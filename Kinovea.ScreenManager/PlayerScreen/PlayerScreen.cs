@@ -925,6 +925,11 @@ namespace Kinovea.ScreenManager
             f.Dispose();
         }
 
+        public void ShowSwimAnalysis()
+        {
+            view.ShowSwimAnalysis();
+        }
+
         public void ShowAngleAngleDiagram()
         {
             FormAngleAngleAnalysis f = new FormAngleAngleAnalysis(frameServer.Metadata);

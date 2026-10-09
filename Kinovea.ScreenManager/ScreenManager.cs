@@ -170,6 +170,7 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem mnuLinearKinematics = new ToolStripMenuItem();
         private ToolStripMenuItem mnuAngularKinematics = new ToolStripMenuItem();
         private ToolStripMenuItem mnuAngleAngleDiagram = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuSwimAnalysis = new ToolStripMenuItem();
 
         // Options
         private ToolStripMenuItem mnuVariables = new ToolStripMenuItem();
@@ -682,6 +683,10 @@ namespace Kinovea.ScreenManager
             mnuAngleAngleDiagram.Click += mnuAngleAngleDiagram_OnClick;
             mnuAngleAngleDiagram.MergeAction = MergeAction.Append;
 
+            mnuSwimAnalysis.Image = Properties.Resources.plot_16;
+            mnuSwimAnalysis.Click += mnuSwimAnalysis_OnClick;
+            mnuSwimAnalysis.MergeAction = MergeAction.Append;
+
             mnuCatchTools.DropDownItems.AddRange(new ToolStripItem[] {
                 mnuImportImage,
                 mnuBackground,
@@ -695,7 +700,9 @@ namespace Kinovea.ScreenManager
                 mnuScatterDiagram,
                 mnuLinearKinematics,
                 mnuAngularKinematics,
-                mnuAngleAngleDiagram
+                mnuAngleAngleDiagram,
+                new ToolStripSeparator(),
+                mnuSwimAnalysis
             });
 
             #endregion
@@ -1273,6 +1280,7 @@ namespace Kinovea.ScreenManager
                     mnuLinearKinematics.Enabled = true;
                     mnuAngularKinematics.Enabled = true;
                     mnuAngleAngleDiagram.Enabled = true;
+                    mnuSwimAnalysis.Enabled = true;
 
                     mnuCoordinateSystem.Checked = activeScreen.CoordinateSystemVisible;
                     mnuTestGrid.Checked = activeScreen.TestGridVisible;
@@ -1327,6 +1335,7 @@ namespace Kinovea.ScreenManager
                     mnuLinearKinematics.Enabled = false;
                     mnuAngularKinematics.Enabled = false;
                     mnuAngleAngleDiagram.Enabled = false;
+                    mnuSwimAnalysis.Enabled = false;
 
                     mnuCoordinateSystem.Checked = activeScreen.CoordinateSystemVisible;
                     mnuTestGrid.Checked = activeScreen.TestGridVisible;
@@ -1390,6 +1399,7 @@ namespace Kinovea.ScreenManager
                 mnuLinearKinematics.Enabled = false;
                 mnuAngularKinematics.Enabled = false;
                 mnuAngleAngleDiagram.Enabled = false;
+                mnuSwimAnalysis.Enabled = false;
 
                 mnuCoordinateSystem.Checked = false;
                 mnuTestGrid.Checked = false;
@@ -2075,6 +2085,7 @@ namespace Kinovea.ScreenManager
             mnuLinearKinematics.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "…";
             mnuAngularKinematics.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "…";
             mnuAngleAngleDiagram.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "…";
+            mnuSwimAnalysis.Text = "Ανάλυση αγώνα κολύμβησης (Swim race analysis)…";
 
             // Options
             mnuVariables.Text = Kinovea.ScreenManager.Languages.ScreenManagerLang.mnuContext;
@@ -2597,6 +2608,14 @@ namespace Kinovea.ScreenManager
                 return;
 
             ps.ShowAngleAngleDiagram();
+        }
+        private void mnuSwimAnalysis_OnClick(object sender, EventArgs e)
+        {
+            PlayerScreen ps = activeScreen as PlayerScreen;
+            if (ps == null)
+                return;
+
+            ps.ShowSwimAnalysis();
         }
         #endregion
 
