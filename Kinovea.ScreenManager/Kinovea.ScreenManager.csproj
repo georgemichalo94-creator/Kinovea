@@ -1041,6 +1041,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
+    <Compile Include="SwimAnalysis\SwimAthletes.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimRace.cs" />

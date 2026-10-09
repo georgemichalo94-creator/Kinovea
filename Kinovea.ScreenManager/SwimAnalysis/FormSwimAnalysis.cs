@@ -62,6 +62,10 @@ namespace Kinovea.ScreenManager
         private readonly Dictionary<string, Button> commandButtons = new Dictionary<string, Button>();
 
         // Tab: race info
+        private TextBox tbAthleteSearch;
+        private ListBox lbAthletes;
+        private Label lblAthlete;
+        private Label lblAthleteList;
         private TextBox tbAthlete;
         private NumericUpDown nudLane;
         private ComboBox cmbStyle;
@@ -272,6 +276,32 @@ namespace Kinovea.ScreenManager
             page.Padding = new Padding(8);
             TableLayoutPanel table = NewTable();
 
+            // Athlete from the registry of the main Google Sheet (KOE App).
+            TableLayoutPanel searchRow = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0) };
+            searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tbAthleteSearch = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
+            Button btnReloadAthletes = new Button { Text = "↻", Width = 30, Height = 23, Margin = new Padding(0) };
+            btnReloadAthletes.Click += (s, e) => manager.RefreshAthletes();
+            toolTip.SetToolTip(btnReloadAthletes, "Ανανέωση της λίστας αθλητών από το Google Sheet");
+            toolTip.SetToolTip(tbAthleteSearch, "Γράψε μέρος του ονόματος, το μητρώο ή το σωματείο. Enter: επιλογή του πρώτου.");
+            searchRow.Controls.Add(tbAthleteSearch, 0, 0);
+            searchRow.Controls.Add(btnReloadAthletes, 1, 0);
+            lbAthletes = new ListBox { Height = 110, IntegralHeight = false };
+            lblAthlete = new Label { AutoSize = false, Height = 34, ForeColor = Color.FromArgb(30, 111, 163) };
+            lblAthleteList = new Label { AutoSize = false, Height = 20, ForeColor = Color.DimGray };
+            tbAthleteSearch.TextChanged += (s, e) => FilterAthletes();
+            tbAthleteSearch.KeyDown += TbAthleteSearch_KeyDown;
+            lbAthletes.Click += (s, e) => ChooseAthlete(lbAthletes.SelectedItem as SwimAthlete);
+            lbAthletes.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    ChooseAthlete(lbAthletes.SelectedItem as SwimAthlete);
+                    e.Handled = true;
+                }
+            };
+
             tbAthlete = new TextBox();
             nudLane = new NumericUpDown { Minimum = 0, Maximum = 10, Width = 60 };
             cmbStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -289,7 +319,11 @@ namespace Kinovea.ScreenManager
             Button btnDefaults = new Button { Text = "Προεπιλεγμένα σημεία", AutoSize = true };
             btnDefaults.Click += (s, e) => ApplyDefaultCheckpoints();
 
-            AddRow(table, "Αθλητής / ομάδα", tbAthlete);
+            AddRow(table, "Αθλητής (από KOE App)", searchRow);
+            AddRow(table, "", lbAthletes);
+            AddRow(table, "", lblAthlete);
+            AddRow(table, "", lblAthleteList);
+            AddRow(table, "Όνομα στο report", tbAthlete);
             AddRow(table, "Διάδρομος", nudLane);
             AddRow(table, "Στυλ", cmbStyle);
             AddRow(table, "Απόσταση", cmbDistance);
@@ -563,6 +597,7 @@ namespace Kinovea.ScreenManager
             }
 
             RefreshButtons();
+            RefreshAthletes();
             RefreshData();
             RefreshSync();
             if (!string.IsNullOrEmpty(manager.LastStatus))
@@ -709,6 +744,77 @@ namespace Kinovea.ScreenManager
             string text = string.Format("⏱ {0} s   ▸ Επόμενο: {1}   ✋ {2}{3}", time, nextText, presses, start);
             if (lblLive.Text != text)
                 lblLive.Text = text;
+        }
+
+        /// <summary>
+        /// Update the selected athlete and the state of the athlete list.
+        /// </summary>
+        public void RefreshAthletes()
+        {
+            if (IsDisposed)
+                return;
+
+            SwimRace r = manager.Race;
+            if (r != null && !string.IsNullOrEmpty(r.AthleteId))
+            {
+                List<string> parts = new List<string> { "✔ " + r.Athlete, "μητρώο " + r.AthleteId };
+                if (!string.IsNullOrEmpty(r.AthleteClub)) parts.Add(r.AthleteClub);
+                if (!string.IsNullOrEmpty(r.AthleteCategory)) parts.Add(r.AthleteCategory);
+                if (!string.IsNullOrEmpty(r.AthleteBirthYear)) parts.Add(r.AthleteBirthYear);
+                lblAthlete.ForeColor = Color.FromArgb(30, 111, 163);
+                lblAthlete.Text = string.Join(" · ", parts.ToArray());
+            }
+            else
+            {
+                lblAthlete.ForeColor = colorWarn;
+                lblAthlete.Text = "Δεν έχει επιλεγεί αθλητής από τη λίστα: η ανάλυση δεν θα συνδεθεί με μητρώο.";
+            }
+
+            lblAthleteList.Text = manager.AthletesMessage ?? "";
+            FilterAthletes();
+        }
+
+        private void FilterAthletes()
+        {
+            if (lbAthletes == null)
+                return;
+
+            string query = tbAthleteSearch.Text.Trim();
+            lbAthletes.BeginUpdate();
+            lbAthletes.Items.Clear();
+            if (query.Length >= 2)
+            {
+                foreach (SwimAthlete a in manager.Athletes.Search(query, 60))
+                    lbAthletes.Items.Add(a);
+            }
+
+            lbAthletes.EndUpdate();
+        }
+
+        private void ChooseAthlete(SwimAthlete athlete)
+        {
+            if (athlete == null)
+                return;
+
+            manager.SetAthlete(athlete);
+            tbAthleteSearch.Text = "";
+        }
+
+        private void TbAthleteSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                if (lbAthletes.Items.Count > 0)
+                    ChooseAthlete(lbAthletes.Items[0] as SwimAthlete);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Down && lbAthletes.Items.Count > 0)
+            {
+                lbAthletes.Focus();
+                lbAthletes.SelectedIndex = 0;
+                e.Handled = true;
+            }
         }
 
         public void RefreshSync()
@@ -985,6 +1091,8 @@ namespace Kinovea.ScreenManager
             if (dgv != null && dgv.IsCurrentCellInEditMode)
                 return true;
             if (c is DataGridViewTextBoxEditingControl)
+                return true;
+            if (c is ListBox)
                 return true;
             return false;
         }

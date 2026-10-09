@@ -1,21 +1,26 @@
 /**
  * Swim Race Analysis – backend σε Google Sheets για το πάνελ "Ανάλυση αγώνα κολύμβησης" του Kinovea.
  *
- * Το Kinovea στέλνει (HTTP POST, JSON) τα γεγονότα που μαρκάρεις στο βίντεο:
- *   περάσματα (χρόνος ανά σημείο ελέγχου), χεριές, δελφινισμούς, έξοδο από το νερό,
- *   αποκόλληση από βατήρα/τοίχο, είσοδο στο νερό, και τα χειροκίνητα πεδία (αποστάσεις κ.λπ.).
- * Το script:
- *   1. υπολογίζει χεριές ανά τμήμα, δελφινισμούς/υποβρύχιο χρόνο ανά φάση, SR από τους χρόνους χεριών,
- *   2. φτιάχνει (μία φορά) ένα φύλλο ανά αγώνα με τύπους, όπως το Excel ανάλυσης,
- *   3. σε κάθε νέο πάτημα γράφει μόνο τα κελιά εισόδου, οπότε οι τύποι και τα γραφήματα ενημερώνονται αμέσως,
- *   4. κατά παραγγελία εξάγει το φύλλο σε PDF (report) σε φάκελο του Drive.
+ * Μπαίνει ως ξεχωριστό αρχείο (π.χ. SwimRaceAnalysis.gs) σε υπάρχον project Apps Script, όπως το KOE App:
+ * δεν ορίζει onOpen / doGet / doPost, ώστε να μη συγκρούεται με τον κώδικα που υπάρχει ήδη.
+ * Οι συναρτήσεις εισόδου είναι swimOnOpen, swimDoGet, swimDoPost (και swimTryHandlePost για υπάρχον doPost).
  *
- * Εγκατάσταση: δες τον οδηγό (README) — σύντομα: Επεκτάσεις → Apps Script, επικόλληση αυτού του αρχείου,
- * εκτέλεση swimSetup, Ανάπτυξη → Νέα ανάπτυξη → Εφαρμογή Ιστού (Εκτέλεση ως: Εγώ, Πρόσβαση: Οποιοσδήποτε).
+ * Τι κάνει:
+ *   1. Δίνει στο Kinovea τη λίστα αθλητών από το φύλλο "Στοιχεία Αθλητών/τριων" (unique_id, ονοματεπώνυμο, σωματείο…).
+ *   2. Δέχεται από το Kinovea τα γεγονότα που μαρκάρεις στο βίντεο (περάσματα, χεριές, δελφινισμοί, έξοδος, αποκόλληση, είσοδος)
+ *      και υπολογίζει χεριές ανά τμήμα, φάσεις εκκίνησης/στροφών/τερματισμού, SR από τους χρόνους χεριών.
+ *   3. Φτιάχνει ένα φύλλο ανά αγώνα με τύπους όπως το Excel ανάλυσης, σε ξεχωριστό spreadsheet αναφορών
+ *      ("Αναλύσεις Αγώνων Κολύμβησης (Kinovea)"), ώστε το κύριο αρχείο να μένει ελαφρύ.
+ *   4. Γράφει μία γραμμή ανά ανάλυση στο φύλλο "Αναλύσεις Αγώνων" του κύριου αρχείου, με το unique_id του αθλητή.
+ *   5. Εξάγει το report σε PDF στον φάκελο "Swim Race Reports" του Drive.
  */
 
-var SWIM_VERSION = '1.0.0';
+var SWIM_VERSION = '1.1.0';
+var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
+var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
+var SWIM_ATHLETES_SHEET = 'Στοιχεία Αθλητών/τριων';
+var SWIM_REPORTS_TITLE = 'Αναλύσεις Αγώνων Κολύμβησης (Kinovea)';
 var SWIM_REPORT_FOLDER = 'Swim Race Reports';
 var SWIM_TIMING_FIRST_ROW = 17;
 
@@ -37,44 +42,78 @@ var SWIM_MEDLEY_RELAY_ORDER = ['bk', 'br', 'fly', 'fs'];
 var SWIM_STYLE_LABELS = { fs: 'fs', bk: 'bk', br: 'br', fly: 'fly', im: 'medley' };
 
 // ---------------------------------------------------------------------------------------------
-// Web app
+// Web app – σημεία εισόδου (τα doGet/doPost/onOpen βρίσκονται στο SwimWebApp.gs ή στον δικό σου κώδικα)
 // ---------------------------------------------------------------------------------------------
 
-function doGet(e) {
-  return swimJson_({ ok: true, app: 'swim-race-analysis', version: SWIM_VERSION });
+function swimDoGet(e) {
+  return swimJson_({ ok: true, app: SWIM_APP_ID, version: SWIM_VERSION });
 }
 
-function doPost(e) {
-  var req;
-  try {
-    req = JSON.parse(e && e.postData ? e.postData.contents : '{}');
-  } catch (err) {
-    return swimJson_({ ok: false, error: 'Μη έγκυρο JSON: ' + err });
-  }
+function swimDoPost(e) {
+  var req = swimParseRequest_(e);
+  if (!req) return swimJson_({ ok: false, error: 'Μη έγκυρο αίτημα (όχι JSON).' });
+  return swimHandle_(req);
+}
 
+/**
+ * Για project που έχει ήδη δικό του doPost: βάλε στην αρχή του
+ *   var swimResponse = swimTryHandlePost(e); if (swimResponse) return swimResponse;
+ * Επιστρέφει null όταν το αίτημα δεν είναι από το Kinovea, οπότε ο υπόλοιπος κώδικας τρέχει κανονικά.
+ */
+function swimTryHandlePost(e) {
+  var req = swimParseRequest_(e);
+  if (!req || req.app !== SWIM_APP_ID) return null;
+  return swimHandle_(req);
+}
+
+function swimParseRequest_(e) {
+  try {
+    var text = e && e.postData ? e.postData.contents : '';
+    if (!text) return null;
+    var req = JSON.parse(text);
+    return req && typeof req === 'object' ? req : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function swimHandle_(req) {
   var token = swimGetToken_();
   if (!token || String(req.token || '') !== token)
     return swimJson_({ ok: false, error: 'Λάθος token. Αντέγραψε ξανά το token από το μενού Swim Analysis → Στοιχεία σύνδεσης.' });
+
+  var action = String(req.action || 'update');
+
+  // Η λίστα αθλητών μόνο διαβάζει: δεν χρειάζεται κλείδωμα.
+  if (action === 'athletes') {
+    try {
+      var list = swimAthletes_();
+      return swimJson_({ ok: true, version: SWIM_VERSION, sheet: list.sheet, athletes: list.athletes });
+    } catch (err) {
+      return swimJson_({ ok: false, error: String(err && err.message ? err.message : err) });
+    }
+  }
 
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(25000);
   } catch (err) {
-    return swimJson_({ ok: false, error: 'Το φύλλο είναι απασχολημένο, θα ξαναπροσπαθήσει.' , retry: true });
+    return swimJson_({ ok: false, error: 'Το φύλλο είναι απασχολημένο, θα ξαναπροσπαθήσει.', retry: true });
   }
 
   try {
-    var action = String(req.action || 'update');
     if (action === 'ping') {
-      var ss0 = swimSpreadsheet_();
-      return swimJson_({ ok: true, version: SWIM_VERSION, spreadsheet: ss0.getName(), url: ss0.getUrl() });
+      var data = swimDataSpreadsheet_();
+      var reports = swimReportsSpreadsheet_();
+      return swimJson_({ ok: true, version: SWIM_VERSION, spreadsheet: data.getName(), reports: reports.getName(), url: reports.getUrl() });
     }
 
     if (action === 'update' || action === 'pdf') {
       var result = swimUpsertRace_(req.race);
       if (action === 'pdf') {
-        var ss = swimSpreadsheet_();
-        result.pdf = swimExportPdf_(ss, ss.getSheetByName(result.sheetName));
+        var ss = swimReportsSpreadsheet_();
+        result.pdf = swimExportPdf_(ss, swimSheetById_(ss, result.sheetId));
+        swimSetSummaryPdf_(result.raceId, result.pdf.url);
       }
       return swimJson_(result);
     }
@@ -91,16 +130,111 @@ function swimJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function swimSpreadsheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (ss) return ss;
-  var id = PropertiesService.getScriptProperties().getProperty('SWIM_SPREADSHEET_ID');
-  if (!id) throw new Error('Δεν βρέθηκε το Google Sheet. Τρέξε πρώτα το swimSetup.');
-  return SpreadsheetApp.openById(id);
+function swimProps_() {
+  return PropertiesService.getScriptProperties();
 }
 
 function swimGetToken_() {
-  return PropertiesService.getScriptProperties().getProperty('SWIM_TOKEN');
+  return swimProps_().getProperty('SWIM_TOKEN');
+}
+
+/** Το κύριο αρχείο (π.χ. KOE App): λίστα αθλητών και πίνακας "Αναλύσεις Αγώνων". */
+function swimDataSpreadsheet_() {
+  var id = swimProps_().getProperty('SWIM_DATA_SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
+  throw new Error('Δεν βρέθηκε το Google Sheet. Τρέξε πρώτα τη συνάρτηση swimSetup από το Apps Script.');
+}
+
+/**
+ * Το spreadsheet των αναφορών (ένα φύλλο ανά αγώνα). Δημιουργείται αυτόματα την πρώτη φορά.
+ * Με το Script Property SWIM_REPORTS_MODE = same, οι αναφορές μπαίνουν στο κύριο αρχείο.
+ */
+function swimReportsSpreadsheet_() {
+  var props = swimProps_();
+  if (props.getProperty('SWIM_REPORTS_MODE') === 'same') return swimDataSpreadsheet_();
+
+  var id = props.getProperty('SWIM_REPORTS_SPREADSHEET_ID');
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (e) {
+      // Διαγράφηκε ή δεν είναι προσβάσιμο: φτιάχνουμε νέο.
+    }
+  }
+
+  var ss = SpreadsheetApp.create(SWIM_REPORTS_TITLE);
+  try { DriveApp.getFileById(ss.getId()).moveTo(swimReportFolder_()); } catch (e) { /* μένει στο My Drive */ }
+  var first = ss.getSheets()[0];
+  var index = swimIndexSheet_(ss);
+  if (first.getSheetId() !== index.getSheetId()) ss.deleteSheet(first);
+  props.setProperty('SWIM_REPORTS_SPREADSHEET_ID', ss.getId());
+  return ss;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Αθλητές (από το φύλλο "Στοιχεία Αθλητών/τριων")
+// ---------------------------------------------------------------------------------------------
+
+var SWIM_ATHLETE_COLUMNS = {
+  id: ['UNIQUE_ID', 'ΑΡΙΘΜΟΣ ΜΗΤΡΩΟΥ', 'ΜΗΤΡΩΟ', 'Α.Μ.', 'ΑΜ'],
+  name: ['ΟΝΟΜΑΤΕΠΩΝΥΜΟ', 'ΟΝΟΜΑ'],
+  gender: ['ΦΥΛΟ'],
+  birthYear: ['ΕΤΟΣ ΓΕΝΝΗΣΗΣ', 'ΕΤΟΣ'],
+  category: ['ΚΑΤΗΓΟΡΙΑ'],
+  club: ['ΣΩΜΑΤΕΙΟ', 'ΟΜΙΛΟΣ']
+};
+
+function swimNormText_(s) {
+  return String(s === null || s === undefined ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+function swimHeaderMap_(headerRow) {
+  var norm = headerRow.map(swimNormText_);
+  var map = {};
+  Object.keys(SWIM_ATHLETE_COLUMNS).forEach(function (key) {
+    var names = SWIM_ATHLETE_COLUMNS[key];
+    for (var i = 0; i < names.length && map[key] === undefined; i++) {
+      var idx = norm.indexOf(names[i]);
+      if (idx >= 0) map[key] = idx;
+    }
+  });
+  return map;
+}
+
+/** Επιστρέφει { sheet, athletes: [{id, name, gender, birthYear, category, club}] } χωρίς διπλότυπα μητρώα. */
+function swimAthletes_() {
+  var ss = swimDataSpreadsheet_();
+  var preferred = swimProps_().getProperty('SWIM_ATHLETES_SHEET') || SWIM_ATHLETES_SHEET;
+  var sheet = ss.getSheetByName(preferred);
+  var candidates = sheet ? [sheet] : ss.getSheets();
+
+  for (var s = 0; s < candidates.length; s++) {
+    var sh = candidates[s];
+    var lastCol = sh.getLastColumn(), lastRow = sh.getLastRow();
+    if (lastCol < 2 || lastRow < 2) continue;
+    var map = swimHeaderMap_(sh.getRange(1, 1, 1, lastCol).getValues()[0]);
+    if (map.id === undefined || map.name === undefined) continue;
+
+    var rows = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var seen = {}, athletes = [];
+    var cell = function (row, key) {
+      return map[key] === undefined ? '' : String(row[map[key]] === null ? '' : row[map[key]]).trim();
+    };
+    rows.forEach(function (row) {
+      var id = cell(row, 'id');
+      var name = cell(row, 'name');
+      if (!id || !name || seen[id]) return;
+      seen[id] = true;
+      athletes.push({ id: id, name: name, gender: cell(row, 'gender'), birthYear: cell(row, 'birthYear'), category: cell(row, 'category'), club: cell(row, 'club') });
+    });
+    athletes.sort(function (a, b) { return a.name.localeCompare(b.name, 'el'); });
+    return { sheet: sh.getName(), athletes: athletes };
+  }
+
+  return { sheet: '', athletes: [] };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -116,7 +250,7 @@ function swimUpsertRace_(rawRace) {
   var analysis = swimAnalyze_(race);
   var layout = swimBuildLayout_(race, analysis);
 
-  var ss = swimSpreadsheet_();
+  var ss = swimReportsSpreadsheet_();
   var index = swimIndexSheet_(ss);
   var entry = swimFindIndexEntry_(index, race.id);
 
@@ -129,7 +263,7 @@ function swimUpsertRace_(rawRace) {
     rebuilt = true;
   } else if (swimNameRoot_(sheet.getName()) !== desiredName && entry.prevBaseName !== null &&
              swimNameRoot_(sheet.getName()) === entry.prevBaseName) {
-    // Το όνομα το είχαμε δώσει εμείς και άλλαξαν τα στοιχεία (π.χ. γράφτηκε το όνομα αθλητή): μετονομασία.
+    // Το όνομα το είχαμε δώσει εμείς και άλλαξαν τα στοιχεία (π.χ. επιλέχθηκε αθλητής): μετονομασία.
     // Αν ο χρήστης μετονόμασε το φύλλο με το χέρι, το αφήνουμε όπως είναι.
     var newName = swimUniqueSheetName_(ss, desiredName, sheet);
     if (newName !== sheet.getName()) sheet.setName(newName);
@@ -143,14 +277,18 @@ function swimUpsertRace_(rawRace) {
   swimWriteInputs_(sheet, race, analysis, layout);
   SpreadsheetApp.flush();
 
-  var finalCell = sheet.getRange(layout.kpi.finalTime.r, layout.kpi.finalTime.c).getValue();
-  swimSaveIndexEntry_(index, entry, race, sheet.getName(), layout.signature, finalCell);
+  var kpi = sheet.getRange(2, layout.kpi.finalTime.c, 6, 1).getValues().map(function (r) { return r[0]; });
+  var sheetUrl = ss.getUrl() + '#gid=' + sheet.getSheetId();
+  swimSaveIndexEntry_(index, entry, race, sheet, layout.signature, kpi[0]);
+  swimWriteSummary_(race, analysis, kpi, sheetUrl);
 
   return {
     ok: true,
     version: SWIM_VERSION,
+    raceId: race.id,
+    sheetId: sheet.getSheetId(),
     sheetName: sheet.getName(),
-    sheetUrl: ss.getUrl() + '#gid=' + sheet.getSheetId(),
+    sheetUrl: sheetUrl,
     rebuilt: rebuilt,
     rows: analysis.rows.map(function (row) {
       return {
@@ -164,6 +302,68 @@ function swimUpsertRace_(rawRace) {
     summary: analysis.summary,
     warnings: analysis.warnings
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Πίνακας "Αναλύσεις Αγώνων" στο κύριο αρχείο (μία γραμμή ανά ανάλυση, με το unique_id)
+// ---------------------------------------------------------------------------------------------
+
+var SWIM_SUMMARY_HEADERS = ['unique_id', 'ΟΝΟΜΑΤΕΠΩΝΥΜΟ', 'ΣΩΜΑΤΕΙΟ', 'ΚΑΤΗΓΟΡΙΑ', 'Ημερομηνία', 'Διοργάνωση', 'Τόπος', 'Φάση',
+  'Αγώνισμα', 'Απόσταση', 'Πισίνα', 'Τελικός χρόνος', 'Μέση ταχύτητα', 'Συνολικές χεριές', 'Μέση συχνότητα', 'Μέσο DPS',
+  'Μέσος ΔΑΚ', 'Χρόνος 15μ.', 'Χρόνοι ανά 50μ.', 'Report', 'PDF', 'Race ID', 'Ενημέρωση'];
+var SWIM_SUM = { pdf: 20, raceId: 21 };
+
+function swimSummarySheet_(ss) {
+  var sh = ss.getSheetByName(SWIM_SUMMARY_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(SWIM_SUMMARY_SHEET);
+    sh.getRange(1, 1, 1, SWIM_SUMMARY_HEADERS.length).setValues([SWIM_SUMMARY_HEADERS])
+      .setFontWeight('bold').setBackground(SWIM_COLORS.header);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function swimSummaryRow_(sh, raceId) {
+  var last = sh.getLastRow();
+  if (last < 2) return null;
+  var ids = sh.getRange(2, SWIM_SUM.raceId + 1, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === raceId) return i + 2;
+  return null;
+}
+
+function swimSplits50_(analysis) {
+  var at = {};
+  analysis.rows.forEach(function (r) { if (r.t !== null) at[r.d] = r.t; });
+  var out = [], prev = 0;
+  for (var d = 50; at[d] !== undefined; d += 50) {
+    out.push((at[d] - prev).toFixed(2));
+    prev = at[d];
+  }
+  return out.join(' / ');
+}
+
+function swimWriteSummary_(race, analysis, kpi, sheetUrl) {
+  var sh = swimSummarySheet_(swimDataSpreadsheet_());
+  var row = swimSummaryRow_(sh, race.id);
+  var pdf = row ? sh.getRange(row, SWIM_SUM.pdf + 1).getValue() : '';
+  var num = function (v) { return typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : ''; };
+  var t15 = null;
+  analysis.rows.forEach(function (r) { if (r.d === 15) t15 = r.t; });
+  var idValue = /^\d+$/.test(race.athleteId) ? Number(race.athleteId) : race.athleteId;
+  var values = [idValue, race.athlete, race.club, race.category, race.date, race.competition, race.location, race.round,
+    (SWIM_STYLE_LABELS[race.style] || race.style) + (race.relay ? ' relay' : ''), race.distanceLabel, race.pool,
+    num(kpi[0]), num(kpi[1]), num(kpi[2]), num(kpi[3]), num(kpi[4]), num(kpi[5]),
+    t15 === null ? '' : Math.round(t15 * 100) / 100, swimSplits50_(analysis), sheetUrl, pdf, race.id,
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm')];
+  var r = row || sh.getLastRow() + 1;
+  sh.getRange(r, 1, 1, values.length).setValues([values]);
+}
+
+function swimSetSummaryPdf_(raceId, url) {
+  var sh = swimSummarySheet_(swimDataSpreadsheet_());
+  var row = swimSummaryRow_(sh, raceId);
+  if (row) sh.getRange(row, SWIM_SUM.pdf + 1).setValue(url);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -195,6 +395,11 @@ function swimNormalizeRace_(raw) {
   var race = {
     id: String(r.id || ''),
     athlete: String(r.athlete || ''),
+    athleteId: String(r.athleteId === undefined || r.athleteId === null ? '' : r.athleteId).trim(),
+    gender: String(r.gender || ''),
+    club: String(r.club || ''),
+    category: String(r.category || ''),
+    birthYear: String(r.birthYear || ''),
     style: style,
     relay: !!r.relay,
     distance: swimNum_(r.distance) || 0,
@@ -514,7 +719,7 @@ function swimF_(fmt, kind) {
 
 function swimLayoutSignature_(race) {
   return JSON.stringify({
-    v: 2,
+    v: 3,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
     dist: race.distance,
@@ -546,8 +751,8 @@ function swimBuildLayout_(race, analysis) {
   g.merge(1, 9, 1, LAST);
   g.rowHeights[1] = 30;
 
-  var headerLabels = ['Date:', 'Athlete:', 'Event:', 'Distance:', 'Competition:', 'Location:', 'Round:', 'Pool:'];
-  var headerKeys = ['date', 'athlete', 'event', 'distance', 'competition', 'location', 'round', 'pool'];
+  var headerLabels = ['Date:', 'Athlete:', 'Event:', 'Distance:', 'Competition:', 'Location:', 'Round:', 'Pool:', 'Club / ID:'];
+  var headerKeys = ['date', 'athlete', 'event', 'distance', 'competition', 'location', 'round', 'pool', 'club'];
   layout.inputs.header = [];
   headerLabels.forEach(function (label, i) {
     var r = 2 + i;
@@ -556,7 +761,7 @@ function swimBuildLayout_(race, analysis) {
     g.merge(r, 2, r, 5);
     layout.inputs.header.push({ r: r, c: 2, key: headerKeys[i] });
   });
-  g.box(2, 1, 9, 5);
+  g.box(2, 1, 10, 5);
 
   // ---- Πίνακας χρόνων (θέσεις γραμμών που χρειάζονται οι τύποι KPI)
   var T0 = SWIM_TIMING_FIRST_ROW;
@@ -943,7 +1148,9 @@ function swimHeaderValues_(race) {
     competition: race.competition,
     location: race.location,
     round: race.round,
-    pool: race.pool + 'μ.'
+    pool: race.pool + 'μ.',
+    club: [race.club, race.athleteId ? 'Μητρώο ' + race.athleteId : '', race.category, race.birthYear]
+      .filter(function (x) { return x; }).join(' · ')
   };
 }
 
@@ -1129,8 +1336,8 @@ function swimWriteInputs_(sheet, race, analysis, layout) {
 // Ευρετήριο αγώνων
 // ---------------------------------------------------------------------------------------------
 
-var SWIM_INDEX_HEADERS = ['Race ID', 'Φύλλο', 'Αθλητής', 'Αγώνισμα', 'Απόσταση', 'Φάση', 'Διοργάνωση', 'Ημερομηνία', 'Τελικός χρόνος', 'Ενημέρωση', 'Βίντεο', 'SheetId', 'Layout', 'JSON'];
-var SWIM_IDX = { id: 0, link: 1, sheetId: 11, layout: 12, json: 13 };
+var SWIM_INDEX_HEADERS = ['Race ID', 'Φύλλο', 'Αθλητής', 'Μητρώο', 'Αγώνισμα', 'Απόσταση', 'Φάση', 'Διοργάνωση', 'Ημερομηνία', 'Τελικός χρόνος', 'Ενημέρωση', 'Βίντεο', 'SheetId', 'Layout', 'JSON'];
+var SWIM_IDX = { id: 0, link: 1, sheetId: 12, layout: 13, json: 14 };
 
 function swimIndexSheet_(ss) {
   var sh = ss.getSheetByName(SWIM_INDEX_SHEET);
@@ -1166,13 +1373,12 @@ function swimSheetById_(ss, id) {
   return null;
 }
 
-function swimSaveIndexEntry_(index, entry, race, sheetName, signature, finalTime) {
-  var ss = index.getParent();
-  var sheet = ss.getSheetByName(sheetName);
+function swimSaveIndexEntry_(index, entry, race, sheet, signature, finalTime) {
+  var sheetName = sheet.getName();
   var link = '=HYPERLINK("#gid=' + sheet.getSheetId() + '","' + sheetName.replace(/"/g, '""') + '")';
   var raw = JSON.stringify(race);
   if (raw.length > 49000) raw = raw.substring(0, 49000);
-  var rowValues = [race.id, link, race.athlete, SWIM_STYLE_LABELS[race.style] + (race.relay ? ' relay' : ''), race.distanceLabel,
+  var rowValues = [race.id, link, race.athlete, race.athleteId, SWIM_STYLE_LABELS[race.style] + (race.relay ? ' relay' : ''), race.distanceLabel,
     race.round, race.competition, race.date, finalTime === '' ? '' : finalTime,
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'), race.video, String(sheet.getSheetId()), signature, raw];
   var r = entry ? entry.row : index.getLastRow() + 1;
@@ -1231,31 +1437,90 @@ function swimExportPdf_(ss, sheet) {
 // Μενού & ρύθμιση
 // ---------------------------------------------------------------------------------------------
 
-function onOpen() {
+/**
+ * Προσθέτει το μενού "Swim Analysis". Καλείται από το onOpen (SwimWebApp.gs ή το δικό σου onOpen)
+ * ή από trigger που εγκαθιστά το swimSetup όταν το onOpen του project δεν το καλεί.
+ */
+function swimOnOpen(e) {
   SpreadsheetApp.getUi().createMenu('Swim Analysis')
     .addItem('1. Αρχική ρύθμιση', 'swimSetup')
     .addItem('2. Στοιχεία σύνδεσης για το Kinovea', 'swimShowConnectionInfo')
     .addSeparator()
+    .addItem('Άνοιγμα των αναφορών (reports)', 'swimOpenReports')
+    .addItem('PDF της επιλεγμένης ανάλυσης', 'swimPdfSelected')
+    .addItem('Επαναδημιουργία της επιλεγμένης ανάλυσης', 'swimRebuildSelected')
     .addItem('Δοκιμαστικός αγώνας (demo)', 'swimCreateDemo')
-    .addItem('PDF του ενεργού φύλλου', 'swimPdfActiveSheet')
-    .addItem('Επαναδημιουργία ενεργού φύλλου', 'swimRebuildActiveSheet')
     .addSeparator()
     .addItem('Νέο token (ακυρώνει το παλιό)', 'swimResetToken')
     .addToUi();
 }
 
+/**
+ * Τρέχει μία φορά από το Apps Script (επιλογή swimSetup → Εκτέλεση).
+ * Δημιουργεί token, το spreadsheet των αναφορών, τον πίνακα "Αναλύσεις Αγώνων" και το μενού.
+ */
 function swimSetup() {
-  var props = PropertiesService.getScriptProperties();
+  var props = swimProps_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  props.setProperty('SWIM_SPREADSHEET_ID', ss.getId());
+  if (ss) props.setProperty('SWIM_DATA_SPREADSHEET_ID', ss.getId());
   if (!props.getProperty('SWIM_TOKEN')) props.setProperty('SWIM_TOKEN', Utilities.getUuid().replace(/-/g, ''));
-  swimIndexSheet_(ss);
+
+  var data = swimDataSpreadsheet_();
+  var reports = swimReportsSpreadsheet_();
+  swimIndexSheet_(reports);
+  swimSummarySheet_(data);
   swimReportFolder_();
-  swimShowConnectionInfo();
+  swimEnsureMenuTrigger_(data);
+
+  var athletes = swimAthletes_();
+  Logger.log('Token: ' + swimGetToken_());
+  Logger.log('Αναφορές: ' + reports.getUrl());
+  Logger.log('Αθλητές: ' + athletes.athletes.length + ' από το φύλλο "' + athletes.sheet + '"');
+  var st = swimProjectStatus_();
+  Logger.log(st.doPostOk ? 'doPost: OK' : (st.doPost ? 'doPost: υπάρχει – πρόσθεσε στην αρχή του: var swimResponse = swimTryHandlePost(e); if (swimResponse) return swimResponse;'
+    : 'doPost: λείπει – πρόσθεσε: function doPost(e) { return swimDoPost(e); }'));
+  try { swimShowConnectionInfo(); } catch (e) { /* εκτέλεση χωρίς ανοιχτό φύλλο: τα στοιχεία είναι στο αρχείο καταγραφής */ }
+}
+
+/** Αν το onOpen του project δεν καλεί το swimOnOpen, εγκαθιστά trigger ώστε να εμφανίζεται το μενού. */
+function swimEnsureMenuTrigger_(ss) {
+  var simpleCallsUs = false;
+  try {
+    simpleCallsUs = (typeof onOpen === 'function') && String(onOpen).indexOf('swimOnOpen') >= 0;
+  } catch (e) {
+    simpleCallsUs = false;
+  }
+  var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'swimOnOpen'; });
+  if (simpleCallsUs) {
+    triggers.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  } else if (!triggers.length && ss) {
+    ScriptApp.newTrigger('swimOnOpen').forSpreadsheet(ss).onOpen().create();
+  }
+}
+
+/** Ελέγχει αν το project έχει doPost που περνά τα αιτήματα του Kinovea στο swimDoPost / swimTryHandlePost. */
+function swimProjectStatus_() {
+  var st = { doPost: false, doPostOk: false };
+  try {
+    st.doPost = typeof doPost === 'function';
+    var src = st.doPost ? String(doPost) : '';
+    st.doPostOk = src.indexOf('swimDoPost') >= 0 || src.indexOf('swimTryHandlePost') >= 0;
+  } catch (e) { st.doPost = false; }
+  return st;
+}
+
+function swimProjectStatusHtml_() {
+  var st = swimProjectStatus_();
+  if (st.doPostOk) return '<p style="color:#2e8b57">✔ Το doPost του project περνά τα αιτήματα του Kinovea.</p>';
+  if (!st.doPost)
+    return '<p style="color:#c06e00">⚠ Το project δεν έχει doPost. Πρόσθεσε σε ένα αρχείο:<br>' +
+      '<code>function doPost(e) { return swimDoPost(e); }</code></p>';
+  return '<p style="color:#c06e00">⚠ Το project έχει ήδη δικό του doPost. Βάλε στην πρώτη γραμμή του:<br>' +
+    '<code>var swimResponse = swimTryHandlePost(e); if (swimResponse) return swimResponse;</code></p>';
 }
 
 function swimResetToken() {
-  PropertiesService.getScriptProperties().setProperty('SWIM_TOKEN', Utilities.getUuid().replace(/-/g, ''));
+  swimProps_().setProperty('SWIM_TOKEN', Utilities.getUuid().replace(/-/g, ''));
   swimShowConnectionInfo();
 }
 
@@ -1263,19 +1528,62 @@ function swimShowConnectionInfo() {
   var token = swimGetToken_() || '(τρέξε πρώτα: Swim Analysis → 1. Αρχική ρύθμιση)';
   var url = '';
   try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
+  var reportsUrl = '';
+  try { reportsUrl = swimReportsSpreadsheet_().getUrl(); } catch (e) { reportsUrl = ''; }
+  var athletes = 0, athleteSheet = '';
+  try { var a = swimAthletes_(); athletes = a.athletes.length; athleteSheet = a.sheet; } catch (e) { athletes = 0; }
   var html =
     '<div style="font-family:Arial;font-size:13px;line-height:1.5">' +
-    '<p><b>Token</b> (επικόλλησέ το στις Ρυθμίσεις του πάνελ στο Kinovea):</p>' +
+    '<p><b>Token</b> (επικόλλησέ το στην καρτέλα Σύνδεση του πάνελ στο Kinovea):</p>' +
     '<input style="width:100%;font-size:13px" readonly value="' + token + '" onclick="this.select()">' +
     '<p style="margin-top:14px"><b>Διεύθυνση Web App</b>: αντέγραψε τη διεύθυνση που τελειώνει σε <code>/exec</code> ' +
-    'από το Ανάπτυξη → Διαχείριση αναπτύξεων.' + (url ? '<br>Πιθανή διεύθυνση:<br><input style="width:100%" readonly value="' + url + '" onclick="this.select()">' : '') + '</p>' +
+    'από το Apps Script → Ανάπτυξη → Διαχείριση αναπτύξεων.' +
+    (url ? '<br>Πιθανή διεύθυνση:<br><input style="width:100%" readonly value="' + url + '" onclick="this.select()">' : '') + '</p>' +
+    '<p>Αθλητές για το Kinovea: <b>' + athletes + '</b>' + (athleteSheet ? ' (φύλλο "' + athleteSheet + '")' : ' – δεν βρέθηκε φύλλο με στήλες unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ') + '</p>' +
+    (reportsUrl ? '<p>Αναφορές: <a href="' + reportsUrl + '" target="_blank">' + SWIM_REPORTS_TITLE + '</a></p>' : '') +
+    swimProjectStatusHtml_() +
     '<p style="color:#666">Έκδοση backend ' + SWIM_VERSION + '</p></div>';
-  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(300), 'Σύνδεση με Kinovea');
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(560).setHeight(460), 'Σύνδεση με Kinovea');
+}
+
+function swimOpenReports() {
+  var url = swimReportsSpreadsheet_().getUrl();
+  var html = '<div style="font-family:Arial;font-size:13px"><p><a href="' + url + '" target="_blank">Άνοιγμα: ' + SWIM_REPORTS_TITLE + '</a></p>' +
+    '<p style="color:#666">Ένα φύλλο ανά ανάλυση. Η λίστα όλων των αναλύσεων είναι και στο φύλλο "' + SWIM_SUMMARY_SHEET + '" εδώ.</p></div>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(140), 'Αναφορές');
+}
+
+/** Race ID της ανάλυσης που είναι επιλεγμένη: γραμμή στο "Αναλύσεις Αγώνων" ή ενεργό φύλλο αγώνα. */
+function swimSelectedRaceId_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  if (sheet.getName() === SWIM_SUMMARY_SHEET) {
+    var row = sheet.getActiveRange().getRow();
+    if (row < 2) return null;
+    var id = String(sheet.getRange(row, SWIM_SUM.raceId + 1).getValue() || '');
+    return id || null;
+  }
+  var race = swimRaceFromSheet_(sheet);
+  return race ? race.id : null;
+}
+
+function swimStoredRace_(raceId) {
+  var index = swimIndexSheet_(swimReportsSpreadsheet_());
+  var last = index.getLastRow();
+  if (last < 2) return null;
+  var data = index.getRange(2, 1, last - 1, SWIM_INDEX_HEADERS.length).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][SWIM_IDX.id]) === raceId) {
+      try { return { row: i + 2, race: JSON.parse(String(data[i][SWIM_IDX.json])), sheetId: String(data[i][SWIM_IDX.sheetId]) }; } catch (e) { return null; }
+    }
+  }
+  return null;
 }
 
 function swimRaceFromSheet_(sheet) {
   var ss = sheet.getParent();
-  var index = swimIndexSheet_(ss);
+  var index = ss.getSheetByName(SWIM_INDEX_SHEET);
+  if (!index) return null;
   var last = index.getLastRow();
   if (last < 2) return null;
   var data = index.getRange(2, 1, last - 1, SWIM_INDEX_HEADERS.length).getValues();
@@ -1287,27 +1595,31 @@ function swimRaceFromSheet_(sheet) {
   return null;
 }
 
-function swimRebuildActiveSheet() {
-  var sheet = SpreadsheetApp.getActiveSheet();
-  var race = swimRaceFromSheet_(sheet);
-  if (!race) { SpreadsheetApp.getUi().alert('Το ενεργό φύλλο δεν είναι αγώνας από το Kinovea.'); return; }
-  var ss = sheet.getParent();
-  var index = swimIndexSheet_(ss);
-  var entry = swimFindIndexEntry_(index, race.id);
-  if (entry) index.getRange(entry.row, SWIM_IDX.layout + 1).setValue('');
-  swimUpsertRace_(race);
-  SpreadsheetApp.getUi().alert('Το φύλλο δημιουργήθηκε ξανά.');
+function swimRebuildSelected() {
+  var ui = SpreadsheetApp.getUi();
+  var id = swimSelectedRaceId_();
+  var stored = id ? swimStoredRace_(id) : null;
+  if (!stored) { ui.alert('Επίλεξε μια γραμμή στο φύλλο "' + SWIM_SUMMARY_SHEET + '" και ξαναδοκίμασε.'); return; }
+  var index = swimIndexSheet_(swimReportsSpreadsheet_());
+  index.getRange(stored.row, SWIM_IDX.layout + 1).setValue('');
+  swimUpsertRace_(stored.race);
+  ui.alert('Η ανάλυση δημιουργήθηκε ξανά.');
 }
 
-function swimPdfActiveSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var info = swimExportPdf_(ss, ss.getActiveSheet());
+function swimPdfSelected() {
+  var ui = SpreadsheetApp.getUi();
+  var id = swimSelectedRaceId_();
+  var stored = id ? swimStoredRace_(id) : null;
+  if (!stored) { ui.alert('Επίλεξε μια γραμμή στο φύλλο "' + SWIM_SUMMARY_SHEET + '" και ξαναδοκίμασε.'); return; }
+  var reports = swimReportsSpreadsheet_();
+  var info = swimExportPdf_(reports, swimSheetById_(reports, stored.sheetId));
+  swimSetSummaryPdf_(id, info.url);
   var html = '<div style="font-family:Arial;font-size:13px"><p>Το PDF αποθηκεύτηκε στον φάκελο <b>' + SWIM_REPORT_FOLDER + '</b>.</p>' +
     '<p><a href="' + info.url + '" target="_blank">Άνοιγμα ' + info.name + '</a></p></div>';
-  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(140), 'Report PDF');
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(140), 'Report PDF');
 }
 
-/** Δοκιμαστικός αγώνας 100μ. ελεύθερο, για να δεις το φύλλο χωρίς Kinovea. */
+/** Δοκιμαστικός αγώνας 100μ. ελεύθερο, για να δεις το report χωρίς Kinovea. */
 function swimDemoRace_() {
   var cps = [15, 25, 35, 45, 50, 65, 75, 85, 95, 100];
   var times = [6.10, 10.95, 16.02, 21.12, 23.80, 30.15, 35.55, 41.02, 46.55, 49.42];
@@ -1316,7 +1628,8 @@ function swimDemoRace_() {
   for (t = 4.95; t < 23.6; t += 0.615) strokes.push(Math.round(t * 100) / 100);
   for (t = 28.70; t < 49.2; t += 0.64) strokes.push(Math.round(t * 100) / 100);
   return {
-    id: 'demo-100fs', athlete: 'Αθλητής Δοκιμής', style: 'fs', relay: false, distance: 100, distanceLabel: '100', pool: 50,
+    id: 'demo-100fs', athlete: 'Αθλητής Δοκιμής', athleteId: '', club: 'Δοκιμαστικό σωματείο', category: '', style: 'fs', relay: false,
+    distance: 100, distanceLabel: '100', pool: 50,
     competition: 'Δοκιμή συστήματος', location: 'Αθήνα', round: 'Final', date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd.M.yyyy'),
     checkpoints: cps.map(function (d, i) { return { d: d, t: times[i] }; }),
     strokes: strokes,
@@ -1331,6 +1644,8 @@ function swimDemoRace_() {
 
 function swimCreateDemo() {
   var res = swimUpsertRace_(swimDemoRace_());
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.setActiveSheet(ss.getSheetByName(res.sheetName));
+  var html = '<div style="font-family:Arial;font-size:13px"><p>Δημιουργήθηκε ο δοκιμαστικός αγώνας.</p>' +
+    '<p><a href="' + res.sheetUrl + '" target="_blank">Άνοιγμα του report</a></p>' +
+    '<p style="color:#666">Μπήκε και μία γραμμή στο φύλλο "' + SWIM_SUMMARY_SHEET + '" (μπορείς να τη διαγράψεις).</p></div>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(170), 'Demo');
 }

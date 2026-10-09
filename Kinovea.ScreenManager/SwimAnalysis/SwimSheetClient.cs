@@ -119,9 +119,23 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void Ping(string url, string token, Action<SwimSheetResult> callback)
         {
+            Simple(url, token, "ping", callback);
+        }
+
+        /// <summary>
+        /// Download the athlete list of the main Google Sheet. The callback runs on the UI thread.
+        /// </summary>
+        public void GetAthletes(string url, string token, Action<SwimSheetResult> callback)
+        {
+            Simple(url, token, "athletes", callback);
+        }
+
+        private void Simple(string url, string token, string action, Action<SwimSheetResult> callback)
+        {
             JObject o = new JObject();
+            o["app"] = SwimPayload.AppId;
             o["token"] = token;
-            o["action"] = "ping";
+            o["action"] = action;
             string body = o.ToString(Newtonsoft.Json.Formatting.None);
 
             Task.Factory.StartNew(() => Post(url, body)).ContinueWith(t =>
@@ -286,11 +300,19 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimPayload
     {
+        /// <summary>Lets the backend recognize our requests inside a project that has its own doPost.</summary>
+        public const string AppId = "kinovea-swim";
+
         public static string Build(SwimRace race, SwimComputed computed, SwimSettings settings, string videoName, string action)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
             r["athlete"] = race.Athlete ?? "";
+            r["athleteId"] = race.AthleteId ?? "";
+            r["gender"] = race.AthleteGender ?? "";
+            r["club"] = race.AthleteClub ?? "";
+            r["category"] = race.AthleteCategory ?? "";
+            r["birthYear"] = race.AthleteBirthYear ?? "";
             r["lane"] = race.Lane > 0 ? race.Lane.ToString(CultureInfo.InvariantCulture) : "";
             r["style"] = race.Style;
             r["relay"] = race.Relay;
@@ -344,6 +366,7 @@ namespace Kinovea.ScreenManager
             r["manual"] = manual;
 
             JObject body = new JObject();
+            body["app"] = AppId;
             body["token"] = settings.Token ?? "";
             body["action"] = action;
             body["race"] = r;

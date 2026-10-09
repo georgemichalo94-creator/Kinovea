@@ -11,7 +11,8 @@ function makeSheet(ss, name, id) {
     getSheetId: () => id, getParent: () => ss,
     getMaxRows: () => maxRows, getMaxColumns: () => maxCols,
     insertRowsAfter: (a, n) => { maxRows += n; }, insertColumnsAfter: (a, n) => { maxCols += n; },
-    getLastRow: () => { let m = 0; for (const k in cells) { const r = +k.split(':')[0]; if (cells[k].v !== '' && r > m) m = r; } return m; },
+    getLastRow: () => { let m = 0; for (const k in cells) { const r = +k.split(':')[0]; if (cells[k].v !== '' && cells[k].v !== null && r > m) m = r; } return m; },
+    getLastColumn: () => { let m = 0; for (const k in cells) { const c = +k.split(':')[1]; if (cells[k].v !== '' && cells[k].v !== null && c > m) m = c; } return m; },
     clear: () => { for (const k in cells) delete cells[k]; },
     getCharts: () => charts.slice(), removeChart: c => charts.splice(charts.indexOf(c), 1),
     insertChart: c => charts.push(c),
@@ -38,6 +39,7 @@ function makeSheet(ss, name, id) {
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? (String(x.v).startsWith('=') ? 0 : x.v) : ''; })),
         getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? x.v : ''; })),
         getValue: () => { const x = cells[r + ':' + col]; return x ? x.v : ''; },
+        getRow: () => r,
         setValues: vals => { if (vals.length !== nr || vals[0].length !== nc) throw new Error(`setValues size ${vals.length}x${vals[0].length} != ${nr}x${nc}`); vals.forEach((row, i) => row.forEach((v, j) => { cells[(r + i) + ':' + (col + j)] = { v }; })); return rng; },
         setValue: v => { cells[r + ':' + col] = { v }; return rng; },
         merge: () => { merges.push([r, col, nr, nc]); return rng; }, breakApart: () => rng,
@@ -52,31 +54,47 @@ function makeSheet(ss, name, id) {
   return sheet;
 }
 
-function makeContext() {
-  let nextId = 100;
+let nextId = 100;
+function makeSpreadsheet(name, id) {
   const sheets = [];
   const ss = {
-    getName: () => 'Test SS', getUrl: () => 'https://docs.google.com/spreadsheets/d/X/edit', getId: () => 'X',
-    getSheetByName: n => sheets.find(s => s.getName() === n) || null, getSheets: () => sheets,
-    insertSheet: (n, idx) => { const s = makeSheet(ss, n, nextId++); sheets.push(s); return s; },
+    getName: () => name, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getId: () => id,
+    getSheetByName: n => sheets.find(s => s.getName() === n) || null,
+    insertSheet: (n, idx) => { if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n); const s = makeSheet(ss, n, nextId++); sheets.push(s); return s; },
     getSheets: () => sheets,
+    deleteSheet: sh => sheets.splice(sheets.indexOf(sh), 1),
   };
+  return ss;
+}
+function makeContext(opts) {
+  opts = opts || {};
+  const ss = makeSpreadsheet('KOE App', 'DATA');
+  const all = { DATA: ss };
+  if (opts.athletes) {
+    const sh = ss.insertSheet('Στοιχεία Αθλητών/τριων');
+    opts.athletes.forEach((row, i) => sh.getRange(i + 1, 1, 1, row.length).setValues([row]));
+  }
+  const triggers = [];
   const props = { SWIM_TOKEN: 'tok' };
   const ctx = {
     console, JSON, Math, Date, Object, Array, String, Number, isFinite,
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {}, BorderStyle: { SOLID: 'solid' } },
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {}, BorderStyle: { SOLID: 'solid' },
+      openById: id => { if (!all[id]) throw new Error('no ss ' + id); return all[id]; },
+      create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
+    Logger: { log: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     ContentService: { createTextOutput: t => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid' },
     Session: { getScriptTimeZone: () => 'Europe/Athens' },
-    DriveApp: { getFoldersByName: () => ({ hasNext: () => true, next: () => ({ getFilesByName: () => ({ hasNext: () => false }), createFile: b => ({ getUrl: () => 'https://drive/pdf', getId: () => 'f1' }) }) }) },
+    DriveApp: { getFileById: () => ({ moveTo: () => {} }), getFoldersByName: () => ({ hasNext: () => true, next: () => ({ getFilesByName: () => ({ hasNext: () => false }), createFile: b => ({ getUrl: () => 'https://drive/pdf', getId: () => 'f1' }) }) }) },
     UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName() { return this; } }) }) },
-    ScriptApp: { getOAuthToken: () => 'oauth' },
+    ScriptApp: { getOAuthToken: () => 'oauth', getProjectTriggers: () => triggers, deleteTrigger: t => triggers.splice(triggers.indexOf(t), 1),
+      newTrigger: fn => ({ forSpreadsheet: () => ({ onOpen: () => ({ create: () => triggers.push({ getHandlerFunction: () => fn }) }) }) }) },
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
-  ctx._ss = ss;
+  ctx._ss = ss; ctx._all = all; ctx._triggers = triggers;
   return ctx;
 }
 module.exports = { makeContext };

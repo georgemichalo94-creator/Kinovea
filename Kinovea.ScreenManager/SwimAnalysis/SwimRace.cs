@@ -61,6 +61,14 @@ namespace Kinovea.ScreenManager
     {
         public string Id = Guid.NewGuid().ToString("N");
         public string Athlete = "";
+
+        // Athlete from the federation registry (unique_id in the main Google Sheet). Empty for free text names.
+        public string AthleteId = "";
+        public string AthleteGender = "";
+        public string AthleteBirthYear = "";
+        public string AthleteCategory = "";
+        public string AthleteClub = "";
+
         public int Lane;
         public string Style = "fs";
         public bool Relay;

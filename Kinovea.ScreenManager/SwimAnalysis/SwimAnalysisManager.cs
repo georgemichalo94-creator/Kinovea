@@ -15,6 +15,7 @@ using System.Text;
 using System.Windows.Forms;
 using Kinovea.Services;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Kinovea.ScreenManager
 {
@@ -53,6 +54,11 @@ namespace Kinovea.ScreenManager
         public string SyncMessage { get; private set; }
         public string LastStatus { get; private set; }
         public bool LastStatusIsWarning { get; private set; }
+
+        /// <summary>Athletes of the main Google Sheet (cached locally).</summary>
+        public SwimAthleteList Athletes { get; private set; }
+        public bool AthletesLoading { get; private set; }
+        public string AthletesMessage { get; private set; }
 
         public bool HasVideo
         {
@@ -95,6 +101,8 @@ namespace Kinovea.ScreenManager
         private SwimAnalysisManager()
         {
             Settings = SwimSettings.Load();
+            Athletes = SwimAthleteList.Load();
+            AthletesMessage = AthletesSummary();
             Timing = new SwimTiming();
             Computed = new SwimComputed();
             SyncState = Settings.IsConfigured ? SwimSyncState.Idle : SwimSyncState.NotConfigured;
@@ -419,6 +427,128 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
+        #region Athletes
+        /// <summary>
+        /// Download the athlete list from the Google Sheet (in the background).
+        /// </summary>
+        public void RefreshAthletes()
+        {
+            if (!Settings.IsConfigured)
+            {
+                AthletesMessage = "Ρύθμισε πρώτα τη σύνδεση (καρτέλα Σύνδεση) για να φορτωθεί η λίστα αθλητών.";
+                if (form != null)
+                    form.RefreshAthletes();
+                return;
+            }
+
+            if (AthletesLoading)
+                return;
+
+            AthletesLoading = true;
+            AthletesMessage = "Φόρτωση λίστας αθλητών…";
+            if (form != null)
+                form.RefreshAthletes();
+
+            client.GetAthletes(Settings.WebAppUrl, Settings.Token, result =>
+            {
+                AthletesLoading = false;
+                if (result.Ok && result.Raw != null)
+                {
+                    SwimAthleteList list = new SwimAthleteList();
+                    list.Updated = DateTime.Now;
+                    list.Sheet = result.Raw.Value<string>("sheet") ?? "";
+                    JArray array = result.Raw["athletes"] as JArray;
+                    if (array != null)
+                    {
+                        foreach (JToken token in array)
+                        {
+                            JObject o = token as JObject;
+                            if (o == null)
+                                continue;
+
+                            SwimAthlete a = new SwimAthlete();
+                            a.Id = o.Value<string>("id") ?? "";
+                            a.Name = o.Value<string>("name") ?? "";
+                            a.Gender = o.Value<string>("gender") ?? "";
+                            a.BirthYear = o.Value<string>("birthYear") ?? "";
+                            a.Category = o.Value<string>("category") ?? "";
+                            a.Club = o.Value<string>("club") ?? "";
+                            list.Athletes.Add(a);
+                        }
+                    }
+
+                    list.BuildIndex();
+                    Athletes = list;
+                    Athletes.Save();
+                    AthletesMessage = AthletesSummary();
+                    if (list.Athletes.Count == 0)
+                        AthletesMessage = "Δεν βρέθηκαν αθλητές: το Google Sheet χρειάζεται φύλλο με στήλες unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ.";
+                }
+                else
+                {
+                    AthletesMessage = "Η λίστα αθλητών δεν ενημερώθηκε: " + result.Error + " " + AthletesSummary();
+                }
+
+                if (form != null)
+                    form.RefreshAthletes();
+            });
+        }
+
+        /// <summary>
+        /// Refresh the list when the panel opens if it is older than a few hours.
+        /// </summary>
+        public void RefreshAthletesIfStale()
+        {
+            if (Settings.IsConfigured && (Athletes.Athletes.Count == 0 || (DateTime.Now - Athletes.Updated).TotalHours > 6))
+                RefreshAthletes();
+        }
+
+        private string AthletesSummary()
+        {
+            if (Athletes == null || Athletes.Athletes.Count == 0)
+                return "Η λίστα αθλητών δεν έχει φορτωθεί.";
+
+            return string.Format("Λίστα: {0} αθλητές (ενημέρωση {1:dd/MM HH:mm}).", Athletes.Athletes.Count, Athletes.Updated);
+        }
+
+        /// <summary>
+        /// Link the current analysis to an athlete of the registry.
+        /// </summary>
+        public void SetAthlete(SwimAthlete athlete)
+        {
+            if (Race == null || athlete == null)
+                return;
+
+            Race.AthleteId = athlete.Id;
+            Race.Athlete = athlete.Name;
+            Race.AthleteGender = athlete.Gender;
+            Race.AthleteBirthYear = athlete.BirthYear;
+            Race.AthleteCategory = athlete.Category;
+            Race.AthleteClub = athlete.Club;
+            Status(string.Format("Αθλητής: {0} (μητρώο {1}).", athlete.Name, athlete.Id), false);
+            Changed(false);
+            ScheduleSend();
+            if (form != null)
+                form.RefreshAll();
+        }
+
+        public void ClearAthlete()
+        {
+            if (Race == null)
+                return;
+
+            Race.AthleteId = "";
+            Race.AthleteGender = "";
+            Race.AthleteBirthYear = "";
+            Race.AthleteCategory = "";
+            Race.AthleteClub = "";
+            Changed(false);
+            ScheduleSend();
+            if (form != null)
+                form.RefreshAll();
+        }
+        #endregion
+
         #region Sheet
         public void SaveSettings()
         {
@@ -440,6 +570,8 @@ namespace Kinovea.ScreenManager
             Changed(false);
             if (form != null)
                 form.RefreshSync();
+
+            RefreshAthletesIfStale();
         }
 
         public void TestConnection(Action<SwimSheetResult> callback)
@@ -686,6 +818,7 @@ namespace Kinovea.ScreenManager
                 form.FormClosed += Form_FormClosed;
                 Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
                 form.ShowNear(owner);
+                RefreshAthletesIfStale();
                 return;
             }
 
