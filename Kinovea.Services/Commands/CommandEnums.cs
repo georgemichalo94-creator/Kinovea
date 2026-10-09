@@ -121,6 +121,17 @@ namespace Kinovea.Services
         ChronometerSplit,
         CadenceBeat,
         StartAllTracking,
+
+        // Swim race analysis
+        SwimShowPanel,
+        SwimStart,
+        SwimSplit,
+        SwimStroke,
+        SwimKick,
+        SwimBreakout,
+        SwimFeetOff,
+        SwimEntry,
+        SwimUndo,
     }
 
     public enum DualCaptureCommands
