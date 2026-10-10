@@ -1752,8 +1752,9 @@ function swimProjectStatusHtml_() {
   var st = swimProjectStatus_();
   if (st.doPostOk) return '<p style="color:#2e8b57">✔ Το doPost του project περνά τα αιτήματα του Kinovea.</p>';
   if (!st.doPost)
-    return '<p style="color:#c06e00">⚠ Το project δεν έχει doPost. Πρόσθεσε σε ένα αρχείο:<br>' +
-      '<code>function doPost(e) { return swimDoPost(e); }</code></p>';
+    return '<p style="color:#c06e00">⚠ Το project δεν έχει doPost, οπότε το Kinovea δεν μπορεί να στείλει δεδομένα. ' +
+      'Φτιάξε νέο αρχείο (+ → Σενάριο, π.χ. SwimDoPost) μόνο με τη γραμμή:<br>' +
+      '<code>function doPost(e) { return swimDoPost(e); }</code><br>και κάνε νέα έκδοση της ανάπτυξης.</p>';
   return '<p style="color:#c06e00">⚠ Το project έχει ήδη δικό του doPost. Βάλε στην πρώτη γραμμή του:<br>' +
     '<code>var swimResponse = swimTryHandlePost(e); if (swimResponse) return swimResponse;</code></p>';
 }
