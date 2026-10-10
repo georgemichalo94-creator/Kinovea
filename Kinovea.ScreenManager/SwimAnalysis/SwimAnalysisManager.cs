@@ -1376,6 +1376,7 @@ namespace Kinovea.ScreenManager
                 SizeF vs = g.MeasureString(value, fontChartBold);
                 float vx = Math.Min(plot.Right - vs.Width, Math.Max(plot.Left, X(last.D) - vs.Width / 2));
                 float vy = y0 - vs.Height - 2 < plot.Top ? y0 + 3 : y0 - vs.Height - 2;
+                g.FillRectangle(brushPanel, vx - 2, vy, vs.Width + 4, vs.Height);
                 g.DrawString(value, fontChartBold, brushAthlete, vx, vy);
             }
 
