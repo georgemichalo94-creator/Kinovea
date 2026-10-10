@@ -1766,8 +1766,6 @@ function swimResetToken() {
 
 function swimShowConnectionInfo() {
   var token = swimGetToken_() || '(τρέξε πρώτα: Swim Analysis → 1. Αρχική ρύθμιση)';
-  var url = '';
-  try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
   var reportsUrl = '';
   try { reportsUrl = swimReportsSpreadsheet_().getUrl(); } catch (e) { reportsUrl = ''; }
   var athletes = 0, athleteSheet = '';
@@ -1777,8 +1775,8 @@ function swimShowConnectionInfo() {
     '<p><b>Token</b> (επικόλλησέ το στην καρτέλα Σύνδεση του πάνελ στο Kinovea):</p>' +
     '<input style="width:100%;font-size:13px" readonly value="' + token + '" onclick="this.select()">' +
     '<p style="margin-top:14px"><b>Διεύθυνση Web App</b>: αντέγραψε τη διεύθυνση που τελειώνει σε <code>/exec</code> ' +
-    'από το Apps Script → Ανάπτυξη → Διαχείριση αναπτύξεων.' +
-    (url ? '<br>Πιθανή διεύθυνση:<br><input style="width:100%" readonly value="' + url + '" onclick="this.select()">' : '') + '</p>' +
+    'από το Apps Script → Ανάπτυξη → Διαχείριση αναπτύξεων → ενεργή ανάπτυξη → Web app → URL. ' +
+    'Μετά από κάθε αλλαγή κώδικα: ✏️ → Έκδοση: Νέα έκδοση → Deploy (η διεύθυνση μένει ίδια).</p>' +
     '<p>Αθλητές για το Kinovea: <b>' + athletes + '</b>' + (athleteSheet ? ' (φύλλο "' + athleteSheet + '")' : ' – δεν βρέθηκε φύλλο με στήλες unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ') + '</p>' +
     (reportsUrl ? '<p>Αναφορές: <a href="' + reportsUrl + '" target="_blank">' + SWIM_REPORTS_TITLE + '</a></p>' : '') +
     swimProjectStatusHtml_() +
