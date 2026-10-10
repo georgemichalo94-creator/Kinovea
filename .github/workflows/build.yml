@@ -47,16 +47,21 @@ jobs:
       shell: cmd
       run: rmdir Kinovea\bin\x64\Release\AppData
     
+    # The installer is optional: a failed NSIS download must not fail the portable build.
     - name: Install NSIS
+      id: install-nsis
+      continue-on-error: true
       uses: repolevedavaj/install-nsis@v1.2.0
       with:
         nsis-version: '3.11'
         
     - name: Make Installer
+      if: steps.install-nsis.outcome == 'success'
       shell: cmd
       run: makensis Installer\Kinovea.nsi
       
     - name: Upload Installer
+      if: steps.install-nsis.outcome == 'success'
       id: upload-installer
       uses: actions/upload-artifact@v6
       with:
