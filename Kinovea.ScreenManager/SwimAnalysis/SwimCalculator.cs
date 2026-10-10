@@ -65,6 +65,7 @@ namespace Kinovea.ScreenManager
     {
         public List<SwimRow> Rows = new List<SwimRow>();
         public List<SwimTurnComputed> Turns = new List<SwimTurnComputed>();
+        public double? ReactionTime;
         public double? BlockTime;
         public double? EntryTime;
         public double? StartUnderwaterTime;
@@ -80,6 +81,7 @@ namespace Kinovea.ScreenManager
         public List<double> Breakouts = new List<double>();
         public List<double> FeetOff = new List<double>();
         public List<double> Entries = new List<double>();
+        public List<double> Reactions = new List<double>();
     }
 
     /// <summary>
@@ -113,6 +115,7 @@ namespace Kinovea.ScreenManager
             result.Breakouts = times(SwimMarkType.Breakout);
             result.FeetOff = times(SwimMarkType.FeetOff);
             result.Entries = times(SwimMarkType.Entry);
+            result.Reactions = times(SwimMarkType.Reaction);
             result.TotalPresses = result.Strokes.Count;
 
             int pool = race.Pool <= 0 ? 50 : race.Pool;
@@ -201,6 +204,7 @@ namespace Kinovea.ScreenManager
 
             // Start.
             double firstWallT = barriers.Count > 0 ? barriers[0] : double.MaxValue;
+            result.ReactionTime = First(result.Reactions, t => t > 0 && t < firstWallT);
             result.BlockTime = First(result.FeetOff, t => t > 0 && t < firstWallT);
             result.EntryTime = First(result.Entries, t => t > 0 && t < firstWallT);
             result.StartUnderwaterTime = First(result.Breakouts, t => t > 0 && t < firstWallT);

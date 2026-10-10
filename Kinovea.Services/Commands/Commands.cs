@@ -127,6 +127,7 @@ namespace Kinovea.Services
         SwimFeetOff,
         SwimEntry,
         SwimUndo,
+        SwimReaction,
     }
 
     public enum DualCaptureCommands

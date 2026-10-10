@@ -28,7 +28,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Feet leave the block (start) or the wall (turn).</summary>
         FeetOff,
         /// <summary>Hands enter the water after the start.</summary>
-        Entry
+        Entry,
+        /// <summary>First movement of the swimmer after the start signal (reaction).</summary>
+        Reaction
     }
 
     /// <summary>
@@ -189,5 +191,8 @@ namespace Kinovea.ScreenManager
         public string VideoPath;
         public string ActiveRaceId;
         public List<SwimRace> Races = new List<SwimRace>();
+
+        /// <summary>Perspective calibrations of the water surface (shared by all the swimmers of the video).</summary>
+        public List<SwimCalibration> Calibrations = new List<SwimCalibration>();
     }
 }

@@ -28,6 +28,8 @@ namespace Kinovea.ScreenManager
 
     /// <summary>
     /// Tool window of the swim race analysis.
+    /// The tabs follow the order of the race (start, swimming, turns, finish) and inside each tab the events
+    /// are listed in the order they happen, each with its button, its key and its value.
     /// The window forwards the player hotkeys (play, frame step, swim marks…) to the player screen,
     /// except while the user is typing in a text field.
     /// </summary>
@@ -39,27 +41,37 @@ namespace Kinovea.ScreenManager
         private static readonly Color colorWarn = Color.FromArgb(200, 110, 0);
         private static readonly Color colorError = Color.FromArgb(192, 0, 0);
         private static readonly Color colorBusy = Color.FromArgb(30, 111, 163);
+        private static readonly Color colorValue = Color.FromArgb(11, 60, 93);
+        private static readonly Color colorPick = Color.FromArgb(255, 214, 0);
 
         private readonly SwimAnalysisManager manager;
         private bool updating;
         private Timer liveTimer;
         private readonly ToolTip toolTip = new ToolTip();
         private Font boldGridFont;
+        private Font buttonFont;
+        private Font valueFont;
 
         // Header
         private ComboBox cmbRaces;
         private Button btnNewRace;
         private Button btnDeleteRace;
-
-        // Tabs
-        private TabControl tabs;
-
-        // Tab: marking
         private Label lblLive;
         private Label lblStatus;
-        private DataGridView grid;
-        private FlowLayoutPanel pnlButtons;
-        private readonly Dictionary<PlayerScreenCommands, Button> commandButtons = new Dictionary<PlayerScreenCommands, Button>();
+        private Button btnUndo;
+
+        // Tabs, in race order.
+        private TabControl tabs;
+        private TabPage tabRace;
+        private TabPage tabStart;
+        private TabPage tabSwim;
+        private TabPage tabTurns;
+        private TabPage tabFinish;
+        private TabPage tabConnection;
+
+        private readonly List<KeyValuePair<PlayerScreenCommands, Button>> commandButtons = new List<KeyValuePair<PlayerScreenCommands, Button>>();
+        private readonly Dictionary<Button, string> buttonTexts = new Dictionary<Button, string>();
+        private readonly Dictionary<SwimPickTarget, Button> pickButtons = new Dictionary<SwimPickTarget, Button>();
 
         // Tab: race info
         private TextBox tbAthleteSearch;
@@ -77,18 +89,53 @@ namespace Kinovea.ScreenManager
         private TextBox tbDate;
         private TextBox tbCheckpoints;
 
-        // Tab: start / turns / finish
+        // Tab: start
+        private Label lblStartSignal;
+        private Label lblReactionAuto;
         private TextBox tbReaction;
+        private Label lblBlock;
+        private Label lblEntry;
         private TextBox tbEntryDistHands;
         private TextBox tbEntryDistHips;
         private TextBox tbEntryVelHands;
         private TextBox tbEntryVelHips;
         private TextBox tbEntryVelFeet;
-        private TextBox tbUnderwaterDist;
+        private Label lblStartKicks;
+        private Label lblBreakout;
         private TextBox tbBreakoutDist;
-        private TextBox tbFinishDist;
-        private Label lblStartAuto;
+        private TextBox tbUnderwaterDist;
+        private Label lblFirstSplitTitle;
+        private Label lblFirstSplit;
+
+        // Tab: swimming
+        private DataGridView grid;
+
+        // Tab: turns
+        private Label lblTurnCurrent;
+        private Label lblTurnGap;
+        private Label lblTurnWall;
+        private Label lblTurnTime;
+        private Label lblTurnKicks;
+        private Label lblTurnUnderwater;
         private DataGridView gridTurns;
+        private int currentTurnWall;
+
+        // Tab: finish
+        private Label lblFinishGap;
+        private Label lblFinalTime;
+        private TextBox tbFinishDist;
+        private Label lblFinishSummary;
+
+        // Calibration (start, turns and finish tabs)
+        private GroupBox grpCalibration;
+        private ComboBox cmbLine1;
+        private ComboBox cmbLine2;
+        private TextBox tbLaneWidth;
+        private CheckBox chkFixedCamera;
+        private Button btnCalibrate;
+        private Button btnDeleteCalibration;
+        private Label lblCalibration;
+        private int calibrationPool = -1;
 
         // Tab: connection
         private TextBox tbUrl;
@@ -148,10 +195,12 @@ namespace Kinovea.ScreenManager
         {
             Text = "Ανάλυση αγώνα κολύμβησης";
             Font = new Font("Segoe UI", 9f);
+            buttonFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            valueFont = new Font("Segoe UI", 9f, FontStyle.Bold);
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
             ShowInTaskbar = false;
-            Size = new Size(600, 780);
-            MinimumSize = new Size(500, 560);
+            Size = new Size(640, 840);
+            MinimumSize = new Size(540, 600);
 
             // Header: race selector.
             Panel header = new Panel { Dock = DockStyle.Top, Height = 38, Padding = new Padding(6, 6, 6, 4) };
@@ -176,6 +225,18 @@ namespace Kinovea.ScreenManager
                 cmbRaces.Width = Math.Max(120, btnNewRace.Left - cmbRaces.Left - 8);
             };
 
+            // Live line: race time, next checkpoint, strokes, phase + undo.
+            Panel live = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(6, 2, 6, 2) };
+            lblLive = new Label { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 11.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, ForeColor = colorValue, AutoEllipsis = true };
+            btnUndo = new SwimNoFocusButton { Dock = DockStyle.Right, Width = 170, Font = buttonFont };
+            btnUndo.Click += (s, e) => RunCommand(PlayerScreenCommands.SwimUndo);
+            toolTip.SetToolTip(btnUndo, "Αναίρεση του τελευταίου σημαδιού");
+            RegisterCommandButton(PlayerScreenCommands.SwimUndo, btnUndo, "Αναίρεση");
+            live.Controls.Add(lblLive);
+            live.Controls.Add(btnUndo);
+
+            lblStatus = new Label { Dock = DockStyle.Top, Height = 38, AutoEllipsis = true, ForeColor = Color.DimGray, Padding = new Padding(6, 0, 6, 0) };
+
             // Footer: sync status.
             Panel footer = new Panel { Dock = DockStyle.Bottom, Height = 40, Padding = new Padding(6) };
             lblSync = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
@@ -192,34 +253,110 @@ namespace Kinovea.ScreenManager
             footer.Controls.Add(lblSync);
             footer.Controls.Add(footerButtons);
 
+            grpCalibration = BuildCalibrationGroup();
+
+            tabRace = BuildRaceTab();
+            tabStart = BuildStartTab();
+            tabSwim = BuildSwimTab();
+            tabTurns = BuildTurnsTab();
+            tabFinish = BuildFinishTab();
+            tabConnection = BuildConnectionTab();
+
             tabs = new TabControl { Dock = DockStyle.Fill };
-            tabs.TabPages.Add(BuildMarkingTab());
-            tabs.TabPages.Add(BuildRaceTab());
-            tabs.TabPages.Add(BuildPhasesTab());
-            tabs.TabPages.Add(BuildConnectionTab());
+            tabs.TabPages.Add(tabRace);
+            tabs.TabPages.Add(tabStart);
+            tabs.TabPages.Add(tabSwim);
+            tabs.TabPages.Add(tabTurns);
+            tabs.TabPages.Add(tabFinish);
+            tabs.TabPages.Add(tabConnection);
+            tabs.SelectedTab = tabStart;
+            tabs.SelectedIndexChanged += (s, e) => UpdateCalibrationVisibility();
 
             Controls.Add(tabs);
+            Controls.Add(grpCalibration);
             Controls.Add(footer);
+            Controls.Add(lblStatus);
+            Controls.Add(live);
             Controls.Add(header);
+            UpdateCalibrationVisibility();
         }
 
-        private TabPage BuildMarkingTab()
+        private TabPage BuildStartTab()
         {
-            TabPage page = new TabPage("Καταγραφή");
+            TabPage page = new TabPage("1 · Εκκίνηση");
+            page.Padding = new Padding(6);
+            page.AutoScroll = true;
+            TableLayoutPanel t = NewEventTable();
+
+            lblStartSignal = ValueLabel();
+            AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Εκκίνηση",
+                "Στο καρέ του σήματος εκκίνησης (καπνός/φλας/ήχος): εκεί γίνεται t = 0.", lblStartSignal);
+
+            lblReactionAuto = ValueLabel();
+            tbReaction = NumberBox();
+            toolTip.SetToolTip(tbReaction, "Επίσημος χρόνος αντίδρασης (π.χ. από τα αποτελέσματα). Αν συμπληρωθεί, υπερισχύει του σημαδιού.");
+            AddEventRow(t, "Αντίδραση", PlayerScreenCommands.SwimReaction, "Αντίδραση",
+                "Η πρώτη κίνηση του αθλητή μετά το σήμα.", lblReactionAuto, Caption("επίσημος:"), tbReaction, Unit("s"));
+
+            lblBlock = ValueLabel();
+            AddEventRow(t, "Αποδέσμευση από τον βατήρα", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση",
+                "Τα πόδια φεύγουν από τον βατήρα (χρόνος πάνω στον βατήρα).", lblBlock);
+
+            lblEntry = ValueLabel();
+            tbEntryDistHands = NumberBox();
+            AddEventRow(t, "Είσοδος χεριών στο νερό", PlayerScreenCommands.SwimEntry, "Είσοδος χεριών",
+                "Τα χέρια μπαίνουν στο νερό (χρόνος πτήσης). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
+                lblEntry, Caption("απόσταση:"), tbEntryDistHands, Unit("m"),
+                PickButton(SwimPickTarget.EntryHands, "Κλικ στο βίντεο εκεί που τα χέρια μπαίνουν στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης."));
+
+            tbEntryDistHips = NumberBox();
+            AddEventRow(t, "Είσοδος ισχίων", null, null,
+                "Τα ισχία μπαίνουν στο νερό. Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
+                Caption("απόσταση:"), tbEntryDistHips, Unit("m"),
+                PickButton(SwimPickTarget.EntryHips, "Κλικ στο βίντεο εκεί που τα ισχία μπαίνουν στο νερό."));
+
+            tbEntryVelHands = NumberBox();
+            tbEntryVelHips = NumberBox();
+            tbEntryVelFeet = NumberBox();
+            AddEventRow(t, "Ταχύτητες εισόδου (m/s)", null, null,
+                "Ταχύτητα των χεριών, των ισχίων και των ποδιών τη στιγμή της εισόδου.",
+                Caption("χέρια"), tbEntryVelHands, Caption("ισχία"), tbEntryVelHips, Caption("πόδια"), tbEntryVelFeet);
+
+            lblStartKicks = ValueLabel();
+            AddEventRow(t, "Υποβρύχιοι δελφινισμοί", PlayerScreenCommands.SwimKick, "Δελφινισμός",
+                "Ένα πάτημα για κάθε υποβρύχιο δελφινισμό.", lblStartKicks);
+
+            lblBreakout = ValueLabel();
+            tbBreakoutDist = NumberBox();
+            AddEventRow(t, "Έξοδος από το νερό (κεφάλι)", PlayerScreenCommands.SwimBreakout, "Έξοδος",
+                "Το κεφάλι βγαίνει από το νερό (χρόνος κάτω από το νερό). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
+                lblBreakout, Caption("απόσταση:"), tbBreakoutDist, Unit("m"),
+                PickButton(SwimPickTarget.StartBreakout, "Κλικ στο κεφάλι εκεί που βγαίνει από το νερό."));
+
+            tbUnderwaterDist = NumberBox();
+            AddEventRow(t, "Απόσταση κάτω από το νερό", null, null,
+                "Μέχρι πού έμεινε κάτω από το νερό, από τον τοίχο εκκίνησης.",
+                tbUnderwaterDist, Unit("m"),
+                PickButton(SwimPickTarget.StartUnderwater, "Κλικ στο κεφάλι εκεί που φτάνει στην επιφάνεια."));
+
+            lblFirstSplit = ValueLabel();
+            lblFirstSplitTitle = AddEventRow(t, "Πέρασμα 15μ.", PlayerScreenCommands.SwimSplit, "Πέρασμα",
+                "Το κεφάλι περνά το πρώτο σημείο ελέγχου. Μετά συνεχίζεις στην καρτέλα Κολύμβηση.", lblFirstSplit);
+
+            page.Controls.Add(t);
+            return page;
+        }
+
+        private TabPage BuildSwimTab()
+        {
+            TabPage page = new TabPage("2 · Κολύμβηση");
             page.Padding = new Padding(6);
 
-            pnlButtons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 4) };
-            AddCommandButton(PlayerScreenCommands.SwimStart, "Εκκίνηση", "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ");
-            AddCommandButton(PlayerScreenCommands.SwimSplit, "Πέρασμα", "Χρόνος στο επόμενο σημείο ελέγχου (κεφάλι στα 15μ., 25μ., … / χέρι στον τοίχο)");
-            AddCommandButton(PlayerScreenCommands.SwimStroke, "Χεριά", "Μία χεριά (είσοδος χεριού). Ελεύθερο/ύπτιο: κάθε χέρι. Πεταλούδα/πρόσθιο: κάθε κύκλος");
-            AddCommandButton(PlayerScreenCommands.SwimKick, "Δελφινισμός", "Ένας υποβρύχιος δελφινισμός");
-            AddCommandButton(PlayerScreenCommands.SwimBreakout, "Έξοδος", "Το κεφάλι βγαίνει από το νερό (μετά την εκκίνηση ή τη στροφή)");
-            AddCommandButton(PlayerScreenCommands.SwimFeetOff, "Αποκόλληση", "Τα πόδια φεύγουν από τον βατήρα (εκκίνηση) ή από τον τοίχο (στροφή)");
-            AddCommandButton(PlayerScreenCommands.SwimEntry, "Είσοδος", "Τα χέρια μπαίνουν στο νερό μετά την εκκίνηση");
-            AddCommandButton(PlayerScreenCommands.SwimUndo, "Αναίρεση", "Αναίρεση του τελευταίου σημαδιού");
-
-            lblLive = new Label { Dock = DockStyle.Top, Height = 34, Font = new Font("Segoe UI", 12f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(11, 60, 93) };
-            lblStatus = new Label { Dock = DockStyle.Top, Height = 36, AutoEllipsis = true, ForeColor = Color.DimGray };
+            TableLayoutPanel t = NewEventTable();
+            AddEventRow(t, "Χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
+                "Σε κάθε είσοδο χεριού. Ελεύθερο/ύπτιο: κάθε χέρι · πεταλούδα/πρόσθιο: κάθε κύκλος.", Caption("Οι μισές χεριές στα σημεία ελέγχου βγαίνουν αυτόματα."));
+            AddEventRow(t, "Πέρασμα σημείου ελέγχου", PlayerScreenCommands.SwimSplit, "Πέρασμα",
+                "Το κεφάλι περνά το επόμενο σημείο ελέγχου (25μ., 35μ., …). Στους τοίχους: το χέρι ακουμπά τον τοίχο.", Caption("Η κίτρινη γραμμή είναι το επόμενο σημείο."));
 
             grid = CreateGrid();
             grid.Columns.Add(Column("d", "Απόσταση", 62));
@@ -243,31 +380,142 @@ namespace Kinovea.ScreenManager
 
             page.Controls.Add(grid);
             page.Controls.Add(hint);
-            page.Controls.Add(lblStatus);
-            page.Controls.Add(lblLive);
-            page.Controls.Add(pnlButtons);
+            page.Controls.Add(t);
             return page;
         }
 
-        private void AddCommandButton(PlayerScreenCommands command, string text, string tooltip)
+        private TabPage BuildTurnsTab()
         {
-            Button b = new SwimNoFocusButton
+            TabPage page = new TabPage("3 · Στροφές");
+            page.Padding = new Padding(6);
+
+            lblTurnCurrent = new Label { Dock = DockStyle.Top, Height = 24, Font = valueFont, ForeColor = colorBusy, TextAlign = ContentAlignment.MiddleLeft };
+
+            TableLayoutPanel t = NewEventTable();
+            lblTurnGap = ValueLabel();
+            AddEventRow(t, "Τελευταία χεριά πριν τον τοίχο", PlayerScreenCommands.SwimStroke, "Χεριά",
+                "Η τελευταία είσοδος χεριού πριν τη στροφή.", lblTurnGap);
+            lblTurnWall = ValueLabel();
+            AddEventRow(t, "Επαφή στον τοίχο", PlayerScreenCommands.SwimSplit, "Πέρασμα",
+                "Το πέρασμα στον τοίχο (το χέρι ή τα πόδια ακουμπούν τον τοίχο).", lblTurnWall);
+            lblTurnTime = ValueLabel();
+            AddEventRow(t, "Αποκόλληση από τον τοίχο", PlayerScreenCommands.SwimFeetOff, "Αποκόλληση",
+                "Τα πόδια φεύγουν από τον τοίχο: δίνει τον χρόνο στροφής.", lblTurnTime);
+            lblTurnKicks = ValueLabel();
+            AddEventRow(t, "Υποβρύχιοι δελφινισμοί", PlayerScreenCommands.SwimKick, "Δελφινισμός",
+                "Ένα πάτημα για κάθε υποβρύχιο δελφινισμό μετά τη στροφή.", lblTurnKicks);
+            lblTurnUnderwater = ValueLabel();
+            AddEventRow(t, "Έξοδος από το νερό (κεφάλι)", PlayerScreenCommands.SwimBreakout, "Έξοδος",
+                "Το κεφάλι βγαίνει από το νερό. Τα μέτρα κάτω από το νερό μετριούνται από τον τοίχο της στροφής.",
+                lblTurnUnderwater,
+                PickButton(SwimPickTarget.TurnUnderwater, "Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: μέτρα κάτω από το νερό από τον τοίχο της στροφής."));
+
+            gridTurns = CreateGrid();
+            gridTurns.ReadOnly = false;
+            gridTurns.Columns.Add(Column("wall", "Τοίχος (μ.)", 70));
+            gridTurns.Columns.Add(Column("uwDist", "Μέτρα κάτω από το νερό", 92));
+            gridTurns.Columns.Add(Column("turnTime", "Χρόνος στροφής (s)", 82));
+            gridTurns.Columns.Add(Column("uwTime", "Υποβρύχιος χρόνος (s)", 86));
+            gridTurns.Columns.Add(Column("kicks", "Δελφινισμοί", 72));
+            gridTurns.Columns.Add(Column("gap", "Τελ. χεριά → τοίχος (s)", 90));
+            foreach (DataGridViewColumn c in gridTurns.Columns)
             {
-                Width = 98,
-                Height = 44,
-                Tag = command,
-                Text = text,
-                Margin = new Padding(2),
-                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
-            };
-            b.Click += (s, e) =>
+                c.ReadOnly = c.Name != "uwDist" && c.Name != "turnTime";
+                c.DefaultCellStyle.BackColor = c.ReadOnly && c.Name != "wall" ? Color.FromArgb(227, 241, 251) : Color.White;
+            }
+            gridTurns.CellEndEdit += GridTurns_CellEndEdit;
+            gridTurns.CellDoubleClick += GridTurns_CellDoubleClick;
+
+            Label lblTurns = new Label
             {
-                if (!manager.ExecutePlayerCommand(command))
-                    ShowStatus("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                Dock = DockStyle.Top,
+                Height = 34,
+                Text = "Όλες οι στροφές: τα λευκά κελιά γράφονται και με το χέρι (το χειροκίνητο υπερισχύει). Διπλό κλικ: μετάβαση του βίντεο στον τοίχο.",
+                ForeColor = Color.DimGray,
+                Padding = new Padding(0, 6, 0, 0)
             };
-            toolTip.SetToolTip(b, tooltip);
-            commandButtons[command] = b;
-            pnlButtons.Controls.Add(b);
+
+            page.Controls.Add(gridTurns);
+            page.Controls.Add(lblTurns);
+            page.Controls.Add(t);
+            page.Controls.Add(lblTurnCurrent);
+            return page;
+        }
+
+        private TabPage BuildFinishTab()
+        {
+            TabPage page = new TabPage("4 · Τερματισμός");
+            page.Padding = new Padding(6);
+            TableLayoutPanel t = NewEventTable();
+
+            lblFinishGap = ValueLabel();
+            AddEventRow(t, "Τελευταία χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
+                "Η τελευταία είσοδος χεριού πριν τον τερματισμό.", lblFinishGap);
+
+            lblFinalTime = ValueLabel();
+            AddEventRow(t, "Τερματισμός (επαφή στον τοίχο)", PlayerScreenCommands.SwimSplit, "Τερματισμός",
+                "Το χέρι ακουμπά τον τοίχο: τελικός χρόνος (το τελευταίο σημείο ελέγχου).", lblFinalTime);
+
+            tbFinishDist = NumberBox();
+            AddEventRow(t, "Απόσταση τελευταίας χεριάς", null, null,
+                "Απόσταση από τον τοίχο τερματισμού τη στιγμή της τελευταίας χεριάς.",
+                tbFinishDist, Unit("m"),
+                PickButton(SwimPickTarget.FinishLastStroke, "Κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά: απόσταση από τον τοίχο τερματισμού."));
+
+            lblFinishSummary = new Label { Dock = DockStyle.Top, Height = 48, ForeColor = colorBusy, Padding = new Padding(0, 8, 0, 0) };
+
+            page.Controls.Add(lblFinishSummary);
+            page.Controls.Add(t);
+            return page;
+        }
+
+        private GroupBox BuildCalibrationGroup()
+        {
+            GroupBox group = new GroupBox { Text = "Μέτρηση αποστάσεων στο βίντεο (βαθμονόμηση πισίνας)", Dock = DockStyle.Bottom, Height = 104, Padding = new Padding(6, 2, 6, 4) };
+
+            FlowLayoutPanel row1 = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0) };
+            cmbLine1 = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 50 };
+            cmbLine2 = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 50 };
+            tbLaneWidth = new TextBox { Width = 40 };
+            toolTip.SetToolTip(cmbLine1, "Απόσταση της πρώτης γραμμής από τον τοίχο εκκίνησης (π.χ. 0 = ο τοίχος, 5 = αλλαγή χρώματος στα σχοινιά).");
+            toolTip.SetToolTip(cmbLine2, "Απόσταση της δεύτερης γραμμής από τον τοίχο εκκίνησης (π.χ. 5 ή 15).");
+            toolTip.SetToolTip(tbLaneWidth, "Απόσταση ανάμεσα στα δύο σχοινιά του διαδρόμου (2.5 μ. σε ολυμπιακή πισίνα).");
+            tbLaneWidth.TextChanged += (s, e) => CommitLaneWidth();
+            row1.Controls.Add(Caption("Γραμμές στα"));
+            row1.Controls.Add(cmbLine1);
+            row1.Controls.Add(Caption("και"));
+            row1.Controls.Add(cmbLine2);
+            row1.Controls.Add(Caption("μ. από τον τοίχο εκκίνησης · διάδρομος"));
+            row1.Controls.Add(tbLaneWidth);
+            row1.Controls.Add(Unit("μ."));
+
+            FlowLayoutPanel row2 = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            btnCalibrate = new SwimNoFocusButton { Text = "Βαθμονόμηση (4 κλικ)", AutoSize = true, Height = 26 };
+            btnCalibrate.Click += (s, e) => manager.BeginCalibration(ParseLine(cmbLine1, 0), ParseLine(cmbLine2, 5));
+            toolTip.SetToolTip(btnCalibrate, "Σε σταματημένο καρέ: κλικ στις δύο γραμμές πάνω στα δύο σχοινιά του διαδρόμου (Α, Β, Α, Β).");
+            btnDeleteCalibration = new SwimNoFocusButton { Text = "Διαγραφή", AutoSize = true, Height = 26 };
+            btnDeleteCalibration.Click += (s, e) => manager.DeleteCalibration();
+            toolTip.SetToolTip(btnDeleteCalibration, "Διαγραφή της βαθμονόμησης αυτού του καρέ (ή της πιο κοντινής).");
+            chkFixedCamera = new CheckBox { Text = "Σταθερή κάμερα", AutoSize = true, Margin = new Padding(10, 6, 3, 3) };
+            chkFixedCamera.CheckedChanged += (s, e) =>
+            {
+                if (updating)
+                    return;
+                manager.Settings.FixedCamera = chkFixedCamera.Checked;
+                manager.Settings.Save();
+                RefreshCalibrationLabel();
+            };
+            toolTip.SetToolTip(chkFixedCamera, "Σταθερή κάμερα: μία βαθμονόμηση για όλο το βίντεο. Αν η κάμερα ακολουθεί τον αθλητή, άφησέ το κενό: κάθε απόσταση μετριέται σε καρέ με δική του βαθμονόμηση.");
+            row2.Controls.Add(btnCalibrate);
+            row2.Controls.Add(btnDeleteCalibration);
+            row2.Controls.Add(chkFixedCamera);
+
+            lblCalibration = new Label { Dock = DockStyle.Fill, ForeColor = Color.DimGray, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
+
+            group.Controls.Add(lblCalibration);
+            group.Controls.Add(row2);
+            group.Controls.Add(row1);
+            return group;
         }
 
         private TabPage BuildRaceTab()
@@ -362,66 +610,6 @@ namespace Kinovea.ScreenManager
             return page;
         }
 
-        private TabPage BuildPhasesTab()
-        {
-            TabPage page = new TabPage("Εκκίνηση / Στροφές");
-            page.Padding = new Padding(8);
-            TableLayoutPanel table = NewTable();
-            table.Dock = DockStyle.Top;
-            table.AutoSize = true;
-
-            tbReaction = NumberBox();
-            tbEntryDistHands = NumberBox();
-            tbEntryDistHips = NumberBox();
-            tbEntryVelHands = NumberBox();
-            tbEntryVelHips = NumberBox();
-            tbEntryVelFeet = NumberBox();
-            tbUnderwaterDist = NumberBox();
-            tbBreakoutDist = NumberBox();
-            tbFinishDist = NumberBox();
-
-            AddRow(table, "Χρόνος αντίδρασης (s)", tbReaction);
-            AddRow(table, "Απόσταση εισόδου – χέρια (m)", tbEntryDistHands);
-            AddRow(table, "Απόσταση εισόδου – ισχία (m)", tbEntryDistHips);
-            AddRow(table, "Ταχύτητα εισόδου – χέρια (m/s)", tbEntryVelHands);
-            AddRow(table, "Ταχύτητα εισόδου – ισχία (m/s)", tbEntryVelHips);
-            AddRow(table, "Ταχύτητα εισόδου – πόδια (m/s)", tbEntryVelFeet);
-            AddRow(table, "Απόσταση κάτω από το νερό (m)", tbUnderwaterDist);
-            AddRow(table, "Απόσταση εξόδου – κεφάλι (m)", tbBreakoutDist);
-            AddRow(table, "Τερματισμός: απόσταση τελευταίας χεριάς (m)", tbFinishDist);
-
-            lblStartAuto = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 58, ForeColor = Color.FromArgb(30, 111, 163) };
-
-            gridTurns = CreateGrid();
-            gridTurns.ReadOnly = false;
-            gridTurns.Columns.Add(Column("wall", "Τοίχος (μ.)", 70));
-            gridTurns.Columns.Add(Column("uwDist", "Μέτρα κάτω από το νερό", 92));
-            gridTurns.Columns.Add(Column("turnTime", "Χρόνος στροφής (s)", 82));
-            gridTurns.Columns.Add(Column("uwTime", "Υποβρύχιος χρόνος (s)", 86));
-            gridTurns.Columns.Add(Column("kicks", "Δελφινισμοί", 72));
-            gridTurns.Columns.Add(Column("gap", "Τελ. χεριά → τοίχος (s)", 90));
-            foreach (DataGridViewColumn c in gridTurns.Columns)
-            {
-                c.ReadOnly = c.Name != "uwDist" && c.Name != "turnTime";
-                c.DefaultCellStyle.BackColor = c.ReadOnly && c.Name != "wall" ? Color.FromArgb(227, 241, 251) : Color.White;
-            }
-            gridTurns.CellEndEdit += GridTurns_CellEndEdit;
-
-            Label lblTurns = new Label
-            {
-                Dock = DockStyle.Top,
-                Height = 40,
-                Text = "Στροφές: τα λευκά κελιά συμπληρώνονται με το χέρι. Ο χρόνος στροφής υπολογίζεται αυτόματα όταν μαρκάρεις «Αποκόλληση» μετά τον τοίχο (το χειροκίνητο υπερισχύει).",
-                ForeColor = Color.DimGray
-            };
-
-            page.Controls.Add(gridTurns);
-            page.Controls.Add(lblTurns);
-            page.Controls.Add(lblStartAuto);
-            page.Controls.Add(table);
-            return page;
-        }
-
         private TabPage BuildConnectionTab()
         {
             TabPage page = new TabPage("Σύνδεση");
@@ -469,6 +657,107 @@ namespace Kinovea.ScreenManager
             return page;
         }
 
+        /// <summary>
+        /// Table of events: number, event, button with its key, values.
+        /// </summary>
+        private static TableLayoutPanel NewEventTable()
+        {
+            TableLayoutPanel t = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, Margin = new Padding(0) };
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 24));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            return t;
+        }
+
+        /// <summary>
+        /// Add an event of the race (in the order it happens). Returns the title label.
+        /// </summary>
+        private Label AddEventRow(TableLayoutPanel t, string title, PlayerScreenCommands? command, string buttonText, string description, params Control[] values)
+        {
+            int row = t.RowCount;
+            t.RowCount = row + 1;
+            t.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            Label number = new Label
+            {
+                Text = (row + 1).ToString(CultureInfo.InvariantCulture),
+                AutoSize = false,
+                Width = 22,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = buttonFont,
+                ForeColor = Color.White,
+                BackColor = colorBusy,
+                Margin = new Padding(0, 9, 2, 3)
+            };
+
+            Label label = new Label { Text = title, AutoSize = false, Width = 148, Height = 38, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(2, 2, 2, 2) };
+            toolTip.SetToolTip(label, description);
+
+            Control button;
+            if (command.HasValue)
+            {
+                PlayerScreenCommands c = command.Value;
+                Button b = new SwimNoFocusButton { Width = 112, Height = 38, Font = buttonFont, Margin = new Padding(2) };
+                b.Click += (s, e) => RunCommand(c);
+                toolTip.SetToolTip(b, description);
+                RegisterCommandButton(c, b, buttonText);
+                button = b;
+            }
+            else
+            {
+                button = new Label { Text = "", AutoSize = false, Width = 112, Height = 38, Margin = new Padding(2) };
+            }
+
+            FlowLayoutPanel flow = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(2, 4, 2, 2) };
+            foreach (Control v in values)
+                flow.Controls.Add(v);
+
+            t.Controls.Add(number, 0, row);
+            t.Controls.Add(label, 1, row);
+            t.Controls.Add(button, 2, row);
+            t.Controls.Add(flow, 3, row);
+            return label;
+        }
+
+        private void RegisterCommandButton(PlayerScreenCommands command, Button button, string text)
+        {
+            button.Text = text;
+            buttonTexts[button] = text;
+            commandButtons.Add(new KeyValuePair<PlayerScreenCommands, Button>(command, button));
+        }
+
+        private void RunCommand(PlayerScreenCommands command)
+        {
+            if (!manager.ExecutePlayerCommand(command))
+                ShowStatus("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+        }
+
+        private Button PickButton(SwimPickTarget target, string tooltip)
+        {
+            Button b = new SwimNoFocusButton { Text = "📍 Μέτρηση", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            b.Click += (s, e) => manager.BeginMeasure(target, SelectedTurnWall());
+            toolTip.SetToolTip(b, tooltip + " (χρειάζεται βαθμονόμηση: δες κάτω)");
+            pickButtons[target] = b;
+            return b;
+        }
+
+        private Label ValueLabel()
+        {
+            return new Label { AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(3, 7, 8, 3), Text = "–" };
+        }
+
+        private static Label Caption(string text)
+        {
+            return new Label { AutoSize = true, Text = text, ForeColor = Color.DimGray, Margin = new Padding(3, 7, 0, 3) };
+        }
+
+        private static Label Unit(string text)
+        {
+            return new Label { AutoSize = true, Text = text, ForeColor = Color.DimGray, Margin = new Padding(0, 7, 3, 3) };
+        }
+
         private static TableLayoutPanel NewTable()
         {
             TableLayoutPanel table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoScroll = true };
@@ -492,8 +781,8 @@ namespace Kinovea.ScreenManager
 
         private TextBox NumberBox()
         {
-            TextBox tb = new TextBox { Width = 90 };
-            tb.Leave += (s, e) => CommitManualValues();
+            TextBox tb = new TextBox { Width = 52, Margin = new Padding(3, 3, 2, 3), TextAlign = HorizontalAlignment.Right };
+            tb.TextChanged += (s, e) => CommitManualValues();
             return tb;
         }
 
@@ -573,16 +862,6 @@ namespace Kinovea.ScreenManager
                     cmbRound.Text = r.Round;
                     tbDate.Text = r.Date;
                     tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
-
-                    tbReaction.Text = Format(r.Reaction);
-                    tbEntryDistHands.Text = Format(r.EntryDistHands);
-                    tbEntryDistHips.Text = Format(r.EntryDistHips);
-                    tbEntryVelHands.Text = Format(r.EntryVelHands);
-                    tbEntryVelHips.Text = Format(r.EntryVelHips);
-                    tbEntryVelFeet.Text = Format(r.EntryVelFeet);
-                    tbUnderwaterDist.Text = Format(r.UnderwaterDist);
-                    tbBreakoutDist.Text = Format(r.BreakoutDist);
-                    tbFinishDist.Text = Format(r.FinishLastStrokeDist);
                 }
 
                 SwimSettings settings = manager.Settings;
@@ -596,12 +875,53 @@ namespace Kinovea.ScreenManager
                 updating = false;
             }
 
+            RefreshManualFields();
             RefreshButtons();
             RefreshAthletes();
             RefreshData();
             RefreshSync();
+            RefreshCalibration();
+            RefreshPick();
             if (!string.IsNullOrEmpty(manager.LastStatus))
                 ShowStatus(manager.LastStatus, manager.LastStatusIsWarning);
+        }
+
+        /// <summary>
+        /// Values typed (or measured on the video) for the current race.
+        /// </summary>
+        public void RefreshManualFields()
+        {
+            SwimRace r = manager.Race;
+            if (r == null || IsDisposed)
+                return;
+
+            updating = true;
+            try
+            {
+                SetText(tbReaction, Format(r.Reaction));
+                SetText(tbEntryDistHands, Format(r.EntryDistHands));
+                SetText(tbEntryDistHips, Format(r.EntryDistHips));
+                SetText(tbEntryVelHands, Format(r.EntryVelHands));
+                SetText(tbEntryVelHips, Format(r.EntryVelHips));
+                SetText(tbEntryVelFeet, Format(r.EntryVelFeet));
+                SetText(tbUnderwaterDist, Format(r.UnderwaterDist));
+                SetText(tbBreakoutDist, Format(r.BreakoutDist));
+                SetText(tbFinishDist, Format(r.FinishLastStrokeDist));
+            }
+            finally
+            {
+                updating = false;
+            }
+        }
+
+        private static void SetText(TextBox tb, string text)
+        {
+            // Keep what the user is typing ("0." or "3,4") when the value is the same.
+            if (tb.Focused && ParseText(tb.Text) == ParseText(text))
+                return;
+
+            if (tb.Text != text)
+                tb.Text = text;
         }
 
         /// <summary>
@@ -614,8 +934,11 @@ namespace Kinovea.ScreenManager
             {
                 HotkeyCommand command = hotkeys.FirstOrDefault(h => h != null && h.CommandCode == (int)pair.Key);
                 string key = command != null && command.KeyData != Keys.None ? KeyName(command.KeyData) : "";
-                string baseText = pair.Value.Text.Split('\n')[0];
-                pair.Value.Text = string.IsNullOrEmpty(key) ? baseText : baseText + "\n[" + key + "]";
+                string baseText = buttonTexts[pair.Value];
+                if (pair.Value == btnUndo)
+                    pair.Value.Text = string.IsNullOrEmpty(key) ? baseText : baseText + " [" + key + "]";
+                else
+                    pair.Value.Text = string.IsNullOrEmpty(key) ? baseText : baseText + "\n[" + key + "]";
             }
         }
 
@@ -631,7 +954,7 @@ namespace Kinovea.ScreenManager
         {
             SwimRace race = manager.Race;
             SwimComputed computed = manager.Computed;
-            if (race == null || computed == null)
+            if (race == null || computed == null || IsDisposed)
                 return;
 
             // Race list label may have changed (athlete name).
@@ -700,35 +1023,114 @@ namespace Kinovea.ScreenManager
 
         private void RefreshPhases(SwimRace race, SwimComputed computed)
         {
-            lblStartAuto.Text = string.Format(
-                "Αυτόματα από τα σημάδια – Εκκίνηση: βατήρας {0} s · είσοδος {1} s · έξοδος από το νερό {2} s · δελφινισμοί {3}\nΤερματισμός: τελευταία χεριά → τοίχος {4} s · Συνολικές χεριές (πατήματα): {5}",
-                Dash(computed.BlockTime), Dash(computed.EntryTime), Dash(computed.StartUnderwaterTime),
-                computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–",
-                Dash(computed.FinishLastStrokeGap), computed.TotalPresses);
+            // Start, in the order of the events.
+            lblStartSignal.Text = race.StartTimestamp.HasValue ? "✔ t = 0" : "δεν έχει οριστεί";
+            lblStartSignal.ForeColor = race.StartTimestamp.HasValue ? colorOk : colorWarn;
+            lblReactionAuto.Text = Seconds(computed.ReactionTime);
+            lblBlock.Text = Seconds(computed.BlockTime);
+            lblEntry.Text = Seconds(computed.EntryTime);
+            lblStartKicks.Text = computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
+            lblBreakout.Text = Seconds(computed.StartUnderwaterTime);
 
-            if (gridTurns.IsCurrentCellInEditMode)
+            SwimRow first = computed.Rows.FirstOrDefault();
+            lblFirstSplitTitle.Text = first != null ? "Πέρασμα " + first.D + "μ." : "Πρώτο πέρασμα";
+            lblFirstSplit.Text = first != null ? Seconds(first.T) : "–";
+
+            // Finish.
+            lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? "τελ. χεριά → τοίχος " + Seconds(computed.FinishLastStrokeGap) : "–";
+            lblFinalTime.Text = computed.FinalTime.HasValue ? "τελικός χρόνος " + FormatRaceTime(computed.FinalTime.Value) : "–";
+            lblFinishSummary.Text = string.Format(CultureInfo.InvariantCulture,
+                "Συνολικές χεριές (πατήματα): {0}{1}",
+                computed.TotalPresses,
+                computed.Warnings.Count > 0 ? "\n⚠ " + computed.Warnings[0] : "");
+
+            // Turns.
+            if (!gridTurns.IsCurrentCellInEditMode)
+            {
+                if (gridTurns.Rows.Count != computed.Turns.Count)
+                {
+                    gridTurns.Rows.Clear();
+                    foreach (SwimTurnComputed t in computed.Turns)
+                        gridTurns.Rows.Add();
+                }
+
+                for (int i = 0; i < computed.Turns.Count; i++)
+                {
+                    SwimTurnComputed t = computed.Turns[i];
+                    SwimTurnManual manual = race.GetTurn(t.Wall, false);
+                    DataGridViewRow gr = gridTurns.Rows[i];
+                    gr.Tag = t.Wall;
+                    gr.Cells["wall"].Value = t.Wall;
+                    gr.Cells["uwDist"].Value = manual != null ? Format(manual.UnderwaterDist) : "";
+                    gr.Cells["turnTime"].Value = manual != null && manual.TurnTime.HasValue ? Format(manual.TurnTime) : Format(t.TurnTime);
+                    gr.Cells["uwTime"].Value = Format(t.UnderwaterTime);
+                    gr.Cells["kicks"].Value = t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "";
+                    gr.Cells["gap"].Value = Format(t.LastStrokeGap);
+                }
+            }
+
+            currentTurnWall = -1;
+            RefreshTurnLabels();
+        }
+
+        /// <summary>
+        /// Values of the turn the video is at (or the selected one).
+        /// </summary>
+        private void RefreshTurnLabels()
+        {
+            SwimRace race = manager.Race;
+            SwimComputed computed = manager.Computed;
+            if (race == null || computed == null)
                 return;
 
-            if (gridTurns.Rows.Count != computed.Turns.Count)
+            int wall = manager.CurrentTurnWall;
+            if (wall <= 0)
+                wall = SelectedTurnWall();
+
+            if (wall == currentTurnWall)
+                return;
+
+            currentTurnWall = wall;
+            SwimTurnComputed t = computed.Turns.FirstOrDefault(x => x.Wall == wall);
+            if (computed.Turns.Count == 0)
             {
-                gridTurns.Rows.Clear();
-                foreach (SwimTurnComputed t in computed.Turns)
-                    gridTurns.Rows.Add();
+                lblTurnCurrent.Text = "Αυτός ο αγώνας δεν έχει στροφές.";
+                wall = 0;
+            }
+            else if (t == null)
+            {
+                lblTurnCurrent.Text = "Στροφή: –";
+            }
+            else
+            {
+                lblTurnCurrent.Text = string.Format("Στροφή στα {0}μ.{1}", wall, manager.CurrentTurnWall == wall ? " (η θέση του βίντεο)" : " (επιλεγμένη)");
             }
 
-            for (int i = 0; i < computed.Turns.Count; i++)
+            SwimTurnManual manual = wall > 0 ? race.GetTurn(wall, false) : null;
+            SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall);
+            lblTurnGap.Text = t != null && t.LastStrokeGap.HasValue ? "→ τοίχος " + Seconds(t.LastStrokeGap) : "–";
+            lblTurnWall.Text = wallRow != null && wallRow.T.HasValue ? wall + "μ. στα " + FormatRaceTime(wallRow.T.Value) : "–";
+            double? turnTime = manual != null && manual.TurnTime.HasValue ? manual.TurnTime : (t != null ? t.TurnTime : null);
+            lblTurnTime.Text = turnTime.HasValue ? "χρόνος στροφής " + Seconds(turnTime) : "–";
+            lblTurnKicks.Text = t != null && t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
+            string uwTime = t != null && t.UnderwaterTime.HasValue ? "υποβρύχια " + Seconds(t.UnderwaterTime) : "–";
+            string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " μ." : "";
+            lblTurnUnderwater.Text = uwTime + uwDist;
+
+            foreach (DataGridViewRow gr in gridTurns.Rows)
             {
-                SwimTurnComputed t = computed.Turns[i];
-                SwimTurnManual manual = race.GetTurn(t.Wall, false);
-                DataGridViewRow gr = gridTurns.Rows[i];
-                gr.Tag = t.Wall;
-                gr.Cells["wall"].Value = t.Wall;
-                gr.Cells["uwDist"].Value = manual != null ? Format(manual.UnderwaterDist) : "";
-                gr.Cells["turnTime"].Value = manual != null && manual.TurnTime.HasValue ? Format(manual.TurnTime) : Format(t.TurnTime);
-                gr.Cells["uwTime"].Value = Format(t.UnderwaterTime);
-                gr.Cells["kicks"].Value = t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "";
-                gr.Cells["gap"].Value = Format(t.LastStrokeGap);
+                bool current = gr.Tag is int && (int)gr.Tag == wall;
+                gr.DefaultCellStyle.Font = current ? (boldGridFont ?? (boldGridFont = new Font(gridTurns.Font, FontStyle.Bold))) : gridTurns.Font;
             }
+        }
+
+        private int SelectedTurnWall()
+        {
+            if (gridTurns != null && gridTurns.CurrentRow != null && gridTurns.CurrentRow.Tag is int)
+                return (int)gridTurns.CurrentRow.Tag;
+
+            List<int> walls = manager.TurnWalls;
+            return walls.Count > 0 ? walls[0] : 0;
         }
 
         private void RefreshLive()
@@ -741,10 +1143,150 @@ namespace Kinovea.ScreenManager
             int next = race.NextCheckpoint();
             string nextText = next > 0 ? next + "μ." : "τέλος";
             int presses = SwimCalculator.PressesSinceLastSplit(manager.Computed);
+            string phase = PhaseName(manager.CurrentPhase);
             string start = race.StartTimestamp.HasValue ? "" : "  (χωρίς σήμα εκκίνησης)";
-            string text = string.Format("⏱ {0} s   ▸ Επόμενο: {1}   ✋ {2}{3}", time, nextText, presses, start);
+            string text = string.Format("⏱ {0} s   ▸ {1}   ✋ {2}   · {3}{4}", time, nextText, presses, phase, start);
             if (lblLive.Text != text)
                 lblLive.Text = text;
+
+            if (tabs.SelectedTab == tabTurns)
+                RefreshTurnLabels();
+
+            if (grpCalibration.Visible)
+                RefreshCalibrationLabel();
+        }
+
+        private string PhaseName(SwimPhase phase)
+        {
+            switch (phase)
+            {
+                case SwimPhase.Start: return "Εκκίνηση";
+                case SwimPhase.Swim: return "Κολύμβηση";
+                case SwimPhase.Turn: return "Στροφή " + manager.CurrentTurnWall + "μ.";
+                case SwimPhase.Finish: return "Τερματισμός";
+                default: return "";
+            }
+        }
+
+        /// <summary>
+        /// Show the tab of the phase of the event just marked (only when a phase tab is shown).
+        /// </summary>
+        public void FollowPhase(SwimPhase phase)
+        {
+            if (IsDisposed)
+                return;
+
+            TabPage current = tabs.SelectedTab;
+            if (current != tabStart && current != tabSwim && current != tabTurns && current != tabFinish)
+                return;
+
+            TabPage target;
+            switch (phase)
+            {
+                case SwimPhase.Start: target = tabStart; break;
+                case SwimPhase.Swim: target = tabSwim; break;
+                case SwimPhase.Turn: target = tabTurns; break;
+                default: target = tabFinish; break;
+            }
+
+            if (target != current)
+                tabs.SelectedTab = target;
+        }
+
+        /// <summary>
+        /// Calibration lines and options.
+        /// </summary>
+        public void RefreshCalibration()
+        {
+            if (IsDisposed)
+                return;
+
+            updating = true;
+            try
+            {
+                int pool = manager.PoolLength;
+                if (pool != calibrationPool)
+                {
+                    calibrationPool = pool;
+                    foreach (ComboBox combo in new ComboBox[] { cmbLine1, cmbLine2 })
+                    {
+                        combo.Items.Clear();
+                        for (int d = 0; d <= pool; d += 5)
+                            combo.Items.Add(d.ToString(CultureInfo.InvariantCulture));
+                    }
+                }
+
+                cmbLine1.Text = manager.CalibrationLine1.ToString("0.##", CultureInfo.InvariantCulture);
+                cmbLine2.Text = manager.CalibrationLine2.ToString("0.##", CultureInfo.InvariantCulture);
+                if (!tbLaneWidth.Focused)
+                    tbLaneWidth.Text = manager.Settings.LaneWidth.ToString("0.##", CultureInfo.InvariantCulture);
+                chkFixedCamera.Checked = manager.Settings.FixedCamera;
+            }
+            finally
+            {
+                updating = false;
+            }
+
+            RefreshCalibrationLabel();
+        }
+
+        private void RefreshCalibrationLabel()
+        {
+            string text = manager.CalibrationSummary();
+            if (lblCalibration.Text != text)
+            {
+                lblCalibration.Text = text;
+                toolTip.SetToolTip(lblCalibration, text);
+            }
+
+            bool hasCalibration = manager.VideoFile != null && manager.VideoFile.Calibrations.Count > 0;
+            btnDeleteCalibration.Enabled = hasCalibration;
+        }
+
+        /// <summary>
+        /// Highlight the button of the pending click on the video.
+        /// </summary>
+        public void RefreshPick()
+        {
+            if (IsDisposed)
+                return;
+
+            SwimPickTarget active = manager.PickTarget == SwimPickTarget.Calibration ? manager.PendingMeasure : manager.PickTarget;
+            foreach (KeyValuePair<SwimPickTarget, Button> pair in pickButtons)
+                Highlight(pair.Value, pair.Key == active && manager.PickTarget != SwimPickTarget.None);
+
+            bool calibrating = manager.PickTarget == SwimPickTarget.Calibration;
+            btnCalibrate.Text = calibrating ? "Ακύρωση βαθμονόμησης" : "Βαθμονόμηση (4 κλικ)";
+            Highlight(btnCalibrate, calibrating);
+            RefreshCalibrationLabel();
+        }
+
+        private static void Highlight(Button b, bool on)
+        {
+            if (on)
+            {
+                b.BackColor = colorPick;
+            }
+            else
+            {
+                b.BackColor = SystemColors.Control;
+                b.UseVisualStyleBackColor = true;
+            }
+        }
+
+        private void UpdateCalibrationVisibility()
+        {
+            TabPage page = tabs != null ? tabs.SelectedTab : null;
+            bool visible = page == tabStart || page == tabTurns || page == tabFinish;
+            grpCalibration.Visible = visible;
+
+            if (visible)
+                RefreshCalibrationLabel();
+            if (page == tabTurns)
+            {
+                currentTurnWall = -1;
+                RefreshTurnLabels();
+            }
         }
 
         /// <summary>
@@ -848,6 +1390,7 @@ namespace Kinovea.ScreenManager
 
             lblStatus.ForeColor = warning ? colorWarn : Color.DimGray;
             lblStatus.Text = message;
+            toolTip.SetToolTip(lblStatus, message);
         }
         #endregion
 
@@ -912,6 +1455,7 @@ namespace Kinovea.ScreenManager
             tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
             updating = false;
             CommitRaceInfo(true);
+            RefreshCalibration();
         }
 
         private void ApplyDefaultCheckpoints()
@@ -966,6 +1510,22 @@ namespace Kinovea.ScreenManager
             manager.ManualValuesChanged();
         }
 
+        private void CommitLaneWidth()
+        {
+            if (updating)
+                return;
+
+            double? width = ParseText(tbLaneWidth.Text);
+            if (width.HasValue && width.Value >= 0.5 && width.Value <= 5)
+                manager.Settings.LaneWidth = width.Value;
+        }
+
+        private static double ParseLine(ComboBox combo, double fallback)
+        {
+            double? value = ParseText(combo.Text);
+            return value.HasValue ? value.Value : fallback;
+        }
+
         private void GridTurns_CellEndEdit(object sender, DataGridViewCellEventArgs e)
         {
             if (manager.Race == null || e.RowIndex < 0)
@@ -985,6 +1545,18 @@ namespace Kinovea.ScreenManager
                 manual.TurnTime = value;
 
             BeginInvoke((Action)(() => manager.ManualValuesChanged()));
+        }
+
+        private void GridTurns_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || !(gridTurns.Rows[e.RowIndex].Tag is int))
+                return;
+
+            string column = gridTurns.Columns[e.ColumnIndex].Name;
+            if (column == "uwDist" || column == "turnTime")
+                return;
+
+            manager.Seek((int)gridTurns.Rows[e.RowIndex].Tag);
         }
 
         private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
@@ -1052,6 +1624,9 @@ namespace Kinovea.ScreenManager
         {
             Control focused = FocusedControl();
             bool typing = IsTextInput(focused);
+
+            if (keyData == Keys.Escape && manager.CancelPick())
+                return true;
 
             if (!typing && focused == grid && keyData == Keys.Delete)
                 return base.ProcessCmdKey(ref msg, keyData);
@@ -1127,14 +1702,24 @@ namespace Kinovea.ScreenManager
             return value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : "";
         }
 
+        private static string Seconds(double? value)
+        {
+            return value.HasValue ? value.Value.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
+        }
+
+        private static string FormatRaceTime(double seconds)
+        {
+            if (seconds < 60)
+                return seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s";
+
+            int minutes = (int)(seconds / 60);
+            double rest = seconds - minutes * 60;
+            return minutes.ToString(CultureInfo.InvariantCulture) + ":" + rest.ToString("00.00", CultureInfo.InvariantCulture);
+        }
+
         private static string FormatStrokes(double? value)
         {
             return value.HasValue ? value.Value.ToString("0.##", CultureInfo.InvariantCulture) : "";
-        }
-
-        private static string Dash(double? value)
-        {
-            return value.HasValue ? value.Value.ToString("0.00", CultureInfo.InvariantCulture) : "–";
         }
 
         private static double? Parse(TextBox tb)

@@ -31,6 +31,15 @@ namespace Kinovea.ScreenManager
         /// <summary>Send every change to the sheet as it happens.</summary>
         public bool AutoSend = true;
 
+        /// <summary>
+        /// The camera does not move: one calibration of the water surface is valid for the whole video.
+        /// Otherwise a distance can only be measured on the frame of a calibration.
+        /// </summary>
+        public bool FixedCamera = false;
+
+        /// <summary>Distance between the lane ropes (m) used for new calibrations.</summary>
+        public double LaneWidth = 2.5;
+
         [JsonIgnore]
         public bool IsConfigured
         {

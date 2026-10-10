@@ -343,7 +343,9 @@ namespace Kinovea.ScreenManager
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();
-            manual["reaction"] = race.Reaction;
+            // The typed (official) reaction time has priority over the one marked on the video.
+            double? reaction = race.Reaction ?? (computed.ReactionTime.HasValue ? (double?)Math.Round(computed.ReactionTime.Value, 3) : null);
+            manual["reaction"] = reaction;
             manual["entryDistHands"] = race.EntryDistHands;
             manual["entryDistHips"] = race.EntryDistHips;
             manual["entryVelHands"] = race.EntryVelHands;

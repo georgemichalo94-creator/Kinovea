@@ -360,6 +360,7 @@ namespace Kinovea.ScreenManager
         private bool m_bKeyframePanelCollapsedManual = false;
         private bool m_bTextEdit;
         private PointF m_DescaledMouse;    // The current mouse point expressed in the original image size coordinates.
+        private bool swimPickInProgress;   // A left click on the image was consumed by the swim analysis (calibration / distance).
         private bool showDrawings = true;
         private bool drawOnPlay = true;
         private bool defaultFadingEnabled = true;
@@ -933,6 +934,30 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimAnalysisManager.Instance.ShowWindow(this, m_FrameServer);
+        }
+
+        /// <summary>
+        /// Called by the swim race analysis when it starts or stops waiting for a click on the image.
+        /// </summary>
+        public void SwimPickModeChanged(bool picking)
+        {
+            if (picking)
+            {
+                if (m_bIsCurrentlyPlaying)
+                {
+                    StopPlaying();
+                    OnPauseAsked();
+                    ActivateKeyframe(m_iCurrentPosition);
+                }
+
+                SetCursor(Cursors.Cross);
+            }
+            else
+            {
+                UpdateCursor();
+            }
+
+            DoInvalidate();
         }
 
         public void ForcePosition(long timestamp, bool allowUIUpdate)
@@ -1551,6 +1576,9 @@ namespace Kinovea.ScreenManager
             {
                 // General
                 case PlayerScreenCommands.ResetViewport:
+                    // Escape also cancels a pending click of the swim analysis.
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.CancelPick())
+                        break;
                     DisablePlayAndDraw();
                     DoInvalidate();
                     break;
@@ -1720,6 +1748,7 @@ namespace Kinovea.ScreenManager
                 case PlayerScreenCommands.SwimFeetOff:
                 case PlayerScreenCommands.SwimEntry:
                 case PlayerScreenCommands.SwimUndo:
+                case PlayerScreenCommands.SwimReaction:
                     SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
                     break;
                 default:
@@ -3254,6 +3283,22 @@ namespace Kinovea.ScreenManager
             selectionTimer.Stop();
             m_DescaledMouse = m_FrameServer.ImageTransform.Untransform(e.Location);
 
+            // Swim race analysis: the click is a calibration point or a distance to measure.
+            swimPickInProgress = false;
+            if (e.Button == MouseButtons.Left && SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.WantsImagePoint(this))
+            {
+                swimPickInProgress = true;
+                if (m_bIsCurrentlyPlaying)
+                {
+                    StopPlaying();
+                    OnPauseAsked();
+                }
+
+                SwimAnalysisManager.Current.ImagePointPicked(this, m_DescaledMouse, m_iCurrentPosition);
+                DoInvalidate();
+                return;
+            }
+
             if (e.Button == MouseButtons.Left)
                 SurfaceScreen_LeftDown();
             else if (e.Button == MouseButtons.Middle)
@@ -3914,6 +3959,9 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.Loaded)
                 return;
 
+            if (swimPickInProgress && e.Button == MouseButtons.Left)
+                return;
+
             m_DescaledMouse = m_FrameServer.ImageTransform.Untransform(e.Location);
 
             if (e.Button == MouseButtons.None && m_FrameServer.Metadata.Magnifier.Initializing)
@@ -4053,6 +4101,13 @@ namespace Kinovea.ScreenManager
             if (e.Button != MouseButtons.Left)
                 return;
 
+            if (swimPickInProgress)
+            {
+                // The mouse down was consumed by the swim analysis.
+                swimPickInProgress = false;
+                return;
+            }
+
             m_DescaledMouse = m_FrameServer.ImageTransform.Untransform(e.Location);
 
             if (m_ActiveTool == m_PointerTool)
@@ -4093,7 +4148,7 @@ namespace Kinovea.ScreenManager
         }
         private void SurfaceScreen_MouseDoubleClick(object sender, MouseEventArgs e)
         {
-            if (!m_FrameServer.Loaded || e.Button != MouseButtons.Left || m_ActiveTool != m_PointerTool)
+            if (!m_FrameServer.Loaded || e.Button != MouseButtons.Left || m_ActiveTool != m_PointerTool || swimPickInProgress)
                 return;
 
             OnPoke();
@@ -4183,6 +4238,10 @@ namespace Kinovea.ScreenManager
                     }
 
                     FlushOnGraphics(m_FrameServer.CurrentImage, e.Graphics, m_viewportManipulator.RenderingSize, iKeyFrameIndex, m_iCurrentPosition, m_FrameServer.ImageTransform);
+
+                    // Swim race analysis: calibration lines and measured distances (screen only, not exported).
+                    if (SwimAnalysisManager.Current != null)
+                        SwimAnalysisManager.Current.DrawOverlay(this, e.Graphics, m_FrameServer.ImageTransform, m_iCurrentPosition);
 
                     if (m_MessageToaster.Enabled)
                         m_MessageToaster.Draw(e.Graphics);
