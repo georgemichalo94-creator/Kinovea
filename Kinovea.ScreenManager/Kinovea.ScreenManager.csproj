@@ -1025,6 +1025,7 @@
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimRace.cs" />
+    <Compile Include="SwimAnalysis\SwimReferences.cs" />
     <Compile Include="SwimAnalysis\SwimSettings.cs" />
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

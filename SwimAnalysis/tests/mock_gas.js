@@ -11,6 +11,17 @@ function makeSheet(ss, name, id) {
     getSheetId: () => id, getParent: () => ss,
     getMaxRows: () => maxRows, getMaxColumns: () => maxCols,
     insertRowsAfter: (a, n) => { maxRows += n; }, insertColumnsAfter: (a, n) => { maxCols += n; },
+    deleteRows: (row, n) => {
+      const moved = {};
+      for (const k in cells) {
+        const [r, c] = k.split(':').map(Number);
+        if (r < row) moved[k] = cells[k];
+        else if (r >= row + n) moved[(r - n) + ':' + c] = cells[k];
+      }
+      for (const k in cells) delete cells[k];
+      Object.assign(cells, moved);
+      maxRows -= n;
+    },
     getLastRow: () => { let m = 0; for (const k in cells) { const r = +k.split(':')[0]; if (cells[k].v !== '' && cells[k].v !== null && r > m) m = r; } return m; },
     getLastColumn: () => { let m = 0; for (const k in cells) { const c = +k.split(':')[1]; if (cells[k].v !== '' && cells[k].v !== null && c > m) m = c; } return m; },
     clear: () => { for (const k in cells) delete cells[k]; },
@@ -37,6 +48,7 @@ function makeSheet(ss, name, id) {
       const rng = {
         _r: r, _c: col, _nr: nr, _nc: nc,
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? (String(x.v).startsWith('=') ? 0 : x.v) : ''; })),
+        getDisplayValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? String(x.v) : ''; })),
         getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? x.v : ''; })),
         getValue: () => { const x = cells[r + ':' + col]; return x ? x.v : ''; },
         getRow: () => r,
@@ -47,7 +59,7 @@ function makeSheet(ss, name, id) {
       ['setNumberFormats','setBackgrounds','setFontWeights','setFontStyles','setFontColors','setFontSizes','setHorizontalAlignments','setWraps'].forEach(fn => {
         rng[fn] = arr => { if (arr.length !== nr || arr[0].length !== nc) throw new Error(fn + ' size mismatch'); return rng; };
       });
-      ['setVerticalAlignment','setFontFamily','setBorder','setFontWeight','setBackground'].forEach(fn => { rng[fn] = () => rng; });
+      ['setVerticalAlignment','setFontFamily','setBorder','setFontWeight','setBackground','setNote','setNumberFormat'].forEach(fn => { rng[fn] = () => rng; });
       return rng;
     },
   };

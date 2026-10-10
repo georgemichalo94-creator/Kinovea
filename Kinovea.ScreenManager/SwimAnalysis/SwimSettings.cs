@@ -5,6 +5,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 */
 #endregion
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Kinovea.Services;
@@ -39,6 +40,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Distance between the lane ropes (m) used for new calibrations.</summary>
         public double LaneWidth = 2.5;
+
+        /// <summary>Velocity chart drawn on the video.</summary>
+        public bool ShowSpeedChart = true;
+
+        /// <summary>Race time, last split and delta drawn on the video.</summary>
+        public bool ShowSplitBoard = true;
+
+        /// <summary>Corner of the video for the chart: TopRight, TopLeft, BottomRight, BottomLeft.</summary>
+        public string OverlayCorner = "TopRight";
+
+        /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
+        public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 
         [JsonIgnore]
         public bool IsConfigured

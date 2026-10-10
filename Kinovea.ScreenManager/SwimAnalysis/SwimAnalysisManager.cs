@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -82,6 +83,11 @@ namespace Kinovea.ScreenManager
         public bool AthletesLoading { get; private set; }
         public string AthletesMessage { get; private set; }
 
+        /// <summary>Elite references of the Google Sheet (cached locally) and the ones saved on this computer.</summary>
+        public SwimReferenceList References { get; private set; }
+        public bool ReferencesLoading { get; private set; }
+        public string ReferencesMessage { get; private set; }
+
         /// <summary>What the next click on the video is used for (calibration point, distance).</summary>
         public SwimPickTarget PickTarget { get; private set; }
 
@@ -144,6 +150,10 @@ namespace Kinovea.ScreenManager
         {
             Settings = SwimSettings.Load();
             Athletes = SwimAthleteList.Load();
+            References = SwimReferenceList.Load();
+            if (Settings.ReferenceByEvent == null)
+                Settings.ReferenceByEvent = new Dictionary<string, string>();
+            ReferencesMessage = ReferencesSummary();
             AthletesMessage = AthletesSummary();
             Timing = new SwimTiming();
             Computed = new SwimComputed();
@@ -1040,7 +1050,7 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Draws the calibration and the last measured distance on the player screen (screen only).
         /// </summary>
-        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp)
+        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize)
         {
             if (screen != player || form == null || form.IsDisposed || VideoFile == null || transform == null)
                 return;
@@ -1048,7 +1058,9 @@ namespace Kinovea.ScreenManager
             try
             {
                 SmoothingMode smoothing = g.SmoothingMode;
+                TextRenderingHint textHint = g.TextRenderingHint;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
                 if (PickTarget == SwimPickTarget.Calibration)
                 {
@@ -1071,7 +1083,10 @@ namespace Kinovea.ScreenManager
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
 
+                DrawRaceOverlay(g, timestamp, renderingSize);
+
                 g.SmoothingMode = smoothing;
+                g.TextRenderingHint = textHint;
             }
             catch (Exception e)
             {
@@ -1163,6 +1178,238 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
+        #region Race overlay: race time, last split, delta and velocity chart
+        private static readonly Color colorAthlete = Color.FromArgb(255, 255, 196, 0);
+        private static readonly Color colorReference = Color.FromArgb(255, 0, 205, 255);
+        private static readonly Pen penAthlete = new Pen(colorAthlete, 2.2f);
+        private static readonly Pen penAthleteLast = new Pen(colorAthlete, 4f);
+        private static readonly Pen penReference = new Pen(colorReference, 1.6f) { DashStyle = DashStyle.Dash };
+        private static readonly Pen penChartGrid = new Pen(Color.FromArgb(60, 255, 255, 255), 1f);
+        private static readonly Pen penChartWall = new Pen(Color.FromArgb(120, 255, 255, 255), 1f) { DashStyle = DashStyle.Dot };
+        private static readonly SolidBrush brushPanel = new SolidBrush(Color.FromArgb(170, 6, 22, 36));
+        private static readonly SolidBrush brushText = new SolidBrush(Color.White);
+        private static readonly SolidBrush brushDim = new SolidBrush(Color.FromArgb(215, 185, 205, 220));
+        private static readonly SolidBrush brushFaster = new SolidBrush(Color.FromArgb(255, 95, 225, 125));
+        private static readonly SolidBrush brushSlower = new SolidBrush(Color.FromArgb(255, 255, 110, 100));
+        private static readonly SolidBrush brushAthlete = new SolidBrush(colorAthlete);
+        private static readonly SolidBrush brushReference = new SolidBrush(colorReference);
+        private static readonly Font fontClock = new Font("Segoe UI", 15f, FontStyle.Bold);
+        private static readonly Font fontDelta = new Font("Segoe UI", 11f, FontStyle.Bold);
+        private static readonly Font fontChart = new Font("Segoe UI", 7.5f);
+        private static readonly Font fontChartBold = new Font("Segoe UI", 8f, FontStyle.Bold);
+
+        /// <summary>
+        /// Panel in a corner of the video, synchronized with the video time: only the splits already
+        /// passed at the current frame are shown, so it plays "live" during the playback.
+        /// </summary>
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size)
+        {
+            if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
+                return;
+            if (!Settings.ShowSpeedChart && !Settings.ShowSplitBoard)
+                return;
+            if (size.Width < 300 || size.Height < 200)
+                return;
+
+            double now = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
+            if (now < -1e-6)
+                return;
+
+            int width = Math.Max(260, Math.Min(520, (int)(size.Width * 0.36)));
+            int boardHeight = Settings.ShowSplitBoard ? 54 : 0;
+            int chartHeight = Settings.ShowSpeedChart ? (int)(width * 0.52) : 0;
+            int gap = boardHeight > 0 && chartHeight > 0 ? 2 : 0;
+            int height = boardHeight + gap + chartHeight;
+            if (height > size.Height - 20)
+            {
+                chartHeight = 0;
+                height = boardHeight;
+                if (height == 0)
+                    return;
+            }
+
+            const int margin = 10;
+            string corner = Settings.OverlayCorner ?? "TopRight";
+            int x = corner.EndsWith("Left", StringComparison.Ordinal) ? margin : size.Width - width - margin;
+            int y = corner.StartsWith("Bottom", StringComparison.Ordinal) ? size.Height - height - margin : margin;
+
+            // Splits reached at this moment of the video.
+            List<SwimRow> done = Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= now + 1e-6).ToList();
+            SwimRow last = done.OrderBy(r => r.T.Value).LastOrDefault();
+
+            int top = y;
+            if (boardHeight > 0)
+            {
+                Rectangle board = new Rectangle(x, top, width, boardHeight);
+                g.FillRectangle(brushPanel, board);
+                DrawBoard(g, board, now, last);
+                top += boardHeight + gap;
+            }
+
+            if (chartHeight > 0)
+            {
+                Rectangle chart = new Rectangle(x, top, width, chartHeight);
+                g.FillRectangle(brushPanel, chart);
+                DrawSpeedChart(g, chart, done, last);
+            }
+        }
+
+        private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last)
+        {
+            bool finished = last != null && last.D >= Race.Distance;
+            string clock = SwimReference.FormatTime(finished ? last.T.Value : Math.Max(0, now));
+            g.DrawString(clock, fontClock, brushText, r.Left + 6, r.Top + 3);
+
+            if (last != null)
+            {
+                string split = (finished ? "Τελικός " : last.D.ToString(CultureInfo.InvariantCulture) + " m  ") + SwimReference.FormatTime(last.T.Value);
+                SizeF splitSize = g.MeasureString(split, fontChartBold);
+                g.DrawString(split, fontChartBold, brushText, r.Right - 6 - splitSize.Width, r.Top + 4);
+
+                if (last.Delta.HasValue)
+                {
+                    string delta = FormatDelta(last.Delta.Value);
+                    SizeF deltaSize = g.MeasureString(delta, fontDelta);
+                    g.DrawString(delta, fontDelta, last.Delta.Value <= 0 ? brushFaster : brushSlower, r.Right - 6 - deltaSize.Width, r.Top + 18);
+                }
+                else if (Computed.Reference != null)
+                {
+                    string none = "χωρίς χρόνο αναφοράς";
+                    SizeF noneSize = g.MeasureString(none, fontChart);
+                    g.DrawString(none, fontChart, brushDim, r.Right - 6 - noneSize.Width, r.Top + 22);
+                }
+            }
+
+            string names = string.IsNullOrWhiteSpace(Race.Athlete) ? "" : Race.Athlete.Trim();
+            if (Computed.Reference != null)
+                names += (names.Length > 0 ? "  vs  " : "vs  ") + Computed.Reference.Name;
+
+            if (names.Length > 0)
+            {
+                using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+                {
+                    RectangleF area = new RectangleF(r.Left + 6, r.Bottom - 17, r.Width * 0.66f, 15);
+                    g.DrawString(names, fontChart, brushDim, area, format);
+                }
+            }
+        }
+
+        private void DrawSpeedChart(Graphics g, Rectangle r, List<SwimRow> done, SwimRow last)
+        {
+            g.DrawString("Ταχύτητα (m/s)", fontChartBold, brushText, r.Left + 6, r.Top + 3);
+
+            // Legend.
+            float lx = r.Right - 6;
+            if (Computed.Reference != null)
+            {
+                string refText = "αναφορά";
+                SizeF s = g.MeasureString(refText, fontChart);
+                lx -= s.Width;
+                g.DrawString(refText, fontChart, brushReference, lx, r.Top + 4);
+                lx -= 20;
+                g.DrawLine(penReference, lx, r.Top + 11, lx + 16, r.Top + 11);
+                lx -= 8;
+            }
+
+            string athleteText = "αθλητής";
+            SizeF a = g.MeasureString(athleteText, fontChart);
+            lx -= a.Width;
+            g.DrawString(athleteText, fontChart, brushAthlete, lx, r.Top + 4);
+            lx -= 20;
+            g.DrawLine(penAthlete, lx, r.Top + 11, lx + 16, r.Top + 11);
+
+            Rectangle plot = new Rectangle(r.Left + 32, r.Top + 22, r.Width - 32 - 10, r.Height - 22 - 18);
+            if (plot.Width < 60 || plot.Height < 30)
+                return;
+
+            List<SwimSegment> athleteAll = Computed.Rows.Where(row => row.Vel.HasValue && row.T.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value }).ToList();
+            List<SwimSegment> reference = Computed.ReferenceSegments ?? new List<SwimSegment>();
+            List<double> values = athleteAll.Select(s => s.V).Concat(reference.Select(s => s.V)).Where(v => v > 0 && v < 4).ToList();
+
+            double vMin = values.Count > 0 ? values.Min() : 1.4;
+            double vMax = values.Count > 0 ? values.Max() : 2.2;
+            double step = vMax - vMin > 1.2 ? 0.5 : 0.2;
+            double yMin = Math.Floor((vMin - 0.05) / step) * step;
+            double yMax = Math.Ceiling((vMax + 0.05) / step) * step;
+            if (yMax - yMin < 2 * step)
+                yMax = yMin + 2 * step;
+
+            double distance = Race.Distance;
+            Func<double, float> X = d => plot.Left + (float)(d / distance * plot.Width);
+            Func<double, float> Y = v => plot.Bottom - (float)((Math.Max(yMin, Math.Min(yMax, v)) - yMin) / (yMax - yMin) * plot.Height);
+
+            // Horizontal grid with the velocity labels.
+            for (double v = yMin; v <= yMax + 1e-9; v += step)
+            {
+                float yy = Y(v);
+                g.DrawLine(penChartGrid, plot.Left, yy, plot.Right, yy);
+                string label = v.ToString("0.0", CultureInfo.InvariantCulture);
+                SizeF ls = g.MeasureString(label, fontChart);
+                g.DrawString(label, fontChart, brushDim, plot.Left - 3 - ls.Width, yy - ls.Height / 2);
+            }
+
+            // Walls and distance labels.
+            int pool = PoolLength;
+            for (int w = pool; w < Race.Distance; w += pool)
+                g.DrawLine(penChartWall, X(w), plot.Top, X(w), plot.Bottom);
+
+            int labelStep = new int[] { 25, 50, 100, 200, 250, 500 }.FirstOrDefault(s => Race.Distance / s <= 5);
+            if (labelStep <= 0)
+                labelStep = 500;
+            for (int d = 0; d <= Race.Distance; d += labelStep)
+            {
+                string label = d.ToString(CultureInfo.InvariantCulture);
+                SizeF ls = g.MeasureString(label, fontChart);
+                g.DrawString(label, fontChart, brushDim, X(d) - ls.Width / 2, plot.Bottom + 2);
+            }
+
+            // Reference profile (the whole race, as a target) and the athlete up to the current frame.
+            DrawSteps(g, penReference, reference, X, Y);
+            List<SwimSegment> athleteDone = done.Where(row => row.Vel.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value }).ToList();
+            DrawSteps(g, penAthlete, athleteDone, X, Y);
+
+            if (last != null && last.Vel.HasValue)
+            {
+                float y0 = Y(last.Vel.Value);
+                g.DrawLine(penAthleteLast, X(last.PrevD), y0, X(last.D), y0);
+                string value = last.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture);
+                SizeF vs = g.MeasureString(value, fontChartBold);
+                float vx = Math.Min(plot.Right - vs.Width, Math.Max(plot.Left, X(last.D) - vs.Width / 2));
+                float vy = y0 - vs.Height - 2 < plot.Top ? y0 + 3 : y0 - vs.Height - 2;
+                g.DrawString(value, fontChartBold, brushAthlete, vx, vy);
+            }
+
+            if (athleteAll.Count == 0 && reference.Count == 0)
+            {
+                string hint = "η ταχύτητα εμφανίζεται με τα περάσματα";
+                SizeF hs = g.MeasureString(hint, fontChart);
+                g.DrawString(hint, fontChart, brushDim, plot.Left + (plot.Width - hs.Width) / 2, plot.Top + (plot.Height - hs.Height) / 2);
+            }
+        }
+
+        /// <summary>
+        /// Step line: one horizontal line per segment, joined when the segments are contiguous.
+        /// </summary>
+        private static void DrawSteps(Graphics g, Pen pen, List<SwimSegment> segments, Func<double, float> X, Func<double, float> Y)
+        {
+            SwimSegment previous = null;
+            foreach (SwimSegment s in segments.OrderBy(x => x.D0))
+            {
+                float y = Y(s.V);
+                if (previous != null && previous.D1 == s.D0)
+                    g.DrawLine(pen, X(s.D0), Y(previous.V), X(s.D0), y);
+
+                g.DrawLine(pen, X(s.D0), y, X(s.D1), y);
+                previous = s;
+            }
+        }
+
+        private static string FormatDelta(double delta)
+        {
+            return SwimReference.FormatDelta(delta);
+        }
+        #endregion
+
         #region Races
         public void SelectRace(string id)
         {
@@ -1192,6 +1439,7 @@ namespace Kinovea.ScreenManager
             VideoFile.Races.Add(race);
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
+            EnsureReference();
             undoStack.Clear();
             Status("Νέα ανάλυση στο ίδιο βίντεο (ίδιο σήμα εκκίνησης). Συμπλήρωσε το όνομα του αθλητή.", false);
             Changed(false);
@@ -1228,8 +1476,12 @@ namespace Kinovea.ScreenManager
             if (structureChanged)
                 Race.RemoveOrphanSplits();
 
+            // The list of references depends on the event (style, distance, pool).
+            EnsureReference();
             Changed(false);
             ScheduleSend();
+            if (form != null)
+                form.RefreshReferences();
         }
 
         public void ManualValuesChanged()
@@ -1359,6 +1611,7 @@ namespace Kinovea.ScreenManager
             Race.AthleteBirthYear = athlete.BirthYear;
             Race.AthleteCategory = athlete.Category;
             Race.AthleteClub = athlete.Club;
+            EnsureReference();
             Status(string.Format("Αθλητής: {0} (μητρώο {1}).", athlete.Name, athlete.Id), false);
             Changed(false);
             ScheduleSend();
@@ -1380,6 +1633,264 @@ namespace Kinovea.ScreenManager
             ScheduleSend();
             if (form != null)
                 form.RefreshAll();
+        }
+        #endregion
+
+        #region Elite references
+        /// <summary>
+        /// References of the event of the current race (and of the gender of the athlete when known).
+        /// </summary>
+        public List<SwimReference> ReferencesForRace()
+        {
+            return References.For(Race);
+        }
+
+        /// <summary>
+        /// Download the references of the sheet "Elite αναφορές" (in the background).
+        /// </summary>
+        public void RefreshReferences()
+        {
+            if (!Settings.IsConfigured)
+            {
+                ReferencesMessage = "Ρύθμισε πρώτα τη σύνδεση (καρτέλα Σύνδεση) για να φορτωθούν οι elite αναφορές.";
+                if (form != null)
+                    form.RefreshReferences();
+                return;
+            }
+
+            if (ReferencesLoading)
+                return;
+
+            ReferencesLoading = true;
+            ReferencesMessage = "Φόρτωση elite αναφορών…";
+            if (form != null)
+                form.RefreshReferences();
+
+            client.GetReferences(Settings.WebAppUrl, Settings.Token, result =>
+            {
+                ReferencesLoading = false;
+                if (result.Ok && result.Raw != null)
+                {
+                    List<SwimReference> list = new List<SwimReference>();
+                    JArray array = result.Raw["references"] as JArray;
+                    if (array != null)
+                    {
+                        foreach (JToken token in array)
+                        {
+                            SwimReference reference = SwimReference.FromJson(token as JObject);
+                            if (reference != null && reference.Times.Count > 0)
+                                list.Add(reference);
+                        }
+                    }
+
+                    References.ReplaceFromSheet(list);
+                    References.Save();
+                    UpdateRaceReferences();
+
+                    JArray skipped = result.Raw["skipped"] as JArray;
+                    ReferencesMessage = ReferencesSummary();
+                    if (skipped != null && skipped.Count > 0)
+                        ReferencesMessage += string.Format(" ⚠ {0} γραμμές του φύλλου δεν διαβάστηκαν (π.χ. {1}).", skipped.Count, skipped[0]);
+
+                    UploadLocalReferences();
+                }
+                else if (IsUnknownAction(result))
+                {
+                    ReferencesMessage = "Για τις elite αναφορές χρειάζεται η νέα έκδοση του Apps Script (1.2.0): δες τον οδηγό. " + ReferencesSummary();
+                }
+                else
+                {
+                    ReferencesMessage = "Οι elite αναφορές δεν ενημερώθηκαν: " + result.Error + " " + ReferencesSummary();
+                }
+
+                if (form != null)
+                    form.RefreshReferences();
+            });
+        }
+
+        public void RefreshReferencesIfStale()
+        {
+            if (Settings.IsConfigured && (References.References.Count == 0 || (DateTime.Now - References.Updated).TotalHours > 6))
+                RefreshReferences();
+        }
+
+        /// <summary>
+        /// Compare the current race with a reference (null: no comparison). The choice is remembered for the event.
+        /// </summary>
+        public void SetReference(SwimReference reference)
+        {
+            if (Race == null)
+                return;
+
+            Race.Reference = reference != null ? reference.Copy() : null;
+            string key = EventKey(Race);
+            if (reference != null)
+                Settings.ReferenceByEvent[key] = reference.Id;
+            else
+                Settings.ReferenceByEvent.Remove(key);
+
+            Settings.Save();
+            Status(reference != null ? "Σύγκριση με: " + reference.Label : "Χωρίς σύγκριση με αναφορά.", false);
+            Changed(false);
+            ScheduleSend();
+            if (form != null)
+                form.RefreshReferences();
+            InvalidatePlayer();
+        }
+
+        /// <summary>
+        /// Keep the analysis as an elite reference for future comparisons (this computer + Google Sheet).
+        /// </summary>
+        public void SaveAsReference(string name)
+        {
+            if (Race == null)
+                return;
+
+            SwimReference reference = SwimReference.FromRace(Race, Computed, name);
+            if (reference.Times.Count == 0)
+            {
+                Status("Η ανάλυση δεν έχει ακόμη χρόνους περασμάτων για να γίνει αναφορά.", true);
+                return;
+            }
+
+            reference.Local = true;
+            References.AddOrReplace(reference);
+            References.Save();
+            if (form != null)
+                form.RefreshReferences();
+
+            if (!Settings.IsConfigured)
+            {
+                Status("Η αναφορά «" + reference.Name + "» αποθηκεύτηκε σε αυτόν τον υπολογιστή.", false);
+                return;
+            }
+
+            Status("Αποστολή της αναφοράς «" + reference.Name + "» στο Google Sheet…", false);
+            UploadReference(reference, true);
+        }
+
+        public static string ReferenceSheetName
+        {
+            get { return "Elite αναφορές"; }
+        }
+
+        private void UploadReference(SwimReference reference, bool report)
+        {
+            client.SaveReference(Settings.WebAppUrl, Settings.Token, reference, result =>
+            {
+                if (result.Ok)
+                {
+                    reference.Local = false;
+                    References.Save();
+                    if (report)
+                        Status("✔ Η αναφορά «" + reference.Name + "» μπήκε στο φύλλο «" + ReferenceSheetName + "» του Google Sheet.", false);
+                }
+                else if (report)
+                {
+                    if (IsUnknownAction(result))
+                        Status("Η αναφορά κρατήθηκε σε αυτόν τον υπολογιστή. Για να μπει και στο Google Sheet χρειάζεται η νέα έκδοση του Apps Script (1.2.0).", true);
+                    else
+                        Status("Η αναφορά κρατήθηκε σε αυτόν τον υπολογιστή: " + result.Error, true);
+                }
+
+                if (form != null)
+                    form.RefreshReferences();
+            });
+        }
+
+        /// <summary>
+        /// References saved on this computer while the sheet was not reachable.
+        /// </summary>
+        private void UploadLocalReferences()
+        {
+            foreach (SwimReference reference in References.References.Where(r => r.Local).ToList())
+                UploadReference(reference, false);
+        }
+
+        /// <summary>
+        /// After a download: refresh the copies of the references used by the races of this video.
+        /// </summary>
+        private void UpdateRaceReferences()
+        {
+            if (VideoFile == null)
+                return;
+
+            bool changed = false;
+            foreach (SwimRace race in VideoFile.Races)
+            {
+                if (race.Reference == null)
+                    continue;
+
+                SwimReference fresh = References.Find(race.Reference.Id);
+                if (fresh != null)
+                {
+                    race.Reference = fresh.Copy();
+                    changed = true;
+                }
+            }
+
+            if (EnsureReference())
+                changed = true;
+
+            if (changed)
+                Changed(false);
+        }
+
+        /// <summary>
+        /// When the event of the race changes, use the reference chosen last time for this event (if any).
+        /// Returns true if the reference of the race changed.
+        /// </summary>
+        private bool EnsureReference()
+        {
+            if (Race == null)
+                return false;
+
+            if (Race.Reference != null && Race.Reference.Matches(Race) && Race.Reference.GenderMatches(Race.AthleteGender))
+                return false;
+
+            SwimReference remembered = null;
+            string id;
+            if (Settings.ReferenceByEvent.TryGetValue(EventKey(Race), out id))
+                remembered = References.Find(id);
+
+            if (remembered != null && (!remembered.Matches(Race) || !remembered.GenderMatches(Race.AthleteGender)))
+                remembered = null;
+
+            SwimReference before = Race.Reference;
+            Race.Reference = remembered != null ? remembered.Copy() : null;
+            return before != null || Race.Reference != null;
+        }
+
+        private static string EventKey(SwimRace race)
+        {
+            return string.Join("|", new string[] { race.Style, race.DistanceLabel, race.Pool.ToString(CultureInfo.InvariantCulture), SwimReference.NormalizeGender(race.AthleteGender) });
+        }
+
+        private string ReferencesSummary()
+        {
+            if (References == null || References.References.Count == 0)
+                return "Δεν υπάρχουν ακόμη elite αναφορές.";
+
+            int local = References.References.Count(r => r.Local);
+            string text = string.Format("Elite αναφορές: {0}", References.References.Count);
+            if (References.Updated > DateTime.MinValue)
+                text += string.Format(" (ενημέρωση {0:dd/MM HH:mm})", References.Updated);
+            if (local > 0)
+                text += string.Format(", {0} μόνο σε αυτόν τον υπολογιστή", local);
+            return text + ".";
+        }
+
+        private static bool IsUnknownAction(SwimSheetResult result)
+        {
+            return result != null && !result.Ok && result.Error != null && result.Error.StartsWith("Άγνωστη ενέργεια", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Redraw the video (overlay options changed).
+        /// </summary>
+        public void RefreshOverlay()
+        {
+            InvalidatePlayer();
         }
         #endregion
 
@@ -1406,6 +1917,7 @@ namespace Kinovea.ScreenManager
                 form.RefreshSync();
 
             RefreshAthletesIfStale();
+            RefreshReferencesIfStale();
         }
 
         public void TestConnection(Action<SwimSheetResult> callback)
@@ -1528,6 +2040,7 @@ namespace Kinovea.ScreenManager
             }
 
             VideoFile.ActiveRaceId = Race.Id;
+            EnsureReference();
             undoStack.Clear();
             Recompute();
             if (form != null)
@@ -1665,6 +2178,8 @@ namespace Kinovea.ScreenManager
                 Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
                 form.ShowNear(owner);
                 RefreshAthletesIfStale();
+                RefreshReferencesIfStale();
+                InvalidatePlayer();
                 return;
             }
 

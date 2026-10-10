@@ -130,14 +130,38 @@ namespace Kinovea.ScreenManager
             Simple(url, token, "athletes", callback);
         }
 
+        /// <summary>
+        /// Download the elite references (sheet "Elite αναφορές"). The callback runs on the UI thread.
+        /// </summary>
+        public void GetReferences(string url, string token, Action<SwimSheetResult> callback)
+        {
+            Simple(url, token, "references", callback);
+        }
+
+        /// <summary>
+        /// Add (or replace) a reference in the sheet "Elite αναφορές". The callback runs on the UI thread.
+        /// </summary>
+        public void SaveReference(string url, string token, SwimReference reference, Action<SwimSheetResult> callback)
+        {
+            JObject o = new JObject();
+            o["app"] = SwimPayload.AppId;
+            o["token"] = token;
+            o["action"] = "saveReference";
+            o["reference"] = reference.ToJson();
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
         private void Simple(string url, string token, string action, Action<SwimSheetResult> callback)
         {
             JObject o = new JObject();
             o["app"] = SwimPayload.AppId;
             o["token"] = token;
             o["action"] = action;
-            string body = o.ToString(Newtonsoft.Json.Formatting.None);
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
 
+        private void Send(string url, string body, Action<SwimSheetResult> callback)
+        {
             Task.Factory.StartNew(() => Post(url, body)).ContinueWith(t =>
             {
                 SwimSheetResult result = t.IsFaulted ? new SwimSheetResult { Ok = false, Error = t.Exception.GetBaseException().Message } : t.Result;
@@ -366,6 +390,9 @@ namespace Kinovea.ScreenManager
 
             manual["turns"] = turns;
             r["manual"] = manual;
+
+            if (computed.Reference != null)
+                r["reference"] = computed.Reference.ToJson();
 
             JObject body = new JObject();
             body["app"] = AppId;

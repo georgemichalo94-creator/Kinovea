@@ -4241,7 +4241,7 @@ namespace Kinovea.ScreenManager
 
                     // Swim race analysis: calibration lines and measured distances (screen only, not exported).
                     if (SwimAnalysisManager.Current != null)
-                        SwimAnalysisManager.Current.DrawOverlay(this, e.Graphics, m_FrameServer.ImageTransform, m_iCurrentPosition);
+                        SwimAnalysisManager.Current.DrawOverlay(this, e.Graphics, m_FrameServer.ImageTransform, m_iCurrentPosition, m_viewportManipulator.RenderingSize);
 
                     if (m_MessageToaster.Enabled)
                         m_MessageToaster.Draw(e.Graphics);

@@ -99,6 +99,9 @@ namespace Kinovea.ScreenManager
         public double? FinishLastStrokeDist;
         public Dictionary<int, SwimTurnManual> Turns = new Dictionary<int, SwimTurnManual>();
 
+        /// <summary>Elite reference for the deltas at the checkpoints (a copy, so it works offline).</summary>
+        public SwimReference Reference;
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;
@@ -178,6 +181,7 @@ namespace Kinovea.ScreenManager
             r.Date = Date;
             r.Checkpoints = new List<int>(Checkpoints);
             r.StartTimestamp = StartTimestamp;
+            r.Reference = Reference != null ? Reference.Copy() : null;
             return r;
         }
     }

@@ -13,9 +13,10 @@
  *      ("Αναλύσεις Αγώνων Κολύμβησης (Kinovea)"), ώστε το κύριο αρχείο να μένει ελαφρύ.
  *   4. Γράφει μία γραμμή ανά ανάλυση στο φύλλο "Αναλύσεις Αγώνων" του κύριου αρχείου, με το unique_id του αθλητή.
  *   5. Εξάγει το report σε PDF στον φάκελο "Swim Race Reports" του Drive.
+ *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '1.1.0';
+var SWIM_VERSION = '1.2.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -106,6 +107,15 @@ function swimHandle_(req) {
       var data = swimDataSpreadsheet_();
       var reports = swimReportsSpreadsheet_();
       return swimJson_({ ok: true, version: SWIM_VERSION, spreadsheet: data.getName(), reports: reports.getName(), url: reports.getUrl() });
+    }
+
+    if (action === 'references') {
+      var refs = swimReferences_();
+      return swimJson_({ ok: true, version: SWIM_VERSION, sheet: SWIM_REFERENCES_SHEET, references: refs.references, skipped: refs.skipped });
+    }
+
+    if (action === 'saveReference') {
+      return swimJson_(swimSaveReference_(req.reference));
     }
 
     if (action === 'update' || action === 'pdf') {
@@ -1333,6 +1343,230 @@ function swimWriteInputs_(sheet, race, analysis, layout) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Elite αναφορές: χρόνοι σύγκρισης για το Δ στα περάσματα (στο spreadsheet των αναφορών)
+//
+// Μορφή: μία γραμμή ανά σημείο ελέγχου. Το όνομα (και τα στοιχεία του αγωνίσματος) γράφονται μόνο
+// στην πρώτη γραμμή κάθε αναφοράς· οι επόμενες γραμμές με κενό όνομα ανήκουν στην ίδια αναφορά.
+// Έτσι επικολλάς κατευθείαν τις στήλες Distance / Time από το Excel ανάλυσης.
+// ---------------------------------------------------------------------------------------------
+
+var SWIM_REFERENCES_SHEET = 'Elite αναφορές';
+var SWIM_REF_HEADERS = ['Αναφορά', 'Φύλο', 'Στυλ', 'Απόσταση', 'Πισίνα', 'Πηγή / σημειώσεις', 'Σημείο (μ.)', 'Χρόνος (s)', 'Race ID'];
+var SWIM_REF = { name: 0, gender: 1, style: 2, distance: 3, pool: 4, source: 5, d: 6, t: 7, raceId: 8 };
+var SWIM_REF_NOTES = [
+  'Όνομα της αναφοράς (π.χ. "WR 2024 – Pan Zhanle" ή "EJC 2025 Final – 1ος"). Γράφεται μόνο στην πρώτη γραμμή: ' +
+    'οι επόμενες γραμμές με κενό όνομα είναι τα υπόλοιπα περάσματα της ίδιας αναφοράς.',
+  'Ανδρών / Γυναικών (ή κενό). Αν ο αθλητής έχει φύλο, το Kinovea δείχνει μόνο τις αναφορές του ίδιου φύλου.',
+  'fs, bk, br, fly, im (ή ελεύθερο, ύπτιο, πρόσθιο, πεταλούδα, μικτή).',
+  'Απόσταση του αγωνίσματος: 50, 100, 200, 400, 800, 1500 ή 4x100, 4x200 για σκυταλοδρομίες.',
+  '50 ή 25 (μέτρα πισίνας). Κενό = 50.',
+  'Ελεύθερο κείμενο (διοργάνωση, ημερομηνία, πηγή των χρόνων).',
+  'Απόσταση του περάσματος σε μέτρα (15, 25, 35, 45, 50, 100…). Δεν χρειάζονται όλα τα σημεία: το Δ βγαίνει όπου υπάρχει χρόνος.',
+  'Χρόνος από το σήμα εκκίνησης: 26.12 ή 1:02.35.',
+  'Συμπληρώνεται αυτόματα όταν η αναφορά προέρχεται από ανάλυση του Kinovea.'
+];
+
+function swimReferencesSheet_(ss) {
+  var sh = ss.getSheetByName(SWIM_REFERENCES_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(SWIM_REFERENCES_SHEET);
+  var header = sh.getRange(1, 1, 1, SWIM_REF_HEADERS.length);
+  header.setValues([SWIM_REF_HEADERS]).setFontWeight('bold').setBackground(SWIM_COLORS.header);
+  for (var i = 0; i < SWIM_REF_HEADERS.length; i++) sh.getRange(1, i + 1).setNote(SWIM_REF_NOTES[i]);
+  sh.setFrozenRows(1);
+  // Κείμενο στη στήλη του χρόνου, ώστε το 1:02.35 να μένει όπως γράφεται.
+  sh.getRange(2, SWIM_REF.t + 1, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
+  sh.getRange(2, SWIM_REF.distance + 1, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@');
+  [260, 90, 60, 80, 60, 260, 90, 90, 120].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  return sh;
+}
+
+function swimStyleCode_(v) {
+  var s = swimNormText_(v);
+  if (!s) return null;
+  var map = [
+    ['IM', 'im'], ['MEDLEY', 'im'], ['ΜΙΚΤ', 'im'], ['ΑΤΟΜΙΚΗ ΜΙΚΤΗ', 'im'],
+    ['FS', 'fs'], ['FREE', 'fs'], ['ΕΛΕΥΘ', 'fs'], ['ΕΛ', 'fs'],
+    ['BK', 'bk'], ['BACK', 'bk'], ['ΥΠΤ', 'bk'], ['ΥΠ', 'bk'],
+    ['BR', 'br'], ['BREAST', 'br'], ['ΠΡΟΣΘ', 'br'], ['ΠΡ', 'br'],
+    ['FLY', 'fly'], ['BUTTER', 'fly'], ['ΠΕΤΑΛ', 'fly'], ['ΠΕΤ', 'fly']
+  ];
+  for (var i = 0; i < map.length; i++) {
+    if (s === map[i][0] || s.indexOf(map[i][0]) === 0) return map[i][1];
+  }
+  return null;
+}
+
+/** "100" → {100, false}, "4x100" → {400, true}. */
+function swimDistanceValue_(v) {
+  var s = String(v === null || v === undefined ? '' : v).trim().toLowerCase().replace(/\s+/g, '');
+  var m = s.match(/^(\d+)[x×χ*](\d+)/);
+  if (m) return { distance: Number(m[1]) * Number(m[2]), relay: true };
+  m = s.match(/^(\d+)/);
+  return { distance: m ? Number(m[1]) : 0, relay: false };
+}
+
+function swimPoolValue_(v) {
+  var s = swimNormText_(v);
+  if (!s) return 50;
+  if (s.indexOf('SC') === 0 || s.indexOf('25') === 0) return 25;
+  return 50;
+}
+
+/** Χρόνος σε δευτερόλεπτα από τιμή κελιού: αριθμός, "26,12", "1:02.35", ή ημερομηνία/ώρα (μέσω του κειμένου του κελιού). */
+function swimRefTime_(value, display) {
+  if (typeof value === 'number') return value > 0 ? value : null;
+  var s = String(value instanceof Date ? display : (value === null || value === undefined ? '' : value)).trim().replace(/,/g, '.');
+  if (!s) return null;
+  var parts = s.split(':');
+  var total = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var n = Number(parts[i]);
+    if (!isFinite(n) || parts[i] === '') return null;
+    total = total * 60 + n;
+  }
+  return total > 0 ? total : null;
+}
+
+/** Όλες οι αναφορές του φύλλου: { references: [...], skipped: ["γραμμή 7: ..."] }. */
+function swimReferences_() {
+  var sh = swimReferencesSheet_(swimReportsSpreadsheet_());
+  var last = sh.getLastRow();
+  var out = { references: [], skipped: [] };
+  if (last < 2) return out;
+
+  var width = SWIM_REF_HEADERS.length;
+  var range = sh.getRange(2, 1, last - 1, width);
+  var values = range.getValues();
+  var display = range.getDisplayValues();
+  var current = null, ids = {};
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i], rowNumber = i + 2;
+    var name = String(row[SWIM_REF.name] === null ? '' : row[SWIM_REF.name]).trim();
+    if (name) {
+      var style = swimStyleCode_(row[SWIM_REF.style]);
+      var dist = swimDistanceValue_(row[SWIM_REF.distance]);
+      current = null;
+      if (!style) { out.skipped.push('γραμμή ' + rowNumber + ': άγνωστο στυλ "' + row[SWIM_REF.style] + '"'); continue; }
+      if (!dist.distance) { out.skipped.push('γραμμή ' + rowNumber + ': λείπει η απόσταση'); continue; }
+      current = {
+        id: '', name: name, gender: String(row[SWIM_REF.gender] || '').trim(), style: style,
+        distance: dist.distance, relay: dist.relay, pool: swimPoolValue_(row[SWIM_REF.pool]),
+        source: String(row[SWIM_REF.source] || '').trim(), raceId: String(row[SWIM_REF.raceId] || '').trim(), times: []
+      };
+      var id = current.raceId || ['sheet', name, style, (dist.relay ? '4x' + dist.distance / 4 : dist.distance), current.pool, current.gender].join('|');
+      if (ids[id]) id += '#' + rowNumber;
+      ids[id] = true;
+      current.id = id;
+      out.references.push(current);
+    }
+    if (!current) continue;
+
+    var dRaw = row[SWIM_REF.d], tRaw = row[SWIM_REF.t];
+    if ((dRaw === '' || dRaw === null) && (tRaw === '' || tRaw === null)) continue;
+    var d = swimNum_(typeof dRaw === 'string' ? dRaw.replace(',', '.') : dRaw);
+    var t = swimRefTime_(tRaw, display[i][SWIM_REF.t]);
+    if (d === null || d <= 0) continue; // π.χ. η γραμμή 0 (χρόνος αντίδρασης) του Excel
+    if (t === null) { out.skipped.push('γραμμή ' + rowNumber + ': μη έγκυρος χρόνος "' + display[i][SWIM_REF.t] + '"'); continue; }
+    current.times.push({ d: d, t: Math.round(t * 1000) / 1000 });
+  }
+
+  out.references = out.references.filter(function (r) {
+    var seen = {};
+    r.times = r.times.filter(function (p) { if (seen[p.d]) return false; seen[p.d] = true; return true; })
+      .sort(function (a, b) { return a.d - b.d; });
+    return r.times.length > 0;
+  });
+  return out;
+}
+
+function swimDeleteReferenceBlock_(sh, raceId) {
+  var last = sh.getLastRow();
+  if (!raceId || last < 2) return 0;
+  var values = sh.getRange(2, 1, last - 1, SWIM_REF_HEADERS.length).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][SWIM_REF.raceId]).trim() !== raceId) continue;
+    var count = 1;
+    while (i + count < values.length && !String(values[i + count][SWIM_REF.name]).trim()) count++;
+    sh.deleteRows(i + 2, count);
+    return count;
+  }
+  return 0;
+}
+
+/** Προσθέτει (ή αντικαθιστά, για το ίδιο Race ID) μία αναφορά. */
+function swimSaveReference_(raw) {
+  var ref = raw || {};
+  var name = String(ref.name || '').trim() || 'Αναφορά';
+  var style = swimStyleCode_(ref.style);
+  var distance = swimNum_(ref.distance) || 0;
+  if (!style || !distance) throw new Error('Η αναφορά χρειάζεται στυλ και απόσταση.');
+  var relay = !!ref.relay;
+  var seen = {};
+  var times = (ref.times || []).map(function (p) { return { d: swimNum_(p && p.d), t: swimNum_(p && p.t) }; })
+    .filter(function (p) { if (p.d === null || p.d <= 0 || p.t === null || p.t <= 0 || seen[p.d]) return false; seen[p.d] = true; return true; })
+    .sort(function (a, b) { return a.d - b.d; });
+  if (!times.length) throw new Error('Η αναφορά δεν έχει χρόνους.');
+
+  var raceId = String(ref.raceId || '').trim();
+  var sh = swimReferencesSheet_(swimReportsSpreadsheet_());
+  swimDeleteReferenceBlock_(sh, raceId);
+
+  var distanceLabel = relay ? '4x' + distance / 4 : String(distance);
+  var rows = times.map(function (p, i) {
+    var t = String(Math.round(p.t * 100) / 100);
+    return i === 0
+      ? [name, String(ref.gender || ''), style, distanceLabel, swimNum_(ref.pool) || 50, String(ref.source || ''), p.d, t, raceId]
+      : ['', '', '', '', '', '', p.d, t, ''];
+  });
+  var start = sh.getLastRow() + 1;
+  var needed = start + rows.length - 1 - sh.getMaxRows();
+  if (needed > 0) sh.insertRowsAfter(sh.getMaxRows(), needed);
+  sh.getRange(start, SWIM_REF.distance + 1, rows.length, 1).setNumberFormat('@');
+  sh.getRange(start, SWIM_REF.t + 1, rows.length, 1).setNumberFormat('@');
+  sh.getRange(start, 1, rows.length, SWIM_REF_HEADERS.length).setValues(rows);
+  sh.getRange(start, 1, 1, SWIM_REF_HEADERS.length).setFontWeight('bold');
+  return { ok: true, version: SWIM_VERSION, name: name, count: rows.length, row: start, sheet: SWIM_REFERENCES_SHEET };
+}
+
+/** Αναφορά από μια αποθηκευμένη ανάλυση (για το μενού). */
+function swimReferenceFromRace_(race, name) {
+  var label = name || [race.athlete, [race.competition, race.round].filter(function (x) { return x; }).join(' ')]
+    .filter(function (x) { return x; }).join(' – ') || 'Αναφορά';
+  return {
+    raceId: race.id, name: label, gender: race.gender, style: race.style, distance: race.distance, relay: race.relay, pool: race.pool,
+    source: [race.competition, race.round, race.date].filter(function (x) { return x; }).join(' · '),
+    times: race.checkpoints.filter(function (cp) { return cp.t !== null && cp.t > 0; }).map(function (cp) { return { d: cp.d, t: cp.t }; })
+  };
+}
+
+function swimReferenceSelected() {
+  var ui = SpreadsheetApp.getUi();
+  var id = swimSelectedRaceId_();
+  var stored = id ? swimStoredRace_(id) : null;
+  if (!stored) { ui.alert('Επίλεξε μια γραμμή στο φύλλο "' + SWIM_SUMMARY_SHEET + '" (ή άνοιξε το φύλλο της ανάλυσης) και ξαναδοκίμασε.'); return; }
+  var race = swimNormalizeRace_(stored.race);
+  var ref = swimReferenceFromRace_(race);
+  if (!ref.times.length) { ui.alert('Η ανάλυση δεν έχει χρόνους περασμάτων.'); return; }
+  var res = swimSaveReference_(ref);
+  ui.alert('Η ανάλυση μπήκε στο φύλλο "' + SWIM_REFERENCES_SHEET + '" ως "' + res.name + '" (' + res.count + ' περάσματα).\n' +
+    'Στο Kinovea: καρτέλα Κολύμβηση → ↻ για να εμφανιστεί στη σύγκριση.');
+}
+
+function swimOpenReferences() {
+  var ss = swimReportsSpreadsheet_();
+  var sh = swimReferencesSheet_(ss);
+  var url = ss.getUrl() + '#gid=' + sh.getSheetId();
+  var html = '<div style="font-family:Arial;font-size:13px;line-height:1.5">' +
+    '<p><a href="' + url + '" target="_blank">Άνοιγμα του φύλλου "' + SWIM_REFERENCES_SHEET + '"</a></p>' +
+    '<p>Μία γραμμή ανά πέρασμα. Όνομα, φύλο, στυλ, απόσταση και πισίνα μόνο στην πρώτη γραμμή κάθε αναφοράς.' +
+    ' Μπορείς να επικολλήσεις τις στήλες <b>Distance</b> και <b>Time</b> από το Excel ανάλυσης στις στήλες "Σημείο" και "Χρόνος".</p>' +
+    '<p style="color:#666">Το Kinovea δείχνει το Δ σε κάθε πέρασμα όπου η αναφορά έχει χρόνο (π.χ. μόνο στα 50άρια, αν έχεις επίσημα περάσματα).</p></div>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(480).setHeight(220), 'Elite αναφορές');
+}
+
+// ---------------------------------------------------------------------------------------------
 // Ευρετήριο αγώνων
 // ---------------------------------------------------------------------------------------------
 
@@ -1449,6 +1683,10 @@ function swimOnOpen(e) {
     .addItem('Άνοιγμα των αναφορών (reports)', 'swimOpenReports')
     .addItem('PDF της επιλεγμένης ανάλυσης', 'swimPdfSelected')
     .addItem('Επαναδημιουργία της επιλεγμένης ανάλυσης', 'swimRebuildSelected')
+    .addSeparator()
+    .addItem('Elite αναφορές (άνοιγμα)', 'swimOpenReferences')
+    .addItem('Η επιλεγμένη ανάλυση ως elite αναφορά', 'swimReferenceSelected')
+    .addSeparator()
     .addItem('Δοκιμαστικός αγώνας (demo)', 'swimCreateDemo')
     .addSeparator()
     .addItem('Νέο token (ακυρώνει το παλιό)', 'swimResetToken')
@@ -1468,6 +1706,7 @@ function swimSetup() {
   var data = swimDataSpreadsheet_();
   var reports = swimReportsSpreadsheet_();
   swimIndexSheet_(reports);
+  swimReferencesSheet_(reports);
   swimSummarySheet_(data);
   swimReportFolder_();
   swimEnsureMenuTrigger_(data);

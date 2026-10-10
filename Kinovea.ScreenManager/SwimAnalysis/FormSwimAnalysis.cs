@@ -109,6 +109,15 @@ namespace Kinovea.ScreenManager
 
         // Tab: swimming
         private DataGridView grid;
+        private ComboBox cmbReference;
+        private Label lblReferences;
+        private Button btnSaveReference;
+        private CheckBox chkSpeedChart;
+        private CheckBox chkSplitBoard;
+        private ComboBox cmbCorner;
+        private static readonly string[] corners = { "TopRight", "TopLeft", "BottomRight", "BottomLeft" };
+        private static readonly Color colorFaster = Color.FromArgb(0, 140, 60);
+        private static readonly Color colorSlower = Color.FromArgb(200, 30, 30);
 
         // Tab: turns
         private Label lblTurnCurrent;
@@ -352,6 +361,46 @@ namespace Kinovea.ScreenManager
             TabPage page = new TabPage("2 · Κολύμβηση");
             page.Padding = new Padding(6);
 
+            // Comparison with an elite reference and what is drawn on the video.
+            TableLayoutPanel compare = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 2) };
+            compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            compare.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Label lblCompare = new Label { Text = "Σύγκριση με (elite):", AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
+            cmbReference = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(0, 3, 4, 3) };
+            cmbReference.SelectedIndexChanged += CmbReference_SelectedIndexChanged;
+            toolTip.SetToolTip(cmbReference, "Αναφορά για το Δ σε κάθε πέρασμα (αρνητικό = πιο γρήγορα από την αναφορά). Δείχνει τις αναφορές του ίδιου αγωνίσματος, στυλ και πισίνας.");
+            Button btnRefreshReferences = new SwimNoFocusButton { Text = "↻", Width = 30, Height = 25, Margin = new Padding(0, 2, 4, 2) };
+            btnRefreshReferences.Click += (s, e) => manager.RefreshReferences();
+            toolTip.SetToolTip(btnRefreshReferences, "Ανανέωση των αναφορών από το φύλλο «Elite αναφορές» του Google Sheet");
+            btnSaveReference = new SwimNoFocusButton { Text = "Ως αναφορά…", AutoSize = true, Height = 25, Margin = new Padding(0, 2, 0, 2) };
+            btnSaveReference.Click += (s, e) => SaveAsReference();
+            toolTip.SetToolTip(btnSaveReference, "Αποθήκευση αυτής της ανάλυσης ως elite αναφοράς (π.χ. ανάλυση ενός τελικού), για σύγκριση σε επόμενες αναλύσεις.");
+            lblReferences = new Label { AutoSize = false, Height = 18, Dock = DockStyle.Fill, ForeColor = Color.DimGray, AutoEllipsis = true, Margin = new Padding(0, 0, 0, 2) };
+            compare.Controls.Add(lblCompare, 0, 0);
+            compare.Controls.Add(cmbReference, 1, 0);
+            compare.Controls.Add(btnRefreshReferences, 2, 0);
+            compare.Controls.Add(btnSaveReference, 3, 0);
+            compare.Controls.Add(lblReferences, 0, 1);
+            compare.SetColumnSpan(lblReferences, 4);
+
+            FlowLayoutPanel overlay = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 4) };
+            chkSpeedChart = new CheckBox { Text = "Γράφημα ταχύτητας", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            chkSplitBoard = new CheckBox { Text = "Χρόνος, πέρασμα, Δ", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            cmbCorner = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112, Margin = new Padding(3, 3, 3, 3) };
+            cmbCorner.Items.AddRange(new object[] { "Πάνω δεξιά", "Πάνω αριστερά", "Κάτω δεξιά", "Κάτω αριστερά" });
+            chkSpeedChart.CheckedChanged += (s, e) => CommitOverlayOptions();
+            chkSplitBoard.CheckedChanged += (s, e) => CommitOverlayOptions();
+            cmbCorner.SelectedIndexChanged += (s, e) => CommitOverlayOptions();
+            toolTip.SetToolTip(chkSpeedChart, "Γράφημα με την ταχύτητα κάθε τμήματος πάνω στο βίντεο (αθλητής και αναφορά). Ακολουθεί τον χρόνο του βίντεο.");
+            toolTip.SetToolTip(chkSplitBoard, "Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο.");
+            overlay.Controls.Add(Caption("Στο βίντεο:"));
+            overlay.Controls.Add(chkSpeedChart);
+            overlay.Controls.Add(chkSplitBoard);
+            overlay.Controls.Add(Caption("θέση"));
+            overlay.Controls.Add(cmbCorner);
+
             TableLayoutPanel t = NewEventTable();
             AddEventRow(t, "Χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
                 "Σε κάθε είσοδο χεριού. Ελεύθερο/ύπτιο: κάθε χέρι · πεταλούδα/πρόσθιο: κάθε κύκλος.", Caption("Οι μισές χεριές στα σημεία ελέγχου βγαίνουν αυτόματα."));
@@ -367,6 +416,8 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("sr", "SR", 50));
             grid.Columns.Add(Column("dps", "DPS", 50));
             grid.Columns.Add(Column("srx", "SR χρόνων", 64));
+            grid.Columns.Add(Column("ref", "Αναφορά", 62));
+            grid.Columns.Add(Column("delta", "Δ", 54));
             grid.CellDoubleClick += Grid_CellDoubleClick;
             grid.KeyDown += Grid_KeyDown;
 
@@ -381,6 +432,8 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(grid);
             page.Controls.Add(hint);
             page.Controls.Add(t);
+            page.Controls.Add(overlay);
+            page.Controls.Add(compare);
             return page;
         }
 
@@ -869,6 +922,9 @@ namespace Kinovea.ScreenManager
                 tbToken.Text = settings.Token;
                 cmbRounding.SelectedIndex = settings.StrokeRounding >= 1 ? 1 : (settings.StrokeRounding > 0 ? 0 : 2);
                 chkAutoSend.Checked = settings.AutoSend;
+                chkSpeedChart.Checked = settings.ShowSpeedChart;
+                chkSplitBoard.Checked = settings.ShowSplitBoard;
+                cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }
             finally
             {
@@ -878,6 +934,7 @@ namespace Kinovea.ScreenManager
             RefreshManualFields();
             RefreshButtons();
             RefreshAthletes();
+            RefreshReferences();
             RefreshData();
             RefreshSync();
             RefreshCalibration();
@@ -995,6 +1052,10 @@ namespace Kinovea.ScreenManager
                 gr.Cells["sr"].Value = Format(row.Sr, "0.0");
                 gr.Cells["dps"].Value = Format(row.Dps);
                 gr.Cells["srx"].Value = Format(row.SrExact, "0.0");
+                gr.Cells["ref"].Value = Format(row.RefT);
+                DataGridViewCell deltaCell = gr.Cells["delta"];
+                deltaCell.Value = row.Delta.HasValue ? SwimReference.FormatDelta(row.Delta.Value) : "";
+                deltaCell.Style.ForeColor = row.Delta.HasValue && row.Delta.Value > 0.0049 ? colorSlower : colorFaster;
                 bool isNext = row.D == next;
                 gr.DefaultCellStyle.BackColor = isNext ? colorNext : colorDone;
                 if (boldGridFont == null)
@@ -1002,6 +1063,13 @@ namespace Kinovea.ScreenManager
                 gr.DefaultCellStyle.Font = isNext ? boldGridFont : grid.Font;
                 if (isNext)
                     nextRowIndex = i;
+            }
+
+            bool hasReference = computed.Reference != null;
+            if (grid.Columns["ref"].Visible != hasReference)
+            {
+                grid.Columns["ref"].Visible = hasReference;
+                grid.Columns["delta"].Visible = hasReference;
             }
 
             if (selected >= 0 && selected < grid.Rows.Count)
@@ -1039,9 +1107,14 @@ namespace Kinovea.ScreenManager
             // Finish.
             lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? "τελ. χεριά → τοίχος " + Seconds(computed.FinishLastStrokeGap) : "–";
             lblFinalTime.Text = computed.FinalTime.HasValue ? "τελικός χρόνος " + FormatRaceTime(computed.FinalTime.Value) : "–";
+            SwimRow finalRow = computed.Rows.LastOrDefault();
+            string finalDelta = finalRow != null && finalRow.Delta.HasValue && computed.Reference != null
+                ? string.Format(" · Δ τελικού {0} από «{1}»", SwimReference.FormatDelta(finalRow.Delta.Value), computed.Reference.Name)
+                : "";
             lblFinishSummary.Text = string.Format(CultureInfo.InvariantCulture,
-                "Συνολικές χεριές (πατήματα): {0}{1}",
+                "Συνολικές χεριές (πατήματα): {0}{1}{2}",
                 computed.TotalPresses,
+                finalDelta,
                 computed.Warnings.Count > 0 ? "\n⚠ " + computed.Warnings[0] : "");
 
             // Turns.
@@ -1145,7 +1218,16 @@ namespace Kinovea.ScreenManager
             int presses = SwimCalculator.PressesSinceLastSplit(manager.Computed);
             string phase = PhaseName(manager.CurrentPhase);
             string start = race.StartTimestamp.HasValue ? "" : "  (χωρίς σήμα εκκίνησης)";
-            string text = string.Format("⏱ {0} s   ▸ {1}   ✋ {2}   · {3}{4}", time, nextText, presses, phase, start);
+            string delta = "";
+            double? now = manager.CurrentRaceTime;
+            if (now.HasValue && manager.Computed.Reference != null)
+            {
+                SwimRow last = manager.Computed.Rows.Where(r => r.T.HasValue && r.Delta.HasValue && r.T.Value <= now.Value + 1e-6).OrderBy(r => r.T.Value).LastOrDefault();
+                if (last != null)
+                    delta = string.Format("   Δ {0} ({1}μ.)", SwimReference.FormatDelta(last.Delta.Value), last.D);
+            }
+
+            string text = string.Format("⏱ {0} s   ▸ {1}   ✋ {2}{3}   · {4}{5}", time, nextText, presses, delta, phase, start);
             if (lblLive.Text != text)
                 lblLive.Text = text;
 
@@ -1287,6 +1369,126 @@ namespace Kinovea.ScreenManager
                 currentTurnWall = -1;
                 RefreshTurnLabels();
             }
+        }
+
+        /// <summary>
+        /// References of the event of the race and the one selected.
+        /// </summary>
+        public void RefreshReferences()
+        {
+            if (IsDisposed)
+                return;
+
+            SwimRace race = manager.Race;
+            int count = 0;
+            updating = true;
+            try
+            {
+                cmbReference.BeginUpdate();
+                cmbReference.Items.Clear();
+                cmbReference.Items.Add(new ReferenceItem(null));
+                int selected = 0;
+                if (race != null)
+                {
+                    List<SwimReference> list = manager.ReferencesForRace();
+                    count = list.Count;
+                    if (race.Reference != null && !list.Any(r => r.Id == race.Reference.Id))
+                        list.Insert(0, race.Reference);
+
+                    foreach (SwimReference reference in list)
+                    {
+                        cmbReference.Items.Add(new ReferenceItem(reference));
+                        if (race.Reference != null && reference.Id == race.Reference.Id)
+                            selected = cmbReference.Items.Count - 1;
+                    }
+                }
+
+                cmbReference.SelectedIndex = selected;
+                cmbReference.EndUpdate();
+            }
+            finally
+            {
+                updating = false;
+            }
+
+            string info = manager.ReferencesMessage ?? "";
+            if (race != null)
+            {
+                string ev = string.Format("{0} {1} ({2}μ.)", race.DistanceLabel, SwimPresets.StyleShort(race.Style), race.Pool);
+                info = (count > 0 ? string.Format("{0} για {1}. ", count, ev) : string.Format("Καμία αναφορά για {0} στο φύλλο «{1}». ", ev, SwimAnalysisManager.ReferenceSheetName)) + info;
+            }
+
+            lblReferences.Text = info;
+            toolTip.SetToolTip(lblReferences, info);
+            btnSaveReference.Enabled = race != null;
+        }
+
+        private void CmbReference_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (updating)
+                return;
+
+            ReferenceItem item = cmbReference.SelectedItem as ReferenceItem;
+            manager.SetReference(item != null ? item.Reference : null);
+        }
+
+        private void SaveAsReference()
+        {
+            SwimRace race = manager.Race;
+            if (race == null)
+                return;
+
+            string name = AskText("Νέα elite αναφορά",
+                "Όνομα της αναφοράς, όπως θα φαίνεται στη λίστα σύγκρισης (π.χ. «Muratory – EJC 2025 Final»):",
+                SwimReference.DefaultName(race));
+            if (name != null)
+                manager.SaveAsReference(name);
+        }
+
+        private string AskText(string title, string prompt, string value)
+        {
+            using (Form dialog = new Form())
+            {
+                dialog.Text = title;
+                dialog.Font = Font;
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.MinimizeBox = false;
+                dialog.MaximizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(440, 124);
+
+                Label label = new Label { Text = prompt, Left = 12, Top = 10, Width = 416, Height = 36 };
+                TextBox box = new TextBox { Text = value ?? "", Left = 12, Top = 50, Width = 416 };
+                Button ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 272, Top = 86, Width = 75 };
+                Button cancel = new Button { Text = "Άκυρο", DialogResult = DialogResult.Cancel, Left = 353, Top = 86, Width = 75 };
+                dialog.Controls.Add(label);
+                dialog.Controls.Add(box);
+                dialog.Controls.Add(ok);
+                dialog.Controls.Add(cancel);
+                dialog.AcceptButton = ok;
+                dialog.CancelButton = cancel;
+
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return null;
+
+                string text = box.Text.Trim();
+                return text.Length > 0 ? text : null;
+            }
+        }
+
+        private void CommitOverlayOptions()
+        {
+            if (updating)
+                return;
+
+            SwimSettings s = manager.Settings;
+            s.ShowSpeedChart = chkSpeedChart.Checked;
+            s.ShowSplitBoard = chkSplitBoard.Checked;
+            if (cmbCorner.SelectedIndex >= 0)
+                s.OverlayCorner = corners[cmbCorner.SelectedIndex];
+            s.Save();
+            manager.RefreshOverlay();
         }
 
         /// <summary>
@@ -1675,6 +1877,21 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Helpers
+        private class ReferenceItem
+        {
+            public readonly SwimReference Reference;
+
+            public ReferenceItem(SwimReference reference)
+            {
+                Reference = reference;
+            }
+
+            public override string ToString()
+            {
+                return Reference == null ? "(χωρίς σύγκριση)" : Reference.Label;
+            }
+        }
+
         private class RaceItem
         {
             public readonly SwimRace Race;

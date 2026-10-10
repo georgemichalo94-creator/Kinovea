@@ -50,6 +50,20 @@ namespace Kinovea.ScreenManager
         public double? SrExact;
         public string Style;
         public bool IsSwim;
+
+        /// <summary>Time of the reference at this checkpoint and difference (athlete − reference, negative = faster).</summary>
+        public double? RefT;
+        public double? Delta;
+    }
+
+    /// <summary>
+    /// Average velocity between two distances (for the velocity chart).
+    /// </summary>
+    public class SwimSegment
+    {
+        public int D0;
+        public int D1;
+        public double V;
     }
 
     public class SwimTurnComputed
@@ -82,6 +96,10 @@ namespace Kinovea.ScreenManager
         public List<double> FeetOff = new List<double>();
         public List<double> Entries = new List<double>();
         public List<double> Reactions = new List<double>();
+
+        /// <summary>Reference used for the deltas (null if none or not the same event).</summary>
+        public SwimReference Reference;
+        public List<SwimSegment> ReferenceSegments = new List<SwimSegment>();
     }
 
     /// <summary>
@@ -96,10 +114,22 @@ namespace Kinovea.ScreenManager
             if (race == null)
                 return result;
 
+            if (race.Reference != null && race.Reference.Matches(race))
+            {
+                result.Reference = race.Reference;
+                result.ReferenceSegments = Segments(race.Reference);
+            }
+
             if (race.StartTimestamp == null || timing == null || !timing.IsValid)
             {
                 foreach (int d in race.Checkpoints)
-                    result.Rows.Add(new SwimRow { D = d, Style = SwimPresets.StyleAt(race, d) });
+                {
+                    SwimRow empty = new SwimRow { D = d, Style = SwimPresets.StyleAt(race, d) };
+                    if (result.Reference != null)
+                        empty.RefT = result.Reference.TimeAt(d);
+                    result.Rows.Add(empty);
+                }
+
                 return result;
             }
 
@@ -135,6 +165,13 @@ namespace Kinovea.ScreenManager
                 {
                     row.T = timing.Seconds(split.Timestamp, origin);
                     timeAt[row.D] = row.T.Value;
+                }
+
+                if (result.Reference != null)
+                {
+                    row.RefT = result.Reference.TimeAt(row.D);
+                    if (row.T.HasValue && row.RefT.HasValue)
+                        row.Delta = row.T.Value - row.RefT.Value;
                 }
 
                 result.Rows.Add(row);
@@ -264,6 +301,27 @@ namespace Kinovea.ScreenManager
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Average velocity of the reference between its consecutive known times (from the start signal at 0 m).
+        /// </summary>
+        public static List<SwimSegment> Segments(SwimReference reference)
+        {
+            List<SwimSegment> segments = new List<SwimSegment>();
+            int d0 = 0;
+            double t0 = 0;
+            foreach (SwimReferenceSplit s in reference.Times.OrderBy(x => x.D))
+            {
+                if (s.D > d0 && s.T > t0)
+                {
+                    segments.Add(new SwimSegment { D0 = d0, D1 = s.D, V = (s.D - d0) / (s.T - t0) });
+                    d0 = s.D;
+                    t0 = s.T;
+                }
+            }
+
+            return segments;
         }
 
         /// <summary>
