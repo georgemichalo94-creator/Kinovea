@@ -2,9 +2,10 @@ name: Build Kinovea
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "swim-stable" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 env:
   VERSION: 2025.2.0

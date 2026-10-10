@@ -924,6 +924,17 @@ namespace Kinovea.ScreenManager
         {
             StopPlaying(true);
         }
+        /// <summary>
+        /// Open the swim race analysis panel for this screen.
+        /// </summary>
+        public void ShowSwimAnalysis()
+        {
+            if (!m_FrameServer.Loaded)
+                return;
+
+            SwimAnalysisManager.Instance.ShowWindow(this, m_FrameServer);
+        }
+
         public void ForcePosition(long timestamp, bool allowUIUpdate)
         {
             m_iFramesToDecode = 1;
@@ -1693,6 +1704,23 @@ namespace Kinovea.ScreenManager
                     break;
                 case PlayerScreenCommands.StartAllTracking:
                     StartAllTracking();
+                    break;
+
+                // Swim race analysis (see SwimAnalysis/SwimAnalysisManager.cs).
+                case PlayerScreenCommands.SwimStart:
+                    StopPlaying();
+                    MarkTimeOrigin();
+                    SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
+                    break;
+                case PlayerScreenCommands.SwimShowPanel:
+                case PlayerScreenCommands.SwimSplit:
+                case PlayerScreenCommands.SwimStroke:
+                case PlayerScreenCommands.SwimKick:
+                case PlayerScreenCommands.SwimBreakout:
+                case PlayerScreenCommands.SwimFeetOff:
+                case PlayerScreenCommands.SwimEntry:
+                case PlayerScreenCommands.SwimUndo:
+                    SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
                     break;
                 default:
                     return base.ExecuteCommand(cmd);

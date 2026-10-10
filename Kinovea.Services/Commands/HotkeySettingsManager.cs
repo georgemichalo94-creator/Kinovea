@@ -254,6 +254,17 @@ namespace Kinovea.Services
                     hk(PlayerScreenCommands.ChronometerSplit, Keys.F6),
                     hk(PlayerScreenCommands.CadenceBeat, Keys.F7),
                     hk(PlayerScreenCommands.StartAllTracking, Keys.None),
+
+                    // Swim race analysis
+                    hk(PlayerScreenCommands.SwimShowPanel, Keys.Control | Keys.Shift | Keys.W),
+                    hk(PlayerScreenCommands.SwimStart, Keys.G),
+                    hk(PlayerScreenCommands.SwimSplit, Keys.S),
+                    hk(PlayerScreenCommands.SwimStroke, Keys.C),
+                    hk(PlayerScreenCommands.SwimKick, Keys.K),
+                    hk(PlayerScreenCommands.SwimBreakout, Keys.B),
+                    hk(PlayerScreenCommands.SwimFeetOff, Keys.F),
+                    hk(PlayerScreenCommands.SwimEntry, Keys.E),
+                    hk(PlayerScreenCommands.SwimUndo, Keys.Back),
                     }
                 },
                 { "DualCapture", new HotkeyCommand[]{
