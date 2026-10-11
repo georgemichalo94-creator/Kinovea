@@ -74,11 +74,12 @@ assert.strictEqual(G._ss.getSheets().length, 2, 'KOE App only got the summary sh
 // summary row linked by unique_id, with pdf url
 const sum = G._ss.getSheetByName('Αναλύσεις Αγώνων');
 const row = sum.getRange(2, 1, 1, 23).getValues()[0];
-assert.strictEqual(row[0], 197085); assert.strictEqual(row[21], 'r1'); assert.strictEqual(row[20], 'https://drive/pdf');
+assert.strictEqual(row[0], 197085); assert.strictEqual(row[21], 'r1'); assert.ok(/^https:\/\/drive\.google\.com\/file\/d\//.test(row[20]), row[20]);
 assert.ok(String(row[19]).includes('#gid='));
 // header shows club / id row
 const rsheet = reports.getSheets().find(s => s.getName().startsWith('ΑΘΑΝΑΣΙΑΔΟΥ'));
-assert.ok(String(rsheet.getRange(10, 2).getValue()).includes('Μητρώο 197085'), rsheet.getRange(10, 2).getValue());
+assert.ok(String(rsheet.getRange(6, 1).getValue()).includes('Μητρώο 197085'), rsheet.getRange(6, 1).getValue());
+assert.ok(String(rsheet.getRange(5, 9).getValue()).includes('100μ. Πρόσθιο'), rsheet.getRange(5, 9).getValue());
 // demo race builds
 G.swimUpsertRace_(G.swimDemoRace_());
 // all presets end to end
