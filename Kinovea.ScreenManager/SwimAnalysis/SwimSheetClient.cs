@@ -160,7 +160,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void GetAnalyses(string url, string token, JObject query, Action<SwimSheetResult> callback)
         {
-            JObject o = Request(token, "analyses");
+            JObject o = NewRequest(token, "analyses");
             o["query"] = query;
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
         }
@@ -170,7 +170,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] jpeg, Action<SwimSheetResult> callback)
         {
-            JObject o = Request(token, "image");
+            JObject o = NewRequest(token, "image");
             o["raceId"] = raceId;
             o["snapshotId"] = snapshotId;
             o["mime"] = "image/jpeg";
@@ -191,7 +191,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void SaveEliteFrame(string url, string token, JObject frame, byte[] jpeg, Action<SwimSheetResult> callback)
         {
-            JObject o = Request(token, "saveEliteFrame");
+            JObject o = NewRequest(token, "saveEliteFrame");
             o["frame"] = frame;
             o["mime"] = "image/jpeg";
             o["data"] = Convert.ToBase64String(jpeg);
@@ -203,12 +203,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void GetImage(string url, string token, string fileId, Action<SwimSheetResult> callback)
         {
-            JObject o = Request(token, "getImage");
+            JObject o = NewRequest(token, "getImage");
             o["fileId"] = fileId;
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
-        private static JObject Request(string token, string action)
+        private static JObject NewRequest(string token, string action)
         {
             JObject o = new JObject();
             o["app"] = SwimPayload.AppId;
@@ -219,7 +219,7 @@ namespace Kinovea.ScreenManager
 
         private void Simple(string url, string token, string action, Action<SwimSheetResult> callback)
         {
-            Send(url, Request(token, action).ToString(Newtonsoft.Json.Formatting.None), callback);
+            Send(url, NewRequest(token, action).ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
         private void Send(string url, string body, Action<SwimSheetResult> callback)
