@@ -69,6 +69,31 @@ jobs:
       with:
         name: Kinovea-Portable-${{env.VERSION}}
         path: Kinovea/bin/x64/Release/
+
+    # The same files as one ordinary zip that Windows opens with a double click (Windows Explorer shows
+    # the zips made by upload-artifact as empty), uploaded as it is (not zipped again).
+    - name: Zip Portable for Windows
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        $zip = "Kinovea-Swim-Portable-$env:VERSION.zip"
+        $src = "Kinovea\bin\x64\Release"
+        $seven = Get-Command 7z -ErrorAction SilentlyContinue
+        if (-not $seven -and (Test-Path "C:\Program Files\7-Zip\7z.exe")) { $seven = "C:\Program Files\7-Zip\7z.exe" }
+        if ($seven) {
+          & $seven a -tzip -mx=7 $zip "$src\*" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z failed with exit code $LASTEXITCODE" }
+        } else {
+          Compress-Archive -Path "$src\*" -DestinationPath $zip
+        }
+        Get-Item $zip | Format-List Name, Length
+
+    - name: Upload Portable zip for Windows
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        path: Kinovea-Swim-Portable-${{env.VERSION}}.zip
+        archive: false
         
     - name: Remove Portable AppData Folder
       shell: cmd
