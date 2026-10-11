@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '2.2.0';
+var SWIM_VERSION = '2.2.1';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -1050,7 +1050,7 @@ function swimLayoutSignature_(race, extras, pageHeight) {
   var x = extras || {};
   var sig = function (o) { return o ? String(o.id || '') + ':' + swimHash_(JSON.stringify(o.race)) : ''; };
   return JSON.stringify({
-    v: 7,
+    v: 8,
     kind: race.kind,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
@@ -3122,47 +3122,66 @@ function swimForceRowHeights_(sheet, row, n, height) {
   else sheet.setRowHeights(row, n, height);
 }
 
-function swimInsertChart_(sheet, spec) {
-  var builder = sheet.newChart();
-  if (spec.type === 'line') builder = builder.asLineChart();
-  else if (spec.type === 'column') builder = builder.asColumnChart();
-  else if (spec.type === 'combo') builder = builder.asComboChart();
-  else if (spec.type === 'pie') builder = builder.asPieChart();
-  else if (spec.type === 'radar') builder = builder.setChartType(Charts.ChartType.RADAR);
-  spec.ranges.forEach(function (a1) { builder.addRange(sheet.getRange(a1)); });
-  if (spec.transpose) builder.setTransposeRowsAndColumns(true);
+/**
+ * Οι ρυθμίσεις ενός γραφήματος. Η περιοχή του γραφήματος (chartArea) σε px: με ποσοστά (π.χ. '74%') η οθόνη το
+ * δείχνει σωστά, αλλά το PDF του Google σχεδίαζε μόνο τον τίτλο (χωρίς άξονες, γραμμές και υπόμνημα).
+ */
+function swimChartOptions_(spec) {
   var text = { fontName: SWIM_FONT, fontSize: 12, color: SWIM_COLORS.dim };
-  builder
-    .setOption('title', spec.title)
-    .setOption('titleTextStyle', { fontName: SWIM_FONT, fontSize: 14, bold: true, color: SWIM_COLORS.title })
-    .setOption('width', spec.width)
-    .setOption('height', spec.height)
-    .setOption('fontName', SWIM_FONT)
-    .setOption('backgroundColor', '#FFFFFF')
-    .setOption('legend', { position: spec.type === 'pie' ? 'right' : 'bottom', textStyle: text })
-    .setOption('useFirstColumnAsDomain', true)
-    .setPosition(spec.row, spec.col, spec.offsetX || 0, spec.offsetY || 0);
-  if (spec.type !== 'pie') builder.setOption('chartArea', { left: 70, top: 48, width: '74%', height: '58%' });
-  if (spec.colors) builder.setOption('colors', spec.colors);
-  if (spec.type === 'line') builder.setOption('pointSize', 5).setOption('lineWidth', 3).setOption('curveType', 'none').setOption('interpolateNulls', true);
-  if (spec.type === 'combo') builder.setOption('seriesType', 'bars');
-  if (spec.stacked) builder.setOption('isStacked', true);
-  if (spec.type === 'pie') builder.setOption('pieHole', 0.45).setOption('pieSliceTextStyle', { fontName: SWIM_FONT, fontSize: 12, color: '#FFFFFF' });
+  var o = {
+    title: spec.title,
+    titleTextStyle: { fontName: SWIM_FONT, fontSize: 14, bold: true, color: SWIM_COLORS.title },
+    width: spec.width,
+    height: spec.height,
+    fontName: SWIM_FONT,
+    backgroundColor: '#FFFFFF',
+    legend: { position: spec.type === 'pie' ? 'right' : 'bottom', textStyle: text },
+    useFirstColumnAsDomain: true
+  };
+  var twoAxes = !!(spec.secondAxis && spec.secondAxis.length);
+  if (spec.type !== 'pie') {
+    var left = 70, right = twoAxes ? 70 : 24, top = 48, bottom = 72;
+    o.chartArea = { left: left, top: top, width: Math.max(120, spec.width - left - right), height: Math.max(90, spec.height - top - bottom) };
+  }
+  if (spec.colors) o.colors = spec.colors;
+  if (spec.type === 'line') { o.pointSize = 5; o.lineWidth = 3; o.curveType = 'none'; o.interpolateNulls = true; }
+  if (spec.type === 'combo') o.seriesType = 'bars';
+  if (spec.stacked) o.isStacked = true;
+  if (spec.type === 'pie') { o.pieHole = 0.45; o.pieSliceTextStyle = { fontName: SWIM_FONT, fontSize: 12, color: '#FFFFFF' }; }
 
   var series = {};
   var get = function (i) { series[i] = series[i] || {}; return series[i]; };
   (spec.labels || []).forEach(function (l, i) { get(i).labelInLegend = l; });
   (spec.seriesTypes || []).forEach(function (t, i) { get(i).type = t; });
   (spec.secondAxis || []).forEach(function (i) { get(i).targetAxisIndex = 1; });
-  if (Object.keys(series).length) builder.setOption('series', series);
+  if (Object.keys(series).length) o.series = series;
 
   if (spec.type !== 'pie') {
     var axis = function (title) { return { title: title || '', textStyle: text, titleTextStyle: { fontName: SWIM_FONT, fontSize: 12, italic: false, color: SWIM_COLORS.dim }, gridlines: { color: '#E6ECF2' } }; };
-    var vAxes = { 0: axis(spec.vTitle) };
-    if (spec.secondAxis && spec.secondAxis.length) vAxes[1] = axis(spec.v2Title);
-    builder.setOption('vAxes', vAxes);
-    builder.setOption('hAxis', { title: spec.hTitle || '', textStyle: text, titleTextStyle: { fontName: SWIM_FONT, fontSize: 12, italic: false, color: SWIM_COLORS.dim } });
+    o.vAxes = { 0: axis(spec.vTitle) };
+    if (twoAxes) o.vAxes[1] = axis(spec.v2Title);
+    o.hAxis = { title: spec.hTitle || '', textStyle: text, titleTextStyle: { fontName: SWIM_FONT, fontSize: 12, italic: false, color: SWIM_COLORS.dim } };
   }
+  return o;
+}
+
+function swimChartBuilder_(sheet, type) {
+  var builder = sheet.newChart();
+  if (type === 'line') return builder.asLineChart();
+  if (type === 'column') return builder.asColumnChart();
+  if (type === 'combo') return builder.asComboChart();
+  if (type === 'pie') return builder.asPieChart();
+  if (type === 'radar') return builder.setChartType(Charts.ChartType.RADAR);
+  return builder;
+}
+
+function swimInsertChart_(sheet, spec, options) {
+  var builder = swimChartBuilder_(sheet, spec.type);
+  spec.ranges.forEach(function (a1) { builder.addRange(sheet.getRange(a1)); });
+  if (spec.transpose) builder.setTransposeRowsAndColumns(true);
+  var o = options || swimChartOptions_(spec);
+  Object.keys(o).forEach(function (k) { builder.setOption(k, o[k]); });
+  builder.setPosition(spec.row, spec.col, spec.offsetX || 0, spec.offsetY || 0);
   sheet.insertChart(builder.build());
 }
 
@@ -3942,6 +3961,57 @@ function swimCalibratePdf_(ss, width) {
   }
 }
 
+/**
+ * Μενού: πώς σχεδιάζει το Google τα γραφήματα στο PDF. Σε προσωρινό φύλλο, το ίδιο γράφημα με τις ρυθμίσεις των
+ * reports, με απλούστερες και με τις ρυθμίσεις της έκδοσης 2.2.0· από το μέγεθος του PDF φαίνεται ποιο σχεδιάστηκε
+ * ολόκληρο (ένα γράφημα μόνο με τον τίτλο του προσθέτει ελάχιστα).
+ */
+function swimChartsCheck() {
+  var html = '<div style="font-family:Arial;font-size:13px;line-height:1.5">' + swimChartsCheckHtml_(swimReportsSpreadsheet_()) + '</div>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(320), 'Γραφήματα στο PDF');
+}
+
+function swimChartsCheckHtml_(ss) {
+  var sh = ss.insertSheet('_swim_chart_check_' + Date.now());
+  var results = [];
+  try {
+    var data = [['Απόσταση', 'Αγώνας', 'PB'], [15, 2.33, 2.34], [25, 1.79, 1.76], [35, 1.74, 1.76], [45, 1.73, 1.72], [50, 1.72, 1.73]];
+    sh.getRange(1, 1, data.length, 3).setValues(data);
+    var spec = { type: 'line', title: 'Ταχύτητα ανά τμήμα (m/s)', ranges: ['A2:A6', 'B2:C6'], row: 8, col: 1, width: SWIM_PAIR.width,
+      height: SWIM_CHART_H, colors: [SWIM_COLORS.athlete, SWIM_COLORS.pb], vTitle: 'm/s', hTitle: 'μ.', labels: ['Αγώνας', 'PB'] };
+    var variants = [
+      { name: 'απλό γράφημα (μέτρο σύγκρισης)', options: function () { return { title: spec.title, width: spec.width, height: spec.height }; } },
+      { name: 'ρυθμίσεις των reports', options: function () { return swimChartOptions_(spec); } },
+      { name: 'χωρίς άξονες και περιοχή', options: function () { var o = swimChartOptions_(spec); delete o.vAxes; delete o.hAxis; delete o.chartArea; return o; } },
+      { name: 'περιοχή σε % (έκδοση 2.2.0)', options: function () { var o = swimChartOptions_(spec); o.chartArea = { left: 70, top: 48, width: '74%', height: '58%' }; return o; } }
+    ];
+    var area = { rows: spec.row + SWIM_CHART_ROWS, cols: 8 };
+    SpreadsheetApp.flush();
+    var empty = swimPdfFetch_(swimPdfUrl_(ss, sh, area)).getBytes().length;
+    variants.forEach(function (v) {
+      sh.getCharts().forEach(function (c) { sh.removeChart(c); });
+      swimInsertChart_(sh, spec, v.options());
+      SpreadsheetApp.flush();
+      Utilities.sleep(3000);
+      results.push({ name: v.name, bytes: swimPdfFetch_(swimPdfUrl_(ss, sh, area)).getBytes().length - empty });
+    });
+  } catch (e) {
+    return '<p style="color:#c06e00">⚠ Ο έλεγχος δεν ολοκληρώθηκε: ' + String(e && e.message ? e.message : e) + '</p>';
+  } finally {
+    ss.deleteSheet(sh);
+  }
+  var ref = results[0].bytes;
+  if (!(ref > 1500)) return '<p style="color:#c06e00">⚠ Ούτε το απλό γράφημα σχεδιάστηκε στο PDF (' + ref + ' bytes): το πρόβλημα δεν είναι οι ρυθμίσεις.</p>';
+  var drawn = function (r) { return r.bytes >= 0.5 * ref; };
+  var rows = results.map(function (r) {
+    return '<tr><td>' + r.name + '</td><td style="text-align:right">' + r.bytes + ' bytes</td><td>' + (drawn(r) ? '✔ ολόκληρο' : '✖ μόνο ο τίτλος') + '</td></tr>';
+  }).join('');
+  var verdict = drawn(results[1])
+    ? '<p style="color:#2e8b57">✔ Τα γραφήματα των reports σχεδιάζονται ολόκληρα στο PDF.</p>'
+    : '<p style="color:#c06e00">⚠ Με τις ρυθμίσεις των reports το γράφημα δεν σχεδιάστηκε. Στείλε αυτόν τον πίνακα για διόρθωση.</p>';
+  return verdict + '<table style="border-collapse:collapse" cellpadding="4">' + rows + '</table>';
+}
+
 /** Μενού: ξαναμετρά το ύψος της σελίδας του PDF και δείχνει το αποτέλεσμα. */
 function swimPdfPagesCheck() {
   var ss = swimReportsSpreadsheet_();
@@ -4645,6 +4715,7 @@ function swimOnOpen(e) {
     .addItem('PDF της επιλεγμένης ανάλυσης', 'swimPdfSelected')
     .addItem('Επαναδημιουργία της επιλεγμένης ανάλυσης', 'swimRebuildSelected')
     .addItem('Σελίδες PDF: νέα μέτρηση', 'swimPdfPagesCheck')
+    .addItem('Έλεγχος γραφημάτων στο PDF', 'swimChartsCheck')
     .addItem('Report για τις επιλεγμένες αναλύσεις', 'swimReportsSelected')
     .addItem('PDF για τις επιλεγμένες αναλύσεις', 'swimPdfsSelected')
     .addSeparator()

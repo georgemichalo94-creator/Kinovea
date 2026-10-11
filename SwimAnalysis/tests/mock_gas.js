@@ -200,6 +200,12 @@ function makeContext(opts) {
     exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName() });
     let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
     for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
+    // Γραφήματα: όπως το PDF του Google, με περιοχή σε % σχεδιάζεται μόνο ο τίτλος (λίγα bytes).
+    sheet._charts.forEach(ch => {
+      const area = ch.opts && ch.opts.chartArea;
+      const titleOnly = area && (/%/.test(String(area.width)) || /%/.test(String(area.height)));
+      text += '% chart ' + 'x'.repeat(titleOnly ? 300 : 6000) + '\n';
+    });
     return makeBlob(Array.from(Buffer.from(text, 'latin1')), 'application/pdf', 'export.pdf');
   }
   const ctx = {

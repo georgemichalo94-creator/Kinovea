@@ -128,6 +128,18 @@ assert.strictEqual(exp.r1, 0); assert.strictEqual(exp.c1, 0);
 assert.strictEqual(exp.r2, layout.print.rows); assert.strictEqual(exp.c2, 15);
 assert.strictEqual(exp.pages, pageOf[layout.print.rows], 'pages of the PDF');
 assert.ok(G._sleeps.indexOf(4000) >= 0, 'wait for the new charts before the PDF');
+// Περιοχή των γραφημάτων σε px (με % το PDF του Google σχεδίαζε μόνο τον τίτλο).
+sh._charts.forEach((c, i) => {
+  const a = c.opts.chartArea;
+  if (layout.charts[i].type === 'pie') { assert.ok(!a, 'pie without chart area'); return; }
+  assert.ok(a && typeof a.width === 'number' && typeof a.height === 'number' && a.width > 100 && a.height > 80, 'chart area in px: ' + JSON.stringify(a));
+  assert.ok(a.left + a.width <= layout.charts[i].width && a.top + a.height <= layout.charts[i].height, 'chart area inside the chart');
+});
+// Έλεγχος από το μενού: το γράφημα των reports σχεδιάζεται, με % όχι.
+const check = G.swimChartsCheckHtml_(reports);
+assert.ok(/✔ Τα γραφήματα των reports σχεδιάζονται ολόκληρα/.test(check), check);
+assert.ok(/περιοχή σε % \(έκδοση 2\.2\.0\)<\/td><td[^>]*>\d+ bytes<\/td><td>✖/.test(check), check);
+assert.ok(!reports.getSheets().some(s2 => s2.getName().indexOf('_swim_chart_check_') === 0), 'check sheet removed');
 // Γραφήματα και εικόνες μέσα στις στήλες A-O.
 const colLeft = c => { let x = 0; for (let k = 1; k < c; k++) x += G.swimColumnWidth_(k); return x; };
 sh._charts.forEach((c, i) => assert.ok(colLeft(c.pos[1]) + c.pos[2] + layout.charts[i].width <= 1124, 'chart inside the page: ' + layout.charts[i].title));
