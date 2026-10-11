@@ -1845,7 +1845,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             string name = AskText("Νέα elite αναφορά",
-                "Όνομα της αναφοράς, όπως θα φαίνεται στη λίστα σύγκρισης (π.χ. «Muratory – EJC 2025 Final»):",
+                "Όνομα της αναφοράς, όπως θα φαίνεται στη λίστα σύγκρισης (π.χ. «Tester – EJC 2025 Final»):",
                 SwimReference.DefaultName(race));
             if (name != null)
                 manager.SaveAsReference(name);

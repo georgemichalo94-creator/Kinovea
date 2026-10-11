@@ -50,6 +50,14 @@ function makeSheet(ss, name, id) {
     },
     getRangeList: list => { if (!Array.isArray(list) || !list.length) throw new Error('bad rangelist'); return { setNumberFormat: f => { if (typeof f !== 'string') throw new Error('fmt'); } }; },
     setRowHeight: () => {}, setColumnWidth: () => {}, setHiddenGridlines: () => {}, setFrozenRows: () => {}, hideColumns: () => {},
+    setFrozenColumns: () => {},
+    _rules: [], _validations: {}, _activeRanges: [],
+    setConditionalFormatRules: rules => { if (!Array.isArray(rules) || rules.some(x => !x || !x._built)) throw new Error('bad rules'); sheet._rules = rules; },
+    getConditionalFormatRules: () => sheet._rules.slice(),
+    // selection: [[row, numRows], ...]
+    _select: list => { sheet._activeRanges = list; ss.setActiveSheet(sheet); },
+    getActiveRangeList: () => ({ getRanges: () => sheet._activeRanges.map(([r, n]) => sheet.getRange(r, 1, n, 1)) }),
+    getActiveRange: () => { const a = sheet._activeRanges[0] || [1, 1]; return sheet.getRange(a[0], 1, a[1], 1); },
     getRange: function (a, b, c, d) {
       let r, col, nr = 1, nc = 1;
       if (typeof a === 'string') {
@@ -63,7 +71,11 @@ function makeSheet(ss, name, id) {
         getDisplayValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? String(x.v) : ''; })),
         getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? x.v : ''; })),
         getValue: () => { const x = cells[r + ':' + col]; return x ? x.v : ''; },
-        getRow: () => r,
+        getRow: () => r, getColumn: () => col, getNumRows: () => nr, getNumColumns: () => nc,
+        clearContent: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) delete cells[(r + i) + ':' + (col + j)]; return rng; },
+        setDataValidation: v => { if (!v || !v._built) throw new Error('bad validation'); for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sheet._validations[(r + i) + ':' + (col + j)] = v; return rng; },
+        clearDataValidations: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) delete sheet._validations[(r + i) + ':' + (col + j)]; return rng; },
+        setWrap: () => rng,
         setValues: vals => { if (vals.length !== nr || vals[0].length !== nc) throw new Error(`setValues size ${vals.length}x${vals[0].length} != ${nr}x${nc}`); vals.forEach((row, i) => row.forEach((v, j) => { cells[(r + i) + ':' + (col + j)] = { v }; })); return rng; },
         setValue: v => { cells[r + ':' + col] = { v }; return rng; },
         merge: () => { merges.push([r, col, nr, nc]); return rng; }, breakApart: () => rng,
@@ -82,6 +94,7 @@ function makeBlob(bytes, type, name) {
   const blob = { _bytes: bytes || [], _type: type || 'application/octet-stream', _name: name || '' };
   blob.setName = n => { blob._name = n; return blob; };
   blob.getBytes = () => blob._bytes; blob.getContentType = () => blob._type; blob.getName = () => blob._name;
+  blob.getDataAsString = () => Buffer.from(blob._bytes).toString('utf8');
   return blob;
 }
 const iter = arr => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
@@ -122,6 +135,8 @@ function makeSpreadsheet(name, id) {
     insertSheet: (n, idx) => { if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n); const s = makeSheet(ss, n, nextId++); sheets.push(s); return s; },
     getSheets: () => sheets,
     deleteSheet: sh => sheets.splice(sheets.indexOf(sh), 1),
+    _active: null,
+    getActiveSheet: () => ss._active || sheets[0], setActiveSheet: sh => { ss._active = sh; return sh; },
   };
   return ss;
 }
@@ -135,11 +150,45 @@ function makeContext(opts) {
   }
   const triggers = [];
   const props = { SWIM_TOKEN: 'tok' };
+  // UI: alerts and dialogs are recorded; prompt answers with ui._answer (OK + text) or CANCEL
+  const menus = [];
+  const makeMenu = name => {
+    const m = { name, items: [] };
+    m.addItem = (label, fn) => { m.items.push({ label, fn }); return m; };
+    m.addSeparator = () => m;
+    m.addSubMenu = sub => { m.items.push({ label: sub.name, sub }); return m; };
+    m.addToUi = () => { menus.push(m); };
+    return m;
+  };
+  const ui = {
+    _alerts: [], _dialogs: [], _answer: null, _menus: menus,
+    ButtonSet: { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO: 'YES_NO' }, Button: { OK: 'OK', CANCEL: 'CANCEL', YES: 'YES', NO: 'NO' },
+    alert: (...a) => { ui._alerts.push(a.length > 1 ? a.slice(0, 2).join(': ') : String(a[0])); return 'OK'; },
+    prompt: () => ({ getSelectedButton: () => (ui._answer === null ? 'CANCEL' : 'OK'), getResponseText: () => String(ui._answer || '') }),
+    showModalDialog: (html, title) => { ui._dialogs.push({ title, html: html._html }); },
+    createMenu: makeMenu,
+  };
   let uuidSeq = 0;
   const drive = makeDrive();
   const ctx = {
     console, JSON, Math, Date, Object, Array, String, Number, isFinite,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {}, BorderStyle: { SOLID: 'solid' },
+      getUi: () => ui,
+      newDataValidation: () => {
+        const v = { _built: false, kind: null, list: null };
+        const api = { requireCheckbox: () => { v.kind = 'checkbox'; return api; },
+          requireValueInList: (list, show) => { if (!Array.isArray(list)) throw new Error('list'); v.kind = 'list'; v.list = list; return api; },
+          build: () => { if (!v.kind) throw new Error('empty validation'); v._built = true; return v; } };
+        return api;
+      },
+      newConditionalFormatRule: () => {
+        const r = { _built: false };
+        const api = { whenFormulaSatisfied: f => { if (!/^=/.test(f)) throw new Error('formula'); r.formula = f; return api; },
+          setBackground: c => { r.bg = c; return api; }, setFontColor: c => { r.color = c; return api; },
+          setRanges: rs => { if (!Array.isArray(rs) || !rs.length) throw new Error('ranges'); r.ranges = rs; return api; },
+          build: () => { if (!r.formula || !r.ranges) throw new Error('incomplete rule'); r._built = true; return r; } };
+        return api;
+      },
       openById: id => { if (!all[id]) throw new Error('no ss ' + id); return all[id]; },
       create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
     Logger: { log: () => {} },
@@ -150,6 +199,7 @@ function makeContext(opts) {
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
       newBlob: (bytes, type, name) => makeBlob(bytes, type, name) },
     Charts: { ChartType: { RADAR: 'radar' } },
+    HtmlService: { createHtmlOutput: html => { const o = { _html: String(html) }; o.setWidth = () => o; o.setHeight = () => o; return o; } },
     Session: { getScriptTimeZone: () => 'Europe/Athens' },
     DriveApp: drive,
     UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName() { return this; } }) }) },
@@ -158,7 +208,7 @@ function makeContext(opts) {
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
-  ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive;
+  ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
   return ctx;
 }
 module.exports = { makeContext };

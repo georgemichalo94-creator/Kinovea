@@ -52,7 +52,7 @@ assert.ok(r.skipped.some(x => x.includes('άγνωστο στυλ')), JSON.strin
 assert.ok(r.skipped.some(x => x.includes('μη έγκυρος χρόνος')), JSON.stringify(r.skipped));
 
 // Save from Kinovea, then save again (same race id) with other times: the block is replaced.
-const ref = { raceId: 'aabbccddeeff00112233445566778899', name: 'Muratory – EJC Final', gender: '', style: 'bk', distance: 200, relay: false, pool: 50, source: 'EJC · Final',
+const ref = { raceId: 'aabbccddeeff00112233445566778899', name: 'Tester – EJC Final', gender: '', style: 'bk', distance: 200, relay: false, pool: 50, source: 'EJC · Final',
   times: [{ d: 15, t: 6.46 }, { d: 25, t: 12.28 }, { d: 50, t: 27.36 }] };
 r = call({ action: 'saveReference', reference: ref });
 assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(r.count, 3);
