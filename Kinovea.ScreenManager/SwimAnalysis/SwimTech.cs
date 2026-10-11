@@ -38,9 +38,19 @@ namespace Kinovea.ScreenManager
         /// <summary>Video timestamp of t = 0 of the phase.</summary>
         public long Origin;
 
-        /// <summary>The marks with a timestamp in [WindowStart, WindowEnd) belong to the phase.</summary>
+        /// <summary>
+        /// Part of the video shown as this phase (panel, overlay, snapshots and angles): [WindowStart, WindowEnd).
+        /// A start begins a little before its signal, a turn with its approach; the phase lasts at least until its last event.
+        /// </summary>
         public long WindowStart;
         public long WindowEnd;
+
+        /// <summary>
+        /// The events of the phase are searched in [EventStart, EventEnd): from the previous origin to the next one
+        /// (the last stroke, rotation and −5 before the contact, the first push-off, breakout and stroke after it).
+        /// </summary>
+        public long EventStart;
+        public long EventEnd;
 
         // Events, in seconds from the origin (negative before the contact of a turn).
         public double? Reaction;
@@ -157,8 +167,17 @@ namespace Kinovea.ScreenManager
         /// <summary>A training attempt keeps the marks up to this long after its origin.</summary>
         private const double AttemptSeconds = 25;
 
-        /// <summary>Marks of the approach of a turn (last stroke, rotation, −5) are at most this long before the contact.</summary>
+        /// <summary>On the panel a turn begins this long before its contact (approach: −5, last stroke, rotation).</summary>
         private const double ApproachSeconds = 5;
+
+        /// <summary>On the panel a start begins this long before its signal (position on the block).</summary>
+        private const double LeadSeconds = 3;
+
+        /// <summary>Training: the approach of a turn is searched this long before its contact (after the previous attempt).</summary>
+        private const double ApproachSearchSeconds = 10;
+
+        /// <summary>The key T marks 5/10/15 (+5/+10/+15) up to this long after the signal or the contact, then −5 of the next turn.</summary>
+        private const double PositiveSeconds = 15;
 
         public static List<SwimTechPhase> Compute(SwimRace race, SwimComputed computed, SwimTiming timing)
         {
@@ -211,19 +230,12 @@ namespace Kinovea.ScreenManager
                 return;
 
             long origin = race.StartTimestamp.Value;
-            int pool = race.Pool <= 0 ? 50 : race.Pool;
-            List<int> walls = new List<int>();
-            for (int w = pool; w < race.Distance; w += pool)
-                walls.Add(w);
-
             Func<int, long?> splitAt = d =>
             {
                 SwimMark m = race.GetSplit(d);
                 return m != null ? (long?)m.Timestamp : null;
             };
 
-            // Boundaries: the start signal and the walls marked, in time order.
-            List<long> wallTimes = walls.Select(w => splitAt(w)).Where(t => t.HasValue).Select(t => t.Value).OrderBy(t => t).ToList();
             long? finish = splitAt(race.Distance);
             long end = finish.HasValue ? finish.Value + 1 : long.MaxValue;
 
@@ -233,51 +245,82 @@ namespace Kinovea.ScreenManager
             start.Wall = 0;
             start.Title = "Εκκίνηση";
             start.Origin = origin;
-            start.WindowStart = origin - (long)Math.Round(timing.AverageTimestampsPerFrame);
-            start.WindowEnd = wallTimes.Count > 0 ? wallTimes[0] - Before(timing, ApproachSeconds) : end;
-            Fill(race, timing, start, wallMarks: true);
-            if (race.Reaction.HasValue)
-                start.Reaction = race.Reaction.Value;
-            start.EntryDist = race.EntryDistHands;
-            start.BreakoutDist = race.BreakoutDist;
-            ApplyCheckpointSplits(race, timing, start, splitAt);
             phases.Add(start);
 
-            for (int i = 0; i < walls.Count; i++)
+            // Contacts in time order: the start signal and every wall marked. A relay exchange bounds the phases
+            // around it but is not a turn (the next swimmer starts from the block).
+            List<KeyValuePair<long, SwimTechPhase>> contacts = new List<KeyValuePair<long, SwimTechPhase>>();
+            contacts.Add(new KeyValuePair<long, SwimTechPhase>(origin, start));
+            foreach (int wall in TurnWalls(race))
             {
-                int wall = walls[i];
                 long? tw = splitAt(wall);
-                if (!tw.HasValue)
+                if (!tw.HasValue || tw.Value <= origin)
                     continue;
+
+                if (IsExchange(race, wall))
+                {
+                    contacts.Add(new KeyValuePair<long, SwimTechPhase>(tw.Value, null));
+                    continue;
+                }
 
                 SwimTurnComputed turn = computed.Turns.FirstOrDefault(t => t.Wall == wall);
                 SwimTechPhase phase = new SwimTechPhase();
                 phase.Id = "turn-" + wall.ToString(CultureInfo.InvariantCulture);
                 phase.Kind = SwimPhaseKind.Turn;
                 phase.Wall = wall;
-                phase.Title = (turn != null && turn.Exchange ? "Αλλαγή " : "Στροφή ") + wall.ToString(CultureInfo.InvariantCulture) + race.Unit;
+                phase.Title = "Στροφή " + wall.ToString(CultureInfo.InvariantCulture) + race.Unit;
                 phase.Flip = turn != null && turn.Flip;
                 phase.Origin = tw.Value;
-                phase.WindowStart = tw.Value - Before(timing, ApproachSeconds);
-                long next = wallTimes.Where(t => t > tw.Value).DefaultIfEmpty(end).First();
-                phase.WindowEnd = Math.Min(next - Before(timing, ApproachSeconds), end);
-                if (phase.WindowEnd <= tw.Value)
-                    phase.WindowEnd = next;
-                Fill(race, timing, phase, wallMarks: true);
-
-                // The turn values of the race analysis (manual turn time, underwater distance) also hold here.
-                SwimTurnManual manual = race.GetTurn(wall, false);
-                if (manual != null)
-                    phase.BreakoutDist = manual.UnderwaterDist;
-                if (turn != null && turn.LastStrokeGap.HasValue)
-                    phase.LastStroke = -turn.LastStrokeGap.Value;
-                // Relay exchange: the next swimmer may leave the block a little before the touch.
-                SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall);
-                if (turn != null && turn.Pushoff.HasValue && wallRow != null && wallRow.T.HasValue)
-                    phase.Pushoff = turn.Pushoff.Value - wallRow.T.Value;
-
-                ApplyCheckpointSplits(race, timing, phase, splitAt);
                 phases.Add(phase);
+                contacts.Add(new KeyValuePair<long, SwimTechPhase>(tw.Value, phase));
+            }
+
+            contacts.Sort((a, b) => a.Key.CompareTo(b.Key));
+            long lead = Before(timing, LeadSeconds);
+            for (int i = 0; i < contacts.Count; i++)
+            {
+                SwimTechPhase p = contacts[i].Value;
+                if (p == null)
+                    continue;
+
+                p.EventStart = p == start ? origin - lead : contacts[i - 1].Key + 1;
+                p.EventEnd = i + 1 < contacts.Count ? contacts[i + 1].Key : end;
+                Fill(race, timing, p, true);
+
+                if (p == start)
+                {
+                    if (race.Reaction.HasValue)
+                        p.Reaction = race.Reaction.Value;
+                    p.EntryDist = race.EntryDistHands;
+                    p.BreakoutDist = race.BreakoutDist;
+                }
+                else
+                {
+                    // The turn values of the race analysis (underwater distance, last stroke, push-off) also hold here.
+                    SwimTurnManual manual = race.GetTurn(p.Wall, false);
+                    if (manual != null)
+                        p.BreakoutDist = manual.UnderwaterDist;
+
+                    SwimTurnComputed turn = computed.Turns.FirstOrDefault(t => t.Wall == p.Wall);
+                    if (turn != null && turn.LastStrokeGap.HasValue)
+                        p.LastStroke = -turn.LastStrokeGap.Value;
+                    SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == p.Wall);
+                    if (turn != null && turn.Pushoff.HasValue && wallRow != null && wallRow.T.HasValue && turn.Pushoff.Value >= wallRow.T.Value)
+                        p.Pushoff = turn.Pushoff.Value - wallRow.T.Value;
+                }
+
+                ApplyCheckpointSplits(race, timing, p, splitAt);
+            }
+
+            // What the panel shows: the approach of a turn (at most half of the length) after the last event of the previous phase.
+            for (int i = 0; i < contacts.Count; i++)
+            {
+                SwimTechPhase p = contacts[i].Value;
+                if (p == null)
+                    continue;
+
+                p.WindowStart = p == start ? origin - lead : Boundary(timing, contacts[i - 1].Value, contacts[i - 1].Key, p, p.Origin);
+                p.WindowEnd = i + 1 < contacts.Count ? Boundary(timing, p, p.Origin, contacts[i + 1].Value, contacts[i + 1].Key) : end;
             }
         }
 
@@ -299,7 +342,11 @@ namespace Kinovea.ScreenManager
 
                 long? t = splitAt(d);
                 if (t.HasValue)
-                    phase.Splits[offset] = timing.Seconds(t.Value, phase.Origin);
+                {
+                    double seconds = timing.Seconds(t.Value, phase.Origin);
+                    if ((offset < 0 && seconds <= 0) || (offset > 0 && seconds > 0))
+                        phase.Splits[offset] = seconds;
+                }
             }
         }
 
@@ -311,9 +358,8 @@ namespace Kinovea.ScreenManager
                 .ToList();
 
             int starts = 0, turns = 0;
-            for (int i = 0; i < origins.Count; i++)
+            foreach (SwimMark o in origins)
             {
-                SwimMark o = origins[i];
                 SwimTechPhase phase = new SwimTechPhase();
                 phase.Id = o.Id;
                 phase.Kind = o.Type == SwimMarkType.Signal ? SwimPhaseKind.Start : SwimPhaseKind.Turn;
@@ -324,22 +370,17 @@ namespace Kinovea.ScreenManager
                 phases.Add(phase);
             }
 
-            // Windows: a turn begins a little before its contact (approach), a start at its signal; each one ends where the next begins.
+            // Events: the approach after the previous attempt, the rest until the next attempt (at most 25 s).
+            long lead = Before(timing, LeadSeconds);
+            long search = Before(timing, ApproachSearchSeconds);
+            long attempt = Before(timing, AttemptSeconds);
             for (int i = 0; i < phases.Count; i++)
             {
                 SwimTechPhase p = phases[i];
-                long begin = p.Kind == SwimPhaseKind.Turn ? p.Origin - Before(timing, ApproachSeconds) : p.Origin;
-                if (i > 0)
-                    begin = Math.Max(begin, phases[i - 1].Origin + 1);
-                p.WindowStart = begin;
-            }
-
-            for (int i = 0; i < phases.Count; i++)
-            {
-                SwimTechPhase p = phases[i];
-                long limit = p.Origin + Before(timing, AttemptSeconds);
-                p.WindowEnd = i + 1 < phases.Count ? Math.Min(phases[i + 1].WindowStart, limit) : limit;
-                Fill(race, timing, p, wallMarks: false);
+                long before = p.Origin - (p.Kind == SwimPhaseKind.Start ? lead : search);
+                p.EventStart = i > 0 ? Math.Max(phases[i - 1].Origin + 1, before) : before;
+                p.EventEnd = Math.Min(i + 1 < phases.Count ? phases[i + 1].Origin : long.MaxValue, p.Origin + attempt);
+                Fill(race, timing, p, false);
                 SwimPhaseManual manual = race.GetPhaseValues(p.Id, false);
                 if (manual != null)
                 {
@@ -347,6 +388,54 @@ namespace Kinovea.ScreenManager
                     p.BreakoutDist = manual.BreakoutDist;
                 }
             }
+
+            for (int i = 0; i < phases.Count; i++)
+            {
+                SwimTechPhase p = phases[i];
+                long begin = p.Origin - (p.Kind == SwimPhaseKind.Start ? lead : Before(timing, ApproachSeconds));
+                long finish = Math.Max(p.Origin + attempt, p.Origin + Before(timing, LastAfterEvent(p)) + 1);
+                p.WindowStart = i > 0 ? Math.Max(begin, Boundary(timing, phases[i - 1], phases[i - 1].Origin, p, p.Origin)) : begin;
+                p.WindowEnd = i + 1 < phases.Count ? Math.Min(finish, Boundary(timing, p, p.Origin, phases[i + 1], phases[i + 1].Origin)) : finish;
+            }
+        }
+
+        /// <summary>
+        /// Where the panel passes from one phase to the next (b begins at bTime): the approach of a turn or the lead of a start,
+        /// at most half of the time between them, never before the last event of the previous phase and never after the contact.
+        /// </summary>
+        private static long Boundary(SwimTiming timing, SwimTechPhase a, long aTime, SwimTechPhase b, long bTime)
+        {
+            long lead = Before(timing, b != null && b.Kind == SwimPhaseKind.Start ? LeadSeconds : ApproachSeconds);
+            long boundary = Math.Max(bTime - lead, aTime + (bTime - aTime) / 2);
+            if (a != null)
+            {
+                double last = LastAfterEvent(a);
+                if (last > 0)
+                    boundary = Math.Max(boundary, aTime + Before(timing, last) + 1);
+            }
+
+            return Math.Min(boundary, bTime);
+        }
+
+        /// <summary>Seconds of the last event after the origin of a phase (push-off, kicks, breakout, first stroke, 5/10/15).</summary>
+        private static double LastAfterEvent(SwimTechPhase p)
+        {
+            double last = 0;
+            foreach (double? v in new double?[] { p.Block, p.Entry, p.Pushoff, p.Breakout, p.FirstStroke })
+            {
+                if (v.HasValue && v.Value > last)
+                    last = v.Value;
+            }
+
+            if (p.Kicks.Count > 0 && p.Kicks[p.Kicks.Count - 1] > last)
+                last = p.Kicks[p.Kicks.Count - 1];
+            foreach (KeyValuePair<int, double> split in p.Splits)
+            {
+                if (split.Key > 0 && split.Value > last)
+                    last = split.Value;
+            }
+
+            return last;
         }
 
         private static long Before(SwimTiming timing, double seconds)
@@ -357,13 +446,53 @@ namespace Kinovea.ScreenManager
             return (long)Math.Round(frames * timing.AverageTimestampsPerFrame);
         }
 
+        /// <summary>Walls where the swimmer turns or a relay leg ends.</summary>
+        public static List<int> TurnWalls(SwimRace race)
+        {
+            List<int> walls = new List<int>();
+            int pool = race == null || race.Pool <= 0 ? 50 : race.Pool;
+            if (race == null)
+                return walls;
+
+            for (int w = pool; w < race.Distance; w += pool)
+                walls.Add(w);
+            return walls;
+        }
+
+        /// <summary>Relay: the end of a leg is an exchange, not a turn (as in SwimCalculator).</summary>
+        public static bool IsExchange(SwimRace race, int wall)
+        {
+            return race.Relay && race.Distance % 4 == 0 && wall % (race.Distance / 4) == 0;
+        }
+
+        /// <summary>Race: the last wall already touched at a timestamp (0 before the first one).</summary>
+        public static int LastWallBefore(SwimRace race, long timestamp)
+        {
+            int wall = 0;
+            foreach (int w in TurnWalls(race))
+            {
+                SwimMark split = race.GetSplit(w);
+                if (split != null && split.Timestamp <= timestamp)
+                    wall = w;
+            }
+
+            return wall;
+        }
+
+        /// <summary>Race: the technical distance is a checkpoint of the race (marked with the split key, not with T).</summary>
+        public static bool IsCheckpoint(SwimRace race, int wall, int offset)
+        {
+            int d = wall + offset;
+            return !race.IsTraining && d > 0 && d < race.Distance && race.Checkpoints.Contains(d);
+        }
+
         /// <summary>
-        /// Events of the phase from the marks inside its window. A race uses the marks of its walls
-        /// (technical splits with the wall of the phase), a training video the offsets alone.
+        /// Events of the phase from the marks of its event window. In a race the technical splits say their wall,
+        /// in a training video the offset decides (−5 before the contact, the others after it).
         /// </summary>
         private static void Fill(SwimRace race, SwimTiming timing, SwimTechPhase p, bool wallMarks)
         {
-            List<SwimMark> marks = race.Marks.Where(m => p.Contains(m.Timestamp)).OrderBy(m => m.Timestamp).ToList();
+            List<SwimMark> marks = race.Marks.Where(m => m.Timestamp >= p.EventStart && m.Timestamp < p.EventEnd).OrderBy(m => m.Timestamp).ToList();
             Func<SwimMark, double> rel = m => timing.Seconds(m.Timestamp, p.Origin);
             Func<SwimMarkType, Func<double, bool>, double?> first = (type, predicate) =>
             {
@@ -393,16 +522,14 @@ namespace Kinovea.ScreenManager
                 return found;
             };
 
-            // Technical splits: in a race the mark says its wall; in training the offset decides (−5 before the contact).
-            foreach (SwimMark m in marks.Where(x => x.Type == SwimMarkType.TechSplit))
+            IEnumerable<SwimMark> techSplits = wallMarks
+                ? race.Marks.Where(m => m.Type == SwimMarkType.TechSplit && (m.Wall == p.Wall || (m.Wall < 0 && m.Timestamp >= p.EventStart && m.Timestamp < p.EventEnd)))
+                    .OrderBy(m => m.Timestamp)
+                : marks.Where(m => m.Type == SwimMarkType.TechSplit);
+            foreach (SwimMark m in techSplits)
             {
-                if (wallMarks && m.Wall >= 0 && m.Wall != p.Wall)
-                    continue;
-
                 double t = rel(m);
-                if (p.Kind == SwimPhaseKind.Start && m.Distance > 0 && t > 0)
-                    p.Splits[m.Distance] = t;
-                else if (p.Kind == SwimPhaseKind.Turn && ((m.Distance < 0 && t <= 0) || (m.Distance > 0 && t > 0)))
+                if ((m.Distance < 0 && t <= 0 && p.Kind == SwimPhaseKind.Turn) || (m.Distance > 0 && t > 0))
                     p.Splits[m.Distance] = t;
             }
 
@@ -461,8 +588,11 @@ namespace Kinovea.ScreenManager
                 set("handsOff", p.HandsOff);
                 set("backFoot", p.BackFoot);
                 set("blockTime", p.Block);
-                set("blockPhase", diff(p.Block, p.Reaction));
-                set("flight", diff(p.Entry, p.Block));
+                // Only in the order they happen (a mark on a wrong frame would give a negative time).
+                if (p.Block.HasValue && p.Reaction.HasValue && p.Block.Value > p.Reaction.Value)
+                    set("blockPhase", p.Block.Value - p.Reaction.Value);
+                if (p.Entry.HasValue && p.Block.HasValue && p.Entry.Value > p.Block.Value)
+                    set("flight", p.Entry.Value - p.Block.Value);
                 set("entryTime", p.Entry);
                 set("entryDist", p.EntryDist);
                 double? t5 = split(5), t10 = split(10), t15 = split(15);
@@ -473,8 +603,9 @@ namespace Kinovea.ScreenManager
                 set("v5_10", vel(5, diff(t10, t5)));
                 set("v10_15", vel(5, diff(t15, t10)));
                 set("underwater", diff(p.Breakout, p.Entry));
+                // Distances are in pool units (μ. or yd), velocities in m/s.
                 if (p.EntryDist.HasValue && p.BreakoutDist.HasValue && p.Kicks.Count > 0 && p.BreakoutDist.Value > p.EntryDist.Value)
-                    set("kickDist", (p.BreakoutDist.Value - p.EntryDist.Value) * k / p.Kicks.Count);
+                    set("kickDist", (p.BreakoutDist.Value - p.EntryDist.Value) / p.Kicks.Count);
                 if (p.EntryDist.HasValue && p.BreakoutDist.HasValue && p.Breakout.HasValue && p.Entry.HasValue && p.Breakout.Value > p.Entry.Value)
                     set("uwVel", (p.BreakoutDist.Value - p.EntryDist.Value) * k / (p.Breakout.Value - p.Entry.Value));
             }
@@ -512,12 +643,13 @@ namespace Kinovea.ScreenManager
                 set("v10_15", vel(5, diff(o15, o10)));
                 set("underwater", diff(p.Breakout, p.Pushoff));
                 if (p.BreakoutDist.HasValue && p.Kicks.Count > 0)
-                    set("kickDist", p.BreakoutDist.Value * k / p.Kicks.Count);
+                    set("kickDist", p.BreakoutDist.Value / p.Kicks.Count);
                 if (p.BreakoutDist.HasValue && p.Breakout.HasValue && p.Pushoff.HasValue && p.Breakout.Value > p.Pushoff.Value)
                     set("uwVel", p.BreakoutDist.Value * k / (p.Breakout.Value - p.Pushoff.Value));
             }
 
-            if (p.Kicks.Count > 0 || p.Breakout.HasValue)
+            // 0 kicks only when kicks are marked in this video (otherwise they were not counted).
+            if (p.Kicks.Count > 0 || (p.Breakout.HasValue && race.Marks.Any(m => m.Type == SwimMarkType.Kick)))
                 set("kicks", p.Kicks.Count);
             if (p.Kicks.Count >= 2)
             {
@@ -534,24 +666,60 @@ namespace Kinovea.ScreenManager
 
         #region Next technical split
         /// <summary>
-        /// Offset of the next technical split for a press at this timestamp: the first missing distance of the phase
-        /// (5, 10, 15 after a start; +5, +10, +15 after a contact), otherwise −5 of the next turn.
+        /// Offset of the next technical split for a press of T at this timestamp: the next distance of the phase not marked yet
+        /// (5, 10, 15 after a signal; +5, +10, +15 after a contact), then −5 before the next wall. The checkpoints of a race
+        /// are skipped (they are marked with the split key). Null when there is nothing left to mark with T.
         /// </summary>
-        public static int NextOffset(List<SwimTechPhase> phases, long timestamp, out SwimTechPhase phase)
+        public static int? NextOffset(SwimRace race, SwimTiming timing, List<SwimTechPhase> phases, long timestamp, out SwimTechPhase phase)
         {
             phase = null;
-            SwimTechPhase current = phases == null ? null : phases.Where(p => p.Origin <= timestamp && p.Contains(timestamp)).LastOrDefault();
-            if (current != null)
+            if (race == null || timing == null || !timing.IsValid || phases == null)
+                return null;
+
+            SwimTechPhase current = OwnerOf(phases, timestamp);
+            if (current != null && current.Contains(timestamp))
             {
-                phase = current;
-                foreach (int offset in current.Kind == SwimPhaseKind.Start ? StartOffsets : TurnOffsets)
+                double t = timing.Seconds(timestamp, current.Origin);
+                if (t > 0 && t <= PositiveSeconds)
                 {
-                    if (offset > 0 && !current.Splits.ContainsKey(offset))
+                    foreach (int offset in current.Kind == SwimPhaseKind.Start ? StartOffsets : TurnOffsets)
+                    {
+                        if (offset <= 0 || current.Splits.ContainsKey(offset) || IsCheckpoint(race, current.Wall, offset))
+                            continue;
+
+                        // Passed already: a farther distance is marked before this press.
+                        if (current.Splits.Any(s => s.Key > offset && s.Value <= t))
+                            continue;
+
+                        phase = current;
                         return offset;
+                    }
                 }
             }
 
+            if (race.IsTraining)
+            {
+                // The approach of the next contact (if it is marked already).
+                phase = phases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Origin >= timestamp && p.Contains(timestamp));
+                return -5;
+            }
+
+            int pool = race.Pool <= 0 ? 50 : race.Pool;
+            int wall = LastWallBefore(race, timestamp) + pool;
+            if (wall >= race.Distance || IsExchange(race, wall) || IsCheckpoint(race, wall, -5))
+                return null;
+
+            phase = phases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == wall);
             return -5;
+        }
+
+        /// <summary>The phase whose origin (signal or contact) is the last one before a timestamp, while its events last.</summary>
+        public static SwimTechPhase OwnerOf(List<SwimTechPhase> phases, long timestamp)
+        {
+            if (phases == null)
+                return null;
+
+            return phases.Where(p => p.Origin <= timestamp && timestamp < p.EventEnd).OrderBy(p => p.Origin).LastOrDefault();
         }
         #endregion
     }

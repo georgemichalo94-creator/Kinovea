@@ -2114,7 +2114,7 @@ function swimTechSignature_(race) {
   parts.push(tech.snapshots.map(function (s) {
     return [s.id, s.phase, s.fileId, s.eliteFileId, swimSnapshotHeight_(swimSnapshotText_(s))].join(':');
   }).join(','));
-  parts.push(tech.values && tech.values.notes ? 'notes' : '');
+  parts.push(tech.values && tech.values.notes ? 'notes' + swimSnapshotHeight_(tech.values.notes) : '');
   return swimHash_(parts.join('|'));
 }
 
@@ -2279,15 +2279,33 @@ function swimTechSnapshots_(L, snapshots, row) {
   return r;
 }
 
+/**
+ * Οι σημειώσεις του αναλυτή για την τεχνική: ένα κελί σε όλο το πλάτος, με ύψος ανάλογο του κειμένου.
+ * Το κείμενο γράφεται σε κάθε ενημέρωση (layout.inputs.blocks) χωρίς ανακατασκευή του φύλλου.
+ */
+function swimTechNotes_(L, cur, W) {
+  var race = L.race, g = L.g;
+  var notes = race.tech && race.tech.values && race.tech.values.notes ? String(race.tech.values.notes) : '';
+  if (!notes) return cur;
+  g.set(cur, 1, '', { wrap: true, color: SWIM_COLORS.title, bg: SWIM_COLORS.kpi, valign: 'top', fmt: '@' });
+  for (var c = 2; c <= W; c++) g.set(cur, c, '', { bg: SWIM_COLORS.kpi });
+  g.merge(cur, 1, cur, W);
+  g.rowHeights[cur] = swimSnapshotHeight_(notes);
+  L.layout.inputs.blocks.push({ r: cur, c: 1, values: [[notes]] });
+  return cur + 2;
+}
+
 /** Ενότητα «Τεχνική ανάλυση» στο τέλος του report του αγώνα (μόνο αν υπάρχουν δεδομένα). */
 function swimLayoutTech_(L, cur) {
   var race = L.race, g = L.g;
   var phases = swimTechPhases_(race);
   var snaps = swimTechSnapshotList_(race, phases);
   var loose = swimTechLooseAngles_(race);
-  if (!phases.length && !snaps.length && !loose.length) { L.cur = cur; return; }
+  var hasNotes = !!(race.tech && race.tech.values && race.tech.values.notes);
+  if (!phases.length && !snaps.length && !loose.length && !hasNotes) { L.cur = cur; return; }
   g.section(cur, 'Τεχνική ανάλυση εκκίνησης και στροφών', L.LAST);
   cur += 2;
+  cur = swimTechNotes_(L, cur, L.LAST);
   var starts = phases.filter(function (p) { return p.kind === 'start'; });
   var turns = phases.filter(function (p) { return p.kind === 'turn'; });
   var t1 = starts.length ? swimTechTable_(L, starts, 'start', cur, 'Εκκίνηση (χρόνοι από το σήμα)') : null;
@@ -2348,16 +2366,7 @@ function swimBuildTechLayout_(race, analysis, extras) {
   layout.inputs.blocks.push({ r: 9, c: 1, values: [tileValues.slice(0, 14)] });
   g.rowHeights[8] = 18; g.rowHeights[9] = 34; g.rowHeights[10] = 28;
 
-  var cur = 12;
-  var notes = race.tech && race.tech.values && race.tech.values.notes ? String(race.tech.values.notes) : '';
-  if (notes) {
-    g.set(cur, 1, '', { wrap: true, color: SWIM_COLORS.title, bg: SWIM_COLORS.kpi, valign: 'top', fmt: '@' });
-    for (var c = 2; c <= W; c++) g.set(cur, c, '', { bg: SWIM_COLORS.kpi });
-    g.merge(cur, 1, cur, W);
-    g.rowHeights[cur] = 48;
-    layout.inputs.blocks.push({ r: cur, c: 1, values: [[notes]] });
-    cur += 2;
-  }
+  var cur = swimTechNotes_(L, 12, W);
   var t1 = null, t2 = null;
   if (starts.length) {
     g.section(cur, 'Εκκινήσεις', W);

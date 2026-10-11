@@ -42,6 +42,10 @@ namespace Kinovea.ScreenManager
         private DataGridView gridTechTurns;
         private string selectedTurnId;
 
+        // Phase of the video at the last refresh of each page: the page follows the video only when it enters another phase.
+        private string videoStartId;
+        private string videoTurnId;
+
         // Snapshots and angles
         private ListBox lbSnapshots;
         private PictureBox picSnapshot;
@@ -56,6 +60,7 @@ namespace Kinovea.ScreenManager
         private Label lblSnapshotInfo;
         private string selectedSnapshotId;
         private string shownEliteId;
+        private string shownEliteList;
 
         private readonly Dictionary<Button, SwimPickTarget[]> techPickButtons = new Dictionary<Button, SwimPickTarget[]>();
 
@@ -154,10 +159,10 @@ namespace Kinovea.ScreenManager
             return b;
         }
 
-        private Button OffsetButton(string text, int offset)
+        private Button OffsetButton(string text, int offset, SwimPhaseKind kind)
         {
             Button b = new SwimNoFocusButton { Text = text, Width = 44, Height = 26, Margin = new Padding(3, 2, 0, 2) };
-            b.Click += (s, e) => manager.MarkTechSplit(offset);
+            b.Click += (s, e) => manager.MarkTechSplit(offset, kind);
             toolTip.SetToolTip(b, "Τεχνικό πέρασμα σε αυτό το καρέ: το κεφάλι στα " + text + " (αντί για το επόμενο της σειράς του πλήκτρου).");
             return b;
         }
@@ -208,7 +213,7 @@ namespace Kinovea.ScreenManager
             lblTsSplits = ValueLabel();
             AddEventRow(t, "Κεφάλι στα 5 / 10 / 15", PlayerScreenCommands.SwimTechSplit, "5 / 10 / 15",
                 "Το κεφάλι περνά τα 5, 10 και 15 (με τη σειρά, ή με τα κουμπιά για συγκεκριμένη απόσταση).", lblTsSplits,
-                OffsetButton("5", 5), OffsetButton("10", 10), OffsetButton("15", 15));
+                OffsetButton("5", 5, SwimPhaseKind.Start), OffsetButton("10", 10, SwimPhaseKind.Start), OffsetButton("15", 15, SwimPhaseKind.Start));
             lblTsFirstStroke = ValueLabel();
             AddEventRow(t, "Πρώτη χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
                 "Η πρώτη είσοδος χεριού μετά την έξοδο.", lblTsFirstStroke);
@@ -241,7 +246,7 @@ namespace Kinovea.ScreenManager
             TableLayoutPanel t = NewEventTable();
             lblTtIn = ValueLabel();
             AddEventRow(t, "Κεφάλι στα −5 πριν τον τοίχο", PlayerScreenCommands.SwimTechSplit, "−5",
-                "Το κεφάλι στα 5 πριν τον τοίχο: χρόνος προσέγγισης.", lblTtIn, OffsetButton("−5", -5));
+                "Το κεφάλι στα 5 πριν τον τοίχο: χρόνος προσέγγισης.", lblTtIn, OffsetButton("−5", -5, SwimPhaseKind.Turn));
             lblTtLastStroke = ValueLabel();
             AddEventRow(t, "Τελευταία χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
                 "Η τελευταία είσοδος χεριού πριν τον τοίχο (από εκεί μετράει ο χρόνος της ανάποδης στροφής).", lblTtLastStroke);
@@ -265,7 +270,7 @@ namespace Kinovea.ScreenManager
             lblTtSplits = ValueLabel();
             AddEventRow(t, "Κεφάλι στα +5 / +10 / +15", PlayerScreenCommands.SwimTechSplit, "+5 / +10 / +15",
                 "Το κεφάλι περνά τα 5, 10 και 15 από τον τοίχο.", lblTtSplits,
-                OffsetButton("+5", 5), OffsetButton("+10", 10), OffsetButton("+15", 15));
+                OffsetButton("+5", 5, SwimPhaseKind.Turn), OffsetButton("+10", 10, SwimPhaseKind.Turn), OffsetButton("+15", 15, SwimPhaseKind.Turn));
             lblTtFirstStroke = ValueLabel();
             AddEventRow(t, "Πρώτη χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
                 "Η πρώτη είσοδος χεριού μετά την έξοδο.", lblTtFirstStroke);
@@ -497,10 +502,17 @@ namespace Kinovea.ScreenManager
             ComboBox combo = kind == SwimPhaseKind.Start ? cmbStartPhase : cmbTurnPhase;
             string selectedId = kind == SwimPhaseKind.Start ? selectedStartId : selectedTurnId;
 
-            // The selected phase follows the video when it is inside a phase of this kind.
+            // The selected phase follows the video when the video enters another phase of this kind
+            // (a phase chosen in the list stays while the video does not move to another one).
             SwimTechPhase current = manager.CurrentTechPhase;
-            if (current != null && current.Kind == kind && manager.HasVideo)
-                selectedId = current.Id;
+            string videoId = current != null && current.Kind == kind && manager.HasVideo ? current.Id : null;
+            string lastVideoId = kind == SwimPhaseKind.Start ? videoStartId : videoTurnId;
+            if (videoId != null && videoId != lastVideoId)
+                selectedId = videoId;
+            if (kind == SwimPhaseKind.Start)
+                videoStartId = videoId;
+            else
+                videoTurnId = videoId;
 
             updating = true;
             try
@@ -737,15 +749,23 @@ namespace Kinovea.ScreenManager
                         string.IsNullOrEmpty(s.FileId) ? "  ⏳" : "  ✔");
                     return new SnapshotItem(s, text);
                 }).ToList();
-                string sig = string.Join("|", items.Select(x => x.Snapshot.Id + x.Text).ToArray());
-                string current = string.Join("|", lbSnapshots.Items.Cast<object>().OfType<SnapshotItem>().Select(x => x.Snapshot.Id + x.Text).ToArray());
-                if (sig != current)
+                List<SnapshotItem> shown = lbSnapshots.Items.Cast<object>().OfType<SnapshotItem>().ToList();
+                bool sameList = shown.Count == items.Count && shown.Select(x => x.Snapshot.Id).SequenceEqual(items.Select(x => x.Snapshot.Id));
+                if (!sameList)
                 {
                     lbSnapshots.BeginUpdate();
                     lbSnapshots.Items.Clear();
                     foreach (SnapshotItem item in items)
                         lbSnapshots.Items.Add(item);
                     lbSnapshots.EndUpdate();
+                }
+                else
+                {
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        if (shown[i].Text != items[i].Text)
+                            lbSnapshots.Items[i] = items[i];
+                    }
                 }
 
                 int index = items.FindIndex(x => x.Snapshot.Id == selectedSnapshotId);
@@ -818,25 +838,34 @@ namespace Kinovea.ScreenManager
 
                 // Elite frames: those of the kind of the phase first.
                 List<SwimEliteFrame> frames = manager.EliteLibrary.For(manager.Race.Style, phase != null ? (SwimPhaseKind?)phase.Kind : null);
-                cmbElite.BeginUpdate();
-                cmbElite.Items.Clear();
-                cmbElite.Items.Add(new EliteItem(null));
+                List<EliteItem> eliteItems = new List<EliteItem> { new EliteItem(null) };
                 int selected = 0;
                 foreach (SwimEliteFrame f in frames)
                 {
-                    cmbElite.Items.Add(new EliteItem(f));
+                    eliteItems.Add(new EliteItem(f));
                     if (has && f.FileId == snap.EliteFileId)
-                        selected = cmbElite.Items.Count - 1;
+                        selected = eliteItems.Count - 1;
                 }
 
                 if (has && selected == 0 && !string.IsNullOrEmpty(snap.EliteFileId))
                 {
-                    cmbElite.Items.Add(new EliteItem(new SwimEliteFrame { FileId = snap.EliteFileId, Label = snap.EliteLabel, Comment = snap.EliteComment }));
-                    selected = cmbElite.Items.Count - 1;
+                    eliteItems.Add(new EliteItem(new SwimEliteFrame { FileId = snap.EliteFileId, Label = snap.EliteLabel, Comment = snap.EliteComment }));
+                    selected = eliteItems.Count - 1;
                 }
 
-                cmbElite.SelectedIndex = selected;
-                cmbElite.EndUpdate();
+                string eliteSig = string.Join("|", eliteItems.Select(x => x.Frame == null ? "" : x.Frame.FileId + ":" + x.ToString()).ToArray());
+                if (eliteSig != shownEliteList)
+                {
+                    shownEliteList = eliteSig;
+                    cmbElite.BeginUpdate();
+                    cmbElite.Items.Clear();
+                    foreach (EliteItem item in eliteItems)
+                        cmbElite.Items.Add(item);
+                    cmbElite.EndUpdate();
+                }
+
+                if (cmbElite.SelectedIndex != selected)
+                    cmbElite.SelectedIndex = selected;
                 lblElite.Text = manager.EliteMessage ?? "";
             }
             finally
@@ -852,7 +881,7 @@ namespace Kinovea.ScreenManager
 
         private void ShowSnapshotImage(SwimSnapshot snap)
         {
-            string file = snap != null ? snap.File : null;
+            string file = snap != null ? manager.SnapshotPath(snap) : null;
             if (file == shownSnapshotFile)
                 return;
 
@@ -909,8 +938,10 @@ namespace Kinovea.ScreenManager
                 clock = (t < 0 ? "−" : "") + Math.Abs(t).ToString("0.00", CultureInfo.InvariantCulture);
                 chips.Add(new SwimChip("ΦΑΣΗ", phase.Title, SwimTheme.Amber));
                 SwimTechPhase owner;
-                int next = SwimTechCalculator.NextOffset(manager.TechPhases, manager.CurrentVideoTimestamp.Value, out owner);
-                chips.Add(new SwimChip("T ΕΠΟΜΕΝΟ", (next < 0 ? "−5" : (phase.Kind == SwimPhaseKind.Turn ? "+" : "") + next.ToString(CultureInfo.InvariantCulture)) + race.Unit, SwimTheme.Accent));
+                int? next = SwimTechCalculator.NextOffset(race, manager.Timing, manager.TechPhases, manager.CurrentVideoTimestamp.Value, out owner);
+                string nextText = !next.HasValue ? "– (S)"
+                    : (next.Value < 0 ? "−5" : (owner != null && owner.Kind == SwimPhaseKind.Turn ? "+" : "") + next.Value.ToString(CultureInfo.InvariantCulture)) + race.Unit;
+                chips.Add(new SwimChip("T ΕΠΟΜΕΝΟ", nextText, next.HasValue ? SwimTheme.Accent : SwimTheme.Dim));
                 int kicks = phase.Kicks.Count(k => k <= t + 1e-6);
                 if (kicks > 0)
                     chips.Add(new SwimChip("ΔΕΛΦΙΝΙΣΜΟΙ", kicks.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));

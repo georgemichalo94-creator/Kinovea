@@ -60,6 +60,9 @@ namespace Kinovea.ScreenManager
                         {
                             using (FontFamily family = new FontFamily(name))
                             {
+                                if (!family.IsStyleAvailable(FontStyle.Regular))
+                                    continue;
+
                                 displayFamily = name;
                                 break;
                             }
@@ -91,7 +94,16 @@ namespace Kinovea.ScreenManager
             Font font;
             if (!fonts.TryGetValue(key, out font))
             {
-                font = new Font(family, size, style);
+                try
+                {
+                    font = new Font(family, size, style);
+                }
+                catch (ArgumentException)
+                {
+                    // The family does not have this style.
+                    font = new Font(FontFamily.GenericSansSerif, size, style);
+                }
+
                 fonts[key] = font;
             }
 
@@ -101,8 +113,8 @@ namespace Kinovea.ScreenManager
         public static GraphicsPath Rounded(RectangleF r, float radius)
         {
             GraphicsPath path = new GraphicsPath();
-            float d = radius * 2;
-            if (d <= 0 || r.Width < d || r.Height < d)
+            float d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+            if (d <= 0.5f)
             {
                 path.AddRectangle(r);
                 return path;
@@ -260,11 +272,19 @@ namespace Kinovea.ScreenManager
         private Color accent = SwimTheme.Accent;
         private bool primary;
 
-        public SwimButton()
+        public SwimButton() : this(false)
         {
-            SetStyle(ControlStyles.Selectable, false);
+        }
+
+        /// <summary>
+        /// The buttons of the panel never take the focus (the keys stay with the video); those of a dialog do,
+        /// so that Enter and Esc click them.
+        /// </summary>
+        public SwimButton(bool selectable)
+        {
+            SetStyle(ControlStyles.Selectable, selectable);
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            TabStop = false;
+            TabStop = selectable;
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
             UseVisualStyleBackColor = false;

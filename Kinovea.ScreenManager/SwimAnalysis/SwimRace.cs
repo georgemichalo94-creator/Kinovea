@@ -369,7 +369,9 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public class SwimVideoFile
     {
-        public int Version = 2;
+        /// <summary>2: pools in yards, technical analysis (training videos, angles, snapshots). Files of version 1 load as they are.</summary>
+        public const int CurrentVersion = 2;
+        public int Version = CurrentVersion;
         public string VideoPath;
         public string ActiveRaceId;
         public List<SwimRace> Races = new List<SwimRace>();

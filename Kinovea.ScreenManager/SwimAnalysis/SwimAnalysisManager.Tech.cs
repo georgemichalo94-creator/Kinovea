@@ -195,6 +195,9 @@ namespace Kinovea.ScreenManager
         private readonly List<PointF> angleClicks = new List<PointF>();
         private long angleFrame;
         private readonly HashSet<string> uploading = new HashSet<string>();
+
+        /// <summary>Snapshots whose upload failed: not retried automatically until the next manual send.</summary>
+        private readonly HashSet<string> uploadFailed = new HashSet<string>();
         private readonly Dictionary<string, List<Action<Image>>> eliteImageRequests = new Dictionary<string, List<Action<Image>>>();
         #endregion
 
@@ -219,7 +222,7 @@ namespace Kinovea.ScreenManager
                     if (Race.IsTraining)
                         AddMark(SwimMarkType.WallContact, timestamp, "Επαφή στον τοίχο (νέα στροφή)");
                     else
-                        AddSplit(timestamp);
+                        AddWallSplit(timestamp);
                     return true;
                 case PlayerScreenCommands.SwimTechSplit:
                     AddTechSplit(timestamp, null);
@@ -255,10 +258,48 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Head at a technical distance: the next one of the phase (5, 10, 15 after a start, +5, +10, +15 after a contact,
-        /// otherwise −5 before the next wall), or the one asked (buttons of the panel).
+        /// Race: W is the contact with the next wall (turn or finish), whatever checkpoints are still empty before it.
+        /// A press shortly after a wall already marked marks that wall again (correction).
         /// </summary>
-        public void AddTechSplit(long timestamp, int? forced)
+        private void AddWallSplit(long timestamp)
+        {
+            bool hadStart = EnsureStart();
+            int last = SwimTechCalculator.LastWallBefore(Race, timestamp);
+            SwimMark lastSplit = last > 0 ? Race.GetSplit(last) : null;
+            int wall = lastSplit != null && Timing.Seconds(timestamp, lastSplit.Timestamp) < 2.0 ? last : last + PoolLength;
+            string unit = Race.Unit;
+            if (wall > Race.Distance || !Race.Checkpoints.Contains(wall))
+            {
+                SystemSounds.Beep.Play();
+                Status(string.Format(CultureInfo.InvariantCulture, "Τα {0}{1} δεν είναι τοίχος αυτού του αγώνα (δες τα σημεία ελέγχου).", wall, unit), true);
+                return;
+            }
+
+            Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == wall);
+            SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = wall };
+            Race.Marks.Add(mark);
+            undoStack.Add(mark.Id);
+
+            double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
+            string message = string.Format(CultureInfo.InvariantCulture, "{0} {1}{2}: {3:0.00} s", wall >= Race.Distance ? "Τερματισμός" : "Τοίχος", wall, unit, t);
+            SwimMark previous = Race.Checkpoints.Where(d => d < wall).Select(d => Race.GetSplit(d)).LastOrDefault(m => m != null);
+            SwimMark next = Race.Checkpoints.Where(d => d > wall).Select(d => Race.GetSplit(d)).FirstOrDefault(m => m != null);
+            bool warn = (previous != null && previous.Timestamp >= timestamp) || (next != null && next.Timestamp <= timestamp);
+            if (warn)
+            {
+                SystemSounds.Exclamation.Play();
+                message += "  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.";
+            }
+
+            if (hadStart || warn)
+                Status(message, warn);
+        }
+
+        /// <summary>
+        /// Head at a technical distance (T): the next one of the phase (5, 10, 15 after a start, +5, +10, +15 after a contact,
+        /// otherwise −5 before the next wall), or the distance of a panel button (forced, on the page of its kind).
+        /// </summary>
+        public void AddTechSplit(long timestamp, int? forced, SwimPhaseKind? forcedKind = null)
         {
             if (Race == null)
                 return;
@@ -267,62 +308,98 @@ namespace Kinovea.ScreenManager
                 EnsureStart();
 
             List<SwimTechPhase> phases = SwimTechCalculator.Compute(Race, Computed, Timing);
-            SwimTechPhase phase;
-            int offset = SwimTechCalculator.NextOffset(phases, timestamp, out phase);
+            SwimTechPhase phase = null;
+            int offset;
             if (forced.HasValue)
             {
                 offset = forced.Value;
-                phase = SwimTechCalculator.PhaseAt(phases, timestamp);
+                if (offset > 0)
+                {
+                    // After the signal or the contact of the phase: never before it, never for a wall not marked yet.
+                    phase = SwimTechCalculator.OwnerOf(phases, timestamp);
+                    SwimPhaseKind kind = forcedKind ?? (phase != null ? phase.Kind : SwimPhaseKind.Start);
+                    if (phase == null || phase.Kind != kind || Timing.Seconds(timestamp, phase.Origin) <= 0)
+                    {
+                        SystemSounds.Beep.Play();
+                        if (kind == SwimPhaseKind.Start)
+                            Status("Τα 5/10/15 μετριούνται μετά το σήμα εκκίνησης: πήγαινε το βίντεο στο καρέ που το κεφάλι περνά την απόσταση.", true);
+                        else if (Race.IsTraining)
+                            Status("Τα +5/+10/+15 μετριούνται μετά την επαφή στον τοίχο: μάρκαρε πρώτα την επαφή (W) αυτής της στροφής.", true);
+                        else
+                            Status("Τα +5/+10/+15 μετριούνται μετά την επαφή στον τοίχο: μάρκαρε πρώτα τον τοίχο της στροφής (W ή S).", true);
+                        return;
+                    }
+                }
+                else if (Race.IsTraining)
+                {
+                    phase = phases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Origin >= timestamp && p.Contains(timestamp));
+                }
+            }
+            else
+            {
+                int? next = SwimTechCalculator.NextOffset(Race, Timing, phases, timestamp, out phase);
+                if (!next.HasValue)
+                {
+                    SystemSounds.Beep.Play();
+                    Status("Δεν μένει τεχνική απόσταση για το T εδώ: τα σημεία ελέγχου (π.χ. 15 και −5 πριν τον τοίχο) μαρκάρονται με το Πέρασμα (S) " +
+                        "και μετράνε και στην τεχνική ανάλυση. Για άλλη απόσταση: τα κουμπιά 5/10/15 στην καρτέλα της φάσης.", true);
+                    return;
+                }
+
+                offset = next.Value;
             }
 
             int wall = -1;
+            string unit = Race.Unit;
             if (!Race.IsTraining)
             {
-                int last = LastWallBefore(timestamp);
-                wall = offset < 0 ? last + PoolLength : (phase != null ? phase.Wall : last);
-                if (wall >= Race.Distance || (offset < 0 && wall <= 0))
+                wall = offset < 0 ? SwimTechCalculator.LastWallBefore(Race, timestamp) + PoolLength : phase.Wall;
+                if (offset < 0 && (wall >= Race.Distance || SwimTechCalculator.IsExchange(Race, wall)))
                 {
                     SystemSounds.Beep.Play();
-                    Status("Δεν υπάρχει άλλη στροφή σε αυτόν τον αγώνα: το −5 δεν μετριέται πριν τον τερματισμό.", true);
+                    Status("Δεν ακολουθεί στροφή: το −5 μετριέται μόνο πριν από στροφή (ο τερματισμός μαρκάρεται με το Πέρασμα).", true);
                     return;
                 }
 
-                if (Race.Checkpoints.Contains(wall + offset) && wall + offset > 0)
+                if (SwimTechCalculator.IsCheckpoint(Race, wall, offset))
                 {
                     SystemSounds.Beep.Play();
                     Status(string.Format(CultureInfo.InvariantCulture,
-                        "Τα {0}{1} είναι σημείο ελέγχου: μαρκάρεται με το Πέρασμα και μετράει και στην τεχνική ανάλυση.", wall + offset, Race.Unit), true);
+                        "Τα {0}{1} είναι σημείο ελέγχου: μαρκάρεται με το Πέρασμα (S) και μετράει και στην τεχνική ανάλυση.", wall + offset, unit), true);
                     return;
                 }
-            }
-            else if (offset > 0 && phase == null)
-            {
-                SystemSounds.Beep.Play();
-                Status("Πάτησε πρώτα το σήμα εκκίνησης (εκκίνηση) ή την επαφή στον τοίχο (στροφή) της προσπάθειας.", true);
-                return;
-            }
 
-            // A new press for the same distance of the same phase replaces the old one.
-            SwimTechPhase owner = phase;
-            Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset &&
-                (Race.IsTraining ? (owner != null && owner.Contains(m.Timestamp) && (offset < 0 ? m.Timestamp <= owner.Origin : m.Timestamp > owner.Origin)) : m.Wall == wall));
+                // A new press for the same distance of the same wall replaces the old one.
+                Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Wall == wall);
+            }
+            else
+            {
+                // Training: −5 belongs to the next contact, the others to the last origin before the press.
+                List<long> origins = Race.Marks.Where(m => m.Type == SwimMarkType.Signal || m.Type == SwimMarkType.WallContact).Select(m => m.Timestamp).ToList();
+                long lo = origins.Where(o => o < timestamp).DefaultIfEmpty(long.MinValue).Max();
+                long hi = origins.Where(o => o >= timestamp).DefaultIfEmpty(long.MaxValue).Min();
+                if (offset < 0)
+                    Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > lo && m.Timestamp <= hi);
+                else
+                    Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > lo && m.Timestamp < hi);
+            }
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.TechSplit, Timestamp = timestamp, Distance = offset, Wall = wall };
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
 
             string where = offset < 0
-                ? (Race.IsTraining ? "−5 πριν τον τοίχο" : string.Format(CultureInfo.InvariantCulture, "−5 πριν τον τοίχο των {0}{1}", wall, Race.Unit))
-                : (phase != null && phase.Kind == SwimPhaseKind.Turn ? "+" : "") + offset.ToString(CultureInfo.InvariantCulture) + Race.Unit;
-            double? t = phase != null ? Timing.Seconds(timestamp, phase.Origin) : (double?)null;
+                ? (Race.IsTraining ? "−5" + unit + " πριν τον τοίχο" : string.Format(CultureInfo.InvariantCulture, "−5{0} πριν τον τοίχο των {1}{0}", unit, wall))
+                : (phase != null && phase.Kind == SwimPhaseKind.Turn ? "+" : "") + offset.ToString(CultureInfo.InvariantCulture) + unit;
+            double? t = offset > 0 && phase != null ? Timing.Seconds(timestamp, phase.Origin) : (double?)null;
             Status(string.Format(CultureInfo.InvariantCulture, "Τεχνικό πέρασμα {0}{1}", where,
-                t.HasValue && offset > 0 ? string.Format(CultureInfo.InvariantCulture, ": {0:0.00} s από {1}", t.Value, phase.Kind == SwimPhaseKind.Start ? "το σήμα" : "την επαφή") : "."), false);
+                t.HasValue ? string.Format(CultureInfo.InvariantCulture, ": {0:0.00} s από {1}", t.Value, phase.Kind == SwimPhaseKind.Start ? "το σήμα" : "την επαφή") : "."), false);
         }
 
         /// <summary>
-        /// Panel buttons: technical split at the current frame of the video.
+        /// Panel buttons: technical split at the current frame of the video, for a distance of the page (start or turn).
         /// </summary>
-        public void MarkTechSplit(int offset)
+        public void MarkTechSplit(int offset, SwimPhaseKind kind)
         {
             if (!HasVideo || Race == null)
             {
@@ -330,26 +407,13 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            AddTechSplit(player.CurrentTimestamp, offset);
+            AddTechSplit(player.CurrentTimestamp, offset, kind);
             Changed(true);
         }
 
-        /// <summary>Wall of the race already passed at a timestamp (0 for the start).</summary>
-        private int LastWallBefore(long timestamp)
-        {
-            int wall = 0;
-            foreach (int w in TurnWalls)
-            {
-                SwimMark split = Race.GetSplit(w);
-                if (split != null && split.Timestamp <= timestamp)
-                    wall = w;
-            }
-
-            return wall;
-        }
-
         /// <summary>
-        /// Delete the marks of a phase (all the events of a training attempt, or the technical marks of a race phase).
+        /// Delete the marks of a phase: all the events of a training attempt, or the technical marks of a start or turn of a race
+        /// (the race marks stay: they are part of the race analysis).
         /// </summary>
         public void DeletePhase(SwimTechPhase phase)
         {
@@ -358,10 +422,20 @@ namespace Kinovea.ScreenManager
 
             int removed;
             if (Race.IsTraining)
-                removed = Race.Marks.RemoveAll(m => phase.Contains(m.Timestamp) || m.Id == phase.Id);
+            {
+                removed = Race.Marks.RemoveAll(m => m.Id == phase.Id ||
+                    (m.Type != SwimMarkType.Signal && m.Type != SwimMarkType.WallContact && phase.Contains(m.Timestamp)));
+            }
+            else if (phase.Kind == SwimPhaseKind.Start)
+            {
+                removed = Race.Marks.RemoveAll(m => (m.Type == SwimMarkType.TechSplit && (m.Wall == 0 || (m.Wall < 0 && phase.Contains(m.Timestamp)))) ||
+                    m.Type == SwimMarkType.HandsOff || m.Type == SwimMarkType.BackFoot);
+            }
             else
-                removed = Race.Marks.RemoveAll(m => phase.Contains(m.Timestamp) && (m.Type == SwimMarkType.TechSplit || m.Type == SwimMarkType.HandsOff ||
-                    m.Type == SwimMarkType.BackFoot || m.Type == SwimMarkType.RotationStart));
+            {
+                removed = Race.Marks.RemoveAll(m => (m.Type == SwimMarkType.TechSplit && (m.Wall == phase.Wall || (m.Wall < 0 && phase.Contains(m.Timestamp)))) ||
+                    (m.Type == SwimMarkType.RotationStart && m.Timestamp >= phase.EventStart && m.Timestamp <= phase.Origin));
+            }
 
             Status(string.Format(CultureInfo.InvariantCulture, "{0}: διαγράφηκαν {1} σημάδια.", phase.Title, removed), false);
             Changed(true);
@@ -485,7 +559,7 @@ namespace Kinovea.ScreenManager
             snapshot.Stage = SuggestStage(phase, timestamp);
             try
             {
-                snapshot.File = SaveSnapshotImage(image, snapshot.Id);
+                snapshot.File = Path.GetFileName(SaveSnapshotImage(image, snapshot.Id));
             }
             catch (Exception e)
             {
@@ -558,6 +632,11 @@ namespace Kinovea.ScreenManager
             return small;
         }
 
+        private static string SnapshotFallbackFolder
+        {
+            get { return Path.Combine(Software.SettingsDirectory, "SwimAnalysis", "Snapshots"); }
+        }
+
         /// <summary>Folder of the snapshots next to the video ("video.ext.swim"), or in the settings folder.</summary>
         private string SnapshotFolder()
         {
@@ -569,10 +648,43 @@ namespace Kinovea.ScreenManager
             }
             catch (Exception)
             {
-                string fallback = Path.Combine(Software.SettingsDirectory, "SwimAnalysis", "Snapshots");
-                Directory.CreateDirectory(fallback);
-                return fallback;
+                Directory.CreateDirectory(SnapshotFallbackFolder);
+                return SnapshotFallbackFolder;
             }
+        }
+
+        /// <summary>
+        /// Image file of a snapshot (only its name is kept in the analysis: next to the video or in the settings folder),
+        /// or null when it is missing.
+        /// </summary>
+        public string SnapshotPath(SwimSnapshot snapshot)
+        {
+            if (snapshot == null || string.IsNullOrEmpty(snapshot.File))
+                return null;
+
+            try
+            {
+                if (Path.IsPathRooted(snapshot.File) && File.Exists(snapshot.File))
+                    return snapshot.File;
+
+                string name = Path.GetFileName(snapshot.File);
+                List<string> folders = new List<string>();
+                if (!string.IsNullOrEmpty(videoPath))
+                    folders.Add(videoPath + ".swim");
+                folders.Add(SnapshotFallbackFolder);
+                foreach (string folder in folders)
+                {
+                    string path = Path.Combine(folder, name);
+                    if (File.Exists(path))
+                        return path;
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not find the snapshot image.", e);
+            }
+
+            return null;
         }
 
         private string SaveSnapshotImage(Bitmap image, string id)
@@ -656,19 +768,21 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Upload the image of a snapshot to the Drive (in the background); the report shows it after the next update.
+        /// Upload the image of a snapshot to the Drive (in the background, one at a time); the report shows it after the next update.
         /// </summary>
         private void UploadSnapshot(SwimSnapshot snapshot)
         {
-            if (!Settings.IsConfigured || snapshot == null || !string.IsNullOrEmpty(snapshot.FileId) || uploading.Contains(snapshot.Id))
+            if (!Settings.IsConfigured || snapshot == null || Race == null || !string.IsNullOrEmpty(snapshot.FileId) ||
+                uploading.Count > 0 || uploadFailed.Contains(snapshot.Id))
                 return;
 
             byte[] bytes;
             try
             {
-                if (string.IsNullOrEmpty(snapshot.File) || !File.Exists(snapshot.File))
+                string path = SnapshotPath(snapshot);
+                if (path == null)
                     return;
-                bytes = File.ReadAllBytes(snapshot.File);
+                bytes = File.ReadAllBytes(path);
             }
             catch (Exception e)
             {
@@ -677,10 +791,16 @@ namespace Kinovea.ScreenManager
             }
 
             SwimRace race = Race;
+            SwimVideoFile video = VideoFile;
             uploading.Add(snapshot.Id);
             client.UploadSnapshot(Settings.WebAppUrl, Settings.Token, race.Id, snapshot.Id, bytes, result =>
             {
                 uploading.Remove(snapshot.Id);
+
+                // Another video was opened meanwhile: its timing and file are not those of this race (uploaded again next time).
+                if (VideoFile != video || video == null || !video.Races.Contains(race))
+                    return;
+
                 if (result.Ok && !string.IsNullOrEmpty(result.FileId))
                 {
                     snapshot.FileId = result.FileId;
@@ -689,14 +809,15 @@ namespace Kinovea.ScreenManager
                         Changed(true);
                     else
                         SendRace(race, false);
-                }
-                else if (IsUnknownAction(result))
-                {
-                    Status("Για τα στιγμιότυπα στο report χρειάζεται η νέα έκδοση του Apps Script (2.0.0): δες τον οδηγό.", true);
+                    UploadPendingSnapshots();
                 }
                 else
                 {
-                    Status("Το στιγμιότυπο κρατήθηκε στον υπολογιστή και θα ανέβει αργότερα: " + result.Error, true);
+                    uploadFailed.Add(snapshot.Id);
+                    if (IsUnknownAction(result))
+                        Status("Για τα στιγμιότυπα στο report χρειάζεται η νέα έκδοση του Apps Script (2.0.0): δες τον οδηγό.", true);
+                    else
+                        Status("Το στιγμιότυπο κρατήθηκε στον υπολογιστή και θα ανέβει με την επόμενη Αποστολή: " + result.Error, true);
                 }
 
                 if (form != null)
@@ -704,20 +825,22 @@ namespace Kinovea.ScreenManager
             });
         }
 
-        /// <summary>Snapshots that did not reach the Drive yet (offline, no connection settings).</summary>
+        /// <summary>Snapshots of the current analysis that did not reach the Drive yet (offline, no connection settings).</summary>
         private void UploadPendingSnapshots()
         {
-            if (VideoFile == null || !Settings.IsConfigured)
+            if (VideoFile == null || Race == null || !Settings.IsConfigured || uploading.Count > 0)
                 return;
 
-            foreach (SwimRace race in VideoFile.Races)
-            {
-                if (race != Race)
-                    continue;
+            SwimSnapshot next = Race.Snapshots.FirstOrDefault(x => string.IsNullOrEmpty(x.FileId) && !uploadFailed.Contains(x.Id) && SnapshotPath(x) != null);
+            if (next != null)
+                UploadSnapshot(next);
+        }
 
-                foreach (SwimSnapshot s in race.Snapshots.Where(x => string.IsNullOrEmpty(x.FileId)).ToList())
-                    UploadSnapshot(s);
-            }
+        /// <summary>A manual send also retries the snapshots that could not be uploaded.</summary>
+        private void RetryFailedUploads()
+        {
+            uploadFailed.Clear();
+            UploadPendingSnapshots();
         }
 
         /// <summary>Image of a snapshot from its file next to the video (null if missing).</summary>
@@ -881,7 +1004,14 @@ namespace Kinovea.ScreenManager
             byte[] bytes;
             try
             {
-                bytes = File.ReadAllBytes(snapshot.File);
+                string path = SnapshotPath(snapshot);
+                if (path == null)
+                {
+                    Status("Δεν βρέθηκε η εικόνα του στιγμιότυπου δίπλα στο βίντεο.", true);
+                    return;
+                }
+
+                bytes = File.ReadAllBytes(path);
             }
             catch (Exception e)
             {

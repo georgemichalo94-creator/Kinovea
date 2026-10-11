@@ -3,10 +3,10 @@ const assert = require('assert');
 const athletes = [
   ['unique_id','ΟΝΟΜΑΤΕΠΩΝΥΜΟ','ΦΥΛΟ','ΕΤΟΣ ΓΕΝΝΗΣΗΣ','ΗΛΙΚΙΑ','ΚΑΤΗΓΟΡΙΑ','ΣΩΜΑΤΕΙΟ','EMAIL ΠΡΟΠΟΝΗΤΗ'],
   [100000,'INTERNATIONAL','',2027,0,'#N/A','INTERNATIONAL','x@y'],
-  [197085,'ΑΘΑΝΑΣΙΑΔΟΥ ΑΓΑΠΗ','Γυναικών',2013,14,'Παγκορασίδων Α','Α.Α. ΑΣΤΕΡΙΑ',''],
-  [197675,'ΞΥΡΑΦΟΠΟΥΛΟΥ ΑΛΕΞΑΝΔΡΑ','Γυναικών',2013,14,'Παγκορασίδων Α','Α.Α. ΑΣΤΕΡΙΑ',''],
-  [197831,'ΑΙΒΑΖΙΔΗΣ ΣΩΤΗΡΙΟΣ','Ανδρών',2013,14,'Παμπαίδων Α','Α.Α. ΑΣΤΕΡΙΑ',''],
-  [197675,'ΞΥΡΑΦΟΠΟΥΛΟΥ ΑΛΕΞΑΝΔΡΑ','Γυναικών',2013,14,'Παγκορασίδων Α','Α.Α. ΑΣΤΕΡΙΑ',''],
+  [900001,'ΑΛΦΑ ΔΟΚΙΜΗ','Γυναικών',2004,22,'Γυναικών','Ο.Κ. ΔΟΚΙΜΩΝ',''],
+  [900002,'ΒΗΤΑ ΔΟΚΙΜΗ','Γυναικών',2004,22,'Γυναικών','Ο.Κ. ΔΟΚΙΜΩΝ',''],
+  [900003,'ΓΑΜΜΑ ΔΟΚΙΜΟΣ','Ανδρών',2004,22,'Ανδρών','Ο.Κ. ΔΟΚΙΜΩΝ',''],
+  [900002,'ΒΗΤΑ ΔΟΚΙΜΗ','Γυναικών',2004,22,'Γυναικών','Ο.Κ. ΔΟΚΙΜΩΝ',''],
   ['', '', '', '', '', '', '', ''],
 ];
 const G = makeContext({ athletes });
@@ -22,8 +22,8 @@ assert.ok(G._ss.getSheetByName('Αναλύσεις Αγώνων'), 'summary shee
 let a = call({ token: 'tok', action: 'athletes', app: 'kinovea-swim' });
 assert.ok(a.ok, JSON.stringify(a));
 assert.strictEqual(a.athletes.length, 4, 'dedup + skip blanks: ' + a.athletes.length);
-assert.strictEqual(a.athletes[0].name, 'ΑΘΑΝΑΣΙΑΔΟΥ ΑΓΑΠΗ');
-assert.strictEqual(a.athletes.find(x => x.id === '197085').club, 'Α.Α. ΑΣΤΕΡΙΑ');
+assert.strictEqual(a.athletes[0].name, 'ΑΛΦΑ ΔΟΚΙΜΗ');
+assert.strictEqual(a.athletes.find(x => x.id === '900001').club, 'Ο.Κ. ΔΟΚΙΜΩΝ');
 // try-handle ignores non-swim posts
 assert.strictEqual(G.swimTryHandlePost({ postData: { contents: JSON.stringify({ foo: 1 }) } }), null);
 assert.ok(G.swimTryHandlePost({ postData: { contents: JSON.stringify({ app: 'kinovea-swim', token: 'tok', action: 'ping' }) } }));
@@ -49,7 +49,7 @@ for (let i = 0; i < times.length; i++) {
   r = call({ token: 'tok', action: 'update', race });
   assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(r.rebuilt, false);
 }
-race.athlete = 'ΑΘΑΝΑΣΙΑΔΟΥ ΑΓΑΠΗ'; race.athleteId = '197085'; race.club = 'Α.Α. ΑΣΤΕΡΙΑ'; race.category = 'Παγκορασίδων Α'; race.birthYear = '2013'; race.feetOff = [0.7, 28.3]; race.breakouts = [5.2, 31.0]; race.kicks = [2, 2.4, 29, 29.4]; race.entries = [0.98];
+race.athlete = 'ΑΛΦΑ ΔΟΚΙΜΗ'; race.athleteId = '900001'; race.club = 'Ο.Κ. ΔΟΚΙΜΩΝ'; race.category = 'Γυναικών'; race.birthYear = '2004'; race.feetOff = [0.7, 28.3]; race.breakouts = [5.2, 31.0]; race.kicks = [2, 2.4, 29, 29.4]; race.entries = [0.98];
 race.manual = { reaction: 0.26, underwaterDist: 12.17, turns: { '50': { underwaterDist: 8.5 } }, finishLastStrokeDist: 0.3 };
 r = call({ token: 'tok', action: 'update', race });
 assert.ok(r.ok, JSON.stringify(r));
@@ -74,11 +74,11 @@ assert.strictEqual(G._ss.getSheets().length, 2, 'KOE App only got the summary sh
 // summary row linked by unique_id, with pdf url
 const sum = G._ss.getSheetByName('Αναλύσεις Αγώνων');
 const row = sum.getRange(2, 1, 1, 23).getValues()[0];
-assert.strictEqual(row[0], 197085); assert.strictEqual(row[21], 'r1'); assert.ok(/^https:\/\/drive\.google\.com\/file\/d\//.test(row[20]), row[20]);
+assert.strictEqual(row[0], 900001); assert.strictEqual(row[21], 'r1'); assert.ok(/^https:\/\/drive\.google\.com\/file\/d\//.test(row[20]), row[20]);
 assert.ok(String(row[19]).includes('#gid='));
 // header shows club / id row
-const rsheet = reports.getSheets().find(s => s.getName().startsWith('ΑΘΑΝΑΣΙΑΔΟΥ'));
-assert.ok(String(rsheet.getRange(6, 1).getValue()).includes('Μητρώο 197085'), rsheet.getRange(6, 1).getValue());
+const rsheet = reports.getSheets().find(s => s.getName().startsWith('ΑΛΦΑ ΔΟΚΙΜΗ'));
+assert.ok(String(rsheet.getRange(6, 1).getValue()).includes('Μητρώο 900001'), rsheet.getRange(6, 1).getValue());
 assert.ok(String(rsheet.getRange(5, 9).getValue()).includes('100μ. Πρόσθιο'), rsheet.getRange(5, 9).getValue());
 // demo race builds
 G.swimUpsertRace_(G.swimDemoRace_());

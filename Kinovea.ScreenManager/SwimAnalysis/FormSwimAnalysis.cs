@@ -41,6 +41,13 @@ namespace Kinovea.ScreenManager
 
         private readonly SwimAnalysisManager manager;
         private bool updating;
+
+        /// <summary>Unit labels of the distances of the race tabs ("m" or "yd").</summary>
+        private readonly List<Label> distanceUnits = new List<Label>();
+
+        /// <summary>A cell of the turns grid being edited: its race and its text before the edit.</summary>
+        private SwimRace turnEditRace;
+        private string turnEditText;
         private Timer liveTimer;
         private readonly ToolTip toolTip = new ToolTip();
         private Font boldGridFont;
@@ -179,6 +186,9 @@ namespace Kinovea.ScreenManager
             BuildUI();
             RefreshAll();
 
+            // The first control that takes the focus does not take the letters of the hotkeys (not the reaction time box).
+            ActiveControl = cmbRaces;
+
             liveTimer = new Timer();
             liveTimer.Interval = 200;
             liveTimer.Tick += (s, e) => RefreshLive();
@@ -193,6 +203,10 @@ namespace Kinovea.ScreenManager
             StartPosition = FormStartPosition.Manual;
             Rectangle area = owner != null ? owner.Bounds : Screen.PrimaryScreen.WorkingArea;
             Rectangle screen = Screen.FromRectangle(area).WorkingArea;
+
+            // Small or scaled screens (1366 x 768, 125 %): the whole window, with its footer, stays visible.
+            MinimumSize = new Size(Math.Min(MinimumSize.Width, screen.Width), Math.Min(MinimumSize.Height, screen.Height));
+            Size = new Size(Math.Min(Width, screen.Width), Math.Min(Height, screen.Height));
             int x = Math.Max(screen.Left, Math.Min(area.Right - Width - 16, screen.Right - Width));
             int y = Math.Max(screen.Top, Math.Min(area.Top + 90, screen.Bottom - Height));
             Location = new Point(x, y);
@@ -209,6 +223,19 @@ namespace Kinovea.ScreenManager
             SwimTheme.DarkTitleBar(Handle);
         }
 
+        protected override void OnDeactivate(EventArgs e)
+        {
+            // Checkpoints typed and not committed yet (the user goes back to the video to mark them).
+            CommitCheckpoints();
+            base.OnDeactivate(e);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            CommitCheckpoints();
+            base.OnFormClosing(e);
+        }
+
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             liveTimer.Stop();
@@ -216,7 +243,19 @@ namespace Kinovea.ScreenManager
             toolTip.Dispose();
             if (boldGridFont != null)
                 boldGridFont.Dispose();
+            foreach (PictureBox box in new PictureBox[] { picSnapshot, picElite })
+            {
+                if (box != null && box.Image != null)
+                {
+                    Image image = box.Image;
+                    box.Image = null;
+                    image.Dispose();
+                }
+            }
+
             base.OnFormClosed(e);
+            if (valueFont != null)
+                valueFont.Dispose();
         }
 
         #region UI construction
@@ -296,11 +335,11 @@ namespace Kinovea.ScreenManager
             lblSync = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = SwimTheme.Ui(8.5f, FontStyle.Bold) };
             FlowLayoutPanel footerButtons = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             btnSend = new SwimNoFocusButton { Text = "Αποστολή τώρα", AutoSize = true, Height = 28, Primary = true };
-            btnSend.Click += (s, e) => manager.SendNow(false);
+            btnSend.Click += (s, e) => manager.SendByUser(false);
             btnOpenSheet = new SwimNoFocusButton { Text = "Άνοιγμα φύλλου", AutoSize = true, Height = 28 };
             btnOpenSheet.Click += (s, e) => manager.OpenSheet();
             btnPdf = new SwimNoFocusButton { Text = "PDF report", AutoSize = true, Height = 28 };
-            btnPdf.Click += (s, e) => manager.SendNow(true);
+            btnPdf.Click += (s, e) => manager.SendByUser(true);
             footerButtons.Controls.Add(btnSend);
             footerButtons.Controls.Add(btnOpenSheet);
             footerButtons.Controls.Add(btnPdf);
@@ -338,7 +377,7 @@ namespace Kinovea.ScreenManager
             Controls.Add(header);
             Controls.Add(brand);
             SwimTheme.Apply(this);
-            SetTechnicalView(false, false);
+            SetTechnicalView(manager.TechnicalView, false);
             UpdateCalibrationVisibility();
         }
 
@@ -349,6 +388,10 @@ namespace Kinovea.ScreenManager
         private void SetTechnicalView(bool technical, bool fromUser)
         {
             SwimRace race = manager.Race;
+
+            // The choice of the user stays for the next videos; a training video shows the technical analysis anyway.
+            if (fromUser)
+                manager.TechnicalView = technical;
             if (!technical && race != null && race.IsTraining)
             {
                 technical = true;
@@ -357,7 +400,6 @@ namespace Kinovea.ScreenManager
             }
 
             modeSwitch.SetSelected(technical ? 1 : 0);
-            manager.TechnicalView = technical;
             SwimPage selected = tabs.SelectedTab;
             List<SwimPage> pages = technical
                 ? new List<SwimPage> { tabRace, tabTechStart, tabTechTurns, tabTechMedia, tabConnection }
@@ -403,13 +445,13 @@ namespace Kinovea.ScreenManager
             tbEntryDistHands = NumberBox();
             AddEventRow(t, "Είσοδος χεριών στο νερό", PlayerScreenCommands.SwimEntry, "Είσοδος χεριών",
                 "Τα χέρια μπαίνουν στο νερό: χρόνος από το σήμα και χρόνος πτήσης (αποδέσμευση → είσοδος). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
-                lblEntry, Caption("απόσταση:"), tbEntryDistHands, Unit("m"),
+                lblEntry, Caption("απόσταση:"), tbEntryDistHands, DistanceUnit(),
                 PickButton(SwimPickTarget.EntryHands, "Κλικ στο βίντεο εκεί που τα χέρια μπαίνουν στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης."));
 
             tbEntryDistHips = NumberBox();
             AddEventRow(t, "Είσοδος ισχίων", null, null,
                 "Τα ισχία μπαίνουν στο νερό. Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
-                Caption("απόσταση:"), tbEntryDistHips, Unit("m"),
+                Caption("απόσταση:"), tbEntryDistHips, DistanceUnit(),
                 PickButton(SwimPickTarget.EntryHips, "Κλικ στο βίντεο εκεί που τα ισχία μπαίνουν στο νερό."));
 
             tbEntryVelHands = NumberBox();
@@ -427,13 +469,13 @@ namespace Kinovea.ScreenManager
             tbBreakoutDist = NumberBox();
             AddEventRow(t, "Έξοδος από το νερό (κεφάλι)", PlayerScreenCommands.SwimBreakout, "Έξοδος",
                 "Το κεφάλι βγαίνει από το νερό (χρόνος κάτω από το νερό). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
-                lblBreakout, Caption("απόσταση:"), tbBreakoutDist, Unit("m"),
+                lblBreakout, Caption("απόσταση:"), tbBreakoutDist, DistanceUnit(),
                 PickButton(SwimPickTarget.StartBreakout, "Κλικ στο κεφάλι εκεί που βγαίνει από το νερό."));
 
             tbUnderwaterDist = NumberBox();
             AddEventRow(t, "Απόσταση κάτω από το νερό", null, null,
                 "Μέχρι πού έμεινε κάτω από το νερό, από τον τοίχο εκκίνησης.",
-                tbUnderwaterDist, Unit("m"),
+                tbUnderwaterDist, DistanceUnit(),
                 PickButton(SwimPickTarget.StartUnderwater, "Κλικ στο κεφάλι εκεί που φτάνει στην επιφάνεια."));
 
             lblFirstSplit = ValueLabel();
@@ -594,6 +636,11 @@ namespace Kinovea.ScreenManager
                 c.ReadOnly = c.Name != "uwDist" && c.Name != "turnTime";
                 c.DefaultCellStyle.BackColor = c.ReadOnly && c.Name != "wall" ? SwimTheme.RowAlt : SwimTheme.Input;
             }
+            gridTurns.CellBeginEdit += (s, e) =>
+            {
+                turnEditRace = manager.Race;
+                turnEditText = Convert.ToString(gridTurns.Rows[e.RowIndex].Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture);
+            };
             gridTurns.CellEndEdit += GridTurns_CellEndEdit;
             gridTurns.CellDoubleClick += GridTurns_CellDoubleClick;
 
@@ -630,7 +677,7 @@ namespace Kinovea.ScreenManager
             tbFinishDist = NumberBox();
             AddEventRow(t, "Απόσταση τελευταίας χεριάς", null, null,
                 "Απόσταση από τον τοίχο τερματισμού τη στιγμή της τελευταίας χεριάς.",
-                tbFinishDist, Unit("m"),
+                tbFinishDist, DistanceUnit(),
                 PickButton(SwimPickTarget.FinishLastStroke, "Κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά: απόσταση από τον τοίχο τερματισμού."));
 
             lblFinishSummary = new Label { Dock = DockStyle.Top, Height = 40, ForeColor = SwimTheme.Dim, Padding = new Padding(0, 6, 0, 0) };
@@ -976,6 +1023,14 @@ namespace Kinovea.ScreenManager
             return new Label { AutoSize = true, Text = text, ForeColor = SwimTheme.Dim, Margin = new Padding(0, 7, 3, 3) };
         }
 
+        /// <summary>Unit of a distance of the pool: "m" or "yd" with the pool of the race (see RefreshAll).</summary>
+        private Label DistanceUnit()
+        {
+            Label label = Unit("m");
+            distanceUnits.Add(label);
+            return label;
+        }
+
         private static TableLayoutPanel NewTable()
         {
             TableLayoutPanel table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoScroll = true };
@@ -1091,7 +1146,11 @@ namespace Kinovea.ScreenManager
             }
 
             if (manager.Race != null)
+            {
                 SetTechnicalView(manager.Race.IsTraining || manager.TechnicalView, false);
+                foreach (Label unit in distanceUnits)
+                    unit.Text = manager.Race.IsYards ? "yd" : "m";
+            }
 
             RefreshManualFields();
             RefreshButtons();
@@ -1509,7 +1568,7 @@ namespace Kinovea.ScreenManager
                 lblTurnTime.Text = "–";
             lblTurnKicks.Text = t != null && t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             string uwTime = t != null && t.UnderwaterTime.HasValue ? "υποβρύχια " + Seconds(t.UnderwaterTime) : "–";
-            string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " μ." : "";
+            string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " " + race.Unit : "";
             lblTurnUnderwater.Text = uwTime + uwDist;
 
             foreach (DataGridViewRow gr in gridTurns.Rows)
@@ -1807,8 +1866,8 @@ namespace Kinovea.ScreenManager
 
                 Label label = new Label { Text = prompt, Left = 12, Top = 10, Width = 416, Height = 36 };
                 TextBox box = new TextBox { Text = value ?? "", Left = 12, Top = 50, Width = 416 };
-                Button ok = new SwimButton { Text = "OK", DialogResult = DialogResult.OK, Left = 272, Top = 86, Width = 75, Height = 28, Primary = true };
-                Button cancel = new SwimButton { Text = "Άκυρο", DialogResult = DialogResult.Cancel, Left = 353, Top = 86, Width = 75, Height = 28 };
+                Button ok = new SwimButton(true) { Text = "OK", DialogResult = DialogResult.OK, Left = 272, Top = 86, Width = 75, Height = 28, Primary = true };
+                Button cancel = new SwimButton(true) { Text = "Άκυρο", DialogResult = DialogResult.Cancel, Left = 353, Top = 86, Width = 75, Height = 28 };
                 dialog.Controls.Add(label);
                 dialog.Controls.Add(box);
                 dialog.Controls.Add(ok);
@@ -1971,6 +2030,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimRace r = manager.Race;
+            string oldStyle = r.Style;
             r.Athlete = tbAthlete.Text.Trim();
             r.Lane = (int)nudLane.Value;
             if (cmbStyle.SelectedIndex >= 0)
@@ -1980,6 +2040,10 @@ namespace Kinovea.ScreenManager
             r.Round = cmbRound.Text.Trim();
             r.Date = tbDate.Text.Trim();
             manager.RaceInfoChanged(structureChanged);
+
+            // The previous races of the PB are those of the event.
+            if (!structureChanged && r.Style != oldStyle)
+                manager.RefreshPbCandidates();
         }
 
         private void CommitDistance()
@@ -2045,6 +2109,9 @@ namespace Kinovea.ScreenManager
             r.Kind = training ? SwimRace.KindTraining : SwimRace.KindRace;
             manager.RaceInfoChanged(false);
             SetTechnicalView(training, true);
+            RefreshPb();
+            if (!training)
+                manager.RefreshPbCandidates();
             ShowStatus(training
                 ? "Βίντεο προπόνησης: G σήμα (νέα εκκίνηση), W επαφή στον τοίχο (νέα στροφή), T για 5/10/15, H/J χέρια/πίσω πόδι, O αρχή περιστροφής, P στιγμιότυπο, A γωνία."
                 : "Βίντεο αγώνα: race analysis και τεχνική ανάλυση της εκκίνησης και των στροφών.", false);
@@ -2127,9 +2194,19 @@ namespace Kinovea.ScreenManager
             if (!(row.Tag is int))
                 return;
 
+            // Esc, or Enter without a change, does not turn the computed value into a manual one;
+            // another race selected during the edit does not receive it either.
+            string text = Convert.ToString(row.Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture);
+            SwimRace editRace = turnEditRace;
+            string before = turnEditText;
+            turnEditRace = null;
+            turnEditText = null;
+            if (editRace != manager.Race || text == before)
+                return;
+
             int wall = (int)row.Tag;
             string column = gridTurns.Columns[e.ColumnIndex].Name;
-            double? value = ParseText(Convert.ToString(row.Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture));
+            double? value = ParseText(text);
             SwimTurnManual manual = manager.Race.GetTurn(wall, true);
             if (column == "uwDist")
                 manual.UnderwaterDist = value;
@@ -2220,10 +2297,14 @@ namespace Kinovea.ScreenManager
             if (keyData == Keys.Escape && manager.CancelPick())
                 return true;
 
-            if (!typing && (focused == grid || focused == gridAngles) && keyData == Keys.Delete)
+            Keys code = keyData & Keys.KeyCode;
+            bool plain = (keyData & (Keys.Control | Keys.Alt)) == 0;
+
+            // An open list, an editable grid cell, the rows of a grid or a list keep their own keys.
+            if (!typing && KeepsKey(focused, keyData, code, plain))
                 return base.ProcessCmdKey(ref msg, keyData);
 
-            if (!typing || (keyData & (Keys.Control | Keys.Alt)) != 0 || (keyData >= Keys.F1 && keyData <= Keys.F24))
+            if (!typing || !plain || (code >= Keys.F1 && code <= Keys.F24))
             {
                 HotkeyCommand command = HotkeySettingsManager.FindCommand("PlayerScreen", keyData);
                 if (command != null && (!typing || command.Name.StartsWith("Swim")))
@@ -2241,10 +2322,12 @@ namespace Kinovea.ScreenManager
             Control c = ActiveControl;
             while (c is ContainerControl && ((ContainerControl)c).ActiveControl != null)
                 c = ((ContainerControl)c).ActiveControl;
-            return c;
+
+            // A control of a page hidden meanwhile (the panel followed the race) no longer has the focus.
+            return c != null && c.ContainsFocus ? c : null;
         }
 
-        private static bool IsTextInput(Control c)
+        private bool IsTextInput(Control c)
         {
             if (c == null)
                 return false;
@@ -2260,8 +2343,45 @@ namespace Kinovea.ScreenManager
                 return true;
             if (c is DataGridViewTextBoxEditingControl)
                 return true;
-            if (c is ListBox)
+
+            // The athletes list is searched by typing; the other lists only take the arrows (see KeepsKey).
+            return c == lbAthletes;
+        }
+
+        /// <summary>
+        /// Keys that stay with the control that has the focus instead of going to the video:
+        /// an open drop-down list, typing in an editable grid cell, Delete and Ctrl+C in a grid, the arrows of a list.
+        /// </summary>
+        private static bool KeepsKey(Control focused, Keys keyData, Keys code, bool plain)
+        {
+            if (focused == null)
+                return false;
+
+            ComboBox combo = focused as ComboBox;
+            if (combo != null && combo.DroppedDown)
                 return true;
+
+            DataGridView dgv = focused as DataGridView;
+            if (dgv != null)
+            {
+                if (plain && code == Keys.Delete)
+                    return true;
+                if (keyData == (Keys.Control | Keys.C))
+                    return true;
+
+                // Typing in an editable cell starts editing it (Excel style): the letters are not hotkeys there.
+                DataGridViewCell cell = dgv.CurrentCell;
+                bool editable = cell != null && !cell.ReadOnly && !dgv.ReadOnly;
+                bool character = (code >= Keys.A && code <= Keys.Z) || (code >= Keys.D0 && code <= Keys.D9) ||
+                    (code >= Keys.NumPad0 && code <= Keys.Divide) || (code >= Keys.OemSemicolon && code <= Keys.Oem102) || code == Keys.Back;
+                if (editable && character && (keyData & (Keys.Control | Keys.Alt)) == 0)
+                    return true;
+                return false;
+            }
+
+            if (focused is ListBox && plain)
+                return code == Keys.Up || code == Keys.Down || code == Keys.PageUp || code == Keys.PageDown || code == Keys.Home || code == Keys.End;
+
             return false;
         }
         #endregion

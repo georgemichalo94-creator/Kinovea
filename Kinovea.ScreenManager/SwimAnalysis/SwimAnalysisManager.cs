@@ -406,7 +406,7 @@ namespace Kinovea.ScreenManager
             int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == distance);
             if (removed > 0)
             {
-                Status(string.Format("Διαγράφηκε ο χρόνος στα {0}μ. Το επόμενο Πέρασμα θα συμπληρώσει αυτό το σημείο.", distance), false);
+                Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκε ο χρόνος στα {0}{1} Το επόμενο Πέρασμα θα συμπληρώσει αυτό το σημείο.", distance, UnitLabel), false);
                 Changed(true);
             }
         }
@@ -491,6 +491,18 @@ namespace Kinovea.ScreenManager
         public int PoolLength
         {
             get { return Race == null || Race.Pool <= 0 ? 50 : Race.Pool; }
+        }
+
+        /// <summary>Unit of the distances of the pool in the texts: "μ." or "yd".</summary>
+        private string UnitLabel
+        {
+            get { return Race != null ? Race.Unit : "μ."; }
+        }
+
+        /// <summary>Short unit drawn on the video: "m" or "yd".</summary>
+        private string UnitShort
+        {
+            get { return Race != null && Race.IsYards ? "yd" : "m"; }
         }
 
         /// <summary>
@@ -697,14 +709,14 @@ namespace Kinovea.ScreenManager
                 PoolX = x,
                 PoolY = y,
                 Value = value,
-                Label = string.Format(CultureInfo.InvariantCulture, "{0:0.00} m", value),
+                Label = string.Format(CultureInfo.InvariantCulture, "{0:0.00} {1}", value, UnitShort),
                 Calibration = calibration
             };
 
             pendingMeasure = SwimPickTarget.None;
             SetPick(SwimPickTarget.None);
 
-            string message = string.Format(CultureInfo.InvariantCulture, "📍 {0}: {1:0.00} μ.", label, value);
+            string message = string.Format(CultureInfo.InvariantCulture, "📍 {0}: {1:0.00} {2}", label, value, UnitLabel);
             bool warn = false;
             if (x < -1 || x > PoolLength + 1)
             {
@@ -718,7 +730,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (Settings.FixedCamera && Math.Abs(Timing.Seconds(timestamp, calibration.Timestamp)) > 0.05)
-                message += string.Format(CultureInfo.InvariantCulture, "  (βαθμονόμηση {0} από άλλο καρέ: σωστό μόνο αν η κάμερα δεν κινήθηκε)", calibration.Label);
+                message += string.Format(CultureInfo.InvariantCulture, "  (βαθμονόμηση {0} {1} από άλλο καρέ: σωστό μόνο αν η κάμερα δεν κινήθηκε)", calibration.Label, UnitLabel);
 
             if (warn)
                 SystemSounds.Exclamation.Play();
@@ -749,7 +761,7 @@ namespace Kinovea.ScreenManager
                 lastMeasurement = null;
 
             MarkDirty();
-            Status("Η βαθμονόμηση " + calibration.Label + " διαγράφηκε.", false);
+            Status("Η βαθμονόμηση " + calibration.Label + " " + UnitLabel + " διαγράφηκε.", false);
             InvalidatePlayer();
             if (form != null)
                 form.RefreshCalibration();
@@ -852,7 +864,7 @@ namespace Kinovea.ScreenManager
             VideoFile.Calibrations.Add(calibration);
             MarkDirty();
 
-            string done = string.Format(CultureInfo.InvariantCulture, "✔ Βαθμονόμηση {0} στο {1:0.00} s.", calibration.Label, RaceSeconds(calibration.Timestamp));
+            string done = string.Format(CultureInfo.InvariantCulture, "✔ Βαθμονόμηση {0} {2} στο {1:0.00} s.", calibration.Label, RaceSeconds(calibration.Timestamp), UnitLabel);
             if (pendingMeasure != SwimPickTarget.None)
             {
                 SetPick(pendingMeasure);
@@ -877,7 +889,7 @@ namespace Kinovea.ScreenManager
                 rope = i % 2 == 0 ? "στο σχοινί Α" : "στο σχοινί Β";
 
             return string.Format(CultureInfo.InvariantCulture,
-                "📐 Κλικ {0}/4: η γραμμή των {1:0.##} μ. {2}, στην επιφάνεια του νερού. Esc: ακύρωση.", i + 1, line, rope);
+                "📐 Κλικ {0}/4: η γραμμή των {1:0.##} {3} {2}, στην επιφάνεια του νερού. Esc: ακύρωση.", i + 1, line, rope, UnitLabel);
         }
 
         private string MeasurePrompt(SwimPickTarget target, int wall)
@@ -889,7 +901,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.EntryHips: what = "Κάνε κλικ στο σημείο όπου τα ισχία μπαίνουν στο νερό."; break;
                 case SwimPickTarget.StartUnderwater: what = "Κάνε κλικ στο κεφάλι, εκεί που φτάνει στην επιφάνεια."; break;
                 case SwimPickTarget.StartBreakout: what = "Κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό."; break;
-                case SwimPickTarget.TurnUnderwater: what = string.Format("Στροφή {0}μ.: κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό.", wall); break;
+                case SwimPickTarget.TurnUnderwater: what = string.Format(CultureInfo.InvariantCulture, "Στροφή {0}{1}: κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό.", wall, UnitLabel); break;
                 case SwimPickTarget.FinishLastStroke: what = "Κάνε κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά."; break;
                 case SwimPickTarget.PhaseEntry: what = "Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό (απόσταση από τη γραμμή 0)."; break;
                 case SwimPickTarget.PhaseBreakout: what = "Κάνε κλικ στο κεφάλι εκεί που βγαίνει από το νερό (απόσταση από τη γραμμή 0)."; break;
@@ -907,7 +919,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.EntryHips: return "Απόσταση εισόδου (ισχία)";
                 case SwimPickTarget.StartUnderwater: return "Απόσταση κάτω από το νερό";
                 case SwimPickTarget.StartBreakout: return "Απόσταση εξόδου (κεφάλι)";
-                case SwimPickTarget.TurnUnderwater: return string.Format("Στροφή {0}μ.: μέτρα κάτω από το νερό", wall);
+                case SwimPickTarget.TurnUnderwater: return string.Format(CultureInfo.InvariantCulture, "Στροφή {0}{1}: απόσταση κάτω από το νερό", wall, UnitLabel);
                 case SwimPickTarget.FinishLastStroke: return "Τερματισμός: απόσταση τελευταίας χεριάς";
                 case SwimPickTarget.PhaseEntry: return PendingPhaseTitle() + ": απόσταση εισόδου";
                 case SwimPickTarget.PhaseBreakout: return PendingPhaseTitle() + ": απόσταση εξόδου";
@@ -1222,7 +1234,7 @@ namespace Kinovea.ScreenManager
                 Point p = points[i];
                 g.FillEllipse(brushPoint, p.X - 4, p.Y - 4, 8, 8);
                 double line = i < 2 ? CalibrationLine1 : CalibrationLine2;
-                string text = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.##} m {2}", i + 1, line, i % 2 == 0 ? "A" : "B");
+                string text = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.##} {3} {2}", i + 1, line, i % 2 == 0 ? "A" : "B", UnitShort);
                 DrawLabel(g, text, new Point(p.X + 8, p.Y - 18), Color.White);
             }
         }
@@ -1249,7 +1261,7 @@ namespace Kinovea.ScreenManager
                 {
                     PointF label;
                     if (c.TryImage(x, width, out label))
-                        DrawLabel(g, string.Format(CultureInfo.InvariantCulture, "{0:0.##} m", x), transform.Transform(label), Color.FromArgb(255, 230, 120));
+                        DrawLabel(g, string.Format(CultureInfo.InvariantCulture, "{0:0.##} {1}", x, UnitShort), transform.Transform(label), Color.FromArgb(255, 230, 120));
                 }
             }
 
@@ -2099,6 +2111,13 @@ namespace Kinovea.ScreenManager
             client.Ping(Settings.WebAppUrl, Settings.Token, callback);
         }
 
+        /// <summary>The send and PDF buttons: also retry the snapshots that could not be uploaded.</summary>
+        public void SendByUser(bool pdf)
+        {
+            SendNow(pdf);
+            RetryFailedUploads();
+        }
+
         public void SendNow(bool pdf)
         {
             if (Race == null)
@@ -2350,6 +2369,7 @@ namespace Kinovea.ScreenManager
                         file.Races.RemoveAll(r => r == null);
                         foreach (SwimRace race in file.Races)
                             race.EnsureLists();
+                        file.Version = SwimVideoFile.CurrentVersion;
                         file.VideoPath = path;
                         if (file.Calibrations == null)
                             file.Calibrations = new List<SwimCalibration>();

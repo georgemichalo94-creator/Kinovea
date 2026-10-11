@@ -77,7 +77,8 @@ namespace Kinovea.ScreenManager
 
         private readonly SynchronizationContext ui;
         private bool inFlight;
-        private Request pending;
+        /// <summary>Requests waiting for the one in flight: at most one per race (the newest state of the race).</summary>
+        private readonly List<Request> pending = new List<Request>();
         private Request lastFailed;
         private int failures;
         private System.Windows.Forms.Timer retryTimer;
@@ -107,11 +108,20 @@ namespace Kinovea.ScreenManager
 
             if (inFlight)
             {
-                // Keep a pending PDF request even if a plain update arrives for the same race.
-                if (pending != null && pending.Pdf && pending.RaceId == raceId)
-                    request.Pdf = true;
+                // The newest state of a race replaces its older pending request (a pending PDF stays a PDF);
+                // the requests of the other races keep their turn.
+                int index = pending.FindIndex(p => p.RaceId == raceId);
+                if (index >= 0)
+                {
+                    if (pending[index].Pdf)
+                        request.Pdf = true;
+                    pending[index] = request;
+                }
+                else
+                {
+                    pending.Add(request);
+                }
 
-                pending = request;
                 return;
             }
 
@@ -234,7 +244,14 @@ namespace Kinovea.ScreenManager
         private void Start(Request request)
         {
             inFlight = true;
-            retryTimer.Stop();
+
+            // A newer state of the race that failed replaces its retry.
+            if (lastFailed != null && lastFailed.RaceId == request.RaceId)
+            {
+                lastFailed = null;
+                retryTimer.Stop();
+            }
+
             Raise(SwimSyncState.Sending, request.Pdf ? "Δημιουργία PDF…" : "Αποστολή…", request.RaceId, null);
 
             Task.Factory.StartNew(() => Post(request.Url, request.Body)).ContinueWith(t =>
@@ -251,7 +268,8 @@ namespace Kinovea.ScreenManager
             if (result.Ok)
             {
                 failures = 0;
-                lastFailed = null;
+                if (lastFailed != null && lastFailed.RaceId == request.RaceId)
+                    lastFailed = null;
                 string message = "Συγχρονίστηκε " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
                 Raise(SwimSyncState.Synced, message, request.RaceId, result);
             }
@@ -261,7 +279,7 @@ namespace Kinovea.ScreenManager
                 SwimSyncState state = result.Retry ? SwimSyncState.Offline : SwimSyncState.Error;
                 Raise(state, result.Error, request.RaceId, result);
 
-                if (result.Retry && pending == null)
+                if (result.Retry && !pending.Any(p => p.RaceId == request.RaceId))
                 {
                     // Retry later with the same state, unless a newer state arrives first.
                     lastFailed = request;
@@ -271,19 +289,34 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            if (pending != null)
+            if (pending.Count > 0)
             {
-                Request next = pending;
-                pending = null;
+                Request next = pending[0];
+                pending.RemoveAt(0);
                 Start(next);
+            }
+            else if (result.Ok && lastFailed != null)
+            {
+                // The connection is back: send the state of the other race that failed now.
+                Request retry = lastFailed;
+                lastFailed = null;
+                retryTimer.Stop();
+                Start(retry);
             }
         }
 
         private void RetryTimer_Tick(object sender, EventArgs e)
         {
             retryTimer.Stop();
-            if (lastFailed == null || inFlight)
+            if (lastFailed == null)
                 return;
+
+            if (inFlight)
+            {
+                // Busy with another request: try again a little later.
+                retryTimer.Start();
+                return;
+            }
 
             Request request = lastFailed;
             lastFailed = null;

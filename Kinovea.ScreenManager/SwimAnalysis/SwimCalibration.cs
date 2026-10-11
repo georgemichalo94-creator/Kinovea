@@ -98,7 +98,8 @@ namespace Kinovea.ScreenManager
         {
             get
             {
-                return string.Format(CultureInfo.InvariantCulture, "{0:0.##}–{1:0.##} μ.", Math.Min(Line1, Line2), Math.Max(Line1, Line2));
+                // The unit (μ. or yd) is added by the caller: the pool of the race.
+                return string.Format(CultureInfo.InvariantCulture, "{0:0.##}–{1:0.##}", Math.Min(Line1, Line2), Math.Max(Line1, Line2));
             }
         }
 
