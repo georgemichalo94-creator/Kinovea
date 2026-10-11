@@ -30,7 +30,18 @@ jobs:
       run: nuget restore Kinovea.VS2019.sln
 
     - name: Build Solution
-      run: msbuild Kinovea.VS2019.sln /p:Platform="x64" /p:Configuration=Release /p:AllowedReferenceRelatedFileExtensions=none
+      run: msbuild Kinovea.VS2019.sln /p:Platform="x64" /p:Configuration=Release /p:AllowedReferenceRelatedFileExtensions=none "/flp:logfile=msbuild.log;verbosity=minimal"
+
+    # The compiler errors as one annotation (readable with the GitHub API when the logs are not reachable).
+    - name: Report build errors
+      if: failure()
+      shell: pwsh
+      run: |
+        if (Test-Path msbuild.log) {
+          $lines = Select-String -Path msbuild.log -Pattern ": error " | ForEach-Object { ($_.Line -replace '\s*\[[^\]]*\.csproj\]', '').Trim() } | Select-Object -Unique -First 120
+          $text = ($lines -join "`n").Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+          Write-Output "::error title=Build errors::$text"
+        }
 
     - name: Create Portable AppData Folder
       shell: cmd
