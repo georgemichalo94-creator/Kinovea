@@ -2292,6 +2292,10 @@ namespace Kinovea.ScreenManager
             OrganizeScreens();
             OrganizeCommonControls();
             OrganizeMenus();
+
+            // The screens that are left (grid) are synchronized again.
+            if (screenList.Count >= 2)
+                ResetSync();
         }
         private void mnuLoadAnnotationsOnClick(object sender, EventArgs e)
         {
@@ -2990,6 +2994,9 @@ namespace Kinovea.ScreenManager
             OrganizeScreens();
             OrganizeCommonControls();
             OrganizeMenus();
+
+            // The screens that have a video are synchronized again.
+            ResetSync();
         }
 
         /// <summary>
