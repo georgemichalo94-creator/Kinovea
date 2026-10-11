@@ -185,6 +185,14 @@ G.swimPdfSelected();
 const last = G._exports[G._exports.length - 1];
 assert.ok(G._exports.length === before + 1 && last.r2 > 0 && last.c2 === 15, JSON.stringify(last));
 assert.ok(G._ui._dialogs.some(d => d.title === 'Report PDF'));
+// PDF για πολλές αναλύσεις μαζί (επιλεγμένες γραμμές του «Αναλύσεις Αγώνων»)
+const ids2 = sum.getRange(2, 1, sum.getLastRow() - 1, 30).getValues();
+const rowsAll = ids2.map((row, i) => i + 2);
+sum._select([[2, rowsAll.length]]);
+const pdfsBefore = G._exports.length, alerts = G._ui._alerts.length;
+G.swimPdfsSelected();
+assert.strictEqual(G._exports.length - pdfsBefore, rowsAll.length, 'one PDF per selected row');
+assert.ok(/^PDF: \d+\.$/.test(G._ui._alerts[alerts]), G._ui._alerts[alerts]);
 // Νέα μέτρηση από το μενού
 G.swimPdfPagesCheck();
 assert.ok(G._ui._dialogs.some(d => d.title === 'Σελίδες PDF' && /Μετρήθηκε/.test(d.html)), 'measurement dialog');

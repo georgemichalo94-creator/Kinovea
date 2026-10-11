@@ -4572,6 +4572,16 @@ function swimLibraryImport_(file) {
 
 /** Μενού: report (φύλλο) για τις γραμμές που είναι επιλεγμένες στο "Αναλύσεις Αγώνων" (π.χ. αγώνες της βιβλιοθήκης). */
 function swimReportsSelected() {
+  swimSelectedBulk_(false);
+}
+
+/** Νέο PDF (με τις σελίδες και τα γράμματα της τρέχουσας έκδοσης) για κάθε επιλεγμένη ανάλυση. */
+function swimPdfsSelected() {
+  swimSelectedBulk_(true);
+}
+
+/** Για τις επιλεγμένες γραμμές του «Αναλύσεις Αγώνων»: ξανά το report (και, με pdf, νέο PDF), ως ~4.5 λεπτά ανά εκτέλεση. */
+function swimSelectedBulk_(pdf) {
   var ui = SpreadsheetApp.getUi();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
@@ -4582,18 +4592,28 @@ function swimReportsSelected() {
   });
   var list = Object.keys(rows).map(Number).sort(function (a, b) { return a - b; });
   if (!list.length) { ui.alert('Επίλεξε γραμμές αγώνων (όχι την κεφαλίδα).'); return; }
-  var t0 = Date.now(), done = 0, left = 0;
-  var index = swimIndexSheet_(swimReportsSpreadsheet_());
+  var t0 = Date.now(), done = 0, left = 0, failed = [];
+  var reports = swimReportsSpreadsheet_();
+  var index = swimIndexSheet_(reports);
   list.forEach(function (r) {
     if (Date.now() - t0 > 4.5 * 60 * 1000) { left++; return; }
     var id = String(sheet.getRange(r, SWIM_SUM.raceId + 1).getValue() || '');
     var stored = id ? swimStoredRace_(id) : null;
     if (!stored) return;
-    index.getRange(stored.row, SWIM_IDX.layout + 1).setValue('');
-    swimUpsertRace_(stored.race);
-    done++;
+    try {
+      if (!pdf) index.getRange(stored.row, SWIM_IDX.layout + 1).setValue('');
+      var made = swimUpsertRace_(stored.race);
+      if (pdf) {
+        var info = swimExportPdf_(reports, swimSheetById_(reports, made.sheetId), made.print, made.rebuilt);
+        swimSetSummaryPdf_(id, info.url);
+      }
+      done++;
+    } catch (e) {
+      failed.push('γραμμή ' + r + ': ' + (e && e.message ? e.message : e));
+    }
   });
-  ui.alert('Report: ' + done + (left ? '. Έμειναν ' + left + ' (όριο χρόνου): ξαναδιάλεξέ τες και ξανατρέξε.' : '.'));
+  ui.alert((pdf ? 'PDF: ' : 'Report: ') + done + (left ? '. Έμειναν ' + left + ' (όριο χρόνου): ξαναδιάλεξέ τες και ξανατρέξε.' : '.') +
+    (failed.length ? '\nΔεν έγιναν: ' + failed.join(' · ') : ''));
 }
 
 function swimOpenLibrary() {
@@ -4626,6 +4646,7 @@ function swimOnOpen(e) {
     .addItem('Επαναδημιουργία της επιλεγμένης ανάλυσης', 'swimRebuildSelected')
     .addItem('Σελίδες PDF: νέα μέτρηση', 'swimPdfPagesCheck')
     .addItem('Report για τις επιλεγμένες αναλύσεις', 'swimReportsSelected')
+    .addItem('PDF για τις επιλεγμένες αναλύσεις', 'swimPdfsSelected')
     .addSeparator()
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Βιβλιοθήκη παλιών αναλύσεων')
       .addItem('Οδηγίες', 'swimOpenLibrary')
