@@ -848,6 +848,21 @@ namespace Kinovea.ScreenManager
         /// Try to load the working zone into the cache if possible
         /// and consolidate the boundary values afterwards.
         /// </summary>
+        /// <summary>
+        /// Number of player screens in the window, set by the screen manager.
+        /// With more than two screens the memory for the cache (preference set for two screens) is shared between them.
+        /// </summary>
+        public static int PlayerScreenCount { get; set; } = 1;
+
+        private static int CacheMemoryPerScreen()
+        {
+            int memory = PreferencesManager.PlayerPreferences.WorkingZoneMemory;
+            if (PlayerScreenCount > 2)
+                memory = Math.Max(64, memory * 2 / PlayerScreenCount);
+
+            return memory;
+        }
+
         public void UpdateWorkingZone(bool invalidateCache)
         {
             if (!m_FrameServer.Loaded)
@@ -860,7 +875,7 @@ namespace Kinovea.ScreenManager
             {
                 StopPlaying();
                 OnPauseAsked();
-                m_FrameServer.VideoReader.UpdateWorkingZone(newZone, invalidateCache, PreferencesManager.PlayerPreferences.WorkingZoneMemory, ProgressWorker);
+                m_FrameServer.VideoReader.UpdateWorkingZone(newZone, invalidateCache, CacheMemoryPerScreen(), ProgressWorker);
                 ResizeUpdate(true);
             }
 

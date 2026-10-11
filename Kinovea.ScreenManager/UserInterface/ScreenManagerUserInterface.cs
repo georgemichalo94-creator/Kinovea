@@ -23,6 +23,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Resources;
 using System.Threading;
 using System.Windows.Forms;
@@ -66,6 +67,14 @@ namespace Kinovea.ScreenManager
         #region Members
         bool initialized = false;
         private ThumbnailViewerContainer thumbnailViewerContainer = new ThumbnailViewerContainer();
+
+        // More than two screens: grid of cells (3: one row, 4: 2+2, 5: 3 on top and 2 below).
+        private Panel pnlGrid = new Panel();
+        private List<Panel> gridCells = new List<Panel>();
+        private int gridCount;
+        private const int gridGap = 3;
+        private static readonly int[][] gridRows = new int[][] {
+            new int[] { }, new int[] { 1 }, new int[] { 2 }, new int[] { 3 }, new int[] { 2, 2 }, new int[] { 3, 2 }, new int[] { 3, 3 } };
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -86,6 +95,8 @@ namespace Kinovea.ScreenManager
             splitScreens.Orientation = WindowManager.ActiveWindow.DualScreenVerticalLayout ? Orientation.Horizontal : Orientation.Vertical;
             float num = splitScreens.Orientation == Orientation.Vertical ? splitScreens.Width : splitScreens.Height;
             splitScreens.SplitterDistance = (int)(num * WindowManager.ActiveWindow.DualScreenSplitterRatio);
+
+            InitializeGrid();
 
             initialized = true;
         }
@@ -121,6 +132,9 @@ namespace Kinovea.ScreenManager
                 this.AllowDrop = true;
                 ClearLeftScreen();
                 ClearRightScreen();
+                ClearGrid(true);
+                pnlGrid.Visible = false;
+                splitScreens.Visible = true;
 
                 if (!Closing)
                     thumbnailViewerContainer.UnhideContent();
@@ -135,13 +149,28 @@ namespace Kinovea.ScreenManager
 
                 splitScreens.Panel1.Controls.Clear();
                 splitScreens.Panel2.Controls.Clear();
+
+                if (screenList.Count <= 2)
+                {
+                    ClearGrid(false);
+                    pnlGrid.Visible = false;
+                    splitScreens.Visible = true;
+
+                    PrepareLeftScreen(screenList[0].UI);
                 
-                PrepareLeftScreen(screenList[0].UI);
-                
-                if(screenList.Count == 2)
-                    PrepareRightScreen(screenList[1].UI);
+                    if(screenList.Count == 2)
+                        PrepareRightScreen(screenList[1].UI);
+                    else
+                        ClearRightScreen();
+                }
                 else
-                    ClearRightScreen();
+                {
+                    splitScreens.Visible = false;
+                    PrepareGrid(screenList);
+                    pnlGrid.Visible = true;
+                    pnlGrid.BringToFront();
+                    LayoutGrid();
+                }
             }
         }
         public void SetFullScreen(bool isFullScreen)
@@ -224,6 +253,102 @@ namespace Kinovea.ScreenManager
             splitScreens.Panel2.Controls.Clear();
             splitScreens.Panel2Collapsed = true;
             splitScreens.Panel2.AllowDrop = false;
+        }
+
+        private void InitializeGrid()
+        {
+            pnlGrid.Dock = DockStyle.Fill;
+            pnlGrid.BackColor = SystemColors.ControlDark;
+            pnlGrid.Visible = false;
+            pnlGrid.Resize += (s, e) => LayoutGrid();
+            splitScreensPanel.Panel1.Controls.Add(pnlGrid);
+        }
+
+        /// <summary>
+        /// Put the screens in the cells of the grid (more than two screens).
+        /// </summary>
+        private void PrepareGrid(List<AbstractScreen> screenList)
+        {
+            pnlGrid.SuspendLayout();
+
+            while (gridCells.Count < screenList.Count)
+            {
+                int index = gridCells.Count;
+                Panel cell = new Panel();
+                cell.BackColor = Color.White;
+                cell.AllowDrop = true;
+                cell.DragOver += DroppableArea_DragOver;
+                cell.DragDrop += (s, e) => Drop(e, index);
+                gridCells.Add(cell);
+                pnlGrid.Controls.Add(cell);
+            }
+
+            for (int i = 0; i < gridCells.Count; i++)
+            {
+                gridCells[i].Controls.Clear();
+                gridCells[i].Visible = i < screenList.Count;
+            }
+
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                UserControl screenUI = screenList[i].UI;
+                if (screenUI == null)
+                    continue;
+
+                screenUI.Dock = DockStyle.Fill;
+                gridCells[i].Controls.Add(screenUI);
+            }
+
+            gridCount = screenList.Count;
+            LayoutGrid();
+            pnlGrid.ResumeLayout();
+        }
+
+        /// <summary>
+        /// Cells of equal size in each row, rows of equal height.
+        /// </summary>
+        private void LayoutGrid()
+        {
+            if (gridCount < 3)
+                return;
+
+            int[] rows = gridCount < gridRows.Length ? gridRows[gridCount] : new int[] { (gridCount + 1) / 2, gridCount / 2 };
+            Rectangle area = pnlGrid.ClientRectangle;
+            int cell = 0;
+            int top = area.Top;
+            for (int r = 0; r < rows.Length; r++)
+            {
+                int bottom = area.Top + (int)Math.Round((double)area.Height * (r + 1) / rows.Length);
+                int height = bottom - top - (r < rows.Length - 1 ? gridGap : 0);
+                int left = area.Left;
+                for (int c = 0; c < rows[r] && cell < gridCount; c++)
+                {
+                    int right = area.Left + (int)Math.Round((double)area.Width * (c + 1) / rows[r]);
+                    int width = right - left - (c < rows[r] - 1 ? gridGap : 0);
+                    gridCells[cell].Bounds = new Rectangle(left, top, Math.Max(1, width), Math.Max(1, height));
+                    left = right;
+                    cell++;
+                }
+
+                top = bottom;
+            }
+        }
+
+        private void ClearGrid(bool dispose)
+        {
+            foreach (Panel cell in gridCells)
+            {
+                if (dispose)
+                {
+                    foreach (Control c in cell.Controls.Cast<Control>().ToList())
+                        c.Dispose();
+                }
+
+                cell.Controls.Clear();
+                cell.Visible = false;
+            }
+
+            gridCount = 0;
         }
         #endregion
         

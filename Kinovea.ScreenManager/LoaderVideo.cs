@@ -48,8 +48,9 @@ namespace Kinovea.ScreenManager
             {
                 LoadInSpecificTarget(manager, 0, path, screenDescriptor);
             }
-            else if (manager.ScreenCount == 2)
+            else
             {
+                // Two screens or the grid (up to ScreenManagerKernel.MaxPlayerScreens).
                 int target = manager.FindTargetScreen(typeof(PlayerScreen));
                 if (target != -1)
                     LoadInSpecificTarget(manager, target, path, screenDescriptor);

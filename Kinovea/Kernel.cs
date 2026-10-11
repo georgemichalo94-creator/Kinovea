@@ -748,6 +748,11 @@ namespace Kinovea.Root
                         mnuWindowDescriptor.Image = Properties.Resources.camera_video;
                     }
                 }
+                else if (d.ScreenList.Count > 2)
+                {
+                    // Grid of playback screens.
+                    mnuWindowDescriptor.Image = Properties.Resources.dualplayback;
+                }
                 else if (d.ScreenList.Count == 2)
                 {
                     if (d.ScreenList[0].ScreenType == ScreenType.Playback && d.ScreenList[1].ScreenType == ScreenType.Playback)

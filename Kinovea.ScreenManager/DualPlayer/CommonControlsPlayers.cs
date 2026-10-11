@@ -63,6 +63,7 @@ namespace Kinovea.ScreenManager
         #region Members
         private bool playing;
         private bool merging;
+        private int playerCount = 2;
         private long oldPosition;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
@@ -163,6 +164,23 @@ namespace Kinovea.ScreenManager
             merging = false;
             RefreshMergeTooltip();
         }
+
+        /// <summary>
+        /// Number of player screens under the common controls.
+        /// Superposition, swap and side by side export only exist for two screens.
+        /// </summary>
+        public void SetPlayerCount(int count)
+        {
+            playerCount = count;
+            bool dual = count <= 2;
+            btnMerge.Visible = dual;
+            btnSwap.Visible = dual;
+            btnSnapshot.Visible = dual;
+            btnDualSave.Visible = dual;
+
+            if (!dual && merging)
+                StopMerge();
+        }
         #endregion
 
         #region Commands
@@ -251,6 +269,9 @@ namespace Kinovea.ScreenManager
         }
         private void ToggleMerge()
         {
+            if (playerCount > 2)
+                return;
+
             merging = !merging;
 
             if (MergeAsked != null)

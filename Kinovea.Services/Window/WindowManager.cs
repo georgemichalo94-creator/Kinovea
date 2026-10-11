@@ -548,6 +548,11 @@ namespace Kinovea.Services
                     return WindowContent.Capture;
                 }
             }
+            else if (d.ScreenList.Count > 2)
+            {
+                // Grid of playback screens.
+                return WindowContent.DualPlayback;
+            }
             else if (d.ScreenList.Count == 2)
             {
                 if (d.ScreenList[0].ScreenType == ScreenType.Playback && d.ScreenList[1].ScreenType == ScreenType.Playback)
