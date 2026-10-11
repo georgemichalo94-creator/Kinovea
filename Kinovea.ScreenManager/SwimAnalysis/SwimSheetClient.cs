@@ -528,6 +528,16 @@ namespace Kinovea.ScreenManager
             JObject compare = new JObject();
             compare["pb"] = race.ComparePb ?? "";
             r["compare"] = compare;
+
+            // Frame of the finish with the graphics of the video (once uploaded to the Drive, and while the finish is marked).
+            if (race.FinalFrame != null && !string.IsNullOrEmpty(race.FinalFrame.FileId) && race.StartTimestamp.HasValue &&
+                race.GetSplit(race.Distance) != null)
+            {
+                JObject final = new JObject();
+                final["fileId"] = race.FinalFrame.FileId;
+                final["t"] = Math.Round(timing.Seconds(race.FinalFrame.Timestamp, race.StartTimestamp.Value), 3);
+                r["finalFrame"] = final;
+            }
             r["tech"] = Tech(race, tech, timing, timeOrigin);
 
             JObject body = new JObject();

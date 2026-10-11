@@ -206,6 +206,9 @@ namespace Kinovea.ScreenManager
         public List<SwimSnapshot> Snapshots = new List<SwimSnapshot>();
         public string TechNotes = "";
 
+        /// <summary>Frame of the finish with the graphics of the video (final time, velocity chart), for the race report.</summary>
+        public SwimSnapshot FinalFrame;
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;

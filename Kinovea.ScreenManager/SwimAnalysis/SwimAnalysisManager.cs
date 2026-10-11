@@ -128,6 +128,11 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Members
+        // Graphics of the video on the exported images: size of the screen (proportions), one drawing at a time
+        // (the video export draws from a background thread), no graphics while a snapshot paints its frame.
+        private Size lastRenderingSize;
+        private static readonly object overlayLock = new object();
+        private bool suppressExportOverlay;
         private PlayerScreenUserInterface player;
         private FrameServerPlayer frameServer;
         private string videoPath;
@@ -250,6 +255,14 @@ namespace Kinovea.ScreenManager
             EnsureForm(false);
             if (command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle)
                 Changed(true);
+
+            // The finish has just been marked: the frame with the graphics (final time, velocity chart) for the report.
+            if (command == PlayerScreenCommands.SwimSplit && !Race.IsTraining)
+            {
+                SwimMark finish = Race.GetSplit(Race.Distance);
+                if (finish != null && SameFrame(finish.Timestamp, timestamp))
+                    CaptureFinalFrame(timestamp);
+            }
 
             // The panel follows the race: start, swimming, turn, finish (or the start and turn pages of the technical analysis).
             if (command != PlayerScreenCommands.SwimUndo && command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle && form != null)
@@ -1204,6 +1217,11 @@ namespace Kinovea.ScreenManager
             if (screen != player || form == null || form.IsDisposed || VideoFile == null || transform == null)
                 return;
 
+            // The exports keep the proportions of the graphics on the screen.
+            if (renderingSize.Width > 0 && renderingSize.Height > 0)
+                lastRenderingSize = renderingSize;
+
+            lock (overlayLock)
             try
             {
                 SmoothingMode smoothing = g.SmoothingMode;
@@ -1355,11 +1373,13 @@ namespace Kinovea.ScreenManager
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
         /// passed at the current frame are shown, so it plays "live" during the playback.
         /// </summary>
-        private void DrawRaceOverlay(Graphics g, long timestamp, Size size)
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false)
         {
             if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
                 return;
-            if (!Settings.ShowSpeedChart && !Settings.ShowSplitBoard)
+            bool showBoard = all || Settings.ShowSplitBoard;
+            bool showChart = all || Settings.ShowSpeedChart;
+            if (!showChart && !showBoard)
                 return;
             if (size.Width < 300 || size.Height < 200)
                 return;
@@ -1369,8 +1389,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             int width = Math.Max(280, Math.Min(540, (int)(size.Width * 0.36)));
-            int boardHeight = Settings.ShowSplitBoard ? 70 : 0;
-            int chartHeight = Settings.ShowSpeedChart ? (int)(width * 0.5) : 0;
+            int boardHeight = showBoard ? 70 : 0;
+            int chartHeight = showChart ? (int)(width * 0.5) : 0;
             int gap = boardHeight > 0 && chartHeight > 0 ? 4 : 0;
             int height = boardHeight + gap + chartHeight;
             if (height > size.Height - 20)

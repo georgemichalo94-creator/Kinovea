@@ -122,6 +122,7 @@ namespace Kinovea.ScreenManager
         private Button btnSaveReference;
         private CheckBox chkSpeedChart;
         private CheckBox chkSplitBoard;
+        private CheckBox chkOverlayExports;
         private ComboBox cmbCorner;
         private static readonly string[] corners = { "TopRight", "TopLeft", "BottomRight", "BottomLeft" };
         private static readonly Color colorFaster = SwimTheme.Green;
@@ -144,6 +145,8 @@ namespace Kinovea.ScreenManager
         // Tab: finish
         private Label lblFinishGap;
         private Label lblFinalTime;
+        private Button btnFinalFrame;
+        private Label lblFinalFrame;
         private TextBox tbFinishDist;
         private Label lblFinishSummary;
         private TextBox tbChecks;
@@ -537,9 +540,14 @@ namespace Kinovea.ScreenManager
             chkSplitBoard = new CheckBox { Text = "Χρόνος, πέρασμα, Δ", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
             cmbCorner = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112, Margin = new Padding(3, 3, 3, 3) };
             cmbCorner.Items.AddRange(new object[] { "Πάνω δεξιά", "Πάνω αριστερά", "Κάτω δεξιά", "Κάτω αριστερά" });
+            chkOverlayExports = new CheckBox { Text = "και στις εξαγωγές", AutoSize = true, Margin = new Padding(10, 5, 3, 3) };
             chkSpeedChart.CheckedChanged += (s, e) => CommitOverlayOptions();
             chkSplitBoard.CheckedChanged += (s, e) => CommitOverlayOptions();
+            chkOverlayExports.CheckedChanged += (s, e) => CommitOverlayOptions();
             cmbCorner.SelectedIndexChanged += (s, e) => CommitOverlayOptions();
+            toolTip.SetToolTip(chkOverlayExports, "Τα γραφικά του βίντεο (χρόνος, γράφημα ταχύτητας, τιμές εκκίνησης και στροφών, γωνίες)\n" +
+                "μπαίνουν και στις εξαγωγές του Kinovea (βίντεο, εικόνα, αντιγραφή καρέ) και στα στιγμιότυπα του report,\n" +
+                "με τις ίδιες αναλογίες που έχουν στην οθόνη. Ισχύει όσο είναι ανοιχτό το παράθυρο Swim Analysis.");
             toolTip.SetToolTip(chkSpeedChart, "Γράφημα με την ταχύτητα κάθε τμήματος πάνω στο βίντεο (αθλητής και αναφορά). Ακολουθεί τον χρόνο του βίντεο.\n" +
                 "Συνεχής γραμμή: καθαρή κολύμβηση · διάστικτη: εκκίνηση, στροφές και τελευταία 5μ. (συμβατική ταχύτητα).");
             toolTip.SetToolTip(chkSplitBoard, "Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο.");
@@ -548,6 +556,7 @@ namespace Kinovea.ScreenManager
             overlay.Controls.Add(chkSplitBoard);
             overlay.Controls.Add(Caption("θέση"));
             overlay.Controls.Add(cmbCorner);
+            overlay.Controls.Add(chkOverlayExports);
 
             TableLayoutPanel t = NewEventTable();
             AddEventRow(t, "Χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
@@ -680,6 +689,14 @@ namespace Kinovea.ScreenManager
                 "Απόσταση από τον τοίχο τερματισμού τη στιγμή της τελευταίας χεριάς.",
                 tbFinishDist, DistanceUnit(),
                 PickButton(SwimPickTarget.FinishLastStroke, "Κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά: απόσταση από τον τοίχο τερματισμού."));
+
+            const string finalFrameHelp = "Το καρέ του τερματισμού με τα γραφικά του βίντεο (τελικός χρόνος, πέρασμα, γράφημα ταχύτητας) μπαίνει στο report και στο PDF του αγώνα.\n" +
+                "Λαμβάνεται αυτόματα όταν μαρκάρεις τον τερματισμό. Με το κουμπί το ξαναπαίρνεις από το καρέ που βλέπεις (αντικαθιστά το προηγούμενο).";
+            btnFinalFrame = new SwimNoFocusButton { Text = "📷 Από αυτό το καρέ", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnFinalFrame.Click += (s, e) => manager.CaptureFinalFrameNow();
+            toolTip.SetToolTip(btnFinalFrame, finalFrameHelp);
+            lblFinalFrame = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(3, 7, 0, 3), Text = "–" };
+            AddEventRow(t, "Τελικό καρέ για το report", null, null, finalFrameHelp, btnFinalFrame, lblFinalFrame);
 
             lblFinishSummary = new Label { Dock = DockStyle.Top, Height = 40, ForeColor = SwimTheme.Dim, Padding = new Padding(0, 6, 0, 0) };
 
@@ -1139,6 +1156,7 @@ namespace Kinovea.ScreenManager
                 chkAutoSend.Checked = settings.AutoSend;
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
+                chkOverlayExports.Checked = settings.OverlayInExports;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }
             finally
@@ -1461,6 +1479,7 @@ namespace Kinovea.ScreenManager
             // Finish.
             lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? "τελ. χεριά → τοίχος " + Seconds(computed.FinishLastStrokeGap) : "–";
             lblFinalTime.Text = computed.FinalTime.HasValue ? "τελικός χρόνος " + FormatRaceTime(computed.FinalTime.Value) : "–";
+            RefreshFinalFrame();
             SwimRow finalRow = computed.Rows.LastOrDefault();
             string finalDelta = finalRow != null && finalRow.Delta.HasValue && computed.Reference != null
                 ? string.Format(" · Δ τελικού {0} από «{1}»", SwimReference.FormatDelta(finalRow.Delta.Value), computed.Reference.Name)
@@ -1895,6 +1914,7 @@ namespace Kinovea.ScreenManager
             SwimSettings s = manager.Settings;
             s.ShowSpeedChart = chkSpeedChart.Checked;
             s.ShowSplitBoard = chkSplitBoard.Checked;
+            s.OverlayInExports = chkOverlayExports.Checked;
             if (cmbCorner.SelectedIndex >= 0)
                 s.OverlayCorner = corners[cmbCorner.SelectedIndex];
             s.Save();
@@ -2463,6 +2483,58 @@ namespace Kinovea.ScreenManager
         private static string Seconds(double? value)
         {
             return value.HasValue ? value.Value.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
+        }
+
+        /// <summary>State of the final frame of the race for the report (finish page).</summary>
+        public void RefreshFinalFrame()
+        {
+            if (IsDisposed || lblFinalFrame == null)
+                return;
+
+            SwimRace race = manager.Race;
+            string text;
+            Color color = SwimTheme.Dim;
+            if (race == null || race.IsTraining)
+            {
+                text = "–";
+            }
+            else if (race.FinalFrame == null)
+            {
+                text = "μπαίνει αυτόματα όταν μαρκάρεις τον τερματισμό";
+            }
+            else
+            {
+                string at = race.StartTimestamp.HasValue && manager.Timing != null
+                    ? " · καρέ στο " + FormatRaceTime(manager.Timing.Seconds(race.FinalFrame.Timestamp, race.StartTimestamp.Value))
+                    : "";
+                if (race.GetSplit(race.Distance) == null)
+                {
+                    text = "μπαίνει στο report μόλις μαρκάρεις τον τερματισμό";
+                }
+                else if (!string.IsNullOrEmpty(race.FinalFrame.FileId))
+                {
+                    text = "✓ στο report" + at;
+                    color = SwimTheme.Green;
+                }
+                else if (manager.FinalFrameUploading)
+                {
+                    text = "⏳ ανεβαίνει στο Drive…" + at;
+                }
+                else if (!manager.FinalFrameOnDisk)
+                {
+                    text = "λείπει το αρχείο: πάτα 📷 στο καρέ του τερματισμού";
+                    color = SwimTheme.Warn;
+                }
+                else
+                {
+                    text = "στον υπολογιστή · ανεβαίνει με την επόμενη Αποστολή" + at;
+                    color = SwimTheme.Warn;
+                }
+            }
+
+            lblFinalFrame.Text = text;
+            lblFinalFrame.ForeColor = color;
+            btnFinalFrame.Enabled = race != null && !race.IsTraining;
         }
 
         private static string FormatRaceTime(double seconds)

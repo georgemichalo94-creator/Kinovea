@@ -120,7 +120,7 @@ layout = G.swimBuildLayout_(race, G.swimAnalyze_(race), extras);
 checkGrid(layout, 'compare');
 const titles = layout.charts.map(c => c.title);
 ['Ταχύτητα ανά τμήμα (m/s)', 'Swolf & ΔΑΚ ανά 50μ.', 'ΔΑΚ ανά 50μ.: PB – αγώνας – elite', 'Φάσεις: PB – αγώνας – elite (s)',
-  'Εκκίνηση 0-15μ.: επίπεδα και αθλητής (s)', 'Στροφή τοίχος → +15μ.: επίπεδα και αθλητής (s)', 'Ανά 50μ.: αθλητής – μέσος όρος τελικού – καλύτερος (s)']
+  'Εκκίνηση 0-15μ.: επίπεδα και αθλητής (s)', 'Στροφή τοίχος → +15μ.: επίπεδα και αθλητής (s)', 'Ανά 50μ.: αθλητής – μ.ο. τελικού – καλύτερος (s)']
   .forEach(t => assert.ok(titles.indexOf(t) >= 0, 'missing chart ' + t + ' in ' + titles.join(' | ')));
 assert.ok(layout.charts.length >= 17, 'charts: ' + layout.charts.length);
 sh = sheetOf(r);
@@ -193,12 +193,13 @@ assert.ok(r.ok && r.rebuilt, JSON.stringify(r));
 sh = sheetOf(r);
 assert.ok(/Τεχνική/.test(sh.getName()), sh.getName());
 race = G.swimNormalizeRace_(training);
-layout = G.swimBuildLayout_(race, G.swimAnalyze_(race), {});
+// Με το ίδιο ύψος σελίδας με το φύλλο (μετρημένο), ώστε οι γραμμές να είναι οι ίδιες.
+layout = G.swimBuildLayout_(race, G.swimAnalyze_(race), { pageHeight: w => G.swimPdfPageHeight_(reports, w) });
 checkGrid(layout, 'training');
 assert.ok(layout.technical);
 assert.strictEqual(layout.images.length, 2, 'athlete image + elite frame');
 assert.strictEqual(sh._images.length, 2, 'images inserted over the grid');
-assert.ok(sh._images.every(im => im.w === 560 && im.h === 315));
+assert.ok(sh._images.every(im => im.w === 546 && im.h === 307), JSON.stringify(sh._images.map(im => [im.w, im.h])));
 assert.ok(layout.charts.length >= 4, 'training charts: ' + layout.charts.length);
 // Οι στροφές χωρίζονται σε 2 πίνακες (12 + 2) με καλύτερη/μέσο όρο από όλες
 const headerRows = Object.values(layout.grid.cells).filter(c => c.c === 1 && /^Τιμές ανά προσπάθεια \(χρόνοι από την επαφή/.test(c.v));

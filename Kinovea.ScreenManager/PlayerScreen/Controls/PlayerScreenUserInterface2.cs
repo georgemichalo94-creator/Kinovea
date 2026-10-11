@@ -6079,6 +6079,10 @@ namespace Kinovea.ScreenManager
             {
                 canvas.Clear(Color.Black);
                 FlushOnGraphics(m_FrameServer.CurrentImage, canvas, output.Size, keyframeIndex, m_iCurrentPosition, m_FrameServer.ImageTransform.Identity);
+
+                // Graphics of the swim analysis (race board, velocity chart, values of the start or turn) when enabled for the exports.
+                if (SwimAnalysisManager.Current != null)
+                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, m_iCurrentPosition);
             }
         }
 
@@ -6108,6 +6112,10 @@ namespace Kinovea.ScreenManager
             {
                 canvas.Clear(Color.Black);
                 FlushOnGraphics(vf.Image, canvas, output.Size, keyframeIndex, vf.Timestamp, m_FrameServer.ImageTransform.Identity);
+
+                // Graphics of the swim analysis, at the time of this frame (see PaintFlushedImage).
+                if (SwimAnalysisManager.Current != null)
+                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, vf.Timestamp);
             }
 
             return keyframeIndex != -1;

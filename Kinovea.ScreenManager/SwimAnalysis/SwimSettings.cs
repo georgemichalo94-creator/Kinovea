@@ -50,6 +50,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Corner of the video for the chart: TopRight, TopLeft, BottomRight, BottomLeft.</summary>
         public string OverlayCorner = "TopRight";
 
+        /// <summary>
+        /// The graphics of the video (race board, velocity chart, values of the start or turn) also in the Kinovea exports
+        /// (video, image, clipboard) and in the snapshots of the report, with the proportions they have on the screen.
+        /// </summary>
+        public bool OverlayInExports = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

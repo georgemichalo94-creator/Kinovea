@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -569,7 +570,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            Bitmap image = CaptureFrame(timestamp);
+            Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false);
             if (image == null)
                 return;
 
@@ -600,7 +601,12 @@ namespace Kinovea.ScreenManager
                 form.SnapshotAdded(snapshot);
         }
 
-        private Bitmap CaptureFrame(long timestamp)
+        /// <summary>
+        /// The current frame with the drawings, the angles of the frame and, if asked, the graphics of the video
+        /// (race board, velocity chart, values of the start or turn). At most 1280 x 720.
+        /// finalFrame: the whole race board and chart, even if they are hidden on the screen.
+        /// </summary>
+        private Bitmap CaptureFrame(long timestamp, bool graphics, bool finalFrame)
         {
             Size size = frameServer.VideoReader.Info.ReferenceSize;
             if (size.Width <= 0 || size.Height <= 0)
@@ -609,6 +615,8 @@ namespace Kinovea.ScreenManager
             Bitmap full = null;
             try
             {
+                // The graphics are drawn below, once, with the choices of this capture.
+                suppressExportOverlay = true;
                 player.BeforeExportVideo();
                 full = new Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb);
                 player.PaintFlushedImage(full);
@@ -624,15 +632,12 @@ namespace Kinovea.ScreenManager
             finally
             {
                 player.AfterExportVideo();
+                suppressExportOverlay = false;
             }
 
-            // The angles of this frame are part of the picture.
+            // The images of the report are at most 1280 wide: the graphics are drawn as on a screen of that width.
             using (Graphics g = Graphics.FromImage(full))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                foreach (SwimAngle a in Race.Angles.Where(x => SameFrame(x.Timestamp, timestamp)))
-                    DrawAngle(g, a, p => p, Math.Max(1f, size.Width / 900f));
-            }
+                DrawGraphicsOnImage(g, size, timestamp, graphics, finalFrame, ReportImageWidth);
 
             // At most 1280 x 720 (Google Sheets accepts images up to 1 million pixels and 2 MB).
             double scale = Math.Min(1.0, Math.Min(1280.0 / size.Width, 720.0 / size.Height));
@@ -655,6 +660,221 @@ namespace Kinovea.ScreenManager
         {
             get { return Path.Combine(Software.SettingsDirectory, "SwimAnalysis", "Snapshots"); }
         }
+
+        #region Graphics of the video on images and the final frame
+        /// <summary>
+        /// The graphics of the video on an image exported by Kinovea (video, image, clipboard), when enabled in the panel:
+        /// angles of the frame, race board, velocity chart, values of the start or turn, with the proportions of the screen.
+        /// The video export calls this from a background thread: the drawing is done on the UI thread.
+        /// </summary>
+        public void DrawExportOverlay(PlayerScreenUserInterface screen, Graphics g, Size outputSize, long timestamp)
+        {
+            // As on the screen: only for the video of the panel, while the panel is open.
+            if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || form == null || form.IsDisposed ||
+                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports)
+                return;
+
+            // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).
+            Action draw = () => DrawGraphicsOnImage(g, outputSize, timestamp, true, false,
+                lastRenderingSize.Width > 0 ? lastRenderingSize.Width : ReportImageWidth);
+            try
+            {
+                if (player.InvokeRequired)
+                    player.Invoke(draw);
+                else
+                    draw();
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not draw the swim graphics on the exported image.", e);
+            }
+        }
+
+        private const float ReportImageWidth = 1280f;
+
+        /// <summary>
+        /// Angles of the frame (image coordinates) and, with panels, the board, chart and values of the start or turn,
+        /// drawn on the image as they are drawn on a screen of the reference width.
+        /// allRace: the race board and chart of the final frame (even if hidden on the screen), without the values of the start or turn.
+        /// </summary>
+        private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth)
+        {
+            if (Race == null)
+                return;
+
+            lock (overlayLock)
+            {
+                GraphicsState state = g.Save();
+                try
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                    foreach (SwimAngle a in Race.Angles.Where(x => SameFrame(x.Timestamp, timestamp)))
+                        DrawAngle(g, a, p => p, Math.Max(1f, size.Width / 900f));
+
+                    if (panels && size.Width > 0 && size.Height > 0)
+                    {
+                        float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
+                        Size logical = new Size((int)Math.Round(size.Width / scale), (int)Math.Round(size.Height / scale));
+                        g.ScaleTransform(scale, scale);
+                        if (!allRace && (Race.IsTraining || TechnicalView))
+                            DrawTechOverlay(g, timestamp, logical);
+                        if (!Race.IsTraining)
+                            DrawRaceOverlay(g, timestamp, logical, allRace);
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.Error("Error while drawing the swim graphics on an image.", e);
+                }
+                finally
+                {
+                    g.Restore(state);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Frame of the finish with the graphics of the video (final time, velocity chart) for the race report.
+        /// Taken when the finish is marked, or from the panel at the current frame. Replaces the previous one.
+        /// </summary>
+        public void CaptureFinalFrame(long timestamp)
+        {
+            if (!HasVideo || Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue)
+                return;
+
+            Bitmap image = CaptureFrame(timestamp, true, true);
+            if (image == null)
+                return;
+
+            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός" };
+            try
+            {
+                frame.File = Path.GetFileName(SaveSnapshotImage(image, frame.Id));
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not save the final frame.", e);
+                Status("Δεν αποθηκεύτηκε το τελικό καρέ: " + e.Message, true);
+                return;
+            }
+            finally
+            {
+                image.Dispose();
+            }
+
+            Race.FinalFrame = frame;
+            uploadFailed.Remove(FinalUploadKey(Race));
+            MarkDirty();
+            UploadFinalFrame(Race);
+            if (form != null)
+                form.RefreshFinalFrame();
+        }
+
+        /// <summary>Final frame from the frame on the screen (button of the panel).</summary>
+        public void CaptureFinalFrameNow()
+        {
+            if (!HasVideo || Race == null)
+                return;
+
+            if (Race.IsTraining)
+            {
+                Status("Το τελικό καρέ είναι για την ανάλυση αγώνα.", true);
+                return;
+            }
+
+            if (!Race.StartTimestamp.HasValue)
+            {
+                Status("Μαρκάρισε πρώτα το σήμα εκκίνησης.", true);
+                return;
+            }
+
+            CaptureFinalFrame(player.CurrentTimestamp);
+            Status("📷 Τελικό καρέ για το report: από αυτό το καρέ.", false);
+        }
+
+        private static string FinalUploadKey(SwimRace race)
+        {
+            return "final:" + race.Id;
+        }
+
+        /// <summary>The final frame of the current race is being uploaded.</summary>
+        public bool FinalFrameUploading
+        {
+            get { return Race != null && uploading.Contains(FinalUploadKey(Race)); }
+        }
+
+        /// <summary>The image of the final frame of the current race is on this computer.</summary>
+        public bool FinalFrameOnDisk
+        {
+            get { return Race != null && Race.FinalFrame != null && SnapshotPath(Race.FinalFrame) != null; }
+        }
+
+        /// <summary>Upload the final frame to the Drive (in the background); the report shows it after the next update.</summary>
+        private void UploadFinalFrame(SwimRace race)
+        {
+            if (!Settings.IsConfigured || race == null || race.FinalFrame == null || !string.IsNullOrEmpty(race.FinalFrame.FileId))
+                return;
+
+            string key = FinalUploadKey(race);
+            if (uploading.Contains(key) || uploadFailed.Contains(key))
+                return;
+
+            byte[] bytes;
+            try
+            {
+                string path = SnapshotPath(race.FinalFrame);
+                if (path == null)
+                    return;
+                bytes = File.ReadAllBytes(path);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not read the final frame.", e);
+                uploadFailed.Add(key);
+                return;
+            }
+
+            SwimSnapshot frame = race.FinalFrame;
+            SwimVideoFile video = VideoFile;
+            uploading.Add(key);
+            client.UploadSnapshot(Settings.WebAppUrl, Settings.Token, race.Id, frame.Id, bytes, result =>
+            {
+                uploading.Remove(key);
+
+                // Another video was opened meanwhile (uploaded again next time).
+                if (VideoFile != video || video == null || !video.Races.Contains(race))
+                    return;
+
+                if (race.FinalFrame != frame)
+                {
+                    // A newer final frame was taken meanwhile: it goes up on its own.
+                    UploadFinalFrame(race);
+                    return;
+                }
+
+                if (result.Ok && !string.IsNullOrEmpty(result.FileId))
+                {
+                    frame.FileId = result.FileId;
+                    MarkDirty();
+                    if (race == Race)
+                        Changed(true);
+                    else
+                        SendRace(race, false);
+                }
+                else
+                {
+                    uploadFailed.Add(key);
+                    Status("Το τελικό καρέ κρατήθηκε στον υπολογιστή και θα ανέβει με την επόμενη Αποστολή: " + result.Error, true);
+                }
+
+                if (form != null)
+                    form.RefreshFinalFrame();
+                UploadPendingSnapshots();
+            });
+        }
+        #endregion
 
         /// <summary>Folder of the snapshots next to the video ("video.ext.swim"), or in the settings folder.</summary>
         private string SnapshotFolder()
@@ -848,7 +1068,11 @@ namespace Kinovea.ScreenManager
         /// <summary>Snapshots of the current analysis that did not reach the Drive yet (offline, no connection settings).</summary>
         private void UploadPendingSnapshots()
         {
-            if (VideoFile == null || Race == null || !Settings.IsConfigured || uploading.Count > 0)
+            if (VideoFile == null || Race == null || !Settings.IsConfigured)
+                return;
+
+            UploadFinalFrame(Race);
+            if (uploading.Count > 0)
                 return;
 
             SwimSnapshot next = Race.Snapshots.FirstOrDefault(x => string.IsNullOrEmpty(x.FileId) && !uploadFailed.Contains(x.Id) && SnapshotPath(x) != null);

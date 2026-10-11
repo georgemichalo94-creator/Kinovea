@@ -4,9 +4,10 @@ const src = fs.readFileSync(path.join(__dirname, '../GoogleSheet/SwimRaceAnalysi
 
 function makeSheet(ss, name, id) {
   const cells = {}; const merges = []; const charts = []; const images = [];
+  const rowHeights = {}; const colWidths = {}; const forced = {};
   let maxRows = 1000, maxCols = 26;
   const sheet = {
-    _cells: cells, _charts: charts, _images: images, _name: name,
+    _cells: cells, _charts: charts, _images: images, _name: name, _rowHeights: rowHeights, _colWidths: colWidths, _forced: forced,
     getName: () => sheet._name, setName: n => { sheet._name = n; },
     getSheetId: () => id, getParent: () => ss,
     getMaxRows: () => maxRows, getMaxColumns: () => maxCols,
@@ -35,21 +36,30 @@ function makeSheet(ss, name, id) {
         setChartType: t => { b.type = t; return api; }, setTransposeRowsAndColumns: v => { b.transpose = v; return api; },
         addRange: r => { if (!r || !r._nr) throw new Error('bad chart range'); b.ranges.push(r); return api; },
         setOption: (k, v) => { if (v === undefined) throw new Error('undefined chart option ' + k); b.opts[k] = v; return api; },
-        setPosition: (r, c) => { b.pos = [r, c]; return api; }, build: () => b,
+        setPosition: (r, c, ox, oy) => { b.pos = [r, c, ox || 0, oy || 0]; return api; },
+        build: () => { b.getRanges = () => b.ranges; return b; },
       };
       return api;
     },
     getImages: () => images.slice(),
-    insertImage: (blob, col, row) => {
+    insertImage: (blob, col, row, ox, oy) => {
       if (!blob || !blob._bytes) throw new Error('insertImage needs a blob');
-      const im = { blob, col, row, w: null, h: null };
+      const im = { blob, col, row, ox: ox || 0, oy: oy || 0, w: null, h: null };
       im.setWidth = w => { im.w = w; return im; }; im.setHeight = h => { im.h = h; return im; };
+      // Φυσικό μέγεθος: blob._size [w, h] (αλλιώς 1280 x 720).
+      im.getInherentWidth = () => (blob._size || [1280, 720])[0]; im.getInherentHeight = () => (blob._size || [1280, 720])[1];
+      im.setAnchorCell = rng => { im.col = rng.getColumn(); im.row = rng.getRow(); return im; };
+      im.setAnchorCellXOffset = x => { im.ox = x; return im; };
       im.remove = () => { images.splice(images.indexOf(im), 1); };
       images.push(im);
       return im;
     },
     getRangeList: list => { if (!Array.isArray(list) || !list.length) throw new Error('bad rangelist'); return { setNumberFormat: f => { if (typeof f !== 'string') throw new Error('fmt'); } }; },
-    setRowHeight: () => {}, setColumnWidth: () => {}, setHiddenGridlines: () => {}, setFrozenRows: () => {}, hideColumns: () => {},
+    setRowHeight: (r, h) => { rowHeights[r] = h; },
+    setRowHeights: (r, n, h) => { for (let i = 0; i < n; i++) rowHeights[r + i] = h; },
+    setRowHeightsForced: (r, n, h) => { if (!(h > 0) || !(n > 0)) throw new Error('bad row heights'); for (let i = 0; i < n; i++) { rowHeights[r + i] = h; forced[r + i] = true; } },
+    setColumnWidth: (c, w) => { colWidths[c] = w; },
+    setHiddenGridlines: () => {}, setFrozenRows: () => {}, hideColumns: () => {},
     setFrozenColumns: () => {},
     _rules: [], _validations: {}, _activeRanges: [],
     setConditionalFormatRules: rules => { if (!Array.isArray(rules) || rules.some(x => !x || !x._built)) throw new Error('bad rules'); sheet._rules = rules; },
@@ -94,7 +104,7 @@ function makeBlob(bytes, type, name) {
   const blob = { _bytes: bytes || [], _type: type || 'application/octet-stream', _name: name || '' };
   blob.setName = n => { blob._name = n; return blob; };
   blob.getBytes = () => blob._bytes; blob.getContentType = () => blob._type; blob.getName = () => blob._name;
-  blob.getDataAsString = () => Buffer.from(blob._bytes).toString('utf8');
+  blob.getDataAsString = cs => Buffer.from(blob._bytes).toString(cs && /8859|latin/i.test(cs) ? 'latin1' : 'utf8');
   return blob;
 }
 const iter = arr => { let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; };
@@ -170,6 +180,28 @@ function makeContext(opts) {
   };
   let uuidSeq = 0;
   const drive = makeDrive();
+  const sleeps = [], exports = [];
+  // Εξαγωγή PDF όπως του Google Sheets: πλάτος = στήλες + 1 px η καθεμία, fit to width, ο αριθμός σελίδας κρατά
+  // pdfFooter ίντσες, οι γραμμές δεν κόβονται. Επιστρέφει PDF με το πλήθος των σελίδων.
+  const pdf = { footer: opts.pdfFooter === undefined ? 0.2 : opts.pdfFooter };
+  function simulatePdf(url) {
+    const q = k => { const m = url.match(new RegExp('[?&]' + k + '=([^&]*)')); return m ? decodeURIComponent(m[1]) : null; };
+    const gid = +q('gid');
+    let sheet = null;
+    Object.keys(all).forEach(id => { const s = all[id].getSheets().find(x => x.getSheetId() === gid); if (s) sheet = s; });
+    if (!sheet) throw new Error('export: no sheet ' + gid);
+    const r1 = +(q('r1') || 0), c1 = +(q('c1') || 0);
+    const r2 = q('r2') !== null ? +q('r2') : sheet.getLastRow(), c2 = q('c2') !== null ? +q('c2') : sheet.getLastColumn();
+    let width = 0;
+    for (let c = c1 + 1; c <= c2; c++) width += (sheet._colWidths[c] || 100) + 1;
+    const H = width * (11.69 - +q('top_margin') - +q('bottom_margin') - pdf.footer) / (8.27 - +q('left_margin') - +q('right_margin'));
+    let pages = 1, y = 0;
+    for (let r = r1 + 1; r <= r2; r++) { const h = sheet._rowHeights[r] || 21; if (y > 0 && y + h > H) { pages++; y = h; } else y += h; }
+    exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName() });
+    let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
+    for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
+    return makeBlob(Array.from(Buffer.from(text, 'latin1')), 'application/pdf', 'export.pdf');
+  }
   const ctx = {
     console, JSON, Math, Date, Object, Array, String, Number, isFinite,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {}, BorderStyle: { SOLID: 'solid' },
@@ -192,23 +224,27 @@ function makeContext(opts) {
       openById: id => { if (!all[id]) throw new Error('no ss ' + id); return all[id]; },
       create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
     Logger: { log: () => {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     ContentService: { createTextOutput: t => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
-      newBlob: (bytes, type, name) => makeBlob(bytes, type, name) },
+      newBlob: (bytes, type, name) => makeBlob(bytes, type, name), sleep: ms => { sleeps.push(ms); } },
     Charts: { ChartType: { RADAR: 'radar' } },
     HtmlService: { createHtmlOutput: html => { const o = { _html: String(html) }; o.setWidth = () => o; o.setHeight = () => o; return o; } },
     Session: { getScriptTimeZone: () => 'Europe/Athens' },
     DriveApp: drive,
-    UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName() { return this; } }) }) },
+    UrlFetchApp: { fetch: url => {
+      const blob = /\/export\?format=pdf/.test(url) ? simulatePdf(url) : makeBlob([], 'application/octet-stream', 'x');
+      return { getResponseCode: () => 200, getBlob: () => blob };
+    } },
     ScriptApp: { getOAuthToken: () => 'oauth', getProjectTriggers: () => triggers, deleteTrigger: t => triggers.splice(triggers.indexOf(t), 1),
       newTrigger: fn => ({ forSpreadsheet: () => ({ onOpen: () => ({ create: () => triggers.push({ getHandlerFunction: () => fn }) }) }) }) },
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
+  ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf;
   return ctx;
 }
 module.exports = { makeContext };
