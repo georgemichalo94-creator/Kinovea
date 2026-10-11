@@ -179,6 +179,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The key T marks 5/10/15 (+5/+10/+15) up to this long after the signal or the contact, then −5 of the next turn.</summary>
         private const double PositiveSeconds = 15;
 
+        /// <summary>The first stroke is at most this long after the breakout, the last stroke at most this long before the contact.</summary>
+        private const double FirstStrokeSeconds = 2.5;
+        private const double LastStrokeSeconds = 4;
+
         public static List<SwimTechPhase> Compute(SwimRace race, SwimComputed computed, SwimTiming timing)
         {
             List<SwimTechPhase> phases = new List<SwimTechPhase>();
@@ -389,11 +393,13 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            long frame = Frame(timing);
             for (int i = 0; i < phases.Count; i++)
             {
                 SwimTechPhase p = phases[i];
-                long begin = p.Origin - (p.Kind == SwimPhaseKind.Start ? lead : Before(timing, ApproachSeconds));
-                long finish = Math.Max(p.Origin + attempt, p.Origin + Before(timing, LastAfterEvent(p)) + 1);
+                long approach = Math.Max(Before(timing, ApproachSeconds), Before(timing, -FirstApproachEvent(p)) + frame);
+                long begin = p.Origin - (p.Kind == SwimPhaseKind.Start ? lead : approach);
+                long finish = Math.Max(p.Origin + attempt, p.Origin + Before(timing, LastAfterEvent(p)) + frame);
                 p.WindowStart = i > 0 ? Math.Max(begin, Boundary(timing, phases[i - 1], phases[i - 1].Origin, p, p.Origin)) : begin;
                 p.WindowEnd = i + 1 < phases.Count ? Math.Min(finish, Boundary(timing, p, p.Origin, phases[i + 1], phases[i + 1].Origin)) : finish;
             }
@@ -407,24 +413,28 @@ namespace Kinovea.ScreenManager
         private static long Boundary(SwimTiming timing, SwimTechPhase a, long aTime, SwimTechPhase b, long bTime)
         {
             long lead = Before(timing, b != null && b.Kind == SwimPhaseKind.Start ? LeadSeconds : ApproachSeconds);
+            // One frame of margin around the events (the seconds of the marks are rounded to frames).
+            long frame = Frame(timing);
             long boundary = Math.Max(bTime - lead, aTime + (bTime - aTime) / 2);
             long afterA = long.MinValue;
             if (a != null)
             {
                 double last = LastAfterEvent(a);
                 if (last > 0)
-                    afterA = aTime + Before(timing, last) + 1;
+                    afterA = aTime + Before(timing, last) + frame;
             }
 
             boundary = Math.Max(boundary, afterA);
             double approach = b != null ? FirstApproachEvent(b) : 0;
             if (approach < 0)
             {
-                long approachStart = bTime - Before(timing, -approach);
+                long approachStart = bTime - Before(timing, -approach) - frame;
                 if (approachStart < boundary)
                     boundary = Math.Max(approachStart, afterA);
             }
 
+            // Walls marked in the wrong order: the windows still follow each other.
+            boundary = Math.Max(boundary, aTime + 1);
             return Math.Min(boundary, bTime);
         }
 
@@ -469,6 +479,17 @@ namespace Kinovea.ScreenManager
             double hsf = timing.HighSpeedFactor <= 0 ? 1.0 : timing.HighSpeedFactor;
             double frames = seconds * 1000.0 * hsf / timing.FrameIntervalMilliseconds;
             return (long)Math.Round(frames * timing.AverageTimestampsPerFrame);
+        }
+
+        /// <summary>Timestamps for a duration in race time (seconds).</summary>
+        public static long Ticks(SwimTiming timing, double seconds)
+        {
+            return timing == null || !timing.IsValid ? 0 : Before(timing, seconds);
+        }
+
+        private static long Frame(SwimTiming timing)
+        {
+            return Math.Max(1, (long)Math.Round(timing.AverageTimestampsPerFrame));
         }
 
         /// <summary>Walls where the swimmer turns or a relay leg ends.</summary>
@@ -570,7 +591,7 @@ namespace Kinovea.ScreenManager
             }
             else
             {
-                p.LastStroke = last(SwimMarkType.Stroke, t => t < 0);
+                p.LastStroke = last(SwimMarkType.Stroke, t => t < 0 && t >= -LastStrokeSeconds);
                 p.RotationStart = last(SwimMarkType.RotationStart, t => t <= 0);
                 p.Pushoff = first(SwimMarkType.FeetOff, t => t >= 0);
                 double after = p.Pushoff ?? 0;
@@ -582,8 +603,9 @@ namespace Kinovea.ScreenManager
             p.Kicks = marks.Where(m => m.Type == SwimMarkType.Kick).Select(rel).Where(t => t > from && t <= to).OrderBy(t => t).ToList();
             if (p.Breakout.HasValue)
             {
+                // A stroke much later is not the first one (it was not marked).
                 double b = p.Breakout.Value;
-                p.FirstStroke = first(SwimMarkType.Stroke, t => t > b);
+                p.FirstStroke = first(SwimMarkType.Stroke, t => t > b && t <= b + FirstStrokeSeconds);
             }
         }
         #endregion
@@ -718,7 +740,7 @@ namespace Kinovea.ScreenManager
 
                         // Too late for this distance at the pace of the previous ones (e.g. +15 not visible on the video):
                         // the press is for the next wall.
-                        if (t > Latest(current, offset))
+                        if (t > Latest(race, current, offset))
                             break;
 
                         phase = current;
@@ -743,16 +765,26 @@ namespace Kinovea.ScreenManager
             return -5;
         }
 
-        /// <summary>Latest plausible time of the head at a distance, from the times at the previous distances of the phase.</summary>
-        private static double Latest(SwimTechPhase p, int offset)
+        /// <summary>
+        /// Latest plausible time of the head at a distance, from the times at the previous distances of the phase.
+        /// In a 25 pool the −5 of the next wall comes only two intervals of 5 later, so the margin is smaller.
+        /// </summary>
+        private static double Latest(SwimRace race, SwimTechPhase p, int offset)
         {
+            bool shortPool = race.Pool > 0 && race.Pool <= 25;
             double tp, tpp;
             bool hasPrevious = p.Splits.TryGetValue(offset - 5, out tp);
             bool hasBefore = p.Splits.TryGetValue(offset - 10, out tpp);
             if (hasPrevious && hasBefore && tp > tpp)
-                return tp + Math.Max(3.0, 3 * (tp - tpp));
+            {
+                double interval = tp - tpp;
+                if (shortPool)
+                    return tp + Math.Max(1.5, (p.Kind == SwimPhaseKind.Start ? 2.0 : 1.5) * interval);
+                return tp + Math.Max(3.0, 3 * interval);
+            }
+
             if (hasPrevious && tp > 0)
-                return tp + Math.Max(3.0, 2 * tp);
+                return tp + Math.Max(3.0, 2.5 * tp);
             return PositiveSeconds;
         }
 

@@ -225,14 +225,15 @@ namespace Kinovea.ScreenManager
 
         protected override void OnDeactivate(EventArgs e)
         {
-            // Checkpoints typed and not committed yet (the user goes back to the video to mark them).
-            CommitCheckpoints();
+            // Checkpoints typed and not committed yet (the user goes back to the video to mark them),
+            // unless the list would drop a checkpoint that has a time (it may be half typed).
+            CommitCheckpoints(true);
             base.OnDeactivate(e);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            CommitCheckpoints();
+            CommitCheckpoints(true);
             base.OnFormClosing(e);
         }
 
@@ -1146,11 +1147,10 @@ namespace Kinovea.ScreenManager
             }
 
             if (manager.Race != null)
-            {
                 SetTechnicalView(manager.Race.IsTraining || manager.TechnicalView, false);
-                foreach (Label unit in distanceUnits)
-                    unit.Text = manager.Race.IsYards ? "yd" : "m";
-            }
+
+            // Another race or video: the technical pages follow the video again.
+            ResetTechSelection();
 
             RefreshManualFields();
             RefreshButtons();
@@ -1319,6 +1319,9 @@ namespace Kinovea.ScreenManager
             SwimComputed computed = manager.Computed;
             if (race == null || computed == null || IsDisposed)
                 return;
+
+            foreach (Label unit in distanceUnits)
+                unit.Text = race.IsYards ? "yd" : "m";
 
             // Race list label may have changed (athlete name).
             for (int i = 0; i < cmbRaces.Items.Count; i++)
@@ -2132,16 +2135,34 @@ namespace Kinovea.ScreenManager
 
         private void CommitCheckpoints()
         {
-            if (updating || manager.Race == null)
+            CommitCheckpoints(false);
+        }
+
+        /// <summary>After another race or video the start and turn pages follow the video again.</summary>
+        private void ResetTechSelection()
+        {
+            selectedStartId = null;
+            selectedTurnId = null;
+            videoStartId = null;
+            videoTurnId = null;
+        }
+
+        private void CommitCheckpoints(bool keepMarked)
+        {
+            if (updating || manager.Race == null || IsDisposed)
                 return;
 
             List<int> parsed = SwimPresets.ParseCheckpoints(tbCheckpoints.Text);
             SwimRace r = manager.Race;
             if (parsed.Count == 0 || parsed.SequenceEqual(r.Checkpoints))
             {
-                tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
+                if (!keepMarked)
+                    tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
                 return;
             }
+
+            if (keepMarked && r.Marks.Any(m => m.Type == SwimMarkType.Split && !parsed.Contains(m.Distance)))
+                return;
 
             if (parsed[parsed.Count - 1] != r.Distance)
                 ShowStatus("Προσοχή: το τελευταίο σημείο ελέγχου δεν είναι ίσο με την απόσταση του αγώνα (" + r.Distance + r.Unit + ").", true);
@@ -2207,6 +2228,13 @@ namespace Kinovea.ScreenManager
             int wall = (int)row.Tag;
             string column = gridTurns.Columns[e.ColumnIndex].Name;
             double? value = ParseText(text);
+            if (value == null && !string.IsNullOrWhiteSpace(text))
+            {
+                // Not a number (e.g. a hotkey typed in the cell): the value stays as it was.
+                BeginInvoke((Action)(() => RefreshData()));
+                return;
+            }
+
             SwimTurnManual manual = manager.Race.GetTurn(wall, true);
             if (column == "uwDist")
                 manual.UnderwaterDist = value;
@@ -2352,7 +2380,7 @@ namespace Kinovea.ScreenManager
         /// Keys that stay with the control that has the focus instead of going to the video:
         /// an open drop-down list, typing in an editable grid cell, Delete and Ctrl+C in a grid, the arrows of a list.
         /// </summary>
-        private static bool KeepsKey(Control focused, Keys keyData, Keys code, bool plain)
+        private bool KeepsKey(Control focused, Keys keyData, Keys code, bool plain)
         {
             if (focused == null)
                 return false;
@@ -2369,14 +2397,17 @@ namespace Kinovea.ScreenManager
                 if (keyData == (Keys.Control | Keys.C))
                     return true;
 
-                // Typing in an editable cell starts editing it (Excel style): the letters are not hotkeys there.
+                // Typing in an editable cell starts editing it (Excel style): a number in the cells of numbers
+                // (the letters stay hotkeys there), any text in the names of the angles.
                 DataGridViewCell cell = dgv.CurrentCell;
                 bool editable = cell != null && !cell.ReadOnly && !dgv.ReadOnly;
-                bool character = (code >= Keys.A && code <= Keys.Z) || (code >= Keys.D0 && code <= Keys.D9) ||
-                    (code >= Keys.NumPad0 && code <= Keys.Divide) || (code >= Keys.OemSemicolon && code <= Keys.Oem102) || code == Keys.Back;
-                if (editable && character && (keyData & (Keys.Control | Keys.Alt)) == 0)
-                    return true;
-                return false;
+                if (!editable || !plain)
+                    return false;
+
+                bool number = (code >= Keys.D0 && code <= Keys.D9) || (code >= Keys.NumPad0 && code <= Keys.NumPad9) ||
+                    code == Keys.Decimal || code == Keys.OemPeriod || code == Keys.Oemcomma || code == Keys.OemMinus || code == Keys.Subtract;
+                bool letter = (code >= Keys.A && code <= Keys.Z) || (code >= Keys.OemSemicolon && code <= Keys.Oem102);
+                return number || (dgv == gridAngles && letter);
             }
 
             if (focused is ListBox && plain)

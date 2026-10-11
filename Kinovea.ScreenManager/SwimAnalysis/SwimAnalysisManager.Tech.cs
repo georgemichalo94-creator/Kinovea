@@ -263,10 +263,11 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void AddWallSplit(long timestamp)
         {
+            const double correction = 2.0;
             bool hadStart = EnsureStart();
             int last = SwimTechCalculator.LastWallBefore(Race, timestamp);
             SwimMark lastSplit = last > 0 ? Race.GetSplit(last) : null;
-            int wall = lastSplit != null && Timing.Seconds(timestamp, lastSplit.Timestamp) < 2.0 ? last : last + PoolLength;
+            int wall = lastSplit != null && Timing.Seconds(timestamp, lastSplit.Timestamp) < correction ? last : last + PoolLength;
             string unit = Race.Unit;
             if (wall > Race.Distance || !Race.Checkpoints.Contains(wall))
             {
@@ -275,10 +276,19 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == wall);
+            // A wall that has a time already is corrected only near that time (a press in the middle of a length is a slip).
+            SwimMark existing = Race.GetSplit(wall);
+            if (existing != null && Math.Abs(Timing.Seconds(timestamp, existing.Timestamp)) >= correction)
+            {
+                SystemSounds.Beep.Play();
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    "Ο τοίχος των {0}{1} έχει ήδη χρόνο ({2:0.00} s). Για διόρθωση πάτα W κοντά στο σωστό καρέ ή σβήσε τον χρόνο (Delete στον πίνακα).",
+                    wall, unit, Timing.Seconds(existing.Timestamp, Race.StartTimestamp.Value)), true);
+                return;
+            }
+
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = wall };
-            Race.Marks.Add(mark);
-            undoStack.Add(mark.Id);
+            AddReplacing(mark, m => m.Type == SwimMarkType.Split && m.Distance == wall);
 
             double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
             string message = string.Format(CultureInfo.InvariantCulture, "{0} {1}{2}: {3:0.00} s", wall >= Race.Distance ? "Τερματισμός" : "Τοίχος", wall, unit, t);
@@ -368,25 +378,34 @@ namespace Kinovea.ScreenManager
                         "Τα {0}{1} είναι σημείο ελέγχου: μαρκάρεται με το Πέρασμα (S) και μετράει και στην τεχνική ανάλυση.", wall + offset, unit), true);
                     return;
                 }
+            }
 
-                // A new press for the same distance of the same wall replaces the old one.
-                Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Wall == wall);
+            // A new press for the same distance of the same phase replaces the old one (Undo puts it back).
+            Predicate<SwimMark> replaces;
+            if (!Race.IsTraining)
+            {
+                int markWall = wall;
+                replaces = m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Wall == markWall;
+            }
+            else if (offset < 0)
+            {
+                // Training: −5 belongs to the approach of the next contact (marked or not yet), near the press.
+                List<long> origins = Race.Marks.Where(m => m.Type == SwimMarkType.Signal || m.Type == SwimMarkType.WallContact).Select(m => m.Timestamp).ToList();
+                long span = SwimTechCalculator.Ticks(Timing, 10);
+                long low = Math.Max(origins.Where(o => o < timestamp).DefaultIfEmpty(long.MinValue).Max(), timestamp - span);
+                long high = Math.Min(origins.Where(o => o >= timestamp).DefaultIfEmpty(long.MaxValue).Min(), timestamp + span);
+                replaces = m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > low && m.Timestamp <= high;
             }
             else
             {
-                // Training: −5 belongs to the next contact, the others to the last origin before the press.
-                List<long> origins = Race.Marks.Where(m => m.Type == SwimMarkType.Signal || m.Type == SwimMarkType.WallContact).Select(m => m.Timestamp).ToList();
-                long lo = origins.Where(o => o < timestamp).DefaultIfEmpty(long.MinValue).Max();
-                long hi = origins.Where(o => o >= timestamp).DefaultIfEmpty(long.MaxValue).Min();
-                if (offset < 0)
-                    Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > lo && m.Timestamp <= hi);
-                else
-                    Race.Marks.RemoveAll(m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > lo && m.Timestamp < hi);
+                // Training: +5/+10/+15 (or 5/10/15) belong to the attempt of the press.
+                long low = phase.Origin;
+                long high = phase.EventEnd;
+                replaces = m => m.Type == SwimMarkType.TechSplit && m.Distance == offset && m.Timestamp > low && m.Timestamp < high;
             }
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.TechSplit, Timestamp = timestamp, Distance = offset, Wall = wall };
-            Race.Marks.Add(mark);
-            undoStack.Add(mark.Id);
+            AddReplacing(mark, replaces);
 
             string where = offset < 0
                 ? (Race.IsTraining ? "−5" + unit + " πριν τον τοίχο" : string.Format(CultureInfo.InvariantCulture, "−5{0} πριν τον τοίχο των {1}{0}", unit, wall))
@@ -787,6 +806,7 @@ namespace Kinovea.ScreenManager
             catch (Exception e)
             {
                 log.Error("Could not read the snapshot.", e);
+                uploadFailed.Add(snapshot.Id);
                 return;
             }
 

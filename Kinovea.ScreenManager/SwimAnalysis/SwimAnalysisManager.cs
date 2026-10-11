@@ -138,6 +138,9 @@ namespace Kinovea.ScreenManager
         private static readonly Version minimumBackend = new Version(2, 0, 0);
         private bool backendWarned;
         private List<string> undoStack = new List<string>();
+
+        /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
+        private readonly Dictionary<string, List<SwimMark>> replacedBy = new Dictionary<string, List<SwimMark>>();
         private Timer saveTimer;
         private Timer sendTimer;
         private bool dirty;
@@ -395,7 +398,33 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            List<SwimMark> replaced;
+            if (replacedBy.TryGetValue(mark.Id, out replaced))
+            {
+                replacedBy.Remove(mark.Id);
+                Race.Marks.AddRange(replaced);
+                Status("Αναιρέθηκε: " + MarkLabel(mark) + " (ξαναμπήκε η προηγούμενη τιμή)", false);
+                return;
+            }
+
             Status("Αναιρέθηκε: " + MarkLabel(mark), false);
+        }
+
+        /// <summary>Add a mark that replaces others (Undo puts them back).</summary>
+        private void AddReplacing(SwimMark mark, Predicate<SwimMark> replaces)
+        {
+            List<SwimMark> removed = Race.Marks.Where(m => replaces(m)).ToList();
+            Race.Marks.RemoveAll(replaces);
+            Race.Marks.Add(mark);
+            undoStack.Add(mark.Id);
+            if (removed.Count > 0)
+                replacedBy[mark.Id] = removed;
+        }
+
+        private void ClearUndo()
+        {
+            undoStack.Clear();
+            replacedBy.Clear();
         }
 
         public void ClearSplit(int distance)
@@ -406,7 +435,7 @@ namespace Kinovea.ScreenManager
             int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == distance);
             if (removed > 0)
             {
-                Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκε ο χρόνος στα {0}{1} Το επόμενο Πέρασμα θα συμπληρώσει αυτό το σημείο.", distance, UnitLabel), false);
+                Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκε ο χρόνος στο σημείο {0}{1} · το επόμενο Πέρασμα θα το συμπληρώσει.", distance, UnitLabel), false);
                 Changed(true);
             }
         }
@@ -798,7 +827,7 @@ namespace Kinovea.ScreenManager
             if (current != null)
             {
                 string location = SameFrame(current.Timestamp, player.CurrentTimestamp) ? "σε αυτό το καρέ" : string.Format(CultureInfo.InvariantCulture, "από το καρέ {0:0.00} s", RaceSeconds(current.Timestamp));
-                return string.Format("✔ Βαθμονόμηση {0} {1}. Πάτησε «📍 Μέτρηση» δίπλα σε μια απόσταση.", current.Label, location);
+                return string.Format("✔ Βαθμονόμηση {0} {2} {1}. Πάτησε «📍 Μέτρηση» δίπλα σε μια απόσταση.", current.Label, location, UnitLabel);
             }
 
             if (count == 0)
@@ -1598,7 +1627,7 @@ namespace Kinovea.ScreenManager
             CancelPick();
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
-            undoStack.Clear();
+            ClearUndo();
             PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
             RefreshPbCandidates();
@@ -1617,7 +1646,7 @@ namespace Kinovea.ScreenManager
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
             EnsureReference();
-            undoStack.Clear();
+            ClearUndo();
             Status("Νέα ανάλυση στο ίδιο βίντεο (ίδιο σήμα εκκίνησης). Συμπλήρωσε το όνομα του αθλητή.", false);
             Changed(false);
             if (form != null)
@@ -1636,7 +1665,7 @@ namespace Kinovea.ScreenManager
 
             Race = VideoFile.Races[VideoFile.Races.Count - 1];
             VideoFile.ActiveRaceId = Race.Id;
-            undoStack.Clear();
+            ClearUndo();
             Changed(false);
             if (form != null)
                 form.RefreshAll();
@@ -2263,7 +2292,7 @@ namespace Kinovea.ScreenManager
 
             VideoFile.ActiveRaceId = Race.Id;
             EnsureReference();
-            undoStack.Clear();
+            ClearUndo();
             Recompute();
             if (form != null)
                 form.RefreshAll();

@@ -853,7 +853,8 @@ namespace Kinovea.ScreenManager
                     selected = eliteItems.Count - 1;
                 }
 
-                string eliteSig = string.Join("|", eliteItems.Select(x => x.Frame == null ? "" : x.Frame.FileId + ":" + x.ToString()).ToArray());
+                string eliteSig = string.Join("|", eliteItems.Select(x => x.Frame == null ? "" :
+                    x.Frame.FileId + ":" + x.ToString() + ":" + x.Frame.Athlete + ":" + x.Frame.Comment).ToArray());
                 if (eliteSig != shownEliteList)
                 {
                     shownEliteList = eliteSig;

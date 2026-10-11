@@ -79,7 +79,9 @@ namespace Kinovea.ScreenManager
         private bool inFlight;
         /// <summary>Requests waiting for the one in flight: at most one per race (the newest state of the race).</summary>
         private readonly List<Request> pending = new List<Request>();
-        private Request lastFailed;
+
+        /// <summary>The last state of each race that could not be sent (offline), retried later.</summary>
+        private readonly Dictionary<string, Request> failed = new Dictionary<string, Request>();
         private int failures;
         private System.Windows.Forms.Timer retryTimer;
 
@@ -245,11 +247,15 @@ namespace Kinovea.ScreenManager
         {
             inFlight = true;
 
-            // A newer state of the race that failed replaces its retry.
-            if (lastFailed != null && lastFailed.RaceId == request.RaceId)
+            // A newer state of a race that failed replaces its retry (and keeps a PDF that was asked for).
+            Request old;
+            if (request.RaceId != null && failed.TryGetValue(request.RaceId, out old))
             {
-                lastFailed = null;
-                retryTimer.Stop();
+                if (old.Pdf)
+                    request.Pdf = true;
+                failed.Remove(request.RaceId);
+                if (failed.Count == 0)
+                    retryTimer.Stop();
             }
 
             Raise(SwimSyncState.Sending, request.Pdf ? "Δημιουργία PDF…" : "Αποστολή…", request.RaceId, null);
@@ -268,8 +274,6 @@ namespace Kinovea.ScreenManager
             if (result.Ok)
             {
                 failures = 0;
-                if (lastFailed != null && lastFailed.RaceId == request.RaceId)
-                    lastFailed = null;
                 string message = "Συγχρονίστηκε " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
                 Raise(SwimSyncState.Synced, message, request.RaceId, result);
             }
@@ -279,14 +283,31 @@ namespace Kinovea.ScreenManager
                 SwimSyncState state = result.Retry ? SwimSyncState.Offline : SwimSyncState.Error;
                 Raise(state, result.Error, request.RaceId, result);
 
-                if (result.Retry && !pending.Any(p => p.RaceId == request.RaceId))
+                if (result.Retry)
                 {
-                    // Retry later with the same state, unless a newer state arrives first.
-                    lastFailed = request;
-                    int delay = failures <= 1 ? 5000 : (failures <= 3 ? 15000 : 30000);
-                    retryTimer.Interval = delay;
-                    retryTimer.Start();
+                    int index = pending.FindIndex(p => p.RaceId == request.RaceId);
+                    if (index >= 0)
+                    {
+                        // A newer state of the race is waiting: it is sent instead (with the PDF if one was asked for).
+                        if (request.Pdf)
+                            pending[index].Pdf = true;
+                    }
+                    else
+                    {
+                        // Retry later with the same state, unless a newer state arrives first.
+                        if (request.RaceId != null)
+                            failed[request.RaceId] = request;
+                        int delay = failures <= 1 ? 5000 : (failures <= 3 ? 15000 : 30000);
+                        retryTimer.Interval = delay;
+                        retryTimer.Start();
+                    }
                 }
+            }
+
+            if (pending.Count == 0 && result.Ok && failed.Count > 0)
+            {
+                // The connection is back: the states of the other races that failed are sent now.
+                MoveFailedToPending();
             }
 
             if (pending.Count > 0)
@@ -295,20 +316,24 @@ namespace Kinovea.ScreenManager
                 pending.RemoveAt(0);
                 Start(next);
             }
-            else if (result.Ok && lastFailed != null)
+        }
+
+        private void MoveFailedToPending()
+        {
+            retryTimer.Stop();
+            foreach (Request request in failed.Values)
             {
-                // The connection is back: send the state of the other race that failed now.
-                Request retry = lastFailed;
-                lastFailed = null;
-                retryTimer.Stop();
-                Start(retry);
+                if (!pending.Any(p => p.RaceId == request.RaceId))
+                    pending.Add(request);
             }
+
+            failed.Clear();
         }
 
         private void RetryTimer_Tick(object sender, EventArgs e)
         {
             retryTimer.Stop();
-            if (lastFailed == null)
+            if (failed.Count == 0)
                 return;
 
             if (inFlight)
@@ -318,9 +343,13 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            Request request = lastFailed;
-            lastFailed = null;
-            Start(request);
+            MoveFailedToPending();
+            if (pending.Count > 0)
+            {
+                Request next = pending[0];
+                pending.RemoveAt(0);
+                Start(next);
+            }
         }
 
         private void Raise(SwimSyncState state, string message, string raceId, SwimSheetResult result)
