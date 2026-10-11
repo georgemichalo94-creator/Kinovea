@@ -95,6 +95,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Relay: end of a leg, the "turn" is the exchange (the next swimmer leaves the block).</summary>
         public bool Exchange;
+
+        /// <summary>Flip turn: freestyle or backstroke, same style before and after the wall.</summary>
+        public bool Flip;
+
+        /// <summary>
+        /// Flip turn: last hand entry → feet off. Open turn (butterfly, breaststroke, medley change of style): touch → feet off.
+        /// Relay exchange: touch → feet of the next swimmer leave the block.
+        /// </summary>
         public double? TurnTime;
         public double? UnderwaterTime;
         public int? Kicks;
@@ -332,23 +340,40 @@ namespace Kinovea.ScreenManager
                 turn.Wall = wall;
                 result.Turns.Add(turn);
 
+                // Relays: at the end of each leg the "turn" is the exchange, and the next swimmer may leave the block
+                // a little before the touch (negative exchange time, allowed down to −0.03 s).
+                turn.Exchange = race.Relay && distance % 4 == 0 && wall % (distance / 4) == 0;
+
+                // Flip turn: freestyle or backstroke, same style before and after the wall. The others (butterfly,
+                // breaststroke, medley change of style) are open turns, with a touch of the hands.
+                string styleIn = SwimPresets.StyleAt(race, wall);
+                string styleOut = SwimPresets.StyleAt(race, wall + pool);
+                turn.Flip = !turn.Exchange && (styleIn == "fs" || styleIn == "bk") && styleOut == styleIn;
+
                 double tw;
                 if (!timeAt.TryGetValue(wall, out tw))
                     continue;
 
                 double nextT = First(wallTimes, t => t > tw + 1e-9) ?? double.MaxValue;
                 double prevT = Last(wallTimes, t => t < tw - 1e-9) ?? 0;
-
-                // Relays: at the end of each leg the "turn" is the exchange, and the next swimmer may leave the block
-                // a little before the touch (negative exchange time, allowed down to −0.03 s).
-                turn.Exchange = race.Relay && distance % 4 == 0 && wall % (distance / 4) == 0;
                 double fromT = turn.Exchange ? tw - 0.5 : tw;
                 double? pushoff = First(result.FeetOff, t => t > fromT && t < nextT);
                 double? breakout = First(result.Breakouts, t => t > tw && t < nextT);
+                double? lastStroke = Last(result.Strokes, t => t < tw && t > prevT);
                 turn.Pushoff = pushoff;
                 turn.Breakout = breakout;
+                if (lastStroke.HasValue)
+                    turn.LastStrokeGap = tw - lastStroke.Value;
+
+                // Turn time: flip turn from the last hand entry, open turn and exchange from the touch, to the feet off.
                 if (pushoff.HasValue)
-                    turn.TurnTime = pushoff.Value - tw;
+                {
+                    if (!turn.Flip)
+                        turn.TurnTime = pushoff.Value - tw;
+                    else if (lastStroke.HasValue)
+                        turn.TurnTime = pushoff.Value - lastStroke.Value;
+                }
+
                 if (breakout.HasValue)
                     turn.UnderwaterTime = breakout.Value - (pushoff ?? tw);
                 if (result.Kicks.Count > 0)
@@ -356,10 +381,6 @@ namespace Kinovea.ScreenManager
                     double to = breakout ?? nextT;
                     turn.Kicks = result.Kicks.Count(t => t > tw && t <= to);
                 }
-
-                double? lastStroke = Last(result.Strokes, t => t < tw && t > prevT);
-                if (lastStroke.HasValue)
-                    turn.LastStrokeGap = tw - lastStroke.Value;
             }
 
             // Finish.
@@ -629,9 +650,9 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Wall contact → feet off is about 0.2–0.4 s in a flip turn and 0.8–1.4 s in an open turn; an exchange is
-        /// usually 0.1–0.5 s. A much longer time means a split on the wrong checkpoint (the wall time is not the wall)
-        /// or a missing feet off mark at this wall.
+        /// Turn time is about 1.0–2.1 s in a flip turn (from the last hand entry) and 0.9–1.5 s in an open turn (from the
+        /// touch); an exchange is usually 0.1–0.5 s. A much longer time means a split on the wrong checkpoint (the wall
+        /// time is not the wall), a missing last stroke press before a flip turn or a missing feet off mark at this wall.
         /// </summary>
         private static void CheckTurns(SwimComputed result)
         {
@@ -639,14 +660,30 @@ namespace Kinovea.ScreenManager
             foreach (SwimTurnComputed turn in result.Turns)
             {
                 string name = (turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + "μ.";
-                if (turn.TurnTime.HasValue && turn.TurnTime.Value > (turn.Exchange ? 1.5 : 2.5))
+                if (turn.TurnTime.HasValue && turn.TurnTime.Value > (turn.Exchange ? 1.5 : (turn.Flip ? 3.0 : 2.5)))
                     found.Add(Format("{0}: χρόνος {1:0.00} s", name, turn.TurnTime.Value));
                 else if (turn.UnderwaterTime.HasValue && turn.UnderwaterTime.Value > 12)
                     found.Add(Format("{0}: υποβρύχια {1:0.00} s", name, turn.UnderwaterTime.Value));
             }
 
             if (found.Count > 0)
-                result.Warnings.Add("Στροφές: " + Join(found) + ". Έλεγξε την επαφή στον τοίχο (μήπως το πέρασμα γράφτηκε σε άλλο σημείο), την αποκόλληση και την έξοδο.");
+                result.Warnings.Add("Στροφές: " + Join(found) + ". Έλεγξε την επαφή στον τοίχο (μήπως το πέρασμα γράφτηκε σε άλλο σημείο), την τελευταία χεριά πριν την ανάποδη στροφή, την αποκόλληση και την έξοδο.");
+
+            // Flip turns are timed from the last hand entry: without the last press the gap to the wall is one stroke longer.
+            List<SwimTurnComputed> flips = result.Turns.Where(x => x.Flip && x.LastStrokeGap.HasValue).ToList();
+            if (flips.Count < 3)
+                return;
+
+            double usual = Median(flips.Select(x => x.LastStrokeGap.Value).ToList());
+            List<string> gaps = flips
+                .Where(x => x.LastStrokeGap.Value > 1.6 * usual && x.LastStrokeGap.Value - usual > 0.35)
+                .Select(x => Format("{0}μ. ({1:0.00} s)", x.Wall, x.LastStrokeGap.Value))
+                .ToList();
+            if (gaps.Count > 0)
+            {
+                result.Warnings.Add(Format("Ανάποδες στροφές: η τελευταία χεριά είναι πολύ πριν τον τοίχο στα {0}, ενώ συνήθως {1:0.00} s. Μήπως λείπει το πάτημα της τελευταίας χεριάς; Από αυτή μετράει ο χρόνος στροφής.",
+                    Join(gaps), usual));
+            }
         }
 
         /// <summary>

@@ -135,7 +135,7 @@ namespace Kinovea.ScreenManager
         private SwimSheetClient client;
 
         /// <summary>Oldest Apps Script whose report uses the definitions of the panel (stroke rate and length in the clean swimming only).</summary>
-        private static readonly Version minimumBackend = new Version(1, 3, 0);
+        private static readonly Version minimumBackend = new Version(1, 3, 1);
         private bool backendWarned;
         private List<string> undoStack = new List<string>();
         private Timer saveTimer;
@@ -1995,7 +1995,7 @@ namespace Kinovea.ScreenManager
             {
                 backendWarned = true;
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "Το Apps Script του KOE App είναι η έκδοση {0}: το report βγάζει ακόμη SR/DPS και στα τελευταία 5μ. Βάλε την έκδοση {1} (δες τον οδηγό).",
+                    "Το Apps Script του KOE App είναι η έκδοση {0} και το report δεν υπολογίζει όπως το πάνελ (SR/DPS στην καθαρή κολύμβηση, χρόνος ανάποδης στροφής). Βάλε την έκδοση {1} (δες τον οδηγό).",
                     version, minimumBackend.ToString(3)), true);
             }
 

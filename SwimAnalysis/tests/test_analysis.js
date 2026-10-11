@@ -42,7 +42,9 @@ assert.strictEqual(a.start.blockTime, 0.7); assert.strictEqual(a.start.entryTime
 assert.strictEqual(a.start.underwaterTime, 4.5); assert.strictEqual(a.start.kicks, 4);
 // turn at 50
 const t = a.turns[0];
-assert.strictEqual(t.wall, 50); assert.ok(near(t.turnTime, 0.6)); assert.ok(near(t.underwaterTime, 27.5 - 24.6));
+// freestyle flip turn: turn time from the last hand entry (23.5) to the feet off (24.6)
+assert.strictEqual(t.wall, 50); assert.ok(t.flip, 'fs turn is a flip turn');
+assert.ok(near(t.turnTime, 24.6 - 23.5), 'flip turn time ' + t.turnTime); assert.ok(near(t.underwaterTime, 27.5 - 24.6));
 assert.strictEqual(t.kicks, 3); assert.ok(near(t.lastStrokeGap, 0.5));
 // finish: last press 49.0 -> gap 0.3
 assert.ok(near(a.finish.lastStrokeGap, 49.3 - 49.0), 'finish gap ' + a.finish.lastStrokeGap);
@@ -54,7 +56,26 @@ const relay = S.swimNormalizeRace_({ id: 'rl', style: 'fs', relay: true, distanc
 const ra = S.swimAnalyze_(relay);
 assert.ok(ra.turns[1].exchange, 'leg boundary is an exchange');
 assert.ok(near(ra.turns[1].turnTime, -0.02), 'exchange time may be negative: ' + ra.turns[1].turnTime);
-assert.ok(!ra.turns[0].exchange && near(ra.turns[0].turnTime, 0.3), 'normal turn');
+assert.ok(!ra.turns[0].exchange && ra.turns[0].flip, 'turn inside a freestyle leg is a flip turn');
+assert.strictEqual(ra.turns[0].turnTime, null, 'flip turn time needs the last stroke press before the wall');
+const ra2 = S.swimAnalyze_(Object.assign({}, relay, { strokes: [21.0, 22.5, 23.1, 46.0, 47.4] }));
+assert.ok(near(ra2.turns[0].turnTime, 24.1 - 23.1), 'flip turn from the last hand entry: ' + ra2.turns[0].turnTime);
+assert.ok(near(ra2.turns[1].turnTime, -0.02), 'exchange still from the touch');
+
+// 1c) Open turns from the touch: breaststroke, butterfly and the medley changes of style; flip turns inside fs/bk legs
+const brRace = S.swimNormalizeRace_({ id: 'br', style: 'br', distance: 100, pool: 50,
+  checkpoints: [{d:15,t:7},{d:50,t:30.0},{d:65,t:38},{d:100,t:63}], strokes: [8, 9.2, 29.2, 40, 62.1], feetOff: [0.7, 30.95] });
+const bra = S.swimAnalyze_(brRace);
+assert.ok(!bra.turns[0].flip && near(bra.turns[0].turnTime, 0.95), 'open turn from the touch: ' + bra.turns[0].turnTime);
+function turnKinds(style, relay, distance) {
+  const r = S.swimNormalizeRace_({ id: 'k', style, relay, distance, pool: 50, checkpoints: [] });
+  return S.swimAnalyze_(r).turns.map(x => x.wall + (x.exchange ? 'x' : x.flip ? 'f' : 'o')).join(' ');
+}
+assert.strictEqual(turnKinds('medley', false, 200), '50o 100o 150o', '200 IM: all changes of style are open turns');
+assert.strictEqual(turnKinds('medley', false, 400), '50o 100o 150f 200o 250o 300o 350f', '400 IM');
+assert.strictEqual(turnKinds('medley', true, 400), '50f 100x 150o 200x 250o 300x 350f', '4x100 medley relay');
+assert.strictEqual(turnKinds('bk', false, 200), '50f 100f 150f', '200 bk');
+assert.strictEqual(turnKinds('fly', false, 200), '50o 100o 150o', '200 fly');
 
 // 2) Medley styles
 const im = S.swimNormalizeRace_({ id: 'im', style: 'medley', distance: 200, pool: 50, checkpoints: [50,100,150,200].map(d=>({d})) });

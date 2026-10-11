@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '1.3.0';
+var SWIM_VERSION = '1.3.1';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -601,26 +601,34 @@ function swimAnalyze_(race) {
   var turns = turnWalls.map(function (wall) {
     var tw = timeAt[wall] !== undefined ? timeAt[wall] : null;
     var res = { wall: wall, tWall: tw, pushoff: null, breakout: null, turnTime: null, underwaterTime: null, kicks: null, lastStrokeGap: null };
+    // Στις σκυταλοδρομίες, στο τέλος κάθε διαδρομής η "στροφή" είναι η αλλαγή: ο επόμενος μπορεί να φύγει λίγο πριν την επαφή.
+    res.exchange = race.relay && Math.abs((wall / (dist / 4)) - Math.round(wall / (dist / 4))) < 1e-9;
+    // Ανάποδη στροφή: ελεύθερο ή ύπτιο, ίδιο στυλ πριν και μετά τον τοίχο. Οι υπόλοιπες (πεταλούδα, πρόσθιο, αλλαγή στυλ
+    // στη μικτή) είναι ανοιχτές, με επαφή των χεριών στον τοίχο.
+    var styleIn = swimStyleAt_(race, wall), styleOut = swimStyleAt_(race, wall + pool);
+    res.flip = !res.exchange && (styleIn === 'fs' || styleIn === 'bk') && styleOut === styleIn;
     if (tw === null) return res;
     var nextT = swimFirst_(knownTimes, function (t) { return t > tw + 1e-9; });
     if (nextT === null) nextT = Infinity;
     var prevT = swimLast_(knownTimes, function (t) { return t < tw - 1e-9; });
     if (prevT === null) prevT = 0;
 
-    // Στις σκυταλοδρομίες, στο τέλος κάθε διαδρομής η "στροφή" είναι η αλλαγή: ο επόμενος μπορεί να φύγει λίγο πριν την επαφή.
-    var exchange = race.relay && Math.abs((wall / (dist / 4)) - Math.round(wall / (dist / 4))) < 1e-9;
-    var fromT = exchange ? tw - 0.5 : tw;
-    res.exchange = exchange;
+    var fromT = res.exchange ? tw - 0.5 : tw;
     res.pushoff = swimFirst_(race.feetOff, function (t) { return t > fromT && t < nextT; });
     res.breakout = swimFirst_(race.breakouts, function (t) { return t > tw && t < nextT; });
-    if (res.pushoff !== null) res.turnTime = res.pushoff - tw;
+    var ls = swimLast_(race.strokes, function (t) { return t < tw && t > prevT; });
+    if (ls !== null) res.lastStrokeGap = tw - ls;
+    // Χρόνος στροφής: ανάποδη από την τελευταία είσοδο χεριού έως την αποκόλληση, ανοιχτή από την επαφή στον τοίχο
+    // έως την αποκόλληση, αλλαγή σκυταλοδρομίας από την επαφή έως την αποδέσμευση του επόμενου.
+    if (res.pushoff !== null) {
+      if (!res.flip) res.turnTime = res.pushoff - tw;
+      else if (ls !== null) res.turnTime = res.pushoff - ls;
+    }
     if (res.breakout !== null) res.underwaterTime = res.breakout - (res.pushoff !== null ? res.pushoff : tw);
     if (race.kicks.length) {
       var to = res.breakout !== null ? res.breakout : nextT;
       res.kicks = race.kicks.filter(function (t) { return t > tw && t <= to; }).length;
     }
-    var ls = swimLast_(race.strokes, function (t) { return t < tw && t > prevT; });
-    if (ls !== null) res.lastStrokeGap = tw - ls;
     return res;
   });
 
@@ -740,7 +748,7 @@ function swimF_(fmt, kind) {
 
 function swimLayoutSignature_(race) {
   return JSON.stringify({
-    v: 4,
+    v: 5,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
     dist: race.distance,
@@ -1140,13 +1148,14 @@ function swimBuildLayout_(race, analysis) {
     'ΔΑΚ = (Χεριές + Χρόνος 15-50μ.) / 3,5 για κάθε 50μ. · StrRate: ελεύθερο/ύπτιο χεριές/2, πεταλούδα/πρόσθιο ×1 (κύκλοι/λεπτό).',
     'StrRate, DPS, SL μόνο στην καθαρή κολύμβηση (15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο). DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο.',
     'Πορτοκαλί ταχύτητα: τμήμα εκκίνησης / στροφής / τελευταίων 5μ. – συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι). Σύγκρινε εκεί τους χρόνους.',
-    'SR από χρόνους χεριών: από τα διαστήματα των πατημάτων · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.'
+    'SR από χρόνους χεριών: από τα διαστήματα των πατημάτων · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.',
+    'Χρόνος στροφής: ανάποδη (ελεύθερο/ύπτιο) από την τελευταία είσοδο χεριού έως την αποκόλληση · ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ) από την επαφή στον τοίχο · σκυταλοδρομία: χρόνος αλλαγής.'
   ];
   notes.forEach(function (t, i) {
     g.set(c1 + i, 5, t, { italic: true, color: '#555555', size: 9 });
     g.merge(c1 + i, 5, c1 + i, LAST);
   });
-  cur = c1 + 5;
+  cur = c1 + notes.length + 1;
 
   // ---- Γραφήματα
   g.section(cur, 'Γραφήματα', LAST);

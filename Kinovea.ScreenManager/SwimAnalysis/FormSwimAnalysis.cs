@@ -466,13 +466,14 @@ namespace Kinovea.ScreenManager
             TableLayoutPanel t = NewEventTable();
             lblTurnGap = ValueLabel();
             AddEventRow(t, "Τελευταία χεριά πριν τον τοίχο", PlayerScreenCommands.SwimStroke, "Χεριά",
-                "Η τελευταία είσοδος χεριού πριν τη στροφή.", lblTurnGap);
+                "Η τελευταία είσοδος χεριού πριν τη στροφή. Στις ανάποδες στροφές (ελεύθερο/ύπτιο) από εδώ μετράει ο χρόνος στροφής.", lblTurnGap);
             lblTurnWall = ValueLabel();
             AddEventRow(t, "Επαφή στον τοίχο", PlayerScreenCommands.SwimSplit, "Πέρασμα",
                 "Το πέρασμα στον τοίχο (το χέρι ή τα πόδια ακουμπούν τον τοίχο).", lblTurnWall);
             lblTurnTime = ValueLabel();
             AddEventRow(t, "Αποκόλληση από τον τοίχο", PlayerScreenCommands.SwimFeetOff, "Αποκόλληση",
-                "Τα πόδια φεύγουν από τον τοίχο: δίνει τον χρόνο στροφής.", lblTurnTime);
+                "Τα πόδια φεύγουν από τον τοίχο: δίνει τον χρόνο στροφής. Ανάποδη στροφή (ελεύθερο/ύπτιο): από την τελευταία είσοδο χεριού. " +
+                "Ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ): από την επαφή στον τοίχο.", lblTurnTime);
             lblTurnKicks = ValueLabel();
             AddEventRow(t, "Υποβρύχιοι δελφινισμοί", PlayerScreenCommands.SwimKick, "Δελφινισμός",
                 "Ένα πάτημα για κάθε υποβρύχιο δελφινισμό μετά τη στροφή.", lblTurnKicks);
@@ -487,6 +488,7 @@ namespace Kinovea.ScreenManager
             gridTurns.Columns.Add(Column("wall", "Τοίχος (μ.)", 70));
             gridTurns.Columns.Add(Column("uwDist", "Μέτρα κάτω από το νερό", 92));
             gridTurns.Columns.Add(Column("turnTime", "Χρόνος στροφής (s)", 82));
+            gridTurns.Columns["turnTime"].ToolTipText = "Ανάποδη στροφή (ελεύθερο/ύπτιο): τελευταία είσοδος χεριού → αποκόλληση. Ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ): επαφή → αποκόλληση. Σκυταλοδρομία: χρόνος αλλαγής. Γράφεται και με το χέρι.";
             gridTurns.Columns.Add(Column("uwTime", "Υποβρύχιος χρόνος (s)", 86));
             gridTurns.Columns.Add(Column("kicks", "Δελφινισμοί", 72));
             gridTurns.Columns.Add(Column("gap", "Τελ. χεριά → τοίχος (s)", 90));
@@ -1236,7 +1238,12 @@ namespace Kinovea.ScreenManager
             lblTurnGap.Text = t != null && t.LastStrokeGap.HasValue ? "→ τοίχος " + Seconds(t.LastStrokeGap) : "–";
             lblTurnWall.Text = wallRow != null && wallRow.T.HasValue ? wall + "μ. στα " + FormatRaceTime(wallRow.T.Value) : "–";
             double? turnTime = manual != null && manual.TurnTime.HasValue ? manual.TurnTime : (t != null ? t.TurnTime : null);
-            lblTurnTime.Text = turnTime.HasValue ? (t != null && t.Exchange ? "χρόνος αλλαγής " : "χρόνος στροφής ") + Seconds(turnTime) : "–";
+            if (turnTime.HasValue)
+                lblTurnTime.Text = (t != null && t.Exchange ? "χρόνος αλλαγής " : (t != null && t.Flip ? "χρόνος στροφής (από την τελευταία χεριά) " : "χρόνος στροφής ")) + Seconds(turnTime);
+            else if (t != null && t.Flip && t.Pushoff.HasValue)
+                lblTurnTime.Text = "χρόνος στροφής: λείπει η τελευταία χεριά πριν τον τοίχο (C)";
+            else
+                lblTurnTime.Text = "–";
             lblTurnKicks.Text = t != null && t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             string uwTime = t != null && t.UnderwaterTime.HasValue ? "υποβρύχια " + Seconds(t.UnderwaterTime) : "–";
             string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " μ." : "";
