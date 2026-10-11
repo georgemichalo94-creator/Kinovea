@@ -239,8 +239,7 @@ namespace Kinovea.ScreenManager
             lblBrandSub = new Label { Text = "Κ.Ο.Ε. · KINOVEA", AutoSize = true, Font = SwimTheme.Ui(7f, FontStyle.Bold), ForeColor = SwimTheme.Accent, Location = new Point(170, 16) };
             modeSwitch = new SwimSegmented("RACE ANALYSIS", "ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ") { Size = new Size(300, 28), Location = new Point(360, 7), Anchor = AnchorStyles.Top | AnchorStyles.Right };
             modeSwitch.SelectedIndexChanged += (s, e) => SetTechnicalView(modeSwitch.SelectedIndex == 1, true);
-            toolTip.SetToolTip(modeSwitch, "Race analysis: περάσματα, χεριές, στροφές και τερματισμός του αγώνα.
-" +
+            toolTip.SetToolTip(modeSwitch, "Race analysis: περάσματα, χεριές, στροφές και τερματισμός του αγώνα.\n" +
                 "Τεχνική ανάλυση: φάσεις της εκκίνησης και των στροφών, χρόνοι 5/10/15, γωνίες, στιγμιότυπα με σχόλια και elite καρέ.");
             brand.Controls.Add(lblWordmark);
             brand.Controls.Add(lblBrandSub);
@@ -478,8 +477,7 @@ namespace Kinovea.ScreenManager
             Label lblPbTitle = new Label { Text = "Σύγκριση στο report (PB):", AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
             cmbPb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(0, 3, 4, 3) };
             cmbPb.SelectedIndexChanged += CmbPb_SelectedIndexChanged;
-            toolTip.SetToolTip(cmbPb, "Προηγούμενη ανάλυση του αθλητή στο ίδιο αγώνισμα για τους πίνακες και τα γραφήματα PB – αγώνας – elite του report.
-" +
+            toolTip.SetToolTip(cmbPb, "Προηγούμενη ανάλυση του αθλητή στο ίδιο αγώνισμα για τους πίνακες και τα γραφήματα PB – αγώνας – elite του report.\n" +
                 "Αυτόματα: ο καλύτερος χρόνος του αθλητή πριν από αυτόν τον αγώνα.");
             Button btnRefreshPb = new SwimNoFocusButton { Text = "↻", Width = 30, Height = 25, Margin = new Padding(0, 2, 4, 2) };
             btnRefreshPb.Click += (s, e) => manager.RefreshPbCandidates();
