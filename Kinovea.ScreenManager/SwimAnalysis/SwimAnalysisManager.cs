@@ -133,6 +133,10 @@ namespace Kinovea.ScreenManager
         private string videoPath;
         private FormSwimAnalysis form;
         private SwimSheetClient client;
+
+        /// <summary>Oldest Apps Script whose report uses the definitions of the panel (stroke rate and length in the clean swimming only).</summary>
+        private static readonly Version minimumBackend = new Version(1, 3, 0);
+        private bool backendWarned;
         private List<string> undoStack = new List<string>();
         private Timer saveTimer;
         private Timer sendTimer;
@@ -314,6 +318,14 @@ namespace Kinovea.ScreenManager
 
         private void AddMark(SwimMarkType type, long timestamp, string label)
         {
+            // Two presses on the same frame (paused video, key repeat) are the same stroke or kick, not two.
+            if ((type == SwimMarkType.Stroke || type == SwimMarkType.Kick) && Race.Marks.Any(m => m.Type == type && SameFrame(m.Timestamp, timestamp)))
+            {
+                SystemSounds.Beep.Play();
+                Status(label + ": υπάρχει ήδη σε αυτό το καρέ (δεν καταχωρήθηκε δεύτερη φορά).", true);
+                return;
+            }
+
             bool hadStart = EnsureStart();
             SwimMark mark = new SwimMark { Type = type, Timestamp = timestamp };
             Race.Marks.Add(mark);
@@ -1184,6 +1196,11 @@ namespace Kinovea.ScreenManager
         private static readonly Pen penAthlete = new Pen(colorAthlete, 2.2f);
         private static readonly Pen penAthleteLast = new Pen(colorAthlete, 4f);
         private static readonly Pen penReference = new Pen(colorReference, 1.6f) { DashStyle = DashStyle.Dash };
+
+        // Start, turns and last 5 m before a wall: conventional velocity (touch at the wall, dive, glide, underwater), drawn faint.
+        private static readonly Pen penAthletePhase = new Pen(Color.FromArgb(150, colorAthlete), 1.6f) { DashStyle = DashStyle.Dot };
+        private static readonly Pen penAthleteLastPhase = new Pen(Color.FromArgb(170, colorAthlete), 3f) { DashStyle = DashStyle.Dot };
+        private static readonly Pen penReferencePhase = new Pen(Color.FromArgb(120, colorReference), 1.2f) { DashStyle = DashStyle.Dot };
         private static readonly Pen penChartGrid = new Pen(Color.FromArgb(60, 255, 255, 255), 1f);
         private static readonly Pen penChartWall = new Pen(Color.FromArgb(120, 255, 255, 255), 1f) { DashStyle = DashStyle.Dot };
         private static readonly SolidBrush brushPanel = new SolidBrush(Color.FromArgb(170, 6, 22, 36));
@@ -1322,7 +1339,7 @@ namespace Kinovea.ScreenManager
             if (plot.Width < 60 || plot.Height < 30)
                 return;
 
-            List<SwimSegment> athleteAll = Computed.Rows.Where(row => row.Vel.HasValue && row.T.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value }).ToList();
+            List<SwimSegment> athleteAll = Computed.Rows.Where(row => row.Vel.HasValue && row.T.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value, Free = row.IsFree }).ToList();
             List<SwimSegment> reference = Computed.ReferenceSegments ?? new List<SwimSegment>();
             List<double> values = athleteAll.Select(s => s.V).Concat(reference.Select(s => s.V)).Where(v => v > 0 && v < 4).ToList();
 
@@ -1364,20 +1381,21 @@ namespace Kinovea.ScreenManager
             }
 
             // Reference profile (the whole race, as a target) and the athlete up to the current frame.
-            DrawSteps(g, penReference, reference, X, Y);
-            List<SwimSegment> athleteDone = done.Where(row => row.Vel.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value }).ToList();
-            DrawSteps(g, penAthlete, athleteDone, X, Y);
+            // Clean swimming solid, start / turns / last 5 m dotted.
+            DrawSteps(g, penReference, penReferencePhase, reference, X, Y);
+            List<SwimSegment> athleteDone = done.Where(row => row.Vel.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value, Free = row.IsFree }).ToList();
+            DrawSteps(g, penAthlete, penAthletePhase, athleteDone, X, Y);
 
             if (last != null && last.Vel.HasValue)
             {
                 float y0 = Y(last.Vel.Value);
-                g.DrawLine(penAthleteLast, X(last.PrevD), y0, X(last.D), y0);
+                g.DrawLine(last.IsFree ? penAthleteLast : penAthleteLastPhase, X(last.PrevD), y0, X(last.D), y0);
                 string value = last.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture);
                 SizeF vs = g.MeasureString(value, fontChartBold);
                 float vx = Math.Min(plot.Right - vs.Width, Math.Max(plot.Left, X(last.D) - vs.Width / 2));
                 float vy = y0 - vs.Height - 2 < plot.Top ? y0 + 3 : y0 - vs.Height - 2;
                 g.FillRectangle(brushPanel, vx - 2, vy, vs.Width + 4, vs.Height);
-                g.DrawString(value, fontChartBold, brushAthlete, vx, vy);
+                g.DrawString(value, fontChartBold, last.IsFree ? brushAthlete : brushDim, vx, vy);
             }
 
             if (athleteAll.Count == 0 && reference.Count == 0)
@@ -1390,17 +1408,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Step line: one horizontal line per segment, joined when the segments are contiguous.
+        /// The segments outside the clean swimming use the faint pen.
         /// </summary>
-        private static void DrawSteps(Graphics g, Pen pen, List<SwimSegment> segments, Func<double, float> X, Func<double, float> Y)
+        private static void DrawSteps(Graphics g, Pen pen, Pen phasePen, List<SwimSegment> segments, Func<double, float> X, Func<double, float> Y)
         {
             SwimSegment previous = null;
             foreach (SwimSegment s in segments.OrderBy(x => x.D0))
             {
                 float y = Y(s.V);
                 if (previous != null && previous.D1 == s.D0)
-                    g.DrawLine(pen, X(s.D0), Y(previous.V), X(s.D0), y);
+                    g.DrawLine(previous.Free && s.Free ? pen : phasePen, X(s.D0), Y(previous.V), X(s.D0), y);
 
-                g.DrawLine(pen, X(s.D0), y, X(s.D1), y);
+                g.DrawLine(s.Free ? pen : phasePen, X(s.D0), y, X(s.D1), y);
                 previous = s;
             }
         }
@@ -1968,6 +1987,17 @@ namespace Kinovea.ScreenManager
         {
             SyncState = e.State;
             SyncMessage = e.Message;
+
+            // An older Apps Script still computes the stroke rate and length in the last 5 m and over whole 50s.
+            Version backend;
+            string version = e.Result != null && e.Result.Ok && e.Result.Raw != null ? e.Result.Raw.Value<string>("version") : null;
+            if (!backendWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < minimumBackend)
+            {
+                backendWarned = true;
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    "Το Apps Script του KOE App είναι η έκδοση {0}: το report βγάζει ακόμη SR/DPS και στα τελευταία 5μ. Βάλε την έκδοση {1} (δες τον οδηγό).",
+                    version, minimumBackend.ToString(3)), true);
+            }
 
             if (e.Result != null && e.Result.Ok && VideoFile != null)
             {

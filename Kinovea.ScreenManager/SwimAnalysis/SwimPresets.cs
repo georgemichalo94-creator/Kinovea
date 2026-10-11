@@ -61,7 +61,8 @@ namespace Kinovea.ScreenManager
 
             if (pool == 25)
             {
-                pattern = leg <= 200 ? new int[] { 15, 20, 25 } : new int[] { 15, 25 };
+                // 15 and 20 m: the only clean swimming segment of a short course length (+15 m to −5 m), for stroke rate and length.
+                pattern = new int[] { 15, 20, 25 };
             }
             else
             {

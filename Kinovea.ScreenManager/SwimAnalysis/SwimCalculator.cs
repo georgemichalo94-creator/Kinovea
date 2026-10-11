@@ -6,6 +6,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 #endregion
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace Kinovea.ScreenManager
@@ -43,13 +44,32 @@ namespace Kinovea.ScreenManager
         public int PrevD;
         public double? T;
         public double? SegTime;
+
+        /// <summary>
+        /// Average velocity of the segment. Outside the clean swimming (start, turns, last 5 m before a wall) it is
+        /// conventional: the checkpoint at a wall is the touch (hands or feet), not the head, and the segment
+        /// contains the dive, the glide, the turn or the underwater phase.
+        /// </summary>
         public double? Vel;
         public double? Strokes;
+
+        /// <summary>Stroke rate (cycles/min), distance per stroke press (m) and cycle length (m): clean swimming only.</summary>
         public double? Sr;
         public double? Dps;
+        public double? Sl;
+
+        /// <summary>Stroke rate from the intervals between the presses inside the segment (cycles/min).</summary>
         public double? SrExact;
         public string Style;
+
+        /// <summary>Starts at least 15 m after the last wall (no start or turn underwater phase).</summary>
         public bool IsSwim;
+
+        /// <summary>
+        /// Clean swimming: starts at least 15 m after the last wall and ends at least 5 m before the next one,
+        /// like the "Ειδικοί τομείς" of the race sheets. Only these segments give stroke rate and length.
+        /// </summary>
+        public bool IsFree;
 
         /// <summary>Time of the reference at this checkpoint and difference (athlete − reference, negative = faster).</summary>
         public double? RefT;
@@ -64,29 +84,51 @@ namespace Kinovea.ScreenManager
         public int D0;
         public int D1;
         public double V;
+
+        /// <summary>Clean swimming (see SwimRow.IsFree). The other segments have a conventional velocity.</summary>
+        public bool Free = true;
     }
 
     public class SwimTurnComputed
     {
         public int Wall;
+
+        /// <summary>Relay: end of a leg, the "turn" is the exchange (the next swimmer leaves the block).</summary>
+        public bool Exchange;
         public double? TurnTime;
         public double? UnderwaterTime;
         public int? Kicks;
         public double? LastStrokeGap;
+
+        /// <summary>Times after the start signal: feet leave the wall (or the block, at an exchange), head breaks the surface.</summary>
+        public double? Pushoff;
+        public double? Breakout;
     }
 
     public class SwimComputed
     {
         public List<SwimRow> Rows = new List<SwimRow>();
         public List<SwimTurnComputed> Turns = new List<SwimTurnComputed>();
+        /// <summary>First movement after the signal (marked on the video). The official reaction time of the
+        /// touch pads corresponds to the block release (BlockTime).</summary>
         public double? ReactionTime;
         public double? BlockTime;
         public double? EntryTime;
+
+        /// <summary>Flight: feet leave the block → hands enter the water.</summary>
+        public double? FlightTime;
         public double? StartUnderwaterTime;
         public int? StartKicks;
         public double? FinishLastStrokeGap;
         public int TotalPresses;
         public double? FinalTime;
+
+        /// <summary>Clean swimming averages, weighted by time and distance: Σcycles·60/Σtime, Σd/Σstrokes, Σd/Σcycles.</summary>
+        public double? AvgSr;
+        public double? AvgDps;
+        public double? AvgSl;
+
+        /// <summary>Marking problems and implausible values, to check on the video.</summary>
         public List<string> Warnings = new List<string>();
 
         /// <summary>Lists of event times (seconds after the start), sorted.</summary>
@@ -191,6 +233,7 @@ namespace Kinovea.ScreenManager
                 int ppc = SwimPresets.PressesPerCycle(row.Style);
                 int lastWall = (int)Math.Floor((row.PrevD + 1e-9) / pool) * pool;
                 row.IsSwim = row.PrevD >= lastWall + 15;
+                row.IsFree = row.IsSwim && row.D <= lastWall + pool - 5;
 
                 if (row.T.HasValue && tPrev.HasValue)
                 {
@@ -232,18 +275,42 @@ namespace Kinovea.ScreenManager
                         row.SrExact = 60.0 / ((sum / count) * ppc);
                 }
 
-                if (row.IsSwim && row.Strokes.HasValue && row.Strokes.Value > 0 && row.SegTime.HasValue && row.SegTime.Value > 0)
+                // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),
+                // like the race sheets of the Excel: in the last 5 m there is the glide and the start of the turn or of
+                // the finish, and in the first 15 m the underwater phase, so the values there are not those of the swimming.
+                if (row.IsFree && row.Strokes.HasValue && row.Strokes.Value > 0 && row.SegTime.HasValue && row.SegTime.Value > 0)
                 {
-                    row.Sr = (row.Strokes.Value / ppc) * 60.0 / row.SegTime.Value;
+                    double cycles = row.Strokes.Value / ppc;
+                    row.Sr = cycles * 60.0 / row.SegTime.Value;
                     row.Dps = (row.D - row.PrevD) / row.Strokes.Value;
+                    row.Sl = (row.D - row.PrevD) / cycles;
                 }
             }
+
+            // Clean swimming averages, weighted (a mean of the segment values would give the same weight to a 5 m and a 30 m segment).
+            double sumCycles = 0, sumTime = 0, sumStrokes = 0, sumDistance = 0;
+            foreach (SwimRow row in result.Rows.Where(r => r.Sr.HasValue))
+            {
+                sumCycles += row.Strokes.Value / SwimPresets.PressesPerCycle(row.Style);
+                sumTime += row.SegTime.Value;
+                sumStrokes += row.Strokes.Value;
+                sumDistance += row.D - row.PrevD;
+            }
+
+            if (sumTime > 0)
+                result.AvgSr = sumCycles * 60.0 / sumTime;
+            if (sumStrokes > 0)
+                result.AvgDps = sumDistance / sumStrokes;
+            if (sumCycles > 0)
+                result.AvgSl = sumDistance / sumCycles;
 
             // Start.
             double firstWallT = barriers.Count > 0 ? barriers[0] : double.MaxValue;
             result.ReactionTime = First(result.Reactions, t => t > 0 && t < firstWallT);
             result.BlockTime = First(result.FeetOff, t => t > 0 && t < firstWallT);
             result.EntryTime = First(result.Entries, t => t > 0 && t < firstWallT);
+            if (result.BlockTime.HasValue && result.EntryTime.HasValue && result.EntryTime.Value > result.BlockTime.Value)
+                result.FlightTime = result.EntryTime.Value - result.BlockTime.Value;
             result.StartUnderwaterTime = First(result.Breakouts, t => t > 0 && t < firstWallT);
             if (result.Kicks.Count > 0)
             {
@@ -272,8 +339,14 @@ namespace Kinovea.ScreenManager
                 double nextT = First(wallTimes, t => t > tw + 1e-9) ?? double.MaxValue;
                 double prevT = Last(wallTimes, t => t < tw - 1e-9) ?? 0;
 
-                double? pushoff = First(result.FeetOff, t => t > tw && t < nextT);
+                // Relays: at the end of each leg the "turn" is the exchange, and the next swimmer may leave the block
+                // a little before the touch (negative exchange time, allowed down to −0.03 s).
+                turn.Exchange = race.Relay && distance % 4 == 0 && wall % (distance / 4) == 0;
+                double fromT = turn.Exchange ? tw - 0.5 : tw;
+                double? pushoff = First(result.FeetOff, t => t > fromT && t < nextT);
                 double? breakout = First(result.Breakouts, t => t > tw && t < nextT);
+                turn.Pushoff = pushoff;
+                turn.Breakout = breakout;
                 if (pushoff.HasValue)
                     turn.TurnTime = pushoff.Value - tw;
                 if (breakout.HasValue)
@@ -300,6 +373,7 @@ namespace Kinovea.ScreenManager
                     result.FinishLastStrokeGap = tFinish - lastStroke.Value;
             }
 
+            CheckPlausibility(race, result, pool);
             return result;
         }
 
@@ -311,17 +385,30 @@ namespace Kinovea.ScreenManager
             List<SwimSegment> segments = new List<SwimSegment>();
             int d0 = 0;
             double t0 = 0;
+            int pool = reference.Pool <= 0 ? 50 : reference.Pool;
             foreach (SwimReferenceSplit s in reference.Times.OrderBy(x => x.D))
             {
                 if (s.D > d0 && s.T > t0)
                 {
-                    segments.Add(new SwimSegment { D0 = d0, D1 = s.D, V = (s.D - d0) / (s.T - t0) });
+                    segments.Add(new SwimSegment { D0 = d0, D1 = s.D, V = (s.D - d0) / (s.T - t0), Free = IsFreeSegment(d0, s.D, pool) });
                     d0 = s.D;
                     t0 = s.T;
                 }
             }
 
             return segments;
+        }
+
+        /// <summary>
+        /// Clean swimming segment: from at least 15 m after a wall to at least 5 m before the next one.
+        /// </summary>
+        public static bool IsFreeSegment(int d0, int d1, int pool)
+        {
+            if (pool <= 0 || d1 <= d0)
+                return false;
+
+            int lastWall = (int)Math.Floor((d0 + 1e-9) / pool) * pool;
+            return d0 >= lastWall + 15 && d1 <= lastWall + pool - 5;
         }
 
         /// <summary>
@@ -344,10 +431,324 @@ namespace Kinovea.ScreenManager
             return pool > 0 && d % pool == 0;
         }
 
+        #region Plausibility checks
+        // Wide limits on purpose: they catch marking errors (a missed or a double press, a split on the wrong
+        // checkpoint, a wrong slow motion factor), not a slow or a fast swimmer.
+        private const double MinVelocity = 0.4;
+        private const double MaxCleanVelocity = 2.7;
+        private const double MaxVelocity = 3.4;
+        private const double MinSr = 15;
+        private const double MaxSr = 80;
+
+        private class StrokeInterval
+        {
+            public string Style;
+            public double A;
+            public double B;
+        }
+
+        private static void CheckPlausibility(SwimRace race, SwimComputed result, int pool)
+        {
+            // A wrong slow motion factor scales all the times: one warning instead of one per value.
+            if (CheckTimeScale(result))
+                return;
+
+            CheckStart(result);
+            CheckVelocities(result);
+            CheckStrokeRates(result);
+            CheckStrokeIntervals(result);
+            CheckTurns(result);
+            CheckBreakouts(result, pool);
+            CheckCleanSegments(race, result, pool);
+        }
+
+        /// <summary>
+        /// Start events in their natural order: first movement → block release → hands entry → breakout.
+        /// The block release is what the touch pads give as the official reaction time (about 0.55–0.95 s).
+        /// </summary>
+        private static void CheckStart(SwimComputed result)
+        {
+            string[] names = { "η αντίδραση", "η αποδέσμευση από τον βατήρα", "η είσοδος στο νερό", "η έξοδος από το νερό" };
+            string[] after = { "την αντίδραση", "την αποδέσμευση από τον βατήρα", "την είσοδο στο νερό", "την έξοδο από το νερό" };
+            double?[] times = { result.ReactionTime, result.BlockTime, result.EntryTime, result.StartUnderwaterTime };
+            int previous = -1;
+            for (int i = 0; i < times.Length; i++)
+            {
+                if (!times[i].HasValue)
+                    continue;
+
+                if (previous >= 0 && times[i].Value <= times[previous].Value)
+                {
+                    result.Warnings.Add(Format("Εκκίνηση: {0} ({1:0.00} s) πρέπει να είναι μετά {2} ({3:0.00} s). Έλεγξε τα σημάδια.",
+                        names[i], times[i].Value, after[previous], times[previous].Value));
+                }
+
+                previous = i;
+            }
+
+            if (result.BlockTime.HasValue && (result.BlockTime.Value < 0.35 || result.BlockTime.Value > 1.3))
+            {
+                result.Warnings.Add(Format("Εκκίνηση: αποδέσμευση από τον βατήρα στα {0:0.00} s από το σήμα (συνήθως 0.55–0.95 s). Έλεγξε το καρέ του σήματος εκκίνησης.",
+                    result.BlockTime.Value));
+            }
+        }
+
+        private static bool CheckTimeScale(SwimComputed result)
+        {
+            List<double> clean = result.Rows.Where(r => r.IsFree && r.Vel.HasValue).Select(r => r.Vel.Value).ToList();
+            if (clean.Count < 2)
+                return false;
+
+            double median = Median(clean);
+            if (median >= 0.6 && median <= 2.6)
+                return false;
+
+            result.Warnings.Add(Format("Η ταχύτητα κολύμβησης βγαίνει {0:0.00} m/s (διάμεσος): δεν είναι ρεαλιστική. Έλεγξε τον συντελεστή αργής κίνησης (high speed) του βίντεο και ότι τα περάσματα είναι στα σωστά σημεία.", median));
+            return true;
+        }
+
+        private static void CheckVelocities(SwimComputed result)
+        {
+            List<string> found = new List<string>();
+            foreach (SwimRow row in result.Rows)
+            {
+                double max = row.IsFree ? MaxCleanVelocity : MaxVelocity;
+                if (row.Vel.HasValue && (row.Vel.Value < MinVelocity || row.Vel.Value > max))
+                    found.Add(Format("{0}–{1}μ. ({2:0.00} m/s)", row.PrevD, row.D, row.Vel.Value));
+            }
+
+            if (found.Count > 0)
+                result.Warnings.Add("Μη ρεαλιστική ταχύτητα στο τμήμα " + Join(found) + ": έλεγξε τα δύο περάσματα του τμήματος.");
+        }
+
+        private static void CheckStrokeRates(SwimComputed result)
+        {
+            List<string> found = result.Rows
+                .Where(r => r.Sr.HasValue && (r.Sr.Value < MinSr || r.Sr.Value > MaxSr))
+                .Select(r => Format("{0}–{1}μ. ({2:0.0})", r.PrevD, r.D, r.Sr.Value))
+                .ToList();
+            if (found.Count > 0)
+                result.Warnings.Add("Συχνότητα εκτός ορίων (15–80 κύκλοι/λεπτό) στο τμήμα " + Join(found) + ": έλεγξε τα πατήματα χεριάς και τα περάσματα.");
+
+            // Cycle length of each style. In freestyle and backstroke every hand entry is one press (two per cycle):
+            // one press per cycle doubles the length.
+            foreach (IGrouping<string, SwimRow> group in result.Rows.Where(r => r.Sl.HasValue).GroupBy(r => r.Style))
+            {
+                int ppc = SwimPresets.PressesPerCycle(group.Key);
+                double cycles = group.Sum(r => r.Strokes.Value / ppc);
+                double distance = group.Sum(r => (double)(r.D - r.PrevD));
+                if (cycles <= 0)
+                    continue;
+
+                double sl = distance / cycles;
+                if (sl > 3.4)
+                {
+                    result.Warnings.Add(Format("Μήκος κύκλου {0:0.00} m ({1}): πολύ μεγάλο. {2}", sl, StyleName(group.Key),
+                        ppc == 2 ? "Στο ελεύθερο και στο ύπτιο πατάς σε κάθε είσοδο χεριού (δύο πατήματα ανά κύκλο)." : "Μήπως λείπουν πατήματα χεριάς;"));
+                }
+                else if (sl < 0.9)
+                {
+                    result.Warnings.Add(Format("Μήκος κύκλου {0:0.00} m ({1}): πολύ μικρό. Μήπως υπάρχουν διπλά πατήματα χεριάς;", sl, StyleName(group.Key)));
+                }
+            }
+        }
+
+        /// <summary>
+        /// A missed stroke press gives an interval about twice the usual one and a double press a very short one.
+        /// Checked in the clean swimming only (no underwater phase, no glide into the wall), against the median
+        /// interval of the same style.
+        /// </summary>
+        private static void CheckStrokeIntervals(SwimComputed result)
+        {
+            // Windows of clean swimming (contiguous clean segments of the same style are merged).
+            List<double> windowStart = new List<double>();
+            List<double> windowEnd = new List<double>();
+            List<string> windowStyle = new List<string>();
+            foreach (SwimRow row in result.Rows)
+            {
+                if (!row.IsFree || !row.T.HasValue || row.Index == 0)
+                    continue;
+
+                double? t0 = result.Rows[row.Index - 1].T;
+                if (!t0.HasValue || row.T.Value <= t0.Value)
+                    continue;
+
+                int n = windowEnd.Count;
+                if (n > 0 && Math.Abs(windowEnd[n - 1] - t0.Value) < 1e-9 && windowStyle[n - 1] == row.Style)
+                {
+                    windowEnd[n - 1] = row.T.Value;
+                }
+                else
+                {
+                    windowStart.Add(t0.Value);
+                    windowEnd.Add(row.T.Value);
+                    windowStyle.Add(row.Style);
+                }
+            }
+
+            List<StrokeInterval> intervals = new List<StrokeInterval>();
+            List<double> s = result.Strokes;
+            for (int j = 0; j + 1 < s.Count; j++)
+            {
+                for (int k = 0; k < windowStart.Count; k++)
+                {
+                    if (s[j] >= windowStart[k] - 1e-9 && s[j + 1] <= windowEnd[k] + 1e-9)
+                    {
+                        intervals.Add(new StrokeInterval { Style = windowStyle[k], A = s[j], B = s[j + 1] });
+                        break;
+                    }
+                }
+            }
+
+            List<string> missed = new List<string>();
+            List<string> doubled = new List<string>();
+            foreach (IGrouping<string, StrokeInterval> group in intervals.GroupBy(x => x.Style))
+            {
+                List<double> durations = group.Select(x => x.B - x.A).ToList();
+                if (durations.Count < 6)
+                    continue;
+
+                double median = Median(durations);
+                if (median <= 0)
+                    continue;
+
+                foreach (StrokeInterval x in group)
+                {
+                    double d = x.B - x.A;
+                    if (d > 1.75 * median)
+                        missed.Add(Format("{0:0.00}–{1:0.00} s", x.A, x.B));
+                    else if (d < 0.4 * median)
+                        doubled.Add(Format("{0:0.00} s", x.B));
+                }
+            }
+
+            if (missed.Count > 0)
+                result.Warnings.Add("Χεριές: μεγάλο κενό ανάμεσα σε δύο πατήματα στα " + Join(missed) + " (σχεδόν διπλάσιο από το συνηθισμένο): μήπως λείπει ένα πάτημα;");
+            if (doubled.Count > 0)
+                result.Warnings.Add("Χεριές: πολύ κοντινά πατήματα στα " + Join(doubled) + ": μήπως διπλό πάτημα;");
+        }
+
+        /// <summary>
+        /// Wall contact → feet off is about 0.2–0.4 s in a flip turn and 0.8–1.4 s in an open turn; an exchange is
+        /// usually 0.1–0.5 s. A much longer time means a split on the wrong checkpoint (the wall time is not the wall)
+        /// or a missing feet off mark at this wall.
+        /// </summary>
+        private static void CheckTurns(SwimComputed result)
+        {
+            List<string> found = new List<string>();
+            foreach (SwimTurnComputed turn in result.Turns)
+            {
+                string name = (turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + "μ.";
+                if (turn.TurnTime.HasValue && turn.TurnTime.Value > (turn.Exchange ? 1.5 : 2.5))
+                    found.Add(Format("{0}: χρόνος {1:0.00} s", name, turn.TurnTime.Value));
+                else if (turn.UnderwaterTime.HasValue && turn.UnderwaterTime.Value > 12)
+                    found.Add(Format("{0}: υποβρύχια {1:0.00} s", name, turn.UnderwaterTime.Value));
+            }
+
+            if (found.Count > 0)
+                result.Warnings.Add("Στροφές: " + Join(found) + ". Έλεγξε την επαφή στον τοίχο (μήπως το πέρασμα γράφτηκε σε άλλο σημείο), την αποκόλληση και την έξοδο.");
+        }
+
+        /// <summary>
+        /// The head must break the surface within 15 m of the start and of each turn. A breakout after the checkpoint
+        /// of +15 m is a marking error (or a disqualification), and the next segment would not be clean swimming.
+        /// </summary>
+        private static void CheckBreakouts(SwimComputed result, int pool)
+        {
+            List<int> walls = new List<int> { 0 };
+            List<double?> breakouts = new List<double?> { result.StartUnderwaterTime };
+            List<string> names = new List<string> { "εκκίνηση" };
+            foreach (SwimTurnComputed turn in result.Turns)
+            {
+                walls.Add(turn.Wall);
+                breakouts.Add(turn.Breakout);
+                names.Add((turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + "μ.");
+            }
+
+            List<string> found = new List<string>();
+            for (int i = 0; i < walls.Count; i++)
+            {
+                if (!breakouts[i].HasValue)
+                    continue;
+
+                int wall = walls[i];
+                SwimRow row = result.Rows.FirstOrDefault(r => r.D >= wall + 15 && r.D < wall + pool && r.T.HasValue);
+                if (row != null && breakouts[i].Value > row.T.Value + 0.1)
+                    found.Add(Format("{0}: {1:0.00} s, μετά το πέρασμα των {2}μ. ({3:0.00} s)", names[i], breakouts[i].Value, row.D, row.T.Value));
+            }
+
+            if (found.Count > 0)
+                result.Warnings.Add("Έξοδος από το νερό μετά τα 15μ. (" + Join(found) + "). Έλεγξε το σημάδι εξόδου: το επόμενο τμήμα μετράει ως καθαρή κολύμβηση.");
+        }
+
+        /// <summary>
+        /// Stroke rate and length need at least one segment between +15 m and −5 m of the walls in every length.
+        /// </summary>
+        private static void CheckCleanSegments(SwimRace race, SwimComputed result, int pool)
+        {
+            if (result.Strokes.Count == 0 || pool < 25 || race.Distance <= 0)
+                return;
+
+            List<string> lengths = new List<string>();
+            for (int wall = 0; wall < race.Distance; wall += pool)
+            {
+                int end = Math.Min(wall + pool, race.Distance);
+                if (!result.Rows.Any(r => r.IsFree && r.PrevD >= wall && r.D <= end))
+                    lengths.Add(Format("{0}–{1}μ.", wall, end));
+            }
+
+            if (lengths.Count > 0)
+            {
+                result.Warnings.Add(Format("Δεν υπάρχει τμήμα καθαρής κολύμβησης {0} {1}, οπότε εκεί δεν βγαίνουν συχνότητα και μήκος χεριάς. Χρειάζονται δύο σημεία ελέγχου ανάμεσα στα +15μ. και −5μ. από τους τοίχους (π.χ. {2} και {3}μ.).",
+                    lengths.Count == 1 ? "στο μήκος" : "στα μήκη", Join(lengths), 15, pool - 5));
+            }
+        }
+
+        private static string Format(string format, params object[] args)
+        {
+            return string.Format(CultureInfo.InvariantCulture, format, args);
+        }
+
+        /// <summary>
+        /// The first items of a list, so a warning stays short.
+        /// </summary>
+        private static string Join(List<string> items)
+        {
+            const int max = 3;
+            string text = string.Join(", ", items.Take(max).ToArray());
+            if (items.Count > max)
+                text += Format(" και {0} ακόμη", items.Count - max);
+
+            return text;
+        }
+
+        private static double Median(List<double> values)
+        {
+            if (values.Count == 0)
+                return 0;
+
+            List<double> sorted = values.OrderBy(v => v).ToList();
+            int mid = sorted.Count / 2;
+            return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        }
+
+        private static string StyleName(string style)
+        {
+            int i = Array.IndexOf(SwimPresets.Styles, style);
+            if (i < 0 || i >= SwimPresets.StyleNames.Length)
+                return style;
+
+            string name = SwimPresets.StyleNames[i];
+            int p = name.IndexOf(" (", StringComparison.Ordinal);
+            return (p > 0 ? name.Substring(0, p) : name).ToLowerInvariant();
+        }
+        #endregion
+
         private static double Round(double x, double step)
         {
+            // Same rounding as the sheet (JavaScript Math.round: halves away from zero for these positive values).
             if (step <= 0)
-                return Math.Round(x * 100) / 100;
+                return Math.Round(x * 100, MidpointRounding.AwayFromZero) / 100;
 
             return Math.Round(x / step + 1e-9, MidpointRounding.AwayFromZero) * step;
         }

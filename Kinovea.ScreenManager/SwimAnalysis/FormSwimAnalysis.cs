@@ -119,6 +119,10 @@ namespace Kinovea.ScreenManager
         private static readonly Color colorFaster = Color.FromArgb(0, 140, 60);
         private static readonly Color colorSlower = Color.FromArgb(200, 30, 30);
 
+        /// <summary>Segments outside the clean swimming (conventional velocity, no stroke rate / length), as in the sheet.</summary>
+        private static readonly Color colorPhase = Color.FromArgb(252, 228, 204);
+        private LinkLabel lnkChecks;
+
         // Tab: turns
         private Label lblTurnCurrent;
         private Label lblTurnGap;
@@ -134,6 +138,7 @@ namespace Kinovea.ScreenManager
         private Label lblFinalTime;
         private TextBox tbFinishDist;
         private Label lblFinishSummary;
+        private TextBox tbChecks;
 
         // Calibration (start, turns and finish tabs)
         private GroupBox grpCalibration;
@@ -303,18 +308,20 @@ namespace Kinovea.ScreenManager
 
             lblReactionAuto = ValueLabel();
             tbReaction = NumberBox();
-            toolTip.SetToolTip(tbReaction, "Επίσημος χρόνος αντίδρασης (π.χ. από τα αποτελέσματα). Αν συμπληρωθεί, υπερισχύει του σημαδιού.");
-            AddEventRow(t, "Αντίδραση", PlayerScreenCommands.SwimReaction, "Αντίδραση",
-                "Η πρώτη κίνηση του αθλητή μετά το σήμα.", lblReactionAuto, Caption("επίσημος:"), tbReaction, Unit("s"));
+            toolTip.SetToolTip(tbReaction, "Χρόνος από το σήμα έως την πρώτη κίνηση, αν τον μετράς αλλιώς. Αν συμπληρωθεί, υπερισχύει του σημαδιού.\n" +
+                "Μην γράφεις εδώ τον επίσημο χρόνο αντίδρασης των αποτελεσμάτων (≈0.6 s): αυτός αντιστοιχεί στην αποδέσμευση από τον βατήρα.");
+            AddEventRow(t, "Αντίδραση (πρώτη κίνηση)", PlayerScreenCommands.SwimReaction, "Αντίδραση",
+                "Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης, που είναι η αποδέσμευση από τον βατήρα).",
+                lblReactionAuto, Caption("ή γράψε:"), tbReaction, Unit("s"));
 
             lblBlock = ValueLabel();
             AddEventRow(t, "Αποδέσμευση από τον βατήρα", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση",
-                "Τα πόδια φεύγουν από τον βατήρα (χρόνος πάνω στον βατήρα).", lblBlock);
+                "Τα πόδια φεύγουν από τον βατήρα (χρόνος πάνω στον βατήρα). Αντιστοιχεί στον επίσημο χρόνο αντίδρασης των αποτελεσμάτων.", lblBlock);
 
             lblEntry = ValueLabel();
             tbEntryDistHands = NumberBox();
             AddEventRow(t, "Είσοδος χεριών στο νερό", PlayerScreenCommands.SwimEntry, "Είσοδος χεριών",
-                "Τα χέρια μπαίνουν στο νερό (χρόνος πτήσης). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
+                "Τα χέρια μπαίνουν στο νερό: χρόνος από το σήμα και χρόνος πτήσης (αποδέσμευση → είσοδος). Η απόσταση μετριέται από τον τοίχο εκκίνησης.",
                 lblEntry, Caption("απόσταση:"), tbEntryDistHands, Unit("m"),
                 PickButton(SwimPickTarget.EntryHands, "Κλικ στο βίντεο εκεί που τα χέρια μπαίνουν στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης."));
 
@@ -393,7 +400,8 @@ namespace Kinovea.ScreenManager
             chkSpeedChart.CheckedChanged += (s, e) => CommitOverlayOptions();
             chkSplitBoard.CheckedChanged += (s, e) => CommitOverlayOptions();
             cmbCorner.SelectedIndexChanged += (s, e) => CommitOverlayOptions();
-            toolTip.SetToolTip(chkSpeedChart, "Γράφημα με την ταχύτητα κάθε τμήματος πάνω στο βίντεο (αθλητής και αναφορά). Ακολουθεί τον χρόνο του βίντεο.");
+            toolTip.SetToolTip(chkSpeedChart, "Γράφημα με την ταχύτητα κάθε τμήματος πάνω στο βίντεο (αθλητής και αναφορά). Ακολουθεί τον χρόνο του βίντεο.\n" +
+                "Συνεχής γραμμή: καθαρή κολύμβηση · διάστικτη: εκκίνηση, στροφές και τελευταία 5μ. (συμβατική ταχύτητα).");
             toolTip.SetToolTip(chkSplitBoard, "Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο.");
             overlay.Controls.Add(Caption("Στο βίντεο:"));
             overlay.Controls.Add(chkSpeedChart);
@@ -415,9 +423,15 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("strokes", "Χεριές", 52));
             grid.Columns.Add(Column("sr", "SR", 50));
             grid.Columns.Add(Column("dps", "DPS", 50));
+            grid.Columns.Add(Column("sl", "SL", 46));
             grid.Columns.Add(Column("srx", "SR χρόνων", 64));
             grid.Columns.Add(Column("ref", "Αναφορά", 62));
             grid.Columns.Add(Column("delta", "Δ", 54));
+            grid.Columns["vel"].ToolTipText = "Μέση ταχύτητα του τμήματος. Πορτοκαλί: εκκίνηση, στροφή ή τελευταία 5μ. πριν τον τοίχο, όπου η ταχύτητα είναι συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι).";
+            grid.Columns["sr"].ToolTipText = "Συχνότητα (κύκλοι/λεπτό), μόνο στην καθαρή κολύμβηση: από 15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο.";
+            grid.Columns["dps"].ToolTipText = "Μέτρα ανά χεριά (ελεύθερο/ύπτιο: ανά χέρι), μόνο στην καθαρή κολύμβηση.";
+            grid.Columns["sl"].ToolTipText = "Μήκος κύκλου (m/κύκλο), μόνο στην καθαρή κολύμβηση. Ελεύθερο/ύπτιο: 2 × DPS.";
+            grid.Columns["srx"].ToolTipText = "Συχνότητα από τα διαστήματα ανάμεσα στα πατήματα μέσα στο τμήμα (δεν επηρεάζεται από το γλίστρημα). Με λίγες χεριές είναι ενδεικτική.";
             grid.CellDoubleClick += Grid_CellDoubleClick;
             grid.KeyDown += Grid_KeyDown;
 
@@ -426,10 +440,15 @@ namespace Kinovea.ScreenManager
                 Dock = DockStyle.Bottom,
                 Height = 32,
                 ForeColor = Color.DimGray,
-                Text = "Διπλό κλικ: μετάβαση του βίντεο στο σημείο · Delete: διαγραφή του χρόνου (το επόμενο Πέρασμα τον ξαναγράφει) · SR χρόνων: από τα διαστήματα των χεριών"
+                Text = "Διπλό κλικ: μετάβαση του βίντεο στο σημείο · Delete: διαγραφή του χρόνου · SR / DPS / SL μόνο στην καθαρή κολύμβηση (+15μ. έως −5μ.) · πορτοκαλί: συμβατική ταχύτητα"
             };
 
+            lnkChecks = new LinkLabel { Dock = DockStyle.Bottom, Height = 34, AutoEllipsis = true, Visible = false, LinkColor = colorWarn, ActiveLinkColor = colorError, Padding = new Padding(0, 2, 0, 0) };
+            lnkChecks.LinkClicked += (s, e) => tabs.SelectedTab = tabFinish;
+            toolTip.SetToolTip(lnkChecks, "Έλεγχοι των δεδομένων: όλοι στην καρτέλα Τερματισμός.");
+
             page.Controls.Add(grid);
+            page.Controls.Add(lnkChecks);
             page.Controls.Add(hint);
             page.Controls.Add(t);
             page.Controls.Add(overlay);
@@ -515,8 +534,14 @@ namespace Kinovea.ScreenManager
                 tbFinishDist, Unit("m"),
                 PickButton(SwimPickTarget.FinishLastStroke, "Κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά: απόσταση από τον τοίχο τερματισμού."));
 
-            lblFinishSummary = new Label { Dock = DockStyle.Top, Height = 48, ForeColor = colorBusy, Padding = new Padding(0, 8, 0, 0) };
+            lblFinishSummary = new Label { Dock = DockStyle.Top, Height = 52, ForeColor = colorBusy, Padding = new Padding(0, 8, 0, 0) };
 
+            Label lblChecks = new Label { Text = "Έλεγχος δεδομένων", Dock = DockStyle.Top, Height = 24, Font = valueFont, ForeColor = colorValue, TextAlign = ContentAlignment.BottomLeft };
+            tbChecks = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            toolTip.SetToolTip(tbChecks, "Πιθανά λάθη στα σημάδια (χαμένο ή διπλό πάτημα, πέρασμα σε λάθος σημείο, σειρά της εκκίνησης) και τιμές έξω από τα ρεαλιστικά όρια.");
+
+            page.Controls.Add(tbChecks);
+            page.Controls.Add(lblChecks);
             page.Controls.Add(lblFinishSummary);
             page.Controls.Add(t);
             return page;
@@ -1048,9 +1073,11 @@ namespace Kinovea.ScreenManager
                 gr.Cells["t"].Value = Format(row.T);
                 gr.Cells["seg"].Value = Format(row.SegTime);
                 gr.Cells["vel"].Value = Format(row.Vel);
+                gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
                 gr.Cells["strokes"].Value = FormatStrokes(row.Strokes);
                 gr.Cells["sr"].Value = Format(row.Sr, "0.0");
                 gr.Cells["dps"].Value = Format(row.Dps);
+                gr.Cells["sl"].Value = Format(row.Sl);
                 gr.Cells["srx"].Value = Format(row.SrExact, "0.0");
                 gr.Cells["ref"].Value = Format(row.RefT);
                 DataGridViewCell deltaCell = gr.Cells["delta"];
@@ -1096,7 +1123,7 @@ namespace Kinovea.ScreenManager
             lblStartSignal.ForeColor = race.StartTimestamp.HasValue ? colorOk : colorWarn;
             lblReactionAuto.Text = Seconds(computed.ReactionTime);
             lblBlock.Text = Seconds(computed.BlockTime);
-            lblEntry.Text = Seconds(computed.EntryTime);
+            lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? " · πτήση " + Seconds(computed.FlightTime) : "");
             lblStartKicks.Text = computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             lblBreakout.Text = Seconds(computed.StartUnderwaterTime);
 
@@ -1111,11 +1138,36 @@ namespace Kinovea.ScreenManager
             string finalDelta = finalRow != null && finalRow.Delta.HasValue && computed.Reference != null
                 ? string.Format(" · Δ τελικού {0} από «{1}»", SwimReference.FormatDelta(finalRow.Delta.Value), computed.Reference.Name)
                 : "";
+            string clean = computed.AvgSr.HasValue
+                ? string.Format(CultureInfo.InvariantCulture, "\nΚαθαρή κολύμβηση: SR {0:0.0} κύκλοι/λεπτό · DPS {1:0.00} m/χεριά · SL {2:0.00} m/κύκλο",
+                    computed.AvgSr.Value, computed.AvgDps ?? 0, computed.AvgSl ?? 0)
+                : "";
             lblFinishSummary.Text = string.Format(CultureInfo.InvariantCulture,
                 "Συνολικές χεριές (πατήματα): {0}{1}{2}",
                 computed.TotalPresses,
                 finalDelta,
-                computed.Warnings.Count > 0 ? "\n⚠ " + computed.Warnings[0] : "");
+                clean);
+
+            // Data checks.
+            string checks = computed.Warnings.Count == 0
+                ? (computed.Rows.Any(r => r.T.HasValue) ? "✔ Δεν βρέθηκε κάποιο πρόβλημα στα σημάδια." : "")
+                : string.Join(Environment.NewLine, computed.Warnings.Select(w => "⚠ " + w).ToArray());
+            if (tbChecks.Text != checks)
+                tbChecks.Text = checks;
+            tbChecks.ForeColor = computed.Warnings.Count > 0 ? colorWarn : colorOk;
+
+            lnkChecks.Visible = computed.Warnings.Count > 0;
+            if (computed.Warnings.Count > 0)
+            {
+                string link = string.Format(CultureInfo.InvariantCulture, "⚠ {0}: {1}",
+                    computed.Warnings.Count == 1 ? "1 έλεγχος" : computed.Warnings.Count + " έλεγχοι",
+                    computed.Warnings[0]);
+                if (lnkChecks.Text != link)
+                {
+                    lnkChecks.Text = link;
+                    lnkChecks.LinkArea = new LinkArea(0, link.Length);
+                }
+            }
 
             // Turns.
             if (!gridTurns.IsCurrentCellInEditMode)
@@ -1133,7 +1185,7 @@ namespace Kinovea.ScreenManager
                     SwimTurnManual manual = race.GetTurn(t.Wall, false);
                     DataGridViewRow gr = gridTurns.Rows[i];
                     gr.Tag = t.Wall;
-                    gr.Cells["wall"].Value = t.Wall;
+                    gr.Cells["wall"].Value = t.Exchange ? t.Wall.ToString(CultureInfo.InvariantCulture) + " αλλαγή" : t.Wall.ToString(CultureInfo.InvariantCulture);
                     gr.Cells["uwDist"].Value = manual != null ? Format(manual.UnderwaterDist) : "";
                     gr.Cells["turnTime"].Value = manual != null && manual.TurnTime.HasValue ? Format(manual.TurnTime) : Format(t.TurnTime);
                     gr.Cells["uwTime"].Value = Format(t.UnderwaterTime);
@@ -1176,7 +1228,7 @@ namespace Kinovea.ScreenManager
             }
             else
             {
-                lblTurnCurrent.Text = string.Format("Στροφή στα {0}μ.{1}", wall, manager.CurrentTurnWall == wall ? " (η θέση του βίντεο)" : " (επιλεγμένη)");
+                lblTurnCurrent.Text = string.Format("{0} στα {1}μ.{2}", t.Exchange ? "Αλλαγή" : "Στροφή", wall, manager.CurrentTurnWall == wall ? " (η θέση του βίντεο)" : " (επιλεγμένη)");
             }
 
             SwimTurnManual manual = wall > 0 ? race.GetTurn(wall, false) : null;
@@ -1184,7 +1236,7 @@ namespace Kinovea.ScreenManager
             lblTurnGap.Text = t != null && t.LastStrokeGap.HasValue ? "→ τοίχος " + Seconds(t.LastStrokeGap) : "–";
             lblTurnWall.Text = wallRow != null && wallRow.T.HasValue ? wall + "μ. στα " + FormatRaceTime(wallRow.T.Value) : "–";
             double? turnTime = manual != null && manual.TurnTime.HasValue ? manual.TurnTime : (t != null ? t.TurnTime : null);
-            lblTurnTime.Text = turnTime.HasValue ? "χρόνος στροφής " + Seconds(turnTime) : "–";
+            lblTurnTime.Text = turnTime.HasValue ? (t != null && t.Exchange ? "χρόνος αλλαγής " : "χρόνος στροφής ") + Seconds(turnTime) : "–";
             lblTurnKicks.Text = t != null && t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             string uwTime = t != null && t.UnderwaterTime.HasValue ? "υποβρύχια " + Seconds(t.UnderwaterTime) : "–";
             string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " μ." : "";

@@ -28,6 +28,15 @@ assert.strictEqual(n50, 38, 'strokes to 50 = number of presses before wall'); //
 assert.strictEqual(rows[5].strokes, 5.5, '50-65');
 assert.strictEqual(rows[0].isSwim, false); assert.strictEqual(rows[1].isSwim, true); assert.strictEqual(rows[4].isSwim, true);
 assert.strictEqual(rows[5].isSwim, false); assert.strictEqual(rows[4].isFree, false); assert.strictEqual(rows[3].isFree, true);
+// SR / DPS / SL only in clean swimming: not in the last 5 m before the wall, not in 0-15 / 50-65
+assert.strictEqual(rows[4].sr, null, 'no SR in 45-50'); assert.strictEqual(rows[4].dps, null, 'no DPS in 45-50');
+assert.strictEqual(rows[0].sr, null); assert.strictEqual(rows[5].sr, null); assert.strictEqual(rows[9].sr, null, 'no SR in 95-100');
+assert.ok(near(rows[1].sl, 10 / (9.5 / 2)), 'SL per cycle ' + rows[1].sl);
+assert.ok(near(rows[1].dps * 2, rows[1].sl), 'fs: SL = 2 x DPS');
+// average SR weighted by time over the clean segments
+const clean = rows.filter(r => r.sr !== null);
+const wsr = clean.reduce((s, r) => s + r.strokes / r.ppc, 0) * 60 / clean.reduce((s, r) => s + r.segTime, 0);
+assert.ok(near(a.summary.avgSr, wsr), 'weighted avg SR');
 // start
 assert.strictEqual(a.start.blockTime, 0.7); assert.strictEqual(a.start.entryTime, 1.0);
 assert.strictEqual(a.start.underwaterTime, 4.5); assert.strictEqual(a.start.kicks, 4);
@@ -37,6 +46,15 @@ assert.strictEqual(t.wall, 50); assert.ok(near(t.turnTime, 0.6)); assert.ok(near
 assert.strictEqual(t.kicks, 3); assert.ok(near(t.lastStrokeGap, 0.5));
 // finish: last press 49.0 -> gap 0.3
 assert.ok(near(a.finish.lastStrokeGap, 49.3 - 49.0), 'finish gap ' + a.finish.lastStrokeGap);
+
+// 1b) Relay exchange: the next swimmer may leave the block just before the touch
+const relay = S.swimNormalizeRace_({ id: 'rl', style: 'fs', relay: true, distance: 400, pool: 50,
+  checkpoints: [{d:15,t:6.0},{d:25,t:11},{d:35,t:16},{d:45,t:21},{d:50,t:23.8},{d:65,t:30},{d:75,t:35},{d:85,t:40},{d:95,t:45},{d:100,t:48.0},{d:115,t:54.2}],
+  feetOff: [0.7, 24.1, 47.98], breakouts: [4.5, 27.0, 52.0] });
+const ra = S.swimAnalyze_(relay);
+assert.ok(ra.turns[1].exchange, 'leg boundary is an exchange');
+assert.ok(near(ra.turns[1].turnTime, -0.02), 'exchange time may be negative: ' + ra.turns[1].turnTime);
+assert.ok(!ra.turns[0].exchange && near(ra.turns[0].turnTime, 0.3), 'normal turn');
 
 // 2) Medley styles
 const im = S.swimNormalizeRace_({ id: 'im', style: 'medley', distance: 200, pool: 50, checkpoints: [50,100,150,200].map(d=>({d})) });
