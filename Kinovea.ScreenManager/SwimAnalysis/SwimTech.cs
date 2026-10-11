@@ -401,20 +401,45 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Where the panel passes from one phase to the next (b begins at bTime): the approach of a turn or the lead of a start,
-        /// at most half of the time between them, never before the last event of the previous phase and never after the contact.
+        /// at most half of the time between them, earlier for an approach marked before it (slow −5),
+        /// never before the last event of the previous phase and never after the contact.
         /// </summary>
         private static long Boundary(SwimTiming timing, SwimTechPhase a, long aTime, SwimTechPhase b, long bTime)
         {
             long lead = Before(timing, b != null && b.Kind == SwimPhaseKind.Start ? LeadSeconds : ApproachSeconds);
             long boundary = Math.Max(bTime - lead, aTime + (bTime - aTime) / 2);
+            long afterA = long.MinValue;
             if (a != null)
             {
                 double last = LastAfterEvent(a);
                 if (last > 0)
-                    boundary = Math.Max(boundary, aTime + Before(timing, last) + 1);
+                    afterA = aTime + Before(timing, last) + 1;
+            }
+
+            boundary = Math.Max(boundary, afterA);
+            double approach = b != null ? FirstApproachEvent(b) : 0;
+            if (approach < 0)
+            {
+                long approachStart = bTime - Before(timing, -approach);
+                if (approachStart < boundary)
+                    boundary = Math.Max(approachStart, afterA);
             }
 
             return Math.Min(boundary, bTime);
+        }
+
+        /// <summary>Seconds (negative) of the first event of the approach of a turn (−5, last stroke, rotation), 0 without one.</summary>
+        private static double FirstApproachEvent(SwimTechPhase p)
+        {
+            double first = 0;
+            double tIn;
+            if (p.Splits.TryGetValue(-5, out tIn) && tIn < first)
+                first = tIn;
+            if (p.LastStroke.HasValue && p.LastStroke.Value < first)
+                first = p.LastStroke.Value;
+            if (p.RotationStart.HasValue && p.RotationStart.Value < first)
+                first = p.RotationStart.Value;
+            return first;
         }
 
         /// <summary>Seconds of the last event after the origin of a phase (push-off, kicks, breakout, first stroke, 5/10/15).</summary>
@@ -691,6 +716,11 @@ namespace Kinovea.ScreenManager
                         if (current.Splits.Any(s => s.Key > offset && s.Value <= t))
                             continue;
 
+                        // Too late for this distance at the pace of the previous ones (e.g. +15 not visible on the video):
+                        // the press is for the next wall.
+                        if (t > Latest(current, offset))
+                            break;
+
                         phase = current;
                         return offset;
                     }
@@ -711,6 +741,19 @@ namespace Kinovea.ScreenManager
 
             phase = phases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == wall);
             return -5;
+        }
+
+        /// <summary>Latest plausible time of the head at a distance, from the times at the previous distances of the phase.</summary>
+        private static double Latest(SwimTechPhase p, int offset)
+        {
+            double tp, tpp;
+            bool hasPrevious = p.Splits.TryGetValue(offset - 5, out tp);
+            bool hasBefore = p.Splits.TryGetValue(offset - 10, out tpp);
+            if (hasPrevious && hasBefore && tp > tpp)
+                return tp + Math.Max(3.0, 3 * (tp - tpp));
+            if (hasPrevious && tp > 0)
+                return tp + Math.Max(3.0, 2 * tp);
+            return PositiveSeconds;
         }
 
         /// <summary>The phase whose origin (signal or contact) is the last one before a timestamp, while its events last.</summary>
