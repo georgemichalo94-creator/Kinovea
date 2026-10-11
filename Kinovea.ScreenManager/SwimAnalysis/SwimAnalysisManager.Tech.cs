@@ -581,7 +581,7 @@ namespace Kinovea.ScreenManager
             ImageCodecInfo codec = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.MimeType == "image/jpeg");
             if (codec == null)
             {
-                image.Save(path, ImageFormat.Jpeg);
+                image.Save(path, System.Drawing.Imaging.ImageFormat.Jpeg);
                 return path;
             }
 

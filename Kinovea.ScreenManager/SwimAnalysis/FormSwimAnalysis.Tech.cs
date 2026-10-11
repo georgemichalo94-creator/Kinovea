@@ -10,6 +10,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using Kinovea.Services;
 
 namespace Kinovea.ScreenManager
 {

@@ -38,9 +38,25 @@ jobs:
       shell: pwsh
       run: |
         if (Test-Path msbuild.log) {
-          $lines = Select-String -Path msbuild.log -Pattern ": error " | ForEach-Object { ($_.Line -replace '\s*\[[^\]]*\.csproj\]', '').Trim() } | Select-Object -Unique -First 120
-          $text = ($lines -join "`n").Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
-          Write-Output "::error title=Build errors::$text"
+          $first = @{}; $count = @{}; $keys = New-Object System.Collections.Generic.List[string]
+          foreach ($m in Select-String -Path msbuild.log -Pattern ': error ') {
+            $line = ($m.Line -replace '\s*\[[^\]]*\.csproj\]', '').Trim()
+            $line = $line -replace '^.*\\Kinovea\\Kinovea\\', ''
+            $key = $line -replace '\(\d+,\d+\)', ''
+            if ($first.ContainsKey($key)) { $count[$key] = $count[$key] + 1 } else { $first[$key] = $line; $count[$key] = 1; $keys.Add($key) }
+          }
+          $chunk = ''; $n = 1
+          foreach ($k in $keys) {
+            $l = $first[$k]
+            if ($count[$k] -gt 1) { $l = $l + ' (x' + $count[$k] + ')' }
+            if ($chunk.Length + $l.Length + 1 -gt 3800 -and $chunk.Length -gt 0) {
+              Write-Output ('::error title=Build errors ' + $n + '::' + $chunk.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A'))
+              $n++; $chunk = ''
+              if ($n -gt 10) { break }
+            }
+            $chunk = $chunk + $l + "`n"
+          }
+          if ($chunk.Length -gt 0 -and $n -le 10) { Write-Output ('::error title=Build errors ' + $n + '::' + $chunk.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')) }
         }
 
     - name: Create Portable AppData Folder
