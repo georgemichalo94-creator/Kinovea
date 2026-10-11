@@ -5,6 +5,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 */
 #endregion
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -35,6 +36,9 @@ namespace Kinovea.ScreenManager
         public string SheetUrl;
         public string PdfUrl;
         public string SpreadsheetName;
+
+        /// <summary>Google Drive file of an uploaded image.</summary>
+        public string FileId;
         public JObject Raw;
     }
 
@@ -151,13 +155,71 @@ namespace Kinovea.ScreenManager
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
-        private void Simple(string url, string token, string action, Action<SwimSheetResult> callback)
+        /// <summary>
+        /// Other analyses of the athlete in the same event (for the comparison with a previous race). The callback runs on the UI thread.
+        /// </summary>
+        public void GetAnalyses(string url, string token, JObject query, Action<SwimSheetResult> callback)
+        {
+            JObject o = Request(token, "analyses");
+            o["query"] = query;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>
+        /// Upload a snapshot of the technical analysis (JPEG) to the Drive. The callback runs on the UI thread.
+        /// </summary>
+        public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] jpeg, Action<SwimSheetResult> callback)
+        {
+            JObject o = Request(token, "image");
+            o["raceId"] = raceId;
+            o["snapshotId"] = snapshotId;
+            o["mime"] = "image/jpeg";
+            o["data"] = Convert.ToBase64String(jpeg);
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>
+        /// The library of elite frames (sheet "Elite καρέ"). The callback runs on the UI thread.
+        /// </summary>
+        public void GetEliteFrames(string url, string token, Action<SwimSheetResult> callback)
+        {
+            Simple(url, token, "eliteFrames", callback);
+        }
+
+        /// <summary>
+        /// Add a frame to the elite library. The callback runs on the UI thread.
+        /// </summary>
+        public void SaveEliteFrame(string url, string token, JObject frame, byte[] jpeg, Action<SwimSheetResult> callback)
+        {
+            JObject o = Request(token, "saveEliteFrame");
+            o["frame"] = frame;
+            o["mime"] = "image/jpeg";
+            o["data"] = Convert.ToBase64String(jpeg);
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>
+        /// Download an image of the snapshots or of the elite library (base64 in Raw["data"]). The callback runs on the UI thread.
+        /// </summary>
+        public void GetImage(string url, string token, string fileId, Action<SwimSheetResult> callback)
+        {
+            JObject o = Request(token, "getImage");
+            o["fileId"] = fileId;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        private static JObject Request(string token, string action)
         {
             JObject o = new JObject();
             o["app"] = SwimPayload.AppId;
             o["token"] = token;
             o["action"] = action;
-            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+            return o;
+        }
+
+        private void Simple(string url, string token, string action, Action<SwimSheetResult> callback)
+        {
+            Send(url, Request(token, action).ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
         private void Send(string url, string body, Action<SwimSheetResult> callback)
@@ -311,6 +373,7 @@ namespace Kinovea.ScreenManager
             result.SheetName = o.Value<string>("sheetName");
             result.SheetUrl = o.Value<string>("sheetUrl") ?? o.Value<string>("url");
             result.SpreadsheetName = o.Value<string>("spreadsheet");
+            result.FileId = o.Value<string>("fileId");
 
             JObject pdf = o["pdf"] as JObject;
             if (pdf != null)
@@ -327,10 +390,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Lets the backend recognize our requests inside a project that has its own doPost.</summary>
         public const string AppId = "kinovea-swim";
 
-        public static string Build(SwimRace race, SwimComputed computed, SwimSettings settings, string videoName, string action)
+        public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
+            SwimSettings settings, string videoName, string action)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
+            r["kind"] = race.IsTraining ? SwimRace.KindTraining : SwimRace.KindRace;
             r["athlete"] = race.Athlete ?? "";
             r["athleteId"] = race.AthleteId ?? "";
             r["gender"] = race.AthleteGender ?? "";
@@ -343,6 +408,7 @@ namespace Kinovea.ScreenManager
             r["distance"] = race.Distance;
             r["distanceLabel"] = race.DistanceLabel;
             r["pool"] = race.Pool;
+            r["poolUnit"] = race.IsYards ? SwimRace.UnitYards : SwimRace.UnitMeters;
             r["competition"] = race.Competition ?? "";
             r["location"] = race.Location ?? "";
             r["round"] = race.Round ?? "";
@@ -351,12 +417,15 @@ namespace Kinovea.ScreenManager
             r["strokeRounding"] = settings.StrokeRounding;
 
             JArray checkpoints = new JArray();
-            foreach (SwimRow row in computed.Rows)
+            if (!race.IsTraining)
             {
-                JObject cp = new JObject();
-                cp["d"] = row.D;
-                cp["t"] = row.T.HasValue ? (double?)Math.Round(row.T.Value, 3) : null;
-                checkpoints.Add(cp);
+                foreach (SwimRow row in computed.Rows)
+                {
+                    JObject cp = new JObject();
+                    cp["d"] = row.D;
+                    cp["t"] = row.T.HasValue ? (double?)Math.Round(row.T.Value, 3) : null;
+                    checkpoints.Add(cp);
+                }
             }
 
             r["checkpoints"] = checkpoints;
@@ -394,12 +463,92 @@ namespace Kinovea.ScreenManager
             if (computed.Reference != null)
                 r["reference"] = computed.Reference.ToJson();
 
+            JObject compare = new JObject();
+            compare["pb"] = race.ComparePb ?? "";
+            r["compare"] = compare;
+            r["tech"] = Tech(race, tech, timing, timeOrigin);
+
             JObject body = new JObject();
             body["app"] = AppId;
             body["token"] = settings.Token ?? "";
             body["action"] = action;
             body["race"] = r;
             return body.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>
+        /// Technical analysis: values of each start and turn, angles and snapshots (times from the origin of their phase).
+        /// </summary>
+        private static JObject Tech(SwimRace race, List<SwimTechPhase> phases, SwimTiming timing, long timeOrigin)
+        {
+            JObject tech = new JObject();
+            JArray list = new JArray();
+            phases = phases ?? new List<SwimTechPhase>();
+            foreach (SwimTechPhase p in phases)
+            {
+                if (p.Values.Count == 0)
+                    continue;
+
+                JObject o = new JObject();
+                o["id"] = p.Id;
+                o["kind"] = p.Kind == SwimPhaseKind.Turn ? "turn" : "start";
+                o["wall"] = p.Wall;
+                o["attempt"] = p.Attempt;
+                o["label"] = p.Title;
+                JObject values = new JObject();
+                foreach (KeyValuePair<string, double> pair in p.Values)
+                    values[pair.Key] = pair.Value;
+                o["values"] = values;
+                list.Add(o);
+            }
+
+            tech["phases"] = list;
+
+            Func<long, SwimTechPhase> phaseOf = ts => SwimTechCalculator.PhaseAt(phases, ts);
+            Func<long, SwimTechPhase, double> seconds = (ts, phase) =>
+                Math.Round(timing.Seconds(ts, phase != null ? phase.Origin : (race.StartTimestamp ?? timeOrigin)), 3);
+
+            JArray angles = new JArray();
+            foreach (SwimAngle a in race.Angles)
+            {
+                double? deg = a.Degrees;
+                if (!deg.HasValue)
+                    continue;
+
+                SwimTechPhase phase = phaseOf(a.Timestamp);
+                JObject o = new JObject();
+                o["id"] = a.Id;
+                o["name"] = string.IsNullOrWhiteSpace(a.Name) ? "Γωνία" : a.Name.Trim();
+                o["t"] = seconds(a.Timestamp, phase);
+                o["deg"] = Math.Round(deg.Value, 1);
+                o["phase"] = phase != null ? phase.Id : "";
+                angles.Add(o);
+            }
+
+            tech["angles"] = angles;
+
+            JArray snapshots = new JArray();
+            foreach (SwimSnapshot s in race.Snapshots)
+            {
+                SwimTechPhase phase = phaseOf(s.Timestamp);
+                JObject o = new JObject();
+                o["id"] = s.Id;
+                o["t"] = seconds(s.Timestamp, phase);
+                o["phase"] = phase != null ? phase.Id : "";
+                o["stage"] = s.Stage ?? "";
+                o["comment"] = s.Comment ?? "";
+                o["fileId"] = s.FileId ?? "";
+                o["eliteFileId"] = s.EliteFileId ?? "";
+                o["eliteLabel"] = s.EliteLabel ?? "";
+                o["eliteComment"] = s.EliteComment ?? "";
+                snapshots.Add(o);
+            }
+
+            tech["snapshots"] = snapshots;
+            JObject extra = new JObject();
+            extra["notes"] = race.TechNotes ?? "";
+            tech["values"] = extra;
+            return tech;
         }
 
         private static JArray Times(System.Collections.Generic.List<double> list)

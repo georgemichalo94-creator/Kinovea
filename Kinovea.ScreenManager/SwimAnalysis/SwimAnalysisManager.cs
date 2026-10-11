@@ -43,7 +43,7 @@ namespace Kinovea.ScreenManager
     /// - PlayerScreenUserInterface.ExecuteScreenCommand forwards those commands here,
     /// - Tools menu entry in ScreenManager.cs opens the panel.
     /// </summary>
-    public class SwimAnalysisManager
+    public partial class SwimAnalysisManager
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static SwimAnalysisManager instance;
@@ -134,8 +134,8 @@ namespace Kinovea.ScreenManager
         private FormSwimAnalysis form;
         private SwimSheetClient client;
 
-        /// <summary>Oldest Apps Script whose report uses the definitions of the panel (stroke rate and length in the clean swimming only).</summary>
-        private static readonly Version minimumBackend = new Version(1, 3, 1);
+        /// <summary>Oldest Apps Script with the reports of this version (pools in yards, ΔΑΚ, comparisons, technical analysis).</summary>
+        private static readonly Version minimumBackend = new Version(2, 0, 0);
         private bool backendWarned;
         private List<string> undoStack = new List<string>();
         private Timer saveTimer;
@@ -145,6 +145,7 @@ namespace Kinovea.ScreenManager
         // Clicks on the video.
         private SwimPickTarget pendingMeasure = SwimPickTarget.None;
         private int pendingWall;
+        private string pendingPhaseId;
         private readonly List<PointF> calibrationClicks = new List<PointF>();
         private long calibrationFrame;
         private SwimMeasurement lastMeasurement;
@@ -201,9 +202,19 @@ namespace Kinovea.ScreenManager
                     EnsureForm(true);
                     return true;
                 case PlayerScreenCommands.SwimStart:
-                    SetStart(timestamp);
+                    if (Race.IsTraining)
+                        AddSignal(timestamp);
+                    else
+                        SetStart(timestamp);
                     break;
                 case PlayerScreenCommands.SwimSplit:
+                    if (Race.IsTraining)
+                    {
+                        SystemSounds.Beep.Play();
+                        Status("Βίντεο προπόνησης: W για την επαφή στον τοίχο (στροφή), T για τα 5/10/15 και G για νέα εκκίνηση.", true);
+                        return true;
+                    }
+
                     AddSplit(timestamp);
                     break;
                 case PlayerScreenCommands.SwimStroke:
@@ -228,15 +239,23 @@ namespace Kinovea.ScreenManager
                     Undo();
                     break;
                 default:
-                    return false;
+                    if (!HandleTechCommand(command, timestamp))
+                        return false;
+                    break;
             }
 
             EnsureForm(false);
-            Changed(true);
+            if (command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle)
+                Changed(true);
 
-            // The panel follows the race: start, swimming, turn, finish.
-            if (command != PlayerScreenCommands.SwimUndo && form != null)
-                form.FollowPhase(PhaseAt(timestamp));
+            // The panel follows the race: start, swimming, turn, finish (or the start and turn pages of the technical analysis).
+            if (command != PlayerScreenCommands.SwimUndo && command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle && form != null)
+            {
+                if (Race.IsTraining || TechnicalView)
+                    form.FollowTechPhase(SwimTechCalculator.PhaseAt(TechPhases, timestamp));
+                else
+                    form.FollowPhase(PhaseAt(timestamp));
+            }
 
             return true;
         }
@@ -288,6 +307,7 @@ namespace Kinovea.ScreenManager
         {
             bool hadStart = EnsureStart();
             int distance = Race.NextCheckpoint();
+            string unit = Race.Unit;
             if (distance < 0)
             {
                 SystemSounds.Beep.Play();
@@ -300,7 +320,7 @@ namespace Kinovea.ScreenManager
             undoStack.Add(mark.Id);
 
             double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
-            string message = string.Format(CultureInfo.InvariantCulture, "Πέρασμα {0}μ.: {1:0.00} s", distance, t);
+            string message = string.Format(CultureInfo.InvariantCulture, "Πέρασμα {0}{1}: {2:0.00} s", distance, unit, t);
 
             // Sanity check against the neighbour checkpoints.
             SwimMark previous = Race.Checkpoints.Where(d => d < distance).Select(d => Race.GetSplit(d)).LastOrDefault(m => m != null);
@@ -318,18 +338,32 @@ namespace Kinovea.ScreenManager
 
         private void AddMark(SwimMarkType type, long timestamp, string label)
         {
-            // Two presses on the same frame (paused video, key repeat) are the same stroke or kick, not two.
-            if ((type == SwimMarkType.Stroke || type == SwimMarkType.Kick) && Race.Marks.Any(m => m.Type == type && SameFrame(m.Timestamp, timestamp)))
+            // Two presses on the same frame (paused video, key repeat) are the same event, not two.
+            if (Race.Marks.Any(m => m.Type == type && SameFrame(m.Timestamp, timestamp)))
             {
                 SystemSounds.Beep.Play();
                 Status(label + ": υπάρχει ήδη σε αυτό το καρέ (δεν καταχωρήθηκε δεύτερη φορά).", true);
                 return;
             }
 
-            bool hadStart = EnsureStart();
+            bool hadStart = Race.IsTraining || EnsureStart();
             SwimMark mark = new SwimMark { Type = type, Timestamp = timestamp };
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
+
+            if (Race.IsTraining)
+            {
+                // Times of a training video are from the origin of the attempt (signal or contact with the wall).
+                List<SwimTechPhase> phases = SwimTechCalculator.Compute(Race, Computed, Timing);
+                SwimTechPhase phase = SwimTechCalculator.PhaseAt(phases, timestamp);
+                if (type == SwimMarkType.WallContact)
+                    Status(string.Format(CultureInfo.InvariantCulture, "{0}: Στροφή {1}.", label, phases.Count(p => p.Kind == SwimPhaseKind.Turn && p.Origin <= timestamp)), false);
+                else if (phase != null)
+                    Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1:0.00} s ({2})", label, Timing.Seconds(timestamp, phase.Origin), phase.Title), false);
+                else
+                    Status(label + ": πριν από την πρώτη προσπάθεια. Πάτησε το σήμα εκκίνησης (G) ή την επαφή στον τοίχο (W).", true);
+                return;
+            }
 
             if (hadStart)
             {
@@ -400,13 +434,19 @@ namespace Kinovea.ScreenManager
         {
             switch (mark.Type)
             {
-                case SwimMarkType.Split: return "πέρασμα " + mark.Distance + "μ.";
+                case SwimMarkType.Split: return "πέρασμα " + mark.Distance;
                 case SwimMarkType.Stroke: return "χεριά";
                 case SwimMarkType.Kick: return "δελφινισμός";
                 case SwimMarkType.Breakout: return "έξοδος από το νερό";
                 case SwimMarkType.FeetOff: return "αποκόλληση ποδιών";
                 case SwimMarkType.Entry: return "είσοδος χεριών στο νερό";
                 case SwimMarkType.Reaction: return "αντίδραση";
+                case SwimMarkType.HandsOff: return "χέρια από τον βατήρα";
+                case SwimMarkType.BackFoot: return "πίσω πόδι";
+                case SwimMarkType.TechSplit: return "τεχνικό πέρασμα " + (mark.Distance > 0 && mark.Wall > 0 ? "+" : "") + mark.Distance;
+                case SwimMarkType.WallContact: return "επαφή στον τοίχο";
+                case SwimMarkType.RotationStart: return "αρχή περιστροφής";
+                case SwimMarkType.Signal: return "σήμα εκκίνησης";
                 default: return mark.Type.ToString();
             }
         }
@@ -556,7 +596,7 @@ namespace Kinovea.ScreenManager
             int wall = 0;
             if (target == SwimPickTarget.TurnUnderwater)
             {
-                wall = CurrentTurnWall;
+                wall = TurnWalls.Contains(wallHint) && TechnicalView ? wallHint : CurrentTurnWall;
                 if (wall <= 0)
                     wall = TurnWalls.Contains(wallHint) ? wallHint : TurnWalls.FirstOrDefault();
 
@@ -616,6 +656,12 @@ namespace Kinovea.ScreenManager
             if (PickTarget == SwimPickTarget.Calibration)
             {
                 CalibrationClick(point, timestamp);
+                return;
+            }
+
+            if (PickTarget == SwimPickTarget.Angle)
+            {
+                AngleClick(point, timestamp);
                 return;
             }
 
@@ -845,6 +891,8 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.StartBreakout: what = "Κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό."; break;
                 case SwimPickTarget.TurnUnderwater: what = string.Format("Στροφή {0}μ.: κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό.", wall); break;
                 case SwimPickTarget.FinishLastStroke: what = "Κάνε κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά."; break;
+                case SwimPickTarget.PhaseEntry: what = "Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό (απόσταση από τη γραμμή 0)."; break;
+                case SwimPickTarget.PhaseBreakout: what = "Κάνε κλικ στο κεφάλι εκεί που βγαίνει από το νερό (απόσταση από τη γραμμή 0)."; break;
                 default: what = "Κάνε κλικ στο βίντεο."; break;
             }
 
@@ -861,6 +909,8 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.StartBreakout: return "Απόσταση εξόδου (κεφάλι)";
                 case SwimPickTarget.TurnUnderwater: return string.Format("Στροφή {0}μ.: μέτρα κάτω από το νερό", wall);
                 case SwimPickTarget.FinishLastStroke: return "Τερματισμός: απόσταση τελευταίας χεριάς";
+                case SwimPickTarget.PhaseEntry: return PendingPhaseTitle() + ": απόσταση εισόδου";
+                case SwimPickTarget.PhaseBreakout: return PendingPhaseTitle() + ": απόσταση εξόδου";
                 default: return "Απόσταση";
             }
         }
@@ -892,7 +942,40 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.StartBreakout: Race.BreakoutDist = value; break;
                 case SwimPickTarget.TurnUnderwater: Race.GetTurn(wall, true).UnderwaterDist = value; break;
                 case SwimPickTarget.FinishLastStroke: Race.FinishLastStrokeDist = value; break;
+                case SwimPickTarget.PhaseEntry: Race.GetPhaseValues(pendingPhaseId, true).EntryDist = value; break;
+                case SwimPickTarget.PhaseBreakout: Race.GetPhaseValues(pendingPhaseId, true).BreakoutDist = value; break;
             }
+        }
+
+        private string PendingPhaseTitle()
+        {
+            SwimTechPhase phase = TechPhases.FirstOrDefault(p => p.Id == pendingPhaseId);
+            return phase != null ? phase.Title : "Προσπάθεια";
+        }
+
+        /// <summary>
+        /// Distance of a start or a turn of the technical analysis: in a race the values of the race analysis
+        /// (entry and breakout of the start, underwater distance of the turn), in a training video the values of the attempt.
+        /// </summary>
+        public void BeginPhaseMeasure(SwimTechPhase phase, bool entry)
+        {
+            if (phase == null)
+            {
+                Status("Επίλεξε πρώτα μια εκκίνηση ή μια στροφή.", true);
+                return;
+            }
+
+            if (!Race.IsTraining)
+            {
+                if (phase.Kind == SwimPhaseKind.Start)
+                    BeginMeasure(entry ? SwimPickTarget.EntryHands : SwimPickTarget.StartBreakout, 0);
+                else
+                    BeginMeasure(SwimPickTarget.TurnUnderwater, phase.Wall);
+                return;
+            }
+
+            pendingPhaseId = phase.Id;
+            BeginMeasure(entry ? SwimPickTarget.PhaseEntry : SwimPickTarget.PhaseBreakout, 0);
         }
 
         /// <summary>
@@ -944,7 +1027,20 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private long? MeasureFrame(SwimPickTarget target, int wall)
         {
-            if (Race == null || !Race.StartTimestamp.HasValue)
+            if (Race == null)
+                return null;
+
+            if (target == SwimPickTarget.PhaseEntry || target == SwimPickTarget.PhaseBreakout)
+            {
+                SwimTechPhase phase = TechPhases.FirstOrDefault(p => p.Id == pendingPhaseId);
+                double? t = phase == null ? null : (target == SwimPickTarget.PhaseEntry ? phase.Entry : phase.Breakout);
+                if (!t.HasValue)
+                    return null;
+
+                return phase.Origin + (long)Math.Round(t.Value * 1000.0 * (Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor) / Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
+            }
+
+            if (!Race.StartTimestamp.HasValue)
                 return null;
 
             long start = Race.StartTimestamp.Value;
@@ -1095,7 +1191,11 @@ namespace Kinovea.ScreenManager
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
 
-                DrawRaceOverlay(g, timestamp, renderingSize);
+                DrawAngles(g, transform, timestamp);
+                if (Race != null && (Race.IsTraining || TechnicalView))
+                    DrawTechOverlay(g, timestamp, renderingSize);
+                if (Race != null && !Race.IsTraining)
+                    DrawRaceOverlay(g, timestamp, renderingSize);
 
                 g.SmoothingMode = smoothing;
                 g.TextRenderingHint = textHint;
@@ -1190,10 +1290,10 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
-        #region Race overlay: race time, last split, delta and velocity chart
-        private static readonly Color colorAthlete = Color.FromArgb(255, 255, 196, 0);
-        private static readonly Color colorReference = Color.FromArgb(255, 0, 205, 255);
-        private static readonly Pen penAthlete = new Pen(colorAthlete, 2.2f);
+        #region Race overlay: race time, last split, delta, ΔΑΚ and velocity chart
+        private static readonly Color colorAthlete = Color.FromArgb(255, 255, 184, 0);
+        private static readonly Color colorReference = Color.FromArgb(255, 0, 200, 255);
+        private static readonly Pen penAthlete = new Pen(colorAthlete, 2.4f) { LineJoin = LineJoin.Round };
         private static readonly Pen penAthleteLast = new Pen(colorAthlete, 4f);
         private static readonly Pen penReference = new Pen(colorReference, 1.6f) { DashStyle = DashStyle.Dash };
 
@@ -1201,19 +1301,14 @@ namespace Kinovea.ScreenManager
         private static readonly Pen penAthletePhase = new Pen(Color.FromArgb(150, colorAthlete), 1.6f) { DashStyle = DashStyle.Dot };
         private static readonly Pen penAthleteLastPhase = new Pen(Color.FromArgb(170, colorAthlete), 3f) { DashStyle = DashStyle.Dot };
         private static readonly Pen penReferencePhase = new Pen(Color.FromArgb(120, colorReference), 1.2f) { DashStyle = DashStyle.Dot };
-        private static readonly Pen penChartGrid = new Pen(Color.FromArgb(60, 255, 255, 255), 1f);
-        private static readonly Pen penChartWall = new Pen(Color.FromArgb(120, 255, 255, 255), 1f) { DashStyle = DashStyle.Dot };
-        private static readonly SolidBrush brushPanel = new SolidBrush(Color.FromArgb(170, 6, 22, 36));
+        private static readonly Pen penChartGrid = new Pen(Color.FromArgb(38, 255, 255, 255), 1f);
+        private static readonly Pen penChartWall = new Pen(Color.FromArgb(90, 0, 200, 255), 1f) { DashStyle = DashStyle.Dot };
         private static readonly SolidBrush brushText = new SolidBrush(Color.White);
-        private static readonly SolidBrush brushDim = new SolidBrush(Color.FromArgb(215, 185, 205, 220));
-        private static readonly SolidBrush brushFaster = new SolidBrush(Color.FromArgb(255, 95, 225, 125));
-        private static readonly SolidBrush brushSlower = new SolidBrush(Color.FromArgb(255, 255, 110, 100));
+        private static readonly SolidBrush brushDim = new SolidBrush(Color.FromArgb(225, 150, 170, 192));
+        private static readonly SolidBrush brushFaster = new SolidBrush(Color.FromArgb(255, 32, 168, 110));
+        private static readonly SolidBrush brushSlower = new SolidBrush(Color.FromArgb(255, 214, 64, 64));
         private static readonly SolidBrush brushAthlete = new SolidBrush(colorAthlete);
         private static readonly SolidBrush brushReference = new SolidBrush(colorReference);
-        private static readonly Font fontClock = new Font("Segoe UI", 15f, FontStyle.Bold);
-        private static readonly Font fontDelta = new Font("Segoe UI", 11f, FontStyle.Bold);
-        private static readonly Font fontChart = new Font("Segoe UI", 7.5f);
-        private static readonly Font fontChartBold = new Font("Segoe UI", 8f, FontStyle.Bold);
 
         /// <summary>
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
@@ -1232,10 +1327,10 @@ namespace Kinovea.ScreenManager
             if (now < -1e-6)
                 return;
 
-            int width = Math.Max(260, Math.Min(520, (int)(size.Width * 0.36)));
-            int boardHeight = Settings.ShowSplitBoard ? 54 : 0;
-            int chartHeight = Settings.ShowSpeedChart ? (int)(width * 0.52) : 0;
-            int gap = boardHeight > 0 && chartHeight > 0 ? 2 : 0;
+            int width = Math.Max(280, Math.Min(540, (int)(size.Width * 0.36)));
+            int boardHeight = Settings.ShowSplitBoard ? 70 : 0;
+            int chartHeight = Settings.ShowSpeedChart ? (int)(width * 0.5) : 0;
+            int gap = boardHeight > 0 && chartHeight > 0 ? 4 : 0;
             int height = boardHeight + gap + chartHeight;
             if (height > size.Height - 20)
             {
@@ -1258,7 +1353,7 @@ namespace Kinovea.ScreenManager
             if (boardHeight > 0)
             {
                 Rectangle board = new Rectangle(x, top, width, boardHeight);
-                g.FillRectangle(brushPanel, board);
+                DrawCard(g, board, SwimTheme.Accent);
                 DrawBoard(g, board, now, last);
                 top += boardHeight + gap;
             }
@@ -1266,76 +1361,115 @@ namespace Kinovea.ScreenManager
             if (chartHeight > 0)
             {
                 Rectangle chart = new Rectangle(x, top, width, chartHeight);
-                g.FillRectangle(brushPanel, chart);
+                DrawCard(g, chart, colorAthlete);
                 DrawSpeedChart(g, chart, done, last);
             }
+        }
+
+        /// <summary>Translucent dark card with an accent on the left edge (broadcast style).</summary>
+        private static void DrawCard(Graphics g, Rectangle r, Color accent)
+        {
+            using (GraphicsPath path = SwimTheme.Rounded(r, 7))
+            using (LinearGradientBrush back = new LinearGradientBrush(r, Color.FromArgb(232, 9, 14, 22), Color.FromArgb(205, 18, 30, 45), LinearGradientMode.Horizontal))
+            using (Pen border = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
+            {
+                g.FillPath(back, path);
+                g.DrawPath(border, path);
+            }
+
+            using (SolidBrush a = new SolidBrush(accent))
+                g.FillRectangle(a, r.Left + 1, r.Top + 7, 3, r.Height - 14);
         }
 
         private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last)
         {
             bool finished = last != null && last.D >= Race.Distance;
+            Font caption = SwimTheme.Ui(6.75f, FontStyle.Bold);
+            Font clockFont = SwimTheme.Display(21f);
+            Font splitFont = SwimTheme.Display(11f);
+
+            // Name and event.
+            string names = string.IsNullOrWhiteSpace(Race.Athlete) ? "" : Race.Athlete.Trim().ToUpperInvariant();
+            string ev = string.Format(CultureInfo.InvariantCulture, "{0}{1} {2}", Race.DistanceLabel, Race.IsYards ? "YD" : "M", SwimPresets.StyleShort(Race.Style).ToUpperInvariant());
+            using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+                g.DrawString(names.Length > 0 ? names + "  ·  " + ev : ev, caption, brushDim, new RectangleF(r.Left + 10, r.Top + 6, r.Width * 0.62f, 13), format);
+
             string clock = SwimReference.FormatTime(finished ? last.T.Value : Math.Max(0, now));
-            g.DrawString(clock, fontClock, brushText, r.Left + 6, r.Top + 3);
+            g.DrawString(clock, clockFont, brushText, r.Left + 8, r.Top + 18);
 
             if (last != null)
             {
-                string split = (finished ? "Τελικός " : last.D.ToString(CultureInfo.InvariantCulture) + " m  ") + SwimReference.FormatTime(last.T.Value);
-                SizeF splitSize = g.MeasureString(split, fontChartBold);
-                g.DrawString(split, fontChartBold, brushText, r.Right - 6 - splitSize.Width, r.Top + 4);
+                string label = finished ? "ΤΕΛΙΚΟΣ" : last.D.ToString(CultureInfo.InvariantCulture) + (Race.IsYards ? " YD" : " M");
+                string split = SwimReference.FormatTime(last.T.Value);
+                SizeF ls = g.MeasureString(label, caption);
+                SizeF ss = g.MeasureString(split, splitFont);
+                float right = r.Right - 10;
+                g.DrawString(label, caption, brushDim, right - ls.Width, r.Top + 6);
+                g.DrawString(split, splitFont, brushText, right - ss.Width, r.Top + 18);
 
                 if (last.Delta.HasValue)
                 {
                     string delta = FormatDelta(last.Delta.Value);
-                    SizeF deltaSize = g.MeasureString(delta, fontDelta);
-                    g.DrawString(delta, fontDelta, last.Delta.Value <= 0 ? brushFaster : brushSlower, r.Right - 6 - deltaSize.Width, r.Top + 18);
-                }
-                else if (Computed.Reference != null)
-                {
-                    string none = "χωρίς χρόνο αναφοράς";
-                    SizeF noneSize = g.MeasureString(none, fontChart);
-                    g.DrawString(none, fontChart, brushDim, r.Right - 6 - noneSize.Width, r.Top + 22);
+                    Font deltaFont = SwimTheme.Display(10.5f);
+                    SizeF ds = g.MeasureString(delta, deltaFont);
+                    RectangleF pill = new RectangleF(right - ds.Width - 10, r.Top + 40, ds.Width + 10, ds.Height + 1);
+                    using (GraphicsPath path = SwimTheme.Rounded(pill, pill.Height / 2))
+                        g.FillPath(last.Delta.Value <= 0 ? brushFaster : brushSlower, path);
+                    g.DrawString(delta, deltaFont, brushText, pill.Left + 5, pill.Top + 1);
                 }
             }
 
-            string names = string.IsNullOrWhiteSpace(Race.Athlete) ? "" : Race.Athlete.Trim();
-            if (Computed.Reference != null)
-                names += (names.Length > 0 ? "  vs  " : "vs  ") + Computed.Reference.Name;
+            // ΔΑΚ of the last 50 completed, and the reference.
+            SwimBlock block = Computed.Blocks.Where(b => b.Dak.HasValue && Computed.Rows.Any(row => row.D == b.To && row.T.HasValue && row.T.Value <= now + 1e-6))
+                .OrderBy(b => b.To).LastOrDefault();
+            float bx = r.Left + 10;
+            if (block != null)
+            {
+                string dak = string.Format(CultureInfo.InvariantCulture, "ΔΑΚ {0}-{1}  {2:0.00}", block.From, block.To, block.Dak.Value);
+                Font dakFont = SwimTheme.Ui(7.5f, FontStyle.Bold);
+                SizeF ks = g.MeasureString(dak, dakFont);
+                RectangleF chip = new RectangleF(bx, r.Bottom - ks.Height - 7, ks.Width + 8, ks.Height + 2);
+                SwimTheme.FillRounded(g, Color.FromArgb(200, 74, 52, 6), chip, 4);
+                using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
+                    g.DrawString(dak, dakFont, amber, chip.Left + 4, chip.Top + 1);
+                bx = chip.Right + 8;
+            }
 
-            if (names.Length > 0)
+            if (Computed.Reference != null)
             {
                 using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
-                {
-                    RectangleF area = new RectangleF(r.Left + 6, r.Bottom - 17, r.Width * 0.66f, 15);
-                    g.DrawString(names, fontChart, brushDim, area, format);
-                }
+                    g.DrawString("vs " + Computed.Reference.Name, caption, brushReference, new RectangleF(bx, r.Bottom - 17, Math.Max(10, r.Right - 90 - bx), 13), format);
             }
         }
 
         private void DrawSpeedChart(Graphics g, Rectangle r, List<SwimRow> done, SwimRow last)
         {
-            g.DrawString("Ταχύτητα (m/s)", fontChartBold, brushText, r.Left + 6, r.Top + 3);
+            Font caption = SwimTheme.Ui(6.75f, FontStyle.Bold);
+            Font chartFont = SwimTheme.Ui(7f, FontStyle.Regular);
+            Font valueFont = SwimTheme.Display(9.5f);
+            g.DrawString("ΤΑΧΥΤΗΤΑ  M/S", caption, brushDim, r.Left + 10, r.Top + 6);
 
             // Legend.
-            float lx = r.Right - 6;
+            float lx = r.Right - 8;
             if (Computed.Reference != null)
             {
-                string refText = "αναφορά";
-                SizeF s = g.MeasureString(refText, fontChart);
+                string refText = "ΑΝΑΦΟΡΑ";
+                SizeF s = g.MeasureString(refText, caption);
                 lx -= s.Width;
-                g.DrawString(refText, fontChart, brushReference, lx, r.Top + 4);
+                g.DrawString(refText, caption, brushReference, lx, r.Top + 6);
                 lx -= 20;
-                g.DrawLine(penReference, lx, r.Top + 11, lx + 16, r.Top + 11);
-                lx -= 8;
+                g.DrawLine(penReference, lx, r.Top + 12, lx + 16, r.Top + 12);
+                lx -= 10;
             }
 
-            string athleteText = "αθλητής";
-            SizeF a = g.MeasureString(athleteText, fontChart);
+            string athleteText = "ΑΘΛΗΤΗΣ";
+            SizeF a = g.MeasureString(athleteText, caption);
             lx -= a.Width;
-            g.DrawString(athleteText, fontChart, brushAthlete, lx, r.Top + 4);
+            g.DrawString(athleteText, caption, brushAthlete, lx, r.Top + 6);
             lx -= 20;
-            g.DrawLine(penAthlete, lx, r.Top + 11, lx + 16, r.Top + 11);
+            g.DrawLine(penAthlete, lx, r.Top + 12, lx + 16, r.Top + 12);
 
-            Rectangle plot = new Rectangle(r.Left + 32, r.Top + 22, r.Width - 32 - 10, r.Height - 22 - 18);
+            Rectangle plot = new Rectangle(r.Left + 34, r.Top + 24, r.Width - 34 - 12, r.Height - 24 - 18);
             if (plot.Width < 60 || plot.Height < 30)
                 return;
 
@@ -1361,8 +1495,8 @@ namespace Kinovea.ScreenManager
                 float yy = Y(v);
                 g.DrawLine(penChartGrid, plot.Left, yy, plot.Right, yy);
                 string label = v.ToString("0.0", CultureInfo.InvariantCulture);
-                SizeF ls = g.MeasureString(label, fontChart);
-                g.DrawString(label, fontChart, brushDim, plot.Left - 3 - ls.Width, yy - ls.Height / 2);
+                SizeF ls = g.MeasureString(label, chartFont);
+                g.DrawString(label, chartFont, brushDim, plot.Left - 3 - ls.Width, yy - ls.Height / 2);
             }
 
             // Walls and distance labels.
@@ -1376,14 +1510,22 @@ namespace Kinovea.ScreenManager
             for (int d = 0; d <= Race.Distance; d += labelStep)
             {
                 string label = d.ToString(CultureInfo.InvariantCulture);
-                SizeF ls = g.MeasureString(label, fontChart);
-                g.DrawString(label, fontChart, brushDim, X(d) - ls.Width / 2, plot.Bottom + 2);
+                SizeF ls = g.MeasureString(label, chartFont);
+                g.DrawString(label, chartFont, brushDim, X(d) - ls.Width / 2, plot.Bottom + 2);
             }
 
-            // Reference profile (the whole race, as a target) and the athlete up to the current frame.
+            // Reference profile (the whole race, as a target) and the athlete up to the current frame, with a glow under the line.
             // Clean swimming solid, start / turns / last 5 m dotted.
             DrawSteps(g, penReference, penReferencePhase, reference, X, Y);
             List<SwimSegment> athleteDone = done.Where(row => row.Vel.HasValue).Select(row => new SwimSegment { D0 = row.PrevD, D1 = row.D, V = row.Vel.Value, Free = row.IsFree }).ToList();
+            foreach (SwimSegment s in athleteDone.Where(x => x.Free))
+            {
+                RectangleF area = new RectangleF(X(s.D0), Y(s.V), Math.Max(1, X(s.D1) - X(s.D0)), Math.Max(1, plot.Bottom - Y(s.V)));
+                using (LinearGradientBrush glow = new LinearGradientBrush(new RectangleF(area.X, area.Y - 1, area.Width, area.Height + 2),
+                    Color.FromArgb(80, colorAthlete), Color.FromArgb(0, colorAthlete), LinearGradientMode.Vertical))
+                    g.FillRectangle(glow, area);
+            }
+
             DrawSteps(g, penAthlete, penAthletePhase, athleteDone, X, Y);
 
             if (last != null && last.Vel.HasValue)
@@ -1391,18 +1533,19 @@ namespace Kinovea.ScreenManager
                 float y0 = Y(last.Vel.Value);
                 g.DrawLine(last.IsFree ? penAthleteLast : penAthleteLastPhase, X(last.PrevD), y0, X(last.D), y0);
                 string value = last.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture);
-                SizeF vs = g.MeasureString(value, fontChartBold);
+                SizeF vs = g.MeasureString(value, valueFont);
                 float vx = Math.Min(plot.Right - vs.Width, Math.Max(plot.Left, X(last.D) - vs.Width / 2));
-                float vy = y0 - vs.Height - 2 < plot.Top ? y0 + 3 : y0 - vs.Height - 2;
-                g.FillRectangle(brushPanel, vx - 2, vy, vs.Width + 4, vs.Height);
-                g.DrawString(value, fontChartBold, last.IsFree ? brushAthlete : brushDim, vx, vy);
+                float vy = y0 - vs.Height - 3 < plot.Top ? y0 + 4 : y0 - vs.Height - 3;
+                RectangleF pill = new RectangleF(vx - 3, vy, vs.Width + 6, vs.Height);
+                SwimTheme.FillRounded(g, Color.FromArgb(225, 9, 14, 22), pill, 4);
+                g.DrawString(value, valueFont, last.IsFree ? brushAthlete : brushDim, vx, vy);
             }
 
             if (athleteAll.Count == 0 && reference.Count == 0)
             {
                 string hint = "η ταχύτητα εμφανίζεται με τα περάσματα";
-                SizeF hs = g.MeasureString(hint, fontChart);
-                g.DrawString(hint, fontChart, brushDim, plot.Left + (plot.Width - hs.Width) / 2, plot.Top + (plot.Height - hs.Height) / 2);
+                SizeF hs = g.MeasureString(hint, chartFont);
+                g.DrawString(hint, chartFont, brushDim, plot.Left + (plot.Width - hs.Width) / 2, plot.Top + (plot.Height - hs.Height) / 2);
             }
         }
 
@@ -1444,7 +1587,9 @@ namespace Kinovea.ScreenManager
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
             undoStack.Clear();
+            PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
+            RefreshPbCandidates();
             if (form != null)
                 form.RefreshAll();
         }
@@ -1500,6 +1645,8 @@ namespace Kinovea.ScreenManager
             EnsureReference();
             Changed(false);
             ScheduleSend();
+            if (structureChanged)
+                RefreshPbCandidates();
             if (form != null)
                 form.RefreshReferences();
         }
@@ -1635,6 +1782,7 @@ namespace Kinovea.ScreenManager
             Status(string.Format("Αθλητής: {0} (μητρώο {1}).", athlete.Name, athlete.Id), false);
             Changed(false);
             ScheduleSend();
+            RefreshPbCandidates();
             if (form != null)
                 form.RefreshAll();
         }
@@ -1883,7 +2031,7 @@ namespace Kinovea.ScreenManager
 
         private static string EventKey(SwimRace race)
         {
-            return string.Join("|", new string[] { race.Style, race.DistanceLabel, race.Pool.ToString(CultureInfo.InvariantCulture), SwimReference.NormalizeGender(race.AthleteGender) });
+            return string.Join("|", new string[] { race.Style, race.DistanceLabel, race.Pool.ToString(CultureInfo.InvariantCulture) + (race.IsYards ? "y" : ""), SwimReference.NormalizeGender(race.AthleteGender) });
         }
 
         private string ReferencesSummary()
@@ -1965,8 +2113,29 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            string body = SwimPayload.Build(Race, Computed, Settings, VideoName, pdf ? "pdf" : "update");
+            long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
+            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update");
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
+        }
+
+        /// <summary>
+        /// Send another analysis of the video (e.g. after the upload of one of its snapshots).
+        /// </summary>
+        private void SendRace(SwimRace race, bool pdf)
+        {
+            if (race == null || !Settings.IsConfigured)
+                return;
+
+            if (race == Race)
+            {
+                SendNow(pdf);
+                return;
+            }
+
+            SwimComputed computed = SwimCalculator.Compute(race, Timing, Settings.StrokeRounding);
+            List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
+            long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
+            client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update"), race.Id, pdf);
         }
 
         public void OpenSheet()
@@ -1995,9 +2164,12 @@ namespace Kinovea.ScreenManager
             {
                 backendWarned = true;
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "Το Apps Script του KOE App είναι η έκδοση {0} και το report δεν υπολογίζει όπως το πάνελ (SR/DPS στην καθαρή κολύμβηση, χρόνος ανάποδης στροφής). Βάλε την έκδοση {1} (δες τον οδηγό).",
+                    "Το Apps Script του KOE App είναι η έκδοση {0}: το report δεν έχει ακόμη τις πισίνες σε γιάρδες, τον ΔΑΚ, τις συγκρίσεις και την τεχνική ανάλυση. Βάλε την έκδοση {1} (δες τον οδηγό).",
                     version, minimumBackend.ToString(3)), true);
             }
+
+            if (e.Result != null && e.Result.Ok && e.State == SwimSyncState.Synced)
+                UploadPendingSnapshots();
 
             if (e.Result != null && e.Result.Ok && VideoFile != null)
             {
@@ -2092,6 +2264,7 @@ namespace Kinovea.ScreenManager
         {
             RefreshTiming();
             Computed = SwimCalculator.Compute(Race, Timing, Settings.StrokeRounding);
+            TechPhases = SwimTechCalculator.Compute(Race, Computed, Timing);
         }
 
         private void Changed(bool send)
@@ -2174,6 +2347,9 @@ namespace Kinovea.ScreenManager
                     SwimVideoFile file = JsonConvert.DeserializeObject<SwimVideoFile>(File.ReadAllText(candidate, Encoding.UTF8));
                     if (file != null && file.Races != null)
                     {
+                        file.Races.RemoveAll(r => r == null);
+                        foreach (SwimRace race in file.Races)
+                            race.EnsureLists();
                         file.VideoPath = path;
                         if (file.Calibrations == null)
                             file.Calibrations = new List<SwimCalibration>();
@@ -2210,6 +2386,9 @@ namespace Kinovea.ScreenManager
                 form.ShowNear(owner);
                 RefreshAthletesIfStale();
                 RefreshReferencesIfStale();
+                RefreshEliteFramesIfStale();
+                RefreshPbCandidates();
+                UploadPendingSnapshots();
                 InvalidatePlayer();
                 return;
             }

@@ -128,6 +128,13 @@ namespace Kinovea.Services
         SwimEntry,
         SwimUndo,
         SwimReaction,
+        SwimHandsOff,
+        SwimBackFoot,
+        SwimTechSplit,
+        SwimWallContact,
+        SwimRotation,
+        SwimSnapshot,
+        SwimAngle,
     }
 
     public enum DualCaptureCommands

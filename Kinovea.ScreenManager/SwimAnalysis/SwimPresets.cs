@@ -14,7 +14,7 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// Checkpoint presets and swimming style helpers.
     /// Presets follow the analysis templates: 15/25/35/45/50 per length up to 200m,
-    /// 15/25/45/50 for 400m and 4x100m, 15/45/50 for 800m and longer.
+    /// 15/25/45/50 for 400m and 4x100m, 15/45/50 for 800m and longer, 15/20/25 per length in 25 m and 25 yd pools.
     /// </summary>
     public static class SwimPresets
     {
@@ -24,12 +24,41 @@ namespace Kinovea.ScreenManager
         /// <summary>Distance choices shown in the UI. "4x100" means a 400m relay.</summary>
         public static readonly string[] DistanceChoices = new string[] { "50", "100", "200", "400", "800", "1500", "4x50", "4x100", "4x200" };
 
+        /// <summary>Events of the 25 yard pools (NCAA / US short course).</summary>
+        public static readonly string[] YardDistanceChoices = new string[] { "50", "100", "200", "400", "500", "1000", "1650", "4x50", "4x100", "4x200" };
+
+        /// <summary>Pools: length and unit, in the order of the UI.</summary>
+        public static readonly string[] PoolNames = new string[] { "50μ. (Long Course)", "25μ. (Short Course)", "25yd (Short Course Yards)" };
+        private static readonly int[] poolLengths = new int[] { 50, 25, 25 };
+        private static readonly string[] poolUnits = new string[] { SwimRace.UnitMeters, SwimRace.UnitMeters, SwimRace.UnitYards };
+
         private static readonly string[] imOrder = new string[] { "fly", "bk", "br", "fs" };
         private static readonly string[] medleyRelayOrder = new string[] { "bk", "br", "fly", "fs" };
 
         public static string StyleShort(string style)
         {
             return style == "im" ? "medley" : style;
+        }
+
+        public static int PoolIndex(SwimRace race)
+        {
+            if (race == null)
+                return 0;
+            if (race.IsYards)
+                return 2;
+            return race.Pool == 25 ? 1 : 0;
+        }
+
+        public static void ApplyPool(SwimRace race, int index)
+        {
+            int i = Math.Max(0, Math.Min(poolLengths.Length - 1, index));
+            race.Pool = poolLengths[i];
+            race.PoolUnit = poolUnits[i];
+        }
+
+        public static string[] DistancesFor(SwimRace race)
+        {
+            return race != null && race.IsYards ? YardDistanceChoices : DistanceChoices;
         }
 
         /// <summary>
@@ -61,7 +90,7 @@ namespace Kinovea.ScreenManager
 
             if (pool == 25)
             {
-                // 15 and 20 m: the only clean swimming segment of a short course length (+15 m to −5 m), for stroke rate and length.
+                // 15 and 20: the only clean swimming segment of a short course length (+15 to −5), for stroke rate and length.
                 pattern = new int[] { 15, 20, 25 };
             }
             else
@@ -145,6 +174,20 @@ namespace Kinovea.ScreenManager
         public static int PressesPerCycle(string style)
         {
             return (style == "fs" || style == "bk") ? 2 : 1;
+        }
+
+        /// <summary>
+        /// Style name without the code: "Ελεύθερο".
+        /// </summary>
+        public static string StyleName(string style)
+        {
+            int i = Array.IndexOf(Styles, style);
+            if (i < 0 || i >= StyleNames.Length)
+                return style;
+
+            string name = StyleNames[i];
+            int p = name.IndexOf(" (", StringComparison.Ordinal);
+            return p > 0 ? name.Substring(0, p) : name;
         }
     }
 }

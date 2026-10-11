@@ -24,7 +24,14 @@ namespace Kinovea.ScreenManager
         StartUnderwater,
         StartBreakout,
         TurnUnderwater,
-        FinishLastStroke
+        FinishLastStroke,
+
+        /// <summary>Three clicks: end, vertex, end of an angle.</summary>
+        Angle,
+
+        /// <summary>Training video: entry and breakout distance of the selected attempt.</summary>
+        PhaseEntry,
+        PhaseBreakout
     }
 
     public class SwimPoint

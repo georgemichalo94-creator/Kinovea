@@ -23,6 +23,9 @@ namespace Kinovea.ScreenManager
     {
         public int D;
         public double T;
+
+        /// <summary>Strokes of the segment that ends at this checkpoint (optional, like the column "Χεριές" of the Excel).</summary>
+        public double? N;
     }
 
     /// <summary>
@@ -40,6 +43,9 @@ namespace Kinovea.ScreenManager
         public int Distance;
         public bool Relay;
         public int Pool = 50;
+
+        /// <summary>"m" or "yd".</summary>
+        public string PoolUnit = SwimRace.UnitMeters;
         public string Source = "";
         public List<SwimReferenceSplit> Times = new List<SwimReferenceSplit>();
 
@@ -89,7 +95,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool Matches(SwimRace race)
         {
-            return race != null && Style == race.Style && Distance == race.Distance && Relay == race.Relay && Pool == race.Pool;
+            return race != null && Style == race.Style && Distance == race.Distance && Relay == race.Relay && Pool == race.Pool &&
+                (string.IsNullOrEmpty(PoolUnit) ? SwimRace.UnitMeters : PoolUnit) == (string.IsNullOrEmpty(race.PoolUnit) ? SwimRace.UnitMeters : race.PoolUnit);
         }
 
         public bool GenderMatches(string gender)
@@ -102,7 +109,7 @@ namespace Kinovea.ScreenManager
         public SwimReference Copy()
         {
             SwimReference r = (SwimReference)MemberwiseClone();
-            r.Times = Times.Select(s => new SwimReferenceSplit { D = s.D, T = s.T }).ToList();
+            r.Times = Times.Select(s => new SwimReferenceSplit { D = s.D, T = s.T, N = s.N }).ToList();
             return r;
         }
 
@@ -162,11 +169,12 @@ namespace Kinovea.ScreenManager
             r.Distance = race.Distance;
             r.Relay = race.Relay;
             r.Pool = race.Pool;
+            r.PoolUnit = race.PoolUnit;
             r.Source = string.Join(" · ", new string[] { race.Competition, race.Round, race.Date }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToArray());
             foreach (SwimRow row in computed.Rows)
             {
                 if (row.T.HasValue && row.T.Value > 0)
-                    r.Times.Add(new SwimReferenceSplit { D = row.D, T = Math.Round(row.T.Value, 2) });
+                    r.Times.Add(new SwimReferenceSplit { D = row.D, T = Math.Round(row.T.Value, 2), N = row.Strokes });
             }
 
             return r;
@@ -194,6 +202,7 @@ namespace Kinovea.ScreenManager
             o["distance"] = Distance;
             o["relay"] = Relay;
             o["pool"] = Pool;
+            o["poolUnit"] = string.IsNullOrEmpty(PoolUnit) ? SwimRace.UnitMeters : PoolUnit;
             o["source"] = Source ?? "";
             JArray times = new JArray();
             foreach (SwimReferenceSplit s in Times)
@@ -201,6 +210,8 @@ namespace Kinovea.ScreenManager
                 JObject t = new JObject();
                 t["d"] = s.D;
                 t["t"] = Math.Round(s.T, 3);
+                if (s.N.HasValue)
+                    t["n"] = s.N.Value;
                 times.Add(t);
             }
 
@@ -221,6 +232,7 @@ namespace Kinovea.ScreenManager
             r.Distance = (int)Math.Round(o.Value<double?>("distance") ?? 0);
             r.Relay = o.Value<bool?>("relay") ?? false;
             r.Pool = (int)Math.Round(o.Value<double?>("pool") ?? 50);
+            r.PoolUnit = o.Value<string>("poolUnit") == SwimRace.UnitYards ? SwimRace.UnitYards : SwimRace.UnitMeters;
             r.Source = o.Value<string>("source") ?? "";
 
             JArray times = o["times"] as JArray;
@@ -234,14 +246,15 @@ namespace Kinovea.ScreenManager
 
                     double? d = t.Value<double?>("d");
                     double? time = t.Value<double?>("t");
+                    double? n = t.Value<double?>("n");
                     if (d.HasValue && time.HasValue && d.Value > 0 && time.Value > 0)
-                        r.Times.Add(new SwimReferenceSplit { D = (int)Math.Round(d.Value), T = time.Value });
+                        r.Times.Add(new SwimReferenceSplit { D = (int)Math.Round(d.Value), T = time.Value, N = n.HasValue && n.Value >= 0 ? n : null });
                 }
             }
 
             r.Times = r.Times.GroupBy(s => s.D).Select(g => g.First()).OrderBy(s => s.D).ToList();
             if (string.IsNullOrEmpty(r.Id))
-                r.Id = "sheet|" + r.Name + "|" + r.Style + "|" + r.DistanceLabel + "|" + r.Pool;
+                r.Id = "sheet|" + r.Name + "|" + r.Style + "|" + r.DistanceLabel + "|" + r.Pool + (r.PoolUnit == SwimRace.UnitYards ? "y" : "");
 
             return r;
         }

@@ -266,6 +266,13 @@ namespace Kinovea.Services
                     hk(PlayerScreenCommands.SwimEntry, Keys.E),
                     hk(PlayerScreenCommands.SwimUndo, Keys.Back),
                     hk(PlayerScreenCommands.SwimReaction, Keys.R),
+                    hk(PlayerScreenCommands.SwimHandsOff, Keys.H),
+                    hk(PlayerScreenCommands.SwimBackFoot, Keys.J),
+                    hk(PlayerScreenCommands.SwimTechSplit, Keys.T),
+                    hk(PlayerScreenCommands.SwimWallContact, Keys.W),
+                    hk(PlayerScreenCommands.SwimRotation, Keys.O),
+                    hk(PlayerScreenCommands.SwimSnapshot, Keys.P),
+                    hk(PlayerScreenCommands.SwimAngle, Keys.A),
                     }
                 },
                 { "DualCapture", new HotkeyCommand[]{

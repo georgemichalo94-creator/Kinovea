@@ -1749,6 +1749,13 @@ namespace Kinovea.ScreenManager
                 case PlayerScreenCommands.SwimEntry:
                 case PlayerScreenCommands.SwimUndo:
                 case PlayerScreenCommands.SwimReaction:
+                case PlayerScreenCommands.SwimHandsOff:
+                case PlayerScreenCommands.SwimBackFoot:
+                case PlayerScreenCommands.SwimTechSplit:
+                case PlayerScreenCommands.SwimWallContact:
+                case PlayerScreenCommands.SwimRotation:
+                case PlayerScreenCommands.SwimSnapshot:
+                case PlayerScreenCommands.SwimAngle:
                     SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
                     break;
                 default:

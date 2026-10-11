@@ -51,6 +51,9 @@ namespace Kinovea.ScreenManager
         /// contains the dive, the glide, the turn or the underwater phase.
         /// </summary>
         public double? Vel;
+
+        /// <summary>25 yard pools: velocity in yd/s (Vel is always in m/s).</summary>
+        public double? VelYd;
         public double? Strokes;
 
         /// <summary>Stroke rate (cycles/min), distance per stroke press (m) and cycle length (m): clean swimming only.</summary>
@@ -89,9 +92,40 @@ namespace Kinovea.ScreenManager
         public bool Free = true;
     }
 
+    /// <summary>
+    /// One 50 of the race (in pool units) with the ΔΑΚ (Δείκτης Απόδοσης Κολύμβησης) and the clean swimming averages.
+    /// ΔΑΚ = (strokes + time from +15 to the wall) / (meters / 10), for every length of the 50: 50 m pool /3.5 as in the Excel,
+    /// 25 m pool /1.0 per length, 25 yd pool /0.9144 per length (DakYd: per 10 yd).
+    /// </summary>
+    public class SwimBlock
+    {
+        public int From;
+        public int To;
+        public double? Time;
+        public double? Strokes;
+        public double? Swolf;
+        public double? Dak;
+        public double? DakYd;
+        public double? Sr;
+        public double? Dps;
+        public double? Sl;
+        public double? Vel;
+        public double? VelYd;
+        public string Style;
+    }
+
     public class SwimTurnComputed
     {
         public int Wall;
+
+        /// <summary>Style before and after the wall (they differ at a change of style in the medley).</summary>
+        public string StyleIn;
+        public string StyleOut;
+
+        /// <summary>−5 → +15 (20 units around the wall), wall → +15 (head) and −5 → wall.</summary>
+        public double? InOut;
+        public double? Out15;
+        public double? In5;
 
         /// <summary>Relay: end of a leg, the "turn" is the exchange (the next swimmer leaves the block).</summary>
         public bool Exchange;
@@ -117,6 +151,13 @@ namespace Kinovea.ScreenManager
     {
         public List<SwimRow> Rows = new List<SwimRow>();
         public List<SwimTurnComputed> Turns = new List<SwimTurnComputed>();
+
+        /// <summary>The 50s of the race with the ΔΑΚ.</summary>
+        public List<SwimBlock> Blocks = new List<SwimBlock>();
+
+        /// <summary>Meters per pool unit (1 or 0.9144) and the label of the unit ("μ." or "yd").</summary>
+        public double K = 1.0;
+        public string Unit = "μ.";
         /// <summary>First movement after the signal (marked on the video). The official reaction time of the
         /// touch pads corresponds to the block release (BlockTime).</summary>
         public double? ReactionTime;
@@ -128,8 +169,19 @@ namespace Kinovea.ScreenManager
         public double? StartUnderwaterTime;
         public int? StartKicks;
         public double? FinishLastStrokeGap;
+
+        /// <summary>Last 5 and last 15 units of the race.</summary>
+        public double? FinishLast5;
+        public double? FinishLast15;
         public int TotalPresses;
         public double? FinalTime;
+        public double? AvgVel;
+
+        /// <summary>Signal → head at 15 units.</summary>
+        public double? Start15;
+
+        /// <summary>Mean of the ΔΑΚ of the 50s.</summary>
+        public double? AvgDak;
 
         /// <summary>Clean swimming averages, weighted by time and distance: Σcycles·60/Σtime, Σd/Σstrokes, Σd/Σcycles.</summary>
         public double? AvgSr;
@@ -163,6 +215,10 @@ namespace Kinovea.ScreenManager
             SwimComputed result = new SwimComputed();
             if (race == null)
                 return result;
+
+            double k = race.K;
+            result.K = k;
+            result.Unit = race.Unit;
 
             if (race.Reference != null && race.Reference.Matches(race))
             {
@@ -247,13 +303,18 @@ namespace Kinovea.ScreenManager
                 {
                     row.SegTime = row.T.Value - tPrev.Value;
                     if (row.SegTime.Value > 0)
-                        row.Vel = (row.D - row.PrevD) / row.SegTime.Value;
+                    {
+                        // Velocities in m/s (in 25 yd pools also in yd/s).
+                        row.Vel = (row.D - row.PrevD) * k / row.SegTime.Value;
+                        if (race.IsYards)
+                            row.VelYd = (row.D - row.PrevD) / row.SegTime.Value;
+                    }
                 }
 
                 if (row.T.HasValue)
                 {
                     if (lastT.HasValue && row.T.Value <= lastT.Value)
-                        result.Warnings.Add(string.Format("Ο χρόνος στα {0}μ. δεν είναι μεγαλύτερος από τον προηγούμενο.", row.D));
+                        result.Warnings.Add(string.Format("Ο χρόνος στα {0}{1} δεν είναι μεγαλύτερος από τον προηγούμενο.", row.D, race.Unit));
                     lastT = row.T;
                 }
 
@@ -290,8 +351,8 @@ namespace Kinovea.ScreenManager
                 {
                     double cycles = row.Strokes.Value / ppc;
                     row.Sr = cycles * 60.0 / row.SegTime.Value;
-                    row.Dps = (row.D - row.PrevD) / row.Strokes.Value;
-                    row.Sl = (row.D - row.PrevD) / cycles;
+                    row.Dps = (row.D - row.PrevD) * k / row.Strokes.Value;
+                    row.Sl = (row.D - row.PrevD) * k / cycles;
                 }
             }
 
@@ -302,7 +363,7 @@ namespace Kinovea.ScreenManager
                 sumCycles += row.Strokes.Value / SwimPresets.PressesPerCycle(row.Style);
                 sumTime += row.SegTime.Value;
                 sumStrokes += row.Strokes.Value;
-                sumDistance += row.D - row.PrevD;
+                sumDistance += (row.D - row.PrevD) * k;
             }
 
             if (sumTime > 0)
@@ -348,11 +409,24 @@ namespace Kinovea.ScreenManager
                 // breaststroke, medley change of style) are open turns, with a touch of the hands.
                 string styleIn = SwimPresets.StyleAt(race, wall);
                 string styleOut = SwimPresets.StyleAt(race, wall + pool);
+                turn.StyleIn = styleIn;
+                turn.StyleOut = styleOut;
                 turn.Flip = !turn.Exchange && (styleIn == "fs" || styleIn == "bk") && styleOut == styleIn;
+
+                double tIn, tOut;
+                bool hasIn = timeAt.TryGetValue(wall - 5, out tIn);
+                bool hasOut = timeAt.TryGetValue(wall + 15, out tOut);
+                if (hasIn && hasOut)
+                    turn.InOut = tOut - tIn;
 
                 double tw;
                 if (!timeAt.TryGetValue(wall, out tw))
                     continue;
+
+                if (hasOut)
+                    turn.Out15 = tOut - tw;
+                if (hasIn)
+                    turn.In5 = tw - tIn;
 
                 double nextT = First(wallTimes, t => t > tw + 1e-9) ?? double.MaxValue;
                 double prevT = Last(wallTimes, t => t < tw - 1e-9) ?? 0;
@@ -392,10 +466,123 @@ namespace Kinovea.ScreenManager
                 double? lastStroke = Last(result.Strokes, t => t < tFinish && (!prevWall.HasValue || t > prevWall.Value));
                 if (lastStroke.HasValue)
                     result.FinishLastStrokeGap = tFinish - lastStroke.Value;
+
+                double t5, t15;
+                if (timeAt.TryGetValue(distance - 5, out t5))
+                    result.FinishLast5 = tFinish - t5;
+                if (timeAt.TryGetValue(distance - 15, out t15))
+                    result.FinishLast15 = tFinish - t15;
+                if (tFinish > 0)
+                    result.AvgVel = distance * k / tFinish;
             }
+
+            double tStart15;
+            if (timeAt.TryGetValue(15, out tStart15))
+                result.Start15 = tStart15;
+
+            result.Blocks = Blocks50(race, result, pool, k);
+            List<double> daks = result.Blocks.Where(b => b.Dak.HasValue).Select(b => b.Dak.Value).ToList();
+            if (daks.Count > 0)
+                result.AvgDak = daks.Average();
 
             CheckPlausibility(race, result, pool);
             return result;
+        }
+
+        /// <summary>
+        /// The 50s of the race with the ΔΑΚ, like swimBlocks50_ of the Google Sheet backend.
+        /// </summary>
+        private static List<SwimBlock> Blocks50(SwimRace race, SwimComputed result, int pool, double k)
+        {
+            List<SwimBlock> blocks = new List<SwimBlock>();
+            Dictionary<int, SwimRow> byD = new Dictionary<int, SwimRow>();
+            foreach (SwimRow r in result.Rows)
+                byD[r.D] = r;
+
+            for (int b = 0; b + 50 <= race.Distance; b += 50)
+            {
+                int e = b + 50;
+                SwimRow re;
+                if (!byD.TryGetValue(e, out re))
+                    continue;
+
+                SwimRow rs = null;
+                if (b > 0)
+                    byD.TryGetValue(b, out rs);
+
+                SwimBlock block = new SwimBlock { From = b, To = e, Style = SwimPresets.StyleAt(race, e) };
+                if (re.T.HasValue && (b == 0 || (rs != null && rs.T.HasValue)))
+                    block.Time = re.T.Value - (b == 0 ? 0 : rs.T.Value);
+
+                int from = b, to = e;
+                List<SwimRow> inBlock = result.Rows.Where(r => r.PrevD >= from && r.D <= to).ToList();
+                if (inBlock.Any(r => r.Strokes.HasValue))
+                    block.Strokes = inBlock.Sum(r => r.Strokes ?? 0);
+                if (block.Time.HasValue && block.Strokes.HasValue)
+                    block.Swolf = block.Time.Value + block.Strokes.Value;
+                if (block.Time.HasValue && block.Time.Value > 0)
+                {
+                    block.Vel = 50 * k / block.Time.Value;
+                    if (race.IsYards)
+                        block.VelYd = 50 / block.Time.Value;
+                }
+
+                // ΔΑΚ: for every length of the 50, from +15 to the wall.
+                double sumStrokes = 0, sumTime = 0;
+                int sumWidth = 0;
+                bool ok = true, any = false;
+                for (int w = b; w < e; w += pool)
+                {
+                    SwimRow a15, aw;
+                    if (!byD.TryGetValue(w + 15, out a15) || !byD.TryGetValue(Math.Min(w + pool, e), out aw) ||
+                        !a15.T.HasValue || !aw.T.HasValue || aw.D <= a15.D)
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    int d0 = a15.D, d1 = aw.D;
+                    foreach (SwimRow r in result.Rows.Where(x => x.PrevD >= d0 && x.D <= d1))
+                    {
+                        if (r.Strokes.HasValue)
+                        {
+                            any = true;
+                            sumStrokes += r.Strokes.Value;
+                        }
+                    }
+
+                    sumTime += aw.T.Value - a15.T.Value;
+                    sumWidth += d1 - d0;
+                }
+
+                if (ok && any && sumWidth > 0)
+                {
+                    block.Dak = (sumStrokes + sumTime) / (sumWidth * k / 10.0);
+                    if (race.IsYards)
+                        block.DakYd = (sumStrokes + sumTime) / (sumWidth / 10.0);
+                }
+
+                // Clean swimming of the 50, weighted.
+                double cycles = 0, time = 0, strokes = 0, meters = 0;
+                foreach (SwimRow r in inBlock.Where(x => x.Sr.HasValue))
+                {
+                    cycles += r.Strokes.Value / SwimPresets.PressesPerCycle(r.Style);
+                    time += r.SegTime.Value;
+                    strokes += r.Strokes.Value;
+                    meters += (r.D - r.PrevD) * k;
+                }
+
+                if (time > 0)
+                    block.Sr = cycles * 60.0 / time;
+                if (strokes > 0)
+                    block.Dps = meters / strokes;
+                if (cycles > 0)
+                    block.Sl = meters / cycles;
+
+                blocks.Add(block);
+            }
+
+            return blocks;
         }
 
         /// <summary>
@@ -407,11 +594,12 @@ namespace Kinovea.ScreenManager
             int d0 = 0;
             double t0 = 0;
             int pool = reference.Pool <= 0 ? 50 : reference.Pool;
+            double k = reference.PoolUnit == SwimRace.UnitYards ? SwimRace.Yard : 1.0;
             foreach (SwimReferenceSplit s in reference.Times.OrderBy(x => x.D))
             {
                 if (s.D > d0 && s.T > t0)
                 {
-                    segments.Add(new SwimSegment { D0 = d0, D1 = s.D, V = (s.D - d0) / (s.T - t0), Free = IsFreeSegment(d0, s.D, pool) });
+                    segments.Add(new SwimSegment { D0 = d0, D1 = s.D, V = (s.D - d0) * k / (s.T - t0), Free = IsFreeSegment(d0, s.D, pool) });
                     d0 = s.D;
                     t0 = s.T;
                 }
@@ -535,7 +723,7 @@ namespace Kinovea.ScreenManager
             {
                 double max = row.IsFree ? MaxCleanVelocity : MaxVelocity;
                 if (row.Vel.HasValue && (row.Vel.Value < MinVelocity || row.Vel.Value > max))
-                    found.Add(Format("{0}–{1}μ. ({2:0.00} m/s)", row.PrevD, row.D, row.Vel.Value));
+                    found.Add(Format("{0}–{1}{2} ({3:0.00} m/s)", row.PrevD, row.D, result.Unit, row.Vel.Value));
             }
 
             if (found.Count > 0)
@@ -546,7 +734,7 @@ namespace Kinovea.ScreenManager
         {
             List<string> found = result.Rows
                 .Where(r => r.Sr.HasValue && (r.Sr.Value < MinSr || r.Sr.Value > MaxSr))
-                .Select(r => Format("{0}–{1}μ. ({2:0.0})", r.PrevD, r.D, r.Sr.Value))
+                .Select(r => Format("{0}–{1}{2} ({3:0.0})", r.PrevD, r.D, result.Unit, r.Sr.Value))
                 .ToList();
             if (found.Count > 0)
                 result.Warnings.Add("Συχνότητα εκτός ορίων (15–80 κύκλοι/λεπτό) στο τμήμα " + Join(found) + ": έλεγξε τα πατήματα χεριάς και τα περάσματα.");
@@ -557,7 +745,7 @@ namespace Kinovea.ScreenManager
             {
                 int ppc = SwimPresets.PressesPerCycle(group.Key);
                 double cycles = group.Sum(r => r.Strokes.Value / ppc);
-                double distance = group.Sum(r => (double)(r.D - r.PrevD));
+                double distance = group.Sum(r => (double)(r.D - r.PrevD) * result.K);
                 if (cycles <= 0)
                     continue;
 
@@ -659,7 +847,7 @@ namespace Kinovea.ScreenManager
             List<string> found = new List<string>();
             foreach (SwimTurnComputed turn in result.Turns)
             {
-                string name = (turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + "μ.";
+                string name = (turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit;
                 if (turn.TurnTime.HasValue && turn.TurnTime.Value > (turn.Exchange ? 1.5 : (turn.Flip ? 3.0 : 2.5)))
                     found.Add(Format("{0}: χρόνος {1:0.00} s", name, turn.TurnTime.Value));
                 else if (turn.UnderwaterTime.HasValue && turn.UnderwaterTime.Value > 12)
@@ -677,7 +865,7 @@ namespace Kinovea.ScreenManager
             double usual = Median(flips.Select(x => x.LastStrokeGap.Value).ToList());
             List<string> gaps = flips
                 .Where(x => x.LastStrokeGap.Value > 1.6 * usual && x.LastStrokeGap.Value - usual > 0.35)
-                .Select(x => Format("{0}μ. ({1:0.00} s)", x.Wall, x.LastStrokeGap.Value))
+                .Select(x => Format("{0}{1} ({2:0.00} s)", x.Wall, result.Unit, x.LastStrokeGap.Value))
                 .ToList();
             if (gaps.Count > 0)
             {
@@ -699,7 +887,7 @@ namespace Kinovea.ScreenManager
             {
                 walls.Add(turn.Wall);
                 breakouts.Add(turn.Breakout);
-                names.Add((turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + "μ.");
+                names.Add((turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit);
             }
 
             List<string> found = new List<string>();
@@ -711,11 +899,11 @@ namespace Kinovea.ScreenManager
                 int wall = walls[i];
                 SwimRow row = result.Rows.FirstOrDefault(r => r.D >= wall + 15 && r.D < wall + pool && r.T.HasValue);
                 if (row != null && breakouts[i].Value > row.T.Value + 0.1)
-                    found.Add(Format("{0}: {1:0.00} s, μετά το πέρασμα των {2}μ. ({3:0.00} s)", names[i], breakouts[i].Value, row.D, row.T.Value));
+                    found.Add(Format("{0}: {1:0.00} s, μετά το πέρασμα των {2}{3} ({4:0.00} s)", names[i], breakouts[i].Value, row.D, result.Unit, row.T.Value));
             }
 
             if (found.Count > 0)
-                result.Warnings.Add("Έξοδος από το νερό μετά τα 15μ. (" + Join(found) + "). Έλεγξε το σημάδι εξόδου: το επόμενο τμήμα μετράει ως καθαρή κολύμβηση.");
+                result.Warnings.Add("Έξοδος από το νερό μετά τα 15" + result.Unit + " (" + Join(found) + "). Έλεγξε το σημάδι εξόδου: το επόμενο τμήμα μετράει ως καθαρή κολύμβηση.");
         }
 
         /// <summary>
@@ -731,13 +919,13 @@ namespace Kinovea.ScreenManager
             {
                 int end = Math.Min(wall + pool, race.Distance);
                 if (!result.Rows.Any(r => r.IsFree && r.PrevD >= wall && r.D <= end))
-                    lengths.Add(Format("{0}–{1}μ.", wall, end));
+                    lengths.Add(Format("{0}–{1}{2}", wall, end, result.Unit));
             }
 
             if (lengths.Count > 0)
             {
-                result.Warnings.Add(Format("Δεν υπάρχει τμήμα καθαρής κολύμβησης {0} {1}, οπότε εκεί δεν βγαίνουν συχνότητα και μήκος χεριάς. Χρειάζονται δύο σημεία ελέγχου ανάμεσα στα +15μ. και −5μ. από τους τοίχους (π.χ. {2} και {3}μ.).",
-                    lengths.Count == 1 ? "στο μήκος" : "στα μήκη", Join(lengths), 15, pool - 5));
+                result.Warnings.Add(Format("Δεν υπάρχει τμήμα καθαρής κολύμβησης {0} {1}, οπότε εκεί δεν βγαίνουν συχνότητα και μήκος χεριάς. Χρειάζονται δύο σημεία ελέγχου ανάμεσα στα +15 και −5 από τους τοίχους (π.χ. {2} και {3}{4}).",
+                    lengths.Count == 1 ? "στο μήκος" : "στα μήκη", Join(lengths), 15, pool - 5, result.Unit));
             }
         }
 

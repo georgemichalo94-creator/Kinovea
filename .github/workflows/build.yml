@@ -2,7 +2,7 @@ name: Build Kinovea
 
 on:
   push:
-    branches: [ "master", "swim-stable" ]
+    branches: [ "master", "swim-stable", "swim-v2" ]
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
