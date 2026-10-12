@@ -395,13 +395,29 @@ namespace Kinovea.ScreenManager
             l.Period = r.Period;
         }
 
-        /// <summary>Cues of the breakout with their usual delay before any learning (the motion rises before the head is out).</summary>
-        private static Dictionary<string, double> BreakoutCuesDelayed(LengthRead l)
+        /// <summary>
+        /// Cues of the breakout with their usual delay before any learning: the dolphin kicks close to the surface move the water
+        /// about a second before the head is out; in breaststroke the motion starts with the head out (end of the pullout).
+        /// Named after the style of the length (the learning keeps each style apart).
+        /// </summary>
+        private Dictionary<string, double> BreakoutCuesDelayed(LengthRead l)
         {
+            string style = SwimPresets.StyleAt(Race, l.Session.Wall);
+            bool breast = style == "br";
             Dictionary<string, double> cues = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in l.Breakout)
-                cues[c.Key] = c.Value + (c.Key == SwimSplitDetector.CueEnergy ? 1.4 : 1.0) * l.Session.Fps;
+            {
+                double delay = c.Key == SwimSplitDetector.CueEnergy ? (breast ? 0.1 : 1.4) : (breast ? 0.2 : 1.0);
+                cues[StyleCue(c.Key, style)] = c.Value + delay * l.Session.Fps;
+            }
+
             return cues;
+        }
+
+        /// <summary>A cue of a style ("mid@br"): what the learning keeps (each style has its own delays and spreads).</summary>
+        private static string StyleCue(string cue, string style)
+        {
+            return string.IsNullOrEmpty(style) ? cue : cue + "@" + style;
         }
 
         /// <summary>Frame of the breakout of a length read (index of its frames, NaN if not seen): its cues as for the proposal.</summary>
@@ -575,8 +591,15 @@ namespace Kinovea.ScreenManager
             SwimLearning learning = Learning;
 
             List<Tuple<int, Dictionary<string, double>, double>> items = new List<Tuple<int, Dictionary<string, double>, double>>();
+            string style = SwimPresets.StyleAt(Race, s.Wall);
             foreach (SwimSplitFound f in l.Found)
-                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, f.Cues, f.Confidence));
+            {
+                Dictionary<string, double> cues = new Dictionary<string, double>();
+                foreach (KeyValuePair<string, double> c in f.Cues)
+                    cues[StyleCue(c.Key, style)] = c.Value;
+                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
+            }
+
             if (l.Wall.Count > 0)
                 items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l), 0.5));
 
@@ -636,9 +659,10 @@ namespace Kinovea.ScreenManager
         private Dictionary<string, double> WallCuesOfKind(LengthRead l)
         {
             string kind = WallKind(l.Session.Wall);
+            string style = SwimPresets.StyleAt(Race, l.Session.Wall);
             Dictionary<string, double> wall = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in l.Wall)
-                wall[c.Key + "." + kind] = c.Value + WallDelay(c.Key, kind) * l.Session.Fps;
+                wall[StyleCue(c.Key + "." + kind, style)] = c.Value + WallDelay(c.Key, kind) * l.Session.Fps;
             return wall;
         }
 
@@ -732,17 +756,27 @@ namespace Kinovea.ScreenManager
         /// <summary>Weight and usual spread (s) of each cue before any learning.</summary>
         private static void CueWeight(string cue, out double weight, out double spread)
         {
+            string style = "";
+            int at = cue.IndexOf('@');
+            if (at > 0)
+            {
+                style = cue.Substring(at + 1);
+                cue = cue.Substring(0, at);
+            }
+
             int dot = cue.IndexOf('.');
             if (dot > 0)
                 cue = cue.Substring(0, dot);
 
-            // The line between the marks of the two ropes is what the analyst sees (the middle of the lane before any learning);
-            // the mark of one rope alone is ahead or behind it by up to a second near the ends of the pool (perspective).
+            // The line between the marks of the two ropes is what the analyst sees (the middle of the lane before any learning;
+            // in breaststroke the head is high and seen three quarters of the lane towards the far rope); the mark of one rope alone
+            // is ahead or behind it by up to a second near the ends of the pool (perspective).
+            bool breast = style == "br";
             switch (cue)
             {
-                case SwimSplitDetector.CueMiddle: weight = 1.0; spread = 0.08; break;
-                case SwimSplitDetector.CueQuarterNear:
-                case SwimSplitDetector.CueQuarterFar: weight = 0.6; spread = 0.12; break;
+                case SwimSplitDetector.CueMiddle: weight = breast ? 0.6 : 1.0; spread = breast ? 0.12 : 0.08; break;
+                case SwimSplitDetector.CueQuarterFar: weight = breast ? 1.0 : 0.6; spread = breast ? 0.08 : 0.12; break;
+                case SwimSplitDetector.CueQuarterNear: weight = 0.6; spread = 0.12; break;
                 case SwimSplitDetector.CueFar: weight = 0.4; spread = 0.25; break;
                 case SwimSplitDetector.CueNear: weight = 0.3; spread = 0.3; break;
                 // The wall: the pace of the length (from its checkpoints) before the image (the swimmer hidden in the splashes of
