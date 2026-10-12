@@ -311,7 +311,24 @@ namespace Kinovea.ScreenManager
 
             Answer(p, timestamp, true);
             Changed(false);
-            NextProposal(timestamp, "✓ " + ProposalLabel(p) + ": t = 0 σε αυτό το καρέ.");
+            string done = "✓ " + ProposalLabel(p) + ": t = 0 σε αυτό το καρέ.";
+
+            // A new analysis (nothing else waiting, no checkpoint yet): straight on to the whole race, a little after the breakout,
+            // where the analyst clicks the swimmer (Esc: not now).
+            if (PendingProposals.Count == 0 && PoolHasMarks && !Race.IsTraining && !Race.Marks.Any(m => m.Type == SwimMarkType.Split))
+            {
+                EndReview(false);
+                SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, timestamp + RealSpan(6.5)));
+                BeginAutoRace();
+                if (PickingTrack)
+                {
+                    Status(done + "  →  🤖 Όλος ο αγώνας: κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (σε ένα καρέ μετά την έξοδο από το νερό· " +
+                        "Esc: όχι τώρα).", false);
+                    return;
+                }
+            }
+
+            NextProposal(timestamp, done);
         }
         #endregion
 
