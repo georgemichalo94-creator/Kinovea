@@ -1026,6 +1026,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimAthletes.cs" />
@@ -1039,6 +1040,9 @@
     <Compile Include="SwimAnalysis\SwimStrokeDetector.cs" />
     <Compile Include="SwimAnalysis\SwimTech.cs" />
     <Compile Include="SwimAnalysis\SwimUi.cs" />
+    <Compile Include="SwimAnalysis\SwimVideoBar.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="UserInterface\ScreenManagerUserInterface.cs">
       <SubType>UserControl</SubType>

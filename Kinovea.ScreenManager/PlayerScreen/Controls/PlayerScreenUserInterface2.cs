@@ -2640,13 +2640,35 @@ namespace Kinovea.ScreenManager
             if (videoFilterIsActive)
                 rotatedCanvas = m_FrameServer.Metadata.ActiveVideoFilter.RotatedCanvas;
 
-            m_viewportManipulator.Manipulate(finished, panelCenter.Size, targetStretch, m_fill, m_FrameServer.ImageTransform.Zoom, canCustomDecodingSize, rotatedCanvas);
+            // Swim race analysis: its bars on the left and right of the viewport, the image between them.
+            int swimBar;
+            Size imageArea = ImageArea(out swimBar);
+            m_viewportManipulator.Manipulate(finished, imageArea, targetStretch, m_fill, m_FrameServer.ImageTransform.Zoom, canCustomDecodingSize, rotatedCanvas);
 
-            pbSurfaceScreen.Location = m_viewportManipulator.RenderingLocation;
+            Point location = m_viewportManipulator.RenderingLocation;
+            pbSurfaceScreen.Location = new Point(location.X + swimBar, location.Y);
             pbSurfaceScreen.Size = m_viewportManipulator.RenderingSize;
             m_FrameServer.ImageTransform.Stretch = m_viewportManipulator.Stretch;
             ReplaceResizers();
         }
+        /// <summary>
+        /// Room for the image in the viewport: the viewport without the bars of the swim race analysis on its sides.
+        /// </summary>
+        private Size ImageArea(out int swimBar)
+        {
+            swimBar = SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.LayoutVideoBars(this, panelCenter.Size) : 0;
+            return new Size(Math.Max(1, panelCenter.Width - 2 * swimBar), panelCenter.Height);
+        }
+
+        /// <summary>
+        /// Called by the swim race analysis when its bars appear or disappear on the sides of the image.
+        /// </summary>
+        public void SwimLayoutChanged()
+        {
+            if (m_Constructed && m_FrameServer.Loaded)
+                ResizeUpdate(true);
+        }
+
         private void ReplaceResizers()
         {
             ImageResizerSE.Left = pbSurfaceScreen.Right - (ImageResizerSE.Width / 2);
@@ -2719,7 +2741,8 @@ namespace Kinovea.ScreenManager
         private void ManualResizeImage(int _iTargetWidth, int _iTargetHeight)
         {
             Size targetSize = new Size(_iTargetWidth, _iTargetHeight);
-            if (!targetSize.FitsIn(panelCenter.Size))
+            int swimBar;
+            if (!targetSize.FitsIn(ImageArea(out swimBar)))
                 return;
 
             if (!m_bManualSqueeze && !m_FrameServer.VideoReader.Info.ReferenceSize.FitsIn(targetSize))

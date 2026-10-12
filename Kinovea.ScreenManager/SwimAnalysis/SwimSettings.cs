@@ -62,6 +62,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool AutoStrokes = false;
 
+        /// <summary>
+        /// Buttons of the analysis, race time and checkpoints in two bars on the left and right of the image (the black
+        /// area of the video): the window of the analysis is opened only when needed.
+        /// </summary>
+        public bool VideoBars = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

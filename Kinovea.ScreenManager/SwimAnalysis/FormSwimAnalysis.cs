@@ -126,6 +126,7 @@ namespace Kinovea.ScreenManager
         private CheckBox chkSpeedChart;
         private CheckBox chkSplitBoard;
         private CheckBox chkOverlayExports;
+        private CheckBox chkVideoBars;
         private ComboBox cmbCorner;
         private static readonly string[] corners = { "TopRight", "TopLeft", "BottomRight", "BottomLeft" };
         private static readonly Color colorFaster = SwimTheme.Green;
@@ -544,13 +545,22 @@ namespace Kinovea.ScreenManager
             cmbCorner = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112, Margin = new Padding(3, 3, 3, 3) };
             cmbCorner.Items.AddRange(new object[] { "Πάνω δεξιά", "Πάνω αριστερά", "Κάτω δεξιά", "Κάτω αριστερά" });
             chkOverlayExports = new CheckBox { Text = "και στις εξαγωγές", AutoSize = true, Margin = new Padding(10, 5, 3, 3) };
+            chkVideoBars = new CheckBox { Text = "Κουμπιά δεξιά-αριστερά", AutoSize = true, Margin = new Padding(10, 5, 3, 3) };
+            chkVideoBars.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetVideoBars(chkVideoBars.Checked);
+            };
+            toolTip.SetToolTip(chkVideoBars, "Τα κουμπιά της ανάλυσης, ο χρόνος και τα περάσματα σε δύο στήλες αριστερά και δεξιά της εικόνας,\n" +
+                "στο μαύρο του βίντεο. Αυτό το παράθυρο ανοίγει μόνο όταν το θέλεις: κουμπί «Πίνακας ανάλυσης» ή Ctrl+Shift+W.\n" +
+                "Χωρίς αυτή την επιλογή, κάθε πλήκτρο της ανάλυσης ανοίγει το παράθυρο όπως πριν.");
             chkSpeedChart.CheckedChanged += (s, e) => CommitOverlayOptions();
             chkSplitBoard.CheckedChanged += (s, e) => CommitOverlayOptions();
             chkOverlayExports.CheckedChanged += (s, e) => CommitOverlayOptions();
             cmbCorner.SelectedIndexChanged += (s, e) => CommitOverlayOptions();
             toolTip.SetToolTip(chkOverlayExports, "Τα γραφικά του βίντεο (χρόνος, γράφημα ταχύτητας, τιμές εκκίνησης και στροφών, γωνίες)\n" +
                 "μπαίνουν και στις εξαγωγές του Kinovea (βίντεο, εικόνα, αντιγραφή καρέ) και στα στιγμιότυπα του report,\n" +
-                "με τις ίδιες αναλογίες που έχουν στην οθόνη. Ισχύει όσο είναι ανοιχτό το παράθυρο Swim Analysis.");
+                "με τις ίδιες αναλογίες που έχουν στην οθόνη. Ισχύει όσο είναι ανοιχτή η ανάλυση (παράθυρο ή κουμπιά στο βίντεο).");
             toolTip.SetToolTip(chkSpeedChart, "Γράφημα με την ταχύτητα κάθε τμήματος πάνω στο βίντεο (αθλητής και αναφορά). Ακολουθεί τον χρόνο του βίντεο.\n" +
                 "Συνεχής γραμμή: καθαρή κολύμβηση · διάστικτη: εκκίνηση, στροφές και τελευταία 5μ. (συμβατική ταχύτητα).");
             toolTip.SetToolTip(chkSplitBoard, "Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο.");
@@ -560,6 +570,7 @@ namespace Kinovea.ScreenManager
             overlay.Controls.Add(Caption("θέση"));
             overlay.Controls.Add(cmbCorner);
             overlay.Controls.Add(chkOverlayExports);
+            overlay.Controls.Add(chkVideoBars);
 
             TableLayoutPanel t = NewEventTable();
             AddEventRow(t, "Χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
@@ -1190,6 +1201,7 @@ namespace Kinovea.ScreenManager
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
                 chkOverlayExports.Checked = settings.OverlayInExports;
+                chkVideoBars.Checked = settings.VideoBars;
                 chkAutoStrokes.Checked = settings.AutoStrokes;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }

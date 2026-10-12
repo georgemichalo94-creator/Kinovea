@@ -453,7 +453,7 @@ namespace Kinovea.ScreenManager
             bool cleared;
             using (FormSwimStrokeCount dialog = new FormSwimStrokeCount(title, detail, shown, sequence))
             {
-                answer = form != null && !form.IsDisposed ? dialog.ShowDialog(form) : dialog.ShowDialog();
+                answer = dialog.ShowDialog(DialogOwner);
                 value = dialog.Value;
                 cleared = dialog.Cleared;
             }

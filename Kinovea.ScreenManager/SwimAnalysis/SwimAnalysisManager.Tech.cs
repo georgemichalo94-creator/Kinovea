@@ -669,8 +669,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void DrawExportOverlay(PlayerScreenUserInterface screen, Graphics g, Size outputSize, long timestamp)
         {
-            // As on the screen: only for the video of the panel, while the panel is open.
-            if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || form == null || form.IsDisposed ||
+            // As on the screen: only for the video of the analysis, while the analysis is on the screen (window or bars).
+            if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || !Active ||
                 VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports)
                 return;
 

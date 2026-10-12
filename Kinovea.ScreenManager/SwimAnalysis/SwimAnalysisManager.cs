@@ -196,7 +196,7 @@ namespace Kinovea.ScreenManager
         public void ShowWindow(PlayerScreenUserInterface player, FrameServerPlayer frameServer)
         {
             Attach(player, frameServer);
-            EnsureForm(true);
+            ShowAnalysis(true);
         }
 
         /// <summary>
@@ -208,10 +208,15 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return false;
 
+            bool splitAdded = false;
             switch (command)
             {
                 case PlayerScreenCommands.SwimShowPanel:
-                    EnsureForm(true);
+                    // With the bars on the video the key opens and closes the window.
+                    if (PanelOpen && Settings.VideoBars && BarsShown)
+                        form.Close();
+                    else
+                        ShowAnalysis(true);
                     return true;
                 case PlayerScreenCommands.SwimStart:
                     if (Race.IsTraining)
@@ -227,7 +232,7 @@ namespace Kinovea.ScreenManager
                         return true;
                     }
 
-                    AddSplit(timestamp);
+                    splitAdded = AddSplit(timestamp);
                     break;
                 case PlayerScreenCommands.SwimStroke:
                     AddMark(SwimMarkType.Stroke, timestamp, "Χεριά");
@@ -256,12 +261,12 @@ namespace Kinovea.ScreenManager
                     break;
             }
 
-            EnsureForm(false);
+            ShowAnalysis(false);
             if (command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle)
                 Changed(true);
 
             // The finish has just been marked: the frame with the graphics (final time, velocity chart) for the report.
-            if (command == PlayerScreenCommands.SwimSplit && !Race.IsTraining)
+            if (command == PlayerScreenCommands.SwimSplit && splitAdded && !Race.IsTraining)
             {
                 SwimMark finish = Race.GetSplit(Race.Distance);
                 if (finish != null && SameFrame(finish.Timestamp, timestamp))
@@ -283,7 +288,7 @@ namespace Kinovea.ScreenManager
             {
                 if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && !PickingStrokes)
                     BeginAutoStrokes();
-                else if (command == PlayerScreenCommands.SwimSplit && (Settings.AutoStrokes || StrokeSessionActive))
+                else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
             }
 
@@ -333,8 +338,19 @@ namespace Kinovea.ScreenManager
             return false;
         }
 
-        private void AddSplit(long timestamp)
+        /// <summary>The next checkpoint at this frame. Returns false if nothing was marked.</summary>
+        private bool AddSplit(long timestamp)
         {
+            // Two presses on the same frame (paused video, key held down) are the same checkpoint, not two.
+            SwimMark same = Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Split && SameFrame(m.Timestamp, timestamp));
+            if (same != null)
+            {
+                SystemSounds.Beep.Play();
+                Status(string.Format(CultureInfo.InvariantCulture, "Σε αυτό το καρέ υπάρχει ήδη το πέρασμα των {0}{1}: δεν καταχωρήθηκε δεύτερο πέρασμα.",
+                    same.Distance, Race.Unit), true);
+                return false;
+            }
+
             bool hadStart = EnsureStart();
             int distance = Race.NextCheckpoint();
             string unit = Race.Unit;
@@ -342,7 +358,7 @@ namespace Kinovea.ScreenManager
             {
                 SystemSounds.Beep.Play();
                 Status("Όλα τα σημεία έχουν χρόνο. Διάγραψε έναν χρόνο (επιλογή γραμμής + Delete) για να τον ξαναμαρκάρεις.", true);
-                return;
+                return false;
             }
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = distance };
@@ -364,6 +380,8 @@ namespace Kinovea.ScreenManager
 
             if (hadStart || warn)
                 Status(message, warn);
+
+            return true;
         }
 
         private void AddMark(SwimMarkType type, long timestamp, string label)
@@ -622,7 +640,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool WantsImagePoint(PlayerScreenUserInterface screen)
         {
-            return PickTarget != SwimPickTarget.None && screen == player && HasVideo && form != null && !form.IsDisposed;
+            return PickTarget != SwimPickTarget.None && screen == player && HasVideo && Active;
         }
 
         /// <summary>
@@ -1238,7 +1256,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize)
         {
-            if (screen != player || form == null || form.IsDisposed || VideoFile == null || transform == null)
+            if (screen != player || !Active || VideoFile == null || transform == null)
                 return;
 
             // The exports keep the proportions of the graphics on the screen.
@@ -2366,6 +2384,7 @@ namespace Kinovea.ScreenManager
             RefreshTiming();
             Computed = SwimCalculator.Compute(Race, Timing, Settings.StrokeRounding);
             TechPhases = SwimTechCalculator.Compute(Race, Computed, Timing);
+            DataVersion++;
         }
 
         private void Changed(bool send)
@@ -2504,7 +2523,13 @@ namespace Kinovea.ScreenManager
             SaveNow();
             Settings.Save();
             form = null;
-            if (PickTarget != SwimPickTarget.None)
+
+            // Without the bars on the video, closing the window ends the analysis on the screen (graphics, clicks).
+            if (!Settings.VideoBars)
+                analysisOn = false;
+            UpdateBars();
+
+            if (PickTarget != SwimPickTarget.None && !Active)
             {
                 pendingMeasure = SwimPickTarget.None;
                 calibrationClicks.Clear();
