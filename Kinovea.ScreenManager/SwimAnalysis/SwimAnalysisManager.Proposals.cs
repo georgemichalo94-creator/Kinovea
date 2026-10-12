@@ -381,12 +381,17 @@ namespace Kinovea.ScreenManager
                 }
 
                 Answer(p, timestamp, true);
+                string estimated = "";
                 if (p.Kind == KindRaceBreakout)
+                {
                     TrimAutoStrokesBeforeBreakout(p.Index, timestamp);
-                Changed(false);
+                    estimated = EstimateUnderwaterDistance(p.Index, timestamp);
+                }
+
+                Changed(estimated.Length > 0);
 
                 // What the command said stays visible with the next proposal.
-                done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus);
+                done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
             }
 
             NextProposal(timestamp, done);

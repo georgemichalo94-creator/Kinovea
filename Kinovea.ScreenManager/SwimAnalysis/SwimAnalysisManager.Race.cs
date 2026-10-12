@@ -531,6 +531,56 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// The breakout after the wall at 'wall' (0: the start) is at this frame: the underwater distance from the time to the next
+        /// checkpoint (marked or proposed) at the speed of the swimming after it, 12% faster (the glide of the breakout, as in the
+        /// analyses made: within about 0.3 m). Written only where the analyst has no value; returns the text for the status
+        /// (empty if nothing was written).
+        /// </summary>
+        private string EstimateUnderwaterDistance(int wall, long breakout)
+        {
+            if (Race == null || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return "";
+
+            bool start = wall == 0;
+            SwimTurnManual turn = start ? null : Race.GetTurn(wall, false);
+            if ((start && Race.UnderwaterDist.HasValue) || (!start && turn != null && turn.UnderwaterDist.HasValue))
+                return "";
+
+            // The first two checkpoints after the breakout in this length, marked or proposed.
+            double tb = Timing.Seconds(breakout, Race.StartTimestamp.Value);
+            List<Tuple<int, double>> next = new List<Tuple<int, double>>();
+            foreach (int d in Race.Checkpoints.Where(c => c > wall && c < wall + Race.Pool).OrderBy(c => c))
+            {
+                SwimMark mark = Race.GetSplit(d);
+                SwimProposal p = Race.Proposals.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == d);
+                long? ts = mark != null ? mark.Timestamp : p != null ? p.Timestamp : (long?)null;
+                if (!ts.HasValue)
+                    continue;
+                double t = Timing.Seconds(ts.Value, Race.StartTimestamp.Value);
+                if (t > tb)
+                    next.Add(Tuple.Create(d, t));
+                if (next.Count == 2)
+                    break;
+            }
+
+            if (next.Count < 2 || next[1].Item2 <= next[0].Item2)
+                return "";
+
+            double speed = (next[1].Item1 - next[0].Item1) * Race.K / (next[1].Item2 - next[0].Item2);
+            double distance = (next[0].Item1 - wall) * Race.K - 1.12 * speed * (next[0].Item2 - tb);
+            if (distance < 2 || distance > (next[0].Item1 - wall) * Race.K)
+                return "";
+
+            distance = Math.Round(distance / Race.K, 1);
+            if (start)
+                Race.UnderwaterDist = distance;
+            else
+                Race.GetTurn(wall, true).UnderwaterDist = distance;
+            return string.Format(CultureInfo.InvariantCulture, " · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)",
+                distance, Race.Unit, next[0].Item1);
+        }
+
+        /// <summary>
         /// The breakout after the wall at 'wall' (0: the start) is at this frame: the automatic strokes of the length before it (more
         /// than the breakout stroke, 0.4 s) go.
         /// </summary>
