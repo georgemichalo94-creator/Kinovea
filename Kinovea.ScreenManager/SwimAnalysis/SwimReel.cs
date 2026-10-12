@@ -69,6 +69,9 @@ namespace Kinovea.ScreenManager
         private readonly List<double> knotD = new List<double>();
         private double[] slopes = new double[0];
 
+        // The first checkpoint after the last one with a time: the swimmer is not shown beyond it before it is marked.
+        private double nextCheckpoint;
+
         /// <summary>Meters per pool unit.</summary>
         public double K = 1.0;
         public string UnitShort = "m";
@@ -78,6 +81,10 @@ namespace Kinovea.ScreenManager
         /// <summary>Final time (s), null until the finish is marked.</summary>
         public double? Finish;
 
+        /// <summary>
+        /// Time of each wall of the race (the turns, not the finish): marked, or from the curve when a later checkpoint is
+        /// marked, else NaN (not reached yet).
+        /// </summary>
         public readonly List<double> Walls = new List<double>();
         public readonly List<SwimReelCycle> Cycles = new List<SwimReelCycle>();
         public readonly List<SwimReelBadge> Badges = new List<SwimReelBadge>();
@@ -134,8 +141,22 @@ namespace Kinovea.ScreenManager
             if (finish != null)
                 reel.Finish = finish.T.Value;
 
-            foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue && r.D % reel.Pool == 0 && r.D < race.Distance).OrderBy(r => r.D))
-                reel.Walls.Add(row.T.Value);
+            double lastD = reel.knotD[reel.knotD.Count - 1];
+            reel.nextCheckpoint = computed.Rows.Where(r => r.D > lastD).Select(r => (double)r.D).DefaultIfEmpty(race.Distance).Min();
+
+            // One time for each wall, also for a wall not marked between two checkpoints that are (the laps stay in order).
+            int laps = Math.Max(1, (int)Math.Ceiling(reel.Distance / (double)reel.Pool - 1e-9));
+            for (int wall = 1; wall < laps; wall++)
+            {
+                int d = wall * reel.Pool;
+                SwimRow row = computed.Rows.FirstOrDefault(r => r.D == d && r.T.HasValue);
+                if (row != null)
+                    reel.Walls.Add(row.T.Value);
+                else if (reel.HasModel && d < lastD)
+                    reel.Walls.Add(reel.TimeAtDistance(d));
+                else
+                    reel.Walls.Add(double.NaN);
+            }
 
             reel.Entry = computed.Entries.Count > 0 ? (double?)computed.Entries[0] : null;
             reel.FirstBreakout = computed.Breakouts.Count > 0 ? (double?)computed.Breakouts[0] : null;
@@ -162,7 +183,7 @@ namespace Kinovea.ScreenManager
             for (int lap = 0; lap < laps; lap++)
             {
                 double start = lapStarts[lap];
-                double end = lap < Walls.Count ? Walls[lap] : (Finish ?? double.PositiveInfinity);
+                double end = LapEnd(lap);
                 double breakout = double.NaN;
                 double feetOff = double.NaN;
                 if (!double.IsNaN(start))
@@ -232,7 +253,7 @@ namespace Kinovea.ScreenManager
                     if (tempo <= 0.2 || tempo > 4.0)
                         continue;
 
-                    double dps = (DistanceAt(t1) - DistanceAt(t0)) * K;
+                    double dps = (Position(t1, false) - Position(t0, false)) * K;
                     number++;
                     Cycles.Add(new SwimReelCycle { Start = t0, Time = t1, Tempo = tempo, Dps = dps, Speed = dps / tempo, Lap = lap, Number = number });
                 }
@@ -403,23 +424,51 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Model
-        /// <summary>Distance of the race (pool units) at a time after the start, from the curve through the checkpoints.</summary>
+        /// <summary>
+        /// Distance of the race (pool units) at a time after the start, from the curve through the checkpoints; after the last
+        /// checkpoint marked, on with the speed of the last segment up to the next checkpoint.
+        /// </summary>
         public double DistanceAt(double t)
         {
+            return Position(t, true);
+        }
+
+        /// <summary>Time (s after the start) at a distance up to the last checkpoint marked, from the curve.</summary>
+        public double TimeAtDistance(double d)
+        {
             int n = knotT.Count;
-            if (n == 0 || t <= 0)
+            if (n < 2 || d <= 0)
                 return 0;
-            if (n == 1)
+            if (d >= knotD[n - 1])
+                return knotT[n - 1];
+
+            double lo = 0, hi = knotT[n - 1];
+            for (int i = 0; i < 50; i++)
+            {
+                double mid = 0.5 * (lo + hi);
+                if (Position(mid, true) < d)
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+
+            return 0.5 * (lo + hi);
+        }
+
+        /// <summary>stopAtCheckpoint: not beyond the next checkpoint (where the swimmer is shown), else up to the finish (cycles).</summary>
+        private double Position(double t, bool stopAtCheckpoint)
+        {
+            int n = knotT.Count;
+            if (n < 2 || t <= 0)
                 return 0;
 
             if (t >= knotT[n - 1])
             {
-                // After the last checkpoint marked: on with the speed of the last segment, up to the next checkpoint.
-                if (Finish.HasValue || n < 2)
+                if (Finish.HasValue)
                     return Math.Min(Distance, knotD[n - 1]);
 
                 double v = (knotD[n - 1] - knotD[n - 2]) / (knotT[n - 1] - knotT[n - 2]);
-                return Math.Min(Distance, knotD[n - 1] + v * (t - knotT[n - 1]));
+                return Math.Min(stopAtCheckpoint ? nextCheckpoint : Distance, knotD[n - 1] + v * (t - knotT[n - 1]));
             }
 
             int k = 0;
@@ -497,6 +546,15 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region At a moment of the video
+        /// <summary>End of a lap (s): its wall, the finish for the last one, infinity while not known.</summary>
+        public double LapEnd(int lap)
+        {
+            if (lap >= 0 && lap < Walls.Count)
+                return double.IsNaN(Walls[lap]) ? (Finish ?? double.PositiveInfinity) : Walls[lap];
+
+            return Finish ?? double.PositiveInfinity;
+        }
+
         /// <summary>Lap at a time after the start (0 = first length).</summary>
         public int LapAt(double t)
         {

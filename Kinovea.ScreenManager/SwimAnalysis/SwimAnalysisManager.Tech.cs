@@ -719,7 +719,7 @@ namespace Kinovea.ScreenManager
                         float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
                         Size logical = new Size((int)Math.Round(size.Width / scale), (int)Math.Round(size.Height / scale));
                         g.ScaleTransform(scale, scale);
-                        if (reel && !allRace && ReelShown)
+                        if (reel && !allRace && ReelReady(logical))
                         {
                             // Video image (reference pixels) → logical units of the exported image.
                             Size reference = frameServer.VideoReader.Info.ReferenceSize;

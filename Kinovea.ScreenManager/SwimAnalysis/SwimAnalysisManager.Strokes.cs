@@ -143,7 +143,7 @@ namespace Kinovea.ScreenManager
             Settings.Save();
             if (!on)
             {
-                if (PickingStrokes)
+                if (PickingStrokes && !PickingTrack)
                     CancelPick();
                 EndStrokeSession();
                 Status("Χεριές σε κάθε πέρασμα: κλειστό.", false);
@@ -176,7 +176,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void BeginAutoStrokes()
         {
-            if (PickingStrokes)
+            // Again while choosing: cancel. While choosing the swimmer to follow: the strokes instead (they keep his place too).
+            if (PickingStrokes && !PickingTrack)
             {
                 CancelPick();
                 return;

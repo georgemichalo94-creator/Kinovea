@@ -76,9 +76,18 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// The technical view can be drawn on an image of this size (else the race board and the velocity chart are shown):
+        /// a race with the start signal, an image of at least 320 × 180.
+        /// </summary>
+        public static bool CanPaint(Size size, SwimReel reel)
+        {
+            return reel != null && size.Width >= 320 && size.Height >= 180;
+        }
+
         public static void Paint(Graphics g, Size size, SwimReelScene s)
         {
-            if (s == null || s.Race == null || s.Computed == null || s.Reel == null || !s.Reel.HasModel || size.Width < 320 || size.Height < 180)
+            if (s == null || s.Race == null || s.Computed == null || !CanPaint(size, s.Reel))
                 return;
 
             Layout layout = new Layout(size);
@@ -124,13 +133,21 @@ namespace Kinovea.ScreenManager
                 g.DrawString(text, font, brush, r, format);
         }
 
+        [ThreadStatic]
+        private static StringFormat measureFormat;
+
         private static float Width(Graphics g, string text, Font font)
         {
             if (string.IsNullOrEmpty(text))
                 return 0;
 
-            using (StringFormat format = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces })
-                return g.MeasureString(text, font, PointF.Empty, format).Width;
+            if (measureFormat == null)
+            {
+                using (StringFormat typographic = StringFormat.GenericTypographic)
+                    measureFormat = new StringFormat(typographic) { FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces };
+            }
+
+            return g.MeasureString(text, font, PointF.Empty, measureFormat).Width;
         }
 
         private static Color Fade(Color c, float a)
@@ -234,13 +251,13 @@ namespace Kinovea.ScreenManager
 
             // Strokes of the length, tempo and distance of the last cycle, speed.
             SwimReelCycle cycle = t >= 0 ? reel.LastCycle(t) : null;
-            bool swimming = reel.Swimming(t);
+            bool swimming = reel.Swimming(t) && reel.HasModel;
             string[] captions = { "ΧΕΡΙΕΣ", "ΣΥΧΝΟΤΗΤΑ", "ΑΠΟΣΤ./ΚΥΚΛΟ", "ΤΑΧΥΤΗΤΑ" };
             string[] values =
             {
                 (t >= 0 ? reel.StrokesInLength(t) : 0).ToString(CultureInfo.InvariantCulture),
                 cycle != null ? cycle.Tempo.ToString("0.00", CultureInfo.InvariantCulture) : "–",
-                cycle != null ? "≈" + cycle.Dps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
+                cycle != null && reel.HasModel ? "≈" + cycle.Dps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
                 swimming ? reel.SpeedAt(t).ToString("0.00", CultureInfo.InvariantCulture) : "–"
             };
             string[] units = { "", "s/κύκλο", "m", "m/s" };
@@ -285,6 +302,9 @@ namespace Kinovea.ScreenManager
             double t = s.Time;
             SwimReel reel = s.Reel;
             RectangleF r = L.Chart;
+            if (!reel.HasModel)
+                return;
+
             Card(g, r, athlete, k);
 
             int laps = Math.Max(1, (int)Math.Ceiling(s.Race.Distance / (double)reel.Pool - 1e-9));
@@ -471,9 +491,13 @@ namespace Kinovea.ScreenManager
 
             samples = Math.Max(4, samples);
             float a = (float)Math.Max(0, Math.Min(1, (edge + 1) / samples));
+            // Each part followed is one length: out after its wall (or the finish).
             SwimReel reel = s.Reel;
-            if (reel.Finish.HasValue && s.Time > reel.Finish.Value + 0.4)
-                a *= (float)Math.Max(0, 1 - (s.Time - reel.Finish.Value - 0.4) / 0.4);
+            double end = reel.Finish ?? double.PositiveInfinity;
+            if (s.Timing != null && s.Timing.IsValid && s.Race.StartTimestamp.HasValue)
+                end = reel.LapEnd(reel.LapAt(s.Timing.Seconds(track.Start, s.Race.StartTimestamp.Value) + 0.05));
+            if (s.Time > end + 0.4)
+                a *= (float)Math.Max(0, 1 - (s.Time - end - 0.4) / 0.4);
             if (a <= 0.01f)
                 return;
 

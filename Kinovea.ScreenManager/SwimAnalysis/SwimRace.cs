@@ -199,6 +199,26 @@ namespace Kinovea.ScreenManager
             bottom = (float)(sb / sw);
             return true;
         }
+
+        /// <summary>The points of the part between two timestamps (included), null if there are fewer than two.</summary>
+        public SwimTrack Slice(long from, long to)
+        {
+            int n = Math.Min(Math.Min(X.Count, Y.Count), Math.Min(Top.Count, Bottom.Count));
+            if (n == 0 || Step <= 0 || to < from)
+                return null;
+
+            int first = (int)Math.Max(0, Math.Ceiling(((double)from - Start) / Step - 1e-9));
+            int last = (int)Math.Min(n - 1, Math.Floor(((double)to - Start) / Step + 1e-9));
+            if (last - first + 1 < 2)
+                return null;
+
+            SwimTrack part = new SwimTrack { Start = Start + (long)Math.Round(first * Step), Step = Step };
+            part.X.AddRange(X.GetRange(first, last - first + 1));
+            part.Y.AddRange(Y.GetRange(first, last - first + 1));
+            part.Top.AddRange(Top.GetRange(first, last - first + 1));
+            part.Bottom.AddRange(Bottom.GetRange(first, last - first + 1));
+            return part;
+        }
     }
 
     /// <summary>A list of numbers written on one line of the indented analysis file (read as usual).</summary>
@@ -459,6 +479,8 @@ namespace Kinovea.ScreenManager
             if (PhaseValues == null) PhaseValues = new Dictionary<string, SwimPhaseManual>();
             if (Angles == null) Angles = new List<SwimAngle>();
             if (Snapshots == null) Snapshots = new List<SwimSnapshot>();
+            if (Tracks == null) Tracks = new List<SwimTrack>();
+            Tracks.RemoveAll(t => t == null || t.X == null || t.Y == null || t.Top == null || t.Bottom == null || t.Step <= 0);
             if (string.IsNullOrEmpty(Kind)) Kind = KindRace;
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";

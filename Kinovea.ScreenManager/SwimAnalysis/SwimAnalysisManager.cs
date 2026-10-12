@@ -286,7 +286,8 @@ namespace Kinovea.ScreenManager
             // (also when a lap is followed from the button of the panel with the setting off).
             if (!Race.IsTraining && HasVideo)
             {
-                if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && !PickingStrokes)
+                // A swimmer to follow for the label becomes the swimmer of the strokes (they keep his place too).
+                if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && (!PickingStrokes || PickingTrack))
                     BeginAutoStrokes();
                 else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
@@ -730,6 +731,7 @@ namespace Kinovea.ScreenManager
 
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
+            pickForTrack = false;
             SetPick(SwimPickTarget.None);
             Status("Ακυρώθηκε.", false);
             return true;
@@ -1293,7 +1295,7 @@ namespace Kinovea.ScreenManager
                     DrawMeasurement(g, transform, lastMeasurement);
 
                 DrawAngles(g, transform, timestamp);
-                if (ReelShown)
+                if (ReelReady(renderingSize))
                 {
                     // The technical view replaces the race board, the velocity chart and the values of the start or turn.
                     DrawReel(g, timestamp, renderingSize, p => transform.Transform(p));

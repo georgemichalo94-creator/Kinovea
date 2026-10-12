@@ -31,6 +31,15 @@ namespace Kinovea.ScreenManager
             get { return Settings != null && Settings.ReelOverlay && Race != null && !Race.IsTraining; }
         }
 
+        /// <summary>
+        /// The technical view is drawn on an image of this size (else the race board and the velocity chart are, as before the
+        /// start signal or on a very small image).
+        /// </summary>
+        private bool ReelReady(Size size)
+        {
+            return ReelShown && SwimReelPainter.CanPaint(size, Reel);
+        }
+
         /// <summary>The next two clicks choose the swimmer that the athlete label follows (not the automatic strokes).</summary>
         public bool PickingTrack
         {
@@ -105,7 +114,7 @@ namespace Kinovea.ScreenManager
         {
             if (PickingStrokes)
             {
-                bool wasTrack = pickForTrack;
+                bool wasTrack = PickingTrack;
                 CancelPick();
                 if (wasTrack)
                     return;
@@ -168,7 +177,7 @@ namespace Kinovea.ScreenManager
 
                 SwimStrokeResult result = s.Detector.Finish(0, s.Timestamps.Count - 1);
                 StoreTrack(s, result);
-                Changed(true);
+                Changed(false);
                 Status(string.Format(CultureInfo.InvariantCulture, "Ακολούθηση: ο αθλητής βρέθηκε μέχρι τα {0:0.00} s{1}. Η ετικέτα του φαίνεται στην τεχνική ανάλυση.",
                     Timing.Seconds(s.LastRead, Race.StartTimestamp.Value), result.Ropes ? "" : " (χωρίς σχοινιά διαδρομής)"), false);
             }
@@ -182,29 +191,35 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// End of the reading for the swimmer: the wall of the length (a little after the touch) when it is marked, else the end of
-        /// the race or of the working zone, at most one minute of video.
+        /// End of the reading for the swimmer, within the working zone: a little after the touch at the wall of the length when it
+        /// is marked; else the rest of the length at a slow speed (0.9 m/s) from where the checkpoints put the swimmer, at most
+        /// a minute (the label stops at the wall once it is marked).
         /// </summary>
         private long TrackEnd(long from)
         {
             long end = frameServer.VideoReader.WorkingZone.End;
-            long minute = from + (long)Math.Round(60.0 * 1000.0 / Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
-            end = Math.Min(end, minute);
-
             int wall = NextWallDistance(from);
             SwimMark split = Race.GetSplit(wall);
             if (split != null && split.Timestamp > from)
-            {
-                long after = split.Timestamp + (long)Math.Round(0.6 * 1000.0 / Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
-                end = Math.Min(end, after);
-            }
+                return Math.Min(end, split.Timestamp + RealSpan(0.6));
 
-            return end;
+            SwimReel reel = Reel;
+            double t = Timing.Seconds(from, Race.StartTimestamp.Value);
+            double at = reel != null && reel.HasModel ? reel.DistanceAt(t) : wall - Race.Pool;
+            double seconds = Math.Max(0, wall - at) * Race.K / 0.9 + 2.0;
+            return Math.Min(end, from + RealSpan(Math.Min(60, seconds)));
+        }
+
+        /// <summary>Timestamps of a time of the race (real seconds, also in a high speed video).</summary>
+        private long RealSpan(double seconds)
+        {
+            double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
+            return (long)Math.Round(seconds * 1000.0 * hsf / Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
         }
 
         /// <summary>
-        /// The place of the swimmer of a reading (automatic strokes or follow) in reference image pixels: it replaces the parts of
-        /// the track in the same time.
+        /// The place of the swimmer of a reading (automatic strokes or follow) in reference image pixels. It replaces what the
+        /// parts kept before have in its time, and stops where a part of a later length begins.
         /// </summary>
         private void StoreTrack(StrokeSession s, SwimStrokeResult result)
         {
@@ -236,10 +251,44 @@ namespace Kinovea.ScreenManager
                 track.Bottom.Add((int)Math.Round(Math.Max(y1, y2) * sy));
             }
 
+            // Not into the length of a part followed before (a reading can go past an unmarked wall).
+            SwimReel reel = Reel;
+            Func<long, int> lap = timestamp => reel != null && Race.StartTimestamp.HasValue
+                ? reel.LapAt(Timing.Seconds(timestamp, Race.StartTimestamp.Value)) : 0;
+            int own = lap(track.Start);
+            foreach (SwimTrack old in Race.Tracks.Where(t => t != null && t.Start > track.Start && t.Start <= track.End).OrderBy(t => t.Start))
+            {
+                if (lap(old.Start) <= own)
+                    continue;
+
+                SwimTrack cut = track.Slice(track.Start, old.Start - 1);
+                if (cut != null)
+                    track = cut;
+                break;
+            }
+
             long start = track.Start, end = track.End;
-            Race.Tracks.RemoveAll(t => t == null || (t.Start <= end && t.End >= start));
-            Race.Tracks.Add(track);
-            Race.Tracks.Sort((a, b) => a.Start.CompareTo(b.Start));
+            List<SwimTrack> kept = new List<SwimTrack>();
+            foreach (SwimTrack old in Race.Tracks.Where(t => t != null && t.X.Count > 0))
+            {
+                if (old.End < start || old.Start > end)
+                {
+                    kept.Add(old);
+                    continue;
+                }
+
+                SwimTrack before = old.Slice(old.Start, start - 1);
+                SwimTrack after = old.Slice(end + 1, old.End);
+                if (before != null)
+                    kept.Add(before);
+                if (after != null)
+                    kept.Add(after);
+            }
+
+            kept.Add(track);
+            kept.Sort((a, b) => a.Start.CompareTo(b.Start));
+            Race.Tracks.Clear();
+            Race.Tracks.AddRange(kept);
         }
 
         /// <summary>Delete the place of the swimmer kept for the label (the marks do not change).</summary>
@@ -249,7 +298,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             Race.Tracks.Clear();
-            Changed(true);
+            Changed(false);
             InvalidatePlayer();
             Status("Διαγράφηκε η ακολούθηση του αθλητή (η ετικέτα δεν φαίνεται πια).", false);
             if (form != null && !form.IsDisposed)
