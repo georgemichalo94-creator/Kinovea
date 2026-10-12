@@ -267,29 +267,39 @@ namespace Kinovea.ScreenManager
             if (usual <= 1e-6)
                 return cues;
 
-            // The rise after the quiet water of the underwater phase (half a second at least): a reading that starts in the swimming
-            // has no breakout.
-            int hold = (int)Math.Round(1.0 * fps), quietNeeded = (int)Math.Round(0.5 * fps), quiet = 0;
+            // The quietest moment of the underwater phase (a reading that starts in the swimming has none), then the rise to the
+            // level of the swimming: half way from the quiet level, staying above a third of the way for a second.
+            int tMin = from;
             for (int t = from; t <= to; t++)
             {
-                if (es[t] < 0.45 * usual)
-                    quiet++;
-                if (es[t] < 0.6 * usual || quiet < quietNeeded)
+                if (es[t] < es[tMin])
+                    tMin = t;
+            }
+
+            double floor = es[tMin];
+            if (floor > 0.7 * usual)
+                return cues;
+
+            double rise = floor + 0.5 * (usual - floor), keep = floor + 0.3 * (usual - floor);
+            int hold = (int)Math.Round(1.0 * fps);
+            for (int t = Math.Max(1, tMin); t <= to; t++)
+            {
+                if (es[t] < rise)
                     continue;
 
                 bool stays = true;
                 for (int k = t; k < Math.Min(T, t + hold) && stays; k++)
-                    stays = es[k] >= 0.45 * usual;
+                    stays = es[k] >= keep;
                 if (!stays)
                     continue;
 
                 double a = es[t - 1], b = es[t];
-                double fraction = b - a > 1e-9 ? (0.6 * usual - a) / (b - a) : 1.0;
+                double fraction = b - a > 1e-9 ? (rise - a) / (b - a) : 1.0;
                 cues[CueEnergy] = t - 1 + Math.Max(0, Math.Min(1, fraction));
                 break;
             }
 
-            // The splash: the first peak of the stroke signal after 'from' as strong as the strokes of the swimming.
+            // The splash: the first peak of the stroke signal after the quiet moment as strong as the strokes of the swimming.
             double[] o = result.Onset;
             if (o != null && o.Length >= T)
             {
@@ -303,12 +313,9 @@ namespace Kinovea.ScreenManager
                 if (peaks.Count >= 3)
                 {
                     double strong = 0.6 * SwimLearningMedian(peaks);
-                    int calm = 0;
-                    for (int t = Math.Max(1, from); t <= Math.Min(to, o.Length - 2); t++)
+                    for (int t = Math.Max(1, tMin); t <= Math.Min(to, o.Length - 2); t++)
                     {
-                        if (es[t] < 0.45 * usual)
-                            calm++;
-                        if (calm >= quietNeeded && o[t] > o[t - 1] && o[t] >= o[t + 1] && o[t] >= strong)
+                        if (o[t] > o[t - 1] && o[t] >= o[t + 1] && o[t] >= strong)
                         {
                             cues[CueBurst] = t;
                             break;

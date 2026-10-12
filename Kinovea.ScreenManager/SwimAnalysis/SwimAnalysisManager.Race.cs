@@ -318,7 +318,7 @@ namespace Kinovea.ScreenManager
             if (PendingProposals.Count == 0 && PoolHasMarks && !Race.IsTraining && !Race.Marks.Any(m => m.Type == SwimMarkType.Split))
             {
                 EndReview(false);
-                SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, timestamp + RealSpan(6.5)));
+                SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, timestamp + RealSpan(5.0)));
                 BeginAutoRace();
                 if (PickingTrack)
                 {
@@ -368,6 +368,9 @@ namespace Kinovea.ScreenManager
             /// <summary>Strokes of the length (frames of the reading): from the breakout to a little before the wall.</summary>
             public readonly List<int> Strokes = new List<int>();
             public double Period;
+
+            /// <summary>Frame of the click on the swimmer in the reading (0: the reading starts there; the first length can start at the start).</summary>
+            public int ClickIndex;
         }
 
         /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
@@ -387,23 +390,40 @@ namespace Kinovea.ScreenManager
             double step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1);
             long lapStartTs = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
             double lapStart = step > 0 ? (lapStartTs - s.Timestamps[0]) / step : double.NaN;
-            int first = 0;
-            if (!double.IsNaN(lapStart) && lapStart > -6.0 * s.Fps)
+            string style = SwimPresets.StyleAt(Race, s.Wall);
+
+            // Without a breakout the strokes start at the click (first length), or after the usual underwater phase of the style.
+            int first = l.ClickIndex;
+            if (l.LapFrom > 0 && !double.IsNaN(lapStart))
+                first = Math.Max(first, (int)Math.Round(lapStart + 0.85 * (style == "fs" ? 2.5 : 4.5) * s.Fps));
+
+            // The breakout, when the reading has the underwater phase (it starts at the wall or the start).
+            if (!double.IsNaN(lapStart) && lapStart > -1.5 * s.Fps)
             {
-                int from = (int)Math.Ceiling(Math.Max(0, lapStart + 1.0 * s.Fps));
+                int from = (int)Math.Ceiling(Math.Max(0, lapStart + (l.LapFrom == 0 ? 1.5 : 1.0) * s.Fps));
                 SwimSplitFound f15 = l.Found.FirstOrDefault(f => f.LapDistance == 15);
                 double at15 = f15 != null ? SwimSplitDetector.MainFrame(f15.Cues) : double.NaN;
                 int to = !double.IsNaN(at15) ? (int)Math.Round(at15) : from + (int)Math.Round(8 * s.Fps);
                 l.Breakout = SwimSplitDetector.BreakoutCues(l.Result, s.Fps, from, to);
-                // The first stroke starts a little before the head is out (the breakout stroke).
+
+                // After the start not before 3 s (entry and glide of the fastest).
                 double b = BreakoutSample(l);
+                if (l.LapFrom == 0 && !double.IsNaN(b) && b < lapStart + 3.0 * s.Fps)
+                {
+                    l.Breakout.Clear();
+                    b = double.NaN;
+                }
+
+                // After a wall the first stroke starts a little before the head is out (the breakout stroke); after the start the
+                // analysts count from the first stroke after the breakout.
                 if (!double.IsNaN(b))
-                    first = Math.Max(0, (int)Math.Round(b - 0.4 * s.Fps));
+                    first = Math.Max(0, (int)Math.Round(b + (l.LapFrom == 0 ? 0.1 : -0.4) * s.Fps));
             }
 
             double wall = WallSample(l);
             int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
             last = Math.Min(n - 1, last);
+            first = Math.Max(0, Math.Min(n - 1, first));
             if (last <= first + 5)
                 return;
 
@@ -1004,6 +1024,231 @@ namespace Kinovea.ScreenManager
             last = Math.Min(end, from + RealSpan(Math.Min(180, most)));
         }
 
+        /// <summary>
+        /// The first length read from the start signal, so that the click on the swimmer can come later in the length (even after
+        /// the 15 m) and the underwater phase of the start is read: the lane clicked is taken back to the start with the motion of
+        /// the camera (composed frame to frame), then followed from there again with its two neighbours (the composed motion
+        /// drifts a little); the one that arrives on the lane clicked is the session. Null when it can't be (the caller reads from
+        /// the click as before); also null when cancelled (cancelled is then true).
+        /// </summary>
+        private StrokeSession StartSession(PointF head, PointF feet, long click, long start, BackgroundWorker worker, out bool cancelled)
+        {
+            cancelled = false;
+            List<StrokeSession> candidates = new List<StrokeSession>();
+            StrokeSession chosen = null;
+            StrokeSession clicked = CreateSession(head, feet, click);
+            try
+            {
+                // The lane at the click.
+                if (!ReadFrames(clicked, click, worker))
+                {
+                    cancelled = true;
+                    return null;
+                }
+
+                if (clicked.Timestamps.Count == 0 || !clicked.Detector.FoundRopes)
+                    return null;
+
+                SwimStrokeLane laneC = clicked.Detector.CurrentLane;
+                int virtualRope = clicked.Detector.VirtualRope;
+                long first = Math.Max(frameServer.VideoReader.WorkingZone.Start, start - RealSpan(0.3));
+                if (first >= click)
+                    return null;
+
+                // The camera motion from the start to the click.
+                double[] composed = SwimStrokeDetector.Identity();
+                bool any = false;
+                if (!ReadShared(new List<StrokeSession>(), clicked.Width, clicked.Height, clicked.Step, first, click, worker,
+                    h => { composed = SwimStrokeDetector.Multiply(h, composed); any = true; }, null))
+                {
+                    cancelled = true;
+                    return null;
+                }
+
+                if (!any)
+                    return null;
+
+                double[] back = SwimStrokeDetector.Invert(composed);
+                SwimStrokeLane lane0 = MapLaneLines(back, laneC, clicked.Width);
+
+                // The lane taken back and its neighbours, the swimmer in the middle of the image with his size there.
+                Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                double sx = (double)clicked.Width / reference.Width, sy = (double)clicked.Height / reference.Height;
+                double hx = head.X * sx, fx = feet.X * sx;
+                double xc = 0.5 * (hx + fx);
+                double widthC = Math.Max(5, Math.Abs(laneC.Y2(xc) - laneC.Y1(xc)));
+                double xm = clicked.Width / 2.0;
+                double width0 = Math.Max(5, Math.Abs(lane0.Y2(xm) - lane0.Y1(xm)));
+                double length = Math.Abs(hx - fx) * width0 / widthC;
+                int direction = hx > fx ? 1 : -1;
+                foreach (int k in new[] { 0, -1, 1 })
+                {
+                    SwimStrokeLane c = lane0;
+                    c.B1 += k * width0;
+                    c.B2 += k * width0;
+                    double y = 0.5 * (c.Y1(xm) + c.Y2(xm));
+                    PointF h0 = new PointF((float)((xm + direction * 0.45 * length) / sx), (float)(y / sy));
+                    PointF f0 = new PointF((float)((xm - direction * 0.45 * length) / sx), (float)(y / sy));
+                    candidates.Add(CreateSession(h0, f0, first, c, virtualRope));
+                }
+
+                OpenCvSharp.Mat lastGray = null;
+                if (!ReadShared(candidates, clicked.Width, clicked.Height, clicked.Step, first, click, worker, null, g => lastGray = g))
+                {
+                    cancelled = true;
+                    return null;
+                }
+
+                // The one on the lane clicked at the click.
+                double best = double.MaxValue;
+                foreach (StrokeSession c in candidates)
+                {
+                    SwimStrokeLane l = c.Detector.CurrentLane;
+                    double error = Math.Abs(l.Y1(xc) - laneC.Y1(xc)) + Math.Abs(l.Y2(xc) - laneC.Y2(xc));
+                    if (error < best)
+                    {
+                        best = error;
+                        chosen = c;
+                    }
+                }
+
+                if (chosen == null || best > 0.35 * widthC || lastGray == null)
+                {
+                    if (lastGray != null)
+                        lastGray.Dispose();
+                    chosen = null;
+                    return null;
+                }
+
+                chosen.PreviousGray = lastGray;
+                return chosen;
+            }
+            finally
+            {
+                clicked.Dispose();
+                foreach (StrokeSession c in candidates)
+                {
+                    if (c != chosen)
+                        c.Dispose();
+                }
+            }
+        }
+
+        /// <summary>A lane moved by a homography (each rope line by two of its points).</summary>
+        private static SwimStrokeLane MapLaneLines(double[] h, SwimStrokeLane lane, int width)
+        {
+            SwimStrokeLane mapped = lane;
+            MapLine(h, lane.A1, lane.B1, width, out mapped.A1, out mapped.B1);
+            MapLine(h, lane.A2, lane.B2, width, out mapped.A2, out mapped.B2);
+            return mapped;
+        }
+
+        private static void MapLine(double[] h, double a, double b, int width, out double ra, out double rb)
+        {
+            double x0, y0, x1, y1;
+            SwimStrokeDetector.MapPoint(h, 0, b, out x0, out y0);
+            SwimStrokeDetector.MapPoint(h, width, a * width + b, out x1, out y1);
+            ra = Math.Abs(x1 - x0) > 1e-6 ? (y1 - y0) / (x1 - x0) : a;
+            rb = y0 - ra * x0;
+        }
+
+        /// <summary>
+        /// Background thread: the frames from 'from' to 'target' read once for several sessions that start together (each gets
+        /// every frame and its camera motion), or only the camera motion of each frame (no session, 'motion' called with the
+        /// homography from the frame before). 'last' gets the grey image of the last frame (for a session that goes on reading).
+        /// False if cancelled.
+        /// </summary>
+        private bool ReadShared(List<StrokeSession> sessions, int width, int height, int step, long from, long target, BackgroundWorker worker,
+            Action<double[]> motion, Action<OpenCvSharp.Mat> last)
+        {
+            VideoReader reader = frameServer.VideoReader;
+            double span = Math.Max(1, target - from);
+            bool completed = true;
+            Exception detectorError = null;
+            OpenCvSharp.Mat previous = null;
+            using (BlockingCollection<StrokeFrame> queue = new BlockingCollection<StrokeFrame>(8))
+            {
+                Task detection = Task.Run(() =>
+                {
+                    foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                    {
+                        if (detectorError != null)
+                            continue;
+
+                        try
+                        {
+                            SwimStrokeImage image = new SwimStrokeImage(width, height, f.Pixels);
+                            Parallel.ForEach(sessions, s =>
+                            {
+                                s.Detector.Add(image, f.Motion);
+                                s.Timestamps.Add(f.Timestamp);
+                            });
+                        }
+                        catch (Exception e)
+                        {
+                            detectorError = e;
+                        }
+                    }
+                });
+
+                try
+                {
+                    reader.BeforeFrameEnumeration();
+                    long current = reader.Current != null ? reader.Current.Timestamp : from;
+                    bool hasMore = reader.MoveTo(current, from);
+                    while (detectorError == null)
+                    {
+                        if (worker.CancellationPending)
+                        {
+                            completed = false;
+                            break;
+                        }
+
+                        VideoFrame frame = reader.Current;
+                        if (frame == null || frame.Image == null || frame.Timestamp > target)
+                            break;
+
+                        using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(frame.Image, width, height))
+                        {
+                            OpenCvSharp.Mat gray = SwimStrokeVideo.HalfGray(bgr);
+                            double[] h = previous == null ? null : SwimStrokeVideo.Motion(previous, gray);
+                            if (previous != null)
+                                previous.Dispose();
+                            previous = gray;
+                            if (h != null && motion != null)
+                                motion(h);
+                            if (sessions.Count > 0)
+                                queue.Add(new StrokeFrame { Timestamp = frame.Timestamp, Motion = h, Pixels = SwimStrokeVideo.Bytes(bgr) });
+                        }
+
+                        worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
+                        if (!hasMore)
+                            break;
+
+                        hasMore = reader.MoveNext(step - 1, true);
+                    }
+                }
+                finally
+                {
+                    queue.CompleteAdding();
+                    detection.Wait();
+                }
+            }
+
+            if (detectorError != null)
+            {
+                if (previous != null)
+                    previous.Dispose();
+                throw new InvalidOperationException("Stroke detector: " + detectorError.Message, detectorError);
+            }
+
+            if (completed && last != null && previous != null)
+                last(previous);
+            else if (previous != null)
+                previous.Dispose();
+            return completed;
+        }
+
         /// <summary>Background thread: the lengths one after the other. False if cancelled.</summary>
         private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker)
         {
@@ -1028,9 +1273,23 @@ namespace Kinovea.ScreenManager
             // The size of the swimmer clicked and the width of his lane there: his size in the next lengths, where the lane is
             // wider or narrower.
             double clickLength = double.NaN, clickLaneWidth = double.NaN;
+            long clickTimestamp = from;
             while (wall <= Race.Distance)
             {
-                StrokeSession s = CreateSession(head, feet, from, nextLane, nextVirtual);
+                // The first length of the race from the start signal (its 15 m and its breakout also when the click comes after
+                // them), else from the click.
+                StrokeSession s = null;
+                if (lengths.Count == 0 && wall == Race.Pool && Race.StartTimestamp.HasValue && lapStart == Race.StartTimestamp.Value &&
+                    from > lapStart + RealSpan(1.0))
+                {
+                    bool cancelled;
+                    s = StartSession(head, feet, from, lapStart, worker, out cancelled);
+                    if (cancelled)
+                        return false;
+                }
+
+                if (s == null)
+                    s = CreateSession(head, feet, from, nextLane, nextVirtual);
                 s.Wall = wall;
                 s.LapStart = lapStart;
 
@@ -1079,6 +1338,8 @@ namespace Kinovea.ScreenManager
                     break;
                 }
 
+                if (lengths.Count == 0)
+                    l.ClickIndex = Math.Max(0, s.Timestamps.FindIndex(t => t >= clickTimestamp));
                 ReadLengthStrokes(l);
                 lengths.Add(l);
                 if (wall >= Race.Distance || worker.CancellationPending)
@@ -1098,7 +1359,10 @@ namespace Kinovea.ScreenManager
                 {
                     double hx0 = head.X * sx, hy0 = head.Y * sy, fx0 = feet.X * sx, fy0 = feet.Y * sy;
                     double cx0 = 0.5 * (hx0 + fx0);
-                    SwimStrokeLane lane0 = result.Lanes[0];
+
+                    // The lane at the frame clicked (the reading can start before it, at the start).
+                    int clickIndex = Math.Max(0, Math.Min(result.Lanes.Count - 1, s.Timestamps.FindIndex(t => t >= clickTimestamp)));
+                    SwimStrokeLane lane0 = result.Lanes[clickIndex];
                     clickLength = Math.Sqrt((hx0 - fx0) * (hx0 - fx0) + (hy0 - fy0) * (hy0 - fy0));
                     clickLaneWidth = Math.Max(5, Math.Abs(lane0.Y2(cx0) - lane0.Y1(cx0)));
                 }
