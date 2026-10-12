@@ -431,7 +431,11 @@ namespace Kinovea.ScreenManager
 
             float small = S(28);
             RectangleF pick = new RectangleF(x0, ay, width - 3 * (small + S(4)), S(26));
-            DrawButton(g, list, "auto-pick", pick, manager.PickingStrokes ? "Κλικ στον αθλητή…" : "Επιλογή αθλητή", null, null, Look.Normal, false,
+            // The long text when the bar is wide enough for it.
+            string pickText = manager.PickingStrokes ? "Κλικ στον αθλητή…" : "Επιλογή αθλητή";
+            if (TextRenderer.MeasureText(g, pickText, SwimTheme.Ui(8.25f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPadding).Width > pick.Width - S(16))
+                pickText = manager.PickingStrokes ? "Κλικ…" : "Αθλητής";
+            DrawButton(g, list, "auto-pick", pick, pickText, null, null, Look.Normal, false,
                 "Αυτόματες χεριές: κλικ στο κεφάλι και στα πόδια του αθλητή σε αυτό το καρέ.\nΟι χεριές μετριούνται σε κάθε πέρασμα μέχρι τον τοίχο.",
                 () => manager.BeginAutoStrokes());
             RectangleF prev = new RectangleF(pick.Right + S(4), ay, small, S(26));
@@ -641,9 +645,18 @@ namespace Kinovea.ScreenManager
 
             bool open = manager.PanelOpen;
             RectangleF panel = new RectangleF(area.Left, send.Top - S(6) - S(34), area.Width, S(34));
-            DrawButton(g, list, "panel", panel, open ? "Κλείσιμο πίνακα" : "Πίνακας ανάλυσης", null, KeyOf(PlayerScreenCommands.SwimShowPanel), Look.Primary, false,
-                open ? "Κλείνει το παράθυρο της ανάλυσης· τα κουμπιά μένουν εδώ."
-                     : "Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.",
+            // The key of the window only when the bar is wide enough for it next to the text.
+            string panelText = open ? "Κλείσιμο πίνακα" : "Πίνακας ανάλυσης";
+            string panelKey = KeyOf(PlayerScreenCommands.SwimShowPanel);
+            Font badgeFont = SwimTheme.Ui(7f, FontStyle.Bold);
+            int needed = TextRenderer.MeasureText(g, panelText, SwimTheme.Ui(9f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPadding).Width +
+                TextRenderer.MeasureText(g, panelKey, badgeFont, Size.Empty, TextFormatFlags.NoPadding).Width + (int)S(40);
+            if (needed > panel.Width)
+                panelKey = null;
+            DrawButton(g, list, "panel", panel, panelText, null, panelKey, Look.Primary, false,
+                (open ? "Κλείνει το παράθυρο της ανάλυσης· τα κουμπιά μένουν εδώ."
+                      : "Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.") +
+                (string.IsNullOrEmpty(KeyOf(PlayerScreenCommands.SwimShowPanel)) ? "" : " (" + KeyOf(PlayerScreenCommands.SwimShowPanel) + ")"),
                 () => manager.TogglePanel());
             return panel.Top;
         }
