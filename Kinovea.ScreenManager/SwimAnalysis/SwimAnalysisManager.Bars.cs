@@ -7,6 +7,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using Kinovea.Services;
 
 namespace Kinovea.ScreenManager
 {
@@ -24,7 +25,12 @@ namespace Kinovea.ScreenManager
         private SwimVideoBar leftBar;
         private SwimVideoBar rightBar;
         private PlayerScreenUserInterface barsPlayer;
+        private FrameServerPlayer barsFrameServer;
         private Timer barsTimer;
+
+        /// <summary>There is room for the bars next to the image (else they are hidden), and their width.</summary>
+        private bool barsRoom;
+        private int barsWidth;
 
         /// <summary>Changes at each computation of the analysis (the bars redraw when it changes).</summary>
         public int DataVersion { get; private set; }
@@ -45,6 +51,12 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>The bars are on the video and there is room for them (a very narrow screen hides them).</summary>
+        public bool BarsVisible
+        {
+            get { return BarsShown && barsRoom; }
+        }
+
         /// <summary>The analysis is on the screen, in its window or in its bars: graphics on the video, clicks on the image.</summary>
         public bool Active
         {
@@ -57,25 +69,33 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int LayoutVideoBars(PlayerScreenUserInterface screen, Size viewport)
         {
-            if (screen == null || screen != barsPlayer || leftBar == null || leftBar.IsDisposed || rightBar == null || rightBar.IsDisposed)
+            SwimVideoBar left = leftBar;
+            SwimVideoBar right = rightBar;
+            if (screen == null || screen != barsPlayer || left == null || left.IsDisposed || right == null || right.IsDisposed)
                 return 0;
 
-            float scale = Math.Max(1f, leftBar.DeviceDpi / 96f);
+            // The video export places the image from its own thread: the same room as on the screen, the bars untouched.
+            if (screen.InvokeRequired)
+                return barsRoom ? barsWidth : 0;
+
+            float scale = Math.Max(1f, left.DeviceDpi / 96f);
             int width = (int)Math.Round(Math.Max(176 * scale, Math.Min(248 * scale, viewport.Width * 0.14)));
             bool room = viewport.Width - 2 * width >= 320 * scale && viewport.Height >= 300 * scale;
-            if (leftBar.Visible != room)
-                leftBar.Visible = room;
-            if (rightBar.Visible != room)
-                rightBar.Visible = room;
+            barsRoom = room;
+            barsWidth = room ? width : 0;
+            if (left.Visible != room)
+                left.Visible = room;
+            if (right.Visible != room)
+                right.Visible = room;
             if (!room)
                 return 0;
 
             Rectangle leftBounds = new Rectangle(0, 0, width, viewport.Height);
             Rectangle rightBounds = new Rectangle(viewport.Width - width, 0, width, viewport.Height);
-            if (leftBar.Bounds != leftBounds)
-                leftBar.Bounds = leftBounds;
-            if (rightBar.Bounds != rightBounds)
-                rightBar.Bounds = rightBounds;
+            if (left.Bounds != leftBounds)
+                left.Bounds = leftBounds;
+            if (right.Bounds != rightBounds)
+                right.Bounds = rightBounds;
 
             return width;
         }
@@ -86,10 +106,11 @@ namespace Kinovea.ScreenManager
         private void ShowAnalysis(bool panel)
         {
             analysisOn = true;
-            if (panel || !Settings.VideoBars)
-                EnsureForm(panel);
-
             UpdateBars();
+
+            // Without visible bars (setting off, or a screen too narrow for them) the window, as before.
+            if (panel || !Settings.VideoBars || !BarsVisible)
+                EnsureForm(panel);
         }
 
         /// <summary>Opens or closes the window of the analysis (button of the bars, Ctrl+Shift+W with the bars).</summary>
@@ -150,6 +171,7 @@ namespace Kinovea.ScreenManager
             leftBar = new SwimVideoBar(this, true);
             rightBar = new SwimVideoBar(this, false);
             barsPlayer = target;
+            barsFrameServer = frameServer;
             target.panelCenter.Controls.Add(leftBar);
             target.panelCenter.Controls.Add(rightBar);
             leftBar.BringToFront();
@@ -182,6 +204,9 @@ namespace Kinovea.ScreenManager
             leftBar = null;
             rightBar = null;
             barsPlayer = null;
+            barsFrameServer = null;
+            barsRoom = false;
+            barsWidth = 0;
             if (barsTimer != null)
                 barsTimer.Stop();
 
@@ -205,8 +230,42 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // Another video loaded in the screen of the analysis: the analysis of that video (the clicks and the
+            // graphics must not go to the analysis of the previous one).
+            if (!string.Equals(frameServer.VideoReader.FilePath, videoPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Attach(player, frameServer);
+                leftBar.RefreshNow();
+                rightBar.RefreshNow();
+                return;
+            }
+
+            // The screen became too narrow for the bars while the window is closed: the window, so the analysis stays at hand.
+            if (!barsRoom && !PanelOpen)
+                EnsureForm(false);
+
             leftBar.RefreshIfChanged();
             rightBar.RefreshIfChanged();
+        }
+
+        /// <summary>A click on the bars: their screen becomes the active one, the keys go to it and the analysis follows it.</summary>
+        internal void BarClicked()
+        {
+            if (barsPlayer == null || barsPlayer.IsDisposed)
+                return;
+
+            barsPlayer.SwimBarClicked();
+            if (barsPlayer != player && barsFrameServer != null && barsFrameServer.Loaded)
+                Attach(barsPlayer, barsFrameServer);
+        }
+
+        /// <summary>A button of the bars: the command on the screen of the bars, as its key would.</summary>
+        internal bool ExecuteBarCommand(PlayerScreenCommands command)
+        {
+            if (barsPlayer == null || barsPlayer.IsDisposed)
+                return false;
+
+            return barsPlayer.ExecuteScreenCommand((int)command);
         }
 
         /// <summary>Owner of the dialogs of the analysis: its window, or the main window when only the bars are shown.</summary>

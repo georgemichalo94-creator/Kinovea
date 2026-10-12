@@ -197,6 +197,8 @@ namespace Kinovea.ScreenManager
             if (e.Button != MouseButtons.Left)
                 return;
 
+            // As a click on the video: this screen is the active one and gets the keys.
+            manager.BarClicked();
             Item item = HitTest(e.Location);
             pressedId = item != null && item.Click != null ? item.Id : null;
             Invalidate();
@@ -220,7 +222,7 @@ namespace Kinovea.ScreenManager
 
         private void Run(PlayerScreenCommands command)
         {
-            if (!manager.ExecutePlayerCommand(command))
+            if (!manager.ExecuteBarCommand(command))
                 SystemSounds.Beep.Play();
         }
 

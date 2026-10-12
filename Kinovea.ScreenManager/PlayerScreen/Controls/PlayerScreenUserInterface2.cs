@@ -2669,6 +2669,15 @@ namespace Kinovea.ScreenManager
                 ResizeUpdate(true);
         }
 
+        /// <summary>
+        /// Called by the bars of the swim race analysis when they are clicked: this screen becomes the active one and gets the keys.
+        /// </summary>
+        public void SwimBarClicked()
+        {
+            RaiseSetAsActiveScreenEvent();
+            panelCenter.Focus();
+        }
+
         private void ReplaceResizers()
         {
             ImageResizerSE.Left = pbSurfaceScreen.Right - (ImageResizerSE.Width / 2);

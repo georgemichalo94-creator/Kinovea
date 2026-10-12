@@ -68,6 +68,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool VideoBars = true;
 
+        /// <summary>Place of the window of the analysis when it was last closed ("x,y,width,height"), empty for the default place.</summary>
+        public string PanelBounds = "";
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

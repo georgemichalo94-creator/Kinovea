@@ -203,7 +203,8 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Show the window next to the right edge of the Kinovea main window.
+        /// Show the window where it was last closed (e.g. on a second monitor), or else next to the right edge of the
+        /// Kinovea main window.
         /// </summary>
         public void ShowNear(Form owner)
         {
@@ -217,6 +218,10 @@ namespace Kinovea.ScreenManager
             int x = Math.Max(screen.Left, Math.Min(area.Right - Width - 16, screen.Right - Width));
             int y = Math.Max(screen.Top, Math.Min(area.Top + 90, screen.Bottom - Height));
             Location = new Point(x, y);
+
+            Rectangle saved;
+            if (TryParseBounds(manager.Settings.PanelBounds, out saved) && TitleOnScreen(saved))
+                Bounds = saved;
 
             if (owner != null)
                 Show(owner);
@@ -241,7 +246,50 @@ namespace Kinovea.ScreenManager
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             CommitCheckpoints(true);
+
+            // The window opens again where the analyst left it.
+            if (WindowState == FormWindowState.Normal)
+                manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
+
             base.OnFormClosing(e);
+        }
+
+        private static bool TryParseBounds(string text, out Rectangle bounds)
+        {
+            bounds = Rectangle.Empty;
+            if (string.IsNullOrEmpty(text))
+                return false;
+
+            string[] parts = text.Split(',');
+            int[] v = new int[4];
+            if (parts.Length != 4)
+                return false;
+
+            for (int i = 0; i < 4; i++)
+            {
+                if (!int.TryParse(parts[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out v[i]))
+                    return false;
+            }
+
+            if (v[2] < 200 || v[3] < 200)
+                return false;
+
+            bounds = new Rectangle(v[0], v[1], v[2], v[3]);
+            return true;
+        }
+
+        /// <summary>The title bar of the window is on a screen (it can be dragged): a monitor may have been removed since.</summary>
+        private static bool TitleOnScreen(Rectangle bounds)
+        {
+            Rectangle title = new Rectangle(bounds.Left, bounds.Top, bounds.Width, 30);
+            foreach (Screen s in Screen.AllScreens)
+            {
+                Rectangle common = Rectangle.Intersect(s.WorkingArea, title);
+                if (common.Width >= 120 && common.Height >= 20)
+                    return true;
+            }
+
+            return false;
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)

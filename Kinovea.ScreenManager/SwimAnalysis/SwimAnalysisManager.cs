@@ -213,7 +213,7 @@ namespace Kinovea.ScreenManager
             {
                 case PlayerScreenCommands.SwimShowPanel:
                     // With the bars on the video the key opens and closes the window.
-                    if (PanelOpen && Settings.VideoBars && BarsShown)
+                    if (PanelOpen && Settings.VideoBars && BarsVisible)
                         form.Close();
                     else
                         ShowAnalysis(true);
@@ -2524,8 +2524,8 @@ namespace Kinovea.ScreenManager
             Settings.Save();
             form = null;
 
-            // Without the bars on the video, closing the window ends the analysis on the screen (graphics, clicks).
-            if (!Settings.VideoBars)
+            // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks).
+            if (!Settings.VideoBars || !BarsVisible)
                 analysisOn = false;
             UpdateBars();
 
