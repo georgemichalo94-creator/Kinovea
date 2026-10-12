@@ -436,8 +436,8 @@ namespace Kinovea.ScreenManager
                 RectangleF angles = new RectangleF(skel.Right + S(4), ay, skel.Width, S(26));
                 DrawButton(g, list, "skeleton-angles", angles, "Γωνίες", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
                     "Οι γωνίες του σκελετού σε αυτό το καρέ μπαίνουν στην ανάλυση (γόνατο, ισχίο, αγκώνας, ώμος).", () => manager.AddSkeletonAngles());
-                RectangleF delete = new RectangleF(angles.Right + S(4), ay, sq, S(26));
-                DrawButton(g, list, "skeleton-delete", delete, "✕", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
+                RectangleF skeletonDelete = new RectangleF(angles.Right + S(4), ay, sq, S(26));
+                DrawButton(g, list, "skeleton-delete", skeletonDelete, "✕", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
                     "Διαγραφή του σκελετού αυτού του σημείου του βίντεο", () => manager.DeleteSkeleton());
                 return;
             }
