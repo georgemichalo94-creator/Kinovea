@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
+    inputs:
+      reel_preview:
+        description: 'Preview images of the technical view (reel) with fictional races, as notice annotations'
+        type: boolean
+        default: false
 
 env:
   VERSION: 2025.2.0
@@ -120,4 +125,69 @@ jobs:
         name: Kinovea-Installer-${{env.VERSION}}
         path: Installer/Kinovea-${{env.VERSION}}.exe
 
+  # Preview images of the technical view (reel) with two fictional races, drawn by the program just built. Only in manual
+  # runs with reel_preview: small JPEG images as notice annotations (base64 in parts, read with the GitHub API where the
+  # logs and the artifacts are not reachable). At most 10 annotations of a kind in a step and 50 in a job. Never fails the run.
+  reel-preview:
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.reel_preview }}
+    runs-on: windows-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2]
 
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: SwimAnalysis/tests/reel_preview
+
+    - name: Download Portable
+      uses: actions/download-artifact@v8
+      with:
+        name: Kinovea-Portable-${{env.VERSION}}
+        path: portable
+
+    - name: Draw the images
+      continue-on-error: true
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode render -Bin portable -Out reel-preview
+
+    - name: Images 1
+      if: always()
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 3 -First 0 -Count 10
+
+    - name: Images 2
+      if: always()
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 3 -First 10 -Count 10
+
+    - name: Images 3
+      if: always()
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 3 -First 20 -Count 10
+
+    - name: Images 4
+      if: always()
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 3 -First 30 -Count 10
+
+    - name: Images 5
+      if: always()
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 3 -First 40 -Count 9
