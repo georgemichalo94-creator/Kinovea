@@ -381,6 +381,8 @@ namespace Kinovea.ScreenManager
                 }
 
                 Answer(p, timestamp, true);
+                if (p.Kind == KindRaceBreakout)
+                    TrimAutoStrokesBeforeBreakout(p.Index, timestamp);
                 Changed(false);
 
                 // What the command said stays visible with the next proposal.

@@ -601,16 +601,18 @@ namespace Kinovea.ScreenManager
                 rel.Add(p[t] - p[t - 1] - shifts[t * W + p[t - 1]]);
 
             double v = rel.Count > 0 ? Median(rel) : 0.0;
-            return Viterbi(Z, shifts, T, W, x0, v, 5);
+            return Viterbi(Z, shifts, T, W, x0, v, 5, SecondLambda);
         }
+
+        /// <summary>Penalty of the second pass of the path on the steps away from the swimmer's own speed (tests).</summary>
+        internal static double SecondLambda = 0.03;
 
         /// <summary>
         /// Best path of the swimmer along the band: maximises the sum of E minus a penalty on the steps, where a step is
         /// measured after moving the previous position with the camera (shifts) and the swimmer's own speed v.
         /// </summary>
-        private static int[] Viterbi(double[] E, double[] shifts, int T, int W, double x0, double v, int maxStep)
+        private static int[] Viterbi(double[] E, double[] shifts, int T, int W, double x0, double v, int maxStep, double lambda = 0.03)
         {
-            const double lambda = 0.03;
             const double startSigma = 40.0;
             const double negative = -1e18;
 

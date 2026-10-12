@@ -511,6 +511,23 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// The breakout after the wall at 'wall' (0: the start) is at this frame: the automatic strokes of the length before it (more
+        /// than the breakout stroke, 0.4 s) go.
+        /// </summary>
+        private void TrimAutoStrokesBeforeBreakout(int wall, long breakout)
+        {
+            if (Race == null || !Race.StartTimestamp.HasValue)
+                return;
+
+            SwimMark wallMark = wall > 0 ? Race.GetSplit(wall) : null;
+            long from = wall == 0 ? Race.StartTimestamp.Value : wallMark != null ? wallMark.Timestamp : breakout - RealSpan(8);
+            long to = breakout - RealSpan(0.4);
+            int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > from && m.Timestamp < to);
+            if (removed > 0)
+                log.DebugFormat("Breakout after {0}: {1} automatic strokes before it removed.", wall, removed);
+        }
+
+        /// <summary>
         /// The strokes of a length as automatic stroke marks (they replace the automatic ones of the length; the analyst's strokes
         /// stay and none is put within half a stroke of them). Returns the number put.
         /// </summary>
