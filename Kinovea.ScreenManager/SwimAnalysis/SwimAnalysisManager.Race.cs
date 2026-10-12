@@ -421,7 +421,7 @@ namespace Kinovea.ScreenManager
             foreach (Tuple<int, Dictionary<string, double>, double> item in items)
             {
                 int distance = item.Item1;
-                if (!Race.Checkpoints.Contains(distance) || Race.GetSplit(distance) != null)
+                if (!Race.Checkpoints.Contains(distance))
                     continue;
 
                 SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, distance) { Confidence = item.Item3 };
@@ -449,11 +449,29 @@ namespace Kinovea.ScreenManager
 
                 foreach (KeyValuePair<string, double> c in item.Item2)
                     p.Cues[c.Key] = SessionStamp(s, c.Value);
+
+                // Already marked by the analyst (an analysis made before): his frame is the answer, it teaches without asking.
+                SwimMark marked = Race.GetSplit(distance);
+                if (marked != null)
+                {
+                    if (Math.Abs(Timing.Seconds(marked.Timestamp, p.Timestamp)) <= 1.5)
+                    {
+                        Race.Proposals.Add(p);
+                        Answer(p, marked.Timestamp, true);
+                        learnedFromMarks++;
+                    }
+
+                    continue;
+                }
+
                 made.Add(p);
             }
 
             return made;
         }
+
+        /// <summary>Checkpoints already marked that taught the learning in the last automatic reading.</summary>
+        private int learnedFromMarks;
 
         /// <summary>The wall at this distance: "finish", "open" (hand touch: butterfly, breaststroke) or "flip" (freestyle, backstroke).</summary>
         private string WallKind(int wall)
@@ -503,9 +521,14 @@ namespace Kinovea.ScreenManager
         private void ShowSplitProposals(List<SwimProposal> made, int lengths)
         {
             Race.Proposals.RemoveAll(p => p.Kind == KindRaceSplit && made.Any(m => m.Index == p.Index));
+            int learned = learnedFromMarks;
+            learnedFromMarks = 0;
             if (made.Count == 0)
             {
-                Status("Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).", false);
+                Status(learned > 0 ?
+                    string.Format(CultureInfo.InvariantCulture, "🤖 Τα περάσματα είχαν ήδη χρόνους: {0} από αυτά κρατήθηκαν για τη μάθηση (δεν χρειάζεται έλεγχος).", learned) :
+                    "Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).", false);
+                Changed(false);
                 RefreshProposalsUi();
                 return;
             }
@@ -520,6 +543,12 @@ namespace Kinovea.ScreenManager
         #region Whole race
         private bool pickForRace;
 
+        // Where the automatic reading of the race stopped when the swimmer was lost after a wall: the next click goes on from
+        // there (wall at the end of the next length, start of it).
+        private int resumeWall = -1;
+        private long resumeLapStart = long.MinValue;
+        private long resumeAt = long.MinValue;
+
         /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
         public void BeginAutoRace()
         {
@@ -529,7 +558,12 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            int keepWall = resumeWall;
+            long keepLapStart = resumeLapStart, keepAt = resumeAt;
             BeginTrackSwimmer();
+            resumeWall = keepWall;
+            resumeLapStart = keepLapStart;
+            resumeAt = keepAt;
             if (PickingTrack)
             {
                 pickForRace = true;
@@ -603,6 +637,10 @@ namespace Kinovea.ScreenManager
                 ShowSplitProposals(made, lengths.Count);
                 if (cancelled)
                     Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0} μήκη: προτείνονται όσα βρέθηκαν.", lengths.Count), true);
+                else if (resumeWall > 0)
+                    Status(string.Format(CultureInfo.InvariantCulture,
+                        "🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» " +
+                        "σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί.", resumeWall - Race.Pool, Race.Unit), true);
             }
             finally
             {
@@ -619,6 +657,17 @@ namespace Kinovea.ScreenManager
         {
             long lapStart = LapStartTimestamp(from);
             int wall = NextWallDistance(from);
+
+            // Going on after a stop (the swimmer lost after a wall): the length of the click is the one after that wall.
+            if (resumeWall > 0 && resumeAt != long.MinValue && from >= resumeAt - RealSpan(1.0) && from <= resumeAt + RealSpan(40))
+            {
+                wall = resumeWall;
+                lapStart = resumeLapStart;
+            }
+
+            resumeWall = -1;
+            resumeLapStart = long.MinValue;
+            resumeAt = long.MinValue;
             double previousSeconds = 0;
             Size reference = frameServer.VideoReader.Info.ReferenceSize;
             while (wall <= Race.Distance)
@@ -644,6 +693,17 @@ namespace Kinovea.ScreenManager
                 LengthRead l = AnalyseLength(s, result, lapStart);
                 if (l == null)
                 {
+                    s.Dispose();
+                    break;
+                }
+
+                // After a wall, a length without any mark of the ropes: the swimmer was lost (camera turning fast, lane at the
+                // far end). The analyst clicks him again a little later and the reading goes on from there.
+                if (lengths.Count > 0 && l.Found.Count == 0)
+                {
+                    resumeWall = wall;
+                    resumeLapStart = lapStart;
+                    resumeAt = from + RealSpan(2.5);
                     s.Dispose();
                     break;
                 }
