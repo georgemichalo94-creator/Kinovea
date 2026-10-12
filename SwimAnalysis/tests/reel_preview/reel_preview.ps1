@@ -25,6 +25,12 @@ if ($Mode -eq 'render') {
     $outFull = (Resolve-Path $Out).Path
     try {
         $binFull = (Resolve-Path $Bin).Path
+        # The native OpenCV library of the program (OpenCvSharpExtern) is found by the program next to it, not by this host.
+        $native = Get-ChildItem -Path $binFull -Recurse -Filter 'OpenCvSharpExtern.dll' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($native) {
+            Write-Output ('OpenCvSharpExtern: ' + $native.FullName.Substring($binFull.Length))
+            $env:PATH = $native.DirectoryName + ';' + $binFull + ';' + $env:PATH
+        }
         $dll = Join-Path $binFull 'ReelPreview.dll'
         $refs = @((Join-Path $binFull 'Kinovea.ScreenManager.dll'))
         foreach ($name in @('Kinovea.Services.dll', 'Newtonsoft.Json.dll', 'OpenCvSharp.dll')) {
