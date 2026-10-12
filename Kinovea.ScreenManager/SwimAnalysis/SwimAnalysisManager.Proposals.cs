@@ -566,7 +566,7 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.FeetOff: name = p.Kind == SwimEventDetector.TurnFeet ? "Αποκόλληση από τον τοίχο" : "Αποκόλληση ποδιών"; break;
                 case SwimMarkType.Entry: name = "Είσοδος χεριών στο νερό"; break;
                 case SwimMarkType.Kick: name = "Δελφινισμός" + (p.Index > 0 ? " " + p.Index : ""); break;
-                case SwimMarkType.Breakout: name = "Έξοδος από το νερό"; break;
+                case SwimMarkType.Breakout: name = "Έξοδος από το νερό" + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? " μετά τα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : " μετά την εκκίνηση") : ""); break;
                 case SwimMarkType.WallContact: name = "Επαφή στον τοίχο"; break;
                 case SwimMarkType.RotationStart: name = "Αρχή περιστροφής"; break;
                 case SwimMarkType.Split: name = p.Kind == KindRaceSplit ? "Πέρασμα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : "Πέρασμα"; break;

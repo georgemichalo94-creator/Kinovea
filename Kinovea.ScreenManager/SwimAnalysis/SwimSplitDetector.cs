@@ -187,6 +187,136 @@ namespace Kinovea.ScreenManager
                 wall[CuePace] = tWall;
         }
 
+        /// <summary>The motion around the swimmer becomes that of the swimming (breakout).</summary>
+        public const string CueEnergy = "energy";
+
+        /// <summary>The first strong splash of the swimming (breakout).</summary>
+        public const string CueBurst = "burst";
+
+        /// <summary>
+        /// The breakout after a wall (or the start): the head breaks the surface and the swimming starts, between the frames
+        /// 'from' and 'to' (the 15 m mark: the rules want the head out before it). Underwater the water around the swimmer
+        /// hardly moves; at the breakout the motion of the swimming starts (cue "energy": the motion within 1.2 lane widths of
+        /// the swimmer, over 0.4 s, reaches 60% of its usual level in the swimming after 'to' and stays) with a strong splash
+        /// (cue "burst": the first peak of the stroke signal as strong as the strokes). Frames of the reading, empty if not found.
+        /// </summary>
+        public static Dictionary<string, double> BreakoutCues(SwimStrokeResult result, double fps, int from, int to)
+        {
+            Dictionary<string, double> cues = new Dictionary<string, double>();
+            if (result == null || result.Path == null || fps <= 0)
+                return cues;
+
+            int T = Math.Min(result.Path.Length, Math.Min(result.Lanes.Count, result.Motion.Count));
+            from = Math.Max(1, from);
+            to = Math.Min(T - 1, to);
+            if (T < 10 || to <= from)
+                return cues;
+
+            double[] e = new double[T];
+            for (int t = 0; t < T; t++)
+            {
+                double[] d = result.Motion[t];
+                if (d == null || d.Length == 0)
+                    continue;
+                int p = Math.Max(0, Math.Min(d.Length - 1, result.Path[t]));
+                double lw = LaneWidth(result.Lanes[t], p);
+                int r = (int)Math.Round(1.2 * lw);
+                double sum = 0;
+                int count = 0;
+                for (int x = Math.Max(0, p - r); x <= Math.Min(d.Length - 1, p + r); x++)
+                {
+                    sum += d[x];
+                    count++;
+                }
+
+                e[t] = count > 0 ? sum / count : 0;
+            }
+
+            int half = Math.Max(1, (int)Math.Round(0.2 * fps));
+            double[] es = new double[T];
+            for (int t = 0; t < T; t++)
+            {
+                double sum = 0;
+                int count = 0;
+                for (int k = Math.Max(0, t - half); k <= Math.Min(T - 1, t + half); k++)
+                {
+                    sum += e[k];
+                    count++;
+                }
+
+                es[t] = sum / count;
+            }
+
+            // Usual level of the swimming: after the 15 m (else the end of the reading).
+            int refFrom = to, refTo = Math.Min(T - 1, to + (int)Math.Round(4 * fps));
+            if (refTo - refFrom < (int)Math.Round(1.5 * fps))
+            {
+                refFrom = Math.Max(from, T - 1 - (int)Math.Round(4 * fps));
+                refTo = T - 1;
+            }
+
+            List<double> level = new List<double>();
+            for (int t = refFrom; t <= refTo; t++)
+                level.Add(es[t]);
+            if (level.Count < 5)
+                return cues;
+            double usual = SwimLearningMedian(level);
+            if (usual <= 1e-6)
+                return cues;
+
+            // The rise after the quiet water of the underwater phase (half a second at least): a reading that starts in the swimming
+            // has no breakout.
+            int hold = (int)Math.Round(1.0 * fps), quietNeeded = (int)Math.Round(0.5 * fps), quiet = 0;
+            for (int t = from; t <= to; t++)
+            {
+                if (es[t] < 0.45 * usual)
+                    quiet++;
+                if (es[t] < 0.6 * usual || quiet < quietNeeded)
+                    continue;
+
+                bool stays = true;
+                for (int k = t; k < Math.Min(T, t + hold) && stays; k++)
+                    stays = es[k] >= 0.45 * usual;
+                if (!stays)
+                    continue;
+
+                double a = es[t - 1], b = es[t];
+                double fraction = b - a > 1e-9 ? (0.6 * usual - a) / (b - a) : 1.0;
+                cues[CueEnergy] = t - 1 + Math.Max(0, Math.Min(1, fraction));
+                break;
+            }
+
+            // The splash: the first peak of the stroke signal after 'from' as strong as the strokes of the swimming.
+            double[] o = result.Onset;
+            if (o != null && o.Length >= T)
+            {
+                List<double> peaks = new List<double>();
+                for (int t = Math.Max(1, refFrom); t < Math.Min(refTo, o.Length - 1); t++)
+                {
+                    if (o[t] > o[t - 1] && o[t] >= o[t + 1] && o[t] > 0)
+                        peaks.Add(o[t]);
+                }
+
+                if (peaks.Count >= 3)
+                {
+                    double strong = 0.6 * SwimLearningMedian(peaks);
+                    int calm = 0;
+                    for (int t = Math.Max(1, from); t <= Math.Min(to, o.Length - 2); t++)
+                    {
+                        if (es[t] < 0.45 * usual)
+                            calm++;
+                        if (calm >= quietNeeded && o[t] > o[t - 1] && o[t] >= o[t + 1] && o[t] >= strong)
+                        {
+                            cues[CueBurst] = t;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return cues;
+        }
+
         public const string CueStop = "stop";
         public const string CueWallHead = "wallhead";
         public const string CueWallBody = "wallbody";
@@ -382,6 +512,12 @@ namespace Kinovea.ScreenManager
             }
 
             return u;
+        }
+
+        /// <summary>Main frame of a checkpoint found (its cues): see Time.</summary>
+        public static double MainFrame(Dictionary<string, double> cues)
+        {
+            return cues == null || cues.Count == 0 ? double.NaN : Time(cues);
         }
 
         /// <summary>Main time of a checkpoint: the line between the marks of the two ropes if it has it, else the far rope, else the near one.</summary>

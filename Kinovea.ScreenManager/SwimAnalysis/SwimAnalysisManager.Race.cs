@@ -344,6 +344,171 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Race distance of the wall where the length started.</summary>
             public int LapFrom;
+
+            /// <summary>Cues of the breakout after the wall (or the start) of the length (frames of the reading), empty if not seen.</summary>
+            public Dictionary<string, double> Breakout = new Dictionary<string, double>();
+
+            /// <summary>Strokes of the length (frames of the reading): from the breakout to a little before the wall.</summary>
+            public readonly List<int> Strokes = new List<int>();
+            public double Period;
+        }
+
+        /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
+        public const string KindRaceBreakout = "race.breakout";
+
+        /// <summary>
+        /// Background thread, after a length is read: its breakout (when the reading starts close enough to the wall or the start to
+        /// have the underwater phase) and its strokes, from the breakout to a little before the wall.
+        /// </summary>
+        private void ReadLengthStrokes(LengthRead l)
+        {
+            StrokeSession s = l.Session;
+            int n = s.Timestamps.Count;
+            if (n < 10 || s.Fps <= 0)
+                return;
+
+            double step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1);
+            long lapStartTs = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
+            double lapStart = step > 0 ? (lapStartTs - s.Timestamps[0]) / step : double.NaN;
+            int first = 0;
+            if (!double.IsNaN(lapStart) && lapStart > -6.0 * s.Fps)
+            {
+                int from = (int)Math.Ceiling(Math.Max(0, lapStart + 1.0 * s.Fps));
+                SwimSplitFound f15 = l.Found.FirstOrDefault(f => f.LapDistance == 15);
+                double at15 = f15 != null ? SwimSplitDetector.MainFrame(f15.Cues) : double.NaN;
+                int to = !double.IsNaN(at15) ? (int)Math.Round(at15) : from + (int)Math.Round(8 * s.Fps);
+                l.Breakout = SwimSplitDetector.BreakoutCues(l.Result, s.Fps, from, to);
+                // The first stroke starts a little before the head is out (the breakout stroke).
+                double b = BreakoutSample(l);
+                if (!double.IsNaN(b))
+                    first = Math.Max(0, (int)Math.Round(b - 0.4 * s.Fps));
+            }
+
+            double wall = WallSample(l);
+            int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
+            last = Math.Min(n - 1, last);
+            if (last <= first + 5)
+                return;
+
+            SwimStrokeResult r = s.Detector.Finish(first, last);
+            l.Strokes.AddRange(r.Strokes);
+            l.Period = r.Period;
+        }
+
+        /// <summary>Cues of the breakout with their usual delay before any learning (the motion rises before the head is out).</summary>
+        private static Dictionary<string, double> BreakoutCuesDelayed(LengthRead l)
+        {
+            Dictionary<string, double> cues = new Dictionary<string, double>();
+            foreach (KeyValuePair<string, double> c in l.Breakout)
+                cues[c.Key] = c.Value + (c.Key == SwimSplitDetector.CueEnergy ? 1.4 : 1.0) * l.Session.Fps;
+            return cues;
+        }
+
+        /// <summary>Frame of the breakout of a length read (index of its frames, NaN if not seen): its cues as for the proposal.</summary>
+        private double BreakoutSample(LengthRead l)
+        {
+            if (l == null || l.Breakout.Count == 0)
+                return double.NaN;
+
+            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = 1.0 };
+            foreach (KeyValuePair<string, double> c in BreakoutCuesDelayed(l))
+            {
+                double weight, spread;
+                CueWeight(c.Key, out weight, out spread);
+                d.Cue(c.Key, c.Value, weight, spread);
+            }
+
+            double confidence;
+            return SwimProposalMath.Combine(d, Learning, SwimLearning.VideoCode(videoPath), l.Session.Fps, out confidence);
+        }
+
+        /// <summary>
+        /// The breakout of a length proposed (the one not marked yet; one marked by the analyst near it teaches the learning).
+        /// </summary>
+        private SwimProposal BreakoutProposal(LengthRead l, string batch)
+        {
+            if (l.Breakout.Count == 0)
+                return null;
+
+            StrokeSession s = l.Session;
+            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = l.Breakout.Count > 1 ? 0.6 : 0.45 };
+            Dictionary<string, double> cues = BreakoutCuesDelayed(l);
+            foreach (KeyValuePair<string, double> c in cues)
+            {
+                double weight, spread;
+                CueWeight(c.Key, out weight, out spread);
+                d.Cue(c.Key, c.Value, weight, spread);
+            }
+
+            double confidence;
+            double sample = SwimProposalMath.Combine(d, Learning, SwimLearning.VideoCode(videoPath), s.Fps, out confidence);
+            if (double.IsNaN(sample))
+                return null;
+
+            SwimProposal p = new SwimProposal
+            {
+                Type = SwimMarkType.Breakout,
+                Kind = KindRaceBreakout,
+                Timestamp = SessionStamp(s, sample),
+                Confidence = Math.Round(confidence, 2),
+                Index = l.LapFrom,
+                Batch = batch
+            };
+
+            foreach (KeyValuePair<string, double> c in cues)
+                p.Cues[c.Key] = SessionStamp(s, c.Value);
+
+            // A breakout marked by the analyst after this wall (an analysis made before): his frame teaches without asking.
+            long lapStart = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
+            SwimMark marked = Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Timestamp > lapStart && m.Timestamp <= lapStart + RealSpan(12))
+                .OrderBy(m => m.Timestamp).FirstOrDefault();
+            if (marked != null)
+            {
+                if (Math.Abs(Timing.Seconds(marked.Timestamp, p.Timestamp)) <= 1.5)
+                {
+                    Race.Proposals.Add(p);
+                    Answer(p, marked.Timestamp, true);
+                    learnedFromMarks++;
+                }
+
+                return null;
+            }
+
+            return p;
+        }
+
+        /// <summary>
+        /// The strokes of a length as automatic stroke marks (they replace the automatic ones of the length; the analyst's strokes
+        /// stay and none is put within half a stroke of them). Returns the number put.
+        /// </summary>
+        private int PlaceLengthStrokes(LengthRead l)
+        {
+            StrokeSession s = l.Session;
+            int n = s.Timestamps.Count;
+            if (l.Strokes.Count == 0 || n < 10)
+                return 0;
+
+            long lapStart = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
+            double wall = WallSample(l);
+            long lapEnd = double.IsNaN(wall) ? s.Timestamps[n - 1] : SessionStamp(s, wall);
+            Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > lapStart && m.Timestamp < lapEnd);
+
+            long near = Math.Max(1, SessionSpan(s, 0.5 * (l.Period > 0 ? l.Period : 0.5)));
+            List<long> kept = Race.Marks.Where(m => m.Type == SwimMarkType.Stroke).Select(m => m.Timestamp).ToList();
+            int placed = 0;
+            foreach (int i in l.Strokes)
+            {
+                if (i < 0 || i >= n)
+                    continue;
+                long t = s.Timestamps[i];
+                if (kept.Any(k => Math.Abs(k - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near))
+                    continue;
+
+                Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
+                placed++;
+            }
+
+            return placed;
         }
 
         private bool PoolHasMarks
@@ -583,6 +748,8 @@ namespace Kinovea.ScreenManager
                 // The wall: the pace of the length (from its checkpoints) before the image (the swimmer hidden in the splashes of
                 // the turn, the camera turning).
                 case SwimSplitDetector.CuePace: weight = 1.0; spread = 0.15; break;
+                case SwimSplitDetector.CueBurst: weight = 1.0; spread = 0.3; break;
+                case SwimSplitDetector.CueEnergy: weight = 0.6; spread = 0.5; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
                 case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;
@@ -591,16 +758,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The proposals made replace the waiting ones of the same distances and the check starts.</summary>
-        private void ShowSplitProposals(List<SwimProposal> made, int lengths)
+        private void ShowSplitProposals(List<SwimProposal> made, int lengths, int strokes = 0)
         {
-            Race.Proposals.RemoveAll(p => p.Kind == KindRaceSplit && made.Any(m => m.Index == p.Index));
+            Race.Proposals.RemoveAll(p => (p.Kind == KindRaceSplit || p.Kind == KindRaceBreakout) && made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
             int learned = learnedFromMarks;
             learnedFromMarks = 0;
+            string strokesText = strokes > 0
+                ? string.Format(CultureInfo.InvariantCulture, " {0} αυτόματες χεριές (διόρθωση: διπλό κλικ στις χεριές του τμήματος).", strokes)
+                : "";
             if (made.Count == 0)
             {
-                Status(learned > 0 ?
+                Status((learned > 0 ?
                     string.Format(CultureInfo.InvariantCulture, "🤖 Τα περάσματα είχαν ήδη χρόνους: {0} από αυτά κρατήθηκαν για τη μάθηση (δεν χρειάζεται έλεγχος).", learned) :
-                    "Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).", false);
+                    "Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).") + strokesText, false);
                 Changed(false);
                 RefreshProposalsUi();
                 return;
@@ -609,8 +779,8 @@ namespace Kinovea.ScreenManager
             Race.Proposals.AddRange(made);
             Changed(false);
             BeginReview(made.OrderBy(p => p.Timestamp).First());
-            if (lengths > 1)
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις περασμάτων. ", lengths, made.Count) + LastStatus, false);
+            if (lengths > 1 || strokes > 0)
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις.{2} ", lengths, made.Count, strokesText) + LastStatus, false);
         }
 
         #region Whole race
@@ -700,14 +870,19 @@ namespace Kinovea.ScreenManager
                 // What was read (also when cancelled) is kept and proposed.
                 string batch = Guid.NewGuid().ToString("N");
                 List<SwimProposal> made = new List<SwimProposal>();
+                int strokes = 0;
                 foreach (LengthRead l in lengths)
                 {
                     StoreTrack(l.Session, l.Result);
                     made.AddRange(SplitProposals(l, batch));
+                    SwimProposal breakout = BreakoutProposal(l, batch);
+                    if (breakout != null)
+                        made.Add(breakout);
+                    strokes += PlaceLengthStrokes(l);
                 }
 
-                Changed(false);
-                ShowSplitProposals(made, lengths.Count);
+                Changed(strokes > 0);
+                ShowSplitProposals(made, lengths.Count, strokes);
                 if (cancelled)
                     Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0} μήκη: προτείνονται όσα βρέθηκαν.", lengths.Count), true);
                 else if (resumeWall > 0)
@@ -836,6 +1011,7 @@ namespace Kinovea.ScreenManager
                     break;
                 }
 
+                ReadLengthStrokes(l);
                 lengths.Add(l);
                 if (wall >= Race.Distance || worker.CancellationPending)
                     break;
