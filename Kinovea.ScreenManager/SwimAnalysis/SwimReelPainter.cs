@@ -664,7 +664,9 @@ namespace Kinovea.ScreenManager
                     if (!labels && lastOfLength)
                     {
                         List<SwimReelCycle> length = lengths[lapOfBar[i]];
-                        string caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                        string caption = string.Format(CultureInfo.InvariantCulture, "ΜΗΚΟΣ {0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                        if (Width(g, caption, tempoFont) > x - groupLeft - 4 * k)
+                            caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
                         TextIn(g, caption, tempoFont, Fade(SwimTheme.Dim, a), new RectangleF(groupLeft, by1 + 2 * k, x - groupLeft, 14 * k), StringAlignment.Center);
                     }
                 }
