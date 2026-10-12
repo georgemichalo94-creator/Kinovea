@@ -136,7 +136,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [0, 1, 2, 3]
+        part: [0, 1, 2, 3, 4]
 
     steps:
     - name: Checkout
@@ -162,32 +162,32 @@ jobs:
       shell: powershell
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 4 -First 0 -Count 10
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 5 -First 0 -Count 10
 
     - name: Images 2
       if: always()
       shell: powershell
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 4 -First 10 -Count 10
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 5 -First 10 -Count 10
 
     - name: Images 3
       if: always()
       shell: powershell
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 4 -First 20 -Count 10
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 5 -First 20 -Count 10
 
     - name: Images 4
       if: always()
       shell: powershell
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 4 -First 30 -Count 10
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 5 -First 30 -Count 10
 
     - name: Images 5
       if: always()
       shell: powershell
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 4 -First 40 -Count 9
+        .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode emit -Out reel-preview -Part ${{ matrix.part }} -Parts 5 -First 40 -Count 9

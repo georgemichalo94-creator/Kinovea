@@ -3,7 +3,8 @@
 #   -Mode render  compiles ReelPreview.cs against the program in -Bin and draws the images in -Out.
 #   -Mode emit    writes the images of the matrix part -Part (of -Parts) as notice annotations: base64 in chunks of
 #                 -Chunk characters, chunks -First to -First + -Count - 1 (a step writes at most 10 annotations).
-#                 Titles: "reel|<image>|<chunk>|<chunks>|<base64 length>", "reel-model|<i>|<n>", "reel-errors|<i>|<n>".
+#                 Titles: "reel|<image>|<chunk>|<chunks>|<base64 length>", "reel-model|<i>|<n>", "reel-pose|<i>|<n>",
+#                 "reel-errors|<i>|<n>".
 param(
     [ValidateSet('render', 'emit')] [string]$Mode = 'render',
     [string]$Bin = 'portable',
@@ -26,7 +27,7 @@ if ($Mode -eq 'render') {
         $binFull = (Resolve-Path $Bin).Path
         $dll = Join-Path $binFull 'ReelPreview.dll'
         $refs = @((Join-Path $binFull 'Kinovea.ScreenManager.dll'))
-        foreach ($name in @('Kinovea.Services.dll', 'Newtonsoft.Json.dll')) {
+        foreach ($name in @('Kinovea.Services.dll', 'Newtonsoft.Json.dll', 'OpenCvSharp.dll')) {
             if (Test-Path (Join-Path $binFull $name)) { $refs += (Join-Path $binFull $name) }
         }
         $refs += @('System.Drawing', 'System.Core')
@@ -67,7 +68,7 @@ function Add-Text([string]$kind, [string]$text) {
 }
 
 if ($Part -eq 0) {
-    foreach ($name in @('errors', 'model')) {
+    foreach ($name in @('errors', 'model', 'pose')) {
         $path = Join-Path $outFull ($name + '.txt')
         if (Test-Path $path) { Add-Text ('reel-' + $name) ([System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)) }
     }
