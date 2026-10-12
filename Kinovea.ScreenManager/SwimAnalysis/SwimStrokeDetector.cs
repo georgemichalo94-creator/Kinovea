@@ -189,6 +189,23 @@ namespace Kinovea.ScreenManager
             get { return virtualRope; }
         }
 
+        /// <summary>
+        /// The frames of the reading are no longer needed (a length of the whole race is done): the band of each frame and the
+        /// images kept go, the lane and the direction stay. Count is 0 after it.
+        /// </summary>
+        public void Release()
+        {
+            previous.Clear();
+            previousMotion.Clear();
+            differences.Clear();
+            shifts.Clear();
+            motions.Clear();
+            redFar.Clear();
+            redNear.Clear();
+            differences.TrimExcess();
+            shifts.TrimExcess();
+        }
+
         /// <param name="style">Style code of the panel: fs, bk, br, fly.</param>
         public SwimStrokeDetector(int width, int height, double headX, double headY, double feetX, double feetY, string style, double fps)
         {

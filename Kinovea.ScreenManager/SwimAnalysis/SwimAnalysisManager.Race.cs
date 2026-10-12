@@ -433,6 +433,29 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// A length done: the band of each frame goes (about 30 MB a length: a 1500 m keeps only what the proposals, the strokes and
+        /// the place of the swimmer need).
+        /// </summary>
+        private static void ReleaseFrames(LengthRead l)
+        {
+            l.Session.Detector.Release();
+            SwimStrokeResult r = l.Result;
+            r.Motion.Clear();
+            r.Motion.TrimExcess();
+            r.Shifts.Clear();
+            r.Shifts.TrimExcess();
+            r.Motions.Clear();
+            r.RedFar.Clear();
+            r.RedNear.Clear();
+            r.Onset = null;
+            if (l.Session.PreviousGray != null)
+            {
+                l.Session.PreviousGray.Dispose();
+                l.Session.PreviousGray = null;
+            }
+        }
+
+        /// <summary>
         /// Cues of the breakout with their usual delay before any learning: the dolphin kicks close to the surface move the water
         /// about a second before the head is out; in breaststroke the motion starts with the head out (end of the pullout).
         /// Named after the style of the length (the learning keeps each style apart).
@@ -1391,6 +1414,7 @@ namespace Kinovea.ScreenManager
                 if (lengths.Count == 0)
                     l.ClickIndex = Math.Max(0, s.Timestamps.FindIndex(t => t >= clickTimestamp));
                 ReadLengthStrokes(l);
+                ReleaseFrames(l);
                 lengths.Add(l);
                 if (wall >= Race.Distance || worker.CancellationPending)
                     break;
