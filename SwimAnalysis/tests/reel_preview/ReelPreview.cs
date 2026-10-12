@@ -240,7 +240,7 @@ public static class ReelPreview
             try
             {
                 using (Bitmap image = Draw(frame, computed[frame.Race], reels[frame.Race], timing))
-                    SaveJpeg(image, Path.Combine(folder, frame.Name + ".jpg"), 72);
+                    SaveJpeg(image, Path.Combine(folder, frame.Name + ".jpg"), 65);
                 names.Add(frame.Name);
             }
             catch (Exception e)

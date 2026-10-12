@@ -597,48 +597,75 @@ namespace Kinovea.ScreenManager
                 }
 
                 Text(g, tiles[i][1], value, Fade(Color.White, a), r.Left + 10 * k, r.Top + th / 2, StringAlignment.Near, StringAlignment.Center);
-                TextIn(g, tiles[i][2], tileDetail, Fade(SwimTheme.Faint, a), new RectangleF(r.Left + 12 * k, r.Bottom - 20 * k, r.Width - 18 * k, 16 * k));
+                TextIn(g, tiles[i][2], tileDetail, Fade(SwimTheme.Dim, a), new RectangleF(r.Left + 12 * k, r.Bottom - 20 * k, r.Width - 18 * k, 16 * k));
             }
 
-            // Distance of each cycle (or of each length, in a long race), with its tempo under it.
+            // Distance of each cycle, the lengths apart (or of each length, in a long race), with the tempo under it.
             float by0 = ty + 2 * th + gap + 36 * k;
             float by1 = card.Bottom - 46 * k;
+            List<List<SwimReelCycle>> lengths = reel.Cycles.GroupBy(cy => cy.Lap).OrderBy(gr => gr.Key).Select(gr => gr.ToList()).ToList();
+            bool perCycle = reel.Cycles.Count <= 80;
             List<KeyValuePair<double, double>> bars = new List<KeyValuePair<double, double>>();
-            string barsTitle;
-            if (reel.Cycles.Count <= 44)
+            List<int> lapOfBar = new List<int>();
+            for (int l = 0; l < lengths.Count; l++)
             {
-                bars.AddRange(reel.Cycles.Select(cy => new KeyValuePair<double, double>(cy.Dps, cy.Tempo)));
-                barsTitle = "ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)";
-            }
-            else
-            {
-                foreach (IGrouping<int, SwimReelCycle> lapCycles in reel.Cycles.GroupBy(cy => cy.Lap).OrderBy(gr => gr.Key))
-                    bars.Add(new KeyValuePair<double, double>(lapCycles.Average(cy => cy.Dps), lapCycles.Average(cy => cy.Tempo)));
-                barsTitle = "ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)";
+                if (perCycle)
+                {
+                    bars.AddRange(lengths[l].Select(cy => new KeyValuePair<double, double>(cy.Dps, cy.Tempo)));
+                    lapOfBar.AddRange(lengths[l].Select(cy => l));
+                }
+                else
+                {
+                    bars.Add(new KeyValuePair<double, double>(lengths[l].Average(cy => cy.Dps), lengths[l].Average(cy => cy.Tempo)));
+                    lapOfBar.Add(l);
+                }
             }
 
             if (bars.Count > 0 && by1 - by0 > 40 * k)
             {
+                // A gap of half a bar between the lengths.
+                float space = perCycle ? 0.6f : 0f;
+                float bw = inner / (bars.Count + space * (lengths.Count - 1));
+                bool labels = bw >= 24 * k;
+                string barsTitle = !perCycle ? "ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)"
+                    : labels ? "ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)"
+                    : "ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (s)";
                 Text(g, barsTitle, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), x0, by0 - 8 * k, StringAlignment.Near, StringAlignment.Far);
-                double median = bars.Select(b => b.Key).OrderBy(v => v).ElementAt(bars.Count / 2);
-                double dpsTop = DpsScale(bars.Select(b => b.Key));
-                float bw = inner / bars.Count;
+                double median = bars.Select(v => v.Key).OrderBy(v => v).ElementAt(bars.Count / 2);
+                double dpsTop = DpsScale(bars.Select(v => v.Key));
                 float maxH = by1 - by0 - 20 * k;
                 Font valueFont = F(7f, k, false, FontStyle.Bold);
                 Font tempoFont = F(6.75f, k);
-                bool labels = bw >= 24 * k;
                 float inset = Math.Min(3 * k, bw * 0.15f);
+                float x = x0;
+                float groupLeft = x0;
                 for (int i = 0; i < bars.Count; i++)
                 {
+                    if (i > 0 && lapOfBar[i] != lapOfBar[i - 1])
+                        x += space * bw;
+                    if (i == 0 || lapOfBar[i] != lapOfBar[i - 1])
+                        groupLeft = x;
+
                     float h = (float)(Math.Max(0, Math.Min(dpsTop, bars[i].Key)) / dpsTop * maxH);
-                    RectangleF b = new RectangleF(x0 + i * bw + inset, by1 - h, Math.Max(1, bw - 2 * inset), h);
+                    RectangleF r = new RectangleF(x + inset, by1 - h, Math.Max(1, bw - 2 * inset), h);
                     Color color = bars[i].Key >= median ? SwimTheme.Green : SwimTheme.Amber;
-                    if (b.Height >= 1)
-                        SwimTheme.FillRounded(g, Color.FromArgb((int)(220 * a), color), b, Math.Min(4 * k, b.Width / 3));
+                    if (r.Height >= 1)
+                        SwimTheme.FillRounded(g, Color.FromArgb((int)(220 * a), color), r, Math.Min(4 * k, r.Width / 3));
                     if (labels)
                     {
-                        Text(g, bars[i].Key.ToString("0.00", CultureInfo.InvariantCulture), valueFont, Fade(SwimTheme.Text, a), b.Left + b.Width / 2, b.Top - 2 * k, StringAlignment.Center, StringAlignment.Far);
-                        Text(g, bars[i].Value.ToString("0.00", CultureInfo.InvariantCulture), tempoFont, Fade(SwimTheme.Dim, a), b.Left + b.Width / 2, by1 + 3 * k, StringAlignment.Center);
+                        Text(g, bars[i].Key.ToString("0.00", CultureInfo.InvariantCulture), valueFont, Fade(SwimTheme.Text, a), r.Left + r.Width / 2, r.Top - 2 * k, StringAlignment.Center, StringAlignment.Far);
+                        Text(g, bars[i].Value.ToString("0.00", CultureInfo.InvariantCulture), tempoFont, Fade(SwimTheme.Dim, a), r.Left + r.Width / 2, by1 + 3 * k, StringAlignment.Center);
+                    }
+
+                    x += bw;
+
+                    // Narrow bars: the length and its tempo under its bars.
+                    bool lastOfLength = i == bars.Count - 1 || lapOfBar[i + 1] != lapOfBar[i];
+                    if (!labels && lastOfLength)
+                    {
+                        List<SwimReelCycle> length = lengths[lapOfBar[i]];
+                        string caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                        TextIn(g, caption, tempoFont, Fade(SwimTheme.Dim, a), new RectangleF(groupLeft, by1 + 2 * k, x - groupLeft, 14 * k), StringAlignment.Center);
                     }
                 }
             }
@@ -650,7 +677,7 @@ namespace Kinovea.ScreenManager
                     string.Join(", ", reel.DoubleMarks.Take(3).Select(d => d.ToString("0.00", CultureInfo.InvariantCulture) + " s")));
             }
 
-            TextIn(g, note, F(7.25f, k), Fade(SwimTheme.Faint, a), new RectangleF(x0, card.Bottom - 26 * k, inner, 18 * k));
+            TextIn(g, note, F(7.25f, k), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Bottom - 26 * k, inner, 18 * k));
         }
         #endregion
     }

@@ -208,8 +208,8 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// A stroke mark much closer to both neighbours than the usual interval, while the two intervals together are one
-        /// usual interval, is a second press on the same stroke.
+        /// Two stroke marks much closer than the usual interval are two presses on the same stroke when leaving one out gives a
+        /// usual interval: the one whose removal gives the interval closest to the usual one is left out.
         /// </summary>
         private List<double> RemoveDoubleMarks(List<double> marks)
         {
@@ -221,21 +221,27 @@ namespace Kinovea.ScreenManager
                 gaps.Add(marks[i] - marks[i - 1]);
             double median = Median(gaps);
 
-            List<double> kept = new List<double> { marks[0] };
-            for (int i = 1; i < marks.Count - 1; i++)
+            List<double> kept = new List<double>(marks);
+            for (int i = 0; i + 1 < kept.Count; i++)
             {
-                double a = marks[i] - kept[kept.Count - 1];
-                double b = marks[i + 1] - marks[i];
-                if (Math.Min(a, b) < 0.7 * median && a + b >= 0.75 * median && a + b <= 1.3 * median)
-                {
-                    DoubleMarks.Add(marks[i]);
+                if (kept[i + 1] - kept[i] >= 0.7 * median)
                     continue;
-                }
 
-                kept.Add(marks[i]);
+                // Without the first of the two: from the mark before to the second; without the second: from the first to the next.
+                double withoutFirst = i > 0 ? kept[i + 1] - kept[i - 1] : double.NaN;
+                double withoutSecond = i + 2 < kept.Count ? kept[i + 2] - kept[i] : double.NaN;
+                double costFirst = double.IsNaN(withoutFirst) ? double.PositiveInfinity : Math.Abs(withoutFirst - median);
+                double costSecond = double.IsNaN(withoutSecond) ? double.PositiveInfinity : Math.Abs(withoutSecond - median);
+                int drop = costFirst <= costSecond ? i : i + 1;
+                double merged = drop == i ? withoutFirst : withoutSecond;
+                if (double.IsNaN(merged) || merged < 0.75 * median || merged > 1.3 * median)
+                    continue;
+
+                DoubleMarks.Add(kept[drop]);
+                kept.RemoveAt(drop);
+                i = Math.Max(-1, i - 2);
             }
 
-            kept.Add(marks[marks.Count - 1]);
             return kept;
         }
 
