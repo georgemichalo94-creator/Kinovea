@@ -499,7 +499,9 @@ namespace Kinovea.ScreenManager
                 progress.ShowDialog();
             }
 
+            // As after a video export: back to the decoding mode of the player, then to the frame of the checkpoint.
             AutoStrokesRunning = false;
+            frameServer.VideoReader.AfterFrameEnumeration();
             if (player != null && !player.IsDisposed)
                 player.AfterExportVideo();
             if (form != null && !form.IsDisposed)
@@ -565,9 +567,9 @@ namespace Kinovea.ScreenManager
                     }
                 });
 
-                reader.BeforeFrameEnumeration();
                 try
                 {
+                    reader.BeforeFrameEnumeration();
                     long current = reader.Current != null ? reader.Current.Timestamp : from;
                     bool hasMore = reader.MoveTo(current, from);
 
@@ -615,7 +617,6 @@ namespace Kinovea.ScreenManager
                 {
                     queue.CompleteAdding();
                     detection.Wait();
-                    reader.AfterFrameEnumeration();
                 }
             }
 
