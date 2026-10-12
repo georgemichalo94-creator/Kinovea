@@ -214,6 +214,7 @@ namespace Kinovea.ScreenManager
 
                 // The image of the start (block and swimmer) for the proposals, then the proposals of this part.
                 lastRegion = capture.Moved && capture.Frames != null && capture.Frames.Count >= 10 ? capture.Frames : null;
+                lastRegionRace = Race.Id;
                 if (Settings.ProposeAfterSkeleton && !cancelled)
                     Propose(kept, lastRegion);
             }

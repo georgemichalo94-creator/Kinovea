@@ -182,14 +182,22 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>A value learned at the frames kept by the analyst (kind, name, value without answers; answers of the same video).</summary>
+    public delegate double SwimMeasure(string kind, string name, double fallback, out int sameVideo);
+
     /// <summary>What the detectors know besides the video: the stroke and what was learned from the analyst.</summary>
     public sealed class SwimDetectorContext
     {
         /// <summary>fs, bk, br, fly, im.</summary>
         public string Style = "fs";
 
-        /// <summary>A value learned at the frames kept by the analyst (kind, name, fallback).</summary>
-        public Func<string, string, double, double> Measure = (kind, name, fallback) => fallback;
+        public SwimMeasure Measure = Fallback;
+
+        private static double Fallback(string kind, string name, double fallback, out int sameVideo)
+        {
+            sameVideo = 0;
+            return fallback;
+        }
     }
 
     /// <summary>
@@ -450,7 +458,10 @@ namespace Kinovea.ScreenManager
             info.EndSample = feetOff.Cues.Count > 0 ? (int)Math.Round(feetOff.Cues.Values.Max()) : half;
             if (!float.IsNaN(info.Block))
             {
-                double level = context.Measure(StartEntry, "level", DefaultEntryLevel);
+                // With the level learned in this video (same camera) the cues are other cues: their usual delay is learned apart.
+                int sameVideo;
+                double level = context.Measure(StartEntry, "level", DefaultEntryLevel, out sameVideo);
+                string suffix = sameVideo > 0 ? "-video" : "";
                 double water = info.Block + level * L;
                 int entryWrist = -1, entryHead = -1;
                 for (int i = half; i < n && (entryWrist < 0 || entryHead < 0); i++)
@@ -464,9 +475,9 @@ namespace Kinovea.ScreenManager
 
                 SwimDetection entry = new SwimDetection(StartEntry, SwimMarkType.Entry) { Confidence = 0.6 };
                 if (entryWrist >= 0)
-                    entry.Cue("wrist", entryWrist, 0.7, 0.05);
+                    entry.Cue("wrist" + suffix, entryWrist, sameVideo > 0 ? 1.0 : 0.7, sameVideo > 0 ? 0.035 : 0.05);
                 if (entryHead >= 0)
-                    entry.Cue("head", entryHead - 0.08 * sps, 1.0, 0.05);
+                    entry.Cue("head" + suffix, entryHead - 0.08 * sps, sameVideo > 0 ? 0.6 : 1.0, 0.05);
                 entry.Measures["block"] = info.Block;
                 entry.Measures["L"] = L;
                 if (entry.Cues.Count > 0)

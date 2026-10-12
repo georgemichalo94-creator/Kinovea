@@ -287,7 +287,7 @@ namespace Kinovea.ScreenManager
             if (!Race.IsTraining && HasVideo)
             {
                 // A swimmer to follow for the label becomes the swimmer of the strokes (they keep his place too).
-                if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && (!PickingStrokes || PickingTrack))
+                if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && (!PickingStrokes || PickingTrack) && !resolvingProposal)
                     BeginAutoStrokes();
                 else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
@@ -2377,6 +2377,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             lastMeasurement = null;
+            lastRegion = null;
             SaveNow();
             videoPath = path;
             VideoFile = Load(path);

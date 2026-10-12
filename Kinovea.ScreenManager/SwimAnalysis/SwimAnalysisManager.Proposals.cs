@@ -29,6 +29,7 @@ namespace Kinovea.ScreenManager
         #region Proposals
         private SwimLearning learning;
         private SwimRegionFrames lastRegion;
+        private string lastRegionRace;
         private string reviewId;
         private int reviewAnswered;
         private int reviewCorrected;
@@ -111,8 +112,10 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            SwimRegionFrames region = lastRegion != null && lastRegion.Count > 0 && lastRegion.Timestamps[0] >= skeleton.Start - (long)skeleton.Step &&
-                lastRegion.Timestamps[lastRegion.Count - 1] <= skeleton.End + (long)skeleton.Step ? lastRegion : null;
+            // The image of the start kept by the reading of this swimmer, if it begins in this part (it goes on a little after the
+            // swimmer is lost).
+            SwimRegionFrames region = lastRegion != null && lastRegion.Count > 0 && lastRegionRace == Race.Id &&
+                lastRegion.Timestamps[0] >= skeleton.Start - (long)skeleton.Step && lastRegion.Timestamps[0] <= skeleton.End ? lastRegion : null;
             Propose(skeleton, region);
         }
 
@@ -133,14 +136,14 @@ namespace Kinovea.ScreenManager
 
             string video = SwimLearning.VideoCode(videoPath);
             SwimLearning l = Learning;
-            SwimDetectorContext context = new SwimDetectorContext
+            SwimDetectorContext context = new SwimDetectorContext { Style = Race.Style };
+            context.Measure = delegate (string kind, string name, double fallback, out int sameVideo)
             {
-                Style = Race.Style,
-                Measure = (kind, name, fallback) =>
-                {
-                    int count;
-                    return l.Measure(kind, name, video, fallback, out count);
-                }
+                int count;
+                bool same;
+                double value = l.Measure(kind, name, video, fallback, out count, out same);
+                sameVideo = same ? count : 0;
+                return value;
             };
 
             List<SwimDetection> found;
@@ -161,9 +164,11 @@ namespace Kinovea.ScreenManager
             int added = 0;
             foreach (SwimDetection d in found)
             {
+                // Too unclear for the detector itself: not proposed. What the analyst deleted before only lowers the confidence
+                // shown (the kind can come back with the next answers).
                 double confidence;
                 double sample = SwimProposalMath.Combine(d, l, video, sps, out confidence);
-                if (double.IsNaN(sample) || confidence < 0.25)
+                if (double.IsNaN(sample) || d.Confidence < 0.25)
                     continue;
 
                 long ts = skeleton.Start + (long)Math.Round(sample * skeleton.Step);
@@ -236,12 +241,14 @@ namespace Kinovea.ScreenManager
             ShowProposal(p);
         }
 
-        private void ShowProposal(SwimProposal p)
+        private void ShowProposal(SwimProposal p, string done = null)
         {
             SeekTo(p.Timestamp);
             int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
-            Status(string.Format(CultureInfo.InvariantCulture, "✨ Πρόταση {0}/{1}: {2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος · Esc: τέλος.",
-                index, Race.Proposals.Count, ProposalLabel(p)), false);
+            bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
+            Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
+                "✨ Πρόταση {0}/{1}: {2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος · Esc: τέλος.",
+                index, Race.Proposals.Count, ProposalLabel(p)), warning);
             RefreshProposalsUi();
             InvalidatePlayer();
         }
@@ -314,15 +321,24 @@ namespace Kinovea.ScreenManager
             if (p == null || Race == null)
                 return;
 
+            // Far from the proposal (another part of the video): not an answer to it.
+            if (Math.Abs(Timing.Seconds(timestamp, p.Timestamp)) > 1.0)
+            {
+                SystemSounds.Beep.Play();
+                Status("Το καρέ είναι μακριά από την πρόταση (πάνω από 1 s): πήγαινε κοντά της με τα βελάκια, ή Delete αν δεν υπάρχει τέτοιο γεγονός.", true);
+                return;
+            }
+
             // A mark of this kind already on this frame: only the answer.
-            bool exists = p.Type == SwimMarkType.WallContact && !Race.IsTraining
-                ? Race.Marks.Any(m => m.Type == SwimMarkType.Split && SameFrame(m.Timestamp, timestamp))
-                : Race.Marks.Any(m => m.Type == p.Type && SameFrame(m.Timestamp, timestamp));
+            SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
+            bool exists = Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp));
             PlayerScreenCommands command;
+            string done;
             if (exists || !CommandOf(p.Type, out command))
             {
                 Answer(p, timestamp, true);
                 Changed(false);
+                done = "✓ " + ProposalLabel(p) + (exists ? ": υπήρχε ήδη σημάδι σε αυτό το καρέ." : ".");
             }
             else
             {
@@ -336,15 +352,22 @@ namespace Kinovea.ScreenManager
                     resolvingProposal = false;
                 }
 
-                // The command may have refused the mark (for example a wall that is not one of the race): still an answer.
-                if (Race.Proposals.Contains(p))
+                // The command refused the mark (for example a wall that is not one of the race): the proposal waits, its reason shows.
+                if (!Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)))
                 {
-                    Answer(p, timestamp, true);
-                    Changed(false);
+                    RefreshProposalsUi();
+                    InvalidatePlayer();
+                    return;
                 }
+
+                Answer(p, timestamp, true);
+                Changed(false);
+
+                // What the command said stays visible with the next proposal.
+                done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus);
             }
 
-            NextProposal(timestamp);
+            NextProposal(timestamp, done);
         }
 
         private void RejectProposal(SwimProposal p)
@@ -355,11 +378,10 @@ namespace Kinovea.ScreenManager
             long at = p.Timestamp;
             Answer(p, at, false);
             Changed(false);
-            Status(ProposalLabel(p) + ": δεν κρατήθηκε (η μάθηση το σημειώνει).", false);
-            NextProposal(at);
+            NextProposal(at, ProposalLabel(p) + ": δεν κρατήθηκε.");
         }
 
-        private void NextProposal(long after)
+        private void NextProposal(long after, string done = null)
         {
             if (reviewId == null)
             {
@@ -376,7 +398,7 @@ namespace Kinovea.ScreenManager
             }
 
             reviewId = next.Id;
-            ShowProposal(next);
+            ShowProposal(next, done);
         }
 
         /// <summary>
@@ -385,7 +407,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void ResolveProposalsByMark(SwimMarkType type, long timestamp)
         {
-            if (Race == null || Race.Proposals.Count == 0)
+            // Accepting a proposal answers that proposal only (not a neighbour of the same kind).
+            if (resolvingProposal || Race == null || Race.Proposals.Count == 0)
                 return;
 
             double window = type == SwimMarkType.Kick ? 0.2 : 0.6;

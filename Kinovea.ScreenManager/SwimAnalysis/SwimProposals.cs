@@ -222,12 +222,21 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public double Measure(string kind, string name, string video, double fallback, out int count)
         {
+            bool sameVideo;
+            return Measure(kind, name, video, fallback, out count, out sameVideo);
+        }
+
+        /// <summary>As Measure, and whether the value comes from answers in the same video.</summary>
+        public double Measure(string kind, string name, string video, double fallback, out int count, out bool sameVideo)
+        {
+            sameVideo = false;
             Func<SwimLearningRecord, bool> has = r => r.Kind == kind && r.Right && r.Measures != null && r.Measures.ContainsKey(name) &&
                 !double.IsNaN(r.Measures[name]) && !double.IsInfinity(r.Measures[name]);
             List<double> same = string.IsNullOrEmpty(video) ? new List<double>() : Records.Where(r => has(r) && r.Video == video).Select(r => r.Measures[name]).ToList();
             if (same.Count > 0)
             {
                 count = same.Count;
+                sameVideo = true;
                 return Median(same.Skip(Math.Max(0, same.Count - Window)).ToList());
             }
 
@@ -353,7 +362,7 @@ namespace Kinovea.ScreenManager
             // Confidence: the detector, the agreement of its cues, and the answers of the analyst for this kind.
             double agreement = kept == values.Count ? 1.0 : 0.75;
             double wrong = learning != null ? learning.WrongRate(d.Kind, video) : 0;
-            confidence = Math.Max(0, Math.Min(1, d.Confidence * agreement * (1 - 0.8 * wrong)));
+            confidence = Math.Max(0, Math.Min(1, d.Confidence * agreement * Math.Max(0.35, 1 - 0.8 * wrong)));
             return result;
         }
 

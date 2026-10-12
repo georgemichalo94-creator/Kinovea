@@ -1726,14 +1726,16 @@ namespace Kinovea.ScreenManager
                     PasteDrawing(true);
                     break;
                 case PlayerScreenCommands.DeleteDrawing:
-                    // Swim analysis: Delete rejects the proposal being checked.
-                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Delete, m_iCurrentPosition))
+                    // Swim analysis: Delete rejects the proposal being checked (when no drawing is selected).
+                    if (m_FrameServer.Metadata.HitDrawing == null && SwimAnalysisManager.Current != null &&
+                        SwimAnalysisManager.Current.ReviewKey(this, Keys.Delete, m_iCurrentPosition))
                         break;
                     DeleteSelectedDrawing();
                     break;
                 case PlayerScreenCommands.ValidateDrawing:
-                    // Swim analysis: Enter keeps the proposal being checked at this frame.
-                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Enter, m_iCurrentPosition))
+                    // Swim analysis: Enter keeps the proposal being checked at this frame (when no drawing is being made).
+                    if (!m_FrameServer.Metadata.DrawingInitializing && SwimAnalysisManager.Current != null &&
+                        SwimAnalysisManager.Current.ReviewKey(this, Keys.Enter, m_iCurrentPosition))
                         break;
                     ValidateDrawing();
                     break;
