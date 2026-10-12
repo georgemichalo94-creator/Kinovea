@@ -94,6 +94,13 @@ namespace Kinovea.ScreenManager
             public int Step;
             public double Fps;
             public int Wall;
+
+            /// <summary>The wall marked before the lap followed (or the start of the race).</summary>
+            public long LapStart;
+
+            /// <summary>Strokes deleted by the analyst in this lap (✕): no automatic stroke there again.</summary>
+            public readonly List<long> Removed = new List<long>();
+
             public OpenCvSharp.Mat PreviousGray;
             public double Cycle;
             public bool Ropes;
@@ -258,6 +265,7 @@ namespace Kinovea.ScreenManager
             s.Step = step;
             s.Fps = realFps / step;
             s.Wall = NextWallDistance(from);
+            s.LapStart = LapStartTimestamp(from);
             s.Style = SwimPresets.StyleAt(Race, s.Wall);
             if (s.Style == "im")
                 s.Style = "fs";
@@ -362,12 +370,23 @@ namespace Kinovea.ScreenManager
             s.Ropes = result.Ropes;
             LastAutoCycle = result.Cycle;
 
-            Race.Marks.RemoveAll(m => m.Batch == s.Batch);
+            // The automatic strokes of the lap are replaced: those of this follow and of an earlier one (swimmer chosen again).
+            SwimMark wallSplit = Race.GetSplit(s.Wall);
+            long lapEnd = wallSplit != null && wallSplit.Timestamp > s.LapStart ? wallSplit.Timestamp : Math.Max(until, s.LastRead);
+            Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null &&
+                (m.Batch == s.Batch || (m.Timestamp > s.LapStart && m.Timestamp <= lapEnd)));
+
+            // A stroke marked by hand (C) is the stroke found within half a stroke of it, and none is placed again where
+            // the analyst deleted one (✕).
+            long near = Math.Max(1, SessionSpan(s, 0.5 * (result.Period > 0 ? result.Period : 0.5)));
+            List<long> kept = Race.Marks.Where(m => m.Type == SwimMarkType.Stroke).Select(m => m.Timestamp).ToList();
             foreach (int i in result.Strokes)
             {
                 long t = s.Timestamps[i];
-                if (!Race.Marks.Any(m => m.Type == SwimMarkType.Stroke && SameFrame(m.Timestamp, t)))
-                    Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
+                if (kept.Any(m => Math.Abs(m - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near))
+                    continue;
+
+                Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
             }
         }
 
@@ -632,6 +651,20 @@ namespace Kinovea.ScreenManager
             return (long)Math.Round(seconds * s.Fps * s.Step * Timing.AverageTimestampsPerFrame);
         }
 
+        /// <summary>Start of the lap of this frame: the wall marked before it, or the start of the race.</summary>
+        private long LapStartTimestamp(long timestamp)
+        {
+            int pool = Math.Max(1, Race.Pool);
+            SwimMark wall = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Split && m.Distance % pool == 0 && m.Timestamp <= timestamp)
+                .OrderBy(m => m.Timestamp)
+                .LastOrDefault();
+            if (wall != null)
+                return wall.Timestamp;
+
+            return Race.StartTimestamp.HasValue && Race.StartTimestamp.Value <= timestamp ? Race.StartTimestamp.Value : long.MinValue;
+        }
+
         private int NextWallDistance(long timestamp)
         {
             int pool = Math.Max(1, Race.Pool);
@@ -688,6 +721,10 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            StrokeSession s = SessionFor(Race);
+            if (s != null && mark.Timestamp > s.LapStart)
+                s.Removed.Add(mark.Timestamp);
+
             Changed(true);
             InvalidatePlayer();
             Status("Διαγράφηκε η χεριά αυτού του καρέ (C για να την ξαναβάλεις).", false);
