@@ -84,8 +84,9 @@ namespace Kinovea.ScreenManager
             double firstEnd = ends.Count > 0 ? ends.Min(e => Time(e)) : double.MaxValue;
             List<Dictionary<string, double>> marks = Group(crossings.Where(c => !c.Long && c.Frame < firstEnd - 0.3 * fps).ToList(), fps);
 
-            // Distances of the marks passed: 15, 25, 35 from the wall of the lap (pool of 50 m).
-            int[] distances = pool == 50 ? new[] { 15, 25, 35 } : new[] { 15 };
+            // Distances of the marks passed from the wall of the lap: 15, 25, 35 in a pool of 50 (the marks 15 from each wall and
+            // the middle); 10 and 15 in a pool of 25 (the marks 15 from each wall).
+            int[] distances = pool == 50 ? new[] { 15, 25, 35 } : new[] { 10, 15 };
             List<double> times = marks.Select(m => Time(m)).ToList();
             int[] assigned = Assign(times, lapStart, fps, distances);
             for (int i = 0; i < marks.Count; i++)
@@ -111,6 +112,187 @@ namespace Kinovea.ScreenManager
             }
 
             return found.OrderBy(f => f.LapDistance).ToList();
+        }
+
+        public const string CueStop = "stop";
+        public const string CueWallHead = "wallhead";
+        public const string CueWallBody = "wallbody";
+
+        /// <summary>
+        /// The wall at the end of the length followed (turn or finish): the cues of its frame (index of the frames read, fractions
+        /// allowed). The wall is where the red last 5 m of the ropes end; the head (front of the moving part) and the body
+        /// (middle of it) reach it. Without the end of the ropes in the image: the swimmer slowing down at the wall (stop).
+        /// </summary>
+        public static Dictionary<string, double> WallCues(SwimStrokeResult result, int direction, double fps, double after)
+        {
+            Dictionary<string, double> cues = new Dictionary<string, double>();
+            if (result == null || result.Path == null || fps <= 0)
+                return cues;
+
+            int T = Math.Min(result.Path.Length, Math.Min(result.Lanes.Count, Math.Min(result.Motion.Count, Math.Min(result.RedFar.Count, result.RedNear.Count))));
+            if (T < 10)
+                return cues;
+
+            double[] head = Heads(result, T, direction, fps);
+            double[] body = new double[T];
+            for (int t = 0; t < T; t++)
+                body[t] = result.Path[t];
+
+            int start = double.IsNaN(after) ? (int)(0.5 * T) : Math.Max(1, (int)Math.Ceiling(after));
+            double wallHead = WallCrossing(result, head, T, direction, start);
+            double wallBody = WallCrossing(result, body, T, direction, start);
+            double stop = Wall(result, direction, fps, after);
+            if (!double.IsNaN(stop))
+                cues[CueStop] = stop;
+
+            // The end of the ropes is the wall only near the moment the swimmer stops there (else a red part beyond the wall).
+            if (!double.IsNaN(wallHead) && (double.IsNaN(stop) || Math.Abs(wallHead - stop) <= 1.0 * fps))
+                cues[CueWallHead] = wallHead;
+            if (!double.IsNaN(wallBody) && (double.IsNaN(stop) || Math.Abs(wallBody - stop) <= 1.0 * fps))
+                cues[CueWallBody] = wallBody;
+            return cues;
+        }
+
+        /// <summary>
+        /// First frame (from start) where the position x passes the end of the red last 5 m of a rope (the far one, else the near
+        /// one) in the direction of the swimmer: the end of a long red part towards where he swims.
+        /// </summary>
+        private static double WallCrossing(SwimStrokeResult result, double[] x, int T, int direction, int start)
+        {
+            for (int t = Math.Max(1, start); t < T; t++)
+            {
+                double e0 = WallEnd(result, t - 1, direction), e1 = WallEnd(result, t, direction);
+                if (double.IsNaN(e0) || double.IsNaN(e1) || double.IsNaN(x[t - 1]) || double.IsNaN(x[t]))
+                    continue;
+
+                // The end must be the same in the two frames (less than half a lane width apart after the camera moved).
+                double lw = LaneWidth(result.Lanes[t], e1);
+                double[] shift = t < result.Shifts.Count ? result.Shifts[t] : null;
+                double moved = e0 + (shift != null && shift.Length > 0 ? shift[Math.Max(0, Math.Min(shift.Length - 1, (int)Math.Round(e0)))] : 0);
+                if (Math.Abs(moved - e1) > Math.Max(6.0, 0.5 * lw))
+                    continue;
+
+                double s0 = direction * (x[t - 1] - e0), s1 = direction * (x[t] - e1);
+                if (s0 < 0 && s1 >= 0)
+                    return t - 1 + (-s0) / Math.Max(1e-9, s1 - s0);
+            }
+
+            return double.NaN;
+        }
+
+        /// <summary>End of the red last 5 m in a frame (working x, NaN if not seen): far rope first, else near rope.</summary>
+        private static double WallEnd(SwimStrokeResult result, int t, int direction)
+        {
+            foreach (List<int[]> red in new[] { result.RedFar, result.RedNear })
+            {
+                int[] runs = Joined(red[t], result.Lanes[t]);
+                double best = double.NaN;
+                for (int i = 0; i + 1 < runs.Length; i += 2)
+                {
+                    double middle = 0.5 * (runs[i] + runs[i + 1]);
+                    if (runs[i + 1] - runs[i] + 1 <= 3.2 * LaneWidth(result.Lanes[t], middle))
+                        continue;
+
+                    double end = direction > 0 ? runs[i + 1] : runs[i];
+                    if (double.IsNaN(best) || direction * (end - best) > 0)
+                        best = end;
+                }
+
+                // A red part that reaches the border of the image: its end is not the wall.
+                int width = result.Motion[t] != null ? result.Motion[t].Length : 0;
+                if (!double.IsNaN(best) && (best <= 1 || (width > 0 && best >= width - 2)))
+                    best = double.NaN;
+                if (!double.IsNaN(best))
+                    return best;
+            }
+
+            return double.NaN;
+        }
+
+        /// <summary>
+        /// The wall at the end of the length followed (turn or finish), frame index (NaN if not found): the swimmer, who swam
+        /// at his usual speed along the lane (camera motion removed, in lane widths so that the zoom does not count), slows
+        /// below a quarter of it after the last checkpoint of the length (after: frame of that checkpoint, or NaN).
+        /// </summary>
+        public static double Wall(SwimStrokeResult result, int direction, double fps, double after)
+        {
+            if (result == null || result.Path == null || fps <= 0)
+                return double.NaN;
+
+            int T = Math.Min(result.Path.Length, Math.Min(result.Lanes.Count, result.Shifts.Count));
+            if (T < (int)(2 * fps))
+                return double.NaN;
+
+            double[] u = Speeds(result, T, direction);
+            int half = Math.Max(1, (int)Math.Round(0.15 * fps));
+            double[] smooth = new double[T];
+            for (int t = 0; t < T; t++)
+            {
+                double sum = 0;
+                int count = 0;
+                for (int k = Math.Max(1, t - half); k <= Math.Min(T - 1, t + half); k++)
+                {
+                    sum += u[k];
+                    count++;
+                }
+
+                smooth[t] = count > 0 ? sum / count : 0;
+            }
+
+            // Usual speed: the middle of the length followed.
+            int from = (int)(0.2 * T), to = (int)(0.8 * T);
+            List<double> middle = new List<double>();
+            for (int t = Math.Max(1, from); t < to; t++)
+                middle.Add(u[t]);
+            if (middle.Count < 5)
+                return double.NaN;
+
+            double usual = SwimLearningMedian(middle);
+            if (usual <= 1e-6)
+                return double.NaN;
+
+            int start = double.IsNaN(after) ? (int)(0.6 * T) : Math.Max(1, (int)Math.Ceiling(after));
+            int hold = Math.Max(2, (int)Math.Round(0.3 * fps));
+            if (Trace != null)
+            {
+                System.Text.StringBuilder b = new System.Text.StringBuilder();
+                for (int t = Math.Max(1, start - 50); t < T; t += 5)
+                    b.Append(string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}:{1:0.00} ", t, smooth[t] / usual));
+                Trace("speed/usual after " + start + ": " + b);
+            }
+            for (int t = start; t < T; t++)
+            {
+                if (smooth[t] >= 0.25 * usual)
+                    continue;
+
+                bool stays = true;
+                for (int k = t; k < Math.Min(T, t + hold) && stays; k++)
+                    stays = smooth[k] < 0.4 * usual;
+                if (!stays)
+                    continue;
+
+                // The moment it went below: between the frame before (above) and this one.
+                double a = smooth[t - 1], b = smooth[t];
+                double fraction = a - b > 1e-9 ? (a - 0.25 * usual) / (a - b) : 1.0;
+                return t - 1 + Math.Max(0, Math.Min(1, fraction));
+            }
+
+            return double.NaN;
+        }
+
+        /// <summary>Speed of the swimmer along the lane in each frame (lane widths per frame, towards where he swims).</summary>
+        private static double[] Speeds(SwimStrokeResult result, int T, int direction)
+        {
+            double[] u = new double[T];
+            for (int t = 1; t < T; t++)
+            {
+                int p0 = result.Path[t - 1], p1 = result.Path[t];
+                double[] shift = result.Shifts[t];
+                double moved = shift != null && shift.Length > 0 ? shift[Math.Max(0, Math.Min(shift.Length - 1, p0))] : 0;
+                u[t] = direction * (p1 - p0 - moved) / LaneWidth(result.Lanes[t], p1);
+            }
+
+            return u;
         }
 
         /// <summary>Main time of a checkpoint: the far rope if it has it, else the near one.</summary>

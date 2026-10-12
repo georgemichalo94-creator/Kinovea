@@ -113,6 +113,7 @@ namespace Kinovea.ScreenManager
             calibrationClicks.Clear();
             angleClicks.Clear();
             pickForTrack = false;
+            pickForRace = false;
             SetPick(SwimPickTarget.Skeleton);
             Status("Σκελετός: σε ένα καρέ όπου φαίνεται καθαρά ο αθλητής, κλικ πάνω του (π.χ. στη μέση του σώματος). " +
                 "Το βίντεο διαβάζεται από εκεί και μετά, όσο φαίνεται ο αθλητής (Esc: ακύρωση).", false);

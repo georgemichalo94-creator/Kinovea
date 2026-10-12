@@ -138,6 +138,7 @@ namespace Kinovea.ScreenManager
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
             angleClicks.Clear();
+            pickForRace = false;
             pickForTrack = true;
             SetPick(SwimPickTarget.StrokeHead);
             Status("Ακολούθηση: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);

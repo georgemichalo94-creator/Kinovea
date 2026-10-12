@@ -320,69 +320,120 @@ namespace Kinovea.ScreenManager
         public const string KindRaceSplit = "race.split";
 
         /// <summary>
-        /// The checkpoints of the length just followed (TrackSwimmer), from the marks of the ropes: proposed for the check, the ones
-        /// not marked yet. The answers teach each cue (head over the mark of the far rope, of the near rope, their middle).
+        /// The checkpoints of the length just followed (TrackSwimmer), from the marks of the ropes, and its wall: proposed for the
+        /// check, the ones not marked yet. The answers teach each cue (head over the mark of the far rope, of the near rope, their
+        /// middle; head and body at the end of the ropes for the wall).
         /// </summary>
         private void ProposeSplits(StrokeSession s, SwimStrokeResult result)
         {
-            if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || s.Timestamps.Count < 10 || s.Fps <= 0)
+            LengthRead l = AnalyseLength(s, result, s.LapStart);
+            if (l == null)
                 return;
+
+            List<SwimProposal> made = SplitProposals(l, Guid.NewGuid().ToString("N"));
+            ShowSplitProposals(made, 1);
+        }
+
+        /// <summary>A length followed and what was found in it (background thread of the whole race, or one length).</summary>
+        private sealed class LengthRead
+        {
+            public StrokeSession Session;
+            public SwimStrokeResult Result;
+            public List<SwimSplitFound> Found = new List<SwimSplitFound>();
+            public Dictionary<string, double> Wall = new Dictionary<string, double>();
+
+            /// <summary>Race distance of the wall where the length started.</summary>
+            public int LapFrom;
+        }
+
+        private bool PoolHasMarks
+        {
+            get { return Race != null && (Race.Pool == 50 || Race.Pool == 25); }
+        }
+
+        /// <summary>The checkpoints and the wall of a length read (null if the race or the reading does not allow it).</summary>
+        private LengthRead AnalyseLength(StrokeSession s, SwimStrokeResult result, long lapStartTimestamp)
+        {
+            if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || s.Timestamps.Count < 10 || s.Fps <= 0 || result == null)
+                return null;
+
+            if (!PoolHasMarks)
+            {
+                Status("Αυτόματα περάσματα: μόνο σε πισίνα 50 ή 25 (σημάδια των σχοινιών).", true);
+                return null;
+            }
 
             int n = s.Timestamps.Count;
             double step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1);
             if (step <= 0)
-                return;
+                return null;
 
             // Index of the start of the length in the frames read (before them: negative).
-            long lapStartTs = s.LapStart == long.MinValue ? Race.StartTimestamp.Value : s.LapStart;
+            long lapStartTs = lapStartTimestamp == long.MinValue ? Race.StartTimestamp.Value : lapStartTimestamp;
             double lapStart = (lapStartTs - s.Timestamps[0]) / step;
-            int lapFrom = s.Wall - Race.Pool;
-            if (Race.PoolUnit != SwimRace.UnitMeters || Race.Pool != 50)
-            {
-                Status("Αυτόματα περάσματα: μόνο σε πισίνα 50μ. (σημάδια των σχοινιών στα 15/25/35/45).", true);
-                return;
-            }
-
-            List<SwimSplitFound> found;
+            LengthRead l = new LengthRead { Session = s, Result = result, LapFrom = s.Wall - Race.Pool };
             try
             {
-                found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
+                l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
+                double last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
+                l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last);
             }
             catch (Exception e)
             {
                 log.Error("Automatic checkpoints failed.", e);
-                Status("Τα αυτόματα περάσματα απέτυχαν: " + e.Message, true);
-                return;
+                return null;
             }
 
-            string video = SwimLearning.VideoCode(videoPath);
-            SwimLearning l = Learning;
-            string batch = Guid.NewGuid().ToString("N");
-            List<SwimProposal> made = new List<SwimProposal>();
-            Func<double, long> stamp = index =>
-            {
-                double clamped = Math.Max(0, Math.Min(n - 1, index));
-                int i0 = (int)Math.Floor(clamped);
-                int i1 = Math.Min(n - 1, i0 + 1);
-                return (long)Math.Round(s.Timestamps[i0] + (clamped - i0) * (s.Timestamps[i1] - s.Timestamps[i0]));
-            };
+            return l;
+        }
 
-            foreach (SwimSplitFound f in found)
+        /// <summary>Timestamp at a frame index of a reading (fractions between the frames).</summary>
+        private static long SessionStamp(StrokeSession s, double index)
+        {
+            int n = s.Timestamps.Count;
+            double clamped = Math.Max(0, Math.Min(n - 1, index));
+            int i0 = (int)Math.Floor(clamped);
+            int i1 = Math.Min(n - 1, i0 + 1);
+            return (long)Math.Round(s.Timestamps[i0] + (clamped - i0) * (s.Timestamps[i1] - s.Timestamps[i0]));
+        }
+
+        /// <summary>Proposals of the checkpoints and of the wall of a length (the ones not marked yet).</summary>
+        private List<SwimProposal> SplitProposals(LengthRead l, string batch)
+        {
+            List<SwimProposal> made = new List<SwimProposal>();
+            StrokeSession s = l.Session;
+            string video = SwimLearning.VideoCode(videoPath);
+            SwimLearning learning = Learning;
+
+            List<Tuple<int, Dictionary<string, double>, double>> items = new List<Tuple<int, Dictionary<string, double>, double>>();
+            foreach (SwimSplitFound f in l.Found)
+                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, f.Cues, f.Confidence));
+            if (l.Wall.Count > 0)
             {
-                int distance = lapFrom + f.LapDistance;
+                // The wall: the cues of its kind (finish, open turn, flip turn), each with its usual delay before any learning.
+                string kind = WallKind(s.Wall);
+                Dictionary<string, double> wall = new Dictionary<string, double>();
+                foreach (KeyValuePair<string, double> c in l.Wall)
+                    wall[c.Key + "." + kind] = c.Value + WallDelay(c.Key, kind) * s.Fps;
+                items.Add(Tuple.Create(s.Wall, wall, 0.5));
+            }
+
+            foreach (Tuple<int, Dictionary<string, double>, double> item in items)
+            {
+                int distance = item.Item1;
                 if (!Race.Checkpoints.Contains(distance) || Race.GetSplit(distance) != null)
                     continue;
 
-                SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, distance) { Confidence = f.Confidence };
-                foreach (KeyValuePair<string, double> c in f.Cues)
+                SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, distance) { Confidence = item.Item3 };
+                foreach (KeyValuePair<string, double> c in item.Item2)
                 {
-                    double weight = c.Key == SwimSplitDetector.CueFar ? 1.0 : c.Key == SwimSplitDetector.CueMiddle ? 0.6 : 0.4;
-                    double spread = c.Key == SwimSplitDetector.CueFar ? 0.06 : c.Key == SwimSplitDetector.CueMiddle ? 0.12 : 0.15;
+                    double weight, spread;
+                    CueWeight(c.Key, out weight, out spread);
                     d.Cue(c.Key, c.Value, weight, spread);
                 }
 
                 double confidence;
-                double sample = SwimProposalMath.Combine(d, l, video, s.Fps, out confidence);
+                double sample = SwimProposalMath.Combine(d, learning, video, s.Fps, out confidence);
                 if (double.IsNaN(sample))
                     continue;
 
@@ -390,22 +441,71 @@ namespace Kinovea.ScreenManager
                 {
                     Type = SwimMarkType.Split,
                     Kind = KindRaceSplit,
-                    Timestamp = stamp(sample),
+                    Timestamp = SessionStamp(s, sample),
                     Confidence = Math.Round(confidence, 2),
                     Index = distance,
                     Batch = batch
                 };
 
-                foreach (KeyValuePair<string, double> c in f.Cues)
-                    p.Cues[c.Key] = stamp(c.Value);
+                foreach (KeyValuePair<string, double> c in item.Item2)
+                    p.Cues[c.Key] = SessionStamp(s, c.Value);
                 made.Add(p);
             }
 
-            // The proposals of an older reading of the same distances go.
+            return made;
+        }
+
+        /// <summary>The wall at this distance: "finish", "open" (hand touch: butterfly, breaststroke) or "flip" (freestyle, backstroke).</summary>
+        private string WallKind(int wall)
+        {
+            if (wall >= Race.Distance)
+                return "finish";
+            string style = SwimPresets.StyleAt(Race, wall);
+            return style == "fs" || style == "bk" ? "flip" : "open";
+        }
+
+        /// <summary>
+        /// Usual time from a wall cue to the analyst's frame (s), before any learning: the swimmer slows down and the head reaches the
+        /// end of the ropes before the touch, much before the feet touch in a flip turn.
+        /// </summary>
+        private static double WallDelay(string cue, string kind)
+        {
+            switch (kind)
+            {
+                case "flip":
+                    return cue == SwimSplitDetector.CueStop ? 0.7 : cue == SwimSplitDetector.CueWallBody ? 0.9 : 1.0;
+                case "open":
+                    return cue == SwimSplitDetector.CueStop ? 0.15 : cue == SwimSplitDetector.CueWallBody ? 0.1 : 0.2;
+                default:
+                    return cue == SwimSplitDetector.CueStop ? 0.1 : cue == SwimSplitDetector.CueWallBody ? 0.0 : 0.2;
+            }
+        }
+
+        /// <summary>Weight and usual spread (s) of each cue before any learning.</summary>
+        private static void CueWeight(string cue, out double weight, out double spread)
+        {
+            int dot = cue.IndexOf('.');
+            if (dot > 0)
+                cue = cue.Substring(0, dot);
+
+            switch (cue)
+            {
+                case SwimSplitDetector.CueFar: weight = 1.0; spread = 0.06; break;
+                case SwimSplitDetector.CueMiddle: weight = 0.6; spread = 0.12; break;
+                case SwimSplitDetector.CueNear: weight = 0.4; spread = 0.15; break;
+                case SwimSplitDetector.CueWallBody: weight = 1.0; spread = 0.15; break;
+                case SwimSplitDetector.CueWallHead: weight = 0.8; spread = 0.2; break;
+                default: weight = 0.5; spread = 0.3; break;
+            }
+        }
+
+        /// <summary>The proposals made replace the waiting ones of the same distances and the check starts.</summary>
+        private void ShowSplitProposals(List<SwimProposal> made, int lengths)
+        {
             Race.Proposals.RemoveAll(p => p.Kind == KindRaceSplit && made.Any(m => m.Index == p.Index));
             if (made.Count == 0)
             {
-                Status("Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών σε αυτό το μήκος (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).", false);
+                Status("Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).", false);
                 RefreshProposalsUi();
                 return;
             }
@@ -413,7 +513,186 @@ namespace Kinovea.ScreenManager
             Race.Proposals.AddRange(made);
             Changed(false);
             BeginReview(made.OrderBy(p => p.Timestamp).First());
+            if (lengths > 1)
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις περασμάτων. ", lengths, made.Count) + LastStatus, false);
         }
+
+        #region Whole race
+        private bool pickForRace;
+
+        /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
+        public void BeginAutoRace()
+        {
+            if (!PoolHasMarks && Race != null)
+            {
+                Status("Αυτόματη ανάλυση αγώνα: πισίνα 50 ή 25.", true);
+                return;
+            }
+
+            BeginTrackSwimmer();
+            if (PickingTrack)
+            {
+                pickForRace = true;
+                Status("🤖 Αυτόματη ανάλυση αγώνα: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του. " +
+                    "Το Kinovea τον ακολουθεί σε όλα τα μήκη (Esc: ακύρωση).", false);
+            }
+        }
+
+        /// <summary>
+        /// The whole race from one click: each length is followed to its wall, its checkpoints and its wall are found, then the
+        /// next length is followed from the wall, the other way (the swimmer is where the previous length ended). Then all of them
+        /// are proposed for the check.
+        /// </summary>
+        private void AutoRace(PointF head, PointF feet, long from)
+        {
+            RefreshTiming();
+            if (!Timing.IsValid || Race == null || !Race.StartTimestamp.HasValue)
+                return;
+
+            List<LengthRead> lengths = new List<LengthRead>();
+            Exception error = null;
+            bool cancelled = false;
+            AutoStrokesRunning = true;
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            player.BeforeExportVideo();
+            using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
+            using (FormProgressBar progress = new FormProgressBar(true))
+            {
+                progress.CancelAsked += (o, e) => worker.CancelAsync();
+                worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
+                worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o); };
+                worker.RunWorkerCompleted += (o, e) =>
+                {
+                    error = e.Error;
+                    cancelled = e.Error == null && e.Result is bool && !(bool)e.Result;
+                    progress.Close();
+                };
+
+                worker.RunWorkerAsync();
+                progress.ShowDialog();
+            }
+
+            AutoStrokesRunning = false;
+            frameServer.VideoReader.AfterFrameEnumeration();
+            if (player != null && !player.IsDisposed)
+                player.AfterExportVideo();
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            try
+            {
+                if (error != null)
+                {
+                    log.Error("Automatic race analysis failed.", error);
+                    Status("Η αυτόματη ανάλυση του αγώνα απέτυχε: " + error.Message, true);
+                    return;
+                }
+
+                // What was read (also when cancelled) is kept and proposed.
+                string batch = Guid.NewGuid().ToString("N");
+                List<SwimProposal> made = new List<SwimProposal>();
+                foreach (LengthRead l in lengths)
+                {
+                    StoreTrack(l.Session, l.Result);
+                    made.AddRange(SplitProposals(l, batch));
+                }
+
+                Changed(false);
+                ShowSplitProposals(made, lengths.Count);
+                if (cancelled)
+                    Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0} μήκη: προτείνονται όσα βρέθηκαν.", lengths.Count), true);
+            }
+            finally
+            {
+                foreach (LengthRead l in lengths)
+                    l.Session.Dispose();
+                InvalidatePlayer();
+                if (form != null && !form.IsDisposed)
+                    form.RefreshReel();
+            }
+        }
+
+        /// <summary>Background thread: the lengths one after the other. False if cancelled.</summary>
+        private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker)
+        {
+            long lapStart = LapStartTimestamp(from);
+            int wall = NextWallDistance(from);
+            double previousSeconds = 0;
+            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            while (wall <= Race.Distance)
+            {
+                StrokeSession s = CreateSession(head, feet, from);
+                s.Wall = wall;
+                s.LapStart = lapStart;
+                long target = lengths.Count == 0 ? TrackEnd(from) :
+                    Math.Min(frameServer.VideoReader.WorkingZone.End, from + RealSpan(Math.Min(120, previousSeconds * 1.35 + 3)));
+                if (target <= from || !ReadFrames(s, target, worker))
+                {
+                    s.Dispose();
+                    return target <= from;
+                }
+
+                if (s.Timestamps.Count < 10)
+                {
+                    s.Dispose();
+                    break;
+                }
+
+                SwimStrokeResult result = s.Detector.Finish(0, s.Timestamps.Count - 1);
+                LengthRead l = AnalyseLength(s, result, lapStart);
+                if (l == null)
+                {
+                    s.Dispose();
+                    break;
+                }
+
+                lengths.Add(l);
+                if (wall >= Race.Distance || worker.CancellationPending)
+                    break;
+
+                // The wall: the swimmer turns there; the next length starts from it, the other way (its usual delay added, a little after).
+                double w = double.NaN;
+                string kind = WallKind(wall);
+                foreach (string cue in new[] { SwimSplitDetector.CueStop, SwimSplitDetector.CueWallBody, SwimSplitDetector.CueWallHead })
+                {
+                    if (l.Wall.ContainsKey(cue))
+                    {
+                        w = l.Wall[cue] + WallDelay(cue, kind) * s.Fps;
+                        break;
+                    }
+                }
+
+                if (double.IsNaN(w) || result.Path == null || result.Path.Length == 0)
+                    break;
+
+                int wi = (int)Math.Round(Math.Max(0, Math.Min(result.Path.Length - 1, w)));
+                double x = result.Path[wi];
+                SwimStrokeLane lane = result.Lanes[Math.Min(wi, result.Lanes.Count - 1)];
+                double y = 0.5 * (lane.Y1(x) + lane.Y2(x));
+                SwimStrokeLane lane0 = result.Lanes[0];
+                double sx = (double)s.Width / reference.Width, sy = (double)s.Height / reference.Height;
+                double hx0 = head.X * sx, hy0 = head.Y * sy, fx0 = feet.X * sx, fy0 = feet.Y * sy;
+                double cx0 = 0.5 * (hx0 + fx0);
+                double lw0 = Math.Max(5, Math.Abs(lane0.Y2(cx0) - lane0.Y1(cx0))), lw = Math.Max(5, Math.Abs(lane.Y2(x) - lane.Y1(x)));
+                double length = Math.Sqrt((hx0 - fx0) * (hx0 - fx0) + (hy0 - fy0) * (hy0 - fy0)) * lw / lw0;
+                int direction = -s.Detector.Direction;
+                long wallTs = SessionStamp(s, w);
+                previousSeconds = Math.Max(10, Timing.Seconds(wallTs, lapStart));
+
+                head = new PointF((float)((x + direction * 0.45 * length) / sx), (float)(y / sy));
+                feet = new PointF((float)((x - direction * 0.45 * length) / sx), (float)(y / sy));
+                from = wallTs + RealSpan(0.2);
+                lapStart = wallTs;
+                wall += Race.Pool;
+                if (from >= frameServer.VideoReader.WorkingZone.End)
+                    break;
+            }
+
+            return true;
+        }
+        #endregion
 
         /// <summary>The checkpoint is at this frame: the split of its distance (replacing a different one), the answer to the learning.</summary>
         private void AcceptSplitProposal(SwimProposal p, long timestamp)

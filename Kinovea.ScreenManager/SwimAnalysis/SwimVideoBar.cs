@@ -797,12 +797,13 @@ namespace Kinovea.ScreenManager
                     list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, StrokeTip));
                     list.Add(new Btn
                     {
-                        Id = "auto-splits",
-                        Text = manager.PickingTrack ? "Κλικ κεφάλι, πόδια…" : "🤖 Αυτόματα περάσματα",
+                        Id = "auto-race",
+                        Text = manager.PickingTrack ? "Κλικ κεφάλι, πόδια…" : "🤖 Όλος ο αγώνας",
                         Dim = manager.AutoStrokesRunning,
-                        Tip = "Κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό: το μήκος διαβάζεται μέχρι τον τοίχο και\n" +
-                            "τα περάσματα 15/25/35/45 προτείνονται από τα κόκκινα σημάδια των σχοινιών, για έλεγχο (Enter σωστό, Delete λάθος).",
-                        Action = () => manager.BeginTrackSwimmer()
+                        Tip = "Αυτόματη ανάλυση όλου του αγώνα: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό.\n" +
+                            "Ακολουθείται σε όλα τα μήκη και προτείνονται τα περάσματα (15/25/35/45 και οι τοίχοι) για έλεγχο\n" +
+                            "(Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος).",
+                        Action = () => manager.BeginAutoRace()
                     });
                     break;
                 case 2:

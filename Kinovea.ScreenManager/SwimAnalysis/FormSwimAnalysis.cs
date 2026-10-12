@@ -491,8 +491,12 @@ namespace Kinovea.ScreenManager
             toolTip.SetToolTip(startLight, "Βρίσκει το καρέ που ανάβουν τα φώτα εκκίνησης (δίπλα στους βατήρες ή στον αφέτη), διαβάζοντας το βίντεο\n" +
                 "από την αρχή μέχρι να ξεκινήσει η κάμερα να ακολουθεί τους αθλητές. Το προτείνει για έλεγχο: Enter σωστό,\n" +
                 "βελάκια και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια). Μαθαίνει από τις απαντήσεις σου.");
+            Button autoRace = new SwimNoFocusButton { Text = "🤖 Όλος ο αγώνας", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            autoRace.Click += (s, e) => manager.BeginAutoRace();
+            toolTip.SetToolTip(autoRace, "Μετά την εκκίνηση: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό. Το Kinovea τον ακολουθεί\n" +
+                "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.");
             AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Εκκίνηση",
-                "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight);
+                "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight, autoRace);
 
             lblReactionAuto = ValueLabel();
             tbReaction = NumberBox();

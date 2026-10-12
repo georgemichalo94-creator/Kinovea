@@ -758,6 +758,7 @@ namespace Kinovea.ScreenManager
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
             pickForTrack = false;
+            pickForRace = false;
             SetPick(SwimPickTarget.None);
             Status("Ακυρώθηκε.", false);
             return true;

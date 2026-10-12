@@ -202,6 +202,7 @@ namespace Kinovea.ScreenManager
             calibrationClicks.Clear();
             angleClicks.Clear();
             pickForTrack = false;
+            pickForRace = false;
             SetPick(SwimPickTarget.StrokeHead);
             Status("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος).", false);
             InvalidatePlayer();
@@ -232,10 +233,14 @@ namespace Kinovea.ScreenManager
             }
 
             bool track = pickForTrack;
+            bool race = pickForRace;
             pickForTrack = false;
+            pickForRace = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            if (track)
+            if (track && race)
+                AutoRace(autoStrokeHead, point, autoStrokeFrame);
+            else if (track)
                 TrackSwimmer(autoStrokeHead, point, autoStrokeFrame);
             else
                 StartStrokeSession(autoStrokeHead, point, autoStrokeFrame);

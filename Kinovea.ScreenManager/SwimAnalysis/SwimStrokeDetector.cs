@@ -6,6 +6,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 #endregion
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Kinovea.ScreenManager
@@ -118,6 +119,9 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public sealed class SwimStrokeDetector
     {
+        /// <summary>Debug output of the lane search (null: none).</summary>
+        public static Action<string> LaneTrace;
+
         private const int BandRows = 16;
         private const double BandLo = 0.15;
         private const double BandHi = 0.85;
@@ -138,6 +142,9 @@ namespace Kinovea.ScreenManager
 
         private bool initialized;
         private bool ropes;
+
+        // Outer lane: the rope of the wall side is not seen (1: the far one, 2: the near one), its place follows the other rope.
+        private int virtualRope;
         private SwimStrokeLane lane;
 
         // Rope tracking: usual rope-ness of each rope, and the second rope relative to the first one when both were seen
@@ -231,13 +238,13 @@ namespace Kinovea.ScreenManager
             {
                 initialized = true;
                 SwimStrokeLane found;
-                ropes = FindLane(image, headX, headY, feetX, feetY, out found);
+                ropes = FindLane(image, headX, headY, feetX, feetY, out found, out virtualRope);
                 if (ropes)
                 {
                     double a, b;
                     lane = found;
-                    if (RefineLine(image, found.A1, found.B1, out a, out b)) { lane.A1 = a; lane.B1 = b; }
-                    if (RefineLine(image, found.A2, found.B2, out a, out b)) { lane.A2 = a; lane.B2 = b; }
+                    if (virtualRope != 1 && RefineLine(image, found.A1, found.B1, out a, out b)) { lane.A1 = a; lane.B1 = b; }
+                    if (virtualRope != 2 && RefineLine(image, found.A2, found.B2, out a, out b)) { lane.A2 = a; lane.B2 = b; }
 
                     double inside;
                     ropeStrength1 = RopeStrength(image, lane.A1, lane.B1, out inside);
@@ -274,8 +281,8 @@ namespace Kinovea.ScreenManager
 
             lanes.Add(lane);
             shifts.Add(shift);
-            redFar.Add(ropes ? RedRuns(image, lane.A1, lane.B1) : new int[0]);
-            redNear.Add(ropes ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
+            redFar.Add(ropes && virtualRope != 1 ? RedRuns(image, lane.A1, lane.B1) : new int[0]);
+            redNear.Add(ropes && virtualRope != 2 ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
 
             double[] d = new double[width];
             if (previous.Count == FrameGap)
@@ -933,11 +940,31 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, out SwimStrokeLane lane)
         {
+            int virtualRope;
+            return FindLane(img, headX, headY, feetX, feetY, out lane, out virtualRope);
+        }
+
+        /// <summary>
+        /// The lane around the swimmer. virtualRope: 0 when both ropes were seen, 1 or 2 when that rope is the place of the
+        /// wall side of an outer lane (one rope only: the next rope of the regular chain, the wall has no rope).
+        /// </summary>
+        public static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, out SwimStrokeLane lane, out int virtualRope)
+        {
+            // Around the swimmer (2.2 lengths), then closer to him (1 length) when stronger lines elsewhere (the wall of the pool
+            // next to an outer lane, boards) hide the ropes.
+            if (FindLane(img, headX, headY, feetX, feetY, 2.2, out lane, out virtualRope))
+                return true;
+            return FindLane(img, headX, headY, feetX, feetY, 1.0, out lane, out virtualRope);
+        }
+
+        private static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, double reach, out SwimStrokeLane lane, out int virtualRope)
+        {
             lane = new SwimStrokeLane();
+            virtualRope = 0;
             double L = Math.Sqrt((headX - feetX) * (headX - feetX) + (headY - feetY) * (headY - feetY));
             double cx = 0.5 * (headX + feetX);
             double cy = 0.5 * (headY + feetY);
-            double halfH = Math.Max(100, Math.Min(0.5 * img.Height, 2.2 * L));
+            double halfH = Math.Max(reach < 2 ? 80 : 100, Math.Min(0.5 * img.Height, reach * L));
 
             List<double> columns = new List<double>();
             for (int x = Math.Max(0, (int)(cx - 250)); x < Math.Min(img.Width, (int)(cx + 250)); x += 2)
@@ -951,23 +978,42 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < n; i++)
                 y0s[i] = cy - halfH + i;
 
-            double bestEnergy = double.MinValue;
-            double bestSlope = 0;
-            double[] bestMagnitude = null;
+            double[] energies = new double[161];
+            double[][] magnitudes = new double[161][];
             for (int k = 0; k < 161; k++)
             {
                 double a = -0.40 + 0.005 * k;
                 double[] profile = LineProfile(img, cx, a, y0s, xs);
-                double energy;
-                double[] magnitude = HighPassMagnitude(profile, n, out energy);
-                if (energy > bestEnergy)
-                {
-                    bestEnergy = energy;
-                    bestSlope = a;
-                    bestMagnitude = magnitude;
-                }
+                magnitudes[k] = HighPassMagnitude(profile, n, out energies[k]);
             }
 
+            // The strongest direction first; then the other strong directions (local maxima): next to an outer lane the wall of
+            // the pool and its boards can be stronger than the ropes.
+            List<int> order = new List<int>();
+            for (int k = 0; k < 161; k++)
+            {
+                bool peak = (k == 0 || energies[k] >= energies[k - 1]) && (k == 160 || energies[k] >= energies[k + 1]);
+                if (peak)
+                    order.Add(k);
+            }
+
+            order.Sort((p, q) => energies[q].CompareTo(energies[p]));
+            for (int i = 0; i < Math.Min(4, order.Count); i++)
+            {
+                if (i > 0 && energies[order[i]] < 0.05 * energies[order[0]])
+                    break;
+                if (LaneAtSlope(-0.40 + 0.005 * order[i], magnitudes[order[i]], y0s, n, headX, headY, feetX, feetY, L, cx, out lane, out virtualRope))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool LaneAtSlope(double bestSlope, double[] bestMagnitude, double[] y0s, int n, double headX, double headY, double feetX, double feetY,
+            double L, double cx, out SwimStrokeLane lane, out int virtualRope)
+        {
+            lane = new SwimStrokeLane();
+            virtualRope = 0;
             double[] m = Gauss1D(bestMagnitude, 1.0);
             double max = 0;
             for (int i = 0; i < n; i++)
@@ -976,6 +1022,9 @@ namespace Kinovea.ScreenManager
                 return false;
 
             List<int> peaks = FindPeaks(m, 4, 0.06 * max);
+            if (LaneTrace != null)
+                LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: slope {0:0.000}, {1} peaks at {2}", bestSlope, peaks.Count,
+                    string.Join(",", peaks.Select(pk => (y0s[pk]).ToString("0", System.Globalization.CultureInfo.InvariantCulture)))));
             if (peaks.Count < 3)
                 return false;
 
@@ -992,6 +1041,8 @@ namespace Kinovea.ScreenManager
             }
 
             List<int> chain = RopeChain(ys, st, Math.Max(8.0, 0.12 * L), 3.0 * L);
+            if (LaneTrace != null)
+                LaneTrace("lane: chain " + string.Join(",", chain.Select(c => ys[c].ToString("0", System.Globalization.CultureInfo.InvariantCulture))));
             if (chain.Count < 3)
                 return false;
 
@@ -1019,6 +1070,51 @@ namespace Kinovea.ScreenManager
                     laneY1 = y1;
                     laneY2 = y2;
                     found = true;
+                }
+            }
+
+            // Outer lane: the swimmer is beyond the first or the last rope of the chain; the wall side is the next place of the
+            // chain (the spacing changes with the perspective as between the last two ropes).
+            if ((!found || bestCoverage < 2.5) && chain.Count >= 3)
+            {
+                Func<double, double, double> coverageOf = (y1, y2) =>
+                {
+                    double cov = 0;
+                    for (int k = 0; k <= 10; k++)
+                    {
+                        double f = k / 10.0;
+                        double px = feetX + (headX - feetX) * f;
+                        double py = feetY + (headY - feetY) * f;
+                        if (y1 + slope * (px - cx) <= py && py <= y2 + slope * (px - cx))
+                            cov += f <= 0.7 ? 1.0 : 0.4;
+                    }
+
+                    return cov;
+                };
+
+                int last = chain.Count - 1;
+                double g0 = ys[chain[1]] - ys[chain[0]], g1 = ys[chain[2]] - ys[chain[1]];
+                double gl = ys[chain[last]] - ys[chain[last - 1]], gl1 = ys[chain[last - 1]] - ys[chain[last - 2]];
+                double before = ys[chain[0]] - g0 * Math.Max(0.7, Math.Min(1.4, g0 / Math.Max(1e-6, g1)));
+                double after = ys[chain[last]] + gl * Math.Max(0.7, Math.Min(1.4, gl / Math.Max(1e-6, gl1)));
+                double cb = coverageOf(before, ys[chain[0]]), ca = coverageOf(ys[chain[last]], after);
+                if (Math.Max(cb, ca) >= 2.5)
+                {
+                    if (ca >= cb)
+                    {
+                        laneY1 = ys[chain[last]];
+                        laneY2 = after;
+                        virtualRope = 2;
+                    }
+                    else
+                    {
+                        laneY1 = before;
+                        laneY2 = ys[chain[0]];
+                        virtualRope = 1;
+                    }
+
+                    found = true;
+                    bestCoverage = Math.Max(cb, ca);
                 }
             }
 
