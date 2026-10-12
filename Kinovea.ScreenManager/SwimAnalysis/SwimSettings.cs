@@ -56,6 +56,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool OverlayInExports = true;
 
+        /// <summary>
+        /// Strokes at each checkpoint: after the breakout the analyst clicks the head and the feet of the swimmer, at each
+        /// checkpoint the strokes of the segment are counted from the video and shown to confirm or correct.
+        /// </summary>
+        public bool AutoStrokes = false;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

@@ -492,6 +492,20 @@ namespace Kinovea.ScreenManager
 
             r["checkpoints"] = checkpoints;
             r["strokes"] = Times(computed.Strokes);
+
+            // Strokes of the segments confirmed or typed by the analyst: they have priority over the stroke times.
+            if (!race.IsTraining && race.StrokeCounts != null && race.StrokeCounts.Count > 0)
+            {
+                JObject counts = new JObject();
+                foreach (KeyValuePair<int, double> pair in race.StrokeCounts.OrderBy(p => p.Key))
+                {
+                    if (race.GetSplit(pair.Key) != null)
+                        counts[pair.Key.ToString(CultureInfo.InvariantCulture)] = pair.Value;
+                }
+
+                if (counts.Count > 0)
+                    r["segmentStrokes"] = counts;
+            }
             r["kicks"] = Times(computed.Kicks);
             r["breakouts"] = Times(computed.Breakouts);
             r["feetOff"] = Times(computed.FeetOff);

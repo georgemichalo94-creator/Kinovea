@@ -56,6 +56,9 @@ namespace Kinovea.ScreenManager
         public double? VelYd;
         public double? Strokes;
 
+        /// <summary>The strokes of the segment were confirmed or typed by the analyst (SwimRace.StrokeCounts).</summary>
+        public bool StrokesTyped;
+
         /// <summary>Stroke rate (cycles/min), distance per stroke press (m) and cycle length (m): clean swimming only.</summary>
         public double? Sr;
         public double? Dps;
@@ -342,6 +345,14 @@ namespace Kinovea.ScreenManager
 
                     if (count > 0 && sum > 0)
                         row.SrExact = 60.0 / ((sum / count) * ppc);
+                }
+
+                // Strokes confirmed or typed by the analyst for this segment.
+                double typed;
+                if (row.T.HasValue && race.StrokeCounts != null && race.StrokeCounts.TryGetValue(row.D, out typed))
+                {
+                    row.Strokes = typed;
+                    row.StrokesTyped = true;
                 }
 
                 // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),

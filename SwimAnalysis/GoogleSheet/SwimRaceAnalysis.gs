@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '2.2.1';
+var SWIM_VERSION = '2.3.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -742,9 +742,13 @@ function swimAnalyze_(race) {
       }
       if (cnt > 0 && sum > 0) row.srExact = 60 / ((sum / cnt) * row.ppc);
     }
-    // Αναφορές χωρίς πατήματα: χεριές ανά τμήμα όπως γράφτηκαν (π.χ. από το Excel ή από ανάλυση του Kinovea).
-    if (!hasStrokes && race.segmentStrokes && race.segmentStrokes[row.d] !== undefined && race.segmentStrokes[row.d] !== null && row.t !== null)
+    // Χεριές ανά τμήμα όπως γράφτηκαν: αναφορές χωρίς πατήματα (π.χ. από το Excel) ή αριθμοί που επιβεβαίωσε / διόρθωσε
+    // ο αναλυτής στο Kinovea σε κάθε πέρασμα. Έχουν προτεραιότητα από το μέτρημα των πατημάτων.
+    row.strokesTyped = false;
+    if (race.segmentStrokes && race.segmentStrokes[row.d] !== undefined && race.segmentStrokes[row.d] !== null && row.t !== null) {
       row.strokes = race.segmentStrokes[row.d];
+      row.strokesTyped = true;
+    }
 
     // Συχνότητα και μήκος χεριάς μόνο στην καθαρή κολύμβηση (15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο),
     // όπως στα φύλλα αγώνων του Excel: στα τελευταία 5μ. υπάρχει γλίστρημα και η αρχή της στροφής / του τερματισμού,

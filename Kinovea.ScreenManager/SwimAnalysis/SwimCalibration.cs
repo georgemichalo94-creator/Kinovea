@@ -31,7 +31,11 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Training video: entry and breakout distance of the selected attempt.</summary>
         PhaseEntry,
-        PhaseBreakout
+        PhaseBreakout,
+
+        /// <summary>Automatic strokes: head, then feet of the swimmer on the first frame.</summary>
+        StrokeHead,
+        StrokeFeet
     }
 
     public class SwimPoint

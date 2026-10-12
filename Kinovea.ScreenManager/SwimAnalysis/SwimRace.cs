@@ -65,6 +65,13 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Technical splits of a race: wall of the offset (0 = start). −1 in a training video (the attempt is found by time).</summary>
         public int Wall = -1;
+
+        /// <summary>
+        /// Strokes placed by the automatic detection: id of the lap followed (its strokes are placed again at each checkpoint of the lap).
+        /// Null for the marks of the analyst.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Batch;
     }
 
     public class SwimTurnManual
@@ -178,6 +185,12 @@ namespace Kinovea.ScreenManager
         public long? StartTimestamp;
 
         public List<SwimMark> Marks = new List<SwimMark>();
+
+        /// <summary>
+        /// Strokes of the segments confirmed or typed by the analyst (key: distance of the checkpoint at the end of the segment).
+        /// They have priority over the count from the stroke marks.
+        /// </summary>
+        public Dictionary<int, double> StrokeCounts = new Dictionary<int, double>();
 
         // Manual values (typed by the analyst).
         public double? Reaction;
@@ -333,6 +346,7 @@ namespace Kinovea.ScreenManager
         public void EnsureLists()
         {
             if (Marks == null) Marks = new List<SwimMark>();
+            if (StrokeCounts == null) StrokeCounts = new Dictionary<int, double>();
             if (Checkpoints == null) Checkpoints = new List<int>();
             if (Turns == null) Turns = new Dictionary<int, SwimTurnManual>();
             if (PhaseValues == null) PhaseValues = new Dictionary<string, SwimPhaseManual>();

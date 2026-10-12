@@ -141,7 +141,11 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Oldest Apps Script with the reports of this version (pools in yards, ΔΑΚ, comparisons, technical analysis).</summary>
         private static readonly Version minimumBackend = new Version(2, 0, 0);
+
+        /// <summary>Oldest Apps Script that keeps the strokes confirmed or typed at each checkpoint.</summary>
+        private static readonly Version typedStrokesBackend = new Version(2, 3, 0);
         private bool backendWarned;
+        private bool typedStrokesWarned;
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -271,6 +275,16 @@ namespace Kinovea.ScreenManager
                     form.FollowTechPhase(SwimTechCalculator.PhaseAt(TechPhases, timestamp));
                 else
                     form.FollowPhase(PhaseAt(timestamp));
+            }
+
+            // Strokes at each checkpoint: the swimmer is chosen after the breakout, the strokes of the segment are shown at each checkpoint
+            // (also when a lap is followed from the button of the panel with the setting off).
+            if (!Race.IsTraining && HasVideo)
+            {
+                if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && !PickingStrokes)
+                    BeginAutoStrokes();
+                else if (command == PlayerScreenCommands.SwimSplit && (Settings.AutoStrokes || StrokeSessionActive))
+                    StrokesAfterSplit(timestamp);
             }
 
             return true;
@@ -411,6 +425,9 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            if (mark.Type == SwimMarkType.Split)
+                Race.StrokeCounts.Remove(mark.Distance);
+
             List<SwimMark> replaced;
             if (replacedBy.TryGetValue(mark.Id, out replaced))
             {
@@ -446,6 +463,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == distance);
+            Race.StrokeCounts.Remove(distance);
             if (removed > 0)
             {
                 Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκε ο χρόνος στο σημείο {0}{1} · το επόμενο Πέρασμα θα το συμπληρώσει.", distance, UnitLabel), false);
@@ -716,6 +734,12 @@ namespace Kinovea.ScreenManager
             if (PickTarget == SwimPickTarget.Angle)
             {
                 AngleClick(point, timestamp);
+                return;
+            }
+
+            if (PickTarget == SwimPickTarget.StrokeHead || PickTarget == SwimPickTarget.StrokeFeet)
+            {
+                AutoStrokeClick(point, timestamp);
                 return;
             }
 
@@ -1251,6 +1275,7 @@ namespace Kinovea.ScreenManager
                     DrawMeasurement(g, transform, lastMeasurement);
 
                 DrawAngles(g, transform, timestamp);
+                DrawStrokeOverlay(g, transform, timestamp, renderingSize);
                 if (Race != null && (Race.IsTraining || TechnicalView))
                     DrawTechOverlay(g, timestamp, renderingSize);
                 if (Race != null && !Race.IsTraining)
@@ -2234,6 +2259,14 @@ namespace Kinovea.ScreenManager
                 Status(string.Format(CultureInfo.InvariantCulture,
                     "Το Apps Script του KOE App είναι η έκδοση {0}: το report δεν έχει ακόμη τις πισίνες σε γιάρδες, τον ΔΑΚ, τις συγκρίσεις και την τεχνική ανάλυση. Βάλε την έκδοση {1} (δες τον οδηγό).",
                     version, minimumBackend.ToString(3)), true);
+            }
+            else if (!typedStrokesWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < typedStrokesBackend &&
+                Race != null && Race.StrokeCounts != null && Race.StrokeCounts.Count > 0)
+            {
+                typedStrokesWarned = true;
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    "Το Apps Script του KOE App είναι η έκδοση {0}: στο Sheet οι χεριές βγαίνουν από τα σημάδια, όχι από τους αριθμούς που επιβεβαιώνεις σε κάθε πέρασμα. Βάλε την έκδοση {1} (δες τον οδηγό).",
+                    version, typedStrokesBackend.ToString(3)), true);
             }
 
             if (e.Result != null && e.Result.Ok && e.State == SwimSyncState.Synced)

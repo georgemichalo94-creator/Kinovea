@@ -115,6 +115,9 @@ namespace Kinovea.ScreenManager
 
         // Tab: swimming
         private DataGridView grid;
+        private CheckBox chkAutoStrokes;
+        private Button btnAutoStrokes;
+        private Label lblAutoStrokes;
         private ComboBox cmbReference;
         private Label lblReferences;
         private ComboBox cmbPb;
@@ -561,6 +564,35 @@ namespace Kinovea.ScreenManager
             TableLayoutPanel t = NewEventTable();
             AddEventRow(t, "Χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
                 "Σε κάθε είσοδο χεριού. Ελεύθερο/ύπτιο: κάθε χέρι · πεταλούδα/πρόσθιο: κάθε κύκλος.", Caption("Οι μισές χεριές στα σημεία ελέγχου βγαίνουν αυτόματα."));
+
+            const string autoHelp = "Οι χεριές κάθε τμήματος μετριούνται από το βίντεο, όταν η κάμερα ακολουθεί τον αθλητή (κερκίδα ή πλάγια λήψη).\n" +
+                "1. Μετά την έξοδο από το νερό (B), κάνε κλικ στο κεφάλι και μετά στα πόδια του αθλητή (μία φορά σε κάθε μήκος).\n" +
+                "2. Σε κάθε πέρασμα (S) βλέπεις τις χεριές από το προηγούμενο πέρασμα: Enter αν είναι σωστές, αλλιώς γράψε τον σωστό αριθμό.\n" +
+                "Ό,τι επιβεβαιώνεις ή γράφεις μένει (✓ στη στήλη Χεριές) και πάει στο Sheet· διπλό κλικ στη στήλη Χεριές για διόρθωση.\n" +
+                "Οι χεριές μπαίνουν και ως σημάδια στο βίντεο: ◀ ▶ πηγαίνουν από χεριά σε χεριά, ✕ διαγράφει τη χεριά του καρέ.\n" +
+                "«Επιλογή αθλητή» ξεκινά το μήκος από το καρέ που βλέπεις, χωρίς το B.";
+            chkAutoStrokes = new CheckBox { Text = "σε κάθε πέρασμα", AutoSize = true, Margin = new Padding(6, 7, 3, 3) };
+            chkAutoStrokes.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetAutoStrokes(chkAutoStrokes.Checked);
+            };
+            toolTip.SetToolTip(chkAutoStrokes, autoHelp);
+            btnAutoStrokes = new SwimNoFocusButton { Text = "Επιλογή αθλητή", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnAutoStrokes.Click += (s, e) => manager.BeginAutoStrokes();
+            toolTip.SetToolTip(btnAutoStrokes, "Κλικ στο κεφάλι και στα πόδια του αθλητή σε αυτό το καρέ: οι χεριές μετριούνται σε κάθε πέρασμα μέχρι τον τοίχο.\n" +
+                "Αν τα περάσματα του μήκους είναι ήδη μαρκαρισμένα, οι χεριές τους εμφανίζονται αμέσως, ένα τμήμα τη φορά.");
+            Button btnDeleteAuto = new SwimNoFocusButton { Text = "Διαγραφή αυτόματων", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnDeleteAuto.Click += (s, e) => AskDeleteAutoStrokes();
+            toolTip.SetToolTip(btnDeleteAuto, "Διαγράφει τα σημάδια χεριών της αυτόματης μέτρησης σε αυτόν τον αγώνα. Οι χεριές που έβαλες εσύ και οι αριθμοί που επιβεβαίωσες μένουν.");
+            lblAutoStrokes = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 0, 3), Text = "–" };
+            AddEventRow(t, "Αυτόματες χεριές", null, null, autoHelp,
+                chkAutoStrokes,
+                btnAutoStrokes,
+                StrokeButton("◀", "Προηγούμενη χεριά", (s, e) => manager.SeekStroke(-1)),
+                StrokeButton("▶", "Επόμενη χεριά", (s, e) => manager.SeekStroke(1)),
+                StrokeButton("✕", "Διαγραφή της χεριάς σε αυτό το καρέ (C για να την ξαναβάλεις)", (s, e) => manager.DeleteStrokeHere()),
+                btnDeleteAuto, lblAutoStrokes);
             AddEventRow(t, "Πέρασμα σημείου ελέγχου", PlayerScreenCommands.SwimSplit, "Πέρασμα",
                 "Το κεφάλι περνά το επόμενο σημείο ελέγχου (25μ., 35μ., …). Στους τοίχους: το χέρι ακουμπά τον τοίχο.", Caption("Η κίτρινη γραμμή είναι το επόμενο σημείο."));
 
@@ -577,6 +609,7 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("ref", "Αναφορά", 62));
             grid.Columns.Add(Column("delta", "Δ", 54));
             grid.Columns["vel"].ToolTipText = "Μέση ταχύτητα του τμήματος. Πορτοκαλί: εκκίνηση, στροφή ή τελευταία 5μ. πριν τον τοίχο, όπου η ταχύτητα είναι συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι).";
+            grid.Columns["strokes"].ToolTipText = "Χεριές του τμήματος. ✓: επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ: διόρθωση.";
             grid.Columns["sr"].ToolTipText = "Συχνότητα (κύκλοι/λεπτό), μόνο στην καθαρή κολύμβηση: από 15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο.";
             grid.Columns["dps"].ToolTipText = "Μέτρα ανά χεριά (ελεύθερο/ύπτιο: ανά χέρι), μόνο στην καθαρή κολύμβηση.";
             grid.Columns["sl"].ToolTipText = "Μήκος κύκλου (m/κύκλο), μόνο στην καθαρή κολύμβηση. Ελεύθερο/ύπτιο: 2 × DPS.";
@@ -589,7 +622,7 @@ namespace Kinovea.ScreenManager
                 Dock = DockStyle.Bottom,
                 Height = 32,
                 ForeColor = SwimTheme.Dim,
-                Text = "Διπλό κλικ: μετάβαση του βίντεο στο σημείο · Delete: διαγραφή του χρόνου · SR / DPS / SL μόνο στην καθαρή κολύμβηση (+15μ. έως −5μ.) · πορτοκαλί: συμβατική ταχύτητα"
+                Text = "Διπλό κλικ: μετάβαση του βίντεο στο σημείο (στη στήλη Χεριές: διόρθωση) · Delete: διαγραφή του χρόνου · SR / DPS / SL μόνο στην καθαρή κολύμβηση (+15μ. έως −5μ.) · πορτοκαλί: συμβατική ταχύτητα"
             };
 
             lnkChecks = new LinkLabel { Dock = DockStyle.Bottom, Height = 34, AutoEllipsis = true, Visible = false, LinkColor = colorWarn, ActiveLinkColor = colorError, Padding = new Padding(0, 2, 0, 0) };
@@ -1157,6 +1190,7 @@ namespace Kinovea.ScreenManager
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
                 chkOverlayExports.Checked = settings.OverlayInExports;
+                chkAutoStrokes.Checked = settings.AutoStrokes;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }
             finally
@@ -1341,6 +1375,8 @@ namespace Kinovea.ScreenManager
             foreach (Label unit in distanceUnits)
                 unit.Text = race.IsYards ? "yd" : "m";
 
+            RefreshAutoStrokes();
+
             // Race list label may have changed (athlete name).
             for (int i = 0; i < cmbRaces.Items.Count; i++)
             {
@@ -1377,7 +1413,10 @@ namespace Kinovea.ScreenManager
                 gr.Cells["vel"].Value = Format(row.Vel);
                 gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
                 gr.Cells["vel"].ToolTipText = row.VelYd.HasValue ? row.VelYd.Value.ToString("0.00", CultureInfo.InvariantCulture) + " yd/s" : "";
-                gr.Cells["strokes"].Value = FormatStrokes(row.Strokes);
+                gr.Cells["strokes"].Value = FormatStrokes(row.Strokes) + (row.StrokesTyped && row.Strokes.HasValue ? " ✓" : "");
+                gr.Cells["strokes"].ToolTipText = row.StrokesTyped
+                    ? "Επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ για αλλαγή."
+                    : "Από τα σημάδια χεριών. Διπλό κλικ για να το επιβεβαιώσεις ή να το διορθώσεις.";
                 gr.Cells["sr"].Value = Format(row.Sr, "0.0");
                 gr.Cells["dps"].Value = Format(row.Dps);
                 gr.Cells["sl"].Value = Format(row.Sl);
@@ -1757,6 +1796,11 @@ namespace Kinovea.ScreenManager
             bool calibrating = manager.PickTarget == SwimPickTarget.Calibration;
             btnCalibrate.Text = calibrating ? "Ακύρωση βαθμονόμησης" : "Βαθμονόμηση (4 κλικ)";
             Highlight(btnCalibrate, calibrating);
+            if (btnAutoStrokes != null)
+            {
+                btnAutoStrokes.Text = manager.PickingStrokes ? "Ακύρωση επιλογής" : "Επιλογή αθλητή";
+                Highlight(btnAutoStrokes, manager.PickingStrokes);
+            }
             RefreshTechPick(active);
             RefreshCalibrationLabel();
         }
@@ -2281,6 +2325,12 @@ namespace Kinovea.ScreenManager
             if (e.RowIndex < 0 || !(grid.Rows[e.RowIndex].Tag is int))
                 return;
 
+            if (e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].Name == "strokes")
+            {
+                manager.EditSegmentStrokes((int)grid.Rows[e.RowIndex].Tag);
+                return;
+            }
+
             manager.Seek((int)grid.Rows[e.RowIndex].Tag);
         }
 
@@ -2483,6 +2533,69 @@ namespace Kinovea.ScreenManager
         private static string Seconds(double? value)
         {
             return value.HasValue ? value.Value.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
+        }
+
+        /// <summary>Automatic strokes of the race (swimming page).</summary>
+        public void RefreshAutoStrokes()
+        {
+            if (IsDisposed || lblAutoStrokes == null)
+                return;
+
+            int count = manager.AutoStrokeCount;
+            string cycle = manager.LastAutoCycle > 0
+                ? " · κύκλος " + manager.LastAutoCycle.ToString("0.00", CultureInfo.InvariantCulture) + " s"
+                : "";
+            string text;
+            Color color = SwimTheme.Dim;
+            if (manager.AutoStrokesRunning)
+            {
+                text = "ανάγνωση του βίντεο…";
+                color = SwimTheme.Amber;
+            }
+            else if (manager.PickingStrokes)
+            {
+                text = "κλικ στο κεφάλι και στα πόδια του αθλητή";
+                color = SwimTheme.Amber;
+            }
+            else if (manager.StrokeSessionActive)
+            {
+                text = string.Format(CultureInfo.InvariantCulture, "μήκος μέχρι τα {0}{1}{2}", manager.StrokeSessionWall, manager.Race != null ? manager.Race.Unit : "", cycle);
+                color = SwimTheme.Green;
+            }
+            else if (!manager.Settings.AutoStrokes)
+            {
+                text = count > 0 ? string.Format(CultureInfo.InvariantCulture, "{0} αυτόματες χεριές στο βίντεο", count) : "κλειστό";
+            }
+            else
+            {
+                text = "μετά το B: κλικ στο κεφάλι και στα πόδια";
+            }
+
+            lblAutoStrokes.Text = text;
+            lblAutoStrokes.ForeColor = color;
+            btnAutoStrokes.Enabled = !manager.AutoStrokesRunning;
+        }
+
+        private Button StrokeButton(string text, string tooltip, EventHandler click)
+        {
+            Button b = new SwimNoFocusButton { Text = text, Width = 32, Height = 26, Margin = new Padding(2, 2, 0, 2) };
+            b.Click += click;
+            toolTip.SetToolTip(b, tooltip);
+            return b;
+        }
+
+        private void AskDeleteAutoStrokes()
+        {
+            int count = manager.AutoStrokeCount;
+            if (count == 0)
+            {
+                ShowStatus("Δεν υπάρχουν αυτόματες χεριές σε αυτόν τον αγώνα.", false);
+                return;
+            }
+
+            string question = string.Format(CultureInfo.InvariantCulture, "Διαγραφή των {0} σημαδιών χεριών της αυτόματης μέτρησης σε αυτόν τον αγώνα;\nΟι χεριές που έβαλες εσύ και οι αριθμοί που επιβεβαίωσες μένουν.", count);
+            if (MessageBox.Show(this, question, "Αυτόματες χεριές", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                manager.DeleteAutoStrokes();
         }
 
         /// <summary>State of the final frame of the race for the report (finish page).</summary>

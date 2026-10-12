@@ -1,0 +1,885 @@
+﻿#region License
+/*
+Copyright © Kinovea contributors. Swim race analysis module.
+This file is part of Kinovea and is distributed under the terms of the GNU General Public License v2.
+*/
+#endregion
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.Globalization;
+using System.Linq;
+using System.Media;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Kinovea.Video;
+
+namespace Kinovea.ScreenManager
+{
+    /// <summary>
+    /// Strokes counted at each checkpoint.
+    ///
+    /// With "Χεριές σε κάθε πέρασμα" on, the analyst clicks the head and the feet of the swimmer after each breakout:
+    /// that starts the follow of the lap (stroke session). At each checkpoint marked afterwards the video of the lap is
+    /// read up to the checkpoint (and a little after it, for the fraction of the stroke at the checkpoint), the strokes
+    /// are found (SwimStrokeDetector) and placed as stroke marks, and the count of the segment is shown: Enter confirms
+    /// it, or the analyst types the right number. The confirmed or typed counts are kept in SwimRace.StrokeCounts and
+    /// have priority over the count from the marks (in the panel, the sheet and the PDF). The session ends at the wall.
+    /// </summary>
+    public partial class SwimAnalysisManager
+    {
+        #region Strokes at each checkpoint
+        /// <summary>Width of the frames given to the stroke detector (pixels).</summary>
+        private const int StrokeWorkWidth = 960;
+
+        /// <summary>Video read after a checkpoint (s): the next stroke gives the fraction of the stroke at the checkpoint.</summary>
+        private const double StrokeLookahead = 1.5;
+
+        /// <summary>Video read from the start of the lap before the first count (s): enough strokes for the stroke cycle.</summary>
+        private const double StrokeMinSpan = 4.5;
+
+        private const string StrokeBatchPrefix = "auto:";
+
+        private PointF autoStrokeHead;
+        private long autoStrokeFrame;
+        private StrokeSession strokeSession;
+
+        /// <summary>True while the video is read for the strokes.</summary>
+        public bool AutoStrokesRunning { get; private set; }
+
+        /// <summary>Stroke cycle (s) of the lap followed or of the last one, 0 if none.</summary>
+        public double LastAutoCycle { get; private set; }
+
+        /// <summary>Strokes of the race placed by the automatic detection.</summary>
+        public int AutoStrokeCount
+        {
+            get { return Race == null ? 0 : Race.Marks.Count(m => m.Type == SwimMarkType.Stroke && m.Batch != null); }
+        }
+
+        public bool PickingStrokes
+        {
+            get { return PickTarget == SwimPickTarget.StrokeHead || PickTarget == SwimPickTarget.StrokeFeet; }
+        }
+
+        /// <summary>A lap of this race is followed: its strokes are counted at each checkpoint up to the wall.</summary>
+        public bool StrokeSessionActive
+        {
+            get { return SessionFor(Race) != null; }
+        }
+
+        /// <summary>Wall at the end of the lap followed, 0 if none.</summary>
+        public int StrokeSessionWall
+        {
+            get
+            {
+                StrokeSession s = SessionFor(Race);
+                return s == null ? 0 : s.Wall;
+            }
+        }
+
+        private sealed class StrokeSession : IDisposable
+        {
+            public string RaceId;
+            public string VideoPath;
+            public string Batch;
+            public SwimStrokeDetector Detector;
+            public readonly List<long> Timestamps = new List<long>();
+            public long Start;
+            public int Width;
+            public int Height;
+            public string Style;
+            public int Step;
+            public double Fps;
+            public int Wall;
+            public OpenCvSharp.Mat PreviousGray;
+            public double Cycle;
+            public bool Ropes;
+
+            public long LastRead
+            {
+                get { return Timestamps.Count > 0 ? Timestamps[Timestamps.Count - 1] : long.MinValue; }
+            }
+
+            public void Dispose()
+            {
+                if (PreviousGray != null)
+                {
+                    PreviousGray.Dispose();
+                    PreviousGray = null;
+                }
+            }
+        }
+
+        private StrokeSession SessionFor(SwimRace race)
+        {
+            StrokeSession s = strokeSession;
+            if (s == null)
+                return null;
+
+            if (race == null || s.RaceId != race.Id || s.VideoPath != videoPath)
+            {
+                // Another race or another video: the lap followed is over.
+                EndStrokeSession();
+                return null;
+            }
+
+            return s;
+        }
+
+        /// <summary>Strokes at each checkpoint on or off (setting of the panel).</summary>
+        public void SetAutoStrokes(bool on)
+        {
+            Settings.AutoStrokes = on;
+            Settings.Save();
+            if (!on)
+            {
+                if (PickingStrokes)
+                    CancelPick();
+                EndStrokeSession();
+                Status("Χεριές σε κάθε πέρασμα: κλειστό.", false);
+            }
+            else
+            {
+                Status("Χεριές σε κάθε πέρασμα: μετά την έξοδο από το νερό (B) κάνε κλικ στο κεφάλι και στα πόδια του αθλητή· " +
+                    "σε κάθε πέρασμα (S) θα δεις τις χεριές του τμήματος για επιβεβαίωση.", false);
+            }
+
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+        }
+
+        private void EndStrokeSession()
+        {
+            if (strokeSession == null)
+                return;
+
+            strokeSession.Dispose();
+            strokeSession = null;
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+        }
+
+        #region Choice of the swimmer
+        /// <summary>
+        /// The next two clicks on the video are the head and the feet of the swimmer: the lap is followed from this frame.
+        /// Called by the panel button and, with the counting on, after the breakout.
+        /// </summary>
+        public void BeginAutoStrokes()
+        {
+            if (PickingStrokes)
+            {
+                CancelPick();
+                return;
+            }
+
+            if (AutoStrokesRunning)
+                return;
+
+            if (!HasVideo || Race == null)
+            {
+                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                return;
+            }
+
+            if (Race.IsTraining)
+            {
+                Status("Οι χεριές σε κάθε πέρασμα είναι για την ανάλυση αγώνα (με σημεία ελέγχου).", true);
+                return;
+            }
+
+            pendingMeasure = SwimPickTarget.None;
+            calibrationClicks.Clear();
+            angleClicks.Clear();
+            SetPick(SwimPickTarget.StrokeHead);
+            Status("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος).", false);
+            InvalidatePlayer();
+        }
+
+        private void AutoStrokeClick(PointF point, long timestamp)
+        {
+            if (PickTarget == SwimPickTarget.StrokeHead || !SameFrame(autoStrokeFrame, timestamp))
+            {
+                bool moved = PickTarget == SwimPickTarget.StrokeFeet;
+                autoStrokeHead = point;
+                autoStrokeFrame = timestamp;
+                SetPick(SwimPickTarget.StrokeFeet);
+                Status(moved ? "Το καρέ άλλαξε: αυτό το κλικ είναι το κεφάλι. Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ." :
+                    "Χεριές: τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ.", moved);
+                InvalidatePlayer();
+                return;
+            }
+
+            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            double dx = point.X - autoStrokeHead.X;
+            double dy = point.Y - autoStrokeHead.Y;
+            if (Math.Abs(dx) < Math.Max(8, reference.Width * 0.02) || Math.Abs(dy) > 0.6 * Math.Abs(dx))
+            {
+                SystemSounds.Exclamation.Play();
+                Status("Τα πόδια πρέπει να είναι πίσω από το κεφάλι, κατά μήκος της διαδρομής (αριστερά ή δεξιά). Κάνε ξανά κλικ στα πόδια.", true);
+                return;
+            }
+
+            SetPick(SwimPickTarget.None);
+            InvalidatePlayer();
+            StartStrokeSession(autoStrokeHead, point, autoStrokeFrame);
+        }
+
+        private void StartStrokeSession(PointF head, PointF feet, long from)
+        {
+            RefreshTiming();
+            if (!Timing.IsValid || Race == null)
+            {
+                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η αυτόματη μέτρηση δεν μπορεί να γίνει.", true);
+                return;
+            }
+
+            EndStrokeSession();
+
+            double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
+            double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
+            int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
+
+            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            int width = StrokeWorkWidth;
+            int height = Math.Max(2, (int)Math.Round(width * (double)reference.Height / reference.Width / 2.0) * 2);
+            double sx = (double)width / reference.Width;
+            double sy = (double)height / reference.Height;
+
+            StrokeSession s = new StrokeSession();
+            s.RaceId = Race.Id;
+            s.VideoPath = videoPath;
+            s.Batch = StrokeBatchPrefix + Guid.NewGuid().ToString("N");
+            s.Start = from;
+            s.Width = width;
+            s.Height = height;
+            s.Step = step;
+            s.Fps = realFps / step;
+            s.Wall = NextWallDistance(from);
+            s.Style = SwimPresets.StyleAt(Race, s.Wall);
+            if (s.Style == "im")
+                s.Style = "fs";
+            s.Detector = new SwimStrokeDetector(width, height, head.X * sx, head.Y * sy, feet.X * sx, feet.Y * sy, s.Style, s.Fps);
+            strokeSession = s;
+            LastAutoCycle = 0;
+
+            Status(string.Format(CultureInfo.InvariantCulture,
+                "Χεριές: ο αθλητής επιλέχθηκε. Σε κάθε πέρασμα μέχρι τον τοίχο των {0}{1} θα δεις τις χεριές του τμήματος.",
+                s.Wall, UnitLabel), false);
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            // Checkpoints of the lap already marked after this frame: their strokes now, one after the other.
+            List<SwimMark> marked = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp > from && m.Distance <= s.Wall)
+                .OrderBy(m => m.Timestamp)
+                .ToList();
+            foreach (SwimMark split in marked)
+            {
+                if (SessionFor(Race) == null)
+                    break;
+                if (!PromptSegmentStrokes(split, true))
+                    break;
+            }
+        }
+        #endregion
+
+        #region Counting at a checkpoint
+        /// <summary>
+        /// A checkpoint has just been marked (counting on): strokes of the segment that ends there.
+        /// </summary>
+        private void StrokesAfterSplit(long timestamp)
+        {
+            if (Race == null || Race.IsTraining)
+                return;
+
+            SwimMark split = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Split && SameFrame(m.Timestamp, timestamp))
+                .OrderBy(m => m.Distance)
+                .LastOrDefault();
+            if (split == null)
+                return;
+
+            PromptSegmentStrokes(split, false);
+        }
+
+        /// <summary>
+        /// Strokes of the segment that ends at this checkpoint: with a lap followed, reads the video of the lap up to the
+        /// checkpoint and places the strokes, then asks the analyst to confirm or correct the count.
+        /// Returns false if the analyst stopped (Esc) or the reading was cancelled.
+        /// </summary>
+        private bool PromptSegmentStrokes(SwimMark split, bool sequence)
+        {
+            StrokeSession s = SessionFor(Race);
+            int pool = Math.Max(1, Race.Pool);
+            bool wall = split.Distance % pool == 0;
+
+            if (s != null && split.Distance > s.Wall)
+            {
+                // The wall of the lap followed was not marked: this checkpoint is in another lap.
+                EndStrokeSession();
+                s = null;
+            }
+
+            bool detected = false;
+            if (s != null && split.Timestamp > s.Start)
+            {
+                long target = wall ? split.Timestamp : Math.Max(split.Timestamp + SessionSpan(s, StrokeLookahead), s.Start + SessionSpan(s, StrokeMinSpan));
+                target = Math.Min(target, frameServer.VideoReader.WorkingZone.End);
+                if (target > s.LastRead && !ReadStrokeFrames(s, target))
+                    return false;
+
+                PlaceSessionStrokes(s, wall ? split.Timestamp : target, wall);
+                detected = true;
+            }
+
+            bool answered = AskSegmentStrokes(split.Distance, detected ? s : null, sequence);
+
+            if (s != null && wall && split.Distance == s.Wall)
+                EndStrokeSession();
+
+            return answered;
+        }
+
+        /// <summary>Strokes of the lap followed up to 'until' (the wall: a little before it), as the marks of the session.</summary>
+        private void PlaceSessionStrokes(StrokeSession s, long until, bool wall)
+        {
+            if (s.Timestamps.Count < 10)
+                return;
+
+            int last = s.Timestamps.Count - 1;
+            while (last > 0 && s.Timestamps[last] > until)
+                last--;
+            if (wall)
+                last -= (int)Math.Round(SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
+            if (last < 5)
+                return;
+
+            SwimStrokeResult result = s.Detector.Finish(0, last);
+            s.Cycle = result.Cycle;
+            s.Ropes = result.Ropes;
+            LastAutoCycle = result.Cycle;
+
+            Race.Marks.RemoveAll(m => m.Batch == s.Batch);
+            foreach (int i in result.Strokes)
+            {
+                long t = s.Timestamps[i];
+                if (!Race.Marks.Any(m => m.Type == SwimMarkType.Stroke && SameFrame(m.Timestamp, t)))
+                    Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
+            }
+        }
+
+        /// <summary>Correction of the strokes of a segment (double click on the strokes of the panel).</summary>
+        public void EditSegmentStrokes(int distance)
+        {
+            if (Race == null || Race.IsTraining)
+                return;
+
+            if (Race.GetSplit(distance) == null)
+            {
+                Status("Το σημείο δεν έχει ακόμη χρόνο: μάρκαρε πρώτα το πέρασμα.", true);
+                return;
+            }
+
+            AskSegmentStrokes(distance, null, false);
+        }
+
+        /// <summary>
+        /// The count of the segment from the marks, in a small window: Enter keeps it, a number replaces it,
+        /// an empty box removes the typed value. Returns false on Esc.
+        /// </summary>
+        private bool AskSegmentStrokes(int distance, StrokeSession detection, bool sequence)
+        {
+            double previous;
+            bool hadTyped = Race.StrokeCounts.TryGetValue(distance, out previous);
+            Race.StrokeCounts.Remove(distance);
+            Recompute();
+
+            SwimRow row = Computed.Rows.FirstOrDefault(r => r.D == distance);
+            if (row == null)
+            {
+                if (hadTyped)
+                    Race.StrokeCounts[distance] = previous;
+                Recompute();
+                return true;
+            }
+
+            double? found = row.Strokes;
+            string title = string.Format(CultureInfo.InvariantCulture, "Χεριές {0}→{1}{2}", row.PrevD, row.D, UnitLabel);
+            string detail;
+            if (detection != null)
+            {
+                detail = string.Format(CultureInfo.InvariantCulture, "Αυτόματη μέτρηση{0}{1}.",
+                    detection.Cycle > 0 ? " · κύκλος " + detection.Cycle.ToString("0.00", CultureInfo.InvariantCulture).Replace('.', ',') + " s" : "",
+                    detection.Ropes ? "" : " · χωρίς σχοινιά διαδρομής");
+            }
+            else if (found.HasValue)
+            {
+                detail = "Από τα σημάδια χεριών του βίντεο: " + FormatCount(found.Value) + ".";
+            }
+            else
+            {
+                detail = "Δεν υπάρχουν σημάδια χεριών σε αυτό το τμήμα.";
+            }
+
+            if (hadTyped)
+                detail += string.Format(CultureInfo.InvariantCulture, " Γραμμένο πριν: {0}.", FormatCount(previous));
+
+            // A new count shows what was found; a correction from the panel starts from the number written before.
+            double? shown = detection == null && hadTyped ? previous : found;
+            DialogResult answer;
+            double? value;
+            bool cleared;
+            using (FormSwimStrokeCount dialog = new FormSwimStrokeCount(title, detail, shown, sequence))
+            {
+                answer = form != null && !form.IsDisposed ? dialog.ShowDialog(form) : dialog.ShowDialog();
+                value = dialog.Value;
+                cleared = dialog.Cleared;
+            }
+
+            if (answer != DialogResult.OK)
+            {
+                if (hadTyped)
+                    Race.StrokeCounts[distance] = previous;
+                Changed(true);
+                Status(sequence ? "Σταμάτησε η μέτρηση των χεριών." : "Οι χεριές του τμήματος δεν άλλαξαν.", false);
+                return false;
+            }
+
+            if (cleared)
+            {
+                Status(string.Format(CultureInfo.InvariantCulture, "{0}: χωρίς γραμμένο αριθμό (μετράνε τα σημάδια χεριών).", title), false);
+            }
+            else if (value.HasValue)
+            {
+                Race.StrokeCounts[distance] = value.Value;
+                bool same = found.HasValue && Math.Abs(found.Value - value.Value) < 1e-6;
+                Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1}{2}", title, FormatCount(value.Value),
+                    same ? " ✓" : (found.HasValue ? " (διόρθωση από " + FormatCount(found.Value) + ")" : "")), false);
+            }
+
+            Changed(true);
+            return true;
+        }
+
+        private static string FormatCount(double value)
+        {
+            return value.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',');
+        }
+
+        /// <summary>
+        /// Reads the frames of the lap followed up to 'target', with the progress window (the UI thread waits there,
+        /// a background thread reads the video like the video export). Returns false if cancelled or failed.
+        /// </summary>
+        private bool ReadStrokeFrames(StrokeSession s, long target)
+        {
+            Exception error = null;
+            bool cancelled = false;
+            AutoStrokesRunning = true;
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            player.BeforeExportVideo();
+            using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
+            using (FormProgressBar progress = new FormProgressBar(true))
+            {
+                progress.CancelAsked += (o, e) => worker.CancelAsync();
+                worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
+                worker.DoWork += (o, e) => { e.Result = ReadFrames(s, target, (BackgroundWorker)o); };
+                worker.RunWorkerCompleted += (o, e) =>
+                {
+                    error = e.Error;
+                    cancelled = e.Error == null && e.Result is bool && !(bool)e.Result;
+                    progress.Close();
+                };
+
+                worker.RunWorkerAsync();
+                progress.ShowDialog();
+            }
+
+            AutoStrokesRunning = false;
+            if (player != null && !player.IsDisposed)
+                player.AfterExportVideo();
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            if (error != null)
+            {
+                log.Error("Automatic strokes failed.", error);
+                Status("Η αυτόματη μέτρηση των χεριών απέτυχε: " + error.Message, true);
+                EndStrokeSession();
+                return false;
+            }
+
+            if (cancelled)
+            {
+                Status("Η ανάγνωση του βίντεο για τις χεριές ακυρώθηκε.", false);
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>A frame for the detector: pixels at the working size and camera motion from the previous frame.</summary>
+        private sealed class StrokeFrame
+        {
+            public byte[] Pixels;
+            public double[] Motion;
+            public long Timestamp;
+        }
+
+        /// <summary>
+        /// Background thread: the frames after the last one read, up to 'target'. Returns false if cancelled.
+        /// This thread decodes the frames and computes the camera motion (OpenCV) while a second thread runs the detector
+        /// on the previous frames.
+        /// </summary>
+        private bool ReadFrames(StrokeSession s, long target, BackgroundWorker worker)
+        {
+            VideoReader reader = frameServer.VideoReader;
+            long from = s.Timestamps.Count == 0 ? s.Start : s.LastRead;
+            long lastQueued = s.LastRead;
+            double span = Math.Max(1, target - from);
+            bool completed = true;
+            Exception detectorError = null;
+
+            using (BlockingCollection<StrokeFrame> queue = new BlockingCollection<StrokeFrame>(8))
+            {
+                Task detection = Task.Run(() =>
+                {
+                    foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                    {
+                        if (detectorError != null)
+                            continue;
+
+                        try
+                        {
+                            s.Detector.Add(new SwimStrokeImage(s.Width, s.Height, f.Pixels), f.Motion);
+                            s.Timestamps.Add(f.Timestamp);
+                        }
+                        catch (Exception e)
+                        {
+                            detectorError = e;
+                        }
+                    }
+                });
+
+                reader.BeforeFrameEnumeration();
+                try
+                {
+                    long current = reader.Current != null ? reader.Current.Timestamp : from;
+                    bool hasMore = reader.MoveTo(current, from);
+
+                    // Continue after the last frame read (that one is already in the detector).
+                    if (s.Timestamps.Count > 0 && hasMore)
+                        hasMore = reader.MoveNext(s.Step - 1, true);
+
+                    while (detectorError == null)
+                    {
+                        if (worker.CancellationPending)
+                        {
+                            completed = false;
+                            break;
+                        }
+
+                        VideoFrame frame = reader.Current;
+                        if (frame == null || frame.Image == null || frame.Timestamp > target)
+                            break;
+
+                        if (frame.Timestamp > lastQueued)
+                        {
+                            StrokeFrame item = new StrokeFrame { Timestamp = frame.Timestamp };
+                            using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(frame.Image, s.Width, s.Height))
+                            {
+                                OpenCvSharp.Mat gray = SwimStrokeVideo.HalfGray(bgr);
+                                item.Motion = s.PreviousGray == null ? null : SwimStrokeVideo.Motion(s.PreviousGray, gray);
+                                if (s.PreviousGray != null)
+                                    s.PreviousGray.Dispose();
+                                s.PreviousGray = gray;
+                                item.Pixels = SwimStrokeVideo.Bytes(bgr);
+                            }
+
+                            queue.Add(item);
+                            lastQueued = frame.Timestamp;
+                            worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
+                        }
+
+                        if (!hasMore)
+                            break;
+
+                        hasMore = reader.MoveNext(s.Step - 1, true);
+                    }
+                }
+                finally
+                {
+                    queue.CompleteAdding();
+                    detection.Wait();
+                    reader.AfterFrameEnumeration();
+                }
+            }
+
+            if (detectorError != null)
+                throw new InvalidOperationException("Stroke detector: " + detectorError.Message, detectorError);
+
+            return completed;
+        }
+
+        /// <summary>Video timestamps in this time of the lap followed (s).</summary>
+        private long SessionSpan(StrokeSession s, double seconds)
+        {
+            return (long)Math.Round(seconds * s.Fps * s.Step * Timing.AverageTimestampsPerFrame);
+        }
+
+        private int NextWallDistance(long timestamp)
+        {
+            int pool = Math.Max(1, Race.Pool);
+            SwimMark before = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp <= timestamp)
+                .OrderBy(m => m.Timestamp)
+                .LastOrDefault();
+            int d = before == null ? 0 : before.Distance;
+            return Math.Max(pool, Math.Min(Race.Distance, (d / pool + 1) * pool));
+        }
+        #endregion
+
+        #region Review
+        /// <summary>Move the video to the previous (−1) or next (+1) stroke mark.</summary>
+        public void SeekStroke(int direction)
+        {
+            if (Race == null || !HasVideo)
+                return;
+
+            long now = player.CurrentTimestamp;
+            double half = Math.Max(1, Timing.AverageTimestampsPerFrame * 0.5);
+            List<SwimMark> strokes = SortedStrokes();
+            SwimMark target = direction > 0
+                ? strokes.FirstOrDefault(m => m.Timestamp > now + half)
+                : strokes.LastOrDefault(m => m.Timestamp < now - half);
+            if (target == null)
+            {
+                SystemSounds.Beep.Play();
+                Status(direction > 0 ? "Δεν υπάρχει άλλη χεριά μετά από αυτό το καρέ." : "Δεν υπάρχει χεριά πριν από αυτό το καρέ.", true);
+                return;
+            }
+
+            player.ForcePosition(target.Timestamp, true);
+            Status(StrokeDescription(target, strokes), false);
+        }
+
+        /// <summary>Delete the stroke mark of the current frame (C puts it back).</summary>
+        public void DeleteStrokeHere()
+        {
+            if (Race == null || !HasVideo)
+                return;
+
+            long now = player.CurrentTimestamp;
+            double tolerance = Math.Max(1, Timing.AverageTimestampsPerFrame * 1.5);
+            SwimMark mark = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Stroke)
+                .OrderBy(m => Math.Abs(m.Timestamp - now))
+                .FirstOrDefault();
+            if (mark == null || Math.Abs(mark.Timestamp - now) > tolerance)
+            {
+                SystemSounds.Beep.Play();
+                Status("Δεν υπάρχει χεριά σε αυτό το καρέ: πήγαινε σε μια χεριά με ◀ ▶.", true);
+                return;
+            }
+
+            Race.Marks.Remove(mark);
+            Changed(true);
+            InvalidatePlayer();
+            Status("Διαγράφηκε η χεριά αυτού του καρέ (C για να την ξαναβάλεις).", false);
+        }
+
+        /// <summary>Delete the strokes placed by the automatic detection in this race (the typed counts stay).</summary>
+        public int DeleteAutoStrokes()
+        {
+            if (Race == null)
+                return 0;
+
+            EndStrokeSession();
+            int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null);
+            if (removed > 0)
+            {
+                Changed(true);
+                InvalidatePlayer();
+                Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} αυτόματες χεριές (οι αριθμοί που επιβεβαίωσες μένουν).", removed), false);
+            }
+
+            return removed;
+        }
+
+        private List<SwimMark> SortedStrokes()
+        {
+            return Race.Marks.Where(m => m.Type == SwimMarkType.Stroke).OrderBy(m => m.Timestamp).ToList();
+        }
+
+        private string StrokeDescription(SwimMark mark, List<SwimMark> strokes)
+        {
+            int index = strokes.IndexOf(mark) + 1;
+            string time = Race.StartTimestamp.HasValue && !Race.IsTraining
+                ? string.Format(CultureInfo.InvariantCulture, " · {0:0.00} s", Timing.Seconds(mark.Timestamp, Race.StartTimestamp.Value))
+                : "";
+            return string.Format(CultureInfo.InvariantCulture, "Χεριά {0}/{1}{2}{3}", index, strokes.Count, time, mark.Batch != null ? " · αυτόματη" : "");
+        }
+
+        /// <summary>
+        /// Screen only: what to click while choosing the swimmer, and the number of the stroke on the frames of the strokes.
+        /// </summary>
+        private void DrawStrokeOverlay(Graphics g, ImageTransform transform, long timestamp, Size renderingSize)
+        {
+            if (Race == null)
+                return;
+
+            if (PickTarget == SwimPickTarget.StrokeHead)
+            {
+                DrawLabel(g, "Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                return;
+            }
+
+            if (PickTarget == SwimPickTarget.StrokeFeet)
+            {
+                if (SameFrame(autoStrokeFrame, timestamp))
+                {
+                    Point p = transform.Transform(autoStrokeHead);
+                    using (Pen pen = new Pen(Color.FromArgb(240, 0, 220, 255), 2f))
+                        g.DrawEllipse(pen, p.X - 8, p.Y - 8, 16, 16);
+                    DrawLabel(g, "κεφάλι", new Point(p.X + 10, p.Y - 20), Color.FromArgb(0, 220, 255));
+                }
+
+                DrawLabel(g, "Χεριές: κλικ στα πόδια του αθλητή", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                return;
+            }
+
+            if (AutoStrokeCount == 0 || renderingSize.Height < 60)
+                return;
+
+            SwimMark mark = Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Stroke && SameFrame(m.Timestamp, timestamp));
+            if (mark == null)
+                return;
+
+            DrawLabel(g, StrokeDescription(mark, SortedStrokes()), new Point(12, renderingSize.Height - 28),
+                mark.Batch != null ? Color.FromArgb(255, 214, 0) : Color.White);
+        }
+        #endregion
+        #endregion
+    }
+
+    /// <summary>
+    /// OpenCV part of the automatic strokes: frames at the working size and camera motion between frames.
+    /// </summary>
+    internal static class SwimStrokeVideo
+    {
+        /// <summary>Copy of the frame at the working size, 24-bit BGR.</summary>
+        public static OpenCvSharp.Mat ToWorking(Bitmap image, int width, int height)
+        {
+            using (OpenCvSharp.Mat source = OpenCvSharp.Extensions.BitmapConverter.ToMat(image))
+            {
+                OpenCvSharp.Mat bgr = source;
+                OpenCvSharp.Mat converted = null;
+                int channels = source.Channels();
+                if (channels == 4)
+                {
+                    converted = new OpenCvSharp.Mat();
+                    OpenCvSharp.Cv2.CvtColor(source, converted, OpenCvSharp.ColorConversionCodes.BGRA2BGR);
+                    bgr = converted;
+                }
+                else if (channels == 1)
+                {
+                    converted = new OpenCvSharp.Mat();
+                    OpenCvSharp.Cv2.CvtColor(source, converted, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
+                    bgr = converted;
+                }
+
+                OpenCvSharp.Mat result = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.Resize(bgr, result, new OpenCvSharp.Size(width, height), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                if (converted != null)
+                    converted.Dispose();
+                return result;
+            }
+        }
+
+        /// <summary>Grayscale image at half the working size (for the camera motion).</summary>
+        public static OpenCvSharp.Mat HalfGray(OpenCvSharp.Mat bgr)
+        {
+            using (OpenCvSharp.Mat gray = new OpenCvSharp.Mat())
+            {
+                OpenCvSharp.Cv2.CvtColor(bgr, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+                OpenCvSharp.Mat half = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.Resize(gray, half, new OpenCvSharp.Size(bgr.Width / 2, bgr.Height / 2), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                return half;
+            }
+        }
+
+        /// <summary>Pixels of a BGR image, rows without padding.</summary>
+        public static byte[] Bytes(OpenCvSharp.Mat bgr)
+        {
+            int length = bgr.Width * bgr.Height * 3;
+            byte[] data = new byte[length];
+            if (bgr.IsContinuous())
+            {
+                Marshal.Copy(bgr.Data, data, 0, length);
+                return data;
+            }
+
+            using (OpenCvSharp.Mat copy = bgr.Clone())
+                Marshal.Copy(copy.Data, data, 0, length);
+            return data;
+        }
+
+        /// <summary>
+        /// Homography (row-major, working coordinates) from the previous frame to this one: corners tracked with
+        /// optical flow, RANSAC. Identity when it can't be estimated.
+        /// </summary>
+        public static double[] Motion(OpenCvSharp.Mat previousHalf, OpenCvSharp.Mat currentHalf)
+        {
+            try
+            {
+                OpenCvSharp.Point2f[] corners = OpenCvSharp.Cv2.GoodFeaturesToTrack(previousHalf, 400, 0.01, 8, null, 7, false, 0.04);
+                if (corners == null || corners.Length < 12)
+                    return SwimStrokeDetector.Identity();
+
+                OpenCvSharp.Point2f[] next = new OpenCvSharp.Point2f[0];
+                byte[] status;
+                float[] error;
+                OpenCvSharp.Cv2.CalcOpticalFlowPyrLK(previousHalf, currentHalf, corners, ref next, out status, out error,
+                    new OpenCvSharp.Size(21, 21), 3);
+
+                List<OpenCvSharp.Point2d> from = new List<OpenCvSharp.Point2d>();
+                List<OpenCvSharp.Point2d> to = new List<OpenCvSharp.Point2d>();
+                int n = Math.Min(corners.Length, Math.Min(next.Length, status.Length));
+                for (int i = 0; i < n; i++)
+                {
+                    if (status[i] != 1)
+                        continue;
+                    from.Add(new OpenCvSharp.Point2d(corners[i].X, corners[i].Y));
+                    to.Add(new OpenCvSharp.Point2d(next[i].X, next[i].Y));
+                }
+
+                if (from.Count < 12)
+                    return SwimStrokeDetector.Identity();
+
+                using (OpenCvSharp.Mat h = OpenCvSharp.Cv2.FindHomography(from, to, OpenCvSharp.HomographyMethods.Ransac, 1.5))
+                {
+                    if (h == null || h.Empty() || h.Rows != 3 || h.Cols != 3)
+                        return SwimStrokeDetector.Identity();
+
+                    double[] m = new double[9];
+                    for (int r = 0; r < 3; r++)
+                    {
+                        for (int c = 0; c < 3; c++)
+                            m[r * 3 + c] = h.At<double>(r, c);
+                    }
+
+                    // Half size -> working size: S⁻¹·H·S with S = diag(½, ½, 1).
+                    return new double[] { m[0], m[1], 2 * m[2], m[3], m[4], 2 * m[5], m[6] / 2, m[7] / 2, m[8] };
+                }
+            }
+            catch (Exception)
+            {
+                return SwimStrokeDetector.Identity();
+            }
+        }
+    }
+}
