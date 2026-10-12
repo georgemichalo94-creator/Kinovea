@@ -459,8 +459,11 @@ namespace Kinovea.ScreenManager
             if (!float.IsNaN(info.Block))
             {
                 // With the level learned in this video (same camera) the cues are other cues: their usual delay is learned apart.
+                // The level of other videos is not used (other cameras): there the cues keep the default level and learn their delay.
                 int sameVideo;
                 double level = context.Measure(StartEntry, "level", DefaultEntryLevel, out sameVideo);
+                if (sameVideo == 0)
+                    level = DefaultEntryLevel;
                 string suffix = sameVideo > 0 ? "-video" : "";
                 double water = info.Block + level * L;
                 int entryWrist = -1, entryHead = -1;

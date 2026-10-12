@@ -254,16 +254,18 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Stops the check (the proposals not answered wait).</summary>
-        public void EndReview(bool report = true)
+        public void EndReview(bool report = true, string done = null)
         {
             bool was = reviewId != null;
             reviewId = null;
             if (was && report)
             {
                 int left = Race == null ? 0 : Race.Proposals.Count;
-                Status(string.Format(CultureInfo.InvariantCulture, "Έλεγχος προτάσεων: {0} απαντήσεις ({1} σωστές, {2} διορθωμένες, {3} λάθος){4}.",
+                bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
+                Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
+                    "Έλεγχος προτάσεων: {0} απαντήσεις ({1} σωστές, {2} διορθωμένες, {3} λάθος){4}.",
                     reviewAnswered, reviewAnswered - reviewCorrected - reviewWrong, reviewCorrected, reviewWrong,
-                    left > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)", left) : ""), false);
+                    left > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)", left) : ""), warning);
             }
 
             RefreshProposalsUi();
@@ -352,11 +354,14 @@ namespace Kinovea.ScreenManager
                     resolvingProposal = false;
                 }
 
-                // The command refused the mark (for example a wall that is not one of the race): the proposal waits, its reason shows.
+                // The command refused the mark (for example a wall that already has its time): the proposal goes without an answer
+                // (the learning does not change) and the reason stays visible with the next one.
                 if (!Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)))
                 {
-                    RefreshProposalsUi();
-                    InvalidatePlayer();
+                    string reason = "⚠ " + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) + ": δεν μπήκε σημάδι." : LastStatus);
+                    Race.Proposals.Remove(p);
+                    Changed(false);
+                    NextProposal(timestamp, reason);
                     return;
                 }
 
@@ -393,7 +398,7 @@ namespace Kinovea.ScreenManager
             SwimProposal next = pending.FirstOrDefault(x => x.Timestamp > after) ?? pending.FirstOrDefault();
             if (next == null)
             {
-                EndReview();
+                EndReview(true, done);
                 return;
             }
 
@@ -411,17 +416,33 @@ namespace Kinovea.ScreenManager
             if (resolvingProposal || Race == null || Race.Proposals.Count == 0)
                 return;
 
-            double window = type == SwimMarkType.Kick ? 0.2 : 0.6;
+            // During the check, a mark of the kind being checked answers that proposal only (as Enter, within 1 s).
             SwimProposal current = CurrentProposal;
-            SwimProposal p = current != null && current.Type == type && Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= window ? current :
-                Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= window)
+            SwimProposal p;
+            if (current != null && current.Type == type)
+            {
+                p = Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= 1.0 ? current : null;
+            }
+            else
+            {
+                double window = type == SwimMarkType.Kick ? 0.2 : 0.6;
+                p = Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= window)
                     .OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
+            }
+
             if (p == null)
                 return;
 
             Answer(p, timestamp, true);
             if (!resolvingProposal && p.Id == reviewId)
-                NextProposal(timestamp);
+            {
+                // After the command of the key has finished (it still works on this frame), the next proposal.
+                string done = "✓ " + ProposalLabel(p);
+                if (player != null && !player.IsDisposed && player.IsHandleCreated)
+                    player.BeginInvoke((Action)(() => NextProposal(timestamp, done)));
+                else
+                    NextProposal(timestamp, done);
+            }
         }
 
         /// <summary>The answer of the analyst to a proposal: kept for the learning, the proposal goes.</summary>
