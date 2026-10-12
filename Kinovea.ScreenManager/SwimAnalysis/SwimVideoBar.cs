@@ -147,7 +147,9 @@ namespace Kinovea.ScreenManager
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
             b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind).Append('|');
             b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription).Append('|');
-            b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription);
+            b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription).Append('|');
+            b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
+            b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "");
             return b.ToString();
         }
         #endregion
@@ -384,7 +386,7 @@ namespace Kinovea.ScreenManager
             float inner = S(10);
             float header = S(26);
             float spacing = S(5);
-            float autoHeight = autoRow || skeletonRow ? S(26) + S(8) : 0;
+            float autoHeight = skeletonRow ? 2 * S(26) + S(4) + S(8) : autoRow ? S(26) + S(8) : 0;
             int n = buttons.Count;
             float room = space.Height - header - S(8) - autoHeight;
             int columns = 1;
@@ -439,6 +441,39 @@ namespace Kinovea.ScreenManager
                 RectangleF skeletonDelete = new RectangleF(angles.Right + S(4), ay, sq, S(26));
                 DrawButton(g, list, "skeleton-delete", skeletonDelete, "✕", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
                     "Διαγραφή του σκελετού αυτού του σημείου του βίντεο", () => manager.DeleteSkeleton());
+
+                // Automatic proposals: check them one by one (Enter, Delete, Esc on the video), or propose from the skeleton.
+                float py = ay + S(30);
+                if (py + S(26) > card.Bottom)
+                    return;
+
+                int pending = manager.Race != null ? manager.Race.Proposals.Count : 0;
+                if (manager.Reviewing)
+                {
+                    float third = (width - 2 * S(4)) / 3;
+                    DrawButton(g, list, "proposal-right", new RectangleF(x0, py, third, S(26)), "✓ Σωστό", null, null, Look.Primary, false,
+                        "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται.",
+                        () => manager.AcceptCurrentProposal());
+                    DrawButton(g, list, "proposal-wrong", new RectangleF(x0 + third + S(4), py, third, S(26)), "✕ Λάθος", null, null, Look.Normal, false,
+                        "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).", () => manager.RejectCurrentProposal());
+                    DrawButton(g, list, "proposal-end", new RectangleF(x0 + 2 * (third + S(4)), py, third, S(26)), "Τέλος", null, null, Look.Normal, false,
+                        "Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν.", () => manager.EndReview());
+                }
+                else if (pending > 0)
+                {
+                    RectangleF review = new RectangleF(x0, py, width - sq - S(4), S(26));
+                    DrawButton(g, list, "proposal-review", review, "✨ Έλεγχος " + pending, null, null, Look.Primary, false,
+                        "Οι προτάσεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος.", () => manager.BeginReview());
+                    DrawButton(g, list, "proposal-delete", new RectangleF(review.Right + S(4), py, sq, S(26)), "✕", null, null, Look.Normal, false,
+                        "Διαγραφή των προτάσεων που περιμένουν", () => manager.DeleteProposals());
+                }
+                else
+                {
+                    DrawButton(g, list, "proposal-make", new RectangleF(x0, py, width, S(26)), "✨ Προτάσεις", null, null, Look.Normal,
+                        manager.SkeletonDescription.Length == 0 || manager.SkeletonRunning,
+                        "Προτάσεις από τον σκελετό: πρώτη κίνηση, χέρια, πόδια, είσοδος, δελφινισμοί, έξοδος, στροφή.", () => manager.ProposeHere());
+                }
+
                 return;
             }
 

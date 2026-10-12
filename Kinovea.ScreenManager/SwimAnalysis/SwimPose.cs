@@ -374,6 +374,15 @@ namespace Kinovea.ScreenManager
             get { return File.Exists(Path.Combine(ModelFolder, DetectorFile)) && File.Exists(Path.Combine(ModelFolder, LandmarkFile)); }
         }
 
+        /// <summary>Keep the person mask of each skeleton found (LastMask, LastTransform).</summary>
+        public bool KeepMask { get; set; }
+
+        /// <summary>Person mask of the last skeleton (256 × 256 values, above 0 on the person), null if not kept.</summary>
+        public float[] LastMask { get; private set; }
+
+        /// <summary>Transform (2 × 3, rows) from the pixels of the image given to Landmarks to the 256 × 256 mask.</summary>
+        public double[] LastTransform { get; private set; }
+
         public SwimPoseNet()
         {
             detector = OpenCvSharp.Dnn.Net.ReadNetFromONNX(Path.Combine(ModelFolder, DetectorFile));
@@ -462,7 +471,10 @@ namespace Kinovea.ScreenManager
                 return null;
 
             float[] landmarks = null;
+            float[] mask = null;
             float confidence = 0;
+            LastMask = null;
+            LastTransform = null;
             using (OpenCvSharp.Mat crop = new OpenCvSharp.Mat(bgr, new OpenCvSharp.Rect(r.X, r.Y, r.Width, r.Height)))
             using (OpenCvSharp.Mat small = new OpenCvSharp.Mat())
             using (OpenCvSharp.Mat warped = new OpenCvSharp.Mat())
@@ -503,6 +515,17 @@ namespace Kinovea.ScreenManager
                         landmarker.Forward(outs, landmarkOutputs);
                         foreach (OpenCvSharp.Mat o in outs)
                         {
+                            long length = o.Total() * o.Channels();
+                            if (length == SwimPoseMath.LandmarkSize * SwimPoseMath.LandmarkSize)
+                            {
+                                if (KeepMask)
+                                    mask = Floats(o);
+                                continue;
+                            }
+
+                            if (length != 39 * 5 && length != 1)
+                                continue;
+
                             float[] values = Floats(o);
                             if (values.Length == 39 * 5)
                                 landmarks = values;
@@ -523,7 +546,49 @@ namespace Kinovea.ScreenManager
             if (confidence < confidenceThreshold)
                 return null;
 
+            if (mask != null)
+            {
+                LastMask = mask;
+                LastTransform = SwimPoseMath.RegionTransform(hip, body, 0, 0, 1);
+            }
+
             return SwimPoseMath.DecodeLandmarks(landmarks, confidence, hip, body);
+        }
+
+        /// <summary>
+        /// The person mask of the landmark model (256 × 256 values in its rotated region, above 0 on the person, see LastMask)
+        /// in a crop of the image: the part roi of the image given to Landmarks, resized to width × height. 1 on the person.
+        /// </summary>
+        public static byte[] MaskInCrop(float[] values, double[] transform, Rectangle roi, int width, int height)
+        {
+            int n = SwimPoseMath.LandmarkSize;
+            if (values == null || values.Length < n * n || transform == null || transform.Length < 6 || roi.Width <= 0 || width <= 0 || height <= 0)
+                return null;
+
+            using (OpenCvSharp.Mat m = new OpenCvSharp.Mat(n, n, OpenCvSharp.MatType.CV_32FC1))
+            using (OpenCvSharp.Mat matrix = new OpenCvSharp.Mat(2, 3, OpenCvSharp.MatType.CV_64FC1))
+            using (OpenCvSharp.Mat warped = new OpenCvSharp.Mat())
+            {
+                Marshal.Copy(values, 0, m.Data, n * n);
+
+                // Crop pixel (u, v) → image (roi + (u, v) / k) → mask.
+                double k = width / (double)roi.Width;
+                double[] t = transform;
+                matrix.Set(0, 0, t[0] / k);
+                matrix.Set(0, 1, t[1] / k);
+                matrix.Set(0, 2, t[0] * roi.X + t[1] * roi.Y + t[2]);
+                matrix.Set(1, 0, t[3] / k);
+                matrix.Set(1, 1, t[4] / k);
+                matrix.Set(1, 2, t[3] * roi.X + t[4] * roi.Y + t[5]);
+                OpenCvSharp.Cv2.WarpAffine(m, warped, matrix, new OpenCvSharp.Size(width, height),
+                    OpenCvSharp.InterpolationFlags.Linear | OpenCvSharp.InterpolationFlags.WarpInverseMap, OpenCvSharp.BorderTypes.Constant, OpenCvSharp.Scalar.All(-10));
+
+                float[] inCrop = Floats(warped);
+                byte[] result = new byte[width * height];
+                for (int i = 0; i < result.Length && i < inCrop.Length; i++)
+                    result[i] = inCrop[i] > 0 ? (byte)1 : (byte)0;
+                return result;
+            }
         }
 
         private static float[] Floats(OpenCvSharp.Mat m)

@@ -60,6 +60,13 @@ namespace Kinovea.ScreenManager
         private CheckBox chkSkeleton;
         private CheckBox chkSkeletonAngles;
         private Label lblSkeleton;
+        private Button btnPropose;
+        private Button btnReview;
+        private Button btnProposalRight;
+        private Button btnProposalWrong;
+        private Button btnDeleteProposals;
+        private CheckBox chkProposeAuto;
+        private Label lblProposals;
         private DataGridView gridAngles;
         private TextBox tbNotes;
         private Label lblSnapshotInfo;
@@ -368,6 +375,49 @@ namespace Kinovea.ScreenManager
             tools.Controls.Add(chkSkeleton);
             tools.Controls.Add(chkSkeletonAngles);
             tools.Controls.Add(lblSkeleton);
+            tools.SetFlowBreak(lblSkeleton, true);
+
+            // Automatic proposals from the skeleton, checked one by one on the video; the learning of this computer.
+            btnPropose = new SwimNoFocusButton { Text = "✨ Προτάσεις", Width = 120, Height = 32 };
+            btnPropose.Click += (s, e) => manager.ProposeHere();
+            toolTip.SetToolTip(btnPropose, "Από τον σκελετό αυτού του σημείου: προτάσεις για πρώτη κίνηση, χέρια, πίσω πόδι, αποκόλληση, είσοδο\n" +
+                "(εκκίνηση από τη θέση ετοιμότητας), δελφινισμούς και έξοδο (κάτω από το νερό), επαφή και αποκόλληση (στροφή).\n" +
+                "Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος.");
+            btnReview = new SwimNoFocusButton { Text = "▶ Έλεγχος", Width = 104, Height = 32, Primary = true };
+            btnReview.Click += (s, e) => manager.BeginReview();
+            toolTip.SetToolTip(btnReview, "Το βίντεο πηγαίνει στην πρώτη πρόταση που περιμένει απάντηση.");
+            btnProposalRight = new SwimNoFocusButton { Text = "✓ Σωστό", Width = 90, Height = 32 };
+            btnProposalRight.Click += (s, e) => manager.AcceptCurrentProposal();
+            toolTip.SetToolTip(btnProposalRight, "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Αν μετακίνησες το βίντεο με τα βελάκια, κρατιέται η διόρθωσή σου.");
+            btnProposalWrong = new SwimNoFocusButton { Text = "✕ Λάθος", Width = 86, Height = 32 };
+            btnProposalWrong.Click += (s, e) => manager.RejectCurrentProposal();
+            toolTip.SetToolTip(btnProposalWrong, "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).");
+            btnDeleteProposals = new SwimNoFocusButton { Text = "🗑", Width = 34, Height = 32 };
+            btnDeleteProposals.Click += (s, e) => manager.DeleteProposals();
+            toolTip.SetToolTip(btnDeleteProposals, "Διαγραφή των προτάσεων που περιμένουν (χωρίς απάντηση: η μάθηση δεν αλλάζει).");
+            chkProposeAuto = new CheckBox { Text = "αμέσως μετά τον σκελετό", AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
+            chkProposeAuto.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetProposeAfterSkeleton(chkProposeAuto.Checked);
+            };
+            lblProposals = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 10, 0, 3), Text = "–" };
+            LinkLabel resetLearning = new LinkLabel { Text = "↺ μάθηση", AutoSize = true, Margin = new Padding(8, 10, 0, 3), LinkColor = SwimTheme.Accent };
+            resetLearning.LinkClicked += (s, e) =>
+            {
+                if (MessageBox.Show(this, "Να ξεχάσει ό,τι έμαθε από τις απαντήσεις σου στις προτάσεις;\n(Οι αναλύσεις και τα σημάδια δεν αλλάζουν.)",
+                    "Μάθηση των προτάσεων", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    manager.ResetLearning();
+            };
+            toolTip.SetToolTip(resetLearning, "Η μάθηση κρατιέται μόνο σε αυτόν τον υπολογιστή (αριθμοί, χωρίς ονόματα ή εικόνες).");
+            tools.Controls.Add(btnPropose);
+            tools.Controls.Add(btnReview);
+            tools.Controls.Add(btnProposalRight);
+            tools.Controls.Add(btnProposalWrong);
+            tools.Controls.Add(btnDeleteProposals);
+            tools.Controls.Add(chkProposeAuto);
+            tools.Controls.Add(lblProposals);
+            tools.Controls.Add(resetLearning);
 
             // Snapshots: list on the left, the picture, the comments and the elite frame on the right.
             TableLayoutPanel snaps = new TableLayoutPanel { Dock = DockStyle.Top, Height = 330, ColumnCount = 2, RowCount = 1, Margin = new Padding(0) };
@@ -574,8 +624,21 @@ namespace Kinovea.ScreenManager
                 updating = true;
                 chkSkeleton.Checked = manager.Settings.SkeletonOverlay;
                 chkSkeletonAngles.Checked = manager.Settings.SkeletonAngles;
+                chkProposeAuto.Checked = manager.Settings.ProposeAfterSkeleton;
                 updating = was;
             }
+
+            // Proposals: waiting, being checked, what was learned.
+            int pending = manager.Race != null ? manager.Race.Proposals.Count : 0;
+            bool reviewing = manager.Reviewing;
+            btnPropose.Enabled = parts.Length > 0 && !manager.SkeletonRunning;
+            btnReview.Enabled = pending > 0 && !reviewing;
+            btnReview.Text = pending > 0 ? "▶ Έλεγχος " + pending : "▶ Έλεγχος";
+            btnProposalRight.Enabled = reviewing;
+            btnProposalWrong.Enabled = reviewing;
+            btnDeleteProposals.Enabled = pending > 0;
+            lblProposals.Text = reviewing && manager.CurrentProposal != null ? "ελέγχεις: " + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal) : manager.ProposalsDescription;
+            lblProposals.ForeColor = reviewing ? SwimTheme.Amber : pending > 0 ? SwimTheme.Accent : SwimTheme.Dim;
         }
 
         private void RefreshTechPhasePage(SwimPhaseKind kind)

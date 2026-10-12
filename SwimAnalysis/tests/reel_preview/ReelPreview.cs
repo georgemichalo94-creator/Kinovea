@@ -261,7 +261,16 @@ public static class ReelPreview
 
         try
         {
-            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck(), Encoding.UTF8);
+            RenderProposal(folder, names);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("proposal: " + e);
+        }
+
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck(), Encoding.UTF8);
         }
         catch (Exception e)
         {
@@ -425,6 +434,113 @@ public static class ReelPreview
         }
     }
 
+    /// <summary>The box of a proposal being checked, on the fictional start.</summary>
+    private static void RenderProposal(string folder, List<string> names)
+    {
+        SwimSkeleton skeleton = StartSkeleton();
+        string name = "proposal-0.9";
+        using (Bitmap image = new Bitmap(960, 540, PixelFormat.Format24bppRgb))
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            float sx = 960f / ReferenceWidth, sy = 540f / ReferenceHeight;
+            using (LinearGradientBrush water = new LinearGradientBrush(new Rectangle(0, 0, 960, 540), Color.FromArgb(150, 190, 215), Color.FromArgb(18, 92, 140), LinearGradientMode.Vertical))
+                g.FillRectangle(water, 0, 0, 960, 540);
+            using (SolidBrush block = new SolidBrush(Color.FromArgb(235, 235, 240)))
+                g.FillRectangle(block, 900 * sx, 600 * sy, 260 * sx, 40 * sy);
+            SwimSkeletonPainter.Paint(g, skeleton, Ts(0.9), p => new PointF(p.X * sx, p.Y * sy), 1f, true);
+            SwimProposal proposal = new SwimProposal { Type = SwimMarkType.FeetOff, Kind = SwimEventDetector.StartFeet, Confidence = 0.82 };
+            SwimAnalysisManager.PaintProposalPrompt(g, "✨ 4/5  " + SwimAnalysisManager.ProposalLabel(proposal), "+2 καρέ από την πρόταση",
+                "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος", false, new Size(960, 540));
+            SaveJpeg(image, Path.Combine(folder, name + ".jpg"), 65);
+        }
+
+        names.Add(name);
+    }
+
+    /// <summary>Fictional skeleton under the water to the right: dolphin kicks at 2.2 Hz from 0.2 s, first stroke and up to the surface at 2.2 s.</summary>
+    private static List<int> Glide(double fps, double seconds, double strokeAt)
+    {
+        double L = 200, speed = 260, f = 2.2;
+        List<int> d = new List<int>();
+        for (int i = 0; i < (int)(seconds * fps); i++)
+        {
+            double t = i / fps;
+            double x = 300 + speed * t;
+            double depth = t < strokeAt ? 420 : Math.Max(300, 420 - (t - strokeAt) * 450);
+            double kick = t < strokeAt + 0.1 ? 1 : 0.2;
+            double pull = t < strokeAt ? 0 : Math.Min(1, (t - strokeAt) / 0.35);
+            double ankle = depth + 6 + 0.2 * L * Math.Sin(2 * Math.PI * f * (t - 0.2) - 0.6) * kick;
+            double[] p =
+            {
+                x + 0.15 * L, depth - 5, x, depth, x - 3, depth + 2,
+                x + 0.3 * L - pull * 0.35 * L, depth - 4 + pull * 0.2 * L, x + 0.3 * L, depth - 3,
+                x + 0.55 * L - pull * 0.75 * L, depth - 6 + pull * 0.3 * L, x + 0.55 * L, depth - 5,
+                x - 0.45 * L, depth + 6, x - 0.45 * L - 3, depth + 8,
+                x - 0.75 * L, depth + 6, x - 0.75 * L - 2, depth + 8,
+                x - L, ankle, x - L - 2, ankle + 2,
+                x - L - 8, ankle - 6, x - L - 10, ankle - 4,
+                x - L - 25, ankle + 10, x - L - 27, ankle + 12
+            };
+            for (int j = 0; j < SwimJoints.Count; j++)
+            {
+                d.Add((int)Math.Round(p[2 * j] + 1.5 * Math.Sin(i * 1.3 + j)));
+                d.Add((int)Math.Round(p[2 * j + 1] + 1.5 * Math.Cos(i * 1.7 + j)));
+                d.Add(90);
+            }
+        }
+
+        return d;
+    }
+
+    /// <summary>
+    /// The proposals of fictional readings (dolphin kicks and breakout under the water) and the learning from fictional answers
+    /// (in a temporary file, not the settings of the program).
+    /// </summary>
+    public static string ProposalsCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        double fps = 60;
+        List<int> glide = Glide(fps, 3.0, 2.2);
+        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        List<SwimDetection> found = SwimEventDetector.Detect(SwimPoseSeries.FromData(glide, fps), null, new SwimDetectorContext { Style = "fly" });
+        b.AppendLine("proposals of a fictional glide (kicks expected near 0.36 0.81 1.27 1.72 2.18 s, breakout near 2.45 s), " + watch.ElapsedMilliseconds + " ms:");
+        string path = Path.Combine(Path.GetTempPath(), "swim-learning-preview.json");
+        if (File.Exists(path))
+            File.Delete(path);
+        SwimLearning learning = SwimLearning.Load(path);
+        foreach (SwimDetection d in found)
+        {
+            double confidence;
+            double sample = SwimProposalMath.Combine(d, learning, "preview", fps, out confidence);
+            b.AppendLine(string.Format(ci, "  {0}{1} {2:0.000} s ({3:0}%)", d.Kind, d.Index > 0 ? " " + d.Index : "", sample / fps, 100 * confidence));
+        }
+
+        // Three answers 2 frames after the kicks: the next proposals move.
+        for (int i = 0; i < 3; i++)
+        {
+            SwimLearningRecord r = new SwimLearningRecord { Date = DateTime.Now, Kind = SwimEventDetector.UnderKick, Video = "preview", Right = true, Error = 2 / fps };
+            r.Cues["feet"] = 2 / fps;
+            learning.Add(r);
+        }
+
+        learning.Save();
+        SwimLearning back = SwimLearning.Load(path);
+        SwimDetection first = found.FirstOrDefault(d => d.Kind == SwimEventDetector.UnderKick);
+        if (first != null)
+        {
+            double c0, c1;
+            double before = SwimProposalMath.Combine(first, null, "preview", fps, out c0);
+            double after = SwimProposalMath.Combine(first, back, "preview", fps, out c1);
+            b.AppendLine(string.Format(ci, "learning: {0} answers saved and read back, first kick {1:0.000} s → {2:0.000} s after 3 answers of +2 frames",
+                back.Records.Count, before / fps, after / fps));
+        }
+
+        File.Delete(path);
+        return b.ToString();
+    }
+
     /// <summary>The pose models of the program: files, reading, one detection and one skeleton on a drawn image, times.</summary>
     public static string PoseCheck()
     {
@@ -459,6 +575,16 @@ public static class ReelPreview
                     pose = net.Landmarks(image, new PointF(960, 600), new PointF(960, 250), 0f);
                 b.AppendLine("landmarks: 5 runs in " + watch.ElapsedMilliseconds + " ms" +
                     (pose != null ? string.Format(ci, ", confidence {0:0.000}, hip {1:0},{2:0}, nose {3:0},{4:0}", pose.Confidence, pose.Hip.X, pose.Hip.Y, pose.X[0], pose.Y[0]) : ", none"));
+
+                // The person mask, kept on request and placed in a crop of the image (as for the image of a start).
+                net.KeepMask = true;
+                watch.Restart();
+                pose = net.Landmarks(image, new PointF(960, 600), new PointF(960, 250), 0f);
+                byte[] mask = SwimPoseNet.MaskInCrop(net.LastMask, net.LastTransform, new Rectangle(660, 150, 600, 800), 150, 200);
+                int on = mask == null ? -1 : mask.Count(v => v != 0);
+                b.AppendLine("mask: " + (net.LastMask == null ? "none" : net.LastMask.Length + " values") + ", in a 150 × 200 crop " + on + " pixels on the person, " +
+                    watch.ElapsedMilliseconds + " ms");
+                net.KeepMask = false;
             }
         }
 

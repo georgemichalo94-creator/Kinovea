@@ -400,6 +400,9 @@ namespace Kinovea.ScreenManager
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
 
+            // A proposal of the same event near this frame is answered by this mark (learning).
+            ResolveProposalsByMark(type, timestamp);
+
             if (Race.IsTraining)
             {
                 // Times of a training video are from the origin of the attempt (signal or contact with the wall).
@@ -1318,6 +1321,9 @@ namespace Kinovea.ScreenManager
                 }
 
                 DrawStrokeOverlay(g, transform, timestamp, renderingSize);
+
+                // The proposal being checked, on top of everything (screen only).
+                DrawProposalPrompt(g, timestamp, renderingSize);
 
                 g.SmoothingMode = smoothing;
                 g.TextRenderingHint = textHint;

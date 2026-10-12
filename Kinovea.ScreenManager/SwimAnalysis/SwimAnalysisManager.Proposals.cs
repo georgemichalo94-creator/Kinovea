@@ -1,0 +1,567 @@
+﻿#region License
+/*
+Copyright © Kinovea contributors. Swim race analysis module.
+This file is part of Kinovea and is distributed under the terms of the GNU General Public License v2.
+*/
+#endregion
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.Linq;
+using System.Media;
+using System.Windows.Forms;
+using Kinovea.Services;
+
+namespace Kinovea.ScreenManager
+{
+    /// <summary>
+    /// Automatic proposals of the technical analysis: after the skeleton of a start or a turn is read, the detectors
+    /// (SwimEventDetector) propose the marks (first movement, hands, back foot, feet, entry, dolphin kicks, breakout, contact,
+    /// push off). The analyst checks them one by one on the video: Enter keeps the proposal at the frame shown (moved with the
+    /// arrows if it was not right), Delete says there is no such event, Esc stops the check. A mark typed with its usual key
+    /// near a proposal answers it too. Each answer goes to the learning of this computer (SwimLearning): the next proposals
+    /// move by the usual correction of the analyst, and in the same video (same camera) at once.
+    /// </summary>
+    public partial class SwimAnalysisManager
+    {
+        #region Proposals
+        private SwimLearning learning;
+        private SwimRegionFrames lastRegion;
+        private string reviewId;
+        private int reviewAnswered;
+        private int reviewCorrected;
+        private int reviewWrong;
+        private bool resolvingProposal;
+
+        /// <summary>The learning of this computer (read once).</summary>
+        public SwimLearning Learning
+        {
+            get
+            {
+                if (learning == null)
+                    learning = SwimLearning.Load();
+                return learning;
+            }
+        }
+
+        /// <summary>Proposals of the race not answered yet, in the order of the video.</summary>
+        public List<SwimProposal> PendingProposals
+        {
+            get { return Race == null ? new List<SwimProposal>() : Race.Proposals.OrderBy(p => p.Timestamp).ToList(); }
+        }
+
+        /// <summary>The proposals are being checked one by one (Enter, Delete, Esc on the video).</summary>
+        public bool Reviewing
+        {
+            get { return reviewId != null && CurrentProposal != null; }
+        }
+
+        /// <summary>The proposal being checked, null if none.</summary>
+        public SwimProposal CurrentProposal
+        {
+            get { return reviewId == null || Race == null ? null : Race.Proposals.FirstOrDefault(p => p.Id == reviewId); }
+        }
+
+        /// <summary>For the panel: proposals waiting and what was learned ("3 προτάσεις · μάθηση από 12 απαντήσεις").</summary>
+        public string ProposalsDescription
+        {
+            get
+            {
+                int pending = Race == null ? 0 : Race.Proposals.Count;
+                int answers = Learning.Records.Count;
+                string p = pending == 0 ? "καμία πρόταση σε αναμονή" : pending == 1 ? "1 πρόταση σε αναμονή" : pending + " προτάσεις σε αναμονή";
+                string l = answers == 0 ? "δεν έχει μάθει ακόμα" : "έμαθε από " + answers + (answers == 1 ? " απάντηση" : " απαντήσεις");
+                return p + " · " + l;
+            }
+        }
+
+        public void SetProposeAfterSkeleton(bool on)
+        {
+            Settings.ProposeAfterSkeleton = on;
+            Settings.Save();
+        }
+
+        /// <summary>Forget what was learned (button of the panel, after a confirmation).</summary>
+        public void ResetLearning()
+        {
+            Learning.Reset();
+            Learning.Save();
+            Status("Η μάθηση των προτάσεων ξεκινά από την αρχή.", false);
+            RefreshProposalsUi();
+        }
+
+        /// <summary>Button of the panel: proposals from the skeleton at the current frame (or the last one).</summary>
+        public void ProposeHere()
+        {
+            if (Race == null || !HasVideo)
+            {
+                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                return;
+            }
+
+            long? now = CurrentVideoTimestamp;
+            SwimSkeleton skeleton = now.HasValue ? Race.SkeletonAt(now.Value) : null;
+            if (skeleton == null)
+                skeleton = Race.Skeletons.OrderBy(s => s.Start).LastOrDefault();
+            if (skeleton == null)
+            {
+                Status("Για τις προτάσεις χρειάζεται ο σκελετός: «🦴 Σκελετός» και κλικ στον αθλητή πριν την κίνηση (π.χ. στη θέση ετοιμότητας).", true);
+                return;
+            }
+
+            SwimRegionFrames region = lastRegion != null && lastRegion.Count > 0 && lastRegion.Timestamps[0] >= skeleton.Start - (long)skeleton.Step &&
+                lastRegion.Timestamps[lastRegion.Count - 1] <= skeleton.End + (long)skeleton.Step ? lastRegion : null;
+            Propose(skeleton, region);
+        }
+
+        /// <summary>The detectors on a skeleton (and the image of the start when it was kept), the proposals, then the check.</summary>
+        private void Propose(SwimSkeleton skeleton, SwimRegionFrames region)
+        {
+            RefreshTiming();
+            if (skeleton == null || skeleton.Count < 8 || !Timing.IsValid)
+                return;
+
+            double secondsPerSample = Timing.Seconds(skeleton.Start + (long)Math.Round(skeleton.Step), skeleton.Start);
+            if (secondsPerSample <= 0)
+                return;
+
+            double sps = 1.0 / secondsPerSample;
+            if (region != null)
+                region.Align(skeleton.Start, skeleton.Step);
+
+            string video = SwimLearning.VideoCode(videoPath);
+            SwimLearning l = Learning;
+            SwimDetectorContext context = new SwimDetectorContext
+            {
+                Style = Race.Style,
+                Measure = (kind, name, fallback) =>
+                {
+                    int count;
+                    return l.Measure(kind, name, video, fallback, out count);
+                }
+            };
+
+            List<SwimDetection> found;
+            try
+            {
+                found = SwimEventDetector.Detect(SwimPoseSeries.FromData(skeleton.Data, sps), region, context);
+            }
+            catch (Exception e)
+            {
+                log.Error("Automatic proposals failed.", e);
+                Status("Οι αυτόματες προτάσεις απέτυχαν: " + e.Message, true);
+                return;
+            }
+
+            // The proposals of an older reading of the same part go.
+            Race.Proposals.RemoveAll(p => p.Timestamp >= skeleton.Start && p.Timestamp <= skeleton.End);
+            string batch = Guid.NewGuid().ToString("N");
+            int added = 0;
+            foreach (SwimDetection d in found)
+            {
+                double confidence;
+                double sample = SwimProposalMath.Combine(d, l, video, sps, out confidence);
+                if (double.IsNaN(sample) || confidence < 0.25)
+                    continue;
+
+                long ts = skeleton.Start + (long)Math.Round(sample * skeleton.Step);
+                if (ts < skeleton.Start || ts > skeleton.End)
+                    continue;
+
+                // Already marked by the analyst near there: nothing to propose.
+                if (HasMarkNear(d.Type, ts, d.Type == SwimMarkType.Kick ? 0.12 : 0.3))
+                    continue;
+
+                SwimProposal p = new SwimProposal
+                {
+                    Type = d.Type,
+                    Timestamp = ts,
+                    Kind = d.Kind,
+                    Confidence = Math.Round(confidence, 2),
+                    Index = d.Index,
+                    Batch = batch
+                };
+
+                foreach (KeyValuePair<string, double> c in d.Cues)
+                    p.Cues[c.Key] = skeleton.Start + (long)Math.Round(c.Value * skeleton.Step);
+                if (d.Measures.Count > 0)
+                    p.Measures = new Dictionary<string, double>(d.Measures);
+                Race.Proposals.Add(p);
+                added++;
+            }
+
+            Changed(false);
+            if (added == 0)
+            {
+                Status("Αυτόματες προτάσεις: δεν βρέθηκε γεγονός σε αυτό το κομμάτι (εκκίνηση από τη θέση ετοιμότητας, δελφινισμοί, στροφή).", false);
+                RefreshProposalsUi();
+                return;
+            }
+
+            BeginReview(Race.Proposals.Where(p => p.Batch == batch).OrderBy(p => p.Timestamp).First());
+        }
+
+        private bool HasMarkNear(SwimMarkType type, long timestamp, double seconds)
+        {
+            Func<SwimMark, bool> near = m => Math.Abs(Timing.Seconds(m.Timestamp, timestamp)) <= seconds;
+            if (type == SwimMarkType.WallContact && !Race.IsTraining)
+                return Race.Marks.Any(m => m.Type == SwimMarkType.Split && near(m));
+            return Race.Marks.Any(m => m.Type == type && near(m));
+        }
+
+        /// <summary>Check of the proposals from this one (or the first waiting): the video goes to it.</summary>
+        public void BeginReview(SwimProposal from = null)
+        {
+            if (Race == null || !HasVideo)
+                return;
+
+            SwimProposal p = from ?? PendingProposals.FirstOrDefault();
+            if (p == null)
+            {
+                Status("Δεν υπάρχουν προτάσεις σε αναμονή. «✨ Προτάσεις» μετά τον σκελετό.", false);
+                EndReview(false);
+                return;
+            }
+
+            if (reviewId == null)
+            {
+                reviewAnswered = 0;
+                reviewCorrected = 0;
+                reviewWrong = 0;
+            }
+
+            reviewId = p.Id;
+            ShowProposal(p);
+        }
+
+        private void ShowProposal(SwimProposal p)
+        {
+            SeekTo(p.Timestamp);
+            int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
+            Status(string.Format(CultureInfo.InvariantCulture, "✨ Πρόταση {0}/{1}: {2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος · Esc: τέλος.",
+                index, Race.Proposals.Count, ProposalLabel(p)), false);
+            RefreshProposalsUi();
+            InvalidatePlayer();
+        }
+
+        /// <summary>Stops the check (the proposals not answered wait).</summary>
+        public void EndReview(bool report = true)
+        {
+            bool was = reviewId != null;
+            reviewId = null;
+            if (was && report)
+            {
+                int left = Race == null ? 0 : Race.Proposals.Count;
+                Status(string.Format(CultureInfo.InvariantCulture, "Έλεγχος προτάσεων: {0} απαντήσεις ({1} σωστές, {2} διορθωμένες, {3} λάθος){4}.",
+                    reviewAnswered, reviewAnswered - reviewCorrected - reviewWrong, reviewCorrected, reviewWrong,
+                    left > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)", left) : ""), false);
+            }
+
+            RefreshProposalsUi();
+            InvalidatePlayer();
+        }
+
+        /// <summary>
+        /// Keys of the video during the check: Enter keeps the proposal at the frame shown, Delete rejects it, Esc stops.
+        /// Returns true when the key was used.
+        /// </summary>
+        public bool ReviewKey(PlayerScreenUserInterface screen, Keys key, long timestamp)
+        {
+            if (!Reviewing || !HasVideo || screen != player)
+                return false;
+
+            SwimProposal p = CurrentProposal;
+            if (key == Keys.Enter)
+            {
+                AcceptProposal(p, timestamp);
+                return true;
+            }
+
+            if (key == Keys.Delete)
+            {
+                RejectProposal(p);
+                return true;
+            }
+
+            if (key == Keys.Escape)
+            {
+                EndReview();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Panel and video bar: "Σωστό" for the proposal being checked at the current frame.</summary>
+        public void AcceptCurrentProposal()
+        {
+            long? now = CurrentVideoTimestamp;
+            if (Reviewing && now.HasValue)
+                AcceptProposal(CurrentProposal, now.Value);
+        }
+
+        public void RejectCurrentProposal()
+        {
+            if (Reviewing)
+                RejectProposal(CurrentProposal);
+        }
+
+        /// <summary>The event is at this frame: the mark is added with its usual command, the answer goes to the learning.</summary>
+        private void AcceptProposal(SwimProposal p, long timestamp)
+        {
+            if (p == null || Race == null)
+                return;
+
+            // A mark of this kind already on this frame: only the answer.
+            bool exists = p.Type == SwimMarkType.WallContact && !Race.IsTraining
+                ? Race.Marks.Any(m => m.Type == SwimMarkType.Split && SameFrame(m.Timestamp, timestamp))
+                : Race.Marks.Any(m => m.Type == p.Type && SameFrame(m.Timestamp, timestamp));
+            PlayerScreenCommands command;
+            if (exists || !CommandOf(p.Type, out command))
+            {
+                Answer(p, timestamp, true);
+                Changed(false);
+            }
+            else
+            {
+                resolvingProposal = true;
+                try
+                {
+                    HandleCommand(player, frameServer, command, timestamp);
+                }
+                finally
+                {
+                    resolvingProposal = false;
+                }
+
+                // The command may have refused the mark (for example a wall that is not one of the race): still an answer.
+                if (Race.Proposals.Contains(p))
+                {
+                    Answer(p, timestamp, true);
+                    Changed(false);
+                }
+            }
+
+            NextProposal(timestamp);
+        }
+
+        private void RejectProposal(SwimProposal p)
+        {
+            if (p == null)
+                return;
+
+            long at = p.Timestamp;
+            Answer(p, at, false);
+            Changed(false);
+            Status(ProposalLabel(p) + ": δεν κρατήθηκε (η μάθηση το σημειώνει).", false);
+            NextProposal(at);
+        }
+
+        private void NextProposal(long after)
+        {
+            if (reviewId == null)
+            {
+                RefreshProposalsUi();
+                return;
+            }
+
+            List<SwimProposal> pending = PendingProposals;
+            SwimProposal next = pending.FirstOrDefault(x => x.Timestamp > after) ?? pending.FirstOrDefault();
+            if (next == null)
+            {
+                EndReview();
+                return;
+            }
+
+            reviewId = next.Id;
+            ShowProposal(next);
+        }
+
+        /// <summary>
+        /// A mark added by the analyst (with its key or by accepting): the proposal of the same kind near it is answered with
+        /// this frame (the one being checked first).
+        /// </summary>
+        private void ResolveProposalsByMark(SwimMarkType type, long timestamp)
+        {
+            if (Race == null || Race.Proposals.Count == 0)
+                return;
+
+            double window = type == SwimMarkType.Kick ? 0.2 : 0.6;
+            SwimProposal current = CurrentProposal;
+            SwimProposal p = current != null && current.Type == type && Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= window ? current :
+                Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= window)
+                    .OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
+            if (p == null)
+                return;
+
+            Answer(p, timestamp, true);
+            if (!resolvingProposal && p.Id == reviewId)
+                NextProposal(timestamp);
+        }
+
+        /// <summary>The answer of the analyst to a proposal: kept for the learning, the proposal goes.</summary>
+        private void Answer(SwimProposal p, long timestamp, bool right)
+        {
+            Race.Proposals.Remove(p);
+            SwimLearningRecord record = new SwimLearningRecord
+            {
+                Date = DateTime.Now,
+                Kind = p.Kind,
+                Video = SwimLearning.VideoCode(videoPath),
+                Right = right,
+                Confidence = p.Confidence
+            };
+
+            if (right)
+            {
+                record.Error = Timing.Seconds(timestamp, p.Timestamp);
+                foreach (KeyValuePair<string, long> c in p.Cues)
+                    record.Cues[c.Key] = Timing.Seconds(timestamp, c.Value);
+                record.Measures = MeasuresAt(p, timestamp);
+            }
+
+            Learning.Add(record);
+            Learning.Save();
+            if (reviewId != null)
+            {
+                reviewAnswered++;
+                if (!right)
+                    reviewWrong++;
+                else if (!SameFrame(timestamp, p.Timestamp))
+                    reviewCorrected++;
+            }
+
+            if (p.Id == reviewId && !Race.Proposals.Any(x => x.Id == reviewId))
+                RefreshProposalsUi();
+        }
+
+        /// <summary>Values of the image at the frame kept (the entry: level of the hands under the block, in body sizes).</summary>
+        private Dictionary<string, double> MeasuresAt(SwimProposal p, long timestamp)
+        {
+            if (p.Kind != SwimEventDetector.StartEntry || p.Measures == null || !p.Measures.ContainsKey("block") || !p.Measures.ContainsKey("L"))
+                return null;
+
+            SwimSkeleton s = Race.SkeletonAt(timestamp);
+            PointF[] points = new PointF[SwimJoints.Count];
+            float[] visibility = new float[SwimJoints.Count];
+            if (s == null || !s.TryGet(timestamp, 2, points, visibility))
+                return null;
+
+            double wrist = double.NaN;
+            foreach (int j in new[] { SwimJoints.LeftWrist, SwimJoints.RightWrist })
+            {
+                if (visibility[j] >= 0.3f && (double.IsNaN(wrist) || points[j].Y > wrist))
+                    wrist = points[j].Y;
+            }
+
+            double L = p.Measures["L"];
+            if (double.IsNaN(wrist) || L <= 0)
+                return null;
+
+            return new Dictionary<string, double> { { "level", (wrist - p.Measures["block"]) / L } };
+        }
+
+        /// <summary>Delete the proposals waiting (all, or the ones of the skeleton at the current frame).</summary>
+        public void DeleteProposals()
+        {
+            if (Race == null || Race.Proposals.Count == 0)
+                return;
+
+            int n = Race.Proposals.Count;
+            Race.Proposals.Clear();
+            EndReview(false);
+            Changed(false);
+            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).", n), false);
+        }
+
+        private static bool CommandOf(SwimMarkType type, out PlayerScreenCommands command)
+        {
+            switch (type)
+            {
+                case SwimMarkType.Reaction: command = PlayerScreenCommands.SwimReaction; return true;
+                case SwimMarkType.HandsOff: command = PlayerScreenCommands.SwimHandsOff; return true;
+                case SwimMarkType.BackFoot: command = PlayerScreenCommands.SwimBackFoot; return true;
+                case SwimMarkType.FeetOff: command = PlayerScreenCommands.SwimFeetOff; return true;
+                case SwimMarkType.Entry: command = PlayerScreenCommands.SwimEntry; return true;
+                case SwimMarkType.Kick: command = PlayerScreenCommands.SwimKick; return true;
+                case SwimMarkType.Breakout: command = PlayerScreenCommands.SwimBreakout; return true;
+                case SwimMarkType.WallContact: command = PlayerScreenCommands.SwimWallContact; return true;
+                case SwimMarkType.RotationStart: command = PlayerScreenCommands.SwimRotation; return true;
+                default: command = PlayerScreenCommands.SwimUndo; return false;
+            }
+        }
+
+        /// <summary>"Αποκόλληση ποδιών (82%)", "Δελφινισμός 3 (70%)".</summary>
+        public static string ProposalLabel(SwimProposal p)
+        {
+            string name;
+            switch (p.Type)
+            {
+                case SwimMarkType.Reaction: name = "Πρώτη κίνηση (αντίδραση)"; break;
+                case SwimMarkType.HandsOff: name = "Χέρια φεύγουν από τον βατήρα"; break;
+                case SwimMarkType.BackFoot: name = "Πίσω πόδι φεύγει"; break;
+                case SwimMarkType.FeetOff: name = p.Kind == SwimEventDetector.TurnFeet ? "Αποκόλληση από τον τοίχο" : "Αποκόλληση ποδιών"; break;
+                case SwimMarkType.Entry: name = "Είσοδος χεριών στο νερό"; break;
+                case SwimMarkType.Kick: name = "Δελφινισμός" + (p.Index > 0 ? " " + p.Index : ""); break;
+                case SwimMarkType.Breakout: name = "Έξοδος από το νερό"; break;
+                case SwimMarkType.WallContact: name = "Επαφή στον τοίχο"; break;
+                case SwimMarkType.RotationStart: name = "Αρχή περιστροφής"; break;
+                default: name = p.Type.ToString(); break;
+            }
+
+            return string.Format(CultureInfo.InvariantCulture, "{0} ({1:0}%)", name, 100 * p.Confidence);
+        }
+
+        private void RefreshProposalsUi()
+        {
+            if (form != null && !form.IsDisposed)
+                form.RefreshSkeleton();
+            DataVersion++;
+        }
+
+        /// <summary>On the video: the proposal being checked (or one at this frame), its keys and how far the frame shown is from it.</summary>
+        private void DrawProposalPrompt(Graphics g, long timestamp, Size renderingSize)
+        {
+            if (Race == null || Race.Proposals.Count == 0)
+                return;
+
+            SwimProposal p = Reviewing ? CurrentProposal : Race.Proposals.FirstOrDefault(x => SameFrame(x.Timestamp, timestamp));
+            if (p == null)
+                return;
+
+            long frames = (long)Math.Round((timestamp - p.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
+            int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
+            string title = string.Format(CultureInfo.InvariantCulture, "✨ {0}/{1}  {2}", index, Race.Proposals.Count, ProposalLabel(p));
+            string where = frames == 0 ? "στο καρέ της πρότασης" : string.Format(CultureInfo.InvariantCulture, "{0:+0;−0} καρέ από την πρόταση", frames);
+            string keys = Reviewing ? "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος" : "«Έλεγχος» για να απαντήσεις";
+
+            PaintProposalPrompt(g, title, where, keys, frames == 0, renderingSize);
+        }
+
+        /// <summary>The box of a proposal at the top of the video: title, where the frame is, the keys.</summary>
+        public static void PaintProposalPrompt(Graphics g, string title, string where, string keys, bool atProposal, Size renderingSize)
+        {
+            // Fonts of the theme are shared: not disposed here.
+            Font big = SwimTheme.Display(11f);
+            Font small = SwimTheme.Ui(8.5f, FontStyle.Bold);
+            SizeF s1 = g.MeasureString(title, big), s2 = g.MeasureString(where + "   " + keys, small);
+            float w = Math.Max(s1.Width, s2.Width) + 24, h = s1.Height + s2.Height + 14;
+            float x = Math.Max(8, (renderingSize.Width - w) / 2), y = 10;
+            RectangleF box = new RectangleF(x, y, w, h);
+            SwimTheme.FillRounded(g, Color.FromArgb(215, 7, 12, 19), box, 8);
+            using (Pen accent = new Pen(Color.FromArgb(230, atProposal ? SwimTheme.Accent : SwimTheme.Amber), 2f))
+                g.DrawLine(accent, box.Left + 8, box.Bottom - 2, box.Right - 8, box.Bottom - 2);
+            using (SolidBrush white = new SolidBrush(Color.White))
+            using (SolidBrush dim = new SolidBrush(Color.FromArgb(230, 190, 205, 220)))
+            using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
+            {
+                g.DrawString(title, big, white, x + 12, y + 5);
+                g.DrawString(where, small, atProposal ? dim : amber, x + 12, y + 7 + s1.Height);
+                g.DrawString(keys, small, dim, x + 12 + g.MeasureString(where + "   ", small).Width, y + 7 + s1.Height);
+            }
+        }
+        #endregion
+    }
+}

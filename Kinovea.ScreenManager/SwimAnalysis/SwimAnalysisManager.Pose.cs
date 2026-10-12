@@ -153,6 +153,7 @@ namespace Kinovea.ScreenManager
             int height = Math.Max(2, (int)Math.Round(width * (double)reference.Height / Math.Max(1, reference.Width)));
             int lostLimit = Math.Max(5, (int)Math.Round(SkeletonLostSeconds * realFps / step));
             SwimSkeleton skeleton = new SwimSkeleton { Start = from, Step = Timing.AverageTimestampsPerFrame * step };
+            RegionCapture capture = new RegionCapture(realFps / step, reference.Width / (float)width, reference.Height / (float)height);
 
             Exception error = null;
             bool cancelled = false;
@@ -168,7 +169,7 @@ namespace Kinovea.ScreenManager
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) =>
                 {
-                    e.Result = ReadSkeletonFrames(skeleton, click, from, end, step, width, height, reference, lostLimit, (BackgroundWorker)o);
+                    e.Result = ReadSkeletonFrames(skeleton, capture, click, from, end, step, width, height, reference, lostLimit, (BackgroundWorker)o);
                 };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
@@ -210,6 +211,11 @@ namespace Kinovea.ScreenManager
                 Status(string.Format(CultureInfo.InvariantCulture,
                     "Σκελετός: βρέθηκε σε {0} από {1} καρέ ({2:0.00}–{3:0.00} s){4}. «📐 Γωνίες σκελετού» βάζει τις γωνίες του καρέ στην ανάλυση.",
                     kept.Found, kept.Count, Timing.Seconds(kept.Start, origin), Timing.Seconds(kept.End, origin), cancelled ? ", ανάγνωση σταμάτησε" : ""), false);
+
+                // The image of the start (block and swimmer) for the proposals, then the proposals of this part.
+                lastRegion = capture.Moved && capture.Frames != null && capture.Frames.Count >= 10 ? capture.Frames : null;
+                if (Settings.ProposeAfterSkeleton && !cancelled)
+                    Propose(kept, lastRegion);
             }
             finally
             {
@@ -220,7 +226,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Background thread: the frames from 'from' to 'end' (or until the swimmer is lost). False if cancelled.</summary>
-        private bool ReadSkeletonFrames(SwimSkeleton skeleton, PointF click, long from, long end, int step, int width, int height, Size reference,
+        private bool ReadSkeletonFrames(SwimSkeleton skeleton, RegionCapture capture, PointF click, long from, long end, int step, int width, int height, Size reference,
             int lostLimit, BackgroundWorker worker)
         {
             SwimPoseNet net = PoseNet();
@@ -250,7 +256,9 @@ namespace Kinovea.ScreenManager
 
                 using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(frame.Image, width, height))
                 {
+                    net.KeepMask = !capture.Done;
                     SwimPose pose = tracker.Next(part => net.Detect(bgr, part), (hip, body) => net.Landmarks(bgr, hip, body));
+                    capture.Add(bgr, pose, net, frame.Timestamp);
                     if (pose != null)
                         pose.Scale(sx, sy);
                     skeleton.Add(pose);
@@ -268,6 +276,160 @@ namespace Kinovea.ScreenManager
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// The image around the swimmer while the skeleton is read, for the proposals of a start: small colour crops of the part
+        /// of the image of the swimmer at the first frame (with a margin for the block), with the person mask of the pose model.
+        /// The last 1.6 s while the swimmer is still, then 1.6 s after he moves (the core more than 0.8 body away).
+        /// </summary>
+        private sealed class RegionCapture
+        {
+            private const double Before = 1.6;
+            private const double After = 1.6;
+            private const double CropBody = 100;
+
+            private readonly int keepBefore;
+            private readonly int keepAfter;
+            private readonly float sx, sy;
+            private OpenCvSharp.Rect roi;
+            private double scale;
+            private int width, height;
+            private PointF firstCore;
+            private double body;
+            private int after = -1;
+
+            public SwimRegionFrames Frames { get; private set; }
+
+            public bool Done { get; private set; }
+
+            public bool Moved
+            {
+                get { return after >= 0; }
+            }
+
+            public RegionCapture(double samplesPerSecond, float sx, float sy)
+            {
+                keepBefore = Math.Max(10, (int)Math.Round(Before * samplesPerSecond));
+                keepAfter = Math.Max(10, (int)Math.Round(After * samplesPerSecond));
+                this.sx = sx;
+                this.sy = sy;
+            }
+
+            /// <summary>The frame (working image) and the skeleton found in it (working pixels, null if none).</summary>
+            public void Add(OpenCvSharp.Mat bgr, SwimPose pose, SwimPoseNet net, long timestamp)
+            {
+                if (Done)
+                    return;
+
+                try
+                {
+                    if (Frames == null)
+                    {
+                        if (pose == null)
+                            return;
+                        if (!Init(bgr, pose))
+                        {
+                            Done = true;
+                            return;
+                        }
+                    }
+
+                    byte[] pixels;
+                    using (OpenCvSharp.Mat part = new OpenCvSharp.Mat(bgr, roi))
+                    using (OpenCvSharp.Mat small = new OpenCvSharp.Mat())
+                    {
+                        OpenCvSharp.Cv2.Resize(part, small, new OpenCvSharp.Size(width, height), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                        pixels = SwimStrokeVideo.Bytes(small);
+                    }
+
+                    byte[] mask = pose != null && net.LastMask != null && net.LastTransform != null ? Mask(net.LastMask, net.LastTransform) : null;
+                    Frames.Add(timestamp, pixels, mask);
+
+                    if (after < 0)
+                    {
+                        Frames.KeepLast(keepBefore);
+                        PointF c = pose != null ? Core(pose) : new PointF(float.NaN, float.NaN);
+                        if (!float.IsNaN(c.X) && Math.Sqrt((c.X - firstCore.X) * (c.X - firstCore.X) + (c.Y - firstCore.Y) * (c.Y - firstCore.Y)) > 0.8 * body)
+                            after = 0;
+                    }
+                    else if (++after >= keepAfter)
+                    {
+                        Done = true;
+                    }
+                }
+                catch (Exception e)
+                {
+                    // Without the image the proposals use the skeleton only.
+                    log.Error("Image of the start not kept.", e);
+                    Frames = null;
+                    Done = true;
+                }
+            }
+
+            private bool Init(OpenCvSharp.Mat bgr, SwimPose pose)
+            {
+                Func<int, int, double> seg = (a, b) => pose.Visibility[a] >= 0.3f && pose.Visibility[b] >= 0.3f ?
+                    Math.Sqrt((pose.X[a] - pose.X[b]) * (pose.X[a] - pose.X[b]) + (pose.Y[a] - pose.Y[b]) * (pose.Y[a] - pose.Y[b])) : double.NaN;
+                double left = seg(SwimJoints.LeftShoulder, SwimJoints.LeftHip) + seg(SwimJoints.LeftHip, SwimJoints.LeftKnee) + seg(SwimJoints.LeftKnee, SwimJoints.LeftAnkle);
+                double right = seg(SwimJoints.RightShoulder, SwimJoints.RightHip) + seg(SwimJoints.RightHip, SwimJoints.RightKnee) + seg(SwimJoints.RightKnee, SwimJoints.RightAnkle);
+                body = double.IsNaN(left) ? right : double.IsNaN(right) ? left : Math.Max(left, right);
+                if (double.IsNaN(body))
+                    body = 2.2 * pose.BodySize;
+                if (double.IsNaN(body) || body < 12)
+                    return false;
+
+                List<int> seen = Enumerable.Range(0, SwimJoints.Count).Where(j => pose.Visibility[j] >= 0.3f).ToList();
+                if (seen.Count < 6)
+                    seen = Enumerable.Range(0, SwimJoints.Count).ToList();
+                double margin = 0.6 * body;
+                int x0 = (int)Math.Max(0, Math.Floor(seen.Min(j => pose.X[j]) - margin));
+                int y0 = (int)Math.Max(0, Math.Floor(seen.Min(j => pose.Y[j]) - margin));
+                int x1 = (int)Math.Min(bgr.Width, Math.Ceiling(seen.Max(j => pose.X[j]) + margin));
+                int y1 = (int)Math.Min(bgr.Height, Math.Ceiling(seen.Max(j => pose.Y[j]) + margin));
+                if (x1 - x0 < 16 || y1 - y0 < 16)
+                    return false;
+
+                roi = new OpenCvSharp.Rect(x0, y0, x1 - x0, y1 - y0);
+                scale = Math.Min(1.0, CropBody / body);
+                width = Math.Max(16, (int)Math.Round(roi.Width * scale));
+                height = Math.Max(16, (int)Math.Round(roi.Height * scale));
+                firstCore = Core(pose);
+                if (float.IsNaN(firstCore.X))
+                    return false;
+
+                Frames = new SwimRegionFrames
+                {
+                    Region = new RectangleF(roi.X * sx, roi.Y * sy, roi.Width * sx, roi.Height * sy),
+                    Scale = (float)(width / (double)roi.Width / sx),
+                    Width = width,
+                    Height = height
+                };
+
+                return true;
+            }
+
+            private static PointF Core(SwimPose pose)
+            {
+                double x = 0, y = 0;
+                int n = 0;
+                foreach (int j in new[] { SwimJoints.LeftShoulder, SwimJoints.RightShoulder, SwimJoints.LeftHip, SwimJoints.RightHip })
+                {
+                    if (pose.Visibility[j] < 0.3f)
+                        continue;
+                    x += pose.X[j];
+                    y += pose.Y[j];
+                    n++;
+                }
+
+                return n == 0 ? new PointF(float.NaN, float.NaN) : new PointF((float)(x / n), (float)(y / n));
+            }
+
+            /// <summary>The person mask of the pose model (256 × 256, in its rotated region) in the crop: 1 on the person.</summary>
+            private byte[] Mask(float[] values, double[] t)
+            {
+                return SwimPoseNet.MaskInCrop(values, t, new Rectangle(roi.X, roi.Y, roi.Width, roi.Height), width, height);
+            }
         }
 
         /// <summary>The skeleton without the frames before the swimmer was first seen and after he was last seen.</summary>

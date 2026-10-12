@@ -482,6 +482,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Skeleton of the swimmer found with "Σκελετός" (technical analysis): one part per start or turn followed.</summary>
         public List<SwimSkeleton> Skeletons = new List<SwimSkeleton>();
 
+        /// <summary>Marks proposed by the automatic analysis and not answered yet (see SwimProposal).</summary>
+        public List<SwimProposal> Proposals = new List<SwimProposal>();
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;
@@ -636,6 +639,13 @@ namespace Kinovea.ScreenManager
             Tracks.RemoveAll(t => t == null || t.X == null || t.Y == null || t.Top == null || t.Bottom == null || t.Step <= 0);
             if (Skeletons == null) Skeletons = new List<SwimSkeleton>();
             Skeletons.RemoveAll(s => s == null || s.Data == null || s.Step <= 0 || s.Data.Count % SwimSkeleton.Values != 0);
+            if (Proposals == null) Proposals = new List<SwimProposal>();
+            Proposals.RemoveAll(p => p == null || string.IsNullOrEmpty(p.Kind));
+            foreach (SwimProposal p in Proposals)
+            {
+                if (p.Cues == null)
+                    p.Cues = new Dictionary<string, long>();
+            }
             if (string.IsNullOrEmpty(Kind)) Kind = KindRace;
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";

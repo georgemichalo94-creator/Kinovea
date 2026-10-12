@@ -87,6 +87,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Technical analysis: the angles of the knee, the hip and the elbow on the skeleton.</summary>
         public bool SkeletonAngles = true;
 
+        /// <summary>
+        /// Technical analysis: right after a skeleton is read, the marks of the start, the dolphin kicks, the breakout and the
+        /// turn are proposed and checked one by one on the video (Enter right, arrows and Enter corrected, Delete wrong).
+        /// </summary>
+        public bool ProposeAfterSkeleton = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

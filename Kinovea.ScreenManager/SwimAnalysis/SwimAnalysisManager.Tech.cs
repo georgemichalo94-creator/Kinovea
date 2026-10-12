@@ -290,6 +290,7 @@ namespace Kinovea.ScreenManager
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = wall };
             AddReplacing(mark, m => m.Type == SwimMarkType.Split && m.Distance == wall);
+            ResolveProposalsByMark(SwimMarkType.WallContact, timestamp);
 
             double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
             string message = string.Format(CultureInfo.InvariantCulture, "{0} {1}{2}: {3:0.00} s", wall >= Race.Distance ? "Τερματισμός" : "Τοίχος", wall, unit, t);

@@ -1591,8 +1591,10 @@ namespace Kinovea.ScreenManager
             {
                 // General
                 case PlayerScreenCommands.ResetViewport:
-                    // Escape also cancels a pending click of the swim analysis.
+                    // Escape also cancels a pending click of the swim analysis, or ends the check of its proposals.
                     if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.CancelPick())
+                        break;
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Escape, m_iCurrentPosition))
                         break;
                     DisablePlayAndDraw();
                     DoInvalidate();
@@ -1724,9 +1726,15 @@ namespace Kinovea.ScreenManager
                     PasteDrawing(true);
                     break;
                 case PlayerScreenCommands.DeleteDrawing:
+                    // Swim analysis: Delete rejects the proposal being checked.
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Delete, m_iCurrentPosition))
+                        break;
                     DeleteSelectedDrawing();
                     break;
                 case PlayerScreenCommands.ValidateDrawing:
+                    // Swim analysis: Enter keeps the proposal being checked at this frame.
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Enter, m_iCurrentPosition))
+                        break;
                     ValidateDrawing();
                     break;
                 case PlayerScreenCommands.CopyImage:
