@@ -159,6 +159,9 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            if (slopes.Count == 0)
+                return;
+
             double slope = SwimLearningMedian(slopes);
             if (slope <= 0)
                 return;
@@ -596,6 +599,9 @@ namespace Kinovea.ScreenManager
 
         private static double SwimLearningMedian(List<double> values)
         {
+            if (values == null || values.Count == 0)
+                return double.NaN;
+
             values.Sort();
             int n = values.Count;
             return n % 2 == 1 ? values[n / 2] : 0.5 * (values[n / 2 - 1] + values[n / 2]);
