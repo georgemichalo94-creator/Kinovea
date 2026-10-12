@@ -989,13 +989,49 @@ namespace Kinovea.ScreenManager
                 wave[i] = smooth[i] - sum / count;
             }
 
+            // The underwater part: the glide (arms forward) for 0.6 s at least, gaps of 2 samples allowed, and 0.12 s after it
+            // (the last kick comes with the first pull). Short moments of arms forward while swimming (butterfly) do not count.
+            bool[] underwater = new bool[n];
+            int gapLimit = 2, minRun = Math.Max(4, (int)Math.Round(0.6 * sps)), tail = (int)Math.Round(0.12 * sps);
+            for (int i = 0; i < n; )
+            {
+                if (!glide[i])
+                {
+                    i++;
+                    continue;
+                }
+
+                int j = i, last = i, gap = 0;
+                while (j + 1 < n && gap <= gapLimit)
+                {
+                    j++;
+                    if (glide[j])
+                    {
+                        last = j;
+                        gap = 0;
+                    }
+                    else
+                    {
+                        gap++;
+                    }
+                }
+
+                if (last - i + 1 >= minRun)
+                {
+                    for (int k = i; k <= Math.Min(n - 1, last + tail); k++)
+                        underwater[k] = true;
+                }
+
+                i = last + 1;
+            }
+
             // Lowest points of the feet in the glide: local maxima, apart by 0.25 s at least, clear against the points around.
             int minGap = Math.Max(2, (int)Math.Round(0.25 * sps));
             List<int> peaks = new List<int>();
             List<double> heights = new List<double>();
             for (int i = 1; i < n - 1; i++)
             {
-                if (!glide[i] || double.IsNaN(wave[i]))
+                if (!underwater[i] || double.IsNaN(wave[i]))
                     continue;
 
                 bool top = true;
@@ -1247,7 +1283,8 @@ namespace Kinovea.ScreenManager
             double fastest = 0;
             int fastestAt = -1;
             int k3 = Math.Max(2, (int)Math.Round(0.05 * sps));
-            for (int i = pushSeen; i < Math.Min(s.Count - k3, pushSeen + (int)(0.6 * sps)); i++)
+            int pushFrom = Math.Max(k3, wallFeetAt >= 0 ? wallFeetAt : contact);
+            for (int i = pushFrom; i < Math.Min(s.Count - k3, pushFrom + (int)(0.8 * sps)); i++)
             {
                 PointF a = Core(s, i - k3), b = Core(s, i + k3);
                 if (float.IsNaN(a.X) || float.IsNaN(b.X))
