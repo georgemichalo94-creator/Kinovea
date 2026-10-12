@@ -714,6 +714,14 @@ namespace Kinovea.ScreenManager
                     foreach (SwimAngle a in Race.Angles.Where(x => SameFrame(x.Timestamp, timestamp)))
                         DrawAngle(g, a, p => p, Math.Max(1f, size.Width / 900f));
 
+                    if (SkeletonShown)
+                    {
+                        // Reference image pixels → pixels of the exported image.
+                        Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                        float kx = size.Width / (float)Math.Max(1, reference.Width), ky = size.Height / (float)Math.Max(1, reference.Height);
+                        DrawSkeleton(g, timestamp, p => new PointF(p.X * kx, p.Y * ky), Math.Max(1f, size.Width / 900f));
+                    }
+
                     if (panels && size.Width > 0 && size.Height > 0)
                     {
                         float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));

@@ -146,7 +146,8 @@ namespace Kinovea.ScreenManager
             b.Append(manager.AutoStrokesRunning).Append('|').Append(manager.StrokeSessionWall).Append('|');
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
             b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind).Append('|');
-            b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription);
+            b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription).Append('|');
+            b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription);
             return b.ToString();
         }
         #endregion
@@ -295,7 +296,7 @@ namespace Kinovea.ScreenManager
             string title;
             List<Btn> buttons = tech ? TechButtons(race, tab, out title) : RaceButtons(race, tab, out title);
             bool autoRow = !tech && manager.Settings.AutoStrokes && tab <= 2;
-            PaintButtons(g, list, new RectangleF(area.Left, top, area.Width, undo.Top - S(8) - top), title, buttons, autoRow);
+            PaintButtons(g, list, new RectangleF(area.Left, top, area.Width, undo.Top - S(8) - top), title, buttons, autoRow, tech);
         }
 
         /// <summary>Right: phase and values, checkpoints, last message, window of the analysis and sending.</summary>
@@ -375,7 +376,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Card with the buttons of the marks of a tab, one under the other (two columns if they don't fit).</summary>
-        private void PaintButtons(Graphics g, List<Item> list, RectangleF space, string title, List<Btn> buttons, bool autoRow)
+        private void PaintButtons(Graphics g, List<Item> list, RectangleF space, string title, List<Btn> buttons, bool autoRow, bool skeletonRow = false)
         {
             if (buttons.Count == 0 || space.Height < S(70))
                 return;
@@ -383,7 +384,7 @@ namespace Kinovea.ScreenManager
             float inner = S(10);
             float header = S(26);
             float spacing = S(5);
-            float autoHeight = autoRow ? S(26) + S(8) : 0;
+            float autoHeight = autoRow || skeletonRow ? S(26) + S(8) : 0;
             int n = buttons.Count;
             float room = space.Height - header - S(8) - autoHeight;
             int columns = 1;
@@ -422,11 +423,29 @@ namespace Kinovea.ScreenManager
                     () => Run(command));
             }
 
+            float ay = y0 + rowCount * (bh + spacing) - spacing + S(8);
+            if (skeletonRow && ay + S(26) <= card.Bottom)
+            {
+                // Skeleton of the swimmer (one click) and its angles at the frame.
+                float sq = S(28);
+                bool picking = manager.PickTarget == SwimPickTarget.Skeleton;
+                RectangleF skel = new RectangleF(x0, ay, (width - sq - S(8)) / 2, S(26));
+                DrawButton(g, list, "skeleton", skel, picking ? "Κλικ…" : "Σκελετός", null, null, picking ? Look.Primary : Look.Normal, manager.SkeletonRunning,
+                    "Σκελετός του αθλητή: κλικ πάνω του σε ένα καθαρό καρέ. Το βίντεο διαβάζεται από εκεί, όσο φαίνεται,\n" +
+                    "και ο σκελετός σχεδιάζεται με τις γωνίες γονάτου, ισχίου και αγκώνα.", () => manager.BeginSkeleton());
+                RectangleF angles = new RectangleF(skel.Right + S(4), ay, skel.Width, S(26));
+                DrawButton(g, list, "skeleton-angles", angles, "Γωνίες", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
+                    "Οι γωνίες του σκελετού σε αυτό το καρέ μπαίνουν στην ανάλυση (γόνατο, ισχίο, αγκώνας, ώμος).", () => manager.AddSkeletonAngles());
+                RectangleF delete = new RectangleF(angles.Right + S(4), ay, sq, S(26));
+                DrawButton(g, list, "skeleton-delete", delete, "✕", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
+                    "Διαγραφή του σκελετού αυτού του σημείου του βίντεο", () => manager.DeleteSkeleton());
+                return;
+            }
+
             if (!autoRow)
                 return;
 
             // Automatic strokes: choose the swimmer again, go from stroke to stroke, delete the stroke of the frame.
-            float ay = y0 + rowCount * (bh + spacing) - spacing + S(8);
             if (ay + S(26) > card.Bottom)
                 return;
 

@@ -1902,6 +1902,7 @@ namespace Kinovea.ScreenManager
             }
             RefreshReel();
             RefreshTechPick(active);
+            RefreshSkeleton();
             RefreshCalibrationLabel();
         }
 

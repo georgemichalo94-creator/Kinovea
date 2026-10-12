@@ -81,6 +81,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Technical view: summary card of the race after the finish.</summary>
         public bool ReelSummary = true;
 
+        /// <summary>Technical analysis: the skeleton of the swimmer on the video (where it was found).</summary>
+        public bool SkeletonOverlay = true;
+
+        /// <summary>Technical analysis: the angles of the knee, the hip and the elbow on the skeleton.</summary>
+        public bool SkeletonAngles = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

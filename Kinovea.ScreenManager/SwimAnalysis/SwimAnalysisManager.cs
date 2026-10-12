@@ -763,6 +763,12 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            if (PickTarget == SwimPickTarget.Skeleton)
+            {
+                SkeletonClick(point, timestamp);
+                return;
+            }
+
             SwimCalibration calibration = CalibrationFor(timestamp);
             if (calibration == null)
             {
@@ -1295,6 +1301,9 @@ namespace Kinovea.ScreenManager
                     DrawMeasurement(g, transform, lastMeasurement);
 
                 DrawAngles(g, transform, timestamp);
+                if (SkeletonShown)
+                    DrawSkeleton(g, timestamp, p => transform.Transform(p), 1f);
+                DrawSkeletonPrompt(g);
                 if (ReelReady(renderingSize))
                 {
                     // The technical view replaces the race board, the velocity chart and the values of the start or turn.

@@ -35,7 +35,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Automatic strokes: head, then feet of the swimmer on the first frame.</summary>
         StrokeHead,
-        StrokeFeet
+        StrokeFeet,
+
+        /// <summary>Technical analysis: the swimmer whose skeleton is found from this frame.</summary>
+        Skeleton
     }
 
     public class SwimPoint

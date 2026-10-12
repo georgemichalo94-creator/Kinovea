@@ -55,6 +55,11 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbElite;
         private Label lblElite;
         private ComboBox cmbAngleName;
+        private Button btnSkeleton;
+        private Button btnSkeletonAngles;
+        private CheckBox chkSkeleton;
+        private CheckBox chkSkeletonAngles;
+        private Label lblSkeleton;
         private DataGridView gridAngles;
         private TextBox tbNotes;
         private Label lblSnapshotInfo;
@@ -329,6 +334,41 @@ namespace Kinovea.ScreenManager
             tools.Controls.Add(Caption("όνομα γωνίας:"));
             tools.Controls.Add(cmbAngleName);
 
+            // Skeleton of the swimmer: one click, then the angles of any frame.
+            btnSkeleton = new SwimNoFocusButton { Text = "🦴 Σκελετός", Width = 120, Height = 32 };
+            btnSkeleton.Click += (s, e) => manager.BeginSkeleton();
+            toolTip.SetToolTip(btnSkeleton, "Σε ένα καρέ όπου ο αθλητής φαίνεται καθαρά (π.χ. στη θέση ετοιμότητας ή πριν την επαφή), κλικ πάνω του.\n" +
+                "Το βίντεο διαβάζεται από εκεί και μετά, όσο τον βλέπει, και ο σκελετός του σχεδιάζεται στο βίντεο με τις γωνίες\n" +
+                "του γονάτου, του ισχίου και του αγκώνα. Για κάμερες σε σταθερή θέση, πάνω ή κάτω από το νερό.");
+            techPickButtons[btnSkeleton] = new SwimPickTarget[] { SwimPickTarget.Skeleton };
+            btnSkeletonAngles = new SwimNoFocusButton { Text = "📐 Γωνίες σκελετού", Width = 150, Height = 32 };
+            btnSkeletonAngles.Click += (s, e) => manager.AddSkeletonAngles();
+            toolTip.SetToolTip(btnSkeletonAngles, "Οι γωνίες του σκελετού σε αυτό το καρέ (γόνατο, ισχίο, αγκώνας, ώμος της πλευράς που φαίνεται)\n" +
+                "μπαίνουν στην ανάλυση όπως οι γωνίες με κλικ: στις τιμές της φάσης, στο Google Sheet και στο report.");
+            Button btnDeleteSkeleton = new SwimNoFocusButton { Text = "✕", Width = 32, Height = 32 };
+            btnDeleteSkeleton.Click += (s, e) => manager.DeleteSkeleton();
+            toolTip.SetToolTip(btnDeleteSkeleton, "Διαγραφή του σκελετού αυτού του σημείου του βίντεο (ή όλων, αν δεν υπάρχει εδώ)");
+            chkSkeleton = new CheckBox { Text = "στο βίντεο", AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
+            chkSkeleton.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetSkeletonOverlay(chkSkeleton.Checked);
+            };
+            chkSkeletonAngles = new CheckBox { Text = "με γωνίες", AutoSize = true, Margin = new Padding(4, 9, 3, 3) };
+            chkSkeletonAngles.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetSkeletonAngles(chkSkeletonAngles.Checked);
+            };
+            lblSkeleton = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 10, 0, 3), Text = "–" };
+            tools.SetFlowBreak(cmbAngleName, true);
+            tools.Controls.Add(btnSkeleton);
+            tools.Controls.Add(btnSkeletonAngles);
+            tools.Controls.Add(btnDeleteSkeleton);
+            tools.Controls.Add(chkSkeleton);
+            tools.Controls.Add(chkSkeletonAngles);
+            tools.Controls.Add(lblSkeleton);
+
             // Snapshots: list on the left, the picture, the comments and the elite frame on the right.
             TableLayoutPanel snaps = new TableLayoutPanel { Dock = DockStyle.Top, Height = 330, ColumnCount = 2, RowCount = 1, Margin = new Padding(0) };
             snaps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
@@ -493,6 +533,49 @@ namespace Kinovea.ScreenManager
                 RefreshTechPhasePage(SwimPhaseKind.Turn);
             else if (page == tabTechMedia)
                 RefreshTechMedia();
+            RefreshSkeleton();
+        }
+
+        /// <summary>The skeleton row: reading, choice of the swimmer, parts of the video with a skeleton.</summary>
+        public void RefreshSkeleton()
+        {
+            if (IsDisposed || lblSkeleton == null)
+                return;
+
+            bool picking = manager.PickTarget == SwimPickTarget.Skeleton;
+            btnSkeleton.Text = picking ? "Ακύρωση" : "🦴 Σκελετός";
+            btnSkeleton.Enabled = !manager.SkeletonRunning;
+            string parts = manager.SkeletonDescription;
+            if (manager.SkeletonRunning)
+            {
+                lblSkeleton.Text = "ανάγνωση του βίντεο…";
+                lblSkeleton.ForeColor = SwimTheme.Amber;
+            }
+            else if (picking)
+            {
+                lblSkeleton.Text = "κλικ πάνω στον αθλητή";
+                lblSkeleton.ForeColor = SwimTheme.Amber;
+            }
+            else if (parts.Length > 0)
+            {
+                lblSkeleton.Text = "σκελετός: " + parts;
+                lblSkeleton.ForeColor = SwimTheme.Green;
+            }
+            else
+            {
+                lblSkeleton.Text = "χωρίς σκελετό";
+                lblSkeleton.ForeColor = SwimTheme.Dim;
+            }
+
+            btnSkeletonAngles.Enabled = parts.Length > 0 && !manager.SkeletonRunning;
+            if (manager.Settings != null)
+            {
+                bool was = updating;
+                updating = true;
+                chkSkeleton.Checked = manager.Settings.SkeletonOverlay;
+                chkSkeletonAngles.Checked = manager.Settings.SkeletonAngles;
+                updating = was;
+            }
         }
 
         private void RefreshTechPhasePage(SwimPhaseKind kind)

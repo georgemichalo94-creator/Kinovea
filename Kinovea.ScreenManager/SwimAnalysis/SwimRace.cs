@@ -6,6 +6,7 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 #endregion
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using Newtonsoft.Json;
@@ -221,6 +222,145 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>
+    /// Skeleton of the swimmer in a part of the video (a start or a turn followed): every Step timestamps from Start, the
+    /// joints of SwimJoints as x, y (reference image pixels) and visibility 0–100, all 0 where the swimmer was not found.
+    /// </summary>
+    public class SwimSkeleton
+    {
+        public const int Values = SwimJoints.Count * 3;
+        public long Start;
+        public double Step;
+
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Data = new List<int>();
+
+        [JsonIgnore]
+        public int Count
+        {
+            get { return Data == null ? 0 : Data.Count / Values; }
+        }
+
+        [JsonIgnore]
+        public long End
+        {
+            get { return Start + (long)Math.Round(Step * Math.Max(0, Count - 1)); }
+        }
+
+        /// <summary>Adds the next image: the skeleton in reference pixels, null if the swimmer was not found.</summary>
+        public void Add(SwimPose pose)
+        {
+            for (int j = 0; j < SwimJoints.Count; j++)
+            {
+                bool seen = pose != null && !float.IsNaN(pose.X[j]) && !float.IsNaN(pose.Y[j]);
+                Data.Add(seen ? (int)Math.Round(pose.X[j]) : 0);
+                Data.Add(seen ? (int)Math.Round(pose.Y[j]) : 0);
+                Data.Add(seen ? Math.Max(1, Math.Min(100, (int)Math.Round(pose.Visibility[j] * 100))) : 0);
+            }
+        }
+
+        /// <summary>Images with the swimmer.</summary>
+        [JsonIgnore]
+        public int Found
+        {
+            get
+            {
+                int found = 0;
+                for (int i = 0; i < Count; i++)
+                {
+                    if (Seen(i))
+                        found++;
+                }
+
+                return found;
+            }
+        }
+
+        private bool Seen(int i)
+        {
+            int o = i * Values;
+            for (int j = 0; j < SwimJoints.Count; j++)
+            {
+                if (Data[o + j * 3 + 2] > 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The joints at a timestamp: each the median of the images around it (±smooth) where it is seen (visibility at least
+        /// 30), its visibility the best of them. False outside the part or where the swimmer was not found.
+        /// </summary>
+        public bool TryGet(long timestamp, int smooth, PointF[] points, float[] visibility)
+        {
+            int n = Count;
+            if (n == 0 || Step <= 0 || points == null || visibility == null)
+                return false;
+
+            double f = (timestamp - Start) / Step;
+            if (f < -0.5 || f > n - 0.5)
+                return false;
+
+            int i = (int)Math.Round(Math.Max(0, Math.Min(n - 1, f)));
+            if (!Seen(i) && !(i > 0 && Seen(i - 1) && i + 1 < n && Seen(i + 1)))
+                return false;
+
+            List<float> xs = new List<float>(), ys = new List<float>();
+            bool any = false;
+            for (int j = 0; j < SwimJoints.Count; j++)
+            {
+                xs.Clear();
+                ys.Clear();
+                float best = 0;
+                for (int k = Math.Max(0, i - smooth); k <= Math.Min(n - 1, i + smooth); k++)
+                {
+                    int o = k * Values + j * 3;
+                    int v = Data[o + 2];
+                    if (v < 30)
+                        continue;
+
+                    xs.Add(Data[o]);
+                    ys.Add(Data[o + 1]);
+                    if (Math.Abs(k - i) <= 1)
+                        best = Math.Max(best, v / 100f);
+                }
+
+                if (xs.Count == 0)
+                {
+                    points[j] = PointF.Empty;
+                    visibility[j] = 0;
+                    continue;
+                }
+
+                xs.Sort();
+                ys.Sort();
+                points[j] = new PointF(xs[xs.Count / 2], ys[ys.Count / 2]);
+                visibility[j] = best;
+                any = any || best > 0;
+            }
+
+            return any;
+        }
+
+        /// <summary>The points of the part between two timestamps (included), null if there are fewer than two.</summary>
+        public SwimSkeleton Slice(long from, long to)
+        {
+            int n = Count;
+            if (n == 0 || Step <= 0 || to < from)
+                return null;
+
+            int first = (int)Math.Max(0, Math.Ceiling(((double)from - Start) / Step - 1e-9));
+            int last = (int)Math.Min(n - 1, Math.Floor(((double)to - Start) / Step + 1e-9));
+            if (last - first + 1 < 2)
+                return null;
+
+            SwimSkeleton part = new SwimSkeleton { Start = Start + (long)Math.Round(first * Step), Step = Step };
+            part.Data.AddRange(Data.GetRange(first * Values, (last - first + 1) * Values));
+            return part;
+        }
+    }
+
     /// <summary>A list of numbers written on one line of the indented analysis file (read as usual).</summary>
     public sealed class SwimNumbersOnOneLine : JsonConverter
     {
@@ -339,6 +479,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public List<SwimTrack> Tracks = new List<SwimTrack>();
 
+        /// <summary>Skeleton of the swimmer found with "Σκελετός" (technical analysis): one part per start or turn followed.</summary>
+        public List<SwimSkeleton> Skeletons = new List<SwimSkeleton>();
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;
@@ -399,6 +542,16 @@ namespace Kinovea.ScreenManager
         public SwimMark GetSplit(int distance)
         {
             return Marks.FirstOrDefault(m => m.Type == SwimMarkType.Split && m.Distance == distance);
+        }
+
+        /// <summary>The part of the skeleton that contains this timestamp, null if none.</summary>
+        public SwimSkeleton SkeletonAt(long timestamp)
+        {
+            if (Skeletons == null)
+                return null;
+
+            return Skeletons.FirstOrDefault(s => s != null && s.Count > 0 &&
+                timestamp >= s.Start - s.Step * 0.5 && timestamp <= s.End + s.Step * 0.5);
         }
 
         /// <summary>The part of the swimmer's track that contains this timestamp, null if none.</summary>
@@ -481,6 +634,8 @@ namespace Kinovea.ScreenManager
             if (Snapshots == null) Snapshots = new List<SwimSnapshot>();
             if (Tracks == null) Tracks = new List<SwimTrack>();
             Tracks.RemoveAll(t => t == null || t.X == null || t.Y == null || t.Top == null || t.Bottom == null || t.Step <= 0);
+            if (Skeletons == null) Skeletons = new List<SwimSkeleton>();
+            Skeletons.RemoveAll(s => s == null || s.Data == null || s.Step <= 0 || s.Data.Count % SwimSkeleton.Values != 0);
             if (string.IsNullOrEmpty(Kind)) Kind = KindRace;
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";
