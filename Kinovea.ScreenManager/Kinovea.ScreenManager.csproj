@@ -1027,6 +1027,7 @@
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimAthletes.cs" />
@@ -1034,6 +1035,8 @@
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimRace.cs" />
+    <Compile Include="SwimAnalysis\SwimReel.cs" />
+    <Compile Include="SwimAnalysis\SwimReelPainter.cs" />
     <Compile Include="SwimAnalysis\SwimReferences.cs" />
     <Compile Include="SwimAnalysis\SwimSettings.cs" />
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />

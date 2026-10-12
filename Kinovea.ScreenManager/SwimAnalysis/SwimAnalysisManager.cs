@@ -1293,11 +1293,20 @@ namespace Kinovea.ScreenManager
                     DrawMeasurement(g, transform, lastMeasurement);
 
                 DrawAngles(g, transform, timestamp);
+                if (ReelShown)
+                {
+                    // The technical view replaces the race board, the velocity chart and the values of the start or turn.
+                    DrawReel(g, timestamp, renderingSize, p => transform.Transform(p));
+                }
+                else
+                {
+                    if (Race != null && (Race.IsTraining || TechnicalView))
+                        DrawTechOverlay(g, timestamp, renderingSize);
+                    if (Race != null && !Race.IsTraining)
+                        DrawRaceOverlay(g, timestamp, renderingSize);
+                }
+
                 DrawStrokeOverlay(g, transform, timestamp, renderingSize);
-                if (Race != null && (Race.IsTraining || TechnicalView))
-                    DrawTechOverlay(g, timestamp, renderingSize);
-                if (Race != null && !Race.IsTraining)
-                    DrawRaceOverlay(g, timestamp, renderingSize);
 
                 g.SmoothingMode = smoothing;
                 g.TextRenderingHint = textHint;

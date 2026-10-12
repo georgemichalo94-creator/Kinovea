@@ -142,6 +142,97 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
+    /// Place of the swimmer in a part of the video (one lap followed): every Step timestamps from Start, the centre of the
+    /// moving part of the swimmer along the lane and the ropes of the lane on each side of it (reference image pixels).
+    /// </summary>
+    public class SwimTrack
+    {
+        public long Start;
+        public double Step;
+
+        // One line each in the analysis file (one number per frame).
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> X = new List<int>();
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Y = new List<int>();
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Top = new List<int>();
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Bottom = new List<int>();
+
+        [JsonIgnore]
+        public long End
+        {
+            get { return Start + (long)Math.Round(Step * Math.Max(0, X.Count - 1)); }
+        }
+
+        /// <summary>
+        /// Place at a timestamp, averaged over 'smooth' points on each side (the path moves by whole pixels).
+        /// False outside the part.
+        /// </summary>
+        public bool TryGet(long timestamp, int smooth, out float x, out float y, out float top, out float bottom)
+        {
+            x = y = top = bottom = 0;
+            int n = Math.Min(Math.Min(X.Count, Y.Count), Math.Min(Top.Count, Bottom.Count));
+            if (n == 0 || Step <= 0)
+                return false;
+
+            double f = (timestamp - Start) / Step;
+            if (f < -0.5 || f > n - 0.5)
+                return false;
+
+            int i = (int)Math.Round(Math.Max(0, Math.Min(n - 1, f)));
+            double sx = 0, sy = 0, st = 0, sb = 0, sw = 0;
+            for (int k = Math.Max(0, i - smooth); k <= Math.Min(n - 1, i + smooth); k++)
+            {
+                double w = smooth + 1 - Math.Abs(k - i);
+                sx += w * X[k];
+                sy += w * Y[k];
+                st += w * Top[k];
+                sb += w * Bottom[k];
+                sw += w;
+            }
+
+            x = (float)(sx / sw);
+            y = (float)(sy / sw);
+            top = (float)(st / sw);
+            bottom = (float)(sb / sw);
+            return true;
+        }
+    }
+
+    /// <summary>A list of numbers written on one line of the indented analysis file (read as usual).</summary>
+    public sealed class SwimNumbersOnOneLine : JsonConverter
+    {
+        public override bool CanRead
+        {
+            get { return false; }
+        }
+
+        public override bool CanConvert(Type objectType)
+        {
+            return objectType == typeof(List<int>);
+        }
+
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            List<int> numbers = value as List<int>;
+            if (numbers == null)
+            {
+                writer.WriteNull();
+                return;
+            }
+
+            writer.WriteRawValue("[" + string.Join(",", numbers.Select(n => n.ToString(CultureInfo.InvariantCulture))) + "]");
+        }
+    }
+
+    /// <summary>
     /// One analysed swimmer in one race (or in a training video for the technical analysis).
     /// Times are not stored as seconds but as video timestamps, and converted with the video timing
     /// so that a change of the capture framerate (high speed) is honored.
@@ -222,6 +313,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Frame of the finish with the graphics of the video (final time, velocity chart), for the race report.</summary>
         public SwimSnapshot FinalFrame;
 
+        /// <summary>
+        /// Place of the swimmer in the video, found with the automatic strokes or with "Ακολούθηση αθλητή": the athlete label of
+        /// the technical view follows it. One part per lap followed.
+        /// </summary>
+        public List<SwimTrack> Tracks = new List<SwimTrack>();
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;
@@ -282,6 +379,16 @@ namespace Kinovea.ScreenManager
         public SwimMark GetSplit(int distance)
         {
             return Marks.FirstOrDefault(m => m.Type == SwimMarkType.Split && m.Distance == distance);
+        }
+
+        /// <summary>The part of the swimmer's track that contains this timestamp, null if none.</summary>
+        public SwimTrack TrackAt(long timestamp)
+        {
+            if (Tracks == null)
+                return null;
+
+            return Tracks.FirstOrDefault(t => t != null && t.X.Count > 0 &&
+                timestamp >= t.Start - t.Step * 0.5 && timestamp <= t.End + t.Step * 0.5);
         }
 
         /// <summary>

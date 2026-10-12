@@ -676,7 +676,7 @@ namespace Kinovea.ScreenManager
 
             // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).
             Action draw = () => DrawGraphicsOnImage(g, outputSize, timestamp, true, false,
-                lastRenderingSize.Width > 0 ? lastRenderingSize.Width : ReportImageWidth);
+                lastRenderingSize.Width > 0 ? lastRenderingSize.Width : ReportImageWidth, true);
             try
             {
                 if (player.InvokeRequired)
@@ -696,8 +696,9 @@ namespace Kinovea.ScreenManager
         /// Angles of the frame (image coordinates) and, with panels, the board, chart and values of the start or turn,
         /// drawn on the image as they are drawn on a screen of the reference width.
         /// allRace: the race board and chart of the final frame (even if hidden on the screen), without the values of the start or turn.
+        /// reel: the technical view instead of the board and the chart when it is on the screen (the video exports, not the report).
         /// </summary>
-        private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth)
+        private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth, bool reel = false)
         {
             if (Race == null)
                 return;
@@ -718,10 +719,21 @@ namespace Kinovea.ScreenManager
                         float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
                         Size logical = new Size((int)Math.Round(size.Width / scale), (int)Math.Round(size.Height / scale));
                         g.ScaleTransform(scale, scale);
-                        if (!allRace && (Race.IsTraining || TechnicalView))
-                            DrawTechOverlay(g, timestamp, logical);
-                        if (!Race.IsTraining)
-                            DrawRaceOverlay(g, timestamp, logical, allRace);
+                        if (reel && !allRace && ReelShown)
+                        {
+                            // Video image (reference pixels) → logical units of the exported image.
+                            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                            float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
+                            float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
+                            DrawReel(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
+                        }
+                        else
+                        {
+                            if (!allRace && (Race.IsTraining || TechnicalView))
+                                DrawTechOverlay(g, timestamp, logical);
+                            if (!Race.IsTraining)
+                                DrawRaceOverlay(g, timestamp, logical, allRace);
+                        }
                     }
                 }
                 catch (Exception e)

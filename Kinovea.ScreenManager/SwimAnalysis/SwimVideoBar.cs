@@ -145,7 +145,8 @@ namespace Kinovea.ScreenManager
             b.Append(manager.Settings.AutoStrokes).Append('|').Append(manager.Settings.IsConfigured).Append('|');
             b.Append(manager.AutoStrokesRunning).Append('|').Append(manager.StrokeSessionWall).Append('|');
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
-            b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind);
+            b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind).Append('|');
+            b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription);
             return b.ToString();
         }
         #endregion
@@ -432,9 +433,10 @@ namespace Kinovea.ScreenManager
             float small = S(28);
             RectangleF pick = new RectangleF(x0, ay, width - 3 * (small + S(4)), S(26));
             // The long text when the bar is wide enough for it.
-            string pickText = manager.PickingStrokes ? "Κλικ στον αθλητή…" : "Επιλογή αθλητή";
+            bool pickingStrokes = manager.PickingStrokes && !manager.PickingTrack;
+            string pickText = pickingStrokes ? "Κλικ στον αθλητή…" : "Επιλογή αθλητή";
             if (TextRenderer.MeasureText(g, pickText, SwimTheme.Ui(8.25f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPadding).Width > pick.Width - S(16))
-                pickText = manager.PickingStrokes ? "Κλικ…" : "Αθλητής";
+                pickText = pickingStrokes ? "Κλικ…" : "Αθλητής";
             DrawButton(g, list, "auto-pick", pick, pickText, null, null, Look.Normal, false,
                 "Αυτόματες χεριές: κλικ στο κεφάλι και στα πόδια του αθλητή σε αυτό το καρέ.\nΟι χεριές μετριούνται σε κάθε πέρασμα μέχρι τον τοίχο.",
                 () => manager.BeginAutoStrokes());
@@ -658,7 +660,28 @@ namespace Kinovea.ScreenManager
                       : "Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.") +
                 (string.IsNullOrEmpty(KeyOf(PlayerScreenCommands.SwimShowPanel)) ? "" : " (" + KeyOf(PlayerScreenCommands.SwimShowPanel) + ")"),
                 () => manager.TogglePanel());
-            return panel.Top;
+            if (race.IsTraining)
+                return panel.Top;
+
+            // Technical view on the video (as the swimming reels) and the swimmer that its label follows.
+            RectangleF row = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
+            float half = (row.Width - S(4)) / 2;
+            RectangleF reel = new RectangleF(row.Left, row.Top, half, row.Height);
+            RectangleF follow = new RectangleF(reel.Right + S(4), row.Top, row.Right - reel.Right - S(4), row.Height);
+            bool reelOn = manager.Settings.ReelOverlay;
+            DrawButton(g, list, "reel", reel, reelOn ? "✓ Τεχνική" : "Τεχνική", null, null, reelOn ? Look.Primary : Look.Normal, false,
+                reelOn ? "Κλείνει την τεχνική ανάλυση στο βίντεο (ξανά ο πίνακας του αγώνα και το γράφημα ταχύτητας)."
+                       : "Τεχνική ανάλυση στο βίντεο, όπως στα reels: χρόνος, χεριές, συχνότητα, απόσταση ανά κύκλο, ταχύτητα,\n" +
+                         "φάση, γράφημα ανά κύκλο και σύνοψη μετά τον τερματισμό. Φαίνεται και στην εξαγωγή βίντεο.",
+                () => manager.SetReel(!manager.Settings.ReelOverlay));
+            bool picking = manager.PickingTrack;
+            string tracked = manager.TrackDescription;
+            DrawButton(g, list, "follow", follow, picking ? "Κλικ…" : "Ακολούθηση", null, null, picking ? Look.Primary : Look.Normal, !race.StartTimestamp.HasValue,
+                "Ακολούθηση αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι και μετά στα πόδια του.\n" +
+                "Η ετικέτα με το όνομα ακολουθεί τον αθλητή μέχρι τον τοίχο του μήκους (ένα μήκος κάθε φορά)." +
+                (tracked.Length > 0 ? "\nΑκολουθείται: " + tracked : ""),
+                () => manager.BeginTrackSwimmer());
+            return row.Top;
         }
         #endregion
 
@@ -817,9 +840,9 @@ namespace Kinovea.ScreenManager
                 return null;
             if (manager.AutoStrokesRunning)
                 return "ανάγνωση…";
-            if (manager.PickTarget == SwimPickTarget.StrokeHead)
+            if (manager.PickTarget == SwimPickTarget.StrokeHead && !manager.PickingTrack)
                 return "κλικ στο κεφάλι";
-            if (manager.PickTarget == SwimPickTarget.StrokeFeet)
+            if (manager.PickTarget == SwimPickTarget.StrokeFeet && !manager.PickingTrack)
                 return "κλικ στα πόδια";
 
             int wall = manager.StrokeSessionWall;

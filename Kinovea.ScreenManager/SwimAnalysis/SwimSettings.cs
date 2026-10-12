@@ -71,6 +71,16 @@ namespace Kinovea.ScreenManager
         /// <summary>Place of the window of the analysis when it was last closed ("x,y,width,height"), empty for the default place.</summary>
         public string PanelBounds = "";
 
+        /// <summary>
+        /// Technical view of the race on the video (as the swimming reels): athlete label following the swimmer, race time with the
+        /// strokes, tempo, distance per cycle and speed, phase, badges at the start, the breakouts and the checkpoints, per cycle chart.
+        /// It replaces the race board and the velocity chart.
+        /// </summary>
+        public bool ReelOverlay = false;
+
+        /// <summary>Technical view: summary card of the race after the finish.</summary>
+        public bool ReelSummary = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 

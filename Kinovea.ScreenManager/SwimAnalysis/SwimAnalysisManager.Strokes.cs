@@ -200,6 +200,7 @@ namespace Kinovea.ScreenManager
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
             angleClicks.Clear();
+            pickForTrack = false;
             SetPick(SwimPickTarget.StrokeHead);
             Status("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος).", false);
             InvalidatePlayer();
@@ -214,7 +215,7 @@ namespace Kinovea.ScreenManager
                 autoStrokeFrame = timestamp;
                 SetPick(SwimPickTarget.StrokeFeet);
                 Status(moved ? "Το καρέ άλλαξε: αυτό το κλικ είναι το κεφάλι. Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ." :
-                    "Χεριές: τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ.", moved);
+                    (PickingTrack ? "Ακολούθηση" : "Χεριές") + ": τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ.", moved);
                 InvalidatePlayer();
                 return;
             }
@@ -229,9 +230,14 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            bool track = pickForTrack;
+            pickForTrack = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            StartStrokeSession(autoStrokeHead, point, autoStrokeFrame);
+            if (track)
+                TrackSwimmer(autoStrokeHead, point, autoStrokeFrame);
+            else
+                StartStrokeSession(autoStrokeHead, point, autoStrokeFrame);
         }
 
         private void StartStrokeSession(PointF head, PointF feet, long from)
@@ -245,6 +251,33 @@ namespace Kinovea.ScreenManager
 
             EndStrokeSession();
 
+            StrokeSession s = CreateSession(head, feet, from);
+            strokeSession = s;
+            LastAutoCycle = 0;
+
+            Status(string.Format(CultureInfo.InvariantCulture,
+                "Χεριές: ο αθλητής επιλέχθηκε. Σε κάθε πέρασμα μέχρι τον τοίχο των {0}{1} θα δεις τις χεριές του τμήματος.",
+                s.Wall, UnitLabel), false);
+            if (form != null && !form.IsDisposed)
+                form.RefreshAutoStrokes();
+
+            // Checkpoints of the lap already marked after this frame: their strokes now, one after the other.
+            List<SwimMark> marked = Race.Marks
+                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp > from && m.Distance <= s.Wall)
+                .OrderBy(m => m.Timestamp)
+                .ToList();
+            foreach (SwimMark split in marked)
+            {
+                if (SessionFor(Race) == null)
+                    break;
+                if (!PromptSegmentStrokes(split, true))
+                    break;
+            }
+        }
+
+        /// <summary>A reading of the lap from this frame, with the detector set on the swimmer clicked (head, feet).</summary>
+        private StrokeSession CreateSession(PointF head, PointF feet, long from)
+        {
             double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
             double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
             int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
@@ -270,27 +303,7 @@ namespace Kinovea.ScreenManager
             if (s.Style == "im")
                 s.Style = "fs";
             s.Detector = new SwimStrokeDetector(width, height, head.X * sx, head.Y * sy, feet.X * sx, feet.Y * sy, s.Style, s.Fps);
-            strokeSession = s;
-            LastAutoCycle = 0;
-
-            Status(string.Format(CultureInfo.InvariantCulture,
-                "Χεριές: ο αθλητής επιλέχθηκε. Σε κάθε πέρασμα μέχρι τον τοίχο των {0}{1} θα δεις τις χεριές του τμήματος.",
-                s.Wall, UnitLabel), false);
-            if (form != null && !form.IsDisposed)
-                form.RefreshAutoStrokes();
-
-            // Checkpoints of the lap already marked after this frame: their strokes now, one after the other.
-            List<SwimMark> marked = Race.Marks
-                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp > from && m.Distance <= s.Wall)
-                .OrderBy(m => m.Timestamp)
-                .ToList();
-            foreach (SwimMark split in marked)
-            {
-                if (SessionFor(Race) == null)
-                    break;
-                if (!PromptSegmentStrokes(split, true))
-                    break;
-            }
+            return s;
         }
         #endregion
 
@@ -369,6 +382,9 @@ namespace Kinovea.ScreenManager
             s.Cycle = result.Cycle;
             s.Ropes = result.Ropes;
             LastAutoCycle = result.Cycle;
+
+            // The place of the swimmer, for the athlete label of the technical view.
+            StoreTrack(s, result);
 
             // The automatic strokes of the lap are replaced: those of this follow and of an earlier one (swimmer chosen again).
             SwimMark wallSplit = Race.GetSplit(s.Wall);
@@ -528,15 +544,23 @@ namespace Kinovea.ScreenManager
 
             if (error != null)
             {
-                log.Error("Automatic strokes failed.", error);
-                Status("Η αυτόματη μέτρηση των χεριών απέτυχε: " + error.Message, true);
-                EndStrokeSession();
+                log.Error("Reading of the video for the swimmer failed.", error);
+                if (s == strokeSession)
+                {
+                    Status("Η αυτόματη μέτρηση των χεριών απέτυχε: " + error.Message, true);
+                    EndStrokeSession();
+                }
+                else
+                {
+                    Status("Η ακολούθηση του αθλητή απέτυχε: " + error.Message, true);
+                }
+
                 return false;
             }
 
             if (cancelled)
             {
-                Status("Η ανάγνωση του βίντεο για τις χεριές ακυρώθηκε.", false);
+                Status(s == strokeSession ? "Η ανάγνωση του βίντεο για τις χεριές ακυρώθηκε." : "Η ακολούθηση του αθλητή ακυρώθηκε.", false);
                 return false;
             }
 
@@ -772,7 +796,8 @@ namespace Kinovea.ScreenManager
 
             if (PickTarget == SwimPickTarget.StrokeHead)
             {
-                DrawLabel(g, "Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, PickingTrack ? "Ακολούθηση: κλικ στο κεφάλι του αθλητή (Esc: ακύρωση)" : "Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)",
+                    new Point(12, 12), Color.FromArgb(0, 220, 255));
                 return;
             }
 
@@ -786,7 +811,7 @@ namespace Kinovea.ScreenManager
                     DrawLabel(g, "κεφάλι", new Point(p.X + 10, p.Y - 20), Color.FromArgb(0, 220, 255));
                 }
 
-                DrawLabel(g, "Χεριές: κλικ στα πόδια του αθλητή", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, (PickingTrack ? "Ακολούθηση" : "Χεριές") + ": κλικ στα πόδια του αθλητή", new Point(12, 12), Color.FromArgb(0, 220, 255));
                 return;
             }
 

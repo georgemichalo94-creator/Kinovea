@@ -118,6 +118,10 @@ namespace Kinovea.ScreenManager
         private CheckBox chkAutoStrokes;
         private Button btnAutoStrokes;
         private Label lblAutoStrokes;
+        private CheckBox chkReel;
+        private CheckBox chkReelSummary;
+        private Button btnTrack;
+        private Label lblTrack;
         private ComboBox cmbReference;
         private Label lblReferences;
         private ComboBox cmbPb;
@@ -652,6 +656,38 @@ namespace Kinovea.ScreenManager
                 StrokeButton("▶", "Επόμενη χεριά", (s, e) => manager.SeekStroke(1)),
                 StrokeButton("✕", "Διαγραφή της χεριάς σε αυτό το καρέ (C για να την ξαναβάλεις)", (s, e) => manager.DeleteStrokeHere()),
                 btnDeleteAuto, lblAutoStrokes);
+
+            const string reelHelp = "Τεχνική ανάλυση πάνω στο βίντεο, όπως στα reels κολύμβησης: ετικέτα που ακολουθεί τον αθλητή, χρόνος αγώνα με\n" +
+                "χεριές του μήκους, συχνότητα και απόσταση του τελευταίου κύκλου, ταχύτητα, φάση (εκκίνηση, υποβρύχια, στυλ, στροφή),\n" +
+                "σημάδια στην αντίδραση, την είσοδο, το breakout και τα περάσματα, γράφημα των κύκλων του μήκους και κάρτα σύνοψης μετά τον τερματισμό.\n" +
+                "Οι χρόνοι και οι χεριές είναι από τα σημάδια της ανάλυσης· η απόσταση και η ταχύτητα ανά κύκλο εκτιμώνται από τα περάσματα (≈).\n" +
+                "Αντικαθιστά τον χρόνο και το γράφημα ταχύτητας στο βίντεο, και μπαίνει και στην εξαγωγή βίντεο («και στις εξαγωγές»).";
+            chkReel = new CheckBox { Text = "στο βίντεο", AutoSize = true, Margin = new Padding(6, 7, 3, 3) };
+            chkReel.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetReel(chkReel.Checked);
+            };
+            toolTip.SetToolTip(chkReel, reelHelp);
+            btnTrack = new SwimNoFocusButton { Text = "Ακολούθηση αθλητή", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnTrack.Click += (s, e) => manager.BeginTrackSwimmer();
+            toolTip.SetToolTip(btnTrack, "Για την ετικέτα πάνω στον αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι και μετά στα πόδια του.\n" +
+                "Το μήκος διαβάζεται μέχρι τον τοίχο του (μία φορά σε κάθε μήκος). Τα σημάδια της ανάλυσης δεν αλλάζουν.\n" +
+                "Οι αυτόματες χεριές βρίσκουν και αυτές τη θέση του αθλητή στα μήκη που μετράνε.");
+            Button btnDeleteTrack = new SwimNoFocusButton { Text = "✕", Width = 32, Height = 26, Margin = new Padding(2, 2, 0, 2) };
+            btnDeleteTrack.Click += (s, e) => manager.DeleteTrack();
+            toolTip.SetToolTip(btnDeleteTrack, "Διαγραφή της ακολούθησης του αθλητή (η ετικέτα δεν φαίνεται πια)");
+            chkReelSummary = new CheckBox { Text = "σύνοψη στο τέλος", AutoSize = true, Margin = new Padding(10, 7, 3, 3) };
+            chkReelSummary.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetReelSummary(chkReelSummary.Checked);
+            };
+            toolTip.SetToolTip(chkReelSummary, "Κάρτα με τα στοιχεία του αγώνα ένα δευτερόλεπτο μετά τον τερματισμό: τελικός χρόνος, αντίδραση, 15μ., breakout,\n" +
+                "ενδιάμεσοι, χεριές, συχνότητα, απόσταση ανά κύκλο και ταχύτητα ανά τμήμα, και η απόσταση κάθε κύκλου.");
+            lblTrack = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 0, 3), Text = "–" };
+            AddEventRow(t, "Τεχνική ανάλυση (reel)", null, null, reelHelp, chkReel, btnTrack, btnDeleteTrack, chkReelSummary, lblTrack);
+
             AddEventRow(t, "Πέρασμα σημείου ελέγχου", PlayerScreenCommands.SwimSplit, "Πέρασμα",
                 "Το κεφάλι περνά το επόμενο σημείο ελέγχου (25μ., 35μ., …). Στους τοίχους: το χέρι ακουμπά τον τοίχο.", Caption("Η κίτρινη γραμμή είναι το επόμενο σημείο."));
 
@@ -1251,6 +1287,8 @@ namespace Kinovea.ScreenManager
                 chkOverlayExports.Checked = settings.OverlayInExports;
                 chkVideoBars.Checked = settings.VideoBars;
                 chkAutoStrokes.Checked = settings.AutoStrokes;
+                chkReel.Checked = settings.ReelOverlay;
+                chkReelSummary.Checked = settings.ReelSummary;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }
             finally
@@ -1858,9 +1896,11 @@ namespace Kinovea.ScreenManager
             Highlight(btnCalibrate, calibrating);
             if (btnAutoStrokes != null)
             {
-                btnAutoStrokes.Text = manager.PickingStrokes ? "Ακύρωση επιλογής" : "Επιλογή αθλητή";
-                Highlight(btnAutoStrokes, manager.PickingStrokes);
+                bool strokes = manager.PickingStrokes && !manager.PickingTrack;
+                btnAutoStrokes.Text = strokes ? "Ακύρωση επιλογής" : "Επιλογή αθλητή";
+                Highlight(btnAutoStrokes, strokes);
             }
+            RefreshReel();
             RefreshTechPick(active);
             RefreshCalibrationLabel();
         }
@@ -2612,7 +2652,7 @@ namespace Kinovea.ScreenManager
                 text = "ανάγνωση του βίντεο…";
                 color = SwimTheme.Amber;
             }
-            else if (manager.PickingStrokes)
+            else if (manager.PickingStrokes && !manager.PickingTrack)
             {
                 text = "κλικ στο κεφάλι και στα πόδια του αθλητή";
                 color = SwimTheme.Amber;
@@ -2634,6 +2674,49 @@ namespace Kinovea.ScreenManager
             lblAutoStrokes.Text = text;
             lblAutoStrokes.ForeColor = color;
             btnAutoStrokes.Enabled = !manager.AutoStrokesRunning;
+            RefreshReel();
+        }
+
+        /// <summary>Technical view of the race: on/off, the swimmer followed for the label.</summary>
+        public void RefreshReel()
+        {
+            if (IsDisposed || lblTrack == null)
+                return;
+
+            bool picking = manager.PickingTrack;
+            btnTrack.Text = picking ? "Ακύρωση επιλογής" : "Ακολούθηση αθλητή";
+            Highlight(btnTrack, picking);
+            btnTrack.Enabled = !manager.AutoStrokesRunning;
+
+            string followed = manager.TrackDescription;
+            if (manager.AutoStrokesRunning)
+            {
+                lblTrack.Text = "ανάγνωση του βίντεο…";
+                lblTrack.ForeColor = SwimTheme.Amber;
+            }
+            else if (picking)
+            {
+                lblTrack.Text = "κλικ στο κεφάλι και στα πόδια του αθλητή";
+                lblTrack.ForeColor = SwimTheme.Amber;
+            }
+            else if (followed.Length > 0)
+            {
+                lblTrack.Text = "ετικέτα: " + followed;
+                lblTrack.ForeColor = SwimTheme.Green;
+            }
+            else
+            {
+                lblTrack.Text = "χωρίς ετικέτα αθλητή";
+                lblTrack.ForeColor = SwimTheme.Dim;
+            }
+
+            if (manager.Settings != null && chkReel.Checked != manager.Settings.ReelOverlay)
+            {
+                bool was = updating;
+                updating = true;
+                chkReel.Checked = manager.Settings.ReelOverlay;
+                updating = was;
+            }
         }
 
         private Button StrokeButton(string text, string tooltip, EventHandler click)
