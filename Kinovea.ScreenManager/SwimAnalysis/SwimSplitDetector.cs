@@ -46,6 +46,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Debug output (null: none).</summary>
         public static Action<string> Trace;
 
+        /// <summary>Fastest time per metre of a lap (s/m), start or push included: no checkpoint before it.</summary>
+        private const double FastestPace = 0.33;
+
         private struct Crossing
         {
             public double Frame;
@@ -79,8 +82,10 @@ namespace Kinovea.ScreenManager
             }
 
             // Marks: crossings of the far and the near rope less than 1 s apart are the same checkpoint. After the start of the
-            // red last 5 m, the short red parts are pieces of it.
-            List<Dictionary<string, double>> ends = Group(crossings.Where(c => c.Long).ToList(), fps);
+            // red last 5 m, the short red parts are pieces of it. The red 5 m of the wall the lap started from (the swimmer
+            // leaves them after a turn) are not the end: the end comes after the time of the fastest swimmer to it.
+            double earliestEnd = lapStart + (pool - 5) * FastestPace * fps;
+            List<Dictionary<string, double>> ends = Group(crossings.Where(c => c.Long && c.Frame >= earliestEnd).ToList(), fps);
             double firstEnd = ends.Count > 0 ? ends.Min(e => Time(e)) : double.MaxValue;
             List<Dictionary<string, double>> marks = Group(crossings.Where(c => !c.Long && c.Frame < firstEnd - 0.3 * fps).ToList(), fps);
 
@@ -125,6 +130,22 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static Dictionary<string, double> WallCues(SwimStrokeResult result, int direction, double fps, double after)
         {
+            return WallCues(result, direction, fps, after, double.NaN, 0);
+        }
+
+        /// <summary>
+        /// The same, knowing the start of the lap (frame index, can be negative) and the pool: the wall comes after the time of
+        /// the fastest swimmer to it.
+        /// </summary>
+        public static Dictionary<string, double> WallCues(SwimStrokeResult result, int direction, double fps, double after, double lapStart, int pool)
+        {
+            if (!double.IsNaN(lapStart) && pool > 0)
+            {
+                double earliest = lapStart + pool * FastestPace * fps;
+                if (double.IsNaN(after) || after < earliest)
+                    after = earliest;
+            }
+
             Dictionary<string, double> cues = new Dictionary<string, double>();
             if (result == null || result.Path == null || fps <= 0)
                 return cues;

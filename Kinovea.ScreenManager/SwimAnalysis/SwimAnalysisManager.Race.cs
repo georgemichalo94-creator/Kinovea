@@ -376,7 +376,7 @@ namespace Kinovea.ScreenManager
             {
                 l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
                 double last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
-                l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last);
+                l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last, lapStart, Race.Pool);
             }
             catch (Exception e)
             {
@@ -670,9 +670,11 @@ namespace Kinovea.ScreenManager
             resumeAt = long.MinValue;
             double previousSeconds = 0;
             Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            SwimStrokeLane? nextLane = null;
+            int nextVirtual = 0;
             while (wall <= Race.Distance)
             {
-                StrokeSession s = CreateSession(head, feet, from);
+                StrokeSession s = CreateSession(head, feet, from, nextLane, nextVirtual);
                 s.Wall = wall;
                 s.LapStart = lapStart;
                 long target = lengths.Count == 0 ? TrackEnd(from) :
@@ -744,6 +746,14 @@ namespace Kinovea.ScreenManager
                 head = new PointF((float)((x + direction * 0.45 * length) / sx), (float)(y / sy));
                 feet = new PointF((float)((x - direction * 0.45 * length) / sx), (float)(y / sy));
                 from = wallTs + RealSpan(0.2);
+
+                // The lane of the next length: the one followed here, at the frame where the next reading starts (the search at
+                // the far end of the pool, where the lanes are narrow, could take another one).
+                nextLane = null;
+                nextVirtual = s.Detector.VirtualRope;
+                int startIndex = s.Timestamps.FindIndex(t => t >= from);
+                if (startIndex >= 0 && startIndex < result.Lanes.Count)
+                    nextLane = result.Lanes[startIndex];
                 lapStart = wallTs;
                 wall += Race.Pool;
                 if (from >= frameServer.VideoReader.WorkingZone.End)

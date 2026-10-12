@@ -284,6 +284,12 @@ namespace Kinovea.ScreenManager
         /// <summary>A reading of the lap from this frame, with the detector set on the swimmer clicked (head, feet).</summary>
         private StrokeSession CreateSession(PointF head, PointF feet, long from)
         {
+            return CreateSession(head, feet, from, null, 0);
+        }
+
+        /// <summary>The same, with the lane already known (working coordinates of the first frame), as after a wall.</summary>
+        private StrokeSession CreateSession(PointF head, PointF feet, long from, SwimStrokeLane? lane, int virtualRope)
+        {
             double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
             double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
             int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
@@ -308,7 +314,9 @@ namespace Kinovea.ScreenManager
             s.Style = SwimPresets.StyleAt(Race, s.Wall);
             if (s.Style == "im")
                 s.Style = "fs";
-            s.Detector = new SwimStrokeDetector(width, height, head.X * sx, head.Y * sy, feet.X * sx, feet.Y * sy, s.Style, s.Fps);
+            s.Detector = lane.HasValue
+                ? new SwimStrokeDetector(width, height, head.X * sx, head.Y * sy, feet.X * sx, feet.Y * sy, s.Style, s.Fps, lane.Value, virtualRope)
+                : new SwimStrokeDetector(width, height, head.X * sx, head.Y * sy, feet.X * sx, feet.Y * sy, s.Style, s.Fps);
             return s;
         }
         #endregion

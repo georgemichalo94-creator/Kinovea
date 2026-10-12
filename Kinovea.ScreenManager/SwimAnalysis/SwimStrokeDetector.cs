@@ -161,6 +161,30 @@ namespace Kinovea.ScreenManager
         private readonly List<int[]> redFar = new List<int[]>();
         private readonly List<int[]> redNear = new List<int[]>();
 
+        // Lane given by the caller (the lane followed in the previous length): no search on the first frame.
+        private readonly bool hasLane0;
+        private readonly SwimStrokeLane lane0;
+        private readonly int virtualRope0;
+
+        /// <summary>
+        /// The next length after a wall: the lane is the one followed in the previous length at this frame (the search on the first
+        /// frame could take another lane at the far end of the pool, where the lanes are narrow).
+        /// </summary>
+        public SwimStrokeDetector(int width, int height, double headX, double headY, double feetX, double feetY, string style, double fps,
+            SwimStrokeLane lane, int virtualRope)
+            : this(width, height, headX, headY, feetX, feetY, style, fps)
+        {
+            hasLane0 = true;
+            lane0 = lane;
+            virtualRope0 = virtualRope;
+        }
+
+        /// <summary>Rope of the lane that is not seen (1 far, 2 near) next to the wall of the pool, 0 if both are seen.</summary>
+        public int VirtualRope
+        {
+            get { return virtualRope; }
+        }
+
         /// <param name="style">Style code of the panel: fs, bk, br, fly.</param>
         public SwimStrokeDetector(int width, int height, double headX, double headY, double feetX, double feetY, string style, double fps)
         {
@@ -238,7 +262,16 @@ namespace Kinovea.ScreenManager
             {
                 initialized = true;
                 SwimStrokeLane found;
-                ropes = FindLane(image, headX, headY, feetX, feetY, out found, out virtualRope);
+                if (hasLane0)
+                {
+                    found = lane0;
+                    virtualRope = virtualRope0;
+                    ropes = true;
+                }
+                else
+                {
+                    ropes = FindLane(image, headX, headY, feetX, feetY, out found, out virtualRope);
+                }
                 if (ropes)
                 {
                     double a, b;
