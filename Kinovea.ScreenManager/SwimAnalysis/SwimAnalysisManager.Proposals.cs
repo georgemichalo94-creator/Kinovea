@@ -331,9 +331,10 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // A mark of this kind already on this frame: only the answer.
+            // A mark of this kind already on this frame (a kick: within 0.2 s, not counted twice): only the answer.
             SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
-            bool exists = Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp));
+            bool exists = Race.Marks.Any(m => m.Type == markType &&
+                (SameFrame(m.Timestamp, timestamp) || (markType == SwimMarkType.Kick && Math.Abs(Timing.Seconds(m.Timestamp, timestamp)) <= 0.2)));
             PlayerScreenCommands command;
             string done;
             if (exists || !CommandOf(p.Type, out command))
@@ -416,17 +417,17 @@ namespace Kinovea.ScreenManager
             if (resolvingProposal || Race == null || Race.Proposals.Count == 0)
                 return;
 
-            // During the check, a mark of the kind being checked answers that proposal only (as Enter, within 1 s).
+            // During the check, a mark of the kind being checked answers that proposal (as Enter: within 1 s, a kick within 0.2 s);
+            // else the nearest proposal of its kind waiting (a kick within 0.2 s, the others within 0.6 s). A kick added far from
+            // the proposals (one the detector missed) answers none.
             SwimProposal current = CurrentProposal;
-            SwimProposal p;
-            if (current != null && current.Type == type)
+            double near = type == SwimMarkType.Kick ? 0.2 : 0.6;
+            SwimProposal p = null;
+            if (current != null && current.Type == type && Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= (type == SwimMarkType.Kick ? 0.2 : 1.0))
+                p = current;
+            if (p == null)
             {
-                p = Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= 1.0 ? current : null;
-            }
-            else
-            {
-                double window = type == SwimMarkType.Kick ? 0.2 : 0.6;
-                p = Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= window)
+                p = Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= near)
                     .OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
             }
 
