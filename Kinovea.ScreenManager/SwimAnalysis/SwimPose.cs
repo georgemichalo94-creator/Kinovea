@@ -348,9 +348,25 @@ namespace Kinovea.ScreenManager
         private readonly string[] detectorOutputs;
         private readonly string[] landmarkOutputs;
 
+        /// <summary>SwimAnalysis\Models next to this assembly (the program folder).</summary>
         public static string ModelFolder
         {
-            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SwimAnalysis", "Models"); }
+            get
+            {
+                string folder = null;
+                try
+                {
+                    folder = Path.GetDirectoryName(typeof(SwimPoseNet).Assembly.Location);
+                }
+                catch (Exception)
+                {
+                    // Assembly without a location: the program folder.
+                }
+
+                if (string.IsNullOrEmpty(folder))
+                    folder = AppDomain.CurrentDomain.BaseDirectory;
+                return Path.Combine(folder, "SwimAnalysis", "Models");
+            }
         }
 
         public static bool Available
