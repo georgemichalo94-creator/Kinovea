@@ -212,8 +212,10 @@ namespace Kinovea.ScreenManager
             string pressed = pressedId;
             pressedId = null;
             Invalidate();
-            if (item != null && pressed != null && item.Id == pressed && item.Click != null)
-                item.Click();
+
+            // After the mouse up is over (capture released): the action may open a dialog or remove the bars.
+            if (item != null && pressed != null && item.Id == pressed && item.Click != null && IsHandleCreated)
+                BeginInvoke(item.Click);
         }
 
         private void Run(PlayerScreenCommands command)
