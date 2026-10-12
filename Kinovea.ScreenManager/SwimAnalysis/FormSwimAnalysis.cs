@@ -486,8 +486,13 @@ namespace Kinovea.ScreenManager
             TableLayoutPanel t = NewEventTable();
 
             lblStartSignal = ValueLabel();
+            Button startLight = new SwimNoFocusButton { Text = "💡 Αυτόματα (φως)", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            startLight.Click += (s, e) => manager.FindStartLight();
+            toolTip.SetToolTip(startLight, "Βρίσκει το καρέ που ανάβουν τα φώτα εκκίνησης (δίπλα στους βατήρες ή στον αφέτη), διαβάζοντας το βίντεο\n" +
+                "από την αρχή μέχρι να ξεκινήσει η κάμερα να ακολουθεί τους αθλητές. Το προτείνει για έλεγχο: Enter σωστό,\n" +
+                "βελάκια και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια). Μαθαίνει από τις απαντήσεις σου.");
             AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Εκκίνηση",
-                "Στο καρέ του σήματος εκκίνησης (καπνός/φλας/ήχος): εκεί γίνεται t = 0.", lblStartSignal);
+                "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight);
 
             lblReactionAuto = ValueLabel();
             tbReaction = NumberBox();

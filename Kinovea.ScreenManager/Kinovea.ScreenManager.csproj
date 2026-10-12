@@ -1029,6 +1029,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Proposals.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Race.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
@@ -1045,6 +1046,7 @@
     <Compile Include="SwimAnalysis\SwimReferences.cs" />
     <Compile Include="SwimAnalysis\SwimSettings.cs" />
     <Compile Include="SwimAnalysis\SwimSkeletonPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimStartLight.cs" />
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />
     <Compile Include="SwimAnalysis\SwimStrokeDetector.cs" />
     <Compile Include="SwimAnalysis\SwimTech.cs" />

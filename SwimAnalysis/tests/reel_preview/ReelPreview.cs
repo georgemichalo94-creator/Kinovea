@@ -270,7 +270,7 @@ public static class ReelPreview
 
         try
         {
-            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck(), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck() + StartLightCheck(), Encoding.UTF8);
         }
         catch (Exception e)
         {
@@ -538,6 +538,87 @@ public static class ReelPreview
         }
 
         File.Delete(path);
+        return b.ToString();
+    }
+
+    /// <summary>
+    /// The start light detector on a fictional video (480×270, 50 frames/s): a still image with glints on the water, three lights
+    /// at the blocks that flash at 6.00 s (frame 300), then the camera follows the race (pan); and the same video without the lights.
+    /// </summary>
+    public static string StartLightCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        int w = 480, h = 270, n = 640, wide = w + 2400;
+        double fps = 50;
+        byte[] scene = new byte[wide * h];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < wide; x++)
+            {
+                double value = y < h / 2 ? 90 + 35 * Math.Sin(x / 11.0) + 25 * Math.Cos(y / 7.0) : 120 + 20 * Math.Sin(x / 5.0 + y / 9.0);
+                scene[y * wide + x] = (byte)Math.Max(0, Math.Min(255, value));
+            }
+        }
+
+        int[] lightX = { 100, 240, 380 };
+        double[] pulse = { 230, 215, 190, 150, 110, 80 };
+        for (int withLights = 1; withLights >= 0; withLights--)
+        {
+            Random random = new Random(7);
+            SwimStartLight detector = new SwimStartLight(w, h, fps);
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            for (int f = 0; f < n; f++)
+            {
+                int shift = f < 330 ? 0 : (f - 330) * 6;
+                byte[] v = new byte[w * h];
+                for (int y = 0; y < h; y++)
+                    Buffer.BlockCopy(scene, y * wide + shift, v, y * w, w);
+
+                // Glints on the water (lower half): small bright dots at random places in every frame.
+                for (int k = 0; k < 120; k++)
+                {
+                    int gx = random.Next(w - 2), gy = h / 2 + random.Next(h / 2 - 2);
+                    for (int dy = 0; dy < 2; dy++)
+                        for (int dx = 0; dx < 2; dx++)
+                            v[(gy + dy) * w + gx + dx] = 225;
+                }
+
+                // The start lights at the blocks: off (dark), a flash at frame 300 that fades.
+                if (withLights == 1)
+                {
+                    foreach (int lx in lightX)
+                    {
+                        int x0 = lx - shift;
+                        int k = f - 300;
+                        byte level = (byte)(k >= 0 && k < pulse.Length ? pulse[k] : 55);
+                        for (int dy = 0; dy < 4; dy++)
+                        {
+                            for (int dx = 0; dx < 4; dx++)
+                            {
+                                int x = x0 + dx;
+                                if (x >= 0 && x < w)
+                                    v[(60 + dy) * w + x] = level;
+                            }
+                        }
+                    }
+                }
+
+                detector.Add(v);
+            }
+
+            List<SwimStartCandidate> found = detector.Find();
+            string what = withLights == 1 ? "with three start lights flashing at 6.00 s (frame 300)" : "without lights";
+            if (found.Count == 0)
+            {
+                b.AppendLine(string.Format(ci, "start light, fictional video {0}: no start found, {1} frames in {2} ms", what, n, watch.ElapsedMilliseconds));
+                continue;
+            }
+
+            SwimStartCandidate c = found[0];
+            b.AppendLine(string.Format(ci, "start light, fictional video {0}: start at frame {1} ({2:0.00} s), {3} lights, flash {4:0}, follow {5:0.00} s, confidence {6:0.00}; {7} frames in {8} ms",
+                what, c.Frame, c.Frame / fps, c.Lights, c.Flash, c.Follow / fps, SwimStartLight.Confidence(found), n, watch.ElapsedMilliseconds));
+        }
+
         return b.ToString();
     }
 

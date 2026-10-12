@@ -66,6 +66,9 @@ namespace Kinovea.ScreenManager
             public bool Primary;
             public bool Dim;
             public string Tip;
+
+            /// <summary>Instead of the command (a button that is not a key of the player).</summary>
+            public Action Action;
         }
 
         private readonly SwimAnalysisManager manager;
@@ -421,8 +424,9 @@ namespace Kinovea.ScreenManager
 
                 Btn b = buttons[i];
                 PlayerScreenCommands command = b.Command;
-                DrawButton(g, list, b.Id, r, b.Text, columns == 1 ? b.Value : null, KeyOf(command), b.Primary ? Look.Primary : Look.Normal, b.Dim, b.Tip,
-                    () => Run(command));
+                Action action = b.Action ?? (() => Run(command));
+                DrawButton(g, list, b.Id, r, b.Text, columns == 1 ? b.Value : null, b.Action != null ? null : KeyOf(command), b.Primary ? Look.Primary : Look.Normal, b.Dim, b.Tip,
+                    action);
             }
 
             float ay = y0 + rowCount * (bh + spacing) - spacing + S(8);
@@ -767,7 +771,15 @@ namespace Kinovea.ScreenManager
                 case 0:
                     title = "ΕΚΚΙΝΗΣΗ";
                     list.Add(B("start", PlayerScreenCommands.SwimStart, "Εκκίνηση", race.StartTimestamp.HasValue ? "✓" : null,
-                        "Στο καρέ του σήματος εκκίνησης (καπνός, φλας, ήχος): εκεί γίνεται t = 0."));
+                        "Στο καρέ του σήματος εκκίνησης (φως, καπνός, ήχος): εκεί γίνεται t = 0."));
+                    list.Add(new Btn
+                    {
+                        Id = "start-light",
+                        Text = "💡 Εκκίνηση από το φως",
+                        Dim = manager.StartLightRunning,
+                        Tip = "Αυτόματα: το καρέ που ανάβουν τα φώτα εκκίνησης, για έλεγχο (Enter σωστό, Delete λάθος).",
+                        Action = () => manager.FindStartLight()
+                    });
                     list.Add(B("reaction", PlayerScreenCommands.SwimReaction, "Αντίδραση", Seconds(c.ReactionTime),
                         "Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης)."));
                     list.Add(B("block", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση", Seconds(c.BlockTime),

@@ -327,6 +327,26 @@ namespace Kinovea.ScreenManager
             }
 
             Status(old == null ? "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ." : "Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά.", false);
+
+            // The start put with its key answers the proposal of the start light near it (the other candidates go).
+            if (!resolvingProposal && Race.Proposals.Any(x => x.Kind == KindRaceStart))
+            {
+                SwimProposal near = Race.Proposals
+                    .Where(x => x.Kind == KindRaceStart && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= 1.0)
+                    .OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
+                bool reviewingStart = CurrentProposal != null && CurrentProposal.Kind == KindRaceStart;
+                Race.Proposals.RemoveAll(x => x.Kind == KindRaceStart && (near == null || x.Id != near.Id));
+                if (near != null)
+                {
+                    if (reviewingStart)
+                        reviewId = near.Id;
+                    ResolveProposalsByMark(SwimMarkType.Signal, timestamp);
+                }
+                else if (reviewingStart)
+                {
+                    NextProposal(timestamp);
+                }
+            }
         }
 
         private bool EnsureStart()
