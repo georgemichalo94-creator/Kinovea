@@ -377,6 +377,10 @@ namespace Kinovea.ScreenManager
                 l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
                 double last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
                 l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last, lapStart, Race.Pool);
+
+                // The pace of the swimmer: the checkpoints not seen and the wall from the ones found.
+                double ratio = SwimSplitDetector.LastFiveRatio(WallKind(s.Wall), SwimPresets.StyleAt(Race, s.Wall));
+                SwimSplitDetector.AddPace(l.Found, l.Wall, Race.Pool, ratio, n);
             }
             catch (Exception e)
             {
@@ -409,14 +413,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimSplitFound f in l.Found)
                 items.Add(Tuple.Create(l.LapFrom + f.LapDistance, f.Cues, f.Confidence));
             if (l.Wall.Count > 0)
-            {
-                // The wall: the cues of its kind (finish, open turn, flip turn), each with its usual delay before any learning.
-                string kind = WallKind(s.Wall);
-                Dictionary<string, double> wall = new Dictionary<string, double>();
-                foreach (KeyValuePair<string, double> c in l.Wall)
-                    wall[c.Key + "." + kind] = c.Value + WallDelay(c.Key, kind) * s.Fps;
-                items.Add(Tuple.Create(s.Wall, wall, 0.5));
-            }
+                items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l), 0.5));
 
             foreach (Tuple<int, Dictionary<string, double>, double> item in items)
             {
@@ -470,15 +467,79 @@ namespace Kinovea.ScreenManager
             return made;
         }
 
+        /// <summary>The cues of the wall of a length named after its kind (finish, open turn, flip turn), each with its usual delay before any learning.</summary>
+        private Dictionary<string, double> WallCuesOfKind(LengthRead l)
+        {
+            string kind = WallKind(l.Session.Wall);
+            Dictionary<string, double> wall = new Dictionary<string, double>();
+            foreach (KeyValuePair<string, double> c in l.Wall)
+                wall[c.Key + "." + kind] = c.Value + WallDelay(c.Key, kind) * l.Session.Fps;
+            return wall;
+        }
+
+        /// <summary>Frame of the wall of a length read (index of its frames, NaN if not found): its cues as for the proposal.</summary>
+        private double WallSample(LengthRead l)
+        {
+            if (l == null || l.Wall.Count == 0)
+                return double.NaN;
+
+            SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, l.Session.Wall) { Confidence = 1.0 };
+            foreach (KeyValuePair<string, double> c in WallCuesOfKind(l))
+            {
+                double weight, spread;
+                CueWeight(c.Key, out weight, out spread);
+                d.Cue(c.Key, c.Value, weight, spread);
+            }
+
+            double confidence;
+            return SwimProposalMath.Combine(d, Learning, SwimLearning.VideoCode(videoPath), l.Session.Fps, out confidence);
+        }
+
         /// <summary>Checkpoints already marked that taught the learning in the last automatic reading.</summary>
         private int learnedFromMarks;
 
-        /// <summary>The wall at this distance: "finish", "open" (hand touch: butterfly, breaststroke) or "flip" (freestyle, backstroke).</summary>
+        /// <summary>
+        /// The checkpoints still waiting take what the last answer taught: each one again from its cues with the learning now
+        /// (in the same video the answers count more: same camera, same analyst), so the next ones need fewer corrections.
+        /// </summary>
+        private void RecombineSplitProposals()
+        {
+            if (Race == null || !Timing.IsValid)
+                return;
+
+            SwimLearning learning = Learning;
+            string video = SwimLearning.VideoCode(videoPath);
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceSplit && x.Cues.Count > 0))
+            {
+                long origin = p.Cues.Values.Min();
+                SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, p.Index) { Confidence = 1.0 };
+                foreach (KeyValuePair<string, long> c in p.Cues)
+                {
+                    double weight, spread;
+                    CueWeight(c.Key, out weight, out spread);
+                    d.Cue(c.Key, Timing.Seconds(c.Value, origin), weight, spread);
+                }
+
+                double confidence;
+                double seconds = SwimProposalMath.Combine(d, learning, video, 1.0, out confidence);
+                if (!double.IsNaN(seconds))
+                    p.Timestamp = origin + RealSpan(seconds);
+            }
+        }
+
+        /// <summary>
+        /// The wall at this distance: "finish" (also the end of a leg of a relay), "open" (hand touch: butterfly, breaststroke,
+        /// the change of stroke of the medley) or "flip" (freestyle, backstroke).
+        /// </summary>
         private string WallKind(int wall)
         {
             if (wall >= Race.Distance)
                 return "finish";
+            if (Race.Relay && Race.Distance >= 4 && wall % (Race.Distance / 4) == 0)
+                return "finish";
             string style = SwimPresets.StyleAt(Race, wall);
+            if (SwimPresets.StyleAt(Race, wall + 1) != style)
+                return "open";
             return style == "fs" || style == "bk" ? "flip" : "open";
         }
 
@@ -488,6 +549,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static double WallDelay(string cue, string kind)
         {
+            // The pace gives the analyst's wall already (time of the last 5 m as the analyses have it).
+            if (cue == SwimSplitDetector.CuePace)
+                return 0;
+
             switch (kind)
             {
                 case "flip":
@@ -506,13 +571,21 @@ namespace Kinovea.ScreenManager
             if (dot > 0)
                 cue = cue.Substring(0, dot);
 
+            // The line between the marks of the two ropes is what the analyst sees (the middle of the lane before any learning);
+            // the mark of one rope alone is ahead or behind it by up to a second near the ends of the pool (perspective).
             switch (cue)
             {
-                case SwimSplitDetector.CueFar: weight = 1.0; spread = 0.06; break;
-                case SwimSplitDetector.CueMiddle: weight = 0.6; spread = 0.12; break;
-                case SwimSplitDetector.CueNear: weight = 0.4; spread = 0.15; break;
-                case SwimSplitDetector.CueWallBody: weight = 1.0; spread = 0.15; break;
-                case SwimSplitDetector.CueWallHead: weight = 0.8; spread = 0.2; break;
+                case SwimSplitDetector.CueMiddle: weight = 1.0; spread = 0.08; break;
+                case SwimSplitDetector.CueQuarterNear:
+                case SwimSplitDetector.CueQuarterFar: weight = 0.6; spread = 0.12; break;
+                case SwimSplitDetector.CueFar: weight = 0.4; spread = 0.25; break;
+                case SwimSplitDetector.CueNear: weight = 0.3; spread = 0.3; break;
+                // The wall: the pace of the length (from its checkpoints) before the image (the swimmer hidden in the splashes of
+                // the turn, the camera turning).
+                case SwimSplitDetector.CuePace: weight = 1.0; spread = 0.15; break;
+                case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
+                case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
+                case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;
                 default: weight = 0.5; spread = 0.3; break;
             }
         }
@@ -652,6 +725,42 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// The frames to read for a length: a first part (to the wall at the pace of a fast swimmer), then 3 s more each time the wall
+        /// is not found yet, up to 'last' (a slow swimmer). After a length: from its time; the first length: from the distance left.
+        /// </summary>
+        private void ReadingSpan(long from, long lapStart, int wall, double previousSeconds, out long target, out long last)
+        {
+            long end = frameServer.VideoReader.WorkingZone.End;
+            SwimMark split = Race.GetSplit(wall);
+            if (split != null && split.Timestamp > from)
+            {
+                // The wall is marked already (an analysis made before): a little after it.
+                target = last = Math.Min(end, split.Timestamp + RealSpan(1.2));
+                return;
+            }
+
+            double first, most;
+            if (previousSeconds > 0)
+            {
+                first = previousSeconds * 1.05 + 1.0;
+                most = previousSeconds * 1.6 + 6.0;
+            }
+            else
+            {
+                // Distance left: from the curve of the race when it has checkpoints, else from the time since the start of the lap.
+                SwimReel reel = Reel;
+                double t = Timing.Seconds(from, Race.StartTimestamp.Value);
+                double at = reel != null && reel.HasModel ? reel.DistanceAt(t) : wall - Race.Pool + Timing.Seconds(from, lapStart) / 0.6;
+                double left = Math.Max(5.0, (wall - Math.Min(wall - 5.0, at)) * Race.K);
+                first = left * 0.5 + 2.0;
+                most = left * 1.3 + 6.0;
+            }
+
+            target = Math.Min(end, from + RealSpan(Math.Min(120, first)));
+            last = Math.Min(end, from + RealSpan(Math.Min(180, most)));
+        }
+
         /// <summary>Background thread: the lengths one after the other. False if cancelled.</summary>
         private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker)
         {
@@ -672,28 +781,45 @@ namespace Kinovea.ScreenManager
             Size reference = frameServer.VideoReader.Info.ReferenceSize;
             SwimStrokeLane? nextLane = null;
             int nextVirtual = 0;
+
+            // The size of the swimmer clicked and the width of his lane there: his size in the next lengths, where the lane is
+            // wider or narrower.
+            double clickLength = double.NaN, clickLaneWidth = double.NaN;
             while (wall <= Race.Distance)
             {
                 StrokeSession s = CreateSession(head, feet, from, nextLane, nextVirtual);
                 s.Wall = wall;
                 s.LapStart = lapStart;
-                long target = lengths.Count == 0 ? TrackEnd(from) :
-                    Math.Min(frameServer.VideoReader.WorkingZone.End, from + RealSpan(Math.Min(120, previousSeconds * 1.35 + 3)));
-                if (target <= from || !ReadFrames(s, target, worker))
+
+                // The frames up to a little after the wall: a first part (a fast swimmer), then more until the wall is found.
+                long target, last;
+                ReadingSpan(from, lapStart, wall, previousSeconds, out target, out last);
+                SwimStrokeResult result = null;
+                LengthRead l = null;
+                while (true)
                 {
-                    s.Dispose();
-                    return target <= from;
+                    if (target <= from || !ReadFrames(s, target, worker))
+                    {
+                        s.Dispose();
+                        return target <= from;
+                    }
+
+                    if (s.Timestamps.Count < 10)
+                        break;
+
+                    result = s.Detector.Finish(0, s.Timestamps.Count - 1);
+                    l = AnalyseLength(s, result, lapStart);
+                    if (l == null)
+                        break;
+
+                    double found = WallSample(l);
+                    bool enough = !double.IsNaN(found) && s.Timestamps.Count - 1 - found >= 1.0 * s.Fps;
+                    if (enough || target >= last || worker.CancellationPending)
+                        break;
+                    target = Math.Min(last, target + RealSpan(3.0));
                 }
 
-                if (s.Timestamps.Count < 10)
-                {
-                    s.Dispose();
-                    break;
-                }
-
-                SwimStrokeResult result = s.Detector.Finish(0, s.Timestamps.Count - 1);
-                LengthRead l = AnalyseLength(s, result, lapStart);
-                if (l == null)
+                if (l == null || result == null)
                 {
                     s.Dispose();
                     break;
@@ -701,7 +827,7 @@ namespace Kinovea.ScreenManager
 
                 // After a wall, a length without any mark of the ropes: the swimmer was lost (camera turning fast, lane at the
                 // far end). The analyst clicks him again a little later and the reading goes on from there.
-                if (lengths.Count > 0 && l.Found.Count == 0)
+                if (lengths.Count > 0 && !l.Found.Any(f => f.Cues.Keys.Any(k => k != SwimSplitDetector.CuePace)))
                 {
                     resumeWall = wall;
                     resumeLapStart = lapStart;
@@ -714,18 +840,8 @@ namespace Kinovea.ScreenManager
                 if (wall >= Race.Distance || worker.CancellationPending)
                     break;
 
-                // The wall: the swimmer turns there; the next length starts from it, the other way (its usual delay added, a little after).
-                double w = double.NaN;
-                string kind = WallKind(wall);
-                foreach (string cue in new[] { SwimSplitDetector.CueStop, SwimSplitDetector.CueWallBody, SwimSplitDetector.CueWallHead })
-                {
-                    if (l.Wall.ContainsKey(cue))
-                    {
-                        w = l.Wall[cue] + WallDelay(cue, kind) * s.Fps;
-                        break;
-                    }
-                }
-
+                // The wall: the swimmer turns there; the next length starts from it, the other way, a little after.
+                double w = WallSample(l);
                 if (double.IsNaN(w) || result.Path == null || result.Path.Length == 0)
                     break;
 
@@ -733,12 +849,18 @@ namespace Kinovea.ScreenManager
                 double x = result.Path[wi];
                 SwimStrokeLane lane = result.Lanes[Math.Min(wi, result.Lanes.Count - 1)];
                 double y = 0.5 * (lane.Y1(x) + lane.Y2(x));
-                SwimStrokeLane lane0 = result.Lanes[0];
                 double sx = (double)s.Width / reference.Width, sy = (double)s.Height / reference.Height;
-                double hx0 = head.X * sx, hy0 = head.Y * sy, fx0 = feet.X * sx, fy0 = feet.Y * sy;
-                double cx0 = 0.5 * (hx0 + fx0);
-                double lw0 = Math.Max(5, Math.Abs(lane0.Y2(cx0) - lane0.Y1(cx0))), lw = Math.Max(5, Math.Abs(lane.Y2(x) - lane.Y1(x)));
-                double length = Math.Sqrt((hx0 - fx0) * (hx0 - fx0) + (hy0 - fy0) * (hy0 - fy0)) * lw / lw0;
+                if (double.IsNaN(clickLength))
+                {
+                    double hx0 = head.X * sx, hy0 = head.Y * sy, fx0 = feet.X * sx, fy0 = feet.Y * sy;
+                    double cx0 = 0.5 * (hx0 + fx0);
+                    SwimStrokeLane lane0 = result.Lanes[0];
+                    clickLength = Math.Sqrt((hx0 - fx0) * (hx0 - fx0) + (hy0 - fy0) * (hy0 - fy0));
+                    clickLaneWidth = Math.Max(5, Math.Abs(lane0.Y2(cx0) - lane0.Y1(cx0)));
+                }
+
+                double lw = Math.Max(5, Math.Abs(lane.Y2(x) - lane.Y1(x)));
+                double length = clickLength * lw / clickLaneWidth;
                 int direction = -s.Detector.Direction;
                 long wallTs = SessionStamp(s, w);
                 previousSeconds = Math.Max(10, Timing.Seconds(wallTs, lapStart));
@@ -795,6 +917,7 @@ namespace Kinovea.ScreenManager
             }
 
             Answer(p, timestamp, true);
+            RecombineSplitProposals();
             Changed(true);
             NextProposal(timestamp, done);
         }

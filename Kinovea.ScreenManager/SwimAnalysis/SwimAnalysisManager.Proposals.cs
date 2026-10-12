@@ -449,6 +449,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             Answer(p, timestamp, true);
+            if (p.Kind == KindRaceSplit)
+                RecombineSplitProposals();
             if (!resolvingProposal && p.Id == reviewId)
             {
                 // After the command of the key has finished (it still works on this frame), the next proposal.

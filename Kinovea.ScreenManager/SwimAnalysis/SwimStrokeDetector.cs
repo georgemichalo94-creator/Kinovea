@@ -97,6 +97,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Camera displacement along the band from the previous frame (working x), per frame.</summary>
         public List<double[]> Shifts = new List<double[]>();
+
+        /// <summary>Camera motion from the previous frame (homography, 9 values row-major, working coordinates), per frame.</summary>
+        public List<double[]> Motions = new List<double[]>();
     }
 
     /// <summary>
@@ -157,6 +160,7 @@ namespace Kinovea.ScreenManager
         private readonly List<double[]> previousMotion = new List<double[]>();
         private readonly List<double[]> differences = new List<double[]>();
         private readonly List<double[]> shifts = new List<double[]>();
+        private readonly List<double[]> motions = new List<double[]>();
         private readonly List<SwimStrokeLane> lanes = new List<SwimStrokeLane>();
         private readonly List<int[]> redFar = new List<int[]>();
         private readonly List<int[]> redNear = new List<int[]>();
@@ -314,6 +318,7 @@ namespace Kinovea.ScreenManager
 
             lanes.Add(lane);
             shifts.Add(shift);
+            motions.Add(motion ?? Identity());
             redFar.Add(ropes && virtualRope != 1 ? RedRuns(image, lane.A1, lane.B1) : new int[0]);
             redNear.Add(ropes && virtualRope != 2 ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
 
@@ -514,6 +519,7 @@ namespace Kinovea.ScreenManager
             result.RedNear.AddRange(redNear);
             result.Motion.AddRange(differences);
             result.Shifts.AddRange(shifts);
+            result.Motions.AddRange(motions);
 
             int T = differences.Count;
             if (T < FrameGap + 3)

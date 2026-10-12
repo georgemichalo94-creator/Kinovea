@@ -43,18 +43,18 @@ namespace Kinovea.ScreenManager
         public const string CueNear = "near";
         public const string CueMiddle = "mid";
 
+        /// <summary>
+        /// The line between the two marks a quarter of the lane from the near rope, and three quarters (the head seen higher in
+        /// the lane: above the water, camera high). The learning finds which one the analyst follows in each video.
+        /// </summary>
+        public const string CueQuarterNear = "l25";
+        public const string CueQuarterFar = "l75";
+
         /// <summary>Debug output (null: none).</summary>
         public static Action<string> Trace;
 
         /// <summary>Fastest time per metre of a lap (s/m), start or push included: no checkpoint before it.</summary>
         private const double FastestPace = 0.33;
-
-        private struct Crossing
-        {
-            public double Frame;
-            public bool Far;
-            public bool Long;
-        }
 
         /// <summary>
         /// Checkpoints of the lap. direction: +1 if the swimmer goes to larger x in the image, −1 if to smaller x.
@@ -72,22 +72,20 @@ namespace Kinovea.ScreenManager
                 return found;
 
             double[] head = Heads(result, T, direction, fps);
-            List<Crossing> crossings = new List<Crossing>();
-            crossings.AddRange(Crossings(result, head, T, direction, fps, true));
-            crossings.AddRange(Crossings(result, head, T, direction, fps, false));
+            double earliestEnd = lapStart + (pool - 5) * FastestPace * fps;
+            List<Checkpoint> points = Checkpoints(result, head, T, direction, fps, earliestEnd);
             if (Trace != null)
             {
-                foreach (Crossing c in crossings.OrderBy(c => c.Frame))
-                    Trace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "crossing {0:0.0} {1} {2}", c.Frame, c.Far ? "far" : "near", c.Long ? "long" : "mark"));
+                foreach (Checkpoint c in points.OrderBy(c => Time(c.Cues)))
+                    Trace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "checkpoint {0}: {1}", c.Long ? "long" : "mark",
+                        string.Join(" ", c.Cues.Select(k => k.Key + "=" + k.Value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)))));
             }
 
-            // Marks: crossings of the far and the near rope less than 1 s apart are the same checkpoint. After the start of the
-            // red last 5 m, the short red parts are pieces of it. The red 5 m of the wall the lap started from (the swimmer
-            // leaves them after a turn) are not the end: the end comes after the time of the fastest swimmer to it.
-            double earliestEnd = lapStart + (pool - 5) * FastestPace * fps;
-            List<Dictionary<string, double>> ends = Group(crossings.Where(c => c.Long && c.Frame >= earliestEnd).ToList(), fps);
+            // After the start of the red last 5 m, the short red parts are pieces of it. The red 5 m of the wall the lap started
+            // from (the swimmer leaves them after a turn) are not the end: the end comes after the time of the fastest swimmer to it.
+            List<Dictionary<string, double>> ends = points.Where(c => c.Long && Time(c.Cues) >= earliestEnd).Select(c => c.Cues).OrderBy(c => Time(c)).ToList();
             double firstEnd = ends.Count > 0 ? ends.Min(e => Time(e)) : double.MaxValue;
-            List<Dictionary<string, double>> marks = Group(crossings.Where(c => !c.Long && c.Frame < firstEnd - 0.3 * fps).ToList(), fps);
+            List<Dictionary<string, double>> marks = points.Where(c => !c.Long && Time(c.Cues) < firstEnd - 0.3 * fps).Select(c => c.Cues).OrderBy(c => Time(c)).ToList();
 
             // Distances of the marks passed from the wall of the lap: 15, 25, 35 in a pool of 50 (the marks 15 from each wall and
             // the middle); 10 and 15 in a pool of 25 (the marks 15 from each wall).
@@ -99,7 +97,7 @@ namespace Kinovea.ScreenManager
                 if (assigned[i] <= 0)
                     continue;
 
-                SwimSplitFound f = new SwimSplitFound { LapDistance = assigned[i], Confidence = marks[i].ContainsKey(CueFar) && marks[i].ContainsKey(CueNear) ? 0.8 : 0.6 };
+                SwimSplitFound f = new SwimSplitFound { LapDistance = assigned[i], Confidence = marks[i].ContainsKey(CueMiddle) ? 0.8 : 0.55 };
                 foreach (KeyValuePair<string, double> c in marks[i])
                     f.Cues[c.Key] = c.Value;
                 found.Add(f);
@@ -110,13 +108,83 @@ namespace Kinovea.ScreenManager
             Dictionary<string, double> end = ends.Where(e => Time(e) > after + 0.5 * fps).OrderBy(e => Time(e)).FirstOrDefault();
             if (end != null)
             {
-                SwimSplitFound f = new SwimSplitFound { LapDistance = pool - 5, Confidence = end.ContainsKey(CueFar) && end.ContainsKey(CueNear) ? 0.75 : 0.55 };
+                SwimSplitFound f = new SwimSplitFound { LapDistance = pool - 5, Confidence = end.ContainsKey(CueMiddle) ? 0.75 : 0.5 };
                 foreach (KeyValuePair<string, double> c in end)
                     f.Cues[c.Key] = c.Value;
                 found.Add(f);
             }
 
             return found.OrderBy(f => f.LapDistance).ToList();
+        }
+
+        /// <summary>The time from the pace of the swimmer in the lap (the checkpoints found before and after).</summary>
+        public const string CuePace = "pace";
+
+        /// <summary>
+        /// Usual time of the last 5 m to the wall against the 10 m before it, as the analysts mark the wall (analyses of 50 m
+        /// pools): the finish and the open turns (hand touch) about half, the flip turn of freestyle (feet touch) a little more.
+        /// </summary>
+        public static double LastFiveRatio(string kind, string style)
+        {
+            if (kind == "flip")
+                return style == "fs" ? 0.55 : 0.51;
+            return kind == "open" ? 0.505 : 0.50;
+        }
+
+        /// <summary>
+        /// The pace of the swimmer in the lap, from the checkpoints found (frames of the reading): the swimmers keep their speed
+        /// between the marks (the next 10 m take 0.96–1.04 of the time of the 10 m before), the last 5 m to the wall take
+        /// 'lastFiveRatio' of the 10 m before. The checkpoints not found are added with the cue "pace" only (low confidence: the
+        /// analyst checks them), the wall gets the cue "pace". Needs two checkpoints found; only in the frames read (0 to frames − 1).
+        /// </summary>
+        public static void AddPace(List<SwimSplitFound> found, Dictionary<string, double> wall, int pool, double lastFiveRatio, int frames)
+        {
+            if (found == null || pool <= 0)
+                return;
+
+            List<SwimSplitFound> seen = found.Where(x => x.Cues.Count > 0 && !(x.Cues.Count == 1 && x.Cues.ContainsKey(CuePace))).ToList();
+            if (seen.Count < 2)
+                return;
+
+            // Time per metre and time at the wall of the lap (straight line through the checkpoints: medians of the slopes of
+            // each pair and of the intercepts, so that one wrong checkpoint does not move it).
+            List<double> slopes = new List<double>();
+            for (int i = 0; i < seen.Count; i++)
+            {
+                for (int j = i + 1; j < seen.Count; j++)
+                {
+                    int dd = seen[j].LapDistance - seen[i].LapDistance;
+                    if (dd != 0)
+                        slopes.Add((Time(seen[j].Cues) - Time(seen[i].Cues)) / dd);
+                }
+            }
+
+            double slope = SwimLearningMedian(slopes);
+            if (slope <= 0)
+                return;
+
+            double intercept = SwimLearningMedian(seen.Select(x => Time(x.Cues) - slope * x.LapDistance).ToList());
+            int[] marks = pool == 50 ? new[] { 15, 25, 35, 45 } : new[] { 10, 15, 20 };
+            foreach (int d in marks)
+            {
+                if (found.Any(x => x.LapDistance == d))
+                    continue;
+
+                double t = intercept + slope * d;
+                if (t < 0 || t > frames - 1)
+                    continue;
+
+                SwimSplitFound added = new SwimSplitFound { LapDistance = d, Confidence = 0.3 };
+                added.Cues[CuePace] = t;
+                found.Add(added);
+            }
+
+            found.Sort((a, b) => a.LapDistance.CompareTo(b.LapDistance));
+            SwimSplitFound end = found.FirstOrDefault(x => x.LapDistance == pool - 5);
+            double tEnd = end != null && seen.Contains(end) ? Time(end.Cues) : intercept + slope * (pool - 5);
+            double tWall = tEnd + lastFiveRatio * 10 * slope;
+            if (wall != null && tWall >= 0 && tWall <= frames - 1)
+                wall[CuePace] = tWall;
         }
 
         public const string CueStop = "stop";
@@ -316,10 +384,12 @@ namespace Kinovea.ScreenManager
             return u;
         }
 
-        /// <summary>Main time of a checkpoint: the far rope if it has it, else the near one.</summary>
+        /// <summary>Main time of a checkpoint: the line between the marks of the two ropes if it has it, else the far rope, else the near one.</summary>
         private static double Time(Dictionary<string, double> cues)
         {
             double t;
+            if (cues.TryGetValue(CueMiddle, out t))
+                return t;
             if (cues.TryGetValue(CueFar, out t))
                 return t;
             if (cues.TryGetValue(CueNear, out t))
@@ -400,81 +470,342 @@ namespace Kinovea.ScreenManager
             return Math.Max(5.0, Math.Abs(lane.Y2(x) - lane.Y1(x)));
         }
 
-        /// <summary>
-        /// Crossings of the head with the marks of one rope: a mark (short red part) or the start of the red last 5 m
-        /// (long part: its edge towards the swimmer), followed from frame to frame with the camera motion.
-        /// </summary>
-        private static List<Crossing> Crossings(SwimStrokeResult result, double[] head, int T, int direction, double fps, bool far)
+        /// <summary>A mark of a rope followed over the frames (the camera moves it; the swimmer and the splashes hide it).</summary>
+        private sealed class MarkTrack
         {
-            List<Crossing> raw = new List<Crossing>();
-            List<int[]> red = far ? result.RedFar : result.RedNear;
-            int settle = Math.Max(1, (int)Math.Round(0.3 * fps));
-            for (int t = settle; t < T; t++)
+            public bool Long;
+            public double X;
+            public int First;
+            public int LastSeen;
+            public int Seen;
+            public bool Done;
+
+            /// <summary>Place in each frame from First (seen or moved with the camera).</summary>
+            public readonly List<double> Places = new List<double>();
+
+            public int Last
             {
-                if (double.IsNaN(head[t]) || double.IsNaN(head[t - 1]))
-                    continue;
+                get { return First + Places.Count - 1; }
+            }
 
-                int[] now = Joined(red[t], result.Lanes[t]), before = Joined(red[t - 1], result.Lanes[t - 1]);
-                if (now.Length == 0 || before.Length == 0)
-                    continue;
+            public double At(int t)
+            {
+                return Places[Math.Max(0, Math.Min(Places.Count - 1, t - First))];
+            }
+        }
 
-                double[] shift = t < result.Shifts.Count ? result.Shifts[t] : null;
-                for (int i = 0; i + 1 < now.Length; i += 2)
+        /// <summary>A checkpoint passed: a mark (or the start of the red last 5 m) and the frames of its cues.</summary>
+        private sealed class Checkpoint
+        {
+            public bool Long;
+            public readonly Dictionary<string, double> Cues = new Dictionary<string, double>();
+        }
+
+        /// <summary>
+        /// The checkpoints passed by the head: the marks of the two ropes are followed over the frames (Track); the mark of the
+        /// far rope and the one of the near rope of the same checkpoint are paired (the closest in the image when both are
+        /// followed); the head crosses each of them and the line between them (its middle: the middle of the lane, cue "mid").
+        /// The perspective puts the two marks of a checkpoint far apart near the ends of the pool (more than a second of
+        /// swimming): the line between them is what the analyst sees.
+        /// </summary>
+        private static List<Checkpoint> Checkpoints(SwimStrokeResult result, double[] head, int T, int direction, double fps, double earliestEnd)
+        {
+            List<MarkTrack> far = Track(result, result.RedFar, true, head, T, direction, fps).Where(m => m.Seen >= 3).ToList();
+            List<MarkTrack> near = Track(result, result.RedNear, false, head, T, direction, fps).Where(m => m.Seen >= 3).ToList();
+            if (Trace != null)
+            {
+                foreach (MarkTrack m in far.Concat(near))
+                    Trace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "track {0} {1} frames {2}-{3} seen {4} last seen {5} x {6:0}->{7:0}",
+                        far.Contains(m) ? "far" : "near", m.Long ? "long" : "mark", m.First, m.Last, m.Seen, m.LastSeen, m.Places[0], m.Places[m.Places.Count - 1]));
+            }
+
+            // Pairs: the far and the near mark of the same checkpoint. The head crosses them less than 2 s apart (two checkpoints
+            // are 10 m apart: more than 4 s); a mark the head did not cross (hidden too long) pairs with the closest mark of the
+            // other rope followed at the crossing of that one (less than 6 lane widths: two checkpoints are most of the image apart).
+            Dictionary<MarkTrack, double> crossing = new Dictionary<MarkTrack, double>();
+            foreach (MarkTrack m in far.Concat(near))
+                crossing[m] = CrossingOf(m.Places, m.First, head, T, direction, fps);
+
+            // The start of the red last 5 m is crossed once on each rope: the first time (the swimmer hides the rest of the red
+            // part as he goes, its edge moves with him); before the time of the fastest swimmer it is the red of the wall left.
+            foreach (List<MarkTrack> rope in new[] { far, near })
+            {
+                MarkTrack first = rope.Where(m => m.Long && !double.IsNaN(crossing[m]) && crossing[m] >= earliestEnd).OrderBy(m => crossing[m]).FirstOrDefault();
+                foreach (MarkTrack m in rope.Where(m => m.Long && m != first))
+                    crossing[m] = double.NaN;
+            }
+
+            List<Tuple<MarkTrack, MarkTrack, double>> candidates = new List<Tuple<MarkTrack, MarkTrack, double>>();
+            foreach (MarkTrack f in far)
+            {
+                foreach (MarkTrack n in near)
                 {
-                    bool isLong;
-                    double x = Point(result.Lanes[t], now[i], now[i + 1], direction, out isLong);
-
-                    // The same part in the previous frame, moved by the camera.
-                    double best = double.MaxValue, xb = double.NaN;
-                    bool longBefore = false;
-                    for (int j = 0; j + 1 < before.Length; j += 2)
-                    {
-                        bool lb;
-                        double xp = Point(result.Lanes[t - 1], before[j], before[j + 1], direction, out lb);
-                        if (lb != isLong)
-                            continue;
-
-                        double moved = xp;
-                        if (shift != null)
-                            moved += shift[Math.Max(0, Math.Min(shift.Length - 1, (int)Math.Round(xp)))];
-                        double e = Math.Abs(moved - x);
-                        if (e < best)
-                        {
-                            best = e;
-                            xb = xp;
-                            longBefore = lb;
-                        }
-                    }
-
-                    double lw = LaneWidth(result.Lanes[t], x);
-                    if (double.IsNaN(xb) || best > Math.Max(6.0, 0.5 * lw))
+                    if (f.Long != n.Long)
                         continue;
 
-                    double s0 = direction * (head[t - 1] - xb);
-                    double s1 = direction * (head[t] - x);
-                    if (s0 < 0 && s1 >= 0)
-                        raw.Add(new Crossing { Frame = t - 1 + (-s0) / Math.Max(1e-9, s1 - s0), Far = far, Long = isLong });
+                    double cf = crossing[f], cn = crossing[n];
+                    if (!double.IsNaN(cf) && !double.IsNaN(cn))
+                    {
+                        if (Math.Abs(cf - cn) <= 2.0 * fps)
+                            candidates.Add(Tuple.Create(f, n, Math.Abs(cf - cn) / fps));
+                        continue;
+                    }
+
+                    if (double.IsNaN(cf) && double.IsNaN(cn))
+                        continue;
+
+                    // One crossed: the other one followed then, close to it in the image.
+                    int t = (int)Math.Round(double.IsNaN(cf) ? cn : cf);
+                    MarkTrack other = double.IsNaN(cf) ? f : n;
+                    if (t < other.First || t > other.Last)
+                        continue;
+                    double lw = LaneWidth(result.Lanes[Math.Max(0, Math.Min(T - 1, t))], n.At(t));
+                    double dx = Math.Abs(f.At(t) - n.At(t));
+                    if (dx <= 6 * lw)
+                        candidates.Add(Tuple.Create(f, n, 2.0 + dx / lw));
                 }
             }
 
-            // The head goes back and forth over a mark (splashes): one crossing per mark, the middle of the ones within 0.6 s.
-            List<Crossing> merged = new List<Crossing>();
-            foreach (bool isLong in new[] { false, true })
+            List<Checkpoint> points = new List<Checkpoint>();
+            HashSet<MarkTrack> paired = new HashSet<MarkTrack>();
+            foreach (Tuple<MarkTrack, MarkTrack, double> c in candidates.OrderBy(c => c.Item3))
             {
-                List<Crossing> list = raw.Where(c => c.Long == isLong).OrderBy(c => c.Frame).ToList();
-                int i = 0;
-                while (i < list.Count)
+                MarkTrack f = c.Item1, n = c.Item2;
+                if (paired.Contains(f) || paired.Contains(n))
+                    continue;
+                paired.Add(f);
+                paired.Add(n);
+
+                // The line between them, at a quarter, half and three quarters of the lane from the near rope, in each frame where
+                // one of the two is followed (the other one at the distance it had in the closest frame where both were).
+                int from = Math.Max(f.First, n.First), to = Math.Min(f.Last, n.Last);
+                int first = Math.Min(f.First, n.First), last = Math.Max(f.Last, n.Last);
+                Checkpoint p = new Checkpoint { Long = f.Long };
+                double x;
+                if (!double.IsNaN(x = crossing[f]))
+                    p.Cues[CueFar] = x;
+                if (!double.IsNaN(x = crossing[n]))
+                    p.Cues[CueNear] = x;
+                foreach (KeyValuePair<string, double> line in new[] {
+                    new KeyValuePair<string, double>(CueQuarterNear, 0.25), new KeyValuePair<string, double>(CueMiddle, 0.5), new KeyValuePair<string, double>(CueQuarterFar, 0.75) })
                 {
-                    int j = i;
-                    while (j + 1 < list.Count && list[j + 1].Frame - list[i].Frame <= 0.6 * fps)
-                        j++;
-                    List<double> frames = list.Skip(i).Take(j - i + 1).Select(c => c.Frame).ToList();
-                    merged.Add(new Crossing { Frame = SwimLearningMedian(frames), Far = far, Long = isLong });
-                    i = j + 1;
+                    List<double> places = new List<double>();
+                    for (int t = first; t <= last; t++)
+                    {
+                        bool hasF = t >= f.First && t <= f.Last, hasN = t >= n.First && t <= n.Last;
+                        int r = Math.Max(from, Math.Min(to, t));
+                        double dx = f.At(r) - n.At(r);
+                        double xn = hasN ? n.At(t) : f.At(t) - dx;
+                        double xf = hasF ? f.At(t) : n.At(t) + dx;
+                        places.Add(xn + line.Value * (xf - xn));
+                    }
+
+                    if (!double.IsNaN(x = CrossingOf(places, first, head, T, direction, fps)))
+                        p.Cues[line.Key] = x;
+                }
+
+                if (p.Cues.Count > 0)
+                    points.Add(p);
+            }
+
+            foreach (MarkTrack m in far.Concat(near))
+            {
+                if (paired.Contains(m))
+                    continue;
+                double x = crossing[m];
+                if (double.IsNaN(x))
+                    continue;
+                Checkpoint p = new Checkpoint { Long = m.Long };
+                p.Cues[far.Contains(m) ? CueFar : CueNear] = x;
+                points.Add(p);
+            }
+
+            // Pieces of the same mark (followed twice: hidden, then seen again): one checkpoint, the one with the most cues.
+            List<Checkpoint> merged = new List<Checkpoint>();
+            foreach (Checkpoint p in points.OrderByDescending(p => p.Cues.Count))
+            {
+                Checkpoint same = merged.FirstOrDefault(m => m.Long == p.Long && Math.Abs(Time(m.Cues) - Time(p.Cues)) <= 0.6 * fps);
+                if (same == null)
+                {
+                    merged.Add(p);
+                    continue;
+                }
+
+                foreach (KeyValuePair<string, double> c in p.Cues)
+                {
+                    if (!same.Cues.ContainsKey(c.Key))
+                        same.Cues[c.Key] = c.Value;
                 }
             }
 
             return merged;
+        }
+
+        /// <summary>
+        /// Frame where the head crosses a point followed from frame 'first' (NaN if it does not): the head minus the point,
+        /// fitted by a straight line over half a second on each side of the first crossing (the head goes back and forth over
+        /// the mark with the arms and the splashes), where the line is zero. Not on the first frames of the point (the head was
+        /// already over it when it was first seen).
+        /// </summary>
+        private static double CrossingOf(List<double> places, int first, double[] head, int T, int direction, double fps)
+        {
+            int settle = Math.Max(1, (int)Math.Round(0.3 * fps));
+            int t0 = -1;
+            for (int k = 2; k < places.Count && t0 < 0; k++)
+            {
+                int t = first + k;
+                if (t < settle || t >= T || double.IsNaN(head[t]) || double.IsNaN(head[t - 1]))
+                    continue;
+
+                double s0 = direction * (head[t - 1] - places[k - 1]);
+                double s1 = direction * (head[t] - places[k]);
+                if (s0 < 0 && s1 >= 0)
+                    t0 = t;
+            }
+
+            if (t0 < 0)
+                return double.NaN;
+
+            // Least squares of s(t) = a + b (t - t0) on the frames of the window where both are known.
+            int w = Math.Max(2, (int)Math.Round(0.5 * fps));
+            double n = 0, st = 0, ss = 0, stt = 0, sts = 0;
+            for (int t = Math.Max(first, t0 - w); t <= Math.Min(Math.Min(T - 1, first + places.Count - 1), t0 + w); t++)
+            {
+                if (double.IsNaN(head[t]))
+                    continue;
+                double u = t - t0, v = direction * (head[t] - places[t - first]);
+                n++;
+                st += u;
+                ss += v;
+                stt += u * u;
+                sts += u * v;
+            }
+
+            double fallback;
+            {
+                double s0 = direction * (head[t0 - 1] - places[t0 - 1 - first]);
+                double s1 = direction * (head[t0] - places[t0 - first]);
+                fallback = t0 - 1 + (-s0) / Math.Max(1e-9, s1 - s0);
+            }
+
+            double det = n * stt - st * st;
+            if (n < 5 || Math.Abs(det) < 1e-9)
+                return fallback;
+
+            double b = (n * sts - st * ss) / det;
+            double a = (ss - b * st) / n;
+            if (b <= 1e-6)
+                return fallback;
+
+            double crossing = t0 - a / b;
+            return Math.Abs(crossing - t0) <= w ? crossing : fallback;
+        }
+
+        /// <summary>
+        /// The marks of a rope followed over the frames read: each red part (its point: middle of a mark, edge of the last 5 m
+        /// towards the swimmer) continues the mark it falls on after the camera motion (the point on the rope moved by the
+        /// homography of the frame), else starts a new one. A mark is not looked at within 1.5 lane widths of the head; a mark not
+        /// seen for 1.5 s, or out of the image, ends. A mark found again after the swimmer passed it continues the one it was.
+        /// </summary>
+        private static List<MarkTrack> Track(SwimStrokeResult result, List<int[]> red, bool far, double[] head, int T, int direction, double fps)
+        {
+            List<MarkTrack> all = new List<MarkTrack>();
+            List<MarkTrack> active = new List<MarkTrack>();
+            int maxGap = (int)Math.Round(1.5 * fps);
+            for (int t = 0; t < T; t++)
+            {
+                SwimStrokeLane lane = result.Lanes[t];
+                double[] shift = t > 0 && t < result.Shifts.Count ? result.Shifts[t] : null;
+                double[] motion = t > 0 && t < result.Motions.Count ? result.Motions[t] : null;
+                int width = result.Motion[t] != null && result.Motion[t].Length > 0 ? result.Motion[t].Length : (shift != null ? shift.Length : 0);
+
+                // The camera moved: the marks with it (on their rope of the frame before).
+                foreach (MarkTrack m in active)
+                {
+                    if (motion != null)
+                    {
+                        SwimStrokeLane before = result.Lanes[t - 1];
+                        double y = far ? before.Y1(m.X) : before.Y2(m.X), X, Y;
+                        SwimStrokeDetector.MapPoint(motion, m.X, y, out X, out Y);
+                        if (!double.IsNaN(X) && !double.IsInfinity(X))
+                            m.X = X;
+                    }
+                    else if (shift != null && shift.Length > 0)
+                    {
+                        m.X += shift[Math.Max(0, Math.Min(shift.Length - 1, (int)Math.Round(m.X)))];
+                    }
+                }
+
+                // The red parts of this frame.
+                int[] runs = Joined(red[t], lane);
+                bool[] used = new bool[active.Count];
+                for (int i = 0; i + 1 < runs.Length; i += 2)
+                {
+                    bool isLong;
+                    double x = Point(lane, runs[i], runs[i + 1], direction, out isLong);
+
+                    // The edge of a red part cut by the border of the image is not the end of the red 5 m.
+                    if (isLong && width > 0 && (x <= 2 || x >= width - 3))
+                        continue;
+
+                    double lw = LaneWidth(lane, x);
+                    bool nearHead = !double.IsNaN(head[t]) && Math.Abs(head[t] - x) < 1.5 * lw;
+                    double tolerance = Math.Max(6.0, 0.5 * lw);
+                    int best = -1;
+                    double e = double.MaxValue;
+                    for (int k = 0; k < active.Count; k++)
+                    {
+                        if (used[k] || active[k].Long != isLong)
+                            continue;
+
+                        // A mark hidden for a while drifts a little more with the camera.
+                        double d = Math.Abs(active[k].X - x);
+                        double allowed = t - active[k].LastSeen > 0.3 * fps ? Math.Max(tolerance, 1.0 * lw) : tolerance;
+                        if (d <= allowed && d < e)
+                        {
+                            e = d;
+                            best = k;
+                        }
+                    }
+
+                    if (best >= 0)
+                    {
+                        used[best] = true;
+                        MarkTrack m = active[best];
+
+                        // Near the head the red part can be a piece of the mark (the rest hidden): the place comes from the camera.
+                        if (!nearHead)
+                        {
+                            m.X += (t - m.LastSeen > 0.3 * fps ? 1.0 : 0.6) * (x - m.X);
+                            m.LastSeen = t;
+                            m.Seen++;
+                        }
+
+                        continue;
+                    }
+
+                    if (nearHead)
+                        continue;
+
+                    MarkTrack track = new MarkTrack { Long = isLong, X = x, First = t, LastSeen = t, Seen = 1 };
+                    active.Add(track);
+                    all.Add(track);
+                    Array.Resize(ref used, active.Count);
+                    used[active.Count - 1] = true;
+                }
+
+                foreach (MarkTrack m in active)
+                {
+                    if (t - m.LastSeen > maxGap || (width > 0 && (m.X < -width * 0.1 || m.X > width * 1.1)))
+                        m.Done = true;
+                    else
+                        m.Places.Add(m.X);
+                }
+
+                active.RemoveAll(m => m.Done);
+            }
+
+            return all;
         }
 
         /// <summary>
@@ -514,47 +845,6 @@ namespace Kinovea.ScreenManager
             if (!isLong)
                 return middle;
             return direction > 0 ? from : to;
-        }
-
-        /// <summary>Crossings of the far and the near rope less than 1 s apart: one checkpoint (cues far, near, and their middle).</summary>
-        private static List<Dictionary<string, double>> Group(List<Crossing> crossings, double fps)
-        {
-            List<Dictionary<string, double>> result = new List<Dictionary<string, double>>();
-            List<Crossing> far = crossings.Where(c => c.Far).OrderBy(c => c.Frame).ToList();
-            List<Crossing> near = crossings.Where(c => !c.Far).OrderBy(c => c.Frame).ToList();
-            bool[] used = new bool[near.Count];
-            foreach (Crossing f in far)
-            {
-                int best = -1;
-                double e = double.MaxValue;
-                for (int k = 0; k < near.Count; k++)
-                {
-                    double d = Math.Abs(near[k].Frame - f.Frame);
-                    if (!used[k] && d <= 1.0 * fps && d < e)
-                    {
-                        e = d;
-                        best = k;
-                    }
-                }
-
-                Dictionary<string, double> cues = new Dictionary<string, double> { { CueFar, f.Frame } };
-                if (best >= 0)
-                {
-                    used[best] = true;
-                    cues[CueNear] = near[best].Frame;
-                    cues[CueMiddle] = 0.5 * (f.Frame + near[best].Frame);
-                }
-
-                result.Add(cues);
-            }
-
-            for (int k = 0; k < near.Count; k++)
-            {
-                if (!used[k])
-                    result.Add(new Dictionary<string, double> { { CueNear, near[k].Frame } });
-            }
-
-            return result.OrderBy(c => Time(c)).ToList();
         }
 
         /// <summary>
