@@ -338,6 +338,13 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // A checkpoint of a race: the split of its distance.
+            if (p.Kind == KindRaceSplit)
+            {
+                AcceptSplitProposal(p, timestamp);
+                return;
+            }
+
             // A mark of this kind already on this frame (a kick: within 0.2 s, not counted twice): only the answer.
             SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
             bool exists = Race.Marks.Any(m => m.Type == markType &&
@@ -560,6 +567,7 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.Breakout: name = "Έξοδος από το νερό"; break;
                 case SwimMarkType.WallContact: name = "Επαφή στον τοίχο"; break;
                 case SwimMarkType.RotationStart: name = "Αρχή περιστροφής"; break;
+                case SwimMarkType.Split: name = p.Kind == KindRaceSplit ? "Πέρασμα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : "Πέρασμα"; break;
                 case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? "Σήμα εκκίνησης (φως)" + (p.Index > 1 ? " · εναλλακτική " + (p.Index - 1) : "") : "Σήμα εκκίνησης"; break;
                 default: name = p.Type.ToString(); break;
             }

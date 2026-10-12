@@ -83,6 +83,19 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Stroke signal (onset strength) for each frame.</summary>
         public double[] Onset;
+
+        /// <summary>
+        /// Red parts of the far and the near rope of the lane in each frame (the marks of the ropes: 15 m, 25 m, the last 5 m):
+        /// pairs of working x (from, to), in order.
+        /// </summary>
+        public List<int[]> RedFar = new List<int[]>();
+        public List<int[]> RedNear = new List<int[]>();
+
+        /// <summary>Band difference (motion across the band) of each frame along the band (working x).</summary>
+        public List<double[]> Motion = new List<double[]>();
+
+        /// <summary>Camera displacement along the band from the previous frame (working x), per frame.</summary>
+        public List<double[]> Shifts = new List<double[]>();
     }
 
     /// <summary>
@@ -138,6 +151,8 @@ namespace Kinovea.ScreenManager
         private readonly List<double[]> differences = new List<double[]>();
         private readonly List<double[]> shifts = new List<double[]>();
         private readonly List<SwimStrokeLane> lanes = new List<SwimStrokeLane>();
+        private readonly List<int[]> redFar = new List<int[]>();
+        private readonly List<int[]> redNear = new List<int[]>();
 
         /// <param name="style">Style code of the panel: fs, bk, br, fly.</param>
         public SwimStrokeDetector(int width, int height, double headX, double headY, double feetX, double feetY, string style, double fps)
@@ -164,6 +179,12 @@ namespace Kinovea.ScreenManager
         public bool FoundRopes
         {
             get { return ropes; }
+        }
+
+        /// <summary>+1 if the swimmer goes to larger x in the image (head right of the feet when clicked), −1 otherwise.</summary>
+        public int Direction
+        {
+            get { return direction; }
         }
 
         public SwimStrokeLane CurrentLane
@@ -253,6 +274,8 @@ namespace Kinovea.ScreenManager
 
             lanes.Add(lane);
             shifts.Add(shift);
+            redFar.Add(ropes ? RedRuns(image, lane.A1, lane.B1) : new int[0]);
+            redNear.Add(ropes ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
 
             double[] d = new double[width];
             if (previous.Count == FrameGap)
@@ -374,6 +397,70 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// Red parts of a rope (y = a x + b): a pixel within 3 px of the line that is red (red brightest, saturated, hue within
+        /// −30°…+18°), parts with gaps up to 3 px joined, at least 3 px long. Pairs (from, to) of working x.
+        /// </summary>
+        public static int[] RedRuns(SwimStrokeImage image, double a, double b)
+        {
+            int w = image.Width, h = image.Height;
+            List<int> runs = new List<int>();
+            int start = -1, lastRed = -10;
+            for (int x = 0; x < w; x++)
+            {
+                bool red = false;
+                double yc = a * x + b;
+                for (int dy = -3; dy <= 3 && !red; dy++)
+                {
+                    int y = (int)Math.Round(yc + dy);
+                    if (y < 0 || y >= h)
+                        continue;
+
+                    int i = (y * w + x) * 3;
+                    red = IsRed(image.Data[i], image.Data[i + 1], image.Data[i + 2]);
+                }
+
+                if (red)
+                {
+                    if (start < 0 || x - lastRed > 4)
+                    {
+                        if (start >= 0 && lastRed - start + 1 >= 3)
+                        {
+                            runs.Add(start);
+                            runs.Add(lastRed);
+                        }
+
+                        start = x;
+                    }
+
+                    lastRed = x;
+                }
+            }
+
+            if (start >= 0 && lastRed - start + 1 >= 3)
+            {
+                runs.Add(start);
+                runs.Add(lastRed);
+            }
+
+            return runs.ToArray();
+        }
+
+        /// <summary>Red of the floats of a lane rope (as hue below 18° or above 330°, saturation above 0.43, value above 70).</summary>
+        public static bool IsRed(byte b, byte g, byte r)
+        {
+            if (r <= 70 || r < g || r < b)
+                return false;
+
+            int min = Math.Min(g, b);
+            int range = r - min;
+            if (range <= 0.43 * r)
+                return false;
+
+            int gb = g - b;
+            return gb <= 0.3 * range && gb >= -0.5 * range;
+        }
+
         #region Finish
         /// <summary>
         /// Strokes between the frames first and last (indices of the frames given to the detector).
@@ -383,6 +470,10 @@ namespace Kinovea.ScreenManager
             SwimStrokeResult result = new SwimStrokeResult();
             result.Ropes = ropes;
             result.Lanes.AddRange(lanes);
+            result.RedFar.AddRange(redFar);
+            result.RedNear.AddRange(redNear);
+            result.Motion.AddRange(differences);
+            result.Shifts.AddRange(shifts);
 
             int T = differences.Count;
             if (T < FrameGap + 3)

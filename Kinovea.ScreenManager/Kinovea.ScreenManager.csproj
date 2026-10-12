@@ -1046,6 +1046,7 @@
     <Compile Include="SwimAnalysis\SwimReferences.cs" />
     <Compile Include="SwimAnalysis\SwimSettings.cs" />
     <Compile Include="SwimAnalysis\SwimSkeletonPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimSplitDetector.cs" />
     <Compile Include="SwimAnalysis\SwimStartLight.cs" />
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />
     <Compile Include="SwimAnalysis\SwimStrokeDetector.cs" />

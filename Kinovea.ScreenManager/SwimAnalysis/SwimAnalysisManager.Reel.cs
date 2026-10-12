@@ -180,6 +180,10 @@ namespace Kinovea.ScreenManager
                 Changed(false);
                 Status(string.Format(CultureInfo.InvariantCulture, "Ακολούθηση: ο αθλητής βρέθηκε μέχρι τα {0:0.00} s{1}. Η ετικέτα του φαίνεται στην τεχνική ανάλυση.",
                     Timing.Seconds(s.LastRead, Race.StartTimestamp.Value), result.Ropes ? "" : " (χωρίς σχοινιά διαδρομής)"), false);
+
+                // The checkpoints of the length from the marks of the ropes, for the check.
+                if (Settings.ProposeSplitsAfterTrack)
+                    ProposeSplits(s, result);
             }
             finally
             {

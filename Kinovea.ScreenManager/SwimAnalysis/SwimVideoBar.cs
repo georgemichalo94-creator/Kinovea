@@ -795,6 +795,15 @@ namespace Kinovea.ScreenManager
                 case 1:
                     title = "ΚΟΛΥΜΒΗΣΗ";
                     list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, StrokeTip));
+                    list.Add(new Btn
+                    {
+                        Id = "auto-splits",
+                        Text = manager.PickingTrack ? "Κλικ κεφάλι, πόδια…" : "🤖 Αυτόματα περάσματα",
+                        Dim = manager.AutoStrokesRunning,
+                        Tip = "Κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό: το μήκος διαβάζεται μέχρι τον τοίχο και\n" +
+                            "τα περάσματα 15/25/35/45 προτείνονται από τα κόκκινα σημάδια των σχοινιών, για έλεγχο (Enter σωστό, Delete λάθος).",
+                        Action = () => manager.BeginTrackSwimmer()
+                    });
                     break;
                 case 2:
                     int wall = manager.CurrentTurnWall;

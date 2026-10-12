@@ -386,6 +386,9 @@ namespace Kinovea.ScreenManager
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
 
+            // A proposal of this checkpoint near this frame is answered by the mark (learning).
+            ResolveProposalsByMark(SwimMarkType.Split, timestamp);
+
             double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
             string message = string.Format(CultureInfo.InvariantCulture, "Πέρασμα {0}{1}: {2:0.00} s", distance, unit, t);
 

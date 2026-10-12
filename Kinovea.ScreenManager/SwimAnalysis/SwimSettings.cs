@@ -93,6 +93,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool ProposeAfterSkeleton = true;
 
+        /// <summary>After following the swimmer for a length: the checkpoints of the length from the marks of the ropes, for the check.</summary>
+        public bool ProposeSplitsAfterTrack = true;
+
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 
