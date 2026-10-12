@@ -92,7 +92,8 @@ namespace Kinovea.ScreenManager
     /// 1. lane: on the first frame the lane ropes around the swimmer (projection of the image along the dominant
     ///    direction, regularly spaced chain of rope candidates, pair of ropes containing the swimmer). Without ropes
     ///    (side views) a band along the swimmer's axis.
-    /// 2. the lane is moved with the camera motion and each rope is refined on the new frame.
+    /// 2. the lane is moved with the camera motion and each rope is refined on the new frame; a rope that leaves the
+    ///    image, is hidden or loses its texture follows the other one with the place it had relative to it.
     /// 3. band difference: |band(t) − band(t−2) moved by the camera|, averaged across the band, per column.
     /// At each count (Finish), with the frames given so far:
     /// 4. position of the swimmer along the band: Viterbi on the smoothed band difference, with the camera motion.
@@ -125,6 +126,13 @@ namespace Kinovea.ScreenManager
         private bool initialized;
         private bool ropes;
         private SwimStrokeLane lane;
+
+        // Rope tracking: usual rope-ness of each rope, and the second rope relative to the first one when both were seen
+        // (slope difference, vertical offset at the middle of the image).
+        private double ropeStrength1;
+        private double ropeStrength2;
+        private double relativeSlope;
+        private double relativeOffset;
         private readonly List<SwimStrokeImage> previous = new List<SwimStrokeImage>();
         private readonly List<double[]> previousMotion = new List<double[]>();
         private readonly List<double[]> differences = new List<double[]>();
@@ -209,6 +217,11 @@ namespace Kinovea.ScreenManager
                     lane = found;
                     if (RefineLine(image, found.A1, found.B1, out a, out b)) { lane.A1 = a; lane.B1 = b; }
                     if (RefineLine(image, found.A2, found.B2, out a, out b)) { lane.A2 = a; lane.B2 = b; }
+
+                    double inside;
+                    ropeStrength1 = RopeStrength(image, lane.A1, lane.B1, out inside);
+                    ropeStrength2 = RopeStrength(image, lane.A2, lane.B2, out inside);
+                    KeepRopeGeometry(lane);
                 }
                 else
                 {
@@ -224,20 +237,7 @@ namespace Kinovea.ScreenManager
                 MapLine(H, before.A2, before.B2, 0, width, out predicted.A2, out predicted.B2);
                 SwimStrokeLane next = predicted;
                 if (ropes)
-                {
-                    // The two ropes in parallel (independent).
-                    double a1 = 0, b1 = 0, a2 = 0, b2 = 0;
-                    bool ok1 = false, ok2 = false;
-                    Parallel.Invoke(
-                        () => ok1 = RefineLine(image, predicted.A1, predicted.B1, out a1, out b1),
-                        () => ok2 = RefineLine(image, predicted.A2, predicted.B2, out a2, out b2));
-                    if (ok1) { next.A1 = a1; next.B1 = b1; }
-                    if (ok2) { next.A2 = a2; next.B2 = b2; }
-                    double wp = predicted.Width(width / 2.0);
-                    double wn = next.Width(width / 2.0);
-                    if (Math.Abs(wn - wp) > 0.25 * Math.Abs(wp))
-                        next = predicted;
-                }
+                    next = TrackRopes(image, predicted);
 
                 // Camera displacement along the band (centre line of the previous band -> this frame).
                 for (int x = 0; x < width; x++)
@@ -1063,6 +1063,145 @@ namespace Kinovea.ScreenManager
             double[] result = new double[2 * RopeR + 1];
             Array.Copy(m, RopeMargin, result, 0, result.Length);
             return result;
+        }
+
+        /// <summary>
+        /// The two ropes of the lane in this frame, from their place predicted with the camera motion. A rope that leaves the
+        /// image, is hidden or loses its texture, or that moves away from the other one, follows the good rope with the last
+        /// place it had relative to it instead of drifting on its own (a lane along the near wall, a camera in front).
+        /// </summary>
+        private SwimStrokeLane TrackRopes(SwimStrokeImage image, SwimStrokeLane predicted)
+        {
+            double a1 = predicted.A1, b1 = predicted.B1, a2 = predicted.A2, b2 = predicted.B2;
+            bool ok1 = false, ok2 = false;
+            Parallel.Invoke(
+                () => ok1 = RefineLine(image, predicted.A1, predicted.B1, out a1, out b1),
+                () => ok2 = RefineLine(image, predicted.A2, predicted.B2, out a2, out b2));
+            if (!ok1)
+            {
+                a1 = predicted.A1;
+                b1 = predicted.B1;
+            }
+
+            if (!ok2)
+            {
+                a2 = predicted.A2;
+                b2 = predicted.B2;
+            }
+
+            double inside1, inside2;
+            double s1 = RopeStrength(image, a1, b1, out inside1);
+            double s2 = RopeStrength(image, a2, b2, out inside2);
+            double usual1 = ropeStrength1 > 0 ? ropeStrength1 : s1;
+            double usual2 = ropeStrength2 > 0 ? ropeStrength2 : s2;
+            bool good1 = inside1 >= 0.25 && s1 >= 0.5 * usual1;
+            bool good2 = inside2 >= 0.25 && s2 >= 0.5 * usual2;
+            if (good1)
+                ropeStrength1 = 0.95 * usual1 + 0.05 * s1;
+            if (good2)
+                ropeStrength2 = 0.95 * usual2 + 0.05 * s2;
+
+            SwimStrokeLane next = predicted;
+            if (good1)
+            {
+                next.A1 = a1;
+                next.B1 = b1;
+            }
+
+            if (good2)
+            {
+                next.A2 = a2;
+                next.B2 = b2;
+            }
+
+            if (good1 && good2)
+            {
+                // The two ropes stay nearly parallel and the width of the lane changes slowly: the rope that moved more is wrong.
+                double wp = predicted.Width(width / 2.0);
+                double wn = next.Width(width / 2.0);
+                if (Math.Abs(wn - wp) > 0.06 * Math.Abs(wp) || Math.Abs(next.A1 - next.A2) > Math.Abs(predicted.A1 - predicted.A2) + 0.02)
+                {
+                    double d1 = Math.Abs(next.B1 - predicted.B1) + 200 * Math.Abs(next.A1 - predicted.A1);
+                    double d2 = Math.Abs(next.B2 - predicted.B2) + 200 * Math.Abs(next.A2 - predicted.A2);
+                    if (d2 > d1)
+                        good2 = false;
+                    else
+                        good1 = false;
+                }
+            }
+
+            double xc = width / 2.0;
+            if (!good1)
+            {
+                if (good2)
+                {
+                    double a = next.A2 - relativeSlope;
+                    double y = next.A2 * xc + next.B2 - relativeOffset;
+                    next.A1 = a;
+                    next.B1 = y - a * xc;
+                }
+                else
+                {
+                    next.A1 = predicted.A1;
+                    next.B1 = predicted.B1;
+                }
+            }
+
+            if (!good2)
+            {
+                if (good1)
+                {
+                    double a = next.A1 + relativeSlope;
+                    double y = next.A1 * xc + next.B1 + relativeOffset;
+                    next.A2 = a;
+                    next.B2 = y - a * xc;
+                }
+                else
+                {
+                    next.A2 = predicted.A2;
+                    next.B2 = predicted.B2;
+                }
+            }
+
+            if (good1 && good2)
+                KeepRopeGeometry(next);
+
+            return next;
+        }
+
+        /// <summary>The second rope relative to the first one (slope difference, vertical offset at the middle of the image).</summary>
+        private void KeepRopeGeometry(SwimStrokeLane l)
+        {
+            double xc = width / 2.0;
+            relativeSlope = l.A2 - l.A1;
+            relativeOffset = (l.A2 * xc + l.B2) - (l.A1 * xc + l.B1);
+        }
+
+        /// <summary>
+        /// Rope-ness at the line itself (peak within two pixels) and the share of the width of the image where the line and its
+        /// margins are inside the image.
+        /// </summary>
+        private static double RopeStrength(SwimStrokeImage img, double a, double b, out double inside)
+        {
+            int columns = 0, total = 0;
+            for (int x = 0; x < img.Width; x += RopeStep)
+            {
+                double y = a * x + b;
+                total++;
+                if (y - RopeR - RopeMargin >= 0 && y + RopeR + RopeMargin <= img.Height - 1)
+                    columns++;
+            }
+
+            inside = total > 0 ? (double)columns / total : 0;
+            double[] m = Ropeness(img, a, b);
+            if (m == null)
+                return 0;
+
+            int c = m.Length / 2;
+            double best = 0;
+            for (int i = Math.Max(0, c - 2); i <= Math.Min(m.Length - 1, c + 2); i++)
+                best = Math.Max(best, m[i]);
+            return best;
         }
 
         /// <summary>Move a rope line to the nearby offset and slope with the strongest rope-ness.</summary>
