@@ -476,10 +476,10 @@ namespace Kinovea.ScreenManager
             };
 
             // Start.
-            add("Εκκίνηση", "Αποκόλληση από το βατήρα", computed.BlockTime, s => s.BlockTime);
+            add("Εκκίνηση", "Αποκόλληση από τον βατήρα", computed.BlockTime, s => s.BlockTime);
             add("Εκκίνηση", "15μ. εκκίνηση", computed.Start15, s => s.Start15);
-            add("Εκκίνηση", "Έξοδος από το νερό (χρόνος)", computed.StartUnderwaterTime, s => s.StartBreakoutTime).Neutral = true;
-            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος από το νερό (απόσταση)", race.UnderwaterDist, s => s.StartBreakoutDist);
+            add("Εκκίνηση", "Έξοδος: χρόνος", computed.StartUnderwaterTime, s => s.StartBreakoutTime).Neutral = true;
+            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", race.UnderwaterDist, s => s.StartBreakoutDist);
             startDist.Unit = "μ.";
             startDist.Neutral = true;
 
@@ -511,9 +511,9 @@ namespace Kinovea.ScreenManager
                 add(group, "5μ. πριν τον τοίχο", turn.In5, s => s.TurnAt(wall) != null ? s.TurnAt(wall).In5 : null);
                 SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall && r.T.HasValue);
                 double? breakout = turn.Breakout.HasValue && wallRow != null ? turn.Breakout - wallRow.T : null;
-                add(group, "Έξοδος από το νερό (από τον τοίχο)", breakout, s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutTime : null).Neutral = true;
+                add(group, "Έξοδος: χρόνος από τον τοίχο", breakout, s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutTime : null).Neutral = true;
                 SwimTurnManual manual = race.GetTurn(wall, false);
-                SwimFinalsMetric dist = add(group, "Έξοδος από το νερό (απόσταση)", manual != null ? manual.UnderwaterDist : null,
+                SwimFinalsMetric dist = add(group, "Έξοδος: απόσταση", manual != null ? manual.UnderwaterDist : null,
                     s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutDist : null);
                 dist.Unit = "μ.";
                 dist.Neutral = true;
