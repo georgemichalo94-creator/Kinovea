@@ -1228,20 +1228,27 @@ namespace Kinovea.ScreenManager
                     return null;
                 }
 
-                // The one on the lane clicked at the click.
-                double best = double.MaxValue;
+                // The one on the lane clicked at the click: close to it, or clearly the closest of the three (the ropes taken back
+                // through a zoom of the camera move a little).
+                double best = double.MaxValue, second = double.MaxValue;
                 foreach (StrokeSession c in candidates)
                 {
                     SwimStrokeLane l = c.Detector.CurrentLane;
                     double error = Math.Abs(l.Y1(xc) - laneC.Y1(xc)) + Math.Abs(l.Y2(xc) - laneC.Y2(xc));
                     if (error < best)
                     {
+                        second = best;
                         best = error;
                         chosen = c;
                     }
+                    else if (error < second)
+                    {
+                        second = error;
+                    }
                 }
 
-                if (chosen == null || best > 0.35 * widthC || lastGray == null)
+                bool close = best <= 0.35 * widthC || (best <= 0.5 * widthC && second >= 2 * best);
+                if (chosen == null || !close || lastGray == null)
                 {
                     if (lastGray != null)
                         lastGray.Dispose();
