@@ -394,6 +394,8 @@ namespace Kinovea.ScreenManager
                 done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
             }
 
+            // The event kept moves the one after it (the feet off from the first movement, the entry from the feet off).
+            MoveEventProposals(p.Kind, p.Index, timestamp);
             NextProposal(timestamp, done);
         }
 
@@ -458,6 +460,7 @@ namespace Kinovea.ScreenManager
             Answer(p, timestamp, true);
             if (p.Kind == KindRaceSplit)
                 RecombineSplitProposals();
+            MoveEventProposals(p.Kind, p.Index, timestamp);
             if (!resolvingProposal && p.Id == reviewId)
             {
                 // After the command of the key has finished (it still works on this frame), the next proposal.
@@ -570,7 +573,10 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.Reaction: name = "Πρώτη κίνηση (αντίδραση)"; break;
                 case SwimMarkType.HandsOff: name = "Χέρια φεύγουν από τον βατήρα"; break;
                 case SwimMarkType.BackFoot: name = "Πίσω πόδι φεύγει"; break;
-                case SwimMarkType.FeetOff: name = p.Kind == SwimEventDetector.TurnFeet ? "Αποκόλληση από τον τοίχο" : "Αποκόλληση ποδιών"; break;
+                case SwimMarkType.FeetOff:
+                    name = p.Kind == KindRacePushoff ? "Αποκόλληση από τον τοίχο των " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." :
+                        p.Kind == SwimEventDetector.TurnFeet ? "Αποκόλληση από τον τοίχο" : p.Kind == KindRaceBlock ? "Αποκόλληση ποδιών (εκκίνηση)" : "Αποκόλληση ποδιών";
+                    break;
                 case SwimMarkType.Entry: name = "Είσοδος χεριών στο νερό"; break;
                 case SwimMarkType.Kick: name = "Δελφινισμός" + (p.Index > 0 ? " " + p.Index : ""); break;
                 case SwimMarkType.Breakout: name = "Έξοδος από το νερό" + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? " μετά τα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : " μετά την εκκίνηση") : ""); break;

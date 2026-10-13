@@ -1030,6 +1030,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Proposals.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Race.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.RaceEvents.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />

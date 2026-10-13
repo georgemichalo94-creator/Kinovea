@@ -921,7 +921,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The proposals made replace the waiting ones of the same distances and the check starts.</summary>
         private void ShowSplitProposals(List<SwimProposal> made, int lengths, int strokes = 0)
         {
-            Race.Proposals.RemoveAll(p => (p.Kind == KindRaceSplit || p.Kind == KindRaceBreakout) && made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
+            Race.Proposals.RemoveAll(p => IsWholeRaceKind(p.Kind) && made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
             int learned = learnedFromMarks;
             learnedFromMarks = 0;
             string strokesText = strokes > 0
@@ -1040,6 +1040,17 @@ namespace Kinovea.ScreenManager
                     if (breakout != null)
                         made.Add(breakout);
                     strokes += PlaceLengthStrokes(l);
+                }
+
+                // The start events (when the first length was read) and the feet off the wall after each wall read.
+                if (lengths.Count > 0 && lengths[0].LapFrom == 0)
+                    made.AddRange(StartEventProposals(batch));
+                List<SwimProposal> walls = made.Concat(Race.Proposals).ToList();
+                foreach (int wall in lengths.Select(l => l.LapFrom).Concat(lengths.Select(l => l.Session.Wall)).Where(w => w > 0).Distinct().OrderBy(w => w))
+                {
+                    SwimProposal pushoff = PushoffProposal(wall, walls, batch);
+                    if (pushoff != null)
+                        made.Add(pushoff);
                 }
 
                 Changed(strokes > 0);
@@ -1505,6 +1516,7 @@ namespace Kinovea.ScreenManager
 
             Answer(p, timestamp, true);
             RecombineSplitProposals();
+            MoveEventProposals(KindRaceSplit, distance, timestamp);
             Changed(true);
             NextProposal(timestamp, done);
         }
