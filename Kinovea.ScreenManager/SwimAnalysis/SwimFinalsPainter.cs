@@ -213,13 +213,13 @@ namespace Kinovea.ScreenManager
 
                 // The value of the last checkpoint passed.
                 SwimDeltaPoint lastPoint = list[list.Count - 1];
-                string v = SwimReference.FormatDelta(lastPoint.Delta);
-                SizeF vs = g.MeasureString(v, value);
+                string valueText = SwimReference.FormatDelta(lastPoint.Delta);
+                SizeF vs = g.MeasureString(valueText, value);
                 float vx = Math.Min(plot.Right - vs.Width - 4, Math.Max(plot.Left, X(lastPoint.D) - vs.Width / 2));
                 float vy = lastPoint.Delta <= 0 ? Math.Max(plot.Top, Y(-lastPoint.Delta) - vs.Height - 2) : Math.Min(plot.Bottom - vs.Height, Y(-lastPoint.Delta) + 2);
                 RectangleF pill = new RectangleF(vx - 3, vy, vs.Width + 6, vs.Height);
                 SwimTheme.FillRounded(g, lastPoint.Delta <= 0 ? Faster : Slower, pill, 4);
-                g.DrawString(v, value, Brushes.White, vx, vy);
+                g.DrawString(valueText, value, Brushes.White, vx, vy);
             }
         }
         #endregion
