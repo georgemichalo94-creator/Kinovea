@@ -123,6 +123,27 @@ const titles = layout.charts.map(c => c.title);
   'Εκκίνηση 0-15μ.: επίπεδα και αθλητής (s)', 'Στροφή τοίχος → +15μ.: επίπεδα και αθλητής (s)', 'Ανά 50μ.: αθλητής – μ.ο. τελικού – καλύτερος (s)']
   .forEach(t => assert.ok(titles.indexOf(t) >= 0, 'missing chart ' + t + ' in ' + titles.join(' | ')));
 assert.ok(layout.charts.length >= 17, 'charts: ' + layout.charts.length);
+
+// Ο τελικός από το Kinovea (π.χ. οι 8 του ολυμπιακού τελικού, φανταστικά ονόματα): προηγείται των αναφορών της ίδιας πηγής.
+const withFinals = Object.assign(mk('now-finals', 1.0, '1.7.2025'), {
+  reference: Object.assign({}, refs.references[0]),
+  finals: { label: 'Δοκιμαστικός τελικός · 100μ. ελεύθερο Ανδρών', source: 'Δοκιμή',
+    swimmers: [['Alpha ONE', 0.93], ['Beta TWO', 0.94], ['Gamma THREE', 0.945], ['Delta FOUR', 0.95]].map(([name, sc], i) => ({
+      rank: i + 1, name, times: [15, 50, 100].map(d => ({ d, t: +({ 15: 6.1, 50: 23.8, 100: 49.4 }[d] * sc).toFixed(2) })) })) }
+});
+let rf = call({ action: 'update', race: withFinals });
+assert.ok(rf.ok, JSON.stringify(rf));
+assert.strictEqual(rf.compare.finalists, 4, 'finals of Kinovea in the report');
+const finalsRace = G.swimNormalizeRace_(withFinals);
+assert.strictEqual(finalsRace.finals.swimmers.length, 4);
+const fx = G.swimComparisons_(finalsRace);
+assert.strictEqual(fx.finalists.length, 4, 'finals from Kinovea replace the same-source references');
+assert.strictEqual(fx.finalists[0].label, '1. Alpha ONE');
+assert.strictEqual(fx.finalsLabel, 'Δοκιμαστικός τελικός · 100μ. ελεύθερο Ανδρών');
+const finalsLayout = G.swimBuildLayout_(finalsRace, G.swimAnalyze_(finalsRace), fx);
+checkGrid(finalsLayout, 'finals');
+assert.ok(JSON.stringify(finalsLayout.grid).indexOf('αθλητής – Δοκιμαστικός τελικός') >= 0, 'section title with the final');
+assert.strictEqual(G.swimFinalsPayload_({ swimmers: [{ name: 'x', times: [] }, { name: 'y', times: [{ d: 50, t: 25 }] }] }), null, 'fewer than two with times: no final');
 sh = sheetOf(r);
 assert.ok(sh._charts.length === layout.charts.length, 'all charts inserted');
 assert.ok(sh._charts.some(c => c.type === 'combo' && c.opts.series && c.opts.series[1] && c.opts.series[1].targetAxisIndex === 1), 'combo with a second axis');
@@ -222,6 +243,15 @@ assert.ok(near(cell(sh, 9, 3), 5.95), 'tile updated without rebuild');
 training.tech.snapshots.push({ id: 'sn3', t: 41, phase: 'tu3', stage: 'Αποκόλληση', comment: 'x' });
 r = call({ action: 'update', race: training });
 assert.ok(r.ok && r.rebuilt, 'new snapshot: rebuild');
+// Αυτόματα στιγμιότυπα των γεγονότων: το γεγονός στον τίτλο πριν από το στάδιο (μία φορά όταν είναι ίδια).
+training.tech.snapshots.push({ id: 'sn4', t: -0.62, phase: 'tu3', stage: 'Προσέγγιση', event: 'Τελευταία χεριά', comment: '' },
+  { id: 'sn5', t: 0, phase: 'tu3', stage: 'Επαφή στον τοίχο', event: 'Επαφή στον τοίχο', comment: '' });
+const autoRace = G.swimNormalizeRace_(training);
+assert.strictEqual(autoRace.tech.snapshots[3].event, 'Τελευταία χεριά');
+const autoLayout = G.swimBuildLayout_(autoRace, G.swimAnalyze_(autoRace), {});
+const autoTitles = autoLayout.inputs.blocks.map(b => b.values[0][0]).filter(v => typeof v === 'string' && /Τελευταία χεριά|Επαφή στον τοίχο ·/.test(v));
+assert.ok(autoTitles.some(v => /Τελευταία χεριά · Προσέγγιση · t = /.test(v)), 'event before the stage: ' + autoTitles.join(' | '));
+assert.ok(autoTitles.some(v => /Επαφή στον τοίχο · t = /.test(v)) && !autoTitles.some(v => /Επαφή στον τοίχο · Επαφή στον τοίχο/.test(v)), 'event = stage once: ' + autoTitles.join(' | '));
 // Οι προπονήσεις δεν μπαίνουν στη λίστα PB ούτε στον πίνακα "Αναλύσεις Αγώνων"
 list = call({ action: 'analyses', query: { athleteId: '500001', style: 'fs', distance: 100, pool: 50, raceId: 'x' } });
 assert.ok(list.analyses.every(a => a.id !== 'tr1'));

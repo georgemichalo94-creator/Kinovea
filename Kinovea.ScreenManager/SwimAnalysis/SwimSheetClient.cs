@@ -453,7 +453,7 @@ namespace Kinovea.ScreenManager
         public const string AppId = "kinovea-swim";
 
         public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
-            SwimSettings settings, string videoName, string action)
+            SwimSettings settings, string videoName, string action, SwimFinal final = null)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
@@ -543,6 +543,10 @@ namespace Kinovea.ScreenManager
             compare["pb"] = race.ComparePb ?? "";
             r["compare"] = compare;
 
+            // The final of the event kept on this computer (e.g. the 8 of an Olympic final): the report compares the race with them.
+            if (final != null && final.Swimmers.Count >= 2 && !race.IsTraining)
+                r["finals"] = Finals(final);
+
             // Frame of the finish with the graphics of the video (once uploaded to the Drive, and while the finish is marked).
             if (race.FinalFrame != null && !string.IsNullOrEmpty(race.FinalFrame.FileId) && race.StartTimestamp.HasValue &&
                 race.GetSplit(race.Distance) != null)
@@ -560,6 +564,35 @@ namespace Kinovea.ScreenManager
             body["action"] = action;
             body["race"] = r;
             return body.ToString(Newtonsoft.Json.Formatting.None);
+        }
+
+        /// <summary>The swimmers of a final, fastest first: rank, name and time at each checkpoint (pool units).</summary>
+        private static JObject Finals(SwimFinal final)
+        {
+            JObject f = new JObject();
+            f["label"] = final.Label;
+            f["source"] = final.Source ?? "";
+            JArray swimmers = new JArray();
+            foreach (SwimFinalist s in final.Swimmers.OrderBy(x => x.Rank > 0 ? x.Rank : int.MaxValue).Take(8))
+            {
+                JArray times = new JArray();
+                foreach (KeyValuePair<int, double> c in s.Checkpoints)
+                {
+                    JObject t = new JObject();
+                    t["d"] = c.Key;
+                    t["t"] = Math.Round(c.Value, 2);
+                    times.Add(t);
+                }
+
+                JObject o = new JObject();
+                o["rank"] = s.Rank;
+                o["name"] = s.Name ?? "";
+                o["times"] = times;
+                swimmers.Add(o);
+            }
+
+            f["swimmers"] = swimmers;
+            return f;
         }
 
         /// <summary>

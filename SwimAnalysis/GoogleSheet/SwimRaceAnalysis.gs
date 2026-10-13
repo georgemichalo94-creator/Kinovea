@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '2.3.0';
+var SWIM_VERSION = '2.4.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -516,6 +516,8 @@ function swimNormalizeRace_(raw) {
     manual: r.manual || {},
     strokeRounding: r.strokeRounding === undefined || r.strokeRounding === null ? 0.5 : (swimNum_(r.strokeRounding) || 0),
     reference: r.reference && typeof r.reference === 'object' ? r.reference : null,
+    // Ο τελικός του αγωνίσματος από το Kinovea (π.χ. οι 8 του ολυμπιακού τελικού).
+    finals: swimFinalsPayload_(r.finals),
     compare: r.compare && typeof r.compare === 'object' ? r.compare : {},
     tech: swimNormalizeTech_(r.tech),
     // Αναλύσεις της βιβλιοθήκης (παλιά Excel): χεριές ανά τμήμα αντί για χρόνους χεριών, σκέλος σκυταλοδρομίας, ακύρωση.
@@ -540,6 +542,23 @@ function swimNormalizeRace_(raw) {
   if (!race.distance && race.checkpoints.length) race.distance = race.checkpoints[race.checkpoints.length - 1].d;
   if (!race.distanceLabel) race.distanceLabel = String(race.distance);
   return race;
+}
+
+/**
+ * Οι φιναλίστ του τελικού του αγωνίσματος, όπως τους στέλνει το Kinovea από το αρχείο τελικών του υπολογιστή του αναλυτή
+ * (π.χ. οι 8 του ολυμπιακού τελικού): { label, source, swimmers: [{ rank, name, times: [{ d, t }] }] }, αλλιώς null.
+ */
+function swimFinalsPayload_(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.swimmers)) return null;
+  var swimmers = raw.swimmers.slice(0, 8).map(function (s) {
+    if (!s || typeof s !== 'object') return null;
+    var times = (Array.isArray(s.times) ? s.times : []).map(function (p) {
+      return { d: swimNum_(p && p.d), t: swimNum_(p && p.t) };
+    }).filter(function (p) { return p.d !== null && p.d > 0 && p.t !== null && p.t > 0; });
+    return times.length ? { rank: swimNum_(s.rank), name: String(s.name || '').substring(0, 60), times: times } : null;
+  }).filter(function (s) { return s; });
+  if (swimmers.length < 2) return null;
+  return { label: String(raw.label || 'Τελικός').substring(0, 80), source: String(raw.source || '').substring(0, 120), swimmers: swimmers };
 }
 
 /** { fileId, t }: το τελικό καρέ του Kinovea (t: χρόνος του καρέ από το σήμα), αλλιώς null. */
@@ -1064,9 +1083,9 @@ function swimLayoutSignature_(race, extras, pageHeight) {
     relay: race.relay,
     pb: sig(x.pb),
     elite: sig(x.elite),
-    finalists: (x.finalists || []).length ? swimHash_(JSON.stringify(x.finalists.map(function (f) {
+    finalists: (x.finalists || []).length ? swimHash_(JSON.stringify([x.finalsLabel || ''].concat(x.finalists.map(function (f) {
       return [f.label, f.race.checkpoints, f.race.segmentStrokes || null];
-    }))) : '',
+    })))) : '',
     bench: x.benchmarks ? swimHash_(JSON.stringify(x.benchmarks)) : '',
     tech: swimTechSignature_(race),
     final: race.finalFrame ? race.finalFrame.fileId : '',
@@ -2268,7 +2287,9 @@ function swimLayoutExtras_(L) {
   var fin = L.extras.finalists || [];
   if (fin.length >= 2 && L.analysis.blocks.length && L.p50First !== null) {
     cur = swimKeep_(L, cur, 'finalists');
-    g.section(cur, 'Κατανομή ανά 50' + U + ': αθλητής – τελικός (' + fin.length + ' αναφορές της ίδιας πηγής)', L.LAST);
+    g.section(cur, L.extras.finalsLabel
+      ? 'Κατανομή ανά 50' + U + ': αθλητής – ' + L.extras.finalsLabel + ' (' + fin.length + ' φιναλίστ)'
+      : 'Κατανομή ανά 50' + U + ': αθλητής – τελικός (' + fin.length + ' αναφορές της ίδιας πηγής)', L.LAST);
     cur++;
     var cols = ['50' + U, 'Αθλητής', 'Μέσος όρος τελικού', 'Καλύτερος', 'Δ από μ.ο. (s)'];
     var shown = fin.slice(0, 8);
@@ -3556,6 +3577,23 @@ function swimComparisons_(race) {
         } catch (e) { out.finalists = []; }
         if (out.finalists.length < 2) out.finalists = [];
       }
+    }
+  }
+
+  // Ο τελικός του αγωνίσματος από το Kinovea (π.χ. οι 8 του ολυμπιακού τελικού): προηγείται των αναφορών της ίδιας πηγής.
+  if (race.finals && race.finals.swimmers && race.finals.swimmers.length >= 2) {
+    var fromKinovea = [];
+    race.finals.swimmers.forEach(function (s) {
+      try {
+        var fr = swimReferenceRace_({ id: 'final:' + (s.rank || '') + ':' + s.name, name: s.name, gender: race.gender, style: race.style,
+          relay: race.relay, distance: race.distance, pool: race.pool, poolUnit: race.poolUnit, times: s.times });
+        if (!swimSameEvent_(fr, race)) return;
+        fromKinovea.push({ label: (s.rank ? s.rank + '. ' : '') + s.name, race: fr, analysis: swimAnalyze_(fr) });
+      } catch (e) { /* χωρίς αυτόν */ }
+    });
+    if (fromKinovea.length >= 2) {
+      out.finalists = fromKinovea;
+      out.finalsLabel = race.finals.label;
     }
   }
 

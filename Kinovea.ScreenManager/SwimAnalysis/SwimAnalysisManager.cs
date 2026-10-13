@@ -2460,7 +2460,7 @@ namespace Kinovea.ScreenManager
             }
 
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
-            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update");
+            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace());
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
         }
 
@@ -2481,7 +2481,8 @@ namespace Kinovea.ScreenManager
             SwimComputed computed = SwimCalculator.Compute(race, Timing, Settings.StrokeRounding);
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
-            client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update"), race.Id, pdf);
+            client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
+                Finals != null ? Finals.For(race) : null), race.Id, pdf);
         }
 
         public void OpenSheet()
