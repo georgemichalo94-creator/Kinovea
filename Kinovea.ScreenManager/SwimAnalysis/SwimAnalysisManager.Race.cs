@@ -397,10 +397,12 @@ namespace Kinovea.ScreenManager
             if (l.LapFrom > 0 && !double.IsNaN(lapStart))
                 first = Math.Max(first, (int)Math.Round(lapStart + 0.85 * (style == "fs" ? 2.5 : 4.5) * s.Fps));
 
-            // The breakout, when the reading has the underwater phase (it starts at the wall or the start).
+            // The breakout, when the reading has the underwater phase (it starts at the wall or the start). The next swimmer of a
+            // relay dives from the block as at the start.
+            bool dive = IsDive(l.LapFrom);
             if (!double.IsNaN(lapStart) && lapStart > -1.5 * s.Fps)
             {
-                int from = (int)Math.Ceiling(Math.Max(0, lapStart + (l.LapFrom == 0 ? 1.5 : 1.0) * s.Fps));
+                int from = (int)Math.Ceiling(Math.Max(0, lapStart + (dive ? 1.5 : 1.0) * s.Fps));
                 SwimSplitFound f15 = l.Found.FirstOrDefault(f => f.LapDistance == 15);
                 double at15 = f15 != null ? SwimSplitDetector.MainFrame(f15.Cues) : double.NaN;
                 int to = !double.IsNaN(at15) ? (int)Math.Round(at15) : from + (int)Math.Round(8 * s.Fps);
@@ -408,7 +410,7 @@ namespace Kinovea.ScreenManager
 
                 // After the start not before 3 s (entry and glide of the fastest).
                 double b = BreakoutSample(l);
-                if (l.LapFrom == 0 && !double.IsNaN(b) && b < lapStart + 3.0 * s.Fps)
+                if (dive && !double.IsNaN(b) && b < lapStart + 3.0 * s.Fps)
                 {
                     l.Breakout.Clear();
                     b = double.NaN;
@@ -417,7 +419,7 @@ namespace Kinovea.ScreenManager
                 // After a wall the first stroke starts a little before the head is out (the breakout stroke); after the start the
                 // analysts count from the first stroke after the breakout.
                 if (!double.IsNaN(b))
-                    first = Math.Max(0, (int)Math.Round(b + (l.LapFrom == 0 ? 0.1 : -0.4) * s.Fps));
+                    first = Math.Max(0, (int)Math.Round(b + (dive ? 0.1 : -0.4) * s.Fps));
             }
 
             double wall = WallSample(l);
@@ -886,6 +888,12 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>The length that starts at this distance starts with a dive: the start, or the next swimmer of a relay.</summary>
+        private bool IsDive(int lapFrom)
+        {
+            return lapFrom == 0 || (Race.Relay && Race.Distance >= 4 && lapFrom > 0 && lapFrom < Race.Distance && lapFrom % (Race.Distance / 4) == 0);
+        }
+
         /// <summary>
         /// The wall at this distance: "finish" (also the end of a leg of a relay), "open" (hand touch: butterfly, breaststroke,
         /// the change of stroke of the medley) or "flip" (freestyle, backstroke).
@@ -1165,7 +1173,7 @@ namespace Kinovea.ScreenManager
             cancelled = false;
             List<StrokeSession> candidates = new List<StrokeSession>();
             StrokeSession chosen = null;
-            StrokeSession clicked = CreateSession(head, feet, click);
+            StrokeSession clicked = CreateSession(head, feet, click, null, 0, Race.Pool);
             try
             {
                 // The lane at the click.
@@ -1218,7 +1226,7 @@ namespace Kinovea.ScreenManager
                     double y = 0.5 * (c.Y1(xm) + c.Y2(xm));
                     PointF h0 = new PointF((float)((xm + direction * 0.45 * length) / sx), (float)(y / sy));
                     PointF f0 = new PointF((float)((xm - direction * 0.45 * length) / sx), (float)(y / sy));
-                    candidates.Add(CreateSession(h0, f0, first, c, virtualRope));
+                    candidates.Add(CreateSession(h0, f0, first, c, virtualRope, Race.Pool));
                 }
 
                 OpenCvSharp.Mat lastGray = null;
@@ -1452,7 +1460,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 if (s == null)
-                    s = CreateSession(head, feet, from, nextLane, nextVirtual);
+                    s = CreateSession(head, feet, from, nextLane, nextVirtual, wall);
                 s.Wall = wall;
                 s.LapStart = lapStart;
 

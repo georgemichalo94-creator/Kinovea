@@ -308,8 +308,12 @@ namespace Kinovea.ScreenManager
             return CreateSession(head, feet, from, null, 0);
         }
 
-        /// <summary>The same, with the lane already known (working coordinates of the first frame), as after a wall.</summary>
-        private StrokeSession CreateSession(PointF head, PointF feet, long from, SwimStrokeLane? lane, int virtualRope)
+        /// <summary>
+        /// The same, with the lane already known (working coordinates of the first frame), as after a wall. wall: the wall at the
+        /// end of the length read (0: the next one after the checkpoints marked), whose style the detector takes (each length of
+        /// the medley in its own style also when the reading of the whole race has not marked the walls before it yet).
+        /// </summary>
+        private StrokeSession CreateSession(PointF head, PointF feet, long from, SwimStrokeLane? lane, int virtualRope, int wall = 0)
         {
             double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
             double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
@@ -330,7 +334,7 @@ namespace Kinovea.ScreenManager
             s.Height = height;
             s.Step = step;
             s.Fps = realFps / step;
-            s.Wall = NextWallDistance(from);
+            s.Wall = wall > 0 ? wall : NextWallDistance(from);
             s.LapStart = LapStartTimestamp(from);
             s.Style = SwimPresets.StyleAt(Race, s.Wall);
             if (s.Style == "im")
