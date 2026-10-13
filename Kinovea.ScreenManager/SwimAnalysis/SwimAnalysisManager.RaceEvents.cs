@@ -304,14 +304,57 @@ namespace Kinovea.ScreenManager
             if (!EventPrior(next, cue, style, wallKind, out delay, out spread))
                 return;
 
-            if (cue == CueFromWall)
-            {
-                foreach (string old in p.Cues.Keys.Where(k => k.StartsWith(CueFromWall, StringComparison.Ordinal)).ToList())
-                    p.Cues.Remove(old);
-            }
+            // The event kept replaces what the proposal had from before it: the wall proposed (by the wall kept), the start signal
+            // (its usual time to this event is the usual time to the event kept and from it: counted once).
+            foreach (string old in p.Cues.Keys.Where(k => k.StartsWith(cue, StringComparison.Ordinal) || k.StartsWith(CueFromStart, StringComparison.Ordinal)).ToList())
+                p.Cues.Remove(old);
 
             p.Cues[EventCueName(cue, style, wallKind)] = timestamp + RealSpan(delay);
             CombineEvent(p, EventConfidence(next));
+        }
+
+        /// <summary>
+        /// After an answer the proposals of the same kind still waiting are made again from their cues with the learning now (in
+        /// the same video the answers count more: the next push off or breakout needs fewer corrections).
+        /// </summary>
+        private void RecombineWaitingProposals(string kind)
+        {
+            if (Race == null || !Timing.IsValid)
+                return;
+
+            if (kind == KindRaceSplit)
+            {
+                RecombineSplitProposals();
+                return;
+            }
+
+            bool events = kind == KindRaceReaction || kind == KindRaceBlock || kind == KindRaceEntry || kind == KindRacePushoff;
+            if (!events && kind != KindRaceBreakout)
+                return;
+
+            string video = SwimLearning.VideoCode(videoPath);
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == kind && x.Cues.Count > 0).ToList())
+            {
+                if (events)
+                {
+                    CombineEvent(p, EventConfidence(kind));
+                    continue;
+                }
+
+                long origin = p.Cues.Values.Min();
+                SwimDetection d = new SwimDetection(kind, p.Type, p.Index) { Confidence = 1.0 };
+                foreach (KeyValuePair<string, long> c in p.Cues)
+                {
+                    double weight, spread;
+                    CueWeight(c.Key, out weight, out spread);
+                    d.Cue(c.Key, Timing.Seconds(c.Value, origin), weight, spread);
+                }
+
+                double confidence;
+                double seconds = SwimProposalMath.Combine(d, Learning, video, 1.0, out confidence);
+                if (!double.IsNaN(seconds))
+                    p.Timestamp = origin + RealSpan(seconds);
+            }
         }
         #endregion
     }

@@ -394,7 +394,9 @@ namespace Kinovea.ScreenManager
                 done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
             }
 
-            // The event kept moves the one after it (the feet off from the first movement, the entry from the feet off).
+            // The answer moves the waiting proposals of its kind (with the learning now) and the event after it (the feet off from
+            // the first movement, the entry from the feet off).
+            RecombineWaitingProposals(p.Kind);
             MoveEventProposals(p.Kind, p.Index, timestamp);
             NextProposal(timestamp, done);
         }
@@ -458,8 +460,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             Answer(p, timestamp, true);
-            if (p.Kind == KindRaceSplit)
-                RecombineSplitProposals();
+            RecombineWaitingProposals(p.Kind);
             MoveEventProposals(p.Kind, p.Index, timestamp);
             if (!resolvingProposal && p.Id == reviewId)
             {

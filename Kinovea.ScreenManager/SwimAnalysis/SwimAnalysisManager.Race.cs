@@ -487,10 +487,19 @@ namespace Kinovea.ScreenManager
                     delay = c.Key == SwimSplitDetector.CueEnergy ? (breast ? 0.1 : 1.4) : (breast ? 0.2 : 1.0);
                 }
 
-                cues[StyleCue(c.Key, style)] = c.Value + delay * fps;
+                cues[StyleCue(c.Key + PriorVersion(c.Key, style), style)] = c.Value + delay * fps;
             }
 
             return cues;
+        }
+
+        /// <summary>
+        /// Part of the name of a cue whose usual delay changed (".2"): the answers kept with the old delay do not move the new one
+        /// (CueWeight reads the name up to the dot). Backstroke: the breakout and the checkpoints since 2026-10.
+        /// </summary>
+        private static string PriorVersion(string cue, string style)
+        {
+            return style == "bk" && cue != SwimSplitDetector.CueRise ? ".2" : "";
         }
 
         /// <summary>A cue of a style ("mid@br"): what the learning keeps (each style has its own delays and spreads).</summary>
@@ -526,8 +535,8 @@ namespace Kinovea.ScreenManager
                 return null;
 
             StrokeSession s = l.Session;
-            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = l.Breakout.Count > 1 ? 0.6 : 0.45 };
             Dictionary<string, double> cues = BreakoutCuesDelayed(l);
+            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = cues.Count > 1 ? 0.6 : 0.45 };
             foreach (KeyValuePair<string, double> c in cues)
             {
                 double weight, spread;
@@ -743,7 +752,7 @@ namespace Kinovea.ScreenManager
             {
                 Dictionary<string, double> cues = new Dictionary<string, double>();
                 foreach (KeyValuePair<string, double> c in f.Cues)
-                    cues[StyleCue(c.Key, style)] = c.Value + delay;
+                    cues[StyleCue(c.Key + PriorVersion(c.Key, style), style)] = c.Value + delay;
                 items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
             }
 
@@ -1236,7 +1245,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 // The swimmer is where he was clicked at that frame: the path goes through it.
-                int clickIndex = chosen.Timestamps.FindIndex(t => t >= click);
+                int clickIndex = chosen.Timestamps.FindLastIndex(t => t <= click);
                 if (clickIndex >= 0)
                     chosen.Detector.Anchor(clickIndex, xc);
 
