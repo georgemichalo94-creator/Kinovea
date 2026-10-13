@@ -129,7 +129,9 @@ const withFinals = Object.assign(mk('now-finals', 1.0, '1.7.2025'), {
   reference: Object.assign({}, refs.references[0]),
   finals: { label: 'Δοκιμαστικός τελικός · 100μ. ελεύθερο Ανδρών', source: 'Δοκιμή',
     swimmers: [['Alpha ONE', 0.93], ['Beta TWO', 0.94], ['Gamma THREE', 0.945], ['Delta FOUR', 0.95]].map(([name, sc], i) => ({
-      rank: i + 1, name, times: [15, 50, 100].map(d => ({ d, t: +({ 15: 6.1, 50: 23.8, 100: 49.4 }[d] * sc).toFixed(2) })) })) }
+      rank: i + 1, name, times: [15, 50, 100].map(d => ({ d, t: +({ 15: 6.1, 50: 23.8, 100: 49.4 }[d] * sc).toFixed(2) })) })),
+    metrics: [{ group: 'Εκκίνηση', label: '15μ. εκκίνηση', athlete: '6.10', rank: '5/5', winner: '5.67', mean: '5.75', best: '5.67', diff: '+0.43' },
+      { group: 'Περάσματα', label: '50μ.', athlete: '23.80', rank: '5/5', winner: '22.13', mean: '22.37', best: '22.13', diff: '+1.67' }] }
 });
 let rf = call({ action: 'update', race: withFinals });
 assert.ok(rf.ok, JSON.stringify(rf));
@@ -144,6 +146,13 @@ const finalsLayout = G.swimBuildLayout_(finalsRace, G.swimAnalyze_(finalsRace), 
 checkGrid(finalsLayout, 'finals');
 assert.ok(JSON.stringify(finalsLayout.grid).indexOf('αθλητής – Δοκιμαστικός τελικός') >= 0, 'section title with the final');
 assert.strictEqual(G.swimFinalsPayload_({ swimmers: [{ name: 'x', times: [] }, { name: 'y', times: [{ d: 50, t: 25 }] }] }), null, 'fewer than two with times: no final');
+// Η σύγκριση τιμή προς τιμή με τους φιναλίστ: πίνακας με τις τιμές στα inputs (αλλάζουν χωρίς ανακατασκευή).
+assert.ok(JSON.stringify(finalsLayout.grid).indexOf('Ο αγώνας ανάμεσα στους φιναλίστ: Δοκιμαστικός τελικός') >= 0, 'table of the values among the finalists');
+const fmVals = finalsLayout.inputs.blocks.map(b => b.values[0][0]);
+['15μ. εκκίνηση', '6.10', '5/5', '5.67', '+0.43', '50μ.', '+1.67'].forEach(v => assert.ok(fmVals.indexOf(v) >= 0, 'value ' + v + ' in the table'));
+withFinals.finals.metrics[0].athlete = '6.05';
+rf = call({ action: 'update', race: withFinals });
+assert.ok(rf.ok && !rf.rebuilt, 'a value among the finalists changes without a rebuild');
 sh = sheetOf(r);
 assert.ok(sh._charts.length === layout.charts.length, 'all charts inserted');
 assert.ok(sh._charts.some(c => c.type === 'combo' && c.opts.series && c.opts.series[1] && c.opts.series[1].targetAxisIndex === 1), 'combo with a second axis');

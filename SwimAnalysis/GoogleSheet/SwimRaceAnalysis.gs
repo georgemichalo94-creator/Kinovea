@@ -558,7 +558,41 @@ function swimFinalsPayload_(raw) {
     return times.length ? { rank: swimNum_(s.rank), name: String(s.name || '').substring(0, 60), times: times } : null;
   }).filter(function (s) { return s; });
   if (swimmers.length < 2) return null;
-  return { label: String(raw.label || 'Τελικός').substring(0, 80), source: String(raw.source || '').substring(0, 120), swimmers: swimmers };
+  var text = function (v, n) { return String(v === null || v === undefined ? '' : v).substring(0, n || 40); };
+  var metrics = (Array.isArray(raw.metrics) ? raw.metrics : []).slice(0, 200).map(function (m) {
+    if (!m || typeof m !== 'object' || !m.label) return null;
+    return { group: text(m.group, 40), label: text(m.label, 60), athlete: text(m.athlete), rank: text(m.rank, 10), winner: text(m.winner),
+      mean: text(m.mean), best: text(m.best), diff: text(m.diff, 20) };
+  }).filter(function (m) { return m; });
+  return { label: String(raw.label || 'Τελικός').substring(0, 80), source: String(raw.source || '').substring(0, 120), swimmers: swimmers, metrics: metrics };
+}
+
+/**
+ * Ο αγώνας ανάμεσα στους φιναλίστ του τελικού του αγωνίσματος, τιμή προς τιμή όπως στο Kinovea (εκκίνηση, 15μ., περάσματα,
+ * στροφές, τελευταία 5μ., χεριές, συχνότητα, μήκος κύκλου): ο αθλητής, η θέση του, ο νικητής, ο μέσος όρος, ο καλύτερος και η
+ * διαφορά από τον νικητή. Οι τιμές γράφονται στο layout.inputs.blocks (αλλάζουν χωρίς ανακατασκευή του φύλλου).
+ */
+function swimLayoutFinalsMetrics_(L) {
+  var g = L.g, race = L.race, cur = L.cur;
+  var fm = race.finals && race.finals.metrics ? race.finals.metrics : [];
+  if (!fm.length) return;
+  var put = function (r, c, v) { L.layout.inputs.blocks.push({ r: r, c: c, values: [[v]] }); };
+  cur = swimKeep_(L, cur, 'finalsMetrics');
+  g.section(cur, 'Ο αγώνας ανάμεσα στους φιναλίστ: ' + race.finals.label + ' (' + race.finals.swimmers.length + ')', L.LAST);
+  cur++;
+  g.headers(cur, ['Φάση', 'Τιμή', 'Αθλητής', 'Θέση', 'Νικητής', 'Μέσος όρος', 'Καλύτερος', 'Από τον νικητή']);
+  var first = cur + 1;
+  fm.forEach(function (m, i) {
+    var r = first + i;
+    g.set(r, 1, '', swimF_('@', 'label'));
+    g.set(r, 2, '', swimF_('@', 'label'));
+    for (var c = 3; c <= 8; c++) g.set(r, c, '', swimF_('@', 'auto'));
+    [m.group, m.label, m.athlete, m.rank, m.winner, m.mean, m.best, m.diff].forEach(function (v, j) { put(r, j + 1, v || ''); });
+  });
+  var last = first + fm.length - 1;
+  g.box(cur, 1, last, 8);
+  swimKeepEnd_(L, 'finalsMetrics', last, first + 2);
+  L.cur = last + 2;
 }
 
 /** { fileId, t }: το τελικό καρέ του Kinovea (t: χρόνος του καρέ από το σήμα), αλλιώς null. */
@@ -1086,6 +1120,7 @@ function swimLayoutSignature_(race, extras, pageHeight) {
     finalists: (x.finalists || []).length ? swimHash_(JSON.stringify([x.finalsLabel || ''].concat(x.finalists.map(function (f) {
       return [f.label, f.race.checkpoints, f.race.segmentStrokes || null];
     })))) : '',
+    finalsMetrics: race.finals && race.finals.metrics && race.finals.metrics.length ? race.finals.metrics.length + ':' + race.finals.label : '',
     bench: x.benchmarks ? swimHash_(JSON.stringify(x.benchmarks)) : '',
     tech: swimTechSignature_(race),
     final: race.finalFrame ? race.finalFrame.fileId : '',
@@ -1457,6 +1492,7 @@ function swimBuildRaceLayout_(race, analysis, extras, paging) {
   if (extras.pb || extras.elite) swimLayoutCompare_(L);
   if (extras.benchmarks) swimLayoutBenchmarks_(L);
   swimLayoutExtras_(L);
+  swimLayoutFinalsMetrics_(L);
   swimLayoutFinalFrame_(L);
   swimLayoutCharts_(L);
   swimLayoutTech_(L, L.cur);

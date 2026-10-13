@@ -545,7 +545,7 @@ namespace Kinovea.ScreenManager
 
             // The final of the event kept on this computer (e.g. the 8 of an Olympic final): the report compares the race with them.
             if (finalOfEvent != null && finalOfEvent.Swimmers.Count >= 2 && !race.IsTraining)
-                r["finals"] = Finals(finalOfEvent);
+                r["finals"] = Finals(finalOfEvent, SwimFinalsCompare.Metrics(race, computed, finalOfEvent));
 
             // Frame of the finish with the graphics of the video (once uploaded to the Drive, and while the finish is marked).
             if (race.FinalFrame != null && !string.IsNullOrEmpty(race.FinalFrame.FileId) && race.StartTimestamp.HasValue &&
@@ -566,8 +566,11 @@ namespace Kinovea.ScreenManager
             return body.ToString(Newtonsoft.Json.Formatting.None);
         }
 
-        /// <summary>The swimmers of a final, fastest first: rank, name and time at each checkpoint (pool units).</summary>
-        private static JObject Finals(SwimFinal final)
+        /// <summary>
+        /// The swimmers of a final, fastest first (rank, name and time at each checkpoint in pool units), and each value of the race
+        /// among them as the panel shows it: the athlete, his place, the winner, the mean, the best and the gap to the winner (text).
+        /// </summary>
+        private static JObject Finals(SwimFinal final, List<SwimFinalsMetric> metrics)
         {
             JObject f = new JObject();
             f["label"] = final.Label;
@@ -592,6 +595,35 @@ namespace Kinovea.ScreenManager
             }
 
             f["swimmers"] = swimmers;
+
+            // The swimmer of the final with the best place: the winner.
+            int winner = -1;
+            for (int i = 0; i < final.Swimmers.Count; i++)
+            {
+                if (final.Swimmers[i].Rank > 0 && (winner < 0 || final.Swimmers[i].Rank < final.Swimmers[winner].Rank))
+                    winner = i;
+            }
+
+            JArray values = new JArray();
+            foreach (SwimFinalsMetric m in metrics ?? new List<SwimFinalsMetric>())
+            {
+                string unit = m.Unit == "s" ? "" : " " + m.Unit;
+                double? won = winner >= 0 && winner < m.Finalists.Count ? m.Finalists[winner] : null;
+                JObject o = new JObject();
+                o["group"] = m.Group;
+                o["label"] = m.Label;
+                o["athlete"] = m.Athlete.HasValue ? m.Format(m.Athlete) + unit : "";
+                o["rank"] = m.Rank > 0 ? m.Rank.ToString(CultureInfo.InvariantCulture) + "/" + (m.Count + 1).ToString(CultureInfo.InvariantCulture) : "";
+                o["winner"] = won.HasValue ? m.Format(won) + unit : "";
+                o["mean"] = m.Mean.HasValue ? m.Format(m.Mean) + unit : "";
+                o["best"] = m.Best.HasValue ? m.Format(m.Best) + unit : "";
+                o["diff"] = m.Athlete.HasValue && won.HasValue
+                    ? (m.Athlete.Value - won.Value >= 0 ? "+" : "−") + Math.Abs(m.Athlete.Value - won.Value).ToString(m.Decimals == 0 ? "0" : m.Decimals == 1 ? "0.0" : "0.00", CultureInfo.InvariantCulture)
+                    : "";
+                values.Add(o);
+            }
+
+            f["metrics"] = values;
             return f;
         }
 
