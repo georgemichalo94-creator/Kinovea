@@ -237,12 +237,17 @@ namespace Kinovea.ScreenManager
         /// <summary>The first strong splash of the swimming (breakout).</summary>
         public const string CueBurst = "burst";
 
+        /// <summary>The steepest rise of the motion around the swimmer (breakout).</summary>
+        public const string CueRise = "rise";
+
         /// <summary>
         /// The breakout after a wall (or the start): the head breaks the surface and the swimming starts, between the frames
         /// 'from' and 'to' (the 15 m mark: the rules want the head out before it). Underwater the water around the swimmer
         /// hardly moves; at the breakout the motion of the swimming starts (cue "energy": the motion within 1.2 lane widths of
         /// the swimmer, over 0.4 s, reaches 60% of its usual level in the swimming after 'to' and stays) with a strong splash
-        /// (cue "burst": the first peak of the stroke signal as strong as the strokes). Frames of the reading, empty if not found.
+        /// (cue "burst": the first peak of the stroke signal as strong as the strokes); the motion rises fastest when the head and
+        /// the arms come out (cue "rise": the steepest rise over 0.6 s; the kicks under the surface move the water before it,
+        /// in backstroke for seconds). Frames of the reading, empty if not found.
         /// </summary>
         public static Dictionary<string, double> BreakoutCues(SwimStrokeResult result, double fps, int from, int to)
         {
@@ -339,6 +344,23 @@ namespace Kinovea.ScreenManager
                 cues[CueEnergy] = t - 1 + Math.Max(0, Math.Min(1, fraction));
                 break;
             }
+
+            // The steepest rise of the motion in the window (a rise of at least a tenth of the usual level).
+            int h = Math.Max(1, (int)Math.Round(0.3 * fps));
+            double steepest = 0.1 * usual;
+            int tRise = -1;
+            for (int t = Math.Max(from, h); t <= Math.Min(to, T - 1 - h); t++)
+            {
+                double up = es[t + h] - es[t - h];
+                if (up > steepest)
+                {
+                    steepest = up;
+                    tRise = t;
+                }
+            }
+
+            if (tRise >= 0)
+                cues[CueRise] = tRise;
 
             // The splash: the first peak of the stroke signal after the quiet moment as strong as the strokes of the swimming.
             double[] o = result.Onset;

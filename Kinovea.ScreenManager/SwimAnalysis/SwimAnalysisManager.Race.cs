@@ -457,18 +457,37 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Cues of the breakout with their usual delay before any learning: the dolphin kicks close to the surface move the water
-        /// about a second before the head is out; in breaststroke the motion starts with the head out (end of the pullout).
-        /// Named after the style of the length (the learning keeps each style apart).
+        /// about a second before the head is out; in breaststroke the motion starts with the head out (end of the pullout), in
+        /// backstroke too (the kicks on the back move the water for seconds before, the cues that come that early do not agree
+        /// with the others). The steepest rise of the motion is the head and the arms coming out in butterfly, breaststroke and
+        /// backstroke; in freestyle the first pull starts under the water and the rise comes anywhere in the last second: not
+        /// used. Named after the style of the length (the learning keeps each style apart).
         /// </summary>
         private Dictionary<string, double> BreakoutCuesDelayed(LengthRead l)
         {
-            string style = SwimPresets.StyleAt(Race, l.Session.Wall);
-            bool breast = style == "br";
+            return BreakoutCuesDelayed(l.Breakout, SwimPresets.StyleAt(Race, l.Session.Wall), l.Session.Fps);
+        }
+
+        /// <summary>The same for the cues of a reading (frames) in a style.</summary>
+        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps)
+        {
+            bool breast = style == "br" || style == "bk";
             Dictionary<string, double> cues = new Dictionary<string, double>();
-            foreach (KeyValuePair<string, double> c in l.Breakout)
+            foreach (KeyValuePair<string, double> c in found)
             {
-                double delay = c.Key == SwimSplitDetector.CueEnergy ? (breast ? 0.1 : 1.4) : (breast ? 0.2 : 1.0);
-                cues[StyleCue(c.Key, style)] = c.Value + delay * l.Session.Fps;
+                double delay;
+                if (c.Key == SwimSplitDetector.CueRise)
+                {
+                    if (style == "fs" || string.IsNullOrEmpty(style))
+                        continue;
+                    delay = 0;
+                }
+                else
+                {
+                    delay = c.Key == SwimSplitDetector.CueEnergy ? (breast ? 0.1 : 1.4) : (breast ? 0.2 : 1.0);
+                }
+
+                cues[StyleCue(c.Key, style)] = c.Value + delay * fps;
             }
 
             return cues;
@@ -719,11 +738,12 @@ namespace Kinovea.ScreenManager
 
             List<Tuple<int, Dictionary<string, double>, double>> items = new List<Tuple<int, Dictionary<string, double>, double>>();
             string style = SwimPresets.StyleAt(Race, s.Wall);
+            double delay = CheckpointDelay(style) * s.Fps;
             foreach (SwimSplitFound f in l.Found)
             {
                 Dictionary<string, double> cues = new Dictionary<string, double>();
                 foreach (KeyValuePair<string, double> c in f.Cues)
-                    cues[StyleCue(c.Key, style)] = c.Value;
+                    cues[StyleCue(c.Key, style)] = c.Value + delay;
                 items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
             }
 
@@ -780,6 +800,16 @@ namespace Kinovea.ScreenManager
             }
 
             return made;
+        }
+
+        /// <summary>
+        /// Usual delay (s) of the checkpoints from the front of the moving part, before any learning: in backstroke the arms and
+        /// the splashes of the recovery are behind the head, the line is crossed a little earlier than seen (races of 50 and 100 m
+        /// backstroke: 0.1–0.3 s).
+        /// </summary>
+        private static double CheckpointDelay(string style)
+        {
+            return style == "bk" ? -0.15 : 0;
         }
 
         /// <summary>The cues of the wall of a length named after its kind (finish, open turn, flip turn), each with its usual delay before any learning.</summary>
@@ -911,6 +941,7 @@ namespace Kinovea.ScreenManager
                 case SwimSplitDetector.CuePace: weight = 1.0; spread = 0.15; break;
                 case SwimSplitDetector.CueBurst: weight = 1.0; spread = 0.3; break;
                 case SwimSplitDetector.CueEnergy: weight = 0.6; spread = 0.5; break;
+                case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
                 case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;

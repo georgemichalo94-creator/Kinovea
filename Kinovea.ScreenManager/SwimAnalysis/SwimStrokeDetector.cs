@@ -1161,9 +1161,9 @@ namespace Kinovea.ScreenManager
                 st[i] = m[peaks[i]] / peakMax;
             }
 
-            // The lines of the floor of the pool (clear water, camera high): darker than the water in the three colours alike, half
-            // way between the ropes. A chain with them has half the spacing of the ropes: when the lane found has a clearly dark one
-            // as a rope, the lane is searched again without any of them.
+            // The lines of the floor of the pool (clear water, camera high): a shade of the water, half way between the ropes. A
+            // chain with them has half the spacing of the ropes: when the lane found has a clearly dark one as a rope, the lane is
+            // searched again without any of them.
             bool[] strong;
             bool[] floor = FloorLines(profile, n, peaks, out strong);
             int[] all = Enumerable.Range(0, ys.Length).ToArray();
@@ -1193,9 +1193,10 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Candidates of a line profile across the lines that are darker than the water in the three colours alike (the lines on
-        /// the floor of the pool seen through the water; 'strong': clearly darker): the ropes are bright (white, yellow floats) or
-        /// coloured (blue, red).
+        /// Candidates of a line profile across the lines that are darker than the water by the same part in its colours (the lines
+        /// on the floor of the pool seen through the water, as a shade; 'strong': clearly darker): the ropes are bright (white,
+        /// yellow floats) or change the colour (blue, purple, red). The colours too dark to measure (the red under the water of a
+        /// dim pool) do not count.
         /// </summary>
         private static bool[] FloorLines(double[] profile, int n, List<int> peaks, out bool[] strong)
         {
@@ -1205,6 +1206,7 @@ namespace Kinovea.ScreenManager
                 return floor;
 
             double[][] high = new double[3][];
+            double[][] level = new double[3][];
             for (int c = 0; c < 3; c++)
             {
                 double[] ch = new double[n];
@@ -1214,16 +1216,30 @@ namespace Kinovea.ScreenManager
                 for (int i = 0; i < n; i++)
                     ch[i] -= smooth[i];
                 high[c] = ch;
+                level[c] = smooth;
             }
 
             for (int k = 0; k < peaks.Count; k++)
             {
                 int p = peaks[k];
-                double b = high[0][p], g = high[1][p], r = high[2][p];
-                double mean = (b + g + r) / 3.0;
-                double spread = Math.Max(b, Math.Max(g, r)) - Math.Min(b, Math.Min(g, r));
-                floor[k] = b < -3 && g < -3 && r < -3 && spread < 0.6 * Math.Abs(mean);
-                strong[k] = floor[k] && mean <= -10;
+                List<double> parts = new List<double>();
+                for (int c = 0; c < 3; c++)
+                {
+                    if (level[c][p] >= 40)
+                        parts.Add(high[c][p] / level[c][p]);
+                }
+
+                if (parts.Count >= 2 && parts.Max() <= -0.08)
+                {
+                    double mean = parts.Average();
+                    floor[k] = parts.Max() - parts.Min() < 0.35 * Math.Abs(mean);
+                    strong[k] = floor[k] && mean <= -0.15;
+                }
+
+                if (LaneTrace != null)
+                    LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: peak {0} rel {1:0.00} {2:0.00} {3:0.00} lvl {4:0} {5:0} {6:0}{7}{8}", p,
+                        high[0][p] / Math.Max(1, level[0][p]), high[1][p] / Math.Max(1, level[1][p]), high[2][p] / Math.Max(1, level[2][p]),
+                        level[0][p], level[1][p], level[2][p], floor[k] ? " floor" : "", strong[k] ? " strong" : ""));
             }
 
             return floor;

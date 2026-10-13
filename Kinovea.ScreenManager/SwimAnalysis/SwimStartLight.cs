@@ -41,7 +41,7 @@ namespace Kinovea.ScreenManager
     /// 2. each spot is followed for ~0.3 s: a light starts bright (≥ 140) from a still background and goes down again; a moving
     ///    object darkens next to where it brightens, water glints come back at the same place (flicker map of the last seconds);
     /// 3. the flash of a frame: its lights at different places (≥ 60 px apart, the strongest of each place), spots that already came on
-    ///    there in the previous frames do not count;
+    ///    there in the previous frames do not count, nor the sparkles of the water (less than 3 pixels at 960 wide);
     /// 4. the race: the camera starts to follow the swimmers (frame difference ≥ 2.5 × the still level for most of 1.5 s, then most
     ///    of the next 6 s); the start is the first strong flash (≥ 60% of the strongest) 0.3–1.6 s before, with a still camera.
     /// Reference implementation and evaluation: Python prototype of the same algorithm (Paris 2026 and Šamorín 2025 races,
@@ -82,6 +82,7 @@ namespace Kinovea.ScreenManager
         private readonly double rateDecay;
         private readonly int cellsX;
         private readonly int cellsY;
+        private readonly int minLightArea;
 
         private readonly List<byte[]> history = new List<byte[]>();
         private float[] noise;
@@ -118,6 +119,7 @@ namespace Kinovea.ScreenManager
             rateDecay = Math.Pow(0.5, 1.0 / (2.0 * this.fps));
             cellsX = (width + CellSize - 1) / CellSize;
             cellsY = (height + CellSize - 1) / CellSize;
+            minLightArea = Math.Max(2, (int)Math.Round(3.0 * width * width / (960.0 * 960.0)));
             int n = width * height;
             reference = new byte[n];
             referenceMin = new byte[n];
@@ -582,6 +584,10 @@ namespace Kinovea.ScreenManager
                     for (int j = Math.Max(0, i - repeatCount); j < i && !again; j++)
                         again = lit[j].Any(c => Math.Abs(c.Cx - b.Cx) < 15 && Math.Abs(c.Cy - b.Cy) < 15);
                     if (again)
+                        continue;
+
+                    // The glints of the water are sparkles of a pixel or two (several at once can look like a flash of lights).
+                    if (b.Area < minLightArea)
                         continue;
 
                     double s = Math.Min(b.ZMax, 40) * Math.Sqrt(Math.Min(b.Area, 100)) / (1.0 + b.Rate / 25.0);
