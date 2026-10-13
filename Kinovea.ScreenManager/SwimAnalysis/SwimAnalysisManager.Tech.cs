@@ -197,6 +197,12 @@ namespace Kinovea.ScreenManager
         private long angleFrame;
         private readonly HashSet<string> uploading = new HashSet<string>();
 
+        /// <summary>
+        /// Frames of marks of the technical analysis that are not (yet) an event of their phase, the newest last (see AutoSnapshots).
+        /// </summary>
+        private readonly List<KeyValuePair<string, Bitmap>> waitingFrames = new List<KeyValuePair<string, Bitmap>>();
+        private const int WaitingFrames = 6;
+
         /// <summary>Snapshots whose upload failed: not retried automatically until the next manual send.</summary>
         private readonly HashSet<string> uploadFailed = new HashSet<string>();
         private readonly Dictionary<string, List<Action<Image>>> eliteImageRequests = new Dictionary<string, List<Action<Image>>>();
@@ -571,13 +577,48 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // One snapshot per frame: the automatic one of an event can be there already (it gets the comments).
+            SwimSnapshot same = Race.Snapshots.FirstOrDefault(x => SameFrame(x.Timestamp, timestamp));
+            if (same != null)
+            {
+                Status("📷 Υπάρχει ήδη στιγμιότυπο σε αυτό το καρέ" + (string.IsNullOrEmpty(same.Event) ? "" : " (" + same.Event + ")") +
+                    ": γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα.", false);
+                if (form != null)
+                    form.SnapshotAdded(same);
+                return;
+            }
+
             Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false);
             if (image == null)
                 return;
 
-            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp };
-            SwimTechPhase phase = SwimTechCalculator.PhaseAt(TechPhases, timestamp);
-            snapshot.Stage = SuggestStage(phase, timestamp);
+            SwimSnapshot snapshot;
+            try
+            {
+                snapshot = AddSnapshot(image, timestamp, "", "");
+            }
+            finally
+            {
+                image.Dispose();
+            }
+
+            if (snapshot == null)
+                return;
+
+            SwimTechPhase phase = PhaseOf(timestamp);
+            Status(string.Format(CultureInfo.InvariantCulture, "📷 Στιγμιότυπο{0}{1}. Γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα.",
+                phase != null ? " · " + phase.Title : "", string.IsNullOrEmpty(snapshot.Stage) ? "" : " · " + snapshot.Stage), false);
+            Changed(false);
+            UploadSnapshot(snapshot);
+            if (form != null)
+                form.SnapshotAdded(snapshot);
+        }
+
+        /// <summary>The image as a snapshot of the race (saved next to the video), null if it could not be saved.</summary>
+        private SwimSnapshot AddSnapshot(Bitmap image, long timestamp, string autoEvent, string markId)
+        {
+            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "" };
+            snapshot.Stage = SuggestStage(PhaseOf(timestamp), timestamp);
             try
             {
                 snapshot.File = Path.GetFileName(SaveSnapshotImage(image, snapshot.Id));
@@ -586,20 +627,244 @@ namespace Kinovea.ScreenManager
             {
                 log.Error("Could not save the snapshot.", e);
                 Status("Δεν αποθηκεύτηκε το στιγμιότυπο: " + e.Message, true);
-                return;
-            }
-            finally
-            {
-                image.Dispose();
+                return null;
             }
 
             Race.Snapshots.Add(snapshot);
-            Status(string.Format(CultureInfo.InvariantCulture, "📷 Στιγμιότυπο{0}{1}. Γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα.",
-                phase != null ? " · " + phase.Title : "", string.IsNullOrEmpty(snapshot.Stage) ? "" : " · " + snapshot.Stage), false);
-            Changed(false);
-            UploadSnapshot(snapshot);
+            return snapshot;
+        }
+
+        private SwimTechPhase PhaseOf(long timestamp)
+        {
+            return SwimTechCalculator.PhaseAt(TechPhases, timestamp);
+        }
+
+        public void SetAutoSnapshots(bool on)
+        {
+            Settings.AutoTechSnapshots = on;
+            Settings.Save();
+            if (!on)
+                ClearWaitingFrames();
+        }
+
+        /// <summary>
+        /// Technical analysis: the frame of each event of a start or a turn becomes a snapshot when the event is marked (or pressed
+        /// again on its mark), with the stage of the phase and the event written on it, as the analyst would take it: the signal, the
+        /// first movement, the hands and the back foot off the block, the release, the entry, the first dolphin kick, the breakout, the
+        /// first stroke; the last stroke before the wall, the start of the rotation, the contact with the wall, the push-off. The same
+        /// event marked again at another frame replaces its snapshot, undoing the mark removes it; the snapshot key still takes any
+        /// other frame. A stroke or a rotation marked before the contact with the wall is kept until the wall is marked (then it is
+        /// known to be the last stroke of the turn): the video has left that frame by then.
+        /// </summary>
+        private void AutoSnapshots(PlayerScreenCommands command, long timestamp, string newMarkId, bool commandStatus)
+        {
+            if (Race == null || !HasVideo || Settings == null || !Settings.AutoTechSnapshots)
+                return;
+
+            List<SwimSnapshot> taken = new List<SwimSnapshot>();
+
+            // The start signal of a race is not a mark: its frame at once.
+            if (command == PlayerScreenCommands.SwimStart && !Race.IsTraining && Race.StartTimestamp.HasValue && SameFrame(Race.StartTimestamp.Value, timestamp))
+            {
+                SwimTechPhase phase = PhaseOf(timestamp);
+                Bitmap image = phase != null && phase.Kind == SwimPhaseKind.Start ? CaptureFrame(timestamp, Settings.OverlayInExports, false) : null;
+                if (image != null)
+                {
+                    SwimSnapshot snapshot = SaveAutoSnapshot(image, timestamp, "Σήμα εκκίνησης", "", phase);
+                    if (snapshot != null)
+                        taken.Add(snapshot);
+                }
+            }
+
+            // The mark of this frame: just put, or there already (the key pressed on a stroke found by the program, for example).
+            SwimMark mark = newMarkId != null ? Race.Marks.FirstOrDefault(m => m.Id == newMarkId) : null;
+            if (mark == null)
+            {
+                SwimMarkType type;
+                if (MarkTypeOf(command, out type))
+                    mark = Race.Marks.Where(m => m.Type == type && SameFrame(m.Timestamp, timestamp)).OrderBy(m => Math.Abs(m.Timestamp - timestamp)).FirstOrDefault();
+            }
+
+            if (mark != null && SameFrame(mark.Timestamp, timestamp) && !waitingFrames.Any(w => w.Key == mark.Id) &&
+                !Race.Snapshots.Any(x => x.MarkId == mark.Id && SameFrame(x.Timestamp, mark.Timestamp)) && MayBecomeEvent(mark))
+            {
+                Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false);
+                if (image != null)
+                {
+                    waitingFrames.Add(new KeyValuePair<string, Bitmap>(mark.Id, image));
+                    while (waitingFrames.Count > WaitingFrames)
+                    {
+                        waitingFrames[0].Value.Dispose();
+                        waitingFrames.RemoveAt(0);
+                    }
+                }
+            }
+
+            // Every frame kept whose mark is now an event of its phase becomes its snapshot (the others wait, a mark undone drops its frame).
+            for (int i = waitingFrames.Count - 1; i >= 0; i--)
+            {
+                KeyValuePair<string, Bitmap> w = waitingFrames[i];
+                SwimMark m = Race.Marks.FirstOrDefault(x => x.Id == w.Key);
+                SwimTechPhase phase = null;
+                string label = m != null ? EventLabel(m, out phase) : null;
+                if (m != null && label == null)
+                    continue;
+
+                waitingFrames.RemoveAt(i);
+                try
+                {
+                    if (m != null)
+                    {
+                        SwimSnapshot snapshot = SaveAutoSnapshot(w.Value, m.Timestamp, label, m.Id, phase);
+                        if (snapshot != null)
+                            taken.Add(snapshot);
+                    }
+                }
+                finally
+                {
+                    w.Value.Dispose();
+                }
+            }
+
+            if (taken.Count == 0)
+                return;
+
+            // The status of the mark stays, the snapshot is said after it.
+            string said = "📷 " + string.Join(", ", taken.OrderBy(x => x.Timestamp).Select(x => x.Event).ToArray());
+            if (commandStatus && !string.IsNullOrEmpty(LastStatus))
+                Status(LastStatus + "   " + said, LastStatusIsWarning);
+            else
+                Status(said + " (στιγμιότυπο στην καρτέλα Στιγμιότυπα)", false);
+
+            MarkDirty();
+            foreach (SwimSnapshot snapshot in taken.OrderBy(x => x.Timestamp))
+                UploadSnapshot(snapshot);
             if (form != null)
-                form.SnapshotAdded(snapshot);
+                form.SnapshotAdded(taken[taken.Count - 1]);
+        }
+
+        /// <summary>
+        /// The snapshot of an event of a phase: the one of the same event before (another frame) goes, its comments and elite frame
+        /// stay with the new one.
+        /// </summary>
+        private SwimSnapshot SaveAutoSnapshot(Bitmap image, long timestamp, string label, string markId, SwimTechPhase phase)
+        {
+            List<SwimSnapshot> old = Race.Snapshots.Where(x => x.Event == label && PhaseOf(x.Timestamp) == phase).ToList();
+            SwimSnapshot snapshot = AddSnapshot(image, timestamp, label, markId);
+            if (snapshot == null)
+                return null;
+
+            foreach (SwimSnapshot before in old)
+            {
+                if (string.IsNullOrEmpty(snapshot.Comment))
+                    snapshot.Comment = before.Comment ?? "";
+                if (string.IsNullOrEmpty(snapshot.EliteFileId) && !string.IsNullOrEmpty(before.EliteFileId))
+                {
+                    snapshot.EliteFileId = before.EliteFileId;
+                    snapshot.EliteLabel = before.EliteLabel;
+                    snapshot.EliteComment = before.EliteComment;
+                }
+
+                Race.Snapshots.Remove(before);
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// The event of its phase a mark is (the name of its snapshot), or null: the first movement, the hands, the back foot, the
+        /// release and the entry of a start, the push-off of a turn, the first dolphin kick and the breakout of each, the last stroke
+        /// before the wall and the first after the breakout, the rotation, the contact with the wall.
+        /// </summary>
+        private string EventLabel(SwimMark m, out SwimTechPhase phase)
+        {
+            phase = PhaseOf(m.Timestamp);
+            SwimTechPhase p = phase;
+            if (p == null)
+                return null;
+
+            double t = Timing.Seconds(m.Timestamp, p.Origin);
+            double near = Math.Max(0.011, 0.55 * Timing.Seconds(m.Timestamp + (long)Math.Round(Math.Max(1, Timing.AverageTimestampsPerFrame)), m.Timestamp));
+            Func<double?, bool> at = x => x.HasValue && Math.Abs(t - x.Value) <= near;
+            bool start = p.Kind == SwimPhaseKind.Start;
+            switch (m.Type)
+            {
+                case SwimMarkType.Signal:
+                    return start && at(0) ? "Σήμα εκκίνησης" : null;
+                case SwimMarkType.Reaction:
+                    return start && t > 0 ? "Αντίδραση" : null;
+                case SwimMarkType.HandsOff:
+                    return start && t > 0 ? "Χέρια φεύγουν από τον βατήρα" : null;
+                case SwimMarkType.BackFoot:
+                    return start && t > 0 ? "Πίσω πόδι φεύγει" : null;
+                case SwimMarkType.FeetOff:
+                    return start ? (at(p.Block) ? "Αποδέσμευση από τον βατήρα" : null) : (at(p.Pushoff) ? "Αποκόλληση από τον τοίχο" : null);
+                case SwimMarkType.Entry:
+                    return start && at(p.Entry) ? "Είσοδος στο νερό" : null;
+                case SwimMarkType.Kick:
+                    return p.Kicks.Count > 0 && at(p.Kicks[0]) ? "Πρώτος δελφινισμός" : null;
+                case SwimMarkType.Breakout:
+                    return at(p.Breakout) ? "Έξοδος από το νερό" : null;
+                case SwimMarkType.Stroke:
+                    return !start && t < 0 && at(p.LastStroke) ? "Τελευταία χεριά" : at(p.FirstStroke) ? "Πρώτη χεριά" : null;
+                case SwimMarkType.RotationStart:
+                    return !start && at(p.RotationStart) ? "Αρχή περιστροφής" : null;
+                case SwimMarkType.WallContact:
+                    return !start && at(0) ? "Επαφή στον τοίχο" : null;
+                case SwimMarkType.Split:
+                    return !start && m.Distance == p.Wall && at(0) ? "Επαφή στον τοίχο" : null;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// A mark whose frame is kept: an event of its phase now, or a stroke or a rotation that becomes one when the wall after it is
+        /// marked (a kick, when the entry or the push-off before it is marked).
+        /// </summary>
+        private bool MayBecomeEvent(SwimMark m)
+        {
+            SwimTechPhase phase;
+            if (EventLabel(m, out phase) != null)
+                return true;
+
+            switch (m.Type)
+            {
+                case SwimMarkType.Stroke:
+                case SwimMarkType.RotationStart:
+                case SwimMarkType.Kick:
+                case SwimMarkType.FeetOff:
+                case SwimMarkType.Breakout:
+                case SwimMarkType.Entry:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool MarkTypeOf(PlayerScreenCommands command, out SwimMarkType type)
+        {
+            switch (command)
+            {
+                case PlayerScreenCommands.SwimStroke: type = SwimMarkType.Stroke; return true;
+                case PlayerScreenCommands.SwimKick: type = SwimMarkType.Kick; return true;
+                case PlayerScreenCommands.SwimBreakout: type = SwimMarkType.Breakout; return true;
+                case PlayerScreenCommands.SwimFeetOff: type = SwimMarkType.FeetOff; return true;
+                case PlayerScreenCommands.SwimEntry: type = SwimMarkType.Entry; return true;
+                case PlayerScreenCommands.SwimReaction: type = SwimMarkType.Reaction; return true;
+                case PlayerScreenCommands.SwimHandsOff: type = SwimMarkType.HandsOff; return true;
+                case PlayerScreenCommands.SwimBackFoot: type = SwimMarkType.BackFoot; return true;
+                case PlayerScreenCommands.SwimRotation: type = SwimMarkType.RotationStart; return true;
+                case PlayerScreenCommands.SwimSplit: type = SwimMarkType.Split; return true;
+                default: type = SwimMarkType.Split; return false;
+            }
+        }
+
+        private void ClearWaitingFrames()
+        {
+            foreach (KeyValuePair<string, Bitmap> w in waitingFrames)
+                w.Value.Dispose();
+            waitingFrames.Clear();
         }
 
         /// <summary>

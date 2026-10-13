@@ -622,6 +622,7 @@ namespace Kinovea.ScreenManager
                 o["t"] = seconds(s.Timestamp, phase);
                 o["phase"] = phase != null ? phase.Id : "";
                 o["stage"] = s.Stage ?? "";
+                o["event"] = s.Event ?? "";
                 o["comment"] = s.Comment ?? "";
                 o["fileId"] = s.FileId ?? "";
                 o["eliteFileId"] = s.EliteFileId ?? "";

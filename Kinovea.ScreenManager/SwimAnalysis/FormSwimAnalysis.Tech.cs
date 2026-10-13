@@ -66,6 +66,7 @@ namespace Kinovea.ScreenManager
         private Button btnProposalWrong;
         private Button btnDeleteProposals;
         private CheckBox chkProposeAuto;
+        private CheckBox chkAutoSnapshots;
         private Label lblProposals;
         private DataGridView gridAngles;
         private TextBox tbNotes;
@@ -336,7 +337,18 @@ namespace Kinovea.ScreenManager
             cmbAngleName.Text = manager.AngleName;
             cmbAngleName.TextChanged += (s, e) => manager.AngleName = cmbAngleName.Text;
             toolTip.SetToolTip(cmbAngleName, "Όνομα της επόμενης γωνίας (π.χ. γόνατο στη θέση ετοιμότητας, γωνία εισόδου στο νερό).");
+            chkAutoSnapshots = new CheckBox { Text = "αυτόματα σε κάθε γεγονός", AutoSize = true, Margin = new Padding(4, 9, 8, 3) };
+            chkAutoSnapshots.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetAutoSnapshots(chkAutoSnapshots.Checked);
+            };
+            toolTip.SetToolTip(chkAutoSnapshots, "Όταν μαρκάρεις ένα γεγονός της εκκίνησης ή της στροφής (σήμα, χέρια, αποδέσμευση, είσοδο, πρώτο δελφινισμό,\n" +
+                "έξοδο, πρώτη και τελευταία χεριά, περιστροφή, επαφή στον τοίχο, αποκόλληση) το καρέ του γίνεται στιγμιότυπο με το όνομά του.\n" +
+                "Ξανά στο ίδιο γεγονός σε άλλο καρέ: αλλάζει το στιγμιότυπο. Αναίρεση του σημαδιού: φεύγει και το στιγμιότυπο.\n" +
+                "Με το «📷 Στιγμιότυπο» (P) τραβάς όποιο άλλο καρέ θέλεις.");
             tools.Controls.Add(btnSnapshot);
+            tools.Controls.Add(chkAutoSnapshots);
             tools.Controls.Add(btnAngle);
             tools.Controls.Add(Caption("όνομα γωνίας:"));
             tools.Controls.Add(cmbAngleName);
@@ -625,6 +637,7 @@ namespace Kinovea.ScreenManager
                 chkSkeleton.Checked = manager.Settings.SkeletonOverlay;
                 chkSkeletonAngles.Checked = manager.Settings.SkeletonAngles;
                 chkProposeAuto.Checked = manager.Settings.ProposeAfterSkeleton;
+                chkAutoSnapshots.Checked = manager.Settings.AutoTechSnapshots;
                 updating = was;
             }
 
@@ -891,8 +904,8 @@ namespace Kinovea.ScreenManager
                 List<SnapshotItem> items = race.Snapshots.OrderBy(s => s.Timestamp).Select(s =>
                 {
                     SwimTechPhase p = SwimTechCalculator.PhaseAt(manager.TechPhases, s.Timestamp);
-                    string text = string.Format("{0}{1}{2}", p != null ? p.Title : "Στιγμιότυπο", string.IsNullOrEmpty(s.Stage) ? "" : " · " + s.Stage,
-                        string.IsNullOrEmpty(s.FileId) ? "  ⏳" : "  ✔");
+                    string text = string.Format("{0}{1}{2}{3}", p != null ? p.Title : "Στιγμιότυπο", string.IsNullOrEmpty(s.Event) ? "" : " · 📷 " + s.Event,
+                        string.IsNullOrEmpty(s.Stage) || s.Stage == s.Event ? "" : " · " + s.Stage, string.IsNullOrEmpty(s.FileId) ? "  ⏳" : "  ✔");
                     return new SnapshotItem(s, text);
                 }).ToList();
                 List<SnapshotItem> shown = lbSnapshots.Items.Cast<object>().OfType<SnapshotItem>().ToList();

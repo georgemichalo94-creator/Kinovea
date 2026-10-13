@@ -604,7 +604,7 @@ function swimNormalizeTech_(raw) {
   (t.snapshots || []).forEach(function (s) {
     if (!s || typeof s !== 'object') return;
     tech.snapshots.push({
-      id: String(s.id || ''), t: swimNum_(s.t), phase: String(s.phase || ''), stage: String(s.stage || ''),
+      id: String(s.id || ''), t: swimNum_(s.t), phase: String(s.phase || ''), stage: String(s.stage || ''), event: String(s.event || ''),
       comment: String(s.comment || ''), fileId: String(s.fileId || ''),
       eliteFileId: String(s.eliteFileId || ''), eliteLabel: String(s.eliteLabel || ''), eliteComment: String(s.eliteComment || '')
     });
@@ -2690,7 +2690,9 @@ function swimTechSnapshots_(L, snapshots, row, writeTitle) {
     // Κάθε στιγμιότυπο (τίτλος, εικόνα, σχόλια) σε μία σελίδα· το πρώτο μαζί με τον τίτλο της ενότητας.
     r = swimKeep_(L, r, 'snapshot', true);
     if (i === 0 && writeTitle) r = writeTitle(r);
-    var title = [s.phaseTitle || '', s.stage || '', s.t !== null && s.t !== undefined ? 't = ' + swimFormatTime_(s.t) + ' s' : '']
+    // Το γεγονός του αυτόματου στιγμιότυπου (π.χ. «Τελευταία χεριά») πριν από το στάδιο, όταν διαφέρουν.
+    var title = [s.phaseTitle || '', s.event || '', s.stage && s.stage !== s.event ? s.stage : '',
+      s.t !== null && s.t !== undefined ? 't = ' + swimFormatTime_(s.t) + ' s' : '']
       .filter(function (x) { return x; }).join(' · ');
     g.set(r, 1, '', { bold: true, color: SWIM_COLORS.titleText, bg: SWIM_COLORS.accentDark, size: 10, fmt: '@' });
     for (var c = 2; c <= W; c++) g.set(r, c, '', { bg: SWIM_COLORS.accentDark });
@@ -3770,7 +3772,7 @@ function swimCompactRace_(race) {
   ['strokes', 'kicks', 'breakouts', 'feetOff', 'entries'].forEach(function (k) { c[k] = r2(c[k]); });
   if (JSON.stringify(c).length > 49000) {
     c.kicks = [];
-    if (c.tech) c.tech.snapshots = (c.tech.snapshots || []).map(function (s) { return { id: s.id, t: s.t, phase: s.phase, stage: s.stage, comment: String(s.comment || '').substring(0, 500), fileId: s.fileId, eliteFileId: s.eliteFileId, eliteLabel: s.eliteLabel }; });
+    if (c.tech) c.tech.snapshots = (c.tech.snapshots || []).map(function (s) { return { id: s.id, t: s.t, phase: s.phase, stage: s.stage, event: s.event, comment: String(s.comment || '').substring(0, 500), fileId: s.fileId, eliteFileId: s.eliteFileId, eliteLabel: s.eliteLabel }; });
   }
   return c;
 }

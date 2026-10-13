@@ -132,6 +132,12 @@ namespace Kinovea.ScreenManager
         public string Stage = "";
         public string Comment = "";
 
+        /// <summary>Taken automatically when this event of the technical analysis was marked (empty: taken by the analyst).</summary>
+        public string Event = "";
+
+        /// <summary>The mark of that event: the snapshot goes when the mark is undone.</summary>
+        public string MarkId = "";
+
         /// <summary>JPEG image next to the video (folder "video.ext.swim").</summary>
         public string File = "";
 

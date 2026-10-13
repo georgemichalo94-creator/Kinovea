@@ -213,6 +213,8 @@ namespace Kinovea.ScreenManager
                 return false;
 
             bool splitAdded = false;
+            int undoBefore = undoStack.Count;
+            string statusBefore = LastStatus;
             switch (command)
             {
                 case PlayerScreenCommands.SwimShowPanel:
@@ -268,6 +270,11 @@ namespace Kinovea.ScreenManager
             ShowAnalysis(false);
             if (command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle)
                 Changed(true);
+
+            // Technical analysis: the frame of the event just marked is kept as a snapshot.
+            if ((Race.IsTraining || TechnicalView) && command != PlayerScreenCommands.SwimUndo && command != PlayerScreenCommands.SwimSnapshot &&
+                command != PlayerScreenCommands.SwimAngle)
+                AutoSnapshots(command, timestamp, undoStack.Count > undoBefore ? undoStack[undoStack.Count - 1] : null, !ReferenceEquals(LastStatus, statusBefore));
 
             // The finish has just been marked: the frame with the graphics (final time, velocity chart) for the report.
             if (command == PlayerScreenCommands.SwimSplit && splitAdded && !Race.IsTraining)
@@ -477,6 +484,9 @@ namespace Kinovea.ScreenManager
             if (mark.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(mark.Distance);
 
+            // The automatic snapshot of the event goes with it (unless the analyst wrote on it).
+            Race.Snapshots.RemoveAll(x => !string.IsNullOrEmpty(x.MarkId) && x.MarkId == mark.Id && string.IsNullOrEmpty(x.Comment) && string.IsNullOrEmpty(x.EliteFileId));
+
             List<SwimMark> replaced;
             if (replacedBy.TryGetValue(mark.Id, out replaced))
             {
@@ -504,6 +514,7 @@ namespace Kinovea.ScreenManager
         {
             undoStack.Clear();
             replacedBy.Clear();
+            ClearWaitingFrames();
         }
 
         public void ClearSplit(int distance)

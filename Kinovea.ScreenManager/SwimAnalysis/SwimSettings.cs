@@ -99,6 +99,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool ProposeAfterSkeleton = true;
 
+        /// <summary>
+        /// Technical analysis: the frame of each event marked (signal, hands, release, entry, first kick, breakout, last stroke,
+        /// rotation, contact with the wall, push-off…) becomes a snapshot of its phase.
+        /// </summary>
+        public bool AutoTechSnapshots = true;
+
         /// <summary>After following the swimmer for a length: the checkpoints of the length from the marks of the ropes, for the check.</summary>
         public bool ProposeSplitsAfterTrack = true;
 
