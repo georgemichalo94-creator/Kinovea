@@ -896,9 +896,9 @@ namespace Kinovea.ScreenManager
                 cue = cue.Substring(0, dot);
 
             // The line between the marks of the two ropes is what the analyst sees (the middle of the lane before any learning;
-            // in breaststroke the head is high and seen three quarters of the lane towards the far rope); the mark of one rope alone
-            // is ahead or behind it by up to a second near the ends of the pool (perspective).
-            bool breast = style == "br";
+            // in breaststroke and backstroke the head is high and seen three quarters of the lane towards the far rope); the mark of
+            // one rope alone is ahead or behind it by up to a second near the ends of the pool (perspective).
+            bool breast = style == "br" || style == "bk";
             switch (cue)
             {
                 case SwimSplitDetector.CueMiddle: weight = breast ? 0.6 : 1.0; spread = breast ? 0.12 : 0.08; break;

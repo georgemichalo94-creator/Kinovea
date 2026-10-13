@@ -148,25 +148,38 @@ namespace Kinovea.ScreenManager
 
             // Time per metre and time at the wall of the lap (straight line through the checkpoints: medians of the slopes of
             // each pair and of the intercepts, so that one wrong checkpoint does not move it).
-            List<double> slopes = new List<double>();
-            for (int i = 0; i < seen.Count; i++)
+            double slope, intercept;
+            if (!PaceLine(seen, out slope, out intercept))
+                return;
+
+            // A checkpoint far from the pace of the others (more than a fifth of the time of 10 m: a mark crossed at another moment,
+            // the swimmer hidden) becomes the pace of the others (the analyst checks it); with four checkpoints the pace stands
+            // without it.
+            double tolerance = 0.2 * 10 * slope;
+            if (seen.Count >= 4)
             {
-                for (int j = i + 1; j < seen.Count; j++)
+                List<SwimSplitFound> far = seen.Where(f => Math.Abs(Time(f.Cues) - (intercept + slope * f.LapDistance)) > tolerance).ToList();
+                if (far.Count > 0 && seen.Count - far.Count >= 2)
                 {
-                    int dd = seen[j].LapDistance - seen[i].LapDistance;
-                    if (dd != 0)
-                        slopes.Add((Time(seen[j].Cues) - Time(seen[i].Cues)) / dd);
+                    List<SwimSplitFound> kept = seen.Where(f => !far.Contains(f)).ToList();
+                    double s2, i2;
+                    if (PaceLine(kept, out s2, out i2))
+                    {
+                        slope = s2;
+                        intercept = i2;
+                        tolerance = 0.2 * 10 * slope;
+                        foreach (SwimSplitFound f in far)
+                        {
+                            f.Cues.Clear();
+                            f.Cues[CuePace] = intercept + slope * f.LapDistance;
+                            f.Confidence = 0.3;
+                        }
+
+                        seen = kept;
+                    }
                 }
             }
 
-            if (slopes.Count == 0)
-                return;
-
-            double slope = SwimLearningMedian(slopes);
-            if (slope <= 0)
-                return;
-
-            double intercept = SwimLearningMedian(seen.Select(x => Time(x.Cues) - slope * x.LapDistance).ToList());
             int[] marks = pool == 50 ? new[] { 15, 25, 35, 45 } : new[] { 10, 15, 20 };
             foreach (int d in marks)
             {
@@ -184,10 +197,38 @@ namespace Kinovea.ScreenManager
 
             found.Sort((a, b) => a.LapDistance.CompareTo(b.LapDistance));
             SwimSplitFound end = found.FirstOrDefault(x => x.LapDistance == pool - 5);
-            double tEnd = end != null && seen.Contains(end) ? Time(end.Cues) : intercept + slope * (pool - 5);
+            double endOnLine = intercept + slope * (pool - 5);
+            double tEnd = end != null && seen.Contains(end) && Math.Abs(Time(end.Cues) - endOnLine) <= tolerance ? Time(end.Cues) : endOnLine;
             double tWall = tEnd + lastFiveRatio * 10 * slope;
             if (wall != null && tWall >= 0 && tWall <= frames - 1)
                 wall[CuePace] = tWall;
+        }
+
+        /// <summary>Straight line time = intercept + slope × distance through checkpoints (medians of the pair slopes and of the intercepts).</summary>
+        private static bool PaceLine(List<SwimSplitFound> seen, out double slope, out double intercept)
+        {
+            slope = intercept = 0;
+            List<double> slopes = new List<double>();
+            for (int i = 0; i < seen.Count; i++)
+            {
+                for (int j = i + 1; j < seen.Count; j++)
+                {
+                    int dd = seen[j].LapDistance - seen[i].LapDistance;
+                    if (dd != 0)
+                        slopes.Add((Time(seen[j].Cues) - Time(seen[i].Cues)) / dd);
+                }
+            }
+
+            if (slopes.Count == 0)
+                return false;
+
+            double s = SwimLearningMedian(slopes);
+            if (s <= 0)
+                return false;
+
+            slope = s;
+            intercept = SwimLearningMedian(seen.Select(x => Time(x.Cues) - s * x.LapDistance).ToList());
+            return true;
         }
 
         /// <summary>The motion around the swimmer becomes that of the swimming (breakout).</summary>

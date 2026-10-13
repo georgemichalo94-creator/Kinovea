@@ -1100,11 +1100,12 @@ namespace Kinovea.ScreenManager
 
             double[] energies = new double[161];
             double[][] magnitudes = new double[161][];
+            double[][] profiles = new double[161][];
             for (int k = 0; k < 161; k++)
             {
                 double a = -0.40 + 0.005 * k;
-                double[] profile = LineProfile(img, cx, a, y0s, xs);
-                magnitudes[k] = HighPassMagnitude(profile, n, out energies[k]);
+                profiles[k] = LineProfile(img, cx, a, y0s, xs);
+                magnitudes[k] = HighPassMagnitude(profiles[k], n, out energies[k]);
             }
 
             // The strongest direction first; then the other strong directions (local maxima): next to an outer lane the wall of
@@ -1122,15 +1123,15 @@ namespace Kinovea.ScreenManager
             {
                 if (i > 0 && energies[order[i]] < 0.05 * energies[order[0]])
                     break;
-                if (LaneAtSlope(-0.40 + 0.005 * order[i], magnitudes[order[i]], y0s, n, headX, headY, feetX, feetY, L, cx, out lane, out virtualRope))
+                if (LaneAtSlope(-0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, cx, out lane, out virtualRope))
                     return true;
             }
 
             return false;
         }
 
-        private static bool LaneAtSlope(double bestSlope, double[] bestMagnitude, double[] y0s, int n, double headX, double headY, double feetX, double feetY,
-            double L, double cx, out SwimStrokeLane lane, out int virtualRope)
+        private static bool LaneAtSlope(double bestSlope, double[] bestMagnitude, double[] profile, double[] y0s, int n, double headX, double headY,
+            double feetX, double feetY, double L, double cx, out SwimStrokeLane lane, out int virtualRope)
         {
             lane = new SwimStrokeLane();
             virtualRope = 0;
@@ -1160,76 +1161,149 @@ namespace Kinovea.ScreenManager
                 st[i] = m[peaks[i]] / peakMax;
             }
 
-            List<int> chain = RopeChain(ys, st, Math.Max(8.0, 0.12 * L), 3.0 * L);
+            // The lines of the floor of the pool (clear water, camera high): darker than the water in the three colours alike, half
+            // way between the ropes. A chain with them has half the spacing of the ropes: when the lane found has a clearly dark one
+            // as a rope, the lane is searched again without any of them.
+            bool[] strong;
+            bool[] floor = FloorLines(profile, n, peaks, out strong);
+            int[] all = Enumerable.Range(0, ys.Length).ToArray();
+            double y1, y2;
+            int r1, r2, v;
+            if (!LaneOfCandidates(ys, st, all, bestSlope, headX, headY, feetX, feetY, L, cx, out y1, out y2, out v, out r1, out r2))
+                return false;
+
+            if ((r1 >= 0 && strong[r1]) || (r2 >= 0 && strong[r2]))
+            {
+                int[] ropes = all.Where(i => !floor[i]).ToArray();
+                double z1, z2;
+                int q1, q2, w;
+                if (ropes.Length >= 3 && LaneOfCandidates(ys, st, ropes, bestSlope, headX, headY, feetX, feetY, L, cx, out z1, out z2, out w, out q1, out q2))
+                {
+                    if (LaneTrace != null)
+                        LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: floor line {0:0}/{1:0} -> ropes {2:0}/{3:0}", y1, y2, z1, z2));
+                    y1 = z1;
+                    y2 = z2;
+                    v = w;
+                }
+            }
+
+            virtualRope = v;
+            lane = new SwimStrokeLane(bestSlope, y1 - bestSlope * cx, bestSlope, y2 - bestSlope * cx);
+            return true;
+        }
+
+        /// <summary>
+        /// Candidates of a line profile across the lines that are darker than the water in the three colours alike (the lines on
+        /// the floor of the pool seen through the water; 'strong': clearly darker): the ropes are bright (white, yellow floats) or
+        /// coloured (blue, red).
+        /// </summary>
+        private static bool[] FloorLines(double[] profile, int n, List<int> peaks, out bool[] strong)
+        {
+            bool[] floor = new bool[peaks.Count];
+            strong = new bool[peaks.Count];
+            if (profile == null || profile.Length < n * 3)
+                return floor;
+
+            double[][] high = new double[3][];
+            for (int c = 0; c < 3; c++)
+            {
+                double[] ch = new double[n];
+                for (int i = 0; i < n; i++)
+                    ch[i] = profile[i * 3 + c];
+                double[] smooth = Gauss1D(ch, RopeSigma);
+                for (int i = 0; i < n; i++)
+                    ch[i] -= smooth[i];
+                high[c] = ch;
+            }
+
+            for (int k = 0; k < peaks.Count; k++)
+            {
+                int p = peaks[k];
+                double b = high[0][p], g = high[1][p], r = high[2][p];
+                double mean = (b + g + r) / 3.0;
+                double spread = Math.Max(b, Math.Max(g, r)) - Math.Min(b, Math.Min(g, r));
+                floor[k] = b < -3 && g < -3 && r < -3 && spread < 0.6 * Math.Abs(mean);
+                strong[k] = floor[k] && mean <= -10;
+            }
+
+            return floor;
+        }
+
+        /// <summary>
+        /// The lane holding the swimmer from some of the rope candidates (their longest regular chain): its two ropes (y at cx) and
+        /// the candidates they are (−1 for the place of the missing rope of an outer lane).
+        /// </summary>
+        private static bool LaneOfCandidates(double[] ys, double[] st, int[] use, double slope, double headX, double headY, double feetX, double feetY,
+            double L, double cx, out double laneY1, out double laneY2, out int virtualRope, out int rope1, out int rope2)
+        {
+            laneY1 = laneY2 = 0;
+            virtualRope = 0;
+            rope1 = rope2 = -1;
+            double[] uy = use.Select(i => ys[i]).ToArray();
+            double[] us = use.Select(i => st[i]).ToArray();
+            List<int> chain = RopeChain(uy, us, Math.Max(8.0, 0.12 * L), 3.0 * L);
             if (LaneTrace != null)
-                LaneTrace("lane: chain " + string.Join(",", chain.Select(c => ys[c].ToString("0", System.Globalization.CultureInfo.InvariantCulture))));
+                LaneTrace("lane: chain " + string.Join(",", chain.Select(c => uy[c].ToString("0", System.Globalization.CultureInfo.InvariantCulture))));
             if (chain.Count < 3)
                 return false;
 
-            double slope = bestSlope;
-            double bestCoverage = 0;
-            double laneY1 = 0, laneY2 = 0;
-            bool found = false;
-            for (int c = 0; c + 1 < chain.Count; c++)
+            Func<double, double, double> coverageOf = (y1, y2) =>
             {
-                double y1 = ys[chain[c]];
-                double y2 = ys[chain[c + 1]];
-                double coverage = 0;
+                double cov = 0;
                 for (int k = 0; k <= 10; k++)
                 {
                     double f = k / 10.0;
                     double px = feetX + (headX - feetX) * f;
                     double py = feetY + (headY - feetY) * f;
                     if (y1 + slope * (px - cx) <= py && py <= y2 + slope * (px - cx))
-                        coverage += f <= 0.7 ? 1.0 : 0.4;
+                        cov += f <= 0.7 ? 1.0 : 0.4;
                 }
 
+                return cov;
+            };
+
+            double bestCoverage = 0;
+            bool found = false;
+            for (int c = 0; c + 1 < chain.Count; c++)
+            {
+                double coverage = coverageOf(uy[chain[c]], uy[chain[c + 1]]);
                 if (coverage > bestCoverage)
                 {
                     bestCoverage = coverage;
-                    laneY1 = y1;
-                    laneY2 = y2;
+                    laneY1 = uy[chain[c]];
+                    laneY2 = uy[chain[c + 1]];
+                    rope1 = use[chain[c]];
+                    rope2 = use[chain[c + 1]];
                     found = true;
                 }
             }
 
             // Outer lane: the swimmer is beyond the first or the last rope of the chain; the wall side is the next place of the
             // chain (the spacing changes with the perspective as between the last two ropes).
-            if ((!found || bestCoverage < 2.5) && chain.Count >= 3)
+            if (!found || bestCoverage < 2.5)
             {
-                Func<double, double, double> coverageOf = (y1, y2) =>
-                {
-                    double cov = 0;
-                    for (int k = 0; k <= 10; k++)
-                    {
-                        double f = k / 10.0;
-                        double px = feetX + (headX - feetX) * f;
-                        double py = feetY + (headY - feetY) * f;
-                        if (y1 + slope * (px - cx) <= py && py <= y2 + slope * (px - cx))
-                            cov += f <= 0.7 ? 1.0 : 0.4;
-                    }
-
-                    return cov;
-                };
-
                 int last = chain.Count - 1;
-                double g0 = ys[chain[1]] - ys[chain[0]], g1 = ys[chain[2]] - ys[chain[1]];
-                double gl = ys[chain[last]] - ys[chain[last - 1]], gl1 = ys[chain[last - 1]] - ys[chain[last - 2]];
-                double before = ys[chain[0]] - g0 * Math.Max(0.7, Math.Min(1.4, g0 / Math.Max(1e-6, g1)));
-                double after = ys[chain[last]] + gl * Math.Max(0.7, Math.Min(1.4, gl / Math.Max(1e-6, gl1)));
-                double cb = coverageOf(before, ys[chain[0]]), ca = coverageOf(ys[chain[last]], after);
+                double g0 = uy[chain[1]] - uy[chain[0]], g1 = uy[chain[2]] - uy[chain[1]];
+                double gl = uy[chain[last]] - uy[chain[last - 1]], gl1 = uy[chain[last - 1]] - uy[chain[last - 2]];
+                double before = uy[chain[0]] - g0 * Math.Max(0.7, Math.Min(1.4, g0 / Math.Max(1e-6, g1)));
+                double after = uy[chain[last]] + gl * Math.Max(0.7, Math.Min(1.4, gl / Math.Max(1e-6, gl1)));
+                double cb = coverageOf(before, uy[chain[0]]), ca = coverageOf(uy[chain[last]], after);
                 if (Math.Max(cb, ca) >= 2.5)
                 {
                     if (ca >= cb)
                     {
-                        laneY1 = ys[chain[last]];
+                        laneY1 = uy[chain[last]];
                         laneY2 = after;
+                        rope1 = use[chain[last]];
+                        rope2 = -1;
                         virtualRope = 2;
                     }
                     else
                     {
                         laneY1 = before;
-                        laneY2 = ys[chain[0]];
+                        laneY2 = uy[chain[0]];
+                        rope1 = -1;
+                        rope2 = use[chain[0]];
                         virtualRope = 1;
                     }
 
@@ -1238,11 +1312,7 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            if (!found || bestCoverage < 2.5)
-                return false;
-
-            lane = new SwimStrokeLane(slope, laneY1 - slope * cx, slope, laneY2 - slope * cx);
-            return true;
+            return found && bestCoverage >= 2.5;
         }
 
         /// <summary>Longest regularly spaced chain of rope candidates (spacing changes smoothly with the perspective).</summary>
