@@ -1193,6 +1193,11 @@ namespace Kinovea.ScreenManager
                     return null;
                 }
 
+                // The swimmer is where he was clicked at that frame: the path goes through it.
+                int clickIndex = chosen.Timestamps.FindIndex(t => t >= click);
+                if (clickIndex >= 0)
+                    chosen.Detector.Anchor(clickIndex, xc);
+
                 chosen.PreviousGray = lastGray;
                 return chosen;
             }

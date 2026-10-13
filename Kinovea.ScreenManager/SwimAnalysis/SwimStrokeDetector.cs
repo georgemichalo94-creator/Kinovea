@@ -183,6 +183,21 @@ namespace Kinovea.ScreenManager
             virtualRope0 = virtualRope;
         }
 
+        // The place of the swimmer along the band known at one frame (the click, when the reading starts before it), −1 if none.
+        private int anchorFrame = -1;
+        private double anchorX;
+
+        /// <summary>
+        /// The swimmer is at this x of the band (middle of the head and the feet clicked) at this frame (index of the frames given):
+        /// the path goes through it (a reading from the start signal, clicked later: the glints of the water ahead of the swimmer
+        /// do not take the path away).
+        /// </summary>
+        public void Anchor(int frame, double x)
+        {
+            anchorFrame = frame;
+            anchorX = x;
+        }
+
         /// <summary>Rope of the lane that is not seen (1 far, 2 near) next to the wall of the pool, 0 if both are seen.</summary>
         public int VirtualRope
         {
@@ -552,7 +567,7 @@ namespace Kinovea.ScreenManager
                 Array.Copy(shifts[t], 0, S, t * W, W);
 
             double x0 = 0.5 * (headX + feetX);
-            int[] path = Locate(D, S, T, W, x0, Math.Max(12.0, 0.3 * length));
+            int[] path = Locate(D, S, T, W, x0, length, anchorFrame, anchorX);
             result.Path = path;
 
             int ahead = (int)Math.Round(1.6 * length);
@@ -585,8 +600,14 @@ namespace Kinovea.ScreenManager
             return result;
         }
 
-        private static int[] Locate(double[] D, double[] shifts, int T, int W, double x0, double sigmaX)
+        /// <summary>
+        /// Place of the swimmer along the band in each frame. length: the swimmer (head to feet, px); anchorFrame, anchorX: where he
+        /// is known to be at one frame (−1: nowhere).
+        /// </summary>
+        private static int[] Locate(double[] D, double[] shifts, int T, int W, double x0, double length, int anchorFrame, double anchorX)
         {
+            double sigmaX = Math.Max(12.0, 0.3 * length);
+            double anchorSigma = Math.Max(12.0, 0.25 * length);
             double[] tmp = GaussAlong(D, T, W, sigmaX, false);
             double[] smooth = GaussAlong(tmp, T, W, 12.0, true);
 
@@ -610,9 +631,44 @@ namespace Kinovea.ScreenManager
                     Z[t * W + x] = (smooth[t * W + x] - mean) / std;
             }
 
-            int[] p = Viterbi(Z, shifts, T, W, x0, 0.0, 8);
+            // The place known at one frame: far from it the path pays as much as a few frames of the strongest motion.
+            if (anchorFrame >= 0 && anchorFrame < T)
+            {
+                for (int x = 0; x < W; x++)
+                {
+                    double z = (x - anchorX) / anchorSigma;
+                    Z[anchorFrame * W + x] -= z * z;
+                }
+            }
 
-            // Speed of the swimmer relative to the water (px/frame), then a tighter second pass.
+            int[] path = TwoPasses(Z, shifts, T, W, x0);
+
+            // The path does not go where the swimmer is known to be (glints of the water stronger than the swimmer took it away):
+            // which moving thing is the swimmer from the motion clipped (glints as strong as the swimmer, the path keeps to the
+            // swimmer it goes through), then where he is from the full motion near that path.
+            bool missed = anchorFrame >= 0 && anchorFrame < T && Math.Abs(path[anchorFrame] - anchorX) > 0.5 * length;
+            if (!missed || double.IsInfinity(ZClip))
+                return path;
+
+            double[] clipped = new double[Z.Length];
+            for (int i = 0; i < Z.Length; i++)
+                clipped[i] = Math.Min(Z[i], ZClip);
+            int[] robust = TwoPasses(clipped, shifts, T, W, x0);
+            double half = Math.Max(10.0, Corridor * length);
+            double[] near = new double[Z.Length];
+            for (int t = 0; t < T; t++)
+            {
+                for (int x = 0; x < W; x++)
+                    near[t * W + x] = Math.Abs(x - robust[t]) <= half ? Z[t * W + x] : Z[t * W + x] - 1e6;
+            }
+
+            return TwoPasses(near, shifts, T, W, x0);
+        }
+
+        /// <summary>Path with no speed first, then with the swimmer's own speed relative to the water (px/frame), tighter.</summary>
+        private static int[] TwoPasses(double[] Z, double[] shifts, int T, int W, double x0)
+        {
+            int[] p = Viterbi(Z, shifts, T, W, x0, 0.0, 8);
             List<double> rel = new List<double>();
             for (int t = 1; t < T; t++)
                 rel.Add(p[t] - p[t - 1] - shifts[t * W + p[t - 1]]);
@@ -620,6 +676,12 @@ namespace Kinovea.ScreenManager
             double v = rel.Count > 0 ? Median(rel) : 0.0;
             return Viterbi(Z, shifts, T, W, x0, v, 5, SecondLambda);
         }
+
+        /// <summary>Half width of the band around the path of the clipped motion (swimmer lengths, tests).</summary>
+        internal static double Corridor = 0.6;
+
+        /// <summary>Largest evidence of the path in one frame (z-score) when the swimmer is searched again (tests: infinity, never).</summary>
+        internal static double ZClip = 1.0;
 
         /// <summary>Penalty of the second pass of the path on the steps away from the swimmer's own speed (tests).</summary>
         internal static double SecondLambda = 0.03;
