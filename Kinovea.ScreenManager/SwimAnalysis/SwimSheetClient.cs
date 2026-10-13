@@ -453,7 +453,7 @@ namespace Kinovea.ScreenManager
         public const string AppId = "kinovea-swim";
 
         public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
-            SwimSettings settings, string videoName, string action, SwimFinal final = null)
+            SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
@@ -544,8 +544,8 @@ namespace Kinovea.ScreenManager
             r["compare"] = compare;
 
             // The final of the event kept on this computer (e.g. the 8 of an Olympic final): the report compares the race with them.
-            if (final != null && final.Swimmers.Count >= 2 && !race.IsTraining)
-                r["finals"] = Finals(final);
+            if (finalOfEvent != null && finalOfEvent.Swimmers.Count >= 2 && !race.IsTraining)
+                r["finals"] = Finals(finalOfEvent);
 
             // Frame of the finish with the graphics of the video (once uploaded to the Drive, and while the finish is marked).
             if (race.FinalFrame != null && !string.IsNullOrEmpty(race.FinalFrame.FileId) && race.StartTimestamp.HasValue &&
