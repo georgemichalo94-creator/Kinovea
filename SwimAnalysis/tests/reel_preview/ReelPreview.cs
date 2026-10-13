@@ -270,7 +270,16 @@ public static class ReelPreview
 
         try
         {
-            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck() + StartLightCheck(), Encoding.UTF8);
+            RenderFinals(folder, names);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("finals: " + e);
+        }
+
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck() + StartLightCheck() + FinalsCheck(), Encoding.UTF8);
         }
         catch (Exception e)
         {
@@ -435,6 +444,150 @@ public static class ReelPreview
     }
 
     /// <summary>The box of a proposal being checked, on the fictional start.</summary>
+    /// <summary>100 m backstroke, long course: the race compared with a fictional final.</summary>
+    public static SwimRace Backstroke100()
+    {
+        SwimRace race = new SwimRace();
+        race.Athlete = "ΔΟΚΙΜΑΣΤΙΚΟΣ ΑΘΛΗΤΗΣ";
+        race.AthleteGender = "Ανδρών";
+        race.Lane = 3;
+        race.Style = "bk";
+        race.Distance = 100;
+        race.Pool = 50;
+        race.Competition = "Δοκιμή γραφικών";
+        race.Checkpoints = SwimPresets.DefaultCheckpoints(100, 50, false);
+        race.StartTimestamp = Ts(0);
+        Add(race, SwimMarkType.Reaction, 0.20, 0);
+        Add(race, SwimMarkType.FeetOff, 0.58, 0);
+        Add(race, SwimMarkType.Entry, 0.67, 0);
+        Add(race, SwimMarkType.Breakout, 5.40, 0);
+        int[] distances = { 15, 25, 35, 45, 50, 65, 75, 85, 95, 100 };
+        double[] times = { 6.20, 11.62, 17.10, 22.66, 25.62, 32.80, 38.25, 43.90, 49.62, 52.95 };
+        Splits(race, distances, times);
+        Add(race, SwimMarkType.FeetOff, 25.92, 0);
+        Add(race, SwimMarkType.Breakout, 31.12, 0);
+        for (double t = 5.62; t < 25.0; t += 0.64)
+            Add(race, SwimMarkType.Stroke, t, 0);
+        for (double t = 31.30; t < 52.4; t += 0.66)
+            Add(race, SwimMarkType.Stroke, t, 0);
+        race.UnderwaterDist = 14.1;
+        race.GetTurn(50, true).UnderwaterDist = 12.4;
+        return race;
+    }
+
+    /// <summary>A fictional final of the 100 m backstroke (eight swimmers, the format of the files of the finals).</summary>
+    public static string FinalsJson()
+    {
+        StringBuilder b = new StringBuilder();
+        b.Append("{\"format\":\"kinovea-swim-finals\",\"version\":1,\"source\":\"Δοκιμαστικός τελικός\",\"short\":\"ΔΟΚΙΜΗ\",\"pool\":50,\"finals\":[");
+        b.Append("{\"gender\":\"M\",\"style\":\"bk\",\"distance\":100,\"swimmers\":[");
+        string[] names = { "Alpha ONE", "Beta TWO", "Gamma THREE", "Delta FOUR", "Epsilon FIVE", "Zeta SIX", "Eta SEVEN", "Theta EIGHT" };
+        for (int i = 0; i < names.Length; i++)
+        {
+            double k = 1 + 0.004 * i;
+            double t15 = 5.9 + 0.04 * i, t25 = 11.2 * k, t45 = 22.0 * k, t50 = 24.9 * k, t65 = 32.0 * k, t75 = 37.4 * k, t95 = 49.1 * k, t100 = 52.0 * k;
+            if (i > 0)
+                b.Append(",");
+            b.Append(string.Format(ci,
+                "{{\"rank\":{0},\"name\":\"{1}\",\"final\":{2:0.00},\"checkpoints\":{{\"15\":{3:0.00},\"25\":{4:0.00},\"45\":{5:0.00},\"50\":{6:0.00},\"65\":{7:0.00},\"75\":{8:0.00},\"95\":{9:0.00},\"100\":{2:0.00}}}," +
+                "\"blockTime\":{10:0.00},\"start15\":{3:0.00},\"startBreakoutTime\":{11:0.00},\"startBreakoutDist\":{12:0.00},\"finishIn5\":{13:0.00}," +
+                "\"turns\":[{{\"wall\":50,\"in5\":{14:0.00},\"out15\":{15:0.00},\"breakoutTime\":{16:0.00},\"breakoutDist\":{17:0.00}}}]," +
+                "\"strokes\":{{\"50\":{18},\"100\":{19}}},\"rate\":{{\"25\":{20:0.0},\"50\":{20:0.0},\"75\":{21:0.0},\"100\":{21:0.0}}},\"cycle\":{{\"25\":{22:0.00},\"50\":{22:0.00},\"75\":{23:0.00},\"100\":{23:0.00}}}}}",
+                i + 1, names[i], t100, t15, t25, t45, t50, t65, t75, t95,
+                0.52 + 0.02 * (i % 3), 5.0 + 0.05 * i, 14.5 - 0.1 * i, t100 - t95, t50 - t45, t65 - t50, 5.6 + 0.1 * (i % 4), 12.8 - 0.15 * i,
+                28 + i % 3, 33 + i % 3, 46.0 + 0.5 * i, 47.0 + 0.4 * i, 2.40 - 0.02 * i, 2.30 - 0.02 * i));
+        }
+
+        b.Append("]}]}");
+        return b.ToString();
+    }
+
+    /// <summary>The finals: the fictional final read, the comparison of the fictional race with it, the board of a checkpoint.</summary>
+    public static string FinalsCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        string error;
+        SwimFinals finals = SwimFinals.Parse(FinalsJson(), out error);
+        if (finals == null)
+            return "finals: not read: " + error + "\n";
+
+        SwimRace race = Backstroke100();
+        SwimFinal final = finals.For(race);
+        b.AppendLine(string.Format(ci, "finals: {0} finals, {1} swimmers; for the race: {2}", finals.Finals.Count, finals.SwimmerCount, final != null ? final.Label : "none"));
+        if (final == null)
+            return b.ToString();
+
+        race.Reference = SwimFinals.Reference(final, final.Swimmers[0]);
+        SwimComputed computed = SwimCalculator.Compute(race, Timing(), 0.5);
+        foreach (SwimFinalsMetric m in SwimFinalsCompare.Metrics(race, computed, final))
+            b.AppendLine(string.Format(ci, "  {0} · {1}: athlete {2} rank {3}/{4} best {5} mean {6}", m.Group, m.Label, m.Format(m.Athlete), m.Rank, m.Count + 1, m.Format(m.Best), m.Format(m.Mean)));
+        foreach (SwimFinalsBoardRow row in SwimFinalsCompare.Board(final, 50, 25.62, "ΔΟΚΙΜΑΣΤΙΚΟΣ"))
+            b.AppendLine(string.Format(ci, "  board 50: {0}. {1} {2:0.00} +{3:0.00}{4}", row.Place, row.Name, row.Time, row.Behind, row.IsAthlete ? " (athlete)" : ""));
+        b.AppendLine("  deltas: " + string.Join(" ", computed.Rows.Where(r => r.Delta.HasValue).Select(r => r.D + ":" + r.Delta.Value.ToString("+0.00;-0.00", ci)).ToArray()));
+        return b.ToString();
+    }
+
+    /// <summary>The graphics of the comparisons with the fictional final: board, Δ on the video and on the panel, the page of the final.</summary>
+    private static void RenderFinals(string folder, List<string> names)
+    {
+        string error;
+        SwimFinals finals = SwimFinals.Parse(FinalsJson(), out error);
+        if (finals == null)
+            throw new InvalidOperationException(error);
+        SwimRace race = Backstroke100();
+        SwimFinal final = finals.For(race);
+        if (final == null)
+            throw new InvalidOperationException("no final for the race");
+        race.Reference = SwimFinals.Reference(final, final.Swimmers[0]);
+        SwimComputed computed = SwimCalculator.Compute(race, Timing(), 0.5);
+        List<SwimDeltaPoint> deltas = computed.Rows.Where(r => r.Delta.HasValue).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
+
+        // The board of the 50 m and the Δ on the video.
+        using (Bitmap image = new Bitmap(960, 540, PixelFormat.Format24bppRgb))
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            using (LinearGradientBrush water = new LinearGradientBrush(new Rectangle(0, 0, 960, 540), Color.FromArgb(60, 140, 180), Color.FromArgb(18, 70, 110), LinearGradientMode.Vertical))
+                g.FillRectangle(water, 0, 0, 960, 540);
+            List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(final, 50, 25.62, "ΔΟΚΙΜΑΣΤΙΚΟΣ");
+            int width = 260;
+            float scale = width / 260f;
+            SwimFinalsPainter.PaintBoard(g, new Rectangle(10, 10, width, SwimFinalsPainter.BoardHeight(rows.Count, scale)), "50 M · ΔΟΚΙΜΗ", "Τελικός 100μ. ύπτιο Ανδρών", rows, scale);
+            SwimFinalsPainter.PaintDelta(g, new Rectangle(600, 10, 350, 105), deltas, 100, 50, race.Reference.Name, true, 1f);
+            SwimFinalsPainter.PaintDelta(g, new Rectangle(600, 130, 350, 105), deltas.Where(d => d.D <= 50).ToList(), 100, 50, race.Reference.Name, true, 1f);
+            SaveJpeg(image, Path.Combine(folder, "finals-board.jpg"), 70);
+        }
+
+        names.Add("finals-board");
+
+        // The Δ of the panel.
+        using (Bitmap image = new Bitmap(640, 118, PixelFormat.Format24bppRgb))
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            SwimFinalsPainter.PaintDelta(g, new Rectangle(0, 0, 640, 118), deltas, 100, 50, race.Reference.Name, false, 1.25f);
+            SaveJpeg(image, Path.Combine(folder, "finals-delta-panel.jpg"), 75);
+        }
+
+        names.Add("finals-delta-panel");
+
+        // The page of the final.
+        List<SwimFinalsMetric> metrics = SwimFinalsCompare.Metrics(race, computed, final);
+        int height = Math.Min(1400, SwimFinalsPainter.MetricsHeight(metrics));
+        using (Bitmap image = new Bitmap(720, height, PixelFormat.Format24bppRgb))
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            SwimFinalsPainter.PaintMetrics(g, new Rectangle(0, 0, 720, height), metrics, final.Label, race.Athlete);
+            SaveJpeg(image, Path.Combine(folder, "finals-metrics.jpg"), 70);
+        }
+
+        names.Add("finals-metrics");
+    }
+
     private static void RenderProposal(string folder, List<string> names)
     {
         SwimSkeleton skeleton = StartSkeleton();

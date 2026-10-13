@@ -413,6 +413,7 @@ namespace Kinovea.ScreenManager
             tabSwim = BuildSwimTab();
             tabTurns = BuildTurnsTab();
             tabFinish = BuildFinishTab();
+            tabFinals = BuildFinalsTab();
             tabConnection = BuildConnectionTab();
             BuildTechPages();
 
@@ -422,6 +423,7 @@ namespace Kinovea.ScreenManager
             tabs.AddPage(tabSwim);
             tabs.AddPage(tabTurns);
             tabs.AddPage(tabFinish);
+            tabs.AddPage(tabFinals);
             tabs.AddPage(tabTechStart);
             tabs.AddPage(tabTechTurns);
             tabs.AddPage(tabTechMedia);
@@ -463,7 +465,7 @@ namespace Kinovea.ScreenManager
             SwimPage selected = tabs.SelectedTab;
             List<SwimPage> pages = technical
                 ? new List<SwimPage> { tabRace, tabTechStart, tabTechTurns, tabTechMedia, tabConnection }
-                : new List<SwimPage> { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabConnection };
+                : new List<SwimPage> { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabFinals, tabConnection };
             tabs.ShowPages(pages);
             if (fromUser || !pages.Contains(selected))
             {
@@ -561,9 +563,10 @@ namespace Kinovea.ScreenManager
             page.Padding = new Padding(6);
 
             // Comparison with an elite reference and what is drawn on the video.
-            TableLayoutPanel compare = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 2) };
+            TableLayoutPanel compare = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 5, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 2) };
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             Label lblCompare = new Label { Text = "Σύγκριση με (elite):", AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
@@ -581,8 +584,9 @@ namespace Kinovea.ScreenManager
             compare.Controls.Add(cmbReference, 1, 0);
             compare.Controls.Add(btnRefreshReferences, 2, 0);
             compare.Controls.Add(btnSaveReference, 3, 0);
+            compare.Controls.Add(BuildFinalsImportButton(), 4, 0);
             compare.Controls.Add(lblReferences, 0, 1);
-            compare.SetColumnSpan(lblReferences, 4);
+            compare.SetColumnSpan(lblReferences, 5);
 
             // Previous race of the athlete (PB) for the comparison tables and charts of the report.
             Label lblPbTitle = new Label { Text = "Σύγκριση στο report (PB):", AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
@@ -598,7 +602,7 @@ namespace Kinovea.ScreenManager
             compare.Controls.Add(cmbPb, 1, 2);
             compare.Controls.Add(btnRefreshPb, 2, 2);
             compare.Controls.Add(lblPb, 0, 3);
-            compare.SetColumnSpan(lblPb, 4);
+            compare.SetColumnSpan(lblPb, 5);
 
             FlowLayoutPanel overlay = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 4) };
             chkSpeedChart = new CheckBox { Text = "Γράφημα ταχύτητας", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
@@ -628,6 +632,7 @@ namespace Kinovea.ScreenManager
             overlay.Controls.Add(Caption("Στο βίντεο:"));
             overlay.Controls.Add(chkSpeedChart);
             overlay.Controls.Add(chkSplitBoard);
+            AddFinalsOverlayOptions(overlay);
             overlay.Controls.Add(Caption("θέση"));
             overlay.Controls.Add(cmbCorner);
             overlay.Controls.Add(chkOverlayExports);
@@ -736,6 +741,7 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(grid);
             page.Controls.Add(lnkChecks);
             page.Controls.Add(hint);
+            page.Controls.Add(BuildDeltaView());
             page.Controls.Add(t);
             page.Controls.Add(overlay);
             page.Controls.Add(compare);
@@ -1293,6 +1299,7 @@ namespace Kinovea.ScreenManager
                 chkAutoSend.Checked = settings.AutoSend;
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
+                LoadFinalsOverlayOptions(settings);
                 chkOverlayExports.Checked = settings.OverlayInExports;
                 chkVideoBars.Checked = settings.VideoBars;
                 chkAutoStrokes.Checked = settings.AutoStrokes;
@@ -1688,6 +1695,7 @@ namespace Kinovea.ScreenManager
 
             currentTurnWall = -1;
             RefreshTurnLabels();
+            RefreshFinals();
         }
 
         /// <summary>
@@ -2068,6 +2076,7 @@ namespace Kinovea.ScreenManager
             SwimSettings s = manager.Settings;
             s.ShowSpeedChart = chkSpeedChart.Checked;
             s.ShowSplitBoard = chkSplitBoard.Checked;
+            CommitFinalsOverlayOptions(s);
             s.OverlayInExports = chkOverlayExports.Checked;
             if (cmbCorner.SelectedIndex >= 0)
                 s.OverlayCorner = corners[cmbCorner.SelectedIndex];

@@ -85,6 +85,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Elite references of the Google Sheet (cached locally) and the ones saved on this computer.</summary>
         public SwimReferenceList References { get; private set; }
+
+        /// <summary>The finals for the comparisons (an Olympic final: its 8 swimmers), loaded from a file once.</summary>
+        public SwimFinals Finals { get; private set; }
         public bool ReferencesLoading { get; private set; }
         public string ReferencesMessage { get; private set; }
 
@@ -168,6 +171,7 @@ namespace Kinovea.ScreenManager
             Settings = SwimSettings.Load();
             Athletes = SwimAthleteList.Load();
             References = SwimReferenceList.Load();
+            Finals = SwimFinals.Load();
             if (Settings.ReferenceByEvent == null)
                 Settings.ReferenceByEvent = new Dictionary<string, string>();
             ReferencesMessage = ReferencesSummary();
@@ -1472,8 +1476,7 @@ namespace Kinovea.ScreenManager
                 return;
             bool showBoard = all || Settings.ShowSplitBoard;
             bool showChart = all || Settings.ShowSpeedChart;
-            if (!showChart && !showBoard)
-                return;
+            bool showDelta = (all || Settings.ShowDeltaChart) && Computed.Reference != null;
             if (size.Width < 300 || size.Height < 200)
                 return;
 
@@ -1481,21 +1484,36 @@ namespace Kinovea.ScreenManager
             if (now < -1e-6)
                 return;
 
+            const int margin = 10;
+            string corner = Settings.OverlayCorner ?? "TopRight";
+            if (all || Settings.ShowFinalsBoard)
+                DrawFinalsBoard(g, now, size, corner, margin);
+            if (!showChart && !showBoard && !showDelta)
+                return;
+
             int width = Math.Max(280, Math.Min(540, (int)(size.Width * 0.36)));
             int boardHeight = showBoard ? 70 : 0;
             int chartHeight = showChart ? (int)(width * 0.5) : 0;
+            int deltaHeight = showDelta ? (int)(width * 0.3) : 0;
             int gap = boardHeight > 0 && chartHeight > 0 ? 4 : 0;
-            int height = boardHeight + gap + chartHeight;
+            int gapDelta = deltaHeight > 0 && boardHeight + chartHeight > 0 ? 4 : 0;
+            int height = boardHeight + gap + chartHeight + gapDelta + deltaHeight;
+            if (height > size.Height - 20)
+            {
+                deltaHeight = 0;
+                gapDelta = 0;
+                height = boardHeight + gap + chartHeight;
+            }
+
             if (height > size.Height - 20)
             {
                 chartHeight = 0;
+                gap = 0;
                 height = boardHeight;
                 if (height == 0)
                     return;
             }
 
-            const int margin = 10;
-            string corner = Settings.OverlayCorner ?? "TopRight";
             int x = corner.EndsWith("Left", StringComparison.Ordinal) ? margin : size.Width - width - margin;
             int y = corner.StartsWith("Bottom", StringComparison.Ordinal) ? size.Height - height - margin : margin;
 
@@ -1509,7 +1527,7 @@ namespace Kinovea.ScreenManager
                 Rectangle board = new Rectangle(x, top, width, boardHeight);
                 DrawCard(g, board, SwimTheme.Accent);
                 DrawBoard(g, board, now, last);
-                top += boardHeight + gap;
+                top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
             }
 
             if (chartHeight > 0)
@@ -1517,7 +1535,62 @@ namespace Kinovea.ScreenManager
                 Rectangle chart = new Rectangle(x, top, width, chartHeight);
                 DrawCard(g, chart, colorAthlete);
                 DrawSpeedChart(g, chart, done, last);
+                top += chartHeight + gapDelta;
             }
+
+            if (deltaHeight > 0)
+            {
+                List<SwimDeltaPoint> points = done.Where(r => r.Delta.HasValue).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
+                SwimFinalsPainter.PaintDelta(g, new Rectangle(x, top, width, deltaHeight), points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1f);
+            }
+        }
+
+        /// <summary>
+        /// The swimmers of the final at the last checkpoint passed and the athlete among them, for a few seconds after it (longer
+        /// after the finish), on the other side of the video than the race board.
+        /// </summary>
+        private void DrawFinalsBoard(Graphics g, double now, Size size, string corner, int margin)
+        {
+            SwimFinal final = FinalForRace();
+            if (final == null || Computed == null)
+                return;
+
+            SwimRow row = Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= now + 1e-6 && final.Swimmers.Any(s => s.TimeAt(r.D).HasValue))
+                .OrderBy(r => r.T.Value).LastOrDefault();
+            if (row == null)
+                return;
+
+            bool finish = row.D >= Race.Distance;
+            if (now - row.T.Value > (finish ? 10.0 : 4.5))
+                return;
+
+            List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(final, row.D, row.T.Value, BoardName(Race.Athlete));
+            if (rows == null)
+                return;
+
+            int width = Math.Max(210, Math.Min(380, (int)(size.Width * 0.27)));
+            float scale = width / 260f;
+            int height = SwimFinalsPainter.BoardHeight(rows.Count, scale);
+            if (height > size.Height - 2 * margin)
+                return;
+
+            int x = corner.EndsWith("Left", StringComparison.Ordinal) ? size.Width - width - margin : margin;
+            int y = corner.StartsWith("Bottom", StringComparison.Ordinal) ? size.Height - height - margin : margin;
+            string title = finish
+                ? "ΤΕΡΜΑΤΙΣΜΟΣ · " + final.Short.ToUpperInvariant()
+                : row.D.ToString(CultureInfo.InvariantCulture) + " M · " + final.Short.ToUpperInvariant();
+            string subtitle = string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleShort(final.Style),
+                final.Gender == "F" ? "Γυναικών" : "Ανδρών");
+            SwimFinalsPainter.PaintBoard(g, new Rectangle(x, y, width, height), title, subtitle, rows, scale);
+        }
+
+        /// <summary>The family name of the athlete for the boards (the registry writes it first).</summary>
+        private static string BoardName(string athlete)
+        {
+            if (string.IsNullOrWhiteSpace(athlete))
+                return "";
+            string[] parts = athlete.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 ? parts[0] : athlete.Trim();
         }
 
         /// <summary>Translucent dark card with an accent on the left edge (broadcast style).</summary>
@@ -1964,7 +2037,51 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public List<SwimReference> ReferencesForRace()
         {
-            return References.For(Race);
+            List<SwimReference> list = References.For(Race);
+            foreach (SwimReference r in Finals.ReferencesFor(Race))
+            {
+                if (!list.Any(x => x.Id == r.Id))
+                    list.Add(r);
+            }
+
+            return list;
+        }
+
+        /// <summary>The final of the event of the race (same style, distance and gender, 50 m pool), null if none.</summary>
+        public SwimFinal FinalForRace()
+        {
+            return Finals.For(Race);
+        }
+
+        /// <summary>A reference of the sheet, of this computer or one of the swimmers of the finals.</summary>
+        private SwimReference FindReference(string id)
+        {
+            return References.Find(id) ?? Finals.FindReference(id);
+        }
+
+        /// <summary>The finals of a file (the analyses of an Olympic final): kept on this computer for the comparisons.</summary>
+        public void ImportFinals(string path)
+        {
+            string error;
+            SwimFinals finals = SwimFinals.Import(path, out error);
+            if (finals == null)
+            {
+                Status("Οι τελικοί δεν φορτώθηκαν: " + error, true);
+                return;
+            }
+
+            Finals = finals;
+            SwimFinal final = FinalForRace();
+            Status(string.Format(CultureInfo.InvariantCulture, "🏅 {0}: {1} τελικοί, {2} κολυμβητές.{3}", finals.Source, finals.Finals.Count, finals.SwimmerCount,
+                final != null ? " Αυτός ο αγώνας συγκρίνεται με τον τελικό " + final.Label + "." :
+                Race != null && SwimReference.NormalizeGender(Race.AthleteGender).Length == 0 ? " Για τη σύγκριση χρειάζεται το φύλο του αθλητή." : ""), false);
+            if (form != null)
+            {
+                form.RefreshReferences();
+                form.RefreshAll();
+            }
+
+            InvalidatePlayer();
         }
 
         /// <summary>
@@ -2143,7 +2260,7 @@ namespace Kinovea.ScreenManager
                 if (race.Reference == null)
                     continue;
 
-                SwimReference fresh = References.Find(race.Reference.Id);
+                SwimReference fresh = FindReference(race.Reference.Id);
                 if (fresh != null)
                 {
                     race.Reference = fresh.Copy();
@@ -2173,7 +2290,7 @@ namespace Kinovea.ScreenManager
             SwimReference remembered = null;
             string id;
             if (Settings.ReferenceByEvent.TryGetValue(EventKey(Race), out id))
-                remembered = References.Find(id);
+                remembered = FindReference(id);
 
             if (remembered != null && (!remembered.Matches(Race) || !remembered.GenderMatches(Race.AthleteGender)))
                 remembered = null;

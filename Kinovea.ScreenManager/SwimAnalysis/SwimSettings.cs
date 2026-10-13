@@ -47,6 +47,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Race time, last split and delta drawn on the video.</summary>
         public bool ShowSplitBoard = true;
 
+        /// <summary>The Δ with the reference at each checkpoint drawn on the video (under the velocity chart).</summary>
+        public bool ShowDeltaChart = true;
+
+        /// <summary>The board of the swimmers of the final at each checkpoint drawn on the video.</summary>
+        public bool ShowFinalsBoard = true;
+
         /// <summary>Corner of the video for the chart: TopRight, TopLeft, BottomRight, BottomLeft.</summary>
         public string OverlayCorner = "TopRight";
 
