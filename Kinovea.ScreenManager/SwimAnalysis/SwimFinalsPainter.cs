@@ -106,7 +106,8 @@ namespace Kinovea.ScreenManager
                     SizeF ts = g.MeasureString(t, time);
                     g.DrawString(t, time, row.IsAthlete ? amber : text, right - behindWidth - ts.Width, line.Top + (rowH - 1 - ts.Height) / 2);
 
-                    string b = row.Place == 1 && Math.Abs(row.Behind) < 0.005 ? "" : "+" + Math.Max(0, row.Behind).ToString("0.00", CultureInfo.InvariantCulture);
+                    string b = row.Place == 1 && Math.Abs(row.Behind) < 0.005 ? "" :
+                        (row.Behind < 0 ? "−" : "+") + Math.Abs(row.Behind).ToString("0.00", CultureInfo.InvariantCulture);
                     if (b.Length > 0)
                     {
                         SizeF bs = g.MeasureString(b, sub);
@@ -234,7 +235,18 @@ namespace Kinovea.ScreenManager
         {
             if (metrics == null || metrics.Count == 0)
                 return 60;
-            int groups = metrics.Select(m => m.Group).Distinct().Count();
+            // A header at each change of phase, as painted.
+            int groups = 0;
+            string group = null;
+            foreach (SwimFinalsMetric m in metrics)
+            {
+                if (m.Group != group)
+                {
+                    group = m.Group;
+                    groups++;
+                }
+            }
+
             return (int)Math.Ceiling(HeaderHeight + groups * GroupHeight + metrics.Count * RowHeight + 8);
         }
 

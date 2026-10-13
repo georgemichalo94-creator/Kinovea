@@ -1300,28 +1300,43 @@ namespace Kinovea.ScreenManager
             bool completed = true;
             Exception detectorError = null;
             OpenCvSharp.Mat previous = null;
+
+            // A reading in the background stays below the player and the panel (and tells its progress less often).
+            bool background = quietThread != null;
+            int frames = 0;
             using (BlockingCollection<StrokeFrame> queue = new BlockingCollection<StrokeFrame>(8))
             {
                 Task detection = Task.Run(() =>
                 {
-                    foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                    System.Threading.Thread thread = System.Threading.Thread.CurrentThread;
+                    System.Threading.ThreadPriority priority = thread.Priority;
+                    if (background)
+                        thread.Priority = System.Threading.ThreadPriority.BelowNormal;
+                    try
                     {
-                        if (detectorError != null)
-                            continue;
+                        foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                        {
+                            if (detectorError != null)
+                                continue;
 
-                        try
-                        {
-                            SwimStrokeImage image = new SwimStrokeImage(width, height, f.Pixels);
-                            Parallel.ForEach(sessions, s =>
+                            try
                             {
-                                s.Detector.Add(image, f.Motion);
-                                s.Timestamps.Add(f.Timestamp);
-                            });
+                                SwimStrokeImage image = new SwimStrokeImage(width, height, f.Pixels);
+                                Parallel.ForEach(sessions, s =>
+                                {
+                                    s.Detector.Add(image, f.Motion);
+                                    s.Timestamps.Add(f.Timestamp);
+                                });
+                            }
+                            catch (Exception e)
+                            {
+                                detectorError = e;
+                            }
                         }
-                        catch (Exception e)
-                        {
-                            detectorError = e;
-                        }
+                    }
+                    finally
+                    {
+                        thread.Priority = priority;
                     }
                 });
 
@@ -1355,7 +1370,8 @@ namespace Kinovea.ScreenManager
                                 queue.Add(new StrokeFrame { Timestamp = frame.Timestamp, Motion = h, Pixels = SwimStrokeVideo.Bytes(bgr) });
                         }
 
-                        worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
+                        if (!background || ++frames % 25 == 0)
+                            worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
                         if (!hasMore)
                             break;
 

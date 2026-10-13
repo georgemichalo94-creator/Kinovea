@@ -624,24 +624,38 @@ namespace Kinovea.ScreenManager
             bool completed = true;
             Exception detectorError = null;
 
+            // A reading in the background stays below the player and the panel (and tells its progress less often).
+            bool background = quietThread != null;
+            int frames = 0;
             using (BlockingCollection<StrokeFrame> queue = new BlockingCollection<StrokeFrame>(8))
             {
                 Task detection = Task.Run(() =>
                 {
-                    foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                    System.Threading.Thread thread = System.Threading.Thread.CurrentThread;
+                    System.Threading.ThreadPriority priority = thread.Priority;
+                    if (background)
+                        thread.Priority = System.Threading.ThreadPriority.BelowNormal;
+                    try
                     {
-                        if (detectorError != null)
-                            continue;
+                        foreach (StrokeFrame f in queue.GetConsumingEnumerable())
+                        {
+                            if (detectorError != null)
+                                continue;
 
-                        try
-                        {
-                            s.Detector.Add(new SwimStrokeImage(s.Width, s.Height, f.Pixels), f.Motion);
-                            s.Timestamps.Add(f.Timestamp);
+                            try
+                            {
+                                s.Detector.Add(new SwimStrokeImage(s.Width, s.Height, f.Pixels), f.Motion);
+                                s.Timestamps.Add(f.Timestamp);
+                            }
+                            catch (Exception e)
+                            {
+                                detectorError = e;
+                            }
                         }
-                        catch (Exception e)
-                        {
-                            detectorError = e;
-                        }
+                    }
+                    finally
+                    {
+                        thread.Priority = priority;
                     }
                 });
 
@@ -682,7 +696,8 @@ namespace Kinovea.ScreenManager
 
                             queue.Add(item);
                             lastQueued = frame.Timestamp;
-                            worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
+                            if (!background || ++frames % 25 == 0)
+                                worker.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - from) / span)));
                         }
 
                         if (!hasMore)

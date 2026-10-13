@@ -507,6 +507,16 @@ namespace Kinovea.ScreenManager
 
             Learning.Add(record);
             Learning.Save();
+
+            // The mark of the event keeps its answer: undone, deleted or replaced, the answer goes with it.
+            if (right && record.Key != null)
+            {
+                SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
+                SwimMark mark = Race.Marks.Where(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)).FirstOrDefault();
+                if (mark != null)
+                    mark.Taught = record.Key;
+            }
+
             if (reviewId != null && shown)
             {
                 reviewAnswered++;

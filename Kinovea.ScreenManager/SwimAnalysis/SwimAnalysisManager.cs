@@ -382,6 +382,8 @@ namespace Kinovea.ScreenManager
             }
 
             Status(old == null ? "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ." : "Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά.", false);
+            if (old.HasValue && old.Value != timestamp)
+                RecheckStartLessons();
 
             // The start put with its key answers the proposal of the start light near it (the other candidates go).
             if (!resolvingProposal && Race.Proposals.Any(x => x.Kind == KindRaceStart))
@@ -465,11 +467,14 @@ namespace Kinovea.ScreenManager
 
         private void AddMark(SwimMarkType type, long timestamp, string label)
         {
-            // Two presses on the same frame (paused video, key repeat) are the same event, not two.
+            // Two presses on the same frame (paused video, key repeat) are the same event, not two. In the technical analysis the key
+            // pressed again on a mark takes its snapshot: no warning then.
             if (Race.Marks.Any(m => m.Type == type && SameFrame(m.Timestamp, timestamp)))
             {
-                SystemSounds.Beep.Play();
-                Status(label + ": υπάρχει ήδη σε αυτό το καρέ (δεν καταχωρήθηκε δεύτερη φορά).", true);
+                bool snapshot = (Race.IsTraining || TechnicalView) && Settings.AutoTechSnapshots;
+                if (!snapshot)
+                    SystemSounds.Beep.Play();
+                Status(label + ": υπάρχει ήδη σε αυτό το καρέ (δεν καταχωρήθηκε δεύτερη φορά).", !snapshot);
                 return;
             }
 
@@ -529,8 +534,8 @@ namespace Kinovea.ScreenManager
             if (mark.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(mark.Distance);
 
-            // The automatic snapshot of the event goes with it (unless the analyst wrote on it).
-            Race.Snapshots.RemoveAll(x => !string.IsNullOrEmpty(x.MarkId) && x.MarkId == mark.Id && string.IsNullOrEmpty(x.Comment) && string.IsNullOrEmpty(x.EliteFileId));
+            // The automatic snapshot of the event goes with it.
+            UndoAutoSnapshots(mark);
 
             List<SwimMark> replaced;
             if (replacedBy.TryGetValue(mark.Id, out replaced))
@@ -1619,6 +1624,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void DrawFinalsBoard(Graphics g, double now, Size size, string corner, int margin)
         {
+            // Not over the cards of the technical analysis, the prompts of a click, or a race board in a narrow view.
+            if (TechnicalView || PickTarget != SwimPickTarget.None || size.Width < 560)
+                return;
+
             SwimFinal final = FinalForRace();
             if (final == null || Computed == null)
                 return;
@@ -1636,8 +1645,9 @@ namespace Kinovea.ScreenManager
             if (rows == null)
                 return;
 
-            int width = Math.Max(210, Math.Min(380, (int)(size.Width * 0.27)));
-            float scale = width / 260f;
+            // The size in steps (a font of each size is kept).
+            float scale = (float)Math.Round(Math.Max(210, Math.Min(380, size.Width * 0.27)) / 260.0 * 10) / 10f;
+            int width = (int)Math.Round(260 * scale);
             int height = SwimFinalsPainter.BoardHeight(rows.Count, scale);
             if (height > size.Height - 2 * margin)
                 return;

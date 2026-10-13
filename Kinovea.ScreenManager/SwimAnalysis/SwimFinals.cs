@@ -185,6 +185,19 @@ namespace Kinovea.ScreenManager
         /// <summary>The finals of the text of a file (format "kinovea-swim-finals").</summary>
         public static SwimFinals Parse(string text, out string error)
         {
+            try
+            {
+                return ParseText(text, out error);
+            }
+            catch (Exception e)
+            {
+                error = "λάθος τιμή στο αρχείο (" + e.Message + ")";
+                return null;
+            }
+        }
+
+        private static SwimFinals ParseText(string text, out string error)
+        {
             error = null;
             JObject o;
             try
@@ -354,7 +367,7 @@ namespace Kinovea.ScreenManager
         private static string ReferenceId(SwimFinal f, SwimFinalist s)
         {
             return IdPrefix + f.Short + "|" + f.Gender + "|" + f.Style + "|" + f.Distance.ToString(CultureInfo.InvariantCulture) + "|" +
-                s.Rank.ToString(CultureInfo.InvariantCulture);
+                s.Rank.ToString(CultureInfo.InvariantCulture) + "|" + s.Name;
         }
 
         public static SwimReference Reference(SwimFinal f, SwimFinalist s)
@@ -508,12 +521,13 @@ namespace Kinovea.ScreenManager
 
             add("Τερματισμός", "Τελευταία 5μ.", computed.FinishLast5, s => s.FinishIn5);
 
-            // Strokes, rate and length of the cycle of each 50 (the final has them by 25: the mean of the two).
-            foreach (SwimBlock block in computed.Blocks.Where(b => b.To - b.From == 50).OrderBy(b => b.To))
+            // Strokes, rate and length of the cycle of each 50 (the final has them by 25: the mean of the two), each kind together.
+            List<SwimBlock> blocks = computed.Blocks.Where(b => b.To - b.From == 50).OrderBy(b => b.To).ToList();
+            Func<SwimBlock, string> blockLabel = b => b.From.ToString(CultureInfo.InvariantCulture) + "–" + b.To.ToString(CultureInfo.InvariantCulture) + "μ.";
+            foreach (SwimBlock block in blocks)
             {
                 int to = block.To;
-                string label = block.From.ToString(CultureInfo.InvariantCulture) + "–" + to.ToString(CultureInfo.InvariantCulture) + "μ.";
-                SwimFinalsMetric strokes = add("Χεριές", label, block.Strokes, s =>
+                SwimFinalsMetric strokes = add("Χεριές", blockLabel(block), block.Strokes, s =>
                 {
                     int n;
                     return s.Strokes.TryGetValue(to, out n) ? n : (double?)null;
@@ -521,13 +535,21 @@ namespace Kinovea.ScreenManager
                 strokes.Unit = "χεριές";
                 strokes.Decimals = 1;
                 strokes.Neutral = true;
+            }
 
-                SwimFinalsMetric rate = add("Συχνότητα", label, block.Sr, s => Mean25(s.Rate, to));
+            foreach (SwimBlock block in blocks)
+            {
+                int to = block.To;
+                SwimFinalsMetric rate = add("Συχνότητα", blockLabel(block), block.Sr, s => Mean25(s.Rate, to));
                 rate.Unit = "κύκλοι/λ.";
                 rate.Decimals = 1;
                 rate.Neutral = true;
+            }
 
-                SwimFinalsMetric cycle = add("Μήκος κύκλου", label, block.Sl, s => Mean25(s.Cycle, to));
+            foreach (SwimBlock block in blocks)
+            {
+                int to = block.To;
+                SwimFinalsMetric cycle = add("Μήκος κύκλου", blockLabel(block), block.Sl, s => Mean25(s.Cycle, to));
                 cycle.Unit = "μ./κύκλο";
                 cycle.Neutral = true;
             }
@@ -562,11 +584,14 @@ namespace Kinovea.ScreenManager
 
             rows.Add(new SwimFinalsBoardRow { Name = string.IsNullOrWhiteSpace(athlete) ? "ΑΘΛΗΤΗΣ" : athlete.Trim(), Time = athleteTime, IsAthlete = true });
             rows = rows.OrderBy(r => r.Time).ThenBy(r => r.IsAthlete ? 1 : 0).ToList();
+
+            // The gap to the first line; the athlete in front of the whole final: his lead on its winner (negative).
+            double first = rows[0].Time;
             double leader = rows.Where(r => !r.IsAthlete).Min(r => r.Time);
             for (int i = 0; i < rows.Count; i++)
             {
                 rows[i].Place = i + 1;
-                rows[i].Behind = rows[i].Time - leader;
+                rows[i].Behind = rows[i].IsAthlete && i == 0 ? rows[i].Time - leader : rows[i].Time - first;
             }
 
             return rows;

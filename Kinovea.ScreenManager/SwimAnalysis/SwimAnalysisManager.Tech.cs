@@ -203,6 +203,12 @@ namespace Kinovea.ScreenManager
         private readonly List<KeyValuePair<string, Bitmap>> waitingFrames = new List<KeyValuePair<string, Bitmap>>();
         private const int WaitingFrames = 6;
 
+        /// <summary>Snapshots of an event replaced by the one of a new mark (by the id of that mark): Undo of the mark puts them back.</summary>
+        private readonly Dictionary<string, List<SwimSnapshot>> replacedSnapshots = new Dictionary<string, List<SwimSnapshot>>();
+
+        /// <summary>Snapshots taken by the analyst that got the name of an event.</summary>
+        private readonly HashSet<string> namedSnapshots = new HashSet<string>();
+
         /// <summary>Snapshots whose upload failed: not retried automatically until the next manual send.</summary>
         private readonly HashSet<string> uploadFailed = new HashSet<string>();
         private readonly Dictionary<string, List<Action<Image>>> eliteImageRequests = new Dictionary<string, List<Action<Image>>>();
@@ -667,12 +673,31 @@ namespace Kinovea.ScreenManager
             if (command == PlayerScreenCommands.SwimStart && !Race.IsTraining && Race.StartTimestamp.HasValue && SameFrame(Race.StartTimestamp.Value, timestamp))
             {
                 SwimTechPhase phase = PhaseOf(timestamp);
-                Bitmap image = phase != null && phase.Kind == SwimPhaseKind.Start ? CaptureFrame(timestamp, Settings.OverlayInExports, false) : null;
-                if (image != null)
+                SwimSnapshot here = Race.Snapshots.FirstOrDefault(x => SameFrame(x.Timestamp, timestamp));
+                if (phase != null && phase.Kind == SwimPhaseKind.Start && here != null)
                 {
-                    SwimSnapshot snapshot = SaveAutoSnapshot(image, timestamp, "Σήμα εκκίνησης", "", phase);
-                    if (snapshot != null)
-                        taken.Add(snapshot);
+                    if (string.IsNullOrEmpty(here.Event))
+                    {
+                        NameSnapshot(here, "Σήμα εκκίνησης", "", phase);
+                        taken.Add(here);
+                    }
+                }
+                else if (phase != null && phase.Kind == SwimPhaseKind.Start)
+                {
+                    Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false, true);
+                    if (image != null)
+                    {
+                        try
+                        {
+                            SwimSnapshot snapshot = SaveAutoSnapshot(image, timestamp, "Σήμα εκκίνησης", "", phase);
+                            if (snapshot != null)
+                                taken.Add(snapshot);
+                        }
+                        finally
+                        {
+                            image.Dispose();
+                        }
+                    }
                 }
             }
 
@@ -685,17 +710,31 @@ namespace Kinovea.ScreenManager
                     mark = Race.Marks.Where(m => m.Type == type && SameFrame(m.Timestamp, timestamp)).OrderBy(m => Math.Abs(m.Timestamp - timestamp)).FirstOrDefault();
             }
 
-            if (mark != null && SameFrame(mark.Timestamp, timestamp) && !waitingFrames.Any(w => w.Key == mark.Id) &&
-                !Race.Snapshots.Any(x => x.MarkId == mark.Id && SameFrame(x.Timestamp, mark.Timestamp)) && MayBecomeEvent(mark))
+            if (mark != null && SameFrame(mark.Timestamp, timestamp) && !waitingFrames.Any(w => w.Key == mark.Id))
             {
-                Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false);
-                if (image != null)
+                // One snapshot per frame: one there already (the analyst's) gets the name of the event instead.
+                SwimSnapshot here = Race.Snapshots.FirstOrDefault(x => SameFrame(x.Timestamp, mark.Timestamp));
+                if (here != null)
                 {
-                    waitingFrames.Add(new KeyValuePair<string, Bitmap>(mark.Id, image));
-                    while (waitingFrames.Count > WaitingFrames)
+                    SwimTechPhase phase;
+                    string label = EventLabel(mark, out phase);
+                    if (label != null && string.IsNullOrEmpty(here.Event))
                     {
-                        waitingFrames[0].Value.Dispose();
-                        waitingFrames.RemoveAt(0);
+                        NameSnapshot(here, label, mark.Id, phase);
+                        taken.Add(here);
+                    }
+                }
+                else if (MayBecomeEvent(mark))
+                {
+                    Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false, true);
+                    if (image != null)
+                    {
+                        waitingFrames.Add(new KeyValuePair<string, Bitmap>(mark.Id, image));
+                        while (waitingFrames.Count > WaitingFrames)
+                        {
+                            waitingFrames[0].Value.Dispose();
+                            waitingFrames.RemoveAt(0);
+                        }
                     }
                 }
             }
@@ -744,16 +783,42 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The snapshot of an event of a phase: the one of the same event before (another frame) goes, its comments and elite frame
-        /// stay with the new one.
+        /// The snapshot of an event of a phase from the frame kept (one taken by the analyst at that frame meanwhile gets the name
+        /// instead): the one of the same event before (another frame) goes, its comments and elite frame stay with the new one.
         /// </summary>
         private SwimSnapshot SaveAutoSnapshot(Bitmap image, long timestamp, string label, string markId, SwimTechPhase phase)
         {
-            List<SwimSnapshot> old = Race.Snapshots.Where(x => x.Event == label && PhaseOf(x.Timestamp) == phase).ToList();
+            SwimSnapshot here = Race.Snapshots.FirstOrDefault(x => string.IsNullOrEmpty(x.Event) && SameFrame(x.Timestamp, timestamp));
+            if (here != null)
+            {
+                NameSnapshot(here, label, markId, phase);
+                return here;
+            }
+
             SwimSnapshot snapshot = AddSnapshot(image, timestamp, label, markId);
             if (snapshot == null)
                 return null;
 
+            ReplaceEventSnapshots(snapshot, phase, markId);
+            return snapshot;
+        }
+
+        /// <summary>A snapshot taken by the analyst at the frame of an event gets its name (Undo of the mark takes the name back only).</summary>
+        private void NameSnapshot(SwimSnapshot snapshot, string label, string markId, SwimTechPhase phase)
+        {
+            snapshot.Event = label;
+            snapshot.MarkId = markId ?? "";
+            namedSnapshots.Add(snapshot.Id);
+            ReplaceEventSnapshots(snapshot, phase, markId);
+        }
+
+        /// <summary>
+        /// The other snapshots of the same event of the phase go (kept for the Undo of the new mark); their comments and elite frame
+        /// stay with this one when it has none.
+        /// </summary>
+        private void ReplaceEventSnapshots(SwimSnapshot snapshot, SwimTechPhase phase, string markId)
+        {
+            List<SwimSnapshot> old = Race.Snapshots.Where(x => x != snapshot && x.Event == snapshot.Event && PhaseOf(x.Timestamp) == phase).ToList();
             foreach (SwimSnapshot before in old)
             {
                 if (string.IsNullOrEmpty(snapshot.Comment))
@@ -768,7 +833,44 @@ namespace Kinovea.ScreenManager
                 Race.Snapshots.Remove(before);
             }
 
-            return snapshot;
+            if (old.Count > 0 && !string.IsNullOrEmpty(markId))
+                replacedSnapshots[markId] = old;
+        }
+
+        /// <summary>
+        /// The mark of an event is undone: its snapshot goes (one taken by the analyst only loses the name, one he wrote on stays) and
+        /// the snapshots it replaced come back.
+        /// </summary>
+        private void UndoAutoSnapshots(SwimMark mark)
+        {
+            List<SwimSnapshot> back;
+            bool restore = replacedSnapshots.TryGetValue(mark.Id, out back);
+            if (restore)
+                replacedSnapshots.Remove(mark.Id);
+
+            foreach (SwimSnapshot x in Race.Snapshots.Where(s => !string.IsNullOrEmpty(s.MarkId) && s.MarkId == mark.Id).ToList())
+            {
+                if (namedSnapshots.Remove(x.Id))
+                {
+                    x.Event = "";
+                    x.MarkId = "";
+                    continue;
+                }
+
+                // What it carries from the one it replaced goes back with that one.
+                bool written = !restore && (!string.IsNullOrEmpty(x.Comment) || !string.IsNullOrEmpty(x.EliteFileId));
+                if (!written)
+                    Race.Snapshots.Remove(x);
+            }
+
+            if (restore)
+            {
+                foreach (SwimSnapshot x in back)
+                {
+                    if (!Race.Snapshots.Contains(x))
+                        Race.Snapshots.Add(x);
+                }
+            }
         }
 
         /// <summary>
@@ -865,6 +967,8 @@ namespace Kinovea.ScreenManager
             foreach (KeyValuePair<string, Bitmap> w in waitingFrames)
                 w.Value.Dispose();
             waitingFrames.Clear();
+            replacedSnapshots.Clear();
+            namedSnapshots.Clear();
         }
 
         /// <summary>
@@ -872,18 +976,21 @@ namespace Kinovea.ScreenManager
         /// (race board, velocity chart, values of the start or turn). At most 1280 x 720.
         /// finalFrame: the whole race board and chart, even if they are hidden on the screen.
         /// </summary>
-        private Bitmap CaptureFrame(long timestamp, bool graphics, bool finalFrame)
+        private Bitmap CaptureFrame(long timestamp, bool graphics, bool finalFrame, bool live = false)
         {
             Size size = frameServer.VideoReader.Info.ReferenceSize;
             if (size.Width <= 0 || size.Height <= 0)
                 return null;
 
+            // A snapshot taken while the video plays (an event marked on the run) does not stop it: the frame shown, as decoded.
+            bool playing = live && player.IsCurrentlyPlaying;
             Bitmap full = null;
             try
             {
                 // The graphics are drawn below, once, with the choices of this capture.
                 suppressExportOverlay = true;
-                player.BeforeExportVideo();
+                if (!playing)
+                    player.BeforeExportVideo();
                 full = new Bitmap(size.Width, size.Height, PixelFormat.Format24bppRgb);
                 player.PaintFlushedImage(full);
             }
@@ -897,7 +1004,8 @@ namespace Kinovea.ScreenManager
             }
             finally
             {
-                player.AfterExportVideo();
+                if (!playing)
+                    player.AfterExportVideo();
                 suppressExportOverlay = false;
             }
 

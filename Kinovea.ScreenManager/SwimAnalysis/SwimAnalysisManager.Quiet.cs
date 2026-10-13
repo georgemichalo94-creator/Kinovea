@@ -262,7 +262,24 @@ namespace Kinovea.ScreenManager
                 VideoOptions o = player.Options;
                 if (o != null)
                     reader.Options = new VideoOptions(o.ImageAspectRatio, o.ImageRotation, o.Demosaicing, o.Deinterlace);
-                if (reader.Open(path) != OpenVideoResult.Success || reader.Info.ReferenceSize != player.Info.ReferenceSize)
+                if (reader.Open(path) != OpenVideoResult.Success)
+                {
+                    CloseReader(reader);
+                    return null;
+                }
+
+                // The file sets its own rotation when it opens: the frames as the player shows them (the clicks are on those).
+                if (o != null)
+                {
+                    if (reader.CanChangeImageRotation && reader.Options.ImageRotation != o.ImageRotation)
+                        reader.ChangeImageRotation(o.ImageRotation);
+                    if (reader.CanChangeAspectRatio && reader.Options.ImageAspectRatio != o.ImageAspectRatio)
+                        reader.ChangeAspectRatio(o.ImageAspectRatio);
+                    if (reader.CanChangeDeinterlacing && reader.Options.Deinterlace != o.Deinterlace)
+                        reader.ChangeDeinterlace(o.Deinterlace);
+                }
+
+                if (reader.Info.ReferenceSize != player.Info.ReferenceSize)
                 {
                     CloseReader(reader);
                     return null;
@@ -313,6 +330,23 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void QuietReadingDone(QuietReading job, RunWorkerCompletedEventArgs e)
         {
+            // A reading with its progress window is running (its thread reads the learning, the answers would change it under it):
+            // what was read waits for its end.
+            if (!job.Cancelled && (AutoStrokesRunning || SkeletonRunning || StartLightRunning))
+            {
+                System.Windows.Forms.Timer wait = new System.Windows.Forms.Timer { Interval = 500 };
+                wait.Tick += (o, a) =>
+                {
+                    if (!job.Cancelled && (AutoStrokesRunning || SkeletonRunning || StartLightRunning))
+                        return;
+                    wait.Stop();
+                    wait.Dispose();
+                    QuietReadingDone(job, e);
+                };
+                wait.Start();
+                return;
+            }
+
             if (quietJob == job)
                 quietJob = null;
 
@@ -351,7 +385,11 @@ namespace Kinovea.ScreenManager
 
                 Race.QuietProposals.RemoveAll(x => made.Any(p => p.Kind == x.Kind && p.Index == x.Index));
                 Race.QuietProposals.AddRange(made);
-                Race.QuietRead = true;
+
+                // Read to the finish: once per race. Else (the swimmer lost after a wall, a click in a later length) another click
+                // reads the rest.
+                int lastWall = job.Lengths[job.Lengths.Count - 1].Session.Wall;
+                Race.QuietRead = lastWall >= Race.Distance;
 
                 // What the analyst marked meanwhile teaches now.
                 int taught = 0;
@@ -365,8 +403,9 @@ namespace Kinovea.ScreenManager
                 MarkDirty();
                 int waiting = made.Count(p => MarkOfQuietEvent(p) == null);
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "🎓 Ο αγώνας διαβάστηκε στο παρασκήνιο ({0} μήκη): {1} σημεία που είχες ήδη μαρκάρει έγιναν μάθηση, {2} περιμένουν τα επόμενα πατήματά σου.",
-                    job.Lengths.Count, taught, waiting), false);
+                    "🎓 Ο αγώνας διαβάστηκε στο παρασκήνιο ({0} μήκη): {1} σημεία που είχες ήδη μαρκάρει έγιναν μάθηση, {2} περιμένουν τα επόμενα πατήματά σου.{3}",
+                    job.Lengths.Count, taught, waiting, Race.QuietRead ? "" : string.Format(CultureInfo.InvariantCulture,
+                        " Διαβάστηκε μέχρι τα {0}{1}: για τα υπόλοιπα, «🎓 Κλικ στον αθλητή» σε ένα καρέ μετά.", lastWall, Race.Unit)), false);
                 RefreshProposalsUi();
                 if (form != null && !form.IsDisposed)
                     form.RefreshQuiet();
@@ -405,8 +444,8 @@ namespace Kinovea.ScreenManager
 
             // The event after it that the analyst marked before (the feet off before the first movement, the push-off before the
             // wall) is taught again with it, as the whole race would propose it.
-            foreach (SwimMark next in PriorDependents(mark))
-                TeachPrior(next);
+            foreach (SwimMark next in PriorDependents(mark, false))
+                Reteach(next);
 
             if (taught)
                 markTaught = true;
@@ -509,16 +548,22 @@ namespace Kinovea.ScreenManager
             return null;
         }
 
-        /// <summary>The marks taught again after this one: the feet off after the first movement, the entry after the feet off, the push-off after its wall.</summary>
-        private List<SwimMark> PriorDependents(SwimMark mark)
+        /// <summary>
+        /// The marks taught again after this one: the feet off after the first movement, the entry after the feet off, the push-off
+        /// after its wall. 'removed': the mark is gone (its event is taught again without it).
+        /// </summary>
+        private List<SwimMark> PriorDependents(SwimMark mark, bool removed)
         {
             List<SwimMark> next = new List<SwimMark>();
+            if (Race == null || !Race.StartTimestamp.HasValue)
+                return next;
+
             long start = Race.StartTimestamp.Value;
             bool inStart = mark.Timestamp > start && mark.Timestamp <= start + RealSpan(StartEventsSeconds);
             SwimMark dependent = null;
-            if (mark.Type == SwimMarkType.Reaction && inStart && FirstStartMark(SwimMarkType.Reaction) == mark)
+            if (mark.Type == SwimMarkType.Reaction && inStart && (removed || FirstStartMark(SwimMarkType.Reaction) == mark))
                 dependent = FirstStartMark(SwimMarkType.FeetOff);
-            else if (mark.Type == SwimMarkType.FeetOff && inStart && FirstStartMark(SwimMarkType.FeetOff) == mark)
+            else if (mark.Type == SwimMarkType.FeetOff && inStart && (removed || FirstStartMark(SwimMarkType.FeetOff) == mark))
                 dependent = FirstStartMark(SwimMarkType.Entry);
             else if (mark.Type == SwimMarkType.Split && IsTurnWall(mark.Distance))
                 dependent = FirstPushoff(mark);
@@ -526,6 +571,35 @@ namespace Kinovea.ScreenManager
             if (dependent != null && dependent != mark)
                 next.Add(dependent);
             return next;
+        }
+
+        /// <summary>A mark taught again from the marks now (or its answer forgotten when it is not that event any more).</summary>
+        private void Reteach(SwimMark mark)
+        {
+            if (TeachPrior(mark) || string.IsNullOrEmpty(mark.Taught))
+                return;
+
+            string key = mark.Taught;
+            mark.Taught = null;
+            if (!Race.Marks.Any(m => m.Taught == key))
+            {
+                Learning.Forget(key);
+                Learning.Save();
+            }
+        }
+
+        /// <summary>The start moved: the first movement, the feet off and the entry are taught again from the new signal.</summary>
+        private void RecheckStartLessons()
+        {
+            if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || !Timing.IsValid || Settings == null || !Settings.LearnFromMarks)
+                return;
+
+            foreach (SwimMark m in Race.Marks.Where(x => x.Type == SwimMarkType.Reaction || x.Type == SwimMarkType.Entry ||
+                (x.Type == SwimMarkType.FeetOff && WallBefore(x) == null)).OrderBy(x => x.Timestamp).ToList())
+            {
+                if (!string.IsNullOrEmpty(m.Taught) || FirstStartMark(m.Type) == m)
+                    Reteach(m);
+            }
         }
 
         private SwimMark FirstStartMark(SwimMarkType type)
@@ -568,19 +642,33 @@ namespace Kinovea.ScreenManager
             return SwimLearning.VideoCode(videoPath) + "|" + race + "|" + p.Kind + "|" + p.Index.ToString(CultureInfo.InvariantCulture);
         }
 
-        /// <summary>A mark that taught is gone (undone, deleted, replaced): its answer goes too, unless another mark of the race keeps it.</summary>
+        /// <summary>
+        /// A mark is gone (undone, deleted, replaced): the answer it gave goes too, another mark of the same event teaches it again,
+        /// and the events taught from it (the feet off from the first movement, the push-off from the wall) are taught again without it.
+        /// </summary>
         private void ForgetTaught(SwimMark mark)
         {
-            if (mark == null || string.IsNullOrEmpty(mark.Taught) || Race == null)
+            if (mark == null || Race == null)
                 return;
 
             string key = mark.Taught;
             mark.Taught = null;
-            if (Race.Marks.Any(m => m.Taught == key))
-                return;
+            if (!string.IsNullOrEmpty(key))
+            {
+                Learning.Forget(key);
+                Learning.Save();
+                foreach (SwimMark other in Race.Marks.Where(m => m.Taught == key).ToList())
+                {
+                    other.Taught = null;
+                    LearnFromMark(other.Type, other.Timestamp);
+                }
+            }
 
-            Learning.Forget(key);
-            Learning.Save();
+            if (Settings != null && Settings.LearnFromMarks && !Race.IsTraining && Race.StartTimestamp.HasValue && Timing.IsValid)
+            {
+                foreach (SwimMark next in PriorDependents(mark, true))
+                    Reteach(next);
+            }
         }
         #endregion
     }
