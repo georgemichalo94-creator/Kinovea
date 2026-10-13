@@ -200,9 +200,56 @@ namespace Kinovea.ScreenManager
             double endOnLine = intercept + slope * (pool - 5);
             double tEnd = end != null && seen.Contains(end) && Math.Abs(Time(end.Cues) - endOnLine) <= tolerance ? Time(end.Cues) : endOnLine;
             double tWall = tEnd + lastFiveRatio * 10 * slope;
+
+            // The swimmer does not stop far before the wall his pace gets him to: such a stop (the path left him for the still
+            // water) and the ends of the ropes it let in are not the wall; the reading goes on until the frames reach it.
+            if (StopPaceCheck && wall != null && tWall > 0)
+            {
+                double early = Math.Max(lastFiveRatio * 10 * slope, 0.3 * 10 * slope);
+                foreach (string k in new[] { CueStop, CueWallHead, CueWallBody })
+                {
+                    double t;
+                    if (wall.TryGetValue(k, out t) && t < tWall - early)
+                        wall.Remove(k);
+                }
+            }
+
             if (wall != null && tWall >= 0 && tWall <= frames - 1)
                 wall[CuePace] = tWall;
         }
+
+        /// <summary>A stop or an end of the ropes far before the wall the pace of the swimmer gets him to is not the wall (tests).</summary>
+        internal static bool StopPaceCheck = true;
+
+        /// <summary>
+        /// The wall cues of a length with their usual delays (frames, keys "cue.kind…"): when the cues seen at the wall (the swimmer
+        /// stopping, the ends of the ropes reached) agree with each other and not with the pace (a guess from the checkpoints
+        /// before, wrong when one of them is), the pace goes.
+        /// </summary>
+        public static void PreferSeenWall(Dictionary<string, double> wall, double fps)
+        {
+            if (!WallConsensus || wall == null || fps <= 0)
+                return;
+
+            Func<string, string> cue = k => { int dot = k.IndexOf('.'); return dot > 0 ? k.Substring(0, dot) : k; };
+            List<double> seen = wall.Where(c => cue(c.Key) == CueStop || cue(c.Key) == CueWallHead || cue(c.Key) == CueWallBody).Select(c => c.Value).ToList();
+            List<string> pace = wall.Keys.Where(k => cue(k) == CuePace).ToList();
+            if (seen.Count < 2 || pace.Count == 0)
+                return;
+
+            double median = SwimLearningMedian(new List<double>(seen));
+            if (seen.Any(v => Math.Abs(v - median) > 0.3 * fps))
+                return;
+
+            foreach (string k in pace)
+            {
+                if (Math.Abs(wall[k] - median) > 0.4 * fps)
+                    wall.Remove(k);
+            }
+        }
+
+        /// <summary>The seen wall cues in agreement win over the pace (tests).</summary>
+        internal static bool WallConsensus = false;
 
         /// <summary>Straight line time = intercept + slope × distance through checkpoints (medians of the pair slopes and of the intercepts).</summary>
         private static bool PaceLine(List<SwimSplitFound> seen, out double slope, out double intercept)

@@ -835,6 +835,7 @@ namespace Kinovea.ScreenManager
             Dictionary<string, double> wall = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in l.Wall)
                 wall[StyleCue(c.Key + "." + kind, style)] = c.Value + WallDelay(c.Key, kind) * l.Session.Fps;
+            SwimSplitDetector.PreferSeenWall(wall, l.Session.Fps);
             return wall;
         }
 

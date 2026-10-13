@@ -71,6 +71,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Weaker flashes than this are not a start light (glints that came on at a new place).</summary>
         private const double MinFlash = 25;
 
+        /// <summary>A spot lit for one frame only (a camera flash) counts little (tests).</summary>
+        internal static bool Persistence = false;
+
         private readonly int width;
         private readonly int height;
         private readonly double fps;
@@ -591,6 +594,17 @@ namespace Kinovea.ScreenManager
                         continue;
 
                     double s = Math.Min(b.ZMax, 40) * Math.Sqrt(Math.Min(b.Area, 100)) / (1.0 + b.Rate / 25.0);
+
+                    // A start light stays on for a few frames; the flash of a photographer's camera on the wet bodies (backstroke
+                    // starts) lights a single frame.
+                    if (Persistence && b.Values.Count > 1 && b.Prev != null && b.Prev.Length > 0)
+                    {
+                        double baseLevel = b.Prev.Average();
+                        double jump = Math.Max(1e-6, b.Values[0] - baseLevel);
+                        double still = (b.Values[1] - baseLevel) / jump;
+                        s *= still <= 0.1 ? 0.15 : still >= 0.4 ? 1.0 : 0.15 + 0.85 * (still - 0.1) / 0.3;
+                    }
+
                     scored.Add(Tuple.Create(s, b));
                 }
 
