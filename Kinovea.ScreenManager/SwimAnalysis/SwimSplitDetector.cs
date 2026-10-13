@@ -1133,7 +1133,14 @@ namespace Kinovea.ScreenManager
                         return double.MaxValue;
                     double p = (t[k] - t[k - 1]) / (d[k] - d[k - 1]);
                     if (k == 1)
+                    {
+                        // No swimmer is at the first mark faster than the fastest start or turn (a mark of the red of the
+                        // wall left behind, a reflection).
+                        if (p < FastestPace)
+                            return double.MaxValue;
                         p *= 1.15;
+                    }
+
                     pace.Add(p);
                 }
 
