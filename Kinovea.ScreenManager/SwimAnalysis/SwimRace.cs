@@ -73,6 +73,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string Batch;
+
+        /// <summary>The answer of the learning this mark gave (its event, SwimLearningRecord.Key): it goes if the mark goes.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Taught;
     }
 
     public class SwimTurnManual
@@ -491,6 +495,15 @@ namespace Kinovea.ScreenManager
         /// <summary>Marks proposed by the automatic analysis and not answered yet (see SwimProposal).</summary>
         public List<SwimProposal> Proposals = new List<SwimProposal>();
 
+        /// <summary>
+        /// Manual analysis: what the reading of the race in the background found (one click on the swimmer), never shown. The mark of
+        /// the analyst at each of these events answers it, for the learning, as the check of a proposal would.
+        /// </summary>
+        public List<SwimProposal> QuietProposals = new List<SwimProposal>();
+
+        /// <summary>The race was read in the background for the learning (once per race).</summary>
+        public bool QuietRead;
+
         // Last synchronization with the Google Sheet.
         public string SheetName;
         public string SheetUrl;
@@ -647,7 +660,9 @@ namespace Kinovea.ScreenManager
             Skeletons.RemoveAll(s => s == null || s.Data == null || s.Step <= 0 || s.Data.Count % SwimSkeleton.Values != 0);
             if (Proposals == null) Proposals = new List<SwimProposal>();
             Proposals.RemoveAll(p => p == null || string.IsNullOrEmpty(p.Kind));
-            foreach (SwimProposal p in Proposals)
+            if (QuietProposals == null) QuietProposals = new List<SwimProposal>();
+            QuietProposals.RemoveAll(p => p == null || string.IsNullOrEmpty(p.Kind));
+            foreach (SwimProposal p in Proposals.Concat(QuietProposals))
             {
                 if (p.Cues == null)
                     p.Cues = new Dictionary<string, long>();
@@ -656,6 +671,34 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";
             if (TechNotes == null) TechNotes = "";
+        }
+
+        public bool ShouldSerializeQuietProposals()
+        {
+            return QuietProposals != null && QuietProposals.Count > 0;
+        }
+
+        /// <summary>
+        /// What a reading of the video in the background needs, as it is now (the marks, the checkpoints): the edits of the analyst
+        /// during the reading do not reach it. The images of the analysis (skeletons, tracks, snapshots) are not copied.
+        /// </summary>
+        public SwimRace CopyForReading()
+        {
+            SwimRace r = (SwimRace)MemberwiseClone();
+            r.Marks = Marks.Select(m => new SwimMark { Id = m.Id, Type = m.Type, Timestamp = m.Timestamp, Distance = m.Distance, Wall = m.Wall, Batch = m.Batch }).ToList();
+            r.Checkpoints = new List<int>(Checkpoints);
+            r.StrokeCounts = new Dictionary<int, double>(StrokeCounts);
+            r.Turns = new Dictionary<int, SwimTurnManual>();
+            r.PhaseValues = new Dictionary<string, SwimPhaseManual>();
+            r.Reference = Reference != null ? Reference.Copy() : null;
+            r.Angles = new List<SwimAngle>();
+            r.Snapshots = new List<SwimSnapshot>();
+            r.FinalFrame = null;
+            r.Tracks = new List<SwimTrack>();
+            r.Skeletons = new List<SwimSkeleton>();
+            r.Proposals = new List<SwimProposal>();
+            r.QuietProposals = new List<SwimProposal>();
+            return r;
         }
 
         /// <summary>

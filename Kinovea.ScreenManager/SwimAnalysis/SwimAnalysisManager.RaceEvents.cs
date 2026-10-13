@@ -179,13 +179,8 @@ namespace Kinovea.ScreenManager
         private SwimProposal EventProposal(string kind, SwimMarkType type, int index, string cue, long originTimestamp, string style, string wallKind,
             long searchFrom, long searchTo, string batch)
         {
-            double delay, spread;
-            if (!EventPrior(kind, cue, style, wallKind, out delay, out spread))
-                return null;
-
-            SwimProposal p = new SwimProposal { Type = type, Kind = kind, Index = index, Batch = batch };
-            p.Cues[EventCueName(cue, style, wallKind)] = originTimestamp + RealSpan(delay);
-            if (!CombineEvent(p, EventConfidence(kind)))
+            SwimProposal p = PriorEventProposal(kind, type, index, cue, originTimestamp, style, wallKind, batch);
+            if (p == null)
                 return null;
 
             SwimMark marked = Race.Marks.Where(m => m.Type == type && m.Timestamp >= searchFrom && m.Timestamp <= searchTo)
@@ -203,6 +198,19 @@ namespace Kinovea.ScreenManager
             }
 
             return p;
+        }
+
+        /// <summary>A proposal of one of these events from one origin: its usual time moved by the learning (null if it has none).</summary>
+        private SwimProposal PriorEventProposal(string kind, SwimMarkType type, int index, string cue, long originTimestamp, string style, string wallKind,
+            string batch)
+        {
+            double delay, spread;
+            if (!EventPrior(kind, cue, style, wallKind, out delay, out spread))
+                return null;
+
+            SwimProposal p = new SwimProposal { Type = type, Kind = kind, Index = index, Batch = batch };
+            p.Cues[EventCueName(cue, style, wallKind)] = originTimestamp + RealSpan(delay);
+            return CombineEvent(p, EventConfidence(kind)) ? p : null;
         }
 
         /// <summary>The start events not marked yet: first movement, feet off, entry (each from the start signal).</summary>

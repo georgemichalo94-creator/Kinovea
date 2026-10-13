@@ -78,7 +78,8 @@ namespace Kinovea.ScreenManager
         {
             get
             {
-                if (Race == null || Computed == null)
+                // A reading in the background reads without it (it is made from the race of the panel).
+                if (quietThread != null || Race == null || Computed == null)
                     return null;
 
                 if (reelCache == null || reelVersion != DataVersion || reelRaceId != Race.Id)
@@ -139,6 +140,7 @@ namespace Kinovea.ScreenManager
             calibrationClicks.Clear();
             angleClicks.Clear();
             pickForRace = false;
+            pickForQuiet = false;
             pickForTrack = true;
             SetPick(SwimPickTarget.StrokeHead);
             Status("Ακολούθηση: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);

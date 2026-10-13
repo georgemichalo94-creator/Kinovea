@@ -73,6 +73,13 @@ namespace Kinovea.ScreenManager
         public Dictionary<string, double> Measures;
 
         public double Confidence;
+
+        /// <summary>
+        /// The event of a race this answer is about (video, race, kind, index): a later answer about the same event (the mark
+        /// corrected, the race read again) replaces it, each event of a race counts once. Null for the other answers.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Key;
     }
 
     /// <summary>What was learned for one cue: its usual delay (to add) and how far from the analyst it is (s).</summary>
@@ -157,6 +164,10 @@ namespace Kinovea.ScreenManager
             if (record == null || string.IsNullOrEmpty(record.Kind))
                 return;
 
+            // The same event of a race answered again (the mark corrected, the race read again): the new answer replaces the old one.
+            if (!string.IsNullOrEmpty(record.Key))
+                Records.RemoveAll(r => r.Key == record.Key);
+
             Records.Add(record);
             if (Records.Count > MaxRecords)
                 Records.RemoveRange(0, Records.Count - MaxRecords);
@@ -165,6 +176,13 @@ namespace Kinovea.ScreenManager
         public void Reset()
         {
             Records.Clear();
+        }
+
+        /// <summary>The answer about one event of a race goes (its mark was undone or deleted).</summary>
+        public void Forget(string key)
+        {
+            if (!string.IsNullOrEmpty(key))
+                Records.RemoveAll(r => r.Key == key);
         }
 
         /// <summary>Short code of a video file (its name), the same on every computer.</summary>

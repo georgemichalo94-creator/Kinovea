@@ -529,7 +529,7 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The breakout of a length proposed (the one not marked yet; one marked by the analyst near it teaches the learning).
         /// </summary>
-        private SwimProposal BreakoutProposal(LengthRead l, string batch)
+        private SwimProposal BreakoutProposal(LengthRead l, string batch, bool all = false)
         {
             if (l.Breakout.Count == 0)
                 return null;
@@ -563,6 +563,9 @@ namespace Kinovea.ScreenManager
                 p.Cues[c.Key] = SessionStamp(s, c.Value);
 
             // A breakout marked by the analyst after this wall (an analysis made before): his frame teaches without asking.
+            if (all)
+                return p;
+
             long lapStart = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
             SwimMark marked = Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Timestamp > lapStart && m.Timestamp <= lapStart + RealSpan(12))
                 .OrderBy(m => m.Timestamp).FirstOrDefault();
@@ -738,7 +741,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Proposals of the checkpoints and of the wall of a length (the ones not marked yet).</summary>
-        private List<SwimProposal> SplitProposals(LengthRead l, string batch)
+        private List<SwimProposal> SplitProposals(LengthRead l, string batch, bool all = false)
         {
             List<SwimProposal> made = new List<SwimProposal>();
             StrokeSession s = l.Session;
@@ -792,7 +795,8 @@ namespace Kinovea.ScreenManager
                     p.Cues[c.Key] = SessionStamp(s, c.Value);
 
                 // Already marked by the analyst (an analysis made before): his frame is the answer, it teaches without asking.
-                SwimMark marked = Race.GetSplit(distance);
+                // (All of them for the reading in the background: its caller teaches with the marks.)
+                SwimMark marked = all ? null : Race.GetSplit(distance);
                 if (marked != null)
                 {
                     if (Math.Abs(Timing.Seconds(marked.Timestamp, p.Timestamp)) <= 1.5)
@@ -962,6 +966,7 @@ namespace Kinovea.ScreenManager
         private void ShowSplitProposals(List<SwimProposal> made, int lengths, int strokes = 0)
         {
             Race.Proposals.RemoveAll(p => IsWholeRaceKind(p.Kind) && made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
+            Race.QuietProposals.RemoveAll(p => made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
             int learned = learnedFromMarks;
             learnedFromMarks = 0;
             string strokesText = strokes > 0
@@ -1118,7 +1123,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void ReadingSpan(long from, long lapStart, int wall, double previousSeconds, out long target, out long last)
         {
-            long end = frameServer.VideoReader.WorkingZone.End;
+            long end = ReadingZone.End;
             SwimMark split = Race.GetSplit(wall);
             if (split != null && split.Timestamp > from)
             {
@@ -1175,7 +1180,7 @@ namespace Kinovea.ScreenManager
 
                 SwimStrokeLane laneC = clicked.Detector.CurrentLane;
                 int virtualRope = clicked.Detector.VirtualRope;
-                long first = Math.Max(frameServer.VideoReader.WorkingZone.Start, start - RealSpan(0.3));
+                long first = Math.Max(ReadingZone.Start, start - RealSpan(0.3));
                 if (first >= click)
                     return null;
 
@@ -1196,7 +1201,7 @@ namespace Kinovea.ScreenManager
                 SwimStrokeLane lane0 = MapLaneLines(back, laneC, clicked.Width);
 
                 // The lane taken back and its neighbours, the swimmer in the middle of the image with his size there.
-                Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                Size reference = ReadingReader.Info.ReferenceSize;
                 double sx = (double)clicked.Width / reference.Width, sy = (double)clicked.Height / reference.Height;
                 double hx = head.X * sx, fx = feet.X * sx;
                 double xc = 0.5 * (hx + fx);
@@ -1290,7 +1295,7 @@ namespace Kinovea.ScreenManager
         private bool ReadShared(List<StrokeSession> sessions, int width, int height, int step, long from, long target, BackgroundWorker worker,
             Action<double[]> motion, Action<OpenCvSharp.Mat> last)
         {
-            VideoReader reader = frameServer.VideoReader;
+            VideoReader reader = ReadingReader;
             double span = Math.Max(1, target - from);
             bool completed = true;
             Exception detectorError = null;
@@ -1384,18 +1389,24 @@ namespace Kinovea.ScreenManager
             long lapStart = LapStartTimestamp(from);
             int wall = NextWallDistance(from);
 
-            // Going on after a stop (the swimmer lost after a wall): the length of the click is the one after that wall.
-            if (resumeWall > 0 && resumeAt != long.MinValue && from >= resumeAt - RealSpan(1.0) && from <= resumeAt + RealSpan(40))
+            // Going on after a stop (the swimmer lost after a wall): the length of the click is the one after that wall. A reading
+            // in the background neither uses nor changes where the whole race stopped.
+            bool background = quietThread != null;
+            if (!background && resumeWall > 0 && resumeAt != long.MinValue && from >= resumeAt - RealSpan(1.0) && from <= resumeAt + RealSpan(40))
             {
                 wall = resumeWall;
                 lapStart = resumeLapStart;
             }
 
-            resumeWall = -1;
-            resumeLapStart = long.MinValue;
-            resumeAt = long.MinValue;
+            if (!background)
+            {
+                resumeWall = -1;
+                resumeLapStart = long.MinValue;
+                resumeAt = long.MinValue;
+            }
+
             double previousSeconds = 0;
-            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            Size reference = ReadingReader.Info.ReferenceSize;
             SwimStrokeLane? nextLane = null;
             int nextVirtual = 0;
 
@@ -1460,9 +1471,13 @@ namespace Kinovea.ScreenManager
                 // far end). The analyst clicks him again a little later and the reading goes on from there.
                 if (lengths.Count > 0 && !l.Found.Any(f => f.Cues.Keys.Any(k => k != SwimSplitDetector.CuePace)))
                 {
-                    resumeWall = wall;
-                    resumeLapStart = lapStart;
-                    resumeAt = from + RealSpan(2.5);
+                    if (!background)
+                    {
+                        resumeWall = wall;
+                        resumeLapStart = lapStart;
+                        resumeAt = from + RealSpan(2.5);
+                    }
+
                     s.Dispose();
                     break;
                 }
@@ -1516,7 +1531,7 @@ namespace Kinovea.ScreenManager
                     nextLane = result.Lanes[startIndex];
                 lapStart = wallTs;
                 wall += Race.Pool;
-                if (from >= frameServer.VideoReader.WorkingZone.End)
+                if (from >= ReadingZone.End)
                     break;
             }
 

@@ -41,6 +41,11 @@ namespace Kinovea.ScreenManager
         {
             get
             {
+                // A reading in the background reads with its own copy (the answers of the analyst change this one meanwhile).
+                QuietReading q = quietThread;
+                if (q != null)
+                    return q.Learning;
+
                 if (learning == null)
                     learning = SwimLearning.Load();
                 return learning;
@@ -439,7 +444,12 @@ namespace Kinovea.ScreenManager
         private void ResolveProposalsByMark(SwimMarkType type, long timestamp)
         {
             // Accepting a proposal answers that proposal only (not a neighbour of the same kind).
-            if (resolvingProposal || Race == null || Race.Proposals.Count == 0)
+            if (resolvingProposal || Race == null)
+                return;
+
+            // Manual analysis: the mark teaches also when nothing was proposed for its event.
+            LearnFromMark(type, timestamp);
+            if (Race.Proposals.Count == 0)
                 return;
 
             // During the check, a mark of the kind being checked answers that proposal (as Enter: within 1 s, a kick within 0.2 s);
@@ -476,14 +486,15 @@ namespace Kinovea.ScreenManager
         /// <summary>The answer of the analyst to a proposal: kept for the learning, the proposal goes.</summary>
         private void Answer(SwimProposal p, long timestamp, bool right)
         {
-            Race.Proposals.Remove(p);
+            bool shown = Race.Proposals.Remove(p);
             SwimLearningRecord record = new SwimLearningRecord
             {
                 Date = DateTime.Now,
                 Kind = p.Kind,
                 Video = SwimLearning.VideoCode(videoPath),
                 Right = right,
-                Confidence = p.Confidence
+                Confidence = p.Confidence,
+                Key = AnswerKey(p)
             };
 
             if (right)
@@ -496,7 +507,7 @@ namespace Kinovea.ScreenManager
 
             Learning.Add(record);
             Learning.Save();
-            if (reviewId != null)
+            if (reviewId != null && shown)
             {
                 reviewAnswered++;
                 if (!right)

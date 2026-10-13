@@ -116,6 +116,8 @@ namespace Kinovea.ScreenManager
         // Tab: swimming
         private DataGridView grid;
         private CheckBox chkAutoStrokes;
+        private CheckBox chkLearnMarks;
+        private Label lblLearn;
         private Button btnAutoStrokes;
         private Label lblAutoStrokes;
         private CheckBox chkReel;
@@ -499,6 +501,26 @@ namespace Kinovea.ScreenManager
                 "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.");
             AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Εκκίνηση",
                 "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight, autoRace);
+
+            // Learning from the marks of a manual analysis.
+            const string learnHelp = "Ανάλυση με το χέρι (χωρίς «🤖 Όλος ο αγώνας»): κάθε σημάδι σου διδάσκει το πρόγραμμα, όπως οι απαντήσεις στις προτάσεις.\n" +
+                "Η πρώτη κίνηση, η αποδέσμευση, η είσοδος και η αποκόλληση από κάθε τοίχο διδάσκουν αμέσως (από τους συνηθισμένους χρόνους).\n" +
+                "Για τα περάσματα, τους τοίχους και τις εξόδους: μία φορά σε κάθε αγώνα κλικ στο κεφάλι και στα πόδια του αθλητή (ζητείται μετά το\n" +
+                "πρώτο πέρασμα· αρκεί και το κλικ των αυτόματων χεριών). Ο αγώνας διαβάζεται στο παρασκήνιο, χωρίς να φαίνεται τίποτα, κι εσύ συνεχίζεις.\n" +
+                "Μια διόρθωση αντικαθιστά την παλιά απάντηση, μια αναίρεση την παίρνει πίσω. Η μάθηση μένει σε αυτόν τον υπολογιστή (μόνο αριθμοί).";
+            chkLearnMarks = new CheckBox { Text = "από τα πατήματά μου", AutoSize = true, Margin = new Padding(6, 7, 3, 3) };
+            chkLearnMarks.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetLearnFromMarks(chkLearnMarks.Checked);
+            };
+            toolTip.SetToolTip(chkLearnMarks, learnHelp);
+            Button btnLearn = new SwimNoFocusButton { Text = "🎓 Κλικ στον αθλητή", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnLearn.Click += (s, e) => manager.BeginQuietLearning();
+            toolTip.SetToolTip(btnLearn, "Μετά την εκκίνηση, σε ένα καρέ μετά την έξοδο από το νερό: κλικ στο κεφάλι και μετά στα πόδια του αθλητή.\n" +
+                "Ο αγώνας διαβάζεται στο παρασκήνιο και κάθε πέρασμα, τοίχος και έξοδος που μαρκάρεις διδάσκει το πρόγραμμα.");
+            lblLearn = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 0, 3), Text = "–" };
+            AddEventRow(t, "Μάθηση", null, null, learnHelp, chkLearnMarks, btnLearn, lblLearn);
 
             lblReactionAuto = ValueLabel();
             tbReaction = NumberBox();
@@ -1303,6 +1325,7 @@ namespace Kinovea.ScreenManager
                 chkOverlayExports.Checked = settings.OverlayInExports;
                 chkVideoBars.Checked = settings.VideoBars;
                 chkAutoStrokes.Checked = settings.AutoStrokes;
+                chkLearnMarks.Checked = settings.LearnFromMarks;
                 chkReel.Checked = settings.ReelOverlay;
                 chkReelSummary.Checked = settings.ReelSummary;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
@@ -1696,6 +1719,7 @@ namespace Kinovea.ScreenManager
             currentTurnWall = -1;
             RefreshTurnLabels();
             RefreshFinals();
+            RefreshQuiet();
         }
 
         /// <summary>
@@ -2655,6 +2679,17 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Automatic strokes of the race (swimming page).</summary>
+        /// <summary>What the learning from the marks of the race is doing (start page).</summary>
+        public void RefreshQuiet()
+        {
+            if (IsDisposed || lblLearn == null)
+                return;
+
+            string text = manager.QuietDescription;
+            lblLearn.Text = string.IsNullOrEmpty(text) ? "–" : text;
+            lblLearn.ForeColor = manager.QuietReadingRunning ? SwimTheme.Amber : SwimTheme.Dim;
+        }
+
         public void RefreshAutoStrokes()
         {
             if (IsDisposed || lblAutoStrokes == null)

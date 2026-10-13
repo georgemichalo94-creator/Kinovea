@@ -203,6 +203,7 @@ namespace Kinovea.ScreenManager
             angleClicks.Clear();
             pickForTrack = false;
             pickForRace = false;
+            pickForQuiet = false;
             SetPick(SwimPickTarget.StrokeHead);
             Status("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος).", false);
             InvalidatePlayer();
@@ -234,16 +235,36 @@ namespace Kinovea.ScreenManager
 
             bool track = pickForTrack;
             bool race = pickForRace;
+            bool quiet = pickForQuiet;
             pickForTrack = false;
             pickForRace = false;
+            pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            if (track && race)
+            if (track && quiet)
+            {
+                StartQuietReading(autoStrokeHead, point, autoStrokeFrame);
+            }
+            else if (track && race)
+            {
                 AutoRace(autoStrokeHead, point, autoStrokeFrame);
+            }
             else if (track)
+            {
                 TrackSwimmer(autoStrokeHead, point, autoStrokeFrame);
+            }
             else
-                StartStrokeSession(autoStrokeHead, point, autoStrokeFrame);
+            {
+                // The swimmer clicked for the strokes is also the one of the reading in the background (no other click).
+                PointF head = autoStrokeHead;
+                long frame = autoStrokeFrame;
+                StartStrokeSession(head, point, frame);
+                if (CanReadQuietly())
+                {
+                    quietAsked.Add(Race.Id);
+                    StartQuietReading(head, point, frame);
+                }
+            }
         }
 
         private void StartStrokeSession(PointF head, PointF feet, long from)
@@ -294,7 +315,7 @@ namespace Kinovea.ScreenManager
             double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
             int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
 
-            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+            Size reference = ReadingReader.Info.ReferenceSize;
             int width = StrokeWorkWidth;
             int height = Math.Max(2, (int)Math.Round(width * (double)reference.Height / reference.Width / 2.0) * 2);
             double sx = (double)width / reference.Width;
@@ -596,7 +617,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private bool ReadFrames(StrokeSession s, long target, BackgroundWorker worker)
         {
-            VideoReader reader = frameServer.VideoReader;
+            VideoReader reader = ReadingReader;
             long from = s.Timestamps.Count == 0 ? s.Start : s.LastRead;
             long lastQueued = s.LastRead;
             double span = Math.Max(1, target - from);

@@ -105,6 +105,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool AutoTechSnapshots = true;
 
+        /// <summary>
+        /// Manual analysis: each mark teaches the learning as the answer to a proposal would; after one click on the swimmer the race
+        /// is read in the background for the checkpoints, the walls and the breakouts.
+        /// </summary>
+        public bool LearnFromMarks = true;
+
         /// <summary>After following the swimmer for a length: the checkpoints of the length from the marks of the ropes, for the check.</summary>
         public bool ProposeSplitsAfterTrack = true;
 

@@ -70,9 +70,39 @@ namespace Kinovea.ScreenManager
         #region Properties
         public SwimSettings Settings { get; private set; }
         public SwimVideoFile VideoFile { get; private set; }
-        public SwimRace Race { get; private set; }
+        /// <summary>The race of the panel (on the thread of a reading in the background: the copy it reads with).</summary>
+        public SwimRace Race
+        {
+            get
+            {
+                QuietReading q = quietThread;
+                return q != null ? q.Race : currentRace;
+            }
+
+            private set
+            {
+                currentRace = value;
+            }
+        }
+
         public SwimComputed Computed { get; private set; }
-        public SwimTiming Timing { get; private set; }
+
+        public SwimTiming Timing
+        {
+            get
+            {
+                QuietReading q = quietThread;
+                return q != null ? q.Timing : currentTiming;
+            }
+
+            private set
+            {
+                currentTiming = value;
+            }
+        }
+
+        private SwimRace currentRace;
+        private SwimTiming currentTiming;
         public SwimSyncState SyncState { get; private set; }
         public string SyncMessage { get; private set; }
         public string LastStatus { get; private set; }
@@ -215,6 +245,7 @@ namespace Kinovea.ScreenManager
             bool splitAdded = false;
             int undoBefore = undoStack.Count;
             string statusBefore = LastStatus;
+            markTaught = false;
             switch (command)
             {
                 case PlayerScreenCommands.SwimShowPanel:
@@ -267,6 +298,14 @@ namespace Kinovea.ScreenManager
                     break;
             }
 
+            // The mark taught the learning (manual analysis): said after its message.
+            if (markTaught)
+            {
+                markTaught = false;
+                if (!string.IsNullOrEmpty(LastStatus) && !ReferenceEquals(LastStatus, statusBefore))
+                    Status(LastStatus + "  🎓", LastStatusIsWarning);
+            }
+
             ShowAnalysis(false);
             if (command != PlayerScreenCommands.SwimSnapshot && command != PlayerScreenCommands.SwimAngle)
                 Changed(true);
@@ -302,6 +341,11 @@ namespace Kinovea.ScreenManager
                     BeginAutoStrokes();
                 else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
+
+                // Manual analysis: after the first checkpoint, one click on the swimmer and the race is read in the background for the learning.
+                if (!TechnicalView && !resolvingProposal && reviewId == null &&
+                    ((command == PlayerScreenCommands.SwimSplit && splitAdded) || command == PlayerScreenCommands.SwimWallContact))
+                    OfferQuietLearning();
             }
 
             return true;
@@ -481,6 +525,7 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            ForgetTaught(mark);
             if (mark.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(mark.Distance);
 
@@ -492,6 +537,8 @@ namespace Kinovea.ScreenManager
             {
                 replacedBy.Remove(mark.Id);
                 Race.Marks.AddRange(replaced);
+                foreach (SwimMark back in replaced)
+                    LearnFromMark(back.Type, back.Timestamp);
                 Status("Αναιρέθηκε: " + MarkLabel(mark) + " (ξαναμπήκε η προηγούμενη τιμή)", false);
                 return;
             }
@@ -504,6 +551,8 @@ namespace Kinovea.ScreenManager
         {
             List<SwimMark> removed = Race.Marks.Where(m => replaces(m)).ToList();
             Race.Marks.RemoveAll(replaces);
+            foreach (SwimMark old in removed)
+                ForgetTaught(old);
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
             if (removed.Count > 0)
@@ -515,6 +564,7 @@ namespace Kinovea.ScreenManager
             undoStack.Clear();
             replacedBy.Clear();
             ClearWaitingFrames();
+            CancelQuietReading();
         }
 
         public void ClearSplit(int distance)
@@ -522,7 +572,10 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            List<SwimMark> cleared = Race.Marks.Where(m => m.Type == SwimMarkType.Split && m.Distance == distance).ToList();
             int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Split && m.Distance == distance);
+            foreach (SwimMark old in cleared)
+                ForgetTaught(old);
             Race.StrokeCounts.Remove(distance);
             if (removed > 0)
             {
@@ -536,7 +589,10 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            List<SwimMark> cleared = Race.Marks.Where(m => m.Type == type).ToList();
             Race.Marks.RemoveAll(m => m.Type == type);
+            foreach (SwimMark old in cleared)
+                ForgetTaught(old);
             Changed(true);
         }
 
@@ -774,6 +830,7 @@ namespace Kinovea.ScreenManager
             calibrationClicks.Clear();
             pickForTrack = false;
             pickForRace = false;
+            pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             Status("Ακυρώθηκε.", false);
             return true;
