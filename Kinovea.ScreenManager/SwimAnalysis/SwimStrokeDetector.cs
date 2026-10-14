@@ -885,8 +885,30 @@ namespace Kinovea.ScreenManager
         /// <summary>Two ropes holding the swimmer are his lane (a zoomed view: no other rope in the window; tests).</summary>
         internal static bool TwoRopes = true;
 
-        /// <summary>Rope candidates weaker than this part of the strongest left out: the waves (tests).</summary>
+        /// <summary>Rope candidates weaker than this part of the LaneReference-th strongest line left out: the waves (tests).</summary>
         internal static double MinStrength = 0.25;
+
+        /// <summary>
+        /// The line the weak candidates are measured against: the third strongest (one structure much stronger than the ropes, the
+        /// edge of the deck or a stand in front, left the ropes out; 0: the strongest, before 2026-10; tests).
+        /// </summary>
+        internal static int LaneReference = 3;
+
+        /// <summary>
+        /// A lane of a rope chain loses this part of the strongest line inside it (not a line of the floor, not next to its ropes,
+        /// at least GapPenaltyMin): a chain of every other rope, one hidden by the splashes, holds such lines (tests; 0: off).
+        /// </summary>
+        internal static double GapPenalty = 0.5;
+        internal static double GapPenaltyMin = 0.5;
+
+        /// <summary>The lane searched again without the lines of the floor only when it fits the old one (dark ropes; tests).</summary>
+        internal static bool FloorCheck = true;
+
+        /// <summary>
+        /// What the lane holding the swimmer gains in a rope chain when he is in its middle (less towards its ropes, nothing on
+        /// them): a chain of other lines can hold him at its edge (a line of the floor, a shade; tests; 0: off).
+        /// </summary>
+        internal static double LaneCenter = 0.2;
 
         /// <summary>A cycle at half the lag found is the cycle when its autocorrelation is this part of the other one (tests; 0: off).</summary>
         internal static double OctaveRatio = 0.4;
@@ -1461,14 +1483,29 @@ namespace Kinovea.ScreenManager
                 st[i] = m[peaks[i]] / peakMax;
             }
 
+            // The lines of the floor of the pool (clear water, camera high): a shade of the water, half way between the ropes. A
+            // chain with them has half the spacing of the ropes: when the lane found has a clearly dark one as a rope, the lane is
+            // searched again without any of them.
+            bool[] strongAll;
+            bool[] floorAll = FloorLines(profile, n, peaks, out strongAll);
+
+            // All the candidates, for the lines inside the lanes of a chain (see GapPenalty).
+            double[] allY = (double[])ys.Clone();
+            double[] allS = (double[])st.Clone();
+            int[] kept = Enumerable.Range(0, ys.Length).ToArray();
+
+            // The waves left out: candidates weaker than a part of the third strongest line (lines 10 px apart), not of the strongest
+            // one, which can be something much stronger than the ropes (the edge of the deck, a dark board, a stand in front).
             if (MinStrength > 0)
             {
-                int[] keep = Enumerable.Range(0, st.Length).Where(i => st[i] >= MinStrength).ToArray();
+                double reference = LaneReference > 0 ? DistinctStrength(ys, st, LaneReference, 10) : 1.0;
+                int[] keep = Enumerable.Range(0, st.Length).Where(i => st[i] >= MinStrength * reference).ToArray();
                 if (keep.Length >= 3)
                 {
                     ys = keep.Select(i => ys[i]).ToArray();
                     st = keep.Select(i => st[i]).ToArray();
                     peaks = keep.Select(i => peaks[i]).ToList();
+                    kept = keep;
                 }
             }
 
@@ -1478,20 +1515,47 @@ namespace Kinovea.ScreenManager
                 double cap = StrengthCap * sorted[sorted.Length / 2];
                 for (int i = 0; i < st.Length; i++)
                     st[i] = Math.Min(st[i], cap);
+                for (int i = 0; i < allS.Length; i++)
+                    allS[i] = Math.Min(allS[i], cap);
+            }
+
+            double stMax = st.Max();
+            if (stMax > 0)
+            {
+                for (int i = 0; i < st.Length; i++)
+                    st[i] /= stMax;
+                for (int i = 0; i < allS.Length; i++)
+                    allS[i] /= stMax;
             }
 
             if (LaneTrace != null)
                 LaneTrace("lane: strengths " + string.Join(",", st.Select((v0, i0) => ys[i0].ToString("0", System.Globalization.CultureInfo.InvariantCulture) + ":" + v0.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))));
 
-            // The lines of the floor of the pool (clear water, camera high): a shade of the water, half way between the ropes. A
-            // chain with them has half the spacing of the ropes: when the lane found has a clearly dark one as a rope, the lane is
-            // searched again without any of them.
-            bool[] strong;
-            bool[] floor = FloorLines(profile, n, peaks, out strong);
+            bool[] floor = kept.Select(i => floorAll[i]).ToArray();
+            bool[] strong = kept.Select(i => strongAll[i]).ToArray();
+
+            // A lane of a chain with a strong line inside it, not a line of the floor nor next to its ropes: a chain of every other
+            // rope (one of them weak, hidden by the splashes), not the ropes.
+            Func<double, double, double> inside = (a, b) =>
+            {
+                if (GapPenalty <= 0)
+                    return 0;
+                double worst = 0, near = 0.2 * (b - a);
+                for (int k = 0; k < allY.Length; k++)
+                {
+                    double y = allY[k];
+                    if (y <= a || y >= b || floorAll[k] || y - a <= near || b - y <= near || allS[k] < GapPenaltyMin)
+                        continue;
+                    worst = Math.Max(worst, allS[k]);
+                }
+
+                return GapPenalty * worst;
+            };
+
             int[] all = Enumerable.Range(0, ys.Length).ToArray();
             double y1, y2;
             int r1, r2, v;
-            if (!LaneOfCandidates(ys, st, all, bestSlope, headX, headY, feetX, feetY, L, cx, out y1, out y2, out v, out r1, out r2))
+            if (!LaneOfCandidates(ys, st, all, bestSlope, headX, headY, feetX, feetY, L, cx, inside, out y1, out y2, out v, out r1, out r2))
                 return false;
 
             if ((r1 >= 0 && strong[r1]) || (r2 >= 0 && strong[r2]))
@@ -1499,7 +1563,8 @@ namespace Kinovea.ScreenManager
                 int[] ropes = all.Where(i => !floor[i]).ToArray();
                 double z1, z2;
                 int q1, q2, w;
-                if (ropes.Length >= 3 && LaneOfCandidates(ys, st, ropes, bestSlope, headX, headY, feetX, feetY, L, cx, out z1, out z2, out w, out q1, out q2))
+                if (ropes.Length >= 3 && LaneOfCandidates(ys, st, ropes, bestSlope, headX, headY, feetX, feetY, L, cx, inside, out z1, out z2, out w, out q1, out q2) &&
+                    (!FloorCheck || FloorLaneFits(y1, y2, r1, r2, strong, z1, z2)))
                 {
                     if (LaneTrace != null)
                         LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: floor line {0:0}/{1:0} -> ropes {2:0}/{3:0}", y1, y2, z1, z2));
@@ -1595,7 +1660,7 @@ namespace Kinovea.ScreenManager
         /// the candidates they are (−1 for the place of the missing rope of an outer lane).
         /// </summary>
         private static bool LaneOfCandidates(double[] ys, double[] st, int[] use, double slope, double headX, double headY, double feetX, double feetY,
-            double L, double cx, out double laneY1, out double laneY2, out int virtualRope, out int rope1, out int rope2)
+            double L, double cx, Func<double, double, double> inside, out double laneY1, out double laneY2, out int virtualRope, out int rope1, out int rope2)
         {
             laneY1 = laneY2 = 0;
             virtualRope = 0;
@@ -1617,7 +1682,15 @@ namespace Kinovea.ScreenManager
                 return cov;
             };
 
-            List<int> chain = RopeChain(uy, us, Math.Max(8.0, GapLength * L), 3.0 * L, (y1, y2) => coverageOf(y1, y2) >= 2.5);
+            // The lane holding the swimmer gains when he is in its middle (the ropes of a chain of other lines can hold him at an edge).
+            double mx = 0.5 * (headX + feetX), my = 0.5 * (headY + feetY);
+            Func<double, double, double> centred = (y1, y2) =>
+            {
+                double rel = (my - (y1 + slope * (mx - cx))) / Math.Max(1e-6, y2 - y1);
+                return LaneCenter * Math.Max(0, 1 - 2 * Math.Abs(rel - 0.5));
+            };
+
+            List<int> chain = RopeChain(uy, us, Math.Max(8.0, GapLength * L), 3.0 * L, (y1, y2) => coverageOf(y1, y2) >= 2.5, inside, centred);
             if (LaneTrace != null)
                 LaneTrace("lane: chain " + string.Join(",", chain.Select(c => uy[c].ToString("0", System.Globalization.CultureInfo.InvariantCulture))));
 
@@ -1678,10 +1751,42 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Longest regularly spaced chain of rope candidates (spacing changes smoothly with the perspective). holds: whether two
-        /// next candidates hold the swimmer between them; the best chain with such a pair is preferred when there is one.
+        /// The lane searched again without the lines of the floor fits the old one: it holds it, about twice as wide, with a dark
+        /// line of the old one near its middle (dark ropes, navy blue, look like the lines of the floor: the old lane stays).
         /// </summary>
-        private static List<int> RopeChain(double[] ys, double[] st, double gmin, double gmax, Func<double, double, bool> holds = null)
+        private static bool FloorLaneFits(double y1, double y2, int r1, int r2, bool[] strong, double z1, double z2)
+        {
+            double wid = y2 - y1, wid2 = z2 - z1, tol = 0.15 * wid;
+            if (z1 > y1 + tol || z2 < y2 - tol || wid2 < 1.5 * wid || wid2 > 2.6 * wid)
+                return false;
+
+            Func<double, bool> middle = y => y >= z1 + 0.3 * wid2 && y <= z2 - 0.3 * wid2;
+            return (r1 >= 0 && strong[r1] && middle(y1)) || (r2 >= 0 && strong[r2] && middle(y2));
+        }
+
+        /// <summary>Strength of the k-th strongest candidate among candidates at least 'apart' px from the stronger ones taken.</summary>
+        private static double DistinctStrength(double[] ys, double[] st, int k, double apart)
+        {
+            List<int> picked = new List<int>();
+            foreach (int i in Enumerable.Range(0, st.Length).OrderByDescending(i => st[i]))
+            {
+                if (picked.All(j => Math.Abs(ys[i] - ys[j]) > apart))
+                    picked.Add(i);
+                if (picked.Count >= k)
+                    break;
+            }
+
+            return picked.Count > 0 ? st[picked[picked.Count - 1]] : 0;
+        }
+
+        /// <summary>
+        /// Longest regularly spaced chain of rope candidates (spacing changes smoothly with the perspective). holds: whether two
+        /// next candidates hold the swimmer between them; the best chain with such a pair is preferred when there is one. inside:
+        /// what a lane between two candidates loses for a strong line inside it; centred: what the lane holding the swimmer gains
+        /// (null: nothing).
+        /// </summary>
+        private static List<int> RopeChain(double[] ys, double[] st, double gmin, double gmax, Func<double, double, bool> holds = null,
+            Func<double, double, double> inside = null, Func<double, double, double> centred = null)
         {
             int n = ys.Length;
             double[,,] best = new double[n, n, 2];
@@ -1697,7 +1802,8 @@ namespace Kinovea.ScreenManager
                         continue;
 
                     int held = holds != null && holds(ys[i], ys[j]) ? 1 : 0;
-                    best[i, j, held] = st[i] + st[j];
+                    double loss = (inside != null ? inside(ys[i], ys[j]) : 0) - (held == 1 && centred != null ? centred(ys[i], ys[j]) : 0);
+                    best[i, j, held] = st[i] + st[j] - loss;
                     prev[i, j, held] = -1;
                     valid[i, j, held] = true;
                     for (int h = 0; h < i; h++)
@@ -1712,7 +1818,7 @@ namespace Kinovea.ScreenManager
                                 continue;
 
                             int c = Math.Max(c0, held);
-                            double candidate = best[h, i, c0] + st[j];
+                            double candidate = best[h, i, c0] + st[j] - loss;
                             if (!valid[i, j, c] || candidate > best[i, j, c])
                             {
                                 best[i, j, c] = candidate;

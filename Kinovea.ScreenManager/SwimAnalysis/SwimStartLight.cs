@@ -93,6 +93,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Seconds from the start signal to the first movement of the swimmers seen by the dive check (median of the races).</summary>
         internal static double DiveDelay = 0.30;
 
+        /// <summary>
+        /// A light: the jump of its brightest pixel at least this many times the noise of the place (10 before the dive check: the
+        /// strobes of the blocks of a sunny outdoor pool, 9.4–9.5, were missed; tests).
+        /// </summary>
+        internal static double LightZ = 9;
+
         private readonly int width;
         private readonly int height;
         private readonly double fps;
@@ -578,7 +584,7 @@ namespace Kinovea.ScreenManager
                     double sd = Math.Sqrt(b.Prev.Select(x => (x - baseLevel) * (x - baseLevel)).Average());
                     double first = b.Values[0];
                     double jump = first - baseLevel;
-                    if (jump < 30 || b.ZMax < 10 || first < 140)
+                    if (jump < 30 || b.ZMax < LightZ || first < 140)
                         continue;
                     if (sd > Math.Max(3.0, 0.15 * jump))
                         continue;
@@ -947,21 +953,23 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// True when a start was found and the race after it has been read long enough (6 s): no need to read further. With the dive
-        /// check, only a flash with the dive after it ends the reading (a start put before the dive, or a flash without the dive,
-        /// can be a camera move before the real start: the reading goes on).
+        /// check, a flash with the dive after it ends the reading; a start put before the dive, or a flash without the dive, can be
+        /// a camera move before the real start: the reading goes on, until 20 s of that race. The seconds are counted from the
+        /// camera following the race of the start found (one seen at the end of the frames read is checked again with its race).
         /// </summary>
         public bool Done()
         {
             int n = motion.Count;
+            int race = (int)Math.Round(6 * fps);
             UpdateFollows();
-            if (follows.Count == 0 || n - follows[0].Item1 < (int)Math.Round(6 * fps))
+            if (follows.Count == 0 || n - follows[0].Item1 < race)
                 return false;
 
             List<SwimStartCandidate> found = Find();
-            if (found.Count == 0)
+            if (found.Count == 0 || n - found[0].Follow < race)
                 return false;
 
-            return !DiveCheck || found[0].Source == "light" || found[0].Source == "weak light";
+            return !DiveCheck || found[0].Source == "light" || found[0].Source == "weak light" || n - found[0].Follow >= (int)Math.Round(20 * fps);
         }
 
         /// <summary>Confidence shown with the proposal (0–1): a clear flash of several lights, far ahead of the next candidate.</summary>
