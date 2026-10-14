@@ -30,6 +30,16 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Places of the lights (working image), for the check.</summary>
         public List<double[]> Places = new List<double[]>();
+
+        /// <summary>
+        /// Where it comes from: "light" (a flash with the swimmers starting to move just after it), "light?" (a flash without that
+        /// check: the dive was not seen), "weak light" (a weaker flash with the dive after it, the strong ones failed the check),
+        /// "dive" (no flash fits: the start put 0.30 s before the swimmers start to move).
+        /// </summary>
+        public string Source = "light";
+
+        /// <summary>Frame where the swimmers start to move after it (−1: not seen).</summary>
+        public int Dive = -1;
     }
 
     /// <summary>
@@ -43,7 +53,10 @@ namespace Kinovea.ScreenManager
     /// 3. the flash of a frame: its lights at different places (≥ 60 px apart, the strongest of each place), spots that already came on
     ///    there in the previous frames do not count, nor the sparkles of the water (less than 3 pixels at 960 wide);
     /// 4. the race: the camera starts to follow the swimmers (frame difference ≥ 2.5 × the still level for most of 1.5 s, then most
-    ///    of the next 6 s); the start is the first strong flash (≥ 60% of the strongest) 0.3–1.6 s before, with a still camera.
+    ///    of the next 6 s); the start is the first strong flash (≥ 60% of the strongest) 0.3–1.6 s before, with a still camera;
+    /// 5. the dive: the swimmers start to move 0.10–0.55 s after the signal (the area of the spots that come on rises to 3× its usual
+    ///    level and stays); a flash without it, or with the swimmers already moving just before it (the flashes of the photographers
+    ///    during the dive), is not the start. Then a weaker flash with the dive after it, else the start 0.30 s before the dive.
     /// Reference implementation and evaluation: Python prototype of the same algorithm (Paris 2026 and Šamorín 2025 races,
     /// 50 frames/s: the frame of the analyst in all of them).
     /// </summary>
@@ -73,6 +86,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>A spot lit for one frame only (a camera flash) counts little (tests).</summary>
         internal static bool Persistence = false;
+
+        /// <summary>The flashes are checked with the dive of the swimmers after them (tests).</summary>
+        internal static bool DiveCheck = true;
+
+        /// <summary>Seconds from the start signal to the first movement of the swimmers seen by the dive check (median of the races).</summary>
+        internal static double DiveDelay = 0.30;
 
         private readonly int width;
         private readonly int height;
@@ -751,17 +770,198 @@ namespace Kinovea.ScreenManager
                 });
             }
 
-            return result.OrderByDescending(c => c.Strength).ToList();
+            result = result.OrderByDescending(c => c.Strength).ToList();
+            if (!DiveCheck)
+                return result;
+
+            // The dive of the swimmers after the flash: the flashes with it first.
+            double[] spots;
+            List<int> dives = DiveOnsets(out spots);
+            foreach (SwimStartCandidate c in result)
+            {
+                int dive;
+                c.Source = DiveAfter(c.Frame, dives, spots, out dive) ? "light" : "light?";
+                c.Dive = dive;
+            }
+
+            List<SwimStartCandidate> checkedLights = result.Where(c => c.Source == "light").ToList();
+            if (checkedLights.Count > 0)
+                return checkedLights.Concat(result.Where(c => c.Source != "light")).ToList();
+
+            // None: a weaker flash of the same windows with the dive after it, else the start just before the dive.
+            List<Tuple<int, double>> follows4 = FollowStarts().Take(4).ToList();
+            SwimStartCandidate weak = null;
+            foreach (Tuple<int, double> follow in follows4)
+            {
+                int f = follow.Item1;
+                double still = follow.Item2;
+                int lo = (int)Math.Ceiling(f - 1.6 * fps - 1e-6), hi = (int)Math.Floor(f - 0.3 * fps + 1e-6);
+                for (int j = Math.Max(0, lo); j <= Math.Min(n - 1, hi); j++)
+                {
+                    if (flash[j] < MinFlash || motion[j] > Math.Max(10, 2.2 * still) || (weak != null && flash[j] <= weak.Flash))
+                        continue;
+
+                    int dive;
+                    if (!DiveAfter(j, dives, spots, out dive))
+                        continue;
+
+                    weak = new SwimStartCandidate
+                    {
+                        Frame = j, Flash = flash[j], Strength = flash[j], Lights = lights[j], Follow = f, Places = places[j] ?? new List<double[]>(),
+                        Source = "weak light", Dive = dive
+                    };
+                }
+            }
+
+            if (weak != null)
+            {
+                result.Insert(0, weak);
+                return result;
+            }
+
+            foreach (Tuple<int, double> follow in follows4)
+            {
+                int f = follow.Item1;
+                int from = (int)Math.Round(f - 1.4 * fps), to = (int)Math.Round(f - 0.05 * fps);
+                List<int> inWindow = dives.Where(x => x >= from && x <= to).ToList();
+                if (inWindow.Count == 0)
+                    continue;
+
+                int dive = inWindow[0];
+                result.Insert(0, new SwimStartCandidate
+                {
+                    Frame = Math.Max(0, dive - (int)Math.Round(DiveDelay * fps)), Flash = 0, Strength = 0, Lights = 0, Follow = f,
+                    Source = "dive", Dive = dive
+                });
+                break;
+            }
+
+            return result;
         }
 
         /// <summary>
-        /// True when a start was found and the race after it has been read long enough (6 s): no need to read further.
+        /// Frames where the swimmers start to move: the area of the spots that came on (two frames) rises to 3× its usual level of
+        /// the second before (lowest quarter of the frames with spots, at least 250 px at 960 wide) and stays there 0.12 s (frames
+        /// without spots, the camera moving, do not count). spots: that area of each frame.
+        /// </summary>
+        private List<int> DiveOnsets(out double[] spots)
+        {
+            int n = frames;
+            double[] area = new double[n];
+            Action<Blob> add = b =>
+            {
+                if (b.Frame < 0 || b.Frame >= n || b.Prev == null || b.Prev.Length == 0 || b.Values.Count == 0)
+                    return;
+                double first = b.Values[0];
+                if (first < 100 || first - b.Prev.Average() < 15)
+                    return;
+                area[b.Frame] += b.Area;
+            };
+            foreach (List<Blob> list in finished)
+            {
+                foreach (Blob b in list)
+                    add(b);
+            }
+
+            foreach (Blob b in following)
+                add(b);
+
+            spots = new double[n];
+            for (int i = 0; i < n; i++)
+                spots[i] = area[i] + (i + 1 < n ? area[i + 1] : 0);
+
+            double floor = 250.0 * width * width / (960.0 * 960.0);
+            int baseFrom = (int)(1.5 * fps), baseTo = (int)(0.3 * fps), hold = (int)Math.Round(0.12 * fps);
+            List<int> result = new List<int>();
+            List<double> usual = new List<double>();
+            for (int i = baseFrom; i < n - hold - 1; i++)
+            {
+                usual.Clear();
+                for (int j = i - baseFrom; j < i - baseTo; j++)
+                {
+                    if (spots[j] > 0)
+                        usual.Add(spots[j]);
+                }
+
+                if (usual.Count < 10)
+                    continue;
+
+                usual.Sort();
+                double level = Math.Max(floor, 3 * usual[Math.Min(usual.Count - 1, (int)(0.25 * usual.Count))]);
+                if (spots[i] < level || spots[i - 1] >= level)
+                    continue;
+
+                bool stays = true;
+                for (int j = i; j < i + hold && stays; j++)
+                    stays = spots[j] <= 0 || spots[j] >= 0.6 * level;
+                if (stays)
+                    result.Add(i);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// The dive after a flash (frame): the swimmers start to move 0.10–0.55 s after it, and they were not already moving from
+        /// 0.40 s before it into that dive without a pause (the flashes of the photographers on the swimmers diving).
+        /// </summary>
+        private bool DiveAfter(int frame, List<int> dives, double[] spots, out int dive)
+        {
+            dive = -1;
+            int lo = frame + (int)Math.Round(0.10 * fps), hi = frame + (int)Math.Round(0.55 * fps);
+            foreach (int x in dives)
+            {
+                if (x >= lo && x <= hi)
+                {
+                    dive = x;
+                    break;
+                }
+            }
+
+            if (dive < 0)
+                return false;
+
+            int before0 = frame - (int)Math.Round(0.40 * fps), before1 = frame - (int)Math.Round(0.04 * fps);
+            foreach (int x in dives)
+            {
+                if (x < before0 || x >= before1)
+                    continue;
+
+                double min = double.MaxValue;
+                bool any = false;
+                for (int j = x; j <= dive && j < spots.Length; j++)
+                {
+                    if (spots[j] > 0)
+                    {
+                        any = true;
+                        min = Math.Min(min, spots[j]);
+                    }
+                }
+
+                if (any && min >= 0.3 * spots[x])
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when a start was found and the race after it has been read long enough (6 s): no need to read further. With the dive
+        /// check, only a flash with the dive after it ends the reading (a start put before the dive, or a flash without the dive,
+        /// can be a camera move before the real start: the reading goes on).
         /// </summary>
         public bool Done()
         {
             int n = motion.Count;
             UpdateFollows();
-            return follows.Count > 0 && n - follows[0].Item1 >= (int)Math.Round(6 * fps) && Find().Count > 0;
+            if (follows.Count == 0 || n - follows[0].Item1 < (int)Math.Round(6 * fps))
+                return false;
+
+            List<SwimStartCandidate> found = Find();
+            if (found.Count == 0)
+                return false;
+
+            return !DiveCheck || found[0].Source == "light" || found[0].Source == "weak light";
         }
 
         /// <summary>Confidence shown with the proposal (0–1): a clear flash of several lights, far ahead of the next candidate.</summary>
@@ -771,10 +971,17 @@ namespace Kinovea.ScreenManager
                 return 0;
 
             SwimStartCandidate best = candidates[0];
+            if (best.Source == "dive")
+                return 0.35;
+            if (best.Source == "weak light")
+                return 0.55;
+
             double c = best.Flash >= 200 ? 0.9 : best.Flash >= 80 ? 0.8 : best.Flash >= 30 ? 0.65 : 0.45;
             if (best.Lights >= 2)
                 c += 0.05;
-            if (candidates.Count > 1 && candidates[1].Strength > 0.7 * best.Strength)
+            if (candidates.Count > 1 && candidates[1].Source == best.Source && candidates[1].Strength > 0.7 * best.Strength)
+                c -= 0.2;
+            if (best.Source == "light?")
                 c -= 0.2;
             return Math.Max(0.25, Math.Min(0.95, c));
         }

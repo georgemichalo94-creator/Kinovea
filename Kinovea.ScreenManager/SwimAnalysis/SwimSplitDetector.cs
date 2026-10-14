@@ -91,7 +91,20 @@ namespace Kinovea.ScreenManager
             // the middle); 10 and 15 in a pool of 25 (the marks 15 from each wall).
             int[] distances = pool == 50 ? new[] { 15, 25, 35 } : new[] { 10, 15 };
             List<double> times = marks.Select(m => Time(m)).ToList();
-            int[] assigned = Assign(times, lapStart, fps, distances);
+
+            // The start of the red last 5 m, when seen, is on the pace of the swimmer too: the marks before it get the distances
+            // that bring him there at that pace (a reading that starts late, from the click, sees the 25 m mark first, not the 15).
+            // Without a choice that fits it (the red seen at another moment), the marks alone.
+            int[] assigned = null;
+            if (EndInAssign && ends.Count > 0)
+            {
+                assigned = Assign(times, lapStart, fps, distances, Time(ends[0]), pool - 5);
+                if (assigned.All(a => a <= 0))
+                    assigned = null;
+            }
+
+            if (assigned == null)
+                assigned = Assign(times, lapStart, fps, distances, double.NaN, 0);
             for (int i = 0; i < marks.Count; i++)
             {
                 if (assigned[i] <= 0)
@@ -115,6 +128,101 @@ namespace Kinovea.ScreenManager
             }
 
             return found.OrderBy(f => f.LapDistance).ToList();
+        }
+
+        /// <summary>The start of the red last 5 m names the marks before it too (tests).</summary>
+        internal static bool EndInAssign = true;
+
+        /// <summary>The checkpoints far from the time of the length go (tests).</summary>
+        internal static bool LengthMarks = true;
+
+        /// <summary>
+        /// Seconds after the wall found from which a fast turn of the camera ends the reading of a length (0: never): the frames
+        /// after it (the camera turning to the scoreboard, a cut) do not move the path before the wall.
+        /// </summary>
+        public static double PathAfterWall = 1.0;
+
+        /// <summary>
+        /// The frame (index of a reading) where the camera starts turning fast after 'after' (more than 3% of the width a frame,
+        /// three frames in a row: to the scoreboard, a cut), 0.2 s before it; −1 if it does not.
+        /// </summary>
+        public static int CameraBreak(SwimStrokeResult result, double after, double fps)
+        {
+            if (result == null || result.Shifts == null || double.IsNaN(after) || fps <= 0)
+                return -1;
+
+            int run = 0;
+            for (int t = Math.Max(1, (int)Math.Ceiling(after)); t < result.Shifts.Count; t++)
+            {
+                double[] s = result.Shifts[t];
+                bool fast = false;
+                if (s != null && s.Length > 0)
+                {
+                    foreach (double v in s)
+                    {
+                        if (double.IsNaN(v) || double.IsInfinity(v) || Math.Abs(v) > 0.03 * s.Length)
+                        {
+                            fast = true;
+                            break;
+                        }
+                    }
+                }
+
+                run = fast ? run + 1 : 0;
+                if (run >= 3)
+                    return Math.Max((int)Math.Ceiling(after), t - 2 - (int)Math.Round(0.2 * fps));
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// The checkpoints found of a length after the first one (frames; before AddPace) far from where a swimmer is at their
+        /// distance in a length of its time go (the path left him: ahead of him after a turn, behind him at the end, a mark of
+        /// another length): in the analysed races the mark at d comes at (d − h)/(pool − h) of the time of the length (h: 4.8 m
+        /// after a dive, −1.4 m after a turn), within 2% of it. Off by more than 10% of the length the time of the length before
+        /// gives (previousSeconds × 1.1 after the length of a dive, × 1.0 after a turn; 20% in another style) and, when the wall
+        /// is seen (the swimmer stopping, the ends of the ropes), by more than 6% of the length it gives: the checkpoint goes.
+        /// With two checkpoints or more, what they are off by together (the start of the lap off) is not counted.
+        /// </summary>
+        public static void KeepWithLength(List<SwimSplitFound> found, Dictionary<string, double> wall, double lapStart, double fps, int pool,
+            bool dive, double previousSeconds, bool previousDive, bool sameStyle)
+        {
+            if (!LengthMarks || found == null || found.Count == 0 || pool <= 0 || fps <= 0 || double.IsNaN(lapStart) || previousSeconds <= 0)
+                return;
+
+            double h = dive ? 4.8 : -1.4;
+            double expected = previousSeconds * (previousDive ? 1.1 : 1.0) * fps;
+            double tolerance = (sameStyle ? 0.10 : 0.20) * expected;
+            double seenWall = double.NaN;
+            if (wall != null)
+            {
+                List<double> seen = wall.Where(c => c.Key == CueStop || c.Key == CueWallHead || c.Key == CueWallBody).Select(c => c.Value).ToList();
+                if (seen.Count > 0)
+                    seenWall = SwimLearningMedian(seen) - lapStart;
+            }
+
+            // Two checkpoints or more: their common offset (the start of the lap a little off, a wall found late) does not count
+            // (up to 8% of the length).
+            Func<double, double> offset = length =>
+            {
+                if (found.Count < 2 || length <= 0)
+                    return 0;
+                List<double> r = found.Select(f => Time(f.Cues) - lapStart - (f.LapDistance - h) / (pool - h) * length).ToList();
+                double m = SwimLearningMedian(r);
+                return Math.Max(-0.08 * length, Math.Min(0.08 * length, m));
+            };
+
+            double offPrevious0 = offset(expected);
+            double offWall0 = double.IsNaN(seenWall) || seenWall <= 0 ? 0 : offset(seenWall);
+            found.RemoveAll(f =>
+            {
+                double t = Time(f.Cues) - lapStart;
+                double share = (f.LapDistance - h) / (pool - h);
+                bool offPrevious = Math.Abs(t - share * expected - offPrevious0) > tolerance;
+                bool offWall = double.IsNaN(seenWall) || seenWall <= 0 || Math.Abs(t - share * seenWall - offWall0) > 0.06 * seenWall;
+                return offPrevious && offWall;
+            });
         }
 
         /// <summary>The time from the pace of the swimmer in the lap (the checkpoints found before and after).</summary>
@@ -287,6 +395,26 @@ namespace Kinovea.ScreenManager
         /// <summary>The steepest rise of the motion around the swimmer (breakout).</summary>
         public const string CueRise = "rise";
 
+        /// <summary>The breakout after a turn with its own cues and delays (tests).</summary>
+        public static bool TurnBreakout = true;
+
+        /// <summary>
+        /// Usual delay (s) of the steepest rise of the motion after a turn from the breakout the analysts mark (analysed races:
+        /// the first strokes after the head is out, about 1.2 s later in butterfly and breaststroke, 0.3 s in backstroke).
+        /// </summary>
+        public static double TurnRiseDelay(string style)
+        {
+            if (!TurnBreakout)
+                return 0;
+            switch (style)
+            {
+                case "fly": return -1.25;
+                case "br": return -1.1;
+                case "bk": return -0.3;
+                default: return 0;
+            }
+        }
+
         /// <summary>
         /// The breakout after a wall (or the start): the head breaks the surface and the swimming starts, between the frames
         /// 'from' and 'to' (the 15 m mark: the rules want the head out before it). Underwater the water around the swimmer
@@ -453,13 +581,13 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The same, knowing the start of the lap (frame index, can be negative) and the pool: the wall comes after the time of
-        /// the fastest swimmer to it.
+        /// the fastest swimmer to it, and not before 'shortest' seconds from the start of the lap (see ShortestLength; 0: none).
         /// </summary>
-        public static Dictionary<string, double> WallCues(SwimStrokeResult result, int direction, double fps, double after, double lapStart, int pool)
+        public static Dictionary<string, double> WallCues(SwimStrokeResult result, int direction, double fps, double after, double lapStart, int pool, double shortest = 0)
         {
             if (!double.IsNaN(lapStart) && pool > 0)
             {
-                double earliest = lapStart + pool * FastestPace * fps;
+                double earliest = lapStart + Math.Max(pool * FastestPace, LengthCheck ? shortest : 0) * fps;
                 if (double.IsNaN(after) || after < earliest)
                     after = earliest;
             }
@@ -546,6 +674,130 @@ namespace Kinovea.ScreenManager
             }
 
             return double.NaN;
+        }
+
+        /// <summary>The wall of a length not before ShortestLength of the length before it (tests).</summary>
+        internal static bool LengthCheck = true;
+
+        /// <summary>
+        /// Shortest time a length can take (s) from the time of the length before it, so that a wall seen much earlier (the path
+        /// left the swimmer and stopped with the water) is not taken: after the length of the start, its time (the dive is worth
+        /// more than a push off: the analysed races 1.05–1.20 times it); after a turn in the same style 0.9 of it (0.98–1.03);
+        /// in another style (medley, the leg of a relay) 0.75 (freestyle after breaststroke 0.83). previousSeconds 0: no limit.
+        /// </summary>
+        public static double ShortestLength(double previousSeconds, bool previousFromStart, bool sameStyle)
+        {
+            if (previousSeconds <= 0)
+                return 0;
+            if (!sameStyle)
+                return 0.75 * previousSeconds;
+            return (previousFromStart ? 1.0 : 0.9) * previousSeconds;
+        }
+
+        /// <summary>The place at the wall from the end of the ropes when the path is far from it (tests).</summary>
+        internal static bool WallPlace = true;
+
+        /// <summary>
+        /// Place of the swimmer's body (working x) at the wall of a length (frame index 'wall'), where the next length starts: the
+        /// path there, unless it is more than a body away from the wall itself (the end of the red last 5 m of the ropes, seen
+        /// within 0.5 s of that frame): then half a body before the wall (the path left the swimmer for the water behind him, the
+        /// camera turning towards the wall). bodyPerLane: the length of the swimmer in lane widths.
+        /// </summary>
+        public static double PlaceAtWall(SwimStrokeResult result, double wall, int direction, double fps, double bodyPerLane)
+        {
+            int n = result != null && result.Path != null ? result.Path.Length : 0;
+            if (n == 0)
+                return double.NaN;
+
+            int wi = (int)Math.Round(Math.Max(0, Math.Min(n - 1, wall)));
+            double x = result.Path[wi];
+            if (!WallPlace || double.IsNaN(bodyPerLane) || bodyPerLane <= 0)
+                return x;
+
+            int T = Math.Min(n, Math.Min(result.Lanes.Count, Math.Min(result.RedFar.Count, result.RedNear.Count)));
+            int reach = (int)Math.Round(0.5 * fps);
+            for (int k = 0; k <= reach; k++)
+            {
+                foreach (int t in new[] { wi - k, wi + k })
+                {
+                    if (t < 0 || t >= T || (k == 0 && t != wi))
+                        continue;
+
+                    double end = WallEnd(result, t, direction);
+                    if (double.IsNaN(end))
+                        continue;
+
+                    // The end moved with the camera to the frame of the wall.
+                    end = MoveWithCamera(result, end, t, wi);
+
+                    double body = bodyPerLane * LaneWidth(result.Lanes[wi], end);
+                    if (Math.Abs(x - end) <= body)
+                        return x;
+                    return end - direction * 0.5 * body;
+                }
+            }
+
+            return x;
+        }
+
+        /// <summary>
+        /// Usual speed of the swimmer in a length read: the median of the middle 60% of its frames (lane widths a frame towards
+        /// where he swims, camera motion removed), NaN when not known.
+        /// </summary>
+        public static double UsualSpeed(SwimStrokeResult result, int direction)
+        {
+            if (result == null || result.Path == null)
+                return double.NaN;
+
+            int T = Math.Min(result.Path.Length, Math.Min(result.Lanes.Count, result.Shifts.Count));
+            if (T < 20)
+                return double.NaN;
+
+            double[] u = Speeds(result, T, direction);
+            List<double> middle = new List<double>();
+            for (int t = Math.Max(1, (int)(0.2 * T)); t < (int)(0.8 * T); t++)
+                middle.Add(u[t]);
+            if (middle.Count < 5)
+                return double.NaN;
+
+            double usual = SwimLearningMedian(middle);
+            return usual > 1e-6 ? usual : double.NaN;
+        }
+
+        /// <summary>
+        /// Usual time (s) from the wall of a turn to the breakout (the head out) by the style of the length after it: the median
+        /// of the analysed races (freestyle 2.45, backstroke 4.98, breaststroke 4.92, butterfly 4.70).
+        /// </summary>
+        public static double TurnUnderwater(string style)
+        {
+            switch (style)
+            {
+                case "bk": return 4.98;
+                case "br": return 4.92;
+                case "fly": return 4.70;
+                default: return 2.45;
+            }
+        }
+
+        /// <summary>
+        /// The place x (working x) at frame 'from' moved with the camera to frame 'to' (indices of the frames read, either order).
+        /// </summary>
+        public static double MoveWithCamera(SwimStrokeResult result, double x, int from, int to)
+        {
+            if (result == null || result.Shifts == null)
+                return x;
+            for (int u = from; u < to && u + 1 < result.Shifts.Count; u++)
+                x += ShiftAt(result.Shifts[u + 1], x);
+            for (int u = from; u > to && u < result.Shifts.Count; u--)
+                x -= ShiftAt(result.Shifts[u], x);
+            return x;
+        }
+
+        private static double ShiftAt(double[] shift, double x)
+        {
+            if (shift == null || shift.Length == 0)
+                return 0;
+            return shift[Math.Max(0, Math.Min(shift.Length - 1, (int)Math.Round(x)))];
         }
 
         /// <summary>
@@ -1108,9 +1360,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Distance of each mark passed (0: none): in order, the first ones that fit the times from the start of the lap
-        /// (a mark 10 m further takes between 0.5 and 1.6 times the time of the previous 10 m).
+        /// (a mark 10 m further takes between 0.5 and 1.6 times the time of the previous 10 m) and, when 'endTime' is a number
+        /// (frames), the time at 'endDistance' (the start of the red last 5 m) after them.
         /// </summary>
-        private static int[] Assign(List<double> times, double lapStart, double fps, int[] distances)
+        private static int[] Assign(List<double> times, double lapStart, double fps, int[] distances, double endTime, int endDistance)
         {
             int n = times.Count;
             int[] result = new int[n];
@@ -1171,6 +1424,12 @@ namespace Kinovea.ScreenManager
                         continue;
                     d.Add(distances[c[i]]);
                     t.Add(times[i] / fps);
+                }
+
+                if (!double.IsNaN(endTime))
+                {
+                    d.Add(endDistance);
+                    t.Add(endTime / fps);
                 }
 
                 List<double> pace = new List<double>();

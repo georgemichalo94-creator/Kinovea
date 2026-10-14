@@ -98,6 +98,12 @@ namespace Kinovea.ScreenManager
             /// <summary>The wall marked before the lap followed (or the start of the race).</summary>
             public long LapStart;
 
+            /// <summary>Shortest time of the lap from the length before it (s, 0: no limit): no wall before it.</summary>
+            public double Shortest;
+
+            /// <summary>Time of the length before it read with it (s, 0: none).</summary>
+            public double PreviousSeconds;
+
             /// <summary>Strokes deleted by the analyst in this lap (✕): no automatic stroke there again.</summary>
             public readonly List<long> Removed = new List<long>();
 

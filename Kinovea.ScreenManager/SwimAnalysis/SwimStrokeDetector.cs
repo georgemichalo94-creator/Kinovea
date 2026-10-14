@@ -216,6 +216,35 @@ namespace Kinovea.ScreenManager
         /// <summary>Seconds the swimmer stays at the wall after an open turn's touch for the reading after it (0: no hold; tests).</summary>
         public static double TurnHold = 0.0;
 
+        // The swimmer under the water after a turn: from frame 0 for glideFrames frames, from glideX at glideSpeed (px a frame).
+        private int glideFrames;
+        private double glideX, glideSpeed;
+
+        /// <summary>
+        /// After a turn the swimmer glides and kicks under the water, unseen (the surface hardly moves), while the water he swam
+        /// through before is still moving: for these first frames of the reading the path stays near where he goes from the wall
+        /// (x at frame 0) at his speed of the length before (px a frame relative to the water, towards where he swims), less sure
+        /// of it frame after frame.
+        /// </summary>
+        public void Glide(int frames, double x, double speed)
+        {
+            glideFrames = frames;
+            glideX = x;
+            glideSpeed = speed;
+        }
+
+        /// <summary>
+        /// Last frame of the reading (−1: all): the frames after it (after the wall, when the camera turns fast to the scoreboard
+        /// or cuts) are left out of the result, so that they do not move the path before it.
+        /// </summary>
+        public int PathEnd = -1;
+
+        /// <summary>Part of the usual time under the water after a turn the path is kept near it (0: never; tests).</summary>
+        public static double GlideShare = 0.8;
+
+        /// <summary>Uncertainty of the speed under the water (part of it; tests).</summary>
+        internal static double GlideSpread = 0.2;
+
         /// <summary>Rope of the lane that is not seen (1 far, 2 near) next to the wall of the pool, 0 if both are seen.</summary>
         public int VirtualRope
         {
@@ -347,21 +376,35 @@ namespace Kinovea.ScreenManager
             {
                 double[] H = motion ?? Identity();
                 SwimStrokeLane before = lane;
+
+                // Camera displacement along the band (centre line of the previous band -> this frame).
+                CameraShift(H, before, shift);
+
+                // A motion of the camera no camera makes (a cut, a fast turn to the scoreboard, a motion not found): the camera
+                // as in the frame before, this frame without motion of the swimmer; after a few such frames the reading is blind
+                // (the lane is lost), so that what comes after does not take the path of the frames before.
+                if (MotionCheck && (blind || AbnormalShift(shift)))
+                {
+                    abnormalRun++;
+                    if (abnormalRun >= (int)Math.Max(3, Math.Round(0.2 * fps)))
+                        blind = true;
+                    H = blind ? Identity() : (lastGoodMotion ?? Identity());
+                    CameraShift(H, before, shift);
+                    motion = H;
+                    quietFrames = FrameGap + 1;
+                }
+                else
+                {
+                    abnormalRun = 0;
+                    lastGoodMotion = motion;
+                }
+
                 SwimStrokeLane predicted;
                 MapLine(H, before.A1, before.B1, 0, width, out predicted.A1, out predicted.B1);
                 MapLine(H, before.A2, before.B2, 0, width, out predicted.A2, out predicted.B2);
                 SwimStrokeLane next = predicted;
-                if (ropes)
+                if (ropes && !blind)
                     next = TrackRopes(image, predicted);
-
-                // Camera displacement along the band (centre line of the previous band -> this frame).
-                for (int x = 0; x < width; x++)
-                {
-                    double yc = 0.5 * (before.Y1(x) + before.Y2(x));
-                    double X, Y;
-                    MapPoint(H, x, yc, out X, out Y);
-                    shift[x] = X - x;
-                }
 
                 lane = next;
             }
@@ -373,7 +416,7 @@ namespace Kinovea.ScreenManager
             redNear.Add(ropes && virtualRope != 2 ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
 
             double[] d = new double[width];
-            if (previous.Count == FrameGap)
+            if (previous.Count == FrameGap && quietFrames == 0 && !blind)
             {
                 double[] M = Identity();
                 for (int k = 1; k < previousMotion.Count; k++)
@@ -383,6 +426,8 @@ namespace Kinovea.ScreenManager
                 BandDifference(image, previous[0], Minv, d);
             }
 
+            if (quietFrames > 0)
+                quietFrames--;
             differences.Add(d);
             previous.Add(image);
             previousMotion.Add(motion ?? Identity());
@@ -392,6 +437,47 @@ namespace Kinovea.ScreenManager
                 previousMotion.RemoveAt(0);
             }
         }
+
+        /// <summary>Displacement along the band of its centre line from the frame before to this one (motion H).</summary>
+        private void CameraShift(double[] H, SwimStrokeLane before, double[] shift)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                double yc = 0.5 * (before.Y1(x) + before.Y2(x));
+                double X, Y;
+                MapPoint(H, x, yc, out X, out Y);
+                shift[x] = X - x;
+            }
+        }
+
+        /// <summary>
+        /// A displacement of the band from one frame to the next that no camera makes, the motion of the camera not found (a cut,
+        /// a blur): more than a quarter of the width at a place, or 8% more at one end than at the other, or not a number. The
+        /// fast turns of the camera after a finish (12–15% a frame, the ends together) are motions.
+        /// </summary>
+        private bool AbnormalShift(double[] shift)
+        {
+            double lo = double.MaxValue, hi = double.MinValue;
+            foreach (double s in shift)
+            {
+                if (double.IsNaN(s) || double.IsInfinity(s) || Math.Abs(s) > 0.25 * width)
+                    return true;
+                lo = Math.Min(lo, s);
+                hi = Math.Max(hi, s);
+            }
+
+            return hi - lo > 0.08 * width;
+        }
+
+        /// <summary>The frames after a motion no camera makes do not count (tests).</summary>
+        internal static bool MotionCheck = true;
+
+        // The camera motion check: abnormal frames in a row, the reading blind after enough of them, the last normal motion, the
+        // frames without band difference still to come (their difference crosses an abnormal frame).
+        private int abnormalRun;
+        private bool blind;
+        private double[] lastGoodMotion;
+        private int quietFrames;
 
         private void BandDifference(SwimStrokeImage current, SwimStrokeImage before, double[] Minv, double[] d)
         {
@@ -562,16 +648,19 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public SwimStrokeResult Finish(int first, int last)
         {
+            // The frames after PathEnd (the camera turning fast after the wall, a cut) are not part of the reading.
+            int count = differences.Count;
+            int T = PathEnd >= FrameGap + 3 && PathEnd < count - 1 ? PathEnd + 1 : count;
+
             SwimStrokeResult result = new SwimStrokeResult();
             result.Ropes = ropes;
-            result.Lanes.AddRange(lanes);
-            result.RedFar.AddRange(redFar);
-            result.RedNear.AddRange(redNear);
-            result.Motion.AddRange(differences);
-            result.Shifts.AddRange(shifts);
-            result.Motions.AddRange(motions);
+            result.Lanes.AddRange(lanes.Take(T));
+            result.RedFar.AddRange(redFar.Take(T));
+            result.RedNear.AddRange(redNear.Take(T));
+            result.Motion.AddRange(differences.Take(T));
+            result.Shifts.AddRange(shifts.Take(T));
+            result.Motions.AddRange(motions.Take(T));
 
-            int T = differences.Count;
             if (T < FrameGap + 3)
                 return result;
 
@@ -598,7 +687,7 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            int[] path = Locate(D, S, T, W, x0, length, anchorFrame, anchorX, scale, holdFrom, holdTo, holdX);
+            int[] path = Locate(D, S, T, W, x0, length, anchorFrame, anchorX, scale, holdFrom, holdTo, holdX, glideFrames, glideX, glideSpeed);
             result.Path = path;
 
             int ahead = (int)Math.Round(1.6 * length);
@@ -636,7 +725,7 @@ namespace Kinovea.ScreenManager
         /// is known to be at one frame (−1: nowhere).
         /// </summary>
         private static int[] Locate(double[] D, double[] shifts, int T, int W, double x0, double length, int anchorFrame, double anchorX, double[] scale = null,
-            int holdFrom = -1, int holdTo = -1, double holdX = 0)
+            int holdFrom = -1, int holdTo = -1, double holdX = 0, int glideFrames = 0, double glideX = 0, double glideSpeed = 0)
         {
             double sigmaX = Math.Max(12.0, 0.3 * length);
             double anchorSigma = Math.Max(12.0, 0.25 * length);
@@ -691,6 +780,27 @@ namespace Kinovea.ScreenManager
                     for (int x = 0; x < W; x++)
                     {
                         double z = (x - xh) / anchorSigma;
+                        Z[k * W + x] -= z * z;
+                    }
+                }
+            }
+
+            // Under the water after a turn: near where he goes from the wall at his speed, less sure frame after frame.
+            if (glideFrames > 0 && GlideShare > 0)
+            {
+                double xg = glideX;
+                for (int k = 0; k <= Math.Min(T - 1, glideFrames); k++)
+                {
+                    if (k > 0)
+                    {
+                        int xi = Clamp((int)Math.Round(xg), 0, W - 1);
+                        xg += shifts[k * W + xi] + glideSpeed;
+                    }
+
+                    double sigma = anchorSigma + GlideSpread * Math.Abs(glideSpeed) * k;
+                    for (int x = 0; x < W; x++)
+                    {
+                        double z = (x - xg) / sigma;
                         Z[k * W + x] -= z * z;
                     }
                 }
@@ -793,9 +903,13 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Penalty of the second pass of the path on the steps away from the swimmer's own speed: strong enough that the path does
         /// not leave a swimmer for the still water (glints of the sun, the wake behind him, the turbulence of a turn), which would
-        /// mean he suddenly stopped (test races: errors over 1 s in 14 checkpoints of 217 instead of 26 with 0.03).
+        /// mean he suddenly stopped, weak enough that it follows his speed changing (test races, checkpoints more than 1 s off of
+        /// 217: 26 with 0.03, 14 with 0.1, 5 with 0.15, 10 with 0.2, 19 with 0.3).
         /// </summary>
-        internal static double SecondLambda = 0.1;
+        internal static double SecondLambda = 0.15;
+
+        /// <summary>Largest step back against the water of the path with the swimmer's speed (px a frame; negative: any, tests).</summary>
+        internal static double Backward = -1;
 
         /// <summary>
         /// Best path of the swimmer along the band: maximises the sum of E minus a penalty on the steps, where a step is
@@ -850,7 +964,15 @@ namespace Kinovea.ScreenManager
                     arg[x] = 0;
                 }
 
-                for (int st = -maxStep; st <= maxStep; st++)
+                // With the swimmer's speed: no step back against the water (more than Backward px a frame); the swimmer never
+                // swims backwards, the wake behind him and the still water do (with the camera following him).
+                int stFrom = -maxStep, stTo = maxStep;
+                if (Backward >= 0 && v > 0)
+                    stFrom = Math.Max(stFrom, (int)Math.Ceiling(-v - Backward));
+                else if (Backward >= 0 && v < 0)
+                    stTo = Math.Min(stTo, (int)Math.Floor(-v + Backward));
+
+                for (int st = stFrom; st <= stTo; st++)
                 {
                     double penalty = lambda * st * st;
                     for (int x = 0; x < W; x++)
