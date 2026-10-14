@@ -34,12 +34,19 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Where it comes from: "light" (a flash with the swimmers starting to move just after it), "light?" (a flash without that
         /// check: the dive was not seen), "weak light" (a weaker flash with the dive after it, the strong ones failed the check),
-        /// "dive" (no flash fits: the start put 0.30 s before the swimmers start to move).
+        /// "dive" (no flash fits: the start put 0.30 s before the swimmers start to move), "light+sound" (the light seen just before
+        /// the start signal heard), "sound" (no light seen: the signal heard less its usual delay).
         /// </summary>
         public string Source = "light";
 
         /// <summary>Frame where the swimmers start to move after it (−1: not seen).</summary>
         public int Dive = -1;
+
+        /// <summary>Frame (fraction) of the start signal heard just after it (NaN: none heard).</summary>
+        public double Beep = double.NaN;
+
+        /// <summary>How clear the signal heard is (SwimBeep.Score, dB).</summary>
+        public double BeepScore;
     }
 
     /// <summary>
@@ -951,6 +958,289 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
+        #region Start signal heard
+        /// <summary>
+        /// The light of the start just before a start signal heard (frames from..to of the frames given): the clearest small flash
+        /// that came on from a still background, at a place without glints lately, and went down again within 0.1 s (the strobe
+        /// next to the starter: a few pixels in a phone video from the stands, too weak for the start lights), the nearer to the
+        /// frame expected from the signal the better. A place that flashes again within 0.5 s before or after is not it (a screen,
+        /// glints). Null: none.
+        /// </summary>
+        public SwimStartCandidate FlashBefore(int from, int to, double expected)
+        {
+            from = Math.Max(0, from);
+            to = Math.Min(frames - 1, to);
+            if (to < from)
+                return null;
+
+            List<Blob> blobs = new List<Blob>();
+            for (int i = from; i <= to; i++)
+                blobs.AddRange(finished[i]);
+            blobs.AddRange(following.Where(b => b.Frame >= from && b.Frame <= to));
+
+            int down = Math.Max(1, (int)Math.Round(0.1 * fps));
+            double maxArea = 400.0 * width * width / (960.0 * 960.0);
+            Blob best = null;
+            double bestScore = 0;
+            foreach (Blob b in blobs)
+            {
+                if (b.Prev == null || b.Prev.Length == 0 || b.Values.Count == 0 || b.Area > maxArea)
+                    continue;
+
+                double baseLevel = b.Prev.Average();
+                double sd = Math.Sqrt(b.Prev.Select(x => (x - baseLevel) * (x - baseLevel)).Average());
+                double first = b.Values[0];
+                double jump = first - baseLevel;
+                if (jump < 35 || first < 140 || b.ZMax < 7 || sd > Math.Max(3.0, 0.15 * jump))
+                    continue;
+
+                // Glints come back at the same place; a moving object darkens next to where it brightens.
+                if (b.Rate > 5 || b.Dark > 0.1 * Math.Max(b.Bright, 1))
+                    continue;
+
+                if (b.Values.Count > 1 && b.Values.Skip(1).Take(down).Min() > baseLevel + 0.75 * jump)
+                    continue;
+
+                double score = Math.Min(b.ZMax, 40) * Math.Min(jump, 150) / (1.0 + b.Rate);
+                if (!double.IsNaN(expected))
+                    score *= SwimStartSound.Nearness(b.Frame, expected, fps);
+                if (score > bestScore && !FlashesAgain(b, (int)Math.Round(0.5 * fps)))
+                {
+                    bestScore = score;
+                    best = b;
+                }
+            }
+
+            if (best == null)
+                return null;
+
+            if (Trace != null)
+                Trace(string.Format("flash before the signal: frame {0} at {1:0},{2:0} area {3} z {4:0.0} score {5:0}", best.Frame, best.Cx, best.Cy, best.Area, best.ZMax, bestScore));
+
+            return new SwimStartCandidate
+            {
+                Frame = best.Frame, Flash = Math.Round(bestScore / 10, 1), Strength = bestScore / 10, Lights = 1, Follow = -1,
+                Places = new List<double[]> { new[] { best.Cx, best.Cy } }, Source = "light+sound"
+            };
+        }
+
+        /// <summary>Another spot came on at the place of this one (15 px at 960 wide) within 'span' frames before or after it (not the next).</summary>
+        private bool FlashesAgain(Blob b, int span)
+        {
+            double near = 15.0 * width / 960.0;
+            Func<Blob, bool> same = c => c != b && Math.Abs(c.Frame - b.Frame) > 1 && Math.Abs(c.Frame - b.Frame) <= span &&
+                Math.Abs(c.Cx - b.Cx) <= near && Math.Abs(c.Cy - b.Cy) <= near;
+            for (int i = Math.Max(0, b.Frame - span); i <= Math.Min(frames - 1, b.Frame + span); i++)
+            {
+                if (finished[i].Any(same))
+                    return true;
+            }
+
+            return following.Any(same);
+        }
+
+        /// <summary>Frame where the swimmers start to move 0.10–0.55 s after this frame (−1: not seen, or already moving before it).</summary>
+        public int DiveAfterFrame(int frame)
+        {
+            double[] spots;
+            List<int> dives = DiveOnsets(out spots);
+            int dive;
+            return DiveAfter(frame, dives, spots, out dive) ? dive : -1;
+        }
+
+        /// <summary>Frames where the camera starts to follow the race.</summary>
+        public List<int> FollowFrames()
+        {
+            return FollowStarts().Select(f => f.Item1).ToList();
+        }
+
+        /// <summary>
+        /// The light of the start in frames at full size (brightness, rows without padding) when it is too small for the frames of
+        /// the reading: the frame (from 'first' to 'last', −1: the end) where the clearest tiny flash comes on: a few pixels (at
+        /// most 60 at 1920 wide) 50 brighter than in the two frames before (and their neighbours), at least 170, gone again two
+        /// frames later (a digit of a clock on the image stays); a place that comes on again in the six frames before or after
+        /// counts less (glints, screens). Frames with many pixels coming on (the camera moving, a change of exposure) are left out.
+        /// −1: none (score below 60). weight: of each image (the nearer to the light expected, the better), null: none.
+        /// </summary>
+        public static int TinyFlash(IList<byte[]> images, int width, int height, int first, out double score, out double[] place,
+            Func<int, double> weight = null, int last = -1)
+        {
+            score = 0;
+            place = null;
+            int n = width * height, best = -1;
+            if (images == null || images.Count < 3 || width < 3 || height < 3)
+                return -1;
+
+            byte[] reference = new byte[n], pass = new byte[n];
+            int[] labels = new int[n];
+            int[] stack = new int[n];
+            double maxArea = Math.Max(4, 60.0 * width * width / (1920.0 * 1920.0));
+            int end = last >= 0 ? Math.Min(images.Count - 1, last) : images.Count - 1;
+            for (int k = Math.Max(2, first); k <= end; k++)
+            {
+                byte[] v = images[k], v1 = images[k - 1], v2 = images[k - 2];
+                if (v == null || v1 == null || v2 == null)
+                    continue;
+
+                // The two frames before, 3×3 maximum: a small move of the camera does not make a flash.
+                for (int p = 0; p < n; p++)
+                    pass[p] = v1[p] > v2[p] ? v1[p] : v2[p];
+                Dilate3(pass, reference, width, height);
+
+                List<int> candidates = new List<int>();
+                for (int p = 0; p < n; p++)
+                {
+                    labels[p] = 0;
+                    if (v[p] >= 170 && v[p] - reference[p] >= 50)
+                    {
+                        candidates.Add(p);
+                        if (candidates.Count > n / 500)
+                            break;
+                    }
+                }
+
+                if (candidates.Count == 0 || candidates.Count > n / 500)
+                    continue;
+
+                foreach (int p in candidates)
+                    labels[p] = -1;
+
+                int label = 0;
+                foreach (int start in candidates)
+                {
+                    if (labels[start] != -1)
+                        continue;
+
+                    label++;
+                    int top = 0, area = 0, minX = width, minY = height, maxX = 0, maxY = 0, peak = 0;
+                    double sx = 0, sy = 0, now = 0, before = 0;
+                    List<int> pixels = new List<int>();
+                    stack[top++] = start;
+                    labels[start] = label;
+                    while (top > 0)
+                    {
+                        int p = stack[--top];
+                        pixels.Add(p);
+                        int x = p % width, y = p / width;
+                        area++;
+                        sx += x;
+                        sy += y;
+                        now += v[p];
+                        before += reference[p];
+                        peak = Math.Max(peak, v[p] - reference[p]);
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                int xx = x + dx, yy = y + dy;
+                                if (xx < 0 || yy < 0 || xx >= width || yy >= height)
+                                    continue;
+                                int q = yy * width + xx;
+                                if (labels[q] == -1)
+                                {
+                                    labels[q] = label;
+                                    stack[top++] = q;
+                                }
+                            }
+                        }
+                    }
+
+                    if (area > maxArea)
+                        continue;
+
+                    now /= area;
+                    before /= area;
+
+                    // The same place in the six frames before and after (not the next): glints of the water and screens come on
+                    // again and again, the light of the start once.
+                    int flicker = 0;
+                    for (int j = Math.Max(2, k - 6); j <= Math.Min(images.Count - 1, k + 6); j++)
+                    {
+                        if (j >= k && j <= k + 1)
+                            continue;
+
+                        byte[] w = images[j], w1 = images[j - 1], w2 = images[j - 2];
+                        if (w == null || w1 == null || w2 == null)
+                            continue;
+                        bool on = false;
+                        for (int y = Math.Max(0, minY - 1); y <= Math.Min(height - 1, maxY + 1) && !on; y++)
+                        {
+                            for (int x = Math.Max(0, minX - 1); x <= Math.Min(width - 1, maxX + 1) && !on; x++)
+                            {
+                                int p = y * width + x;
+                                on = w[p] - Math.Max(w1[p], w2[p]) >= 30;
+                            }
+                        }
+
+                        if (on)
+                            flicker++;
+                    }
+
+                    // Gone two frames later (a flash caught by two frames is still on in the next one).
+                    int later = Math.Min(images.Count - 1, k + 2);
+                    if (later > k && images[later] != null)
+                    {
+                        double after = 0;
+                        foreach (int p in pixels)
+                            after += images[later][p];
+                        after /= area;
+                        if (after > before + 0.5 * (now - before))
+                            continue;
+                    }
+
+                    double s = peak * Math.Sqrt(Math.Min(area, 50)) / (1 + flicker) * (weight != null ? weight(k) : 1.0);
+                    if (s > score)
+                    {
+                        score = s;
+                        best = k;
+                        place = new[] { sx / area, sy / area };
+                    }
+                }
+            }
+
+            if (score < 60)
+            {
+                place = null;
+                return -1;
+            }
+
+            return best;
+        }
+
+        /// <summary>3×3 maximum, edges replicated.</summary>
+        private static void Dilate3(byte[] src, byte[] dst, int width, int height)
+        {
+            byte[] rows = new byte[src.Length];
+            for (int y = 0; y < height; y++)
+            {
+                int row = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    byte m = src[row + x];
+                    if (x > 0 && src[row + x - 1] > m) m = src[row + x - 1];
+                    if (x < width - 1 && src[row + x + 1] > m) m = src[row + x + 1];
+                    rows[row + x] = m;
+                }
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                int row = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    byte m = rows[row + x];
+                    if (y > 0 && rows[row - width + x] > m) m = rows[row - width + x];
+                    if (y < height - 1 && rows[row + width + x] > m) m = rows[row + width + x];
+                    dst[row + x] = m;
+                }
+            }
+        }
+        #endregion
+
         /// <summary>
         /// True when a start was found and the race after it has been read long enough (6 s): no need to read further. With the dive
         /// check, a flash with the dive after it ends the reading; a start put before the dive, or a flash without the dive, can be
@@ -983,6 +1273,10 @@ namespace Kinovea.ScreenManager
                 return 0.35;
             if (best.Source == "weak light")
                 return 0.55;
+            if (best.Source == "light+sound")
+                return best.Follow >= 0 || best.Dive >= 0 ? 0.95 : 0.9;
+            if (best.Source == "sound")
+                return best.Follow >= 0 || best.Dive >= 0 ? 0.8 : 0.7;
 
             double c = best.Flash >= 200 ? 0.9 : best.Flash >= 80 ? 0.8 : best.Flash >= 30 ? 0.65 : 0.45;
             if (best.Lights >= 2)

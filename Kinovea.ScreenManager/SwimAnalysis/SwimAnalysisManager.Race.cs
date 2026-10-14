@@ -10,7 +10,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Kinovea.Services;
 using Kinovea.Video;
@@ -18,8 +20,9 @@ using Kinovea.Video;
 namespace Kinovea.ScreenManager
 {
     /// <summary>
-    /// Automatic analysis of a race video (camera in the stands following the swimmer): the start signal from the start lights,
-    /// proposed for the check of the analyst (Enter right, arrows and Enter corrected, Delete wrong) and learned from the answers.
+    /// Automatic analysis of a race video (camera in the stands following the swimmer): the start signal from the start lights and
+    /// the signal heard, proposed for the check of the analyst (Enter right, arrows and Enter corrected, Delete wrong) and learned
+    /// from the answers.
     /// </summary>
     public partial class SwimAnalysisManager
     {
@@ -35,9 +38,25 @@ namespace Kinovea.ScreenManager
 
         public bool StartLightRunning { get; private set; }
 
+        /// <summary>What the reading of the start found (background thread).</summary>
+        private sealed class StartFound
+        {
+            /// <summary>Read to the end (not cancelled).</summary>
+            public bool Completed;
+
+            public List<SwimStartCandidate> Candidates = new List<SwimStartCandidate>();
+
+            /// <summary>The start signals heard (empty: no sound, or none heard).</summary>
+            public List<SwimBeep> Beeps = new List<SwimBeep>();
+
+            /// <summary>Why the sound could not be read (null: read, or not asked).</summary>
+            public string SoundError;
+        }
+
         /// <summary>
-        /// Reads the video from its beginning until the start (the start lights flash, then the camera follows the swimmers),
-        /// proposes the frame of the flash and starts the check. A start already marked near it only teaches the learning.
+        /// Reads the video from its beginning until the start (the start lights flash, the signal sounds, then the camera follows the
+        /// swimmers), proposes the frame of the light (the light of the start seen just before the signal heard; without light, the
+        /// signal less its usual delay) and starts the check. A start already marked near it only teaches the learning.
         /// </summary>
         public void FindStartLight()
         {
@@ -70,6 +89,16 @@ namespace Kinovea.ScreenManager
             SwimStartLight detector = new SwimStartLight(width, height, realFps);
             List<long> stamps = new List<long>();
 
+            // The sound of the video (the start signal heard), read by ffmpeg next to the program while the frames are read. Not for
+            // the videos slowed down (high speed): their sound is not in real time.
+            double tsPerSecond = frameServer.VideoReader.Info.AverageTimeStampsPerSeconds;
+            string ffmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
+            string path = videoPath;
+            bool sound = Math.Abs(hsf - 1) < 0.01 && tsPerSecond > 0 && !string.IsNullOrEmpty(path) && File.Exists(path) && File.Exists(ffmpeg);
+            double soundFrom = from / Math.Max(1e-9, tsPerSecond);
+            double soundSeconds = (end - from) / Math.Max(1e-9, tsPerSecond) + 1;
+
+            StartFound result = null;
             Exception error = null;
             bool cancelled = false;
             StartLightRunning = true;
@@ -80,11 +109,16 @@ namespace Kinovea.ScreenManager
             {
                 progress.CancelAsked += (o, e) => worker.CancelAsync();
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
-                worker.DoWork += (o, e) => { e.Result = ReadStartLightFrames(detector, stamps, from, end, width, height, (BackgroundWorker)o); };
+                worker.DoWork += (o, e) =>
+                {
+                    e.Result = ReadStart(detector, stamps, from, end, width, height, (BackgroundWorker)o, sound ? ffmpeg : null, path, soundFrom,
+                        soundSeconds, tsPerSecond);
+                };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
                     error = e.Error;
-                    cancelled = e.Error == null && e.Result is bool && !(bool)e.Result;
+                    result = e.Error == null ? e.Result as StartFound : null;
+                    cancelled = e.Error == null && (result == null || !result.Completed);
                     progress.Close();
                 };
 
@@ -112,11 +146,14 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
-                List<SwimStartCandidate> found = detector.Find();
+                if (result.SoundError != null)
+                    log.WarnFormat("Start signal: the sound was not read ({0}).", result.SoundError);
+
+                List<SwimStartCandidate> found = result.Candidates;
                 if (found.Count == 0 || stamps.Count == 0)
                 {
-                    Status("Δεν βρέθηκε φωτεινό σήμα εκκίνησης πριν από την κολύμβηση (δεν φαίνεται το φως ή η κάμερα δεν ακολουθεί τον αθλητή). " +
-                        "Βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος.", true);
+                    Status("Δεν βρέθηκε σήμα εκκίνησης πριν από την κολύμβηση (δεν φαίνεται το φως, δεν ακούγεται το σήμα ή η κάμερα δεν ακολουθεί " +
+                        "τον αθλητή). Βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος.", true);
                     return;
                 }
 
@@ -129,8 +166,177 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>Background thread: frames from the beginning until the start is clear (or 'end'). False if cancelled.</summary>
-        private bool ReadStartLightFrames(SwimStartLight detector, List<long> stamps, long from, long end, int width, int height, BackgroundWorker worker)
+        /// <summary>
+        /// Background thread: the frames from the beginning until the start is clear (or 'end'), the sound at the same time (ffmpeg:
+        /// null, not read), then the starts from the lights and the signal heard.
+        /// </summary>
+        private StartFound ReadStart(SwimStartLight detector, List<long> stamps, long from, long end, int width, int height, BackgroundWorker worker,
+            string ffmpeg, string path, double soundFrom, double soundSeconds, double tsPerSecond)
+        {
+            StartFound result = new StartFound();
+            using (CancellationTokenSource stop = new CancellationTokenSource())
+            {
+                Task<List<SwimBeep>> heard = null;
+                string soundError = null;
+                if (ffmpeg != null)
+                {
+                    heard = Task.Run(() =>
+                    {
+                        string err;
+                        float[] samples = SwimStartSound.Read(ffmpeg, path, soundFrom, soundSeconds, stop.Token, out err);
+                        soundError = err;
+                        return samples != null ? SwimStartSound.Find(samples) : new List<SwimBeep>();
+                    });
+                }
+
+                // Once the signal is heard, the frames are read until 8 s after the last clear one (its race, for the checks).
+                Func<long, bool> enough = ts =>
+                {
+                    if (heard == null || !heard.IsCompleted || heard.IsFaulted || heard.IsCanceled)
+                        return false;
+                    List<SwimBeep> clear = heard.Result.Where(b => b.Score >= SwimStartSound.MinScore).ToList();
+                    return clear.Count > 0 && ts > from + (clear.Max(b => b.Onset) + 8) * tsPerSecond;
+                };
+
+                result.Completed = ReadStartLightFrames(detector, stamps, from, end, width, height, worker, enough);
+                if (heard != null)
+                {
+                    try
+                    {
+                        // The sound is usually read long before the frames; cancelled, ffmpeg is stopped.
+                        if (!result.Completed)
+                            stop.Cancel();
+                        while (!heard.Wait(200))
+                        {
+                            if (worker.CancellationPending && !stop.IsCancellationRequested)
+                            {
+                                stop.Cancel();
+                                result.Completed = false;
+                            }
+                        }
+
+                        result.Beeps = heard.Result;
+                        result.SoundError = soundError;
+                    }
+                    catch (AggregateException e)
+                    {
+                        result.SoundError = e.InnerException != null ? e.InnerException.Message : e.Message;
+                    }
+                }
+
+                if (!result.Completed)
+                    return result;
+            }
+
+            List<SwimStartCandidate> found = detector.Find();
+            if (result.Beeps.Count > 0 && stamps.Count > 1)
+            {
+                Func<double, double> frameAt = seconds => FrameAt(stamps, from + seconds * tsPerSecond);
+                Func<int, int, double, SwimStartCandidate> fullSize = (lo, hi, expected) => TinyFlashAt(stamps, lo, hi, expected, width, detector.FramesPerSecond);
+                found = SwimStartSound.Choose(found, result.Beeps, detector, frameAt, fullSize, SwimStartSound.Delay);
+            }
+
+            result.Candidates = found;
+            return result;
+        }
+
+        /// <summary>Frame (fraction) of the frames read at a time stamp (NaN outside them).</summary>
+        private static double FrameAt(List<long> stamps, double timestamp)
+        {
+            if (stamps.Count < 2 || timestamp < stamps[0] || timestamp > stamps[stamps.Count - 1])
+                return double.NaN;
+
+            int lo = 0, hi = stamps.Count - 1;
+            while (hi - lo > 1)
+            {
+                int mid = (lo + hi) / 2;
+                if (stamps[mid] <= timestamp)
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+
+            return lo + (timestamp - stamps[lo]) / Math.Max(1.0, stamps[hi] - stamps[lo]);
+        }
+
+        /// <summary>Time stamp of a frame (fraction) of the frames read.</summary>
+        private static long StampAt(List<long> stamps, double frame)
+        {
+            if (stamps.Count == 0 || double.IsNaN(frame))
+                return stamps.Count > 0 ? stamps[0] : 0;
+
+            int k = Math.Max(0, Math.Min(stamps.Count - 1, (int)Math.Floor(frame)));
+            if (k >= stamps.Count - 1)
+                return stamps[stamps.Count - 1];
+
+            return (long)Math.Round(stamps[k] + (frame - k) * (stamps[k + 1] - stamps[k]));
+        }
+
+        /// <summary>
+        /// Background thread, after the reading: the tiny flash of the light of the start in the frames at full size (at most 1920
+        /// wide) between two frames read, too small for the frames of the reading, the nearer to the frame expected the better.
+        /// Null: none.
+        /// </summary>
+        private SwimStartCandidate TinyFlashAt(List<long> stamps, int lo, int hi, double expected, int workWidth, double fps)
+        {
+            lo = Math.Max(0, lo);
+            hi = Math.Min(stamps.Count - 1, hi);
+            if (hi < lo)
+                return null;
+
+            VideoReader reader = frameServer.VideoReader;
+            Size reference = reader.Info.ReferenceSize;
+            int w = Math.Min(1920, Math.Max(64, reference.Width));
+            int h = Math.Max(2, (int)Math.Round(w * (double)reference.Height / Math.Max(1, reference.Width)));
+            int from = Math.Max(0, lo - 8), to = Math.Min(stamps.Count - 1, hi + 8);
+            List<byte[]> images = new List<byte[]>();
+            List<int> index = new List<int>();
+            long current = reader.Current != null ? reader.Current.Timestamp : stamps[from];
+            bool more = reader.MoveTo(current, stamps[from]);
+            while (true)
+            {
+                VideoFrame frame = reader.Current;
+                if (frame == null || frame.Image == null || frame.Timestamp > stamps[to])
+                    break;
+
+                int k = stamps.BinarySearch(frame.Timestamp);
+                if (k >= 0)
+                {
+                    using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(frame.Image, w, h))
+                        images.Add(Brightness(bgr));
+                    index.Add(k);
+                }
+
+                if (!more)
+                    break;
+
+                more = reader.MoveNext(0, true);
+            }
+
+            int first = index.FindIndex(k => k >= lo), last = index.FindLastIndex(k => k <= hi);
+            if (first < 0 || last < first)
+                return null;
+
+            double score;
+            double[] place;
+            int i = SwimStartLight.TinyFlash(images, w, h, first, out score, out place, k => SwimStartSound.Nearness(index[k], expected, fps), last);
+            if (i < 0 || index[i] > hi)
+                return null;
+
+            double scale = (double)workWidth / w;
+            return new SwimStartCandidate
+            {
+                Frame = index[i], Flash = Math.Round(score / 10, 1), Strength = score / 10, Lights = 1, Follow = -1,
+                Places = new List<double[]> { new[] { place[0] * scale, place[1] * scale } }, Source = "light+sound"
+            };
+        }
+
+        /// <summary>
+        /// Background thread: frames from the beginning until the start is clear (or 'end', or 'enough' at a frame). False if
+        /// cancelled.
+        /// </summary>
+        private bool ReadStartLightFrames(SwimStartLight detector, List<long> stamps, long from, long end, int width, int height, BackgroundWorker worker,
+            Func<long, bool> enough)
         {
             VideoReader reader = frameServer.VideoReader;
             double span = Math.Max(1, end - from);
@@ -176,7 +382,7 @@ namespace Kinovea.ScreenManager
                         }
 
                         VideoFrame frame = reader.Current;
-                        if (frame == null || frame.Image == null || frame.Timestamp > end)
+                        if (frame == null || frame.Image == null || frame.Timestamp > end || (enough != null && enough(frame.Timestamp)))
                             break;
 
                         using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(frame.Image, width, height))
@@ -242,10 +448,15 @@ namespace Kinovea.ScreenManager
                 if (c.Frame < 0 || c.Frame >= stamps.Count)
                     continue;
 
-                // A start put before the dive of the swimmers (no light fits) is its own cue: its delay is learned apart.
-                string cue = c.Source == "dive" ? "dive" : "light";
+                // A start put before the dive of the swimmers (no light fits), or from the signal heard (no light seen before it), is
+                // its own cue: its delay is learned apart.
+                string cue = c.Source == "dive" ? "dive" : c.Source == "sound" ? "sound" : "light";
                 SwimDetection d = new SwimDetection(KindRaceStart, SwimMarkType.Signal, k + 1) { Confidence = k == 0 ? confidence0 : 0.35 * confidence0 };
-                d.Cue(cue, c.Frame, 1.0, c.Source == "dive" ? 0.1 : 0.02);
+                double heardStart = double.IsNaN(c.Beep) ? double.NaN : c.Beep - SwimStartSound.Delay * realFps;
+                if (cue == "sound")
+                    d.Cue(cue, heardStart, 1.0, 0.03);
+                else
+                    d.Cue(cue, c.Frame, 1.0, c.Source == "dive" ? 0.1 : 0.02);
                 double confidence;
                 double sample = SwimProposalMath.Combine(d, l, video, realFps, out confidence);
                 if (double.IsNaN(sample))
@@ -261,21 +472,31 @@ namespace Kinovea.ScreenManager
                     Index = k + 1,
                     Batch = batch
                 };
-                p.Cues[cue] = stamps[c.Frame];
+                p.Cues[cue] = cue == "sound" ? StampAt(stamps, heardStart) : stamps[c.Frame];
+
+                // The signal heard with a light: its delay is learned too (for the starts without light).
+                if (cue == "light" && !double.IsNaN(heardStart))
+                    p.Cues["sound"] = StampAt(stamps, heardStart);
                 p.Measures = new Dictionary<string, double>
                 {
                     { "lights", c.Lights },
-                    { "flash", Math.Round(c.Flash, 1) },
-                    { "follow", Math.Round(Timing.Seconds(stamps[Math.Min(stamps.Count - 1, c.Follow)], stamps[c.Frame]), 2) }
+                    { "flash", Math.Round(c.Flash, 1) }
                 };
+                if (c.Follow >= 0 && c.Follow < stamps.Count)
+                    p.Measures["follow"] = Math.Round(Timing.Seconds(stamps[c.Follow], stamps[c.Frame]), 2);
                 if (c.Dive >= 0 && c.Dive < stamps.Count)
                     p.Measures["dive"] = Math.Round(Timing.Seconds(stamps[c.Dive], stamps[c.Frame]), 2);
+                if (!double.IsNaN(c.Beep))
+                {
+                    p.Measures["beep"] = Math.Round((StampAt(stamps, c.Beep) - stamps[c.Frame]) / Math.Max(1e-9, frameServer.VideoReader.Info.AverageTimeStampsPerSeconds), 3);
+                    p.Measures["beepScore"] = Math.Round(c.BeepScore, 1);
+                }
                 made.Add(p);
             }
 
             if (made.Count == 0)
             {
-                Status("Δεν βρέθηκε φωτεινό σήμα εκκίνησης.", true);
+                Status("Δεν βρέθηκε σήμα εκκίνησης.", true);
                 return;
             }
 
@@ -288,8 +509,10 @@ namespace Kinovea.ScreenManager
                 Answer(best, marked, true);
                 Changed(false);
                 long frames = (long)Math.Round((marked - best.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
-                Status(frames == 0 ? "💡 Η εκκίνηση που έχεις βάλει είναι στο καρέ του φωτεινού σήματος: κρατήθηκε για τη μάθηση." :
-                    string.Format(CultureInfo.InvariantCulture, "💡 Η εκκίνηση που έχεις βάλει είναι {0:+0;-0} καρέ από το φωτεινό σήμα: κρατήθηκε για τη μάθηση.", frames), false);
+                string what = found[0].Source == "sound" ? "το σήμα που ακούγεται" : "το φωτεινό σήμα";
+                Status(frames == 0 ? "💡 Η εκκίνηση που έχεις βάλει είναι στο καρέ που βρέθηκε από " + what + ": κρατήθηκε για τη μάθηση." :
+                    string.Format(CultureInfo.InvariantCulture, "💡 Η εκκίνηση που έχεις βάλει είναι {0:+0;-0} καρέ από αυτήν που βρέθηκε από {1}: κρατήθηκε για τη μάθηση.",
+                    frames, what), false);
                 return;
             }
 
@@ -297,7 +520,13 @@ namespace Kinovea.ScreenManager
             Changed(false);
             BeginReview(best);
             if (best.Cues.ContainsKey("dive"))
-                Status("⚠ Δεν φάνηκε το φως της εκκίνησης: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. Έλεγξέ τη στο καρέ του σήματος.", true);
+                Status("⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. " +
+                    "Έλεγξέ τη στο καρέ του σήματος.", true);
+            else if (found[0].Source == "sound")
+                Status("🔊 Δεν φάνηκε το φως της εκκίνησης: η πρόταση είναι από το σήμα που ακούγεται (λίγο πριν ακουστεί, όσο αργεί ο ήχος να φτάσει " +
+                    "στην κάμερα). Έλεγξέ τη στο καρέ του φωτός.", false);
+            else if (found[0].Source == "light+sound")
+                Status("💡🔊 Η εκκίνηση στο φως του σήματος, που ακούγεται αμέσως μετά. Έλεγξέ τη.", false);
         }
 
         /// <summary>The start proposal is accepted at this frame: it becomes the start of the race (and of the swimmers of the video).</summary>
