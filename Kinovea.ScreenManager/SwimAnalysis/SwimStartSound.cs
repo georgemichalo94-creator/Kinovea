@@ -184,6 +184,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Weaker signals than this (dB) are not a start.</summary>
         public const double MinScore = 10;
 
+        /// <summary>Weight of a signal heard while the camera already follows a race (its score is multiplied by it).</summary>
+        public const double InRaceWeight = 0.3;
+
         /// <summary>A light at this frame against the light expected from the signal heard: 1 there, 0.3 at 0.3 s and further.</summary>
         public static double Nearness(double frame, double expected, double fps)
         {
@@ -216,10 +219,18 @@ namespace Kinovea.ScreenManager
             int last = detector.Count - 1;
             List<int> follows = detector.FollowFrames();
             List<SwimStartCandidate> heard = new List<SwimStartCandidate>();
-            double clearest = beeps.Max(x => x.Score);
-            foreach (SwimBeep b in beeps.Where(x => x.Score >= Math.Max(MinScore, 0.7 * clearest)).OrderByDescending(x => x.Score).Take(3))
+
+            // A signal heard while the camera already follows a race (sounds of the stands in the middle of a race) counts little.
+            var weighted = beeps.Select(x =>
             {
-                double frame = frameAt(b.Onset);
+                double f = frameAt(x.Onset);
+                return new { Beep = x, Frame = f, Score = x.Score * (!double.IsNaN(f) && f >= 1 && f <= last && detector.InRace(f) ? InRaceWeight : 1.0) };
+            }).ToList();
+            double clearest = weighted.Max(x => x.Score);
+            foreach (var w in weighted.Where(x => x.Beep.Score >= MinScore && x.Score >= 0.7 * clearest).OrderByDescending(x => x.Score).Take(3))
+            {
+                SwimBeep b = w.Beep;
+                double frame = w.Frame;
                 if (double.IsNaN(frame) || frame < 1 || frame > last)
                     continue;
 
@@ -257,8 +268,8 @@ namespace Kinovea.ScreenManager
                 }
 
                 c0.Beep = frame;
-                c0.BeepScore = b.Score;
-                c0.Strength = b.Score;
+                c0.BeepScore = w.Score;
+                c0.Strength = w.Score;
                 c0.Dive = detector.DiveAfterFrame(c0.Frame);
                 c0.Follow = follows.Where(f => f >= c0.Frame + 0.2 * fps && f <= c0.Frame + 3.0 * fps).DefaultIfEmpty(-1).First();
                 if (heard.All(h => h.Frame != c0.Frame))

@@ -1055,6 +1055,40 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Median motion of the frames from 'from' to 'to' seconds before this frame (a start: the camera still and the swimmers
+        /// set, low; a signal heard in the middle of a race: the camera following the swimmers, high). NaN: no frames there.
+        /// </summary>
+        public double MotionBefore(double frame, double from = 1.5, double to = 0.2)
+        {
+            int lo = Math.Max(1, (int)Math.Round(frame - from * fps)), hi = Math.Min(motion.Count - 1, (int)Math.Round(frame - to * fps));
+            if (hi < lo)
+                return double.NaN;
+
+            return Median(motion.Skip(lo).Take(hi - lo + 1).ToList());
+        }
+
+        /// <summary>
+        /// The camera was already following a race before this frame (a signal heard in the middle of a race: not a start): the motion
+        /// of the 1.5 s before it (the last 0.2 s left out) is that of a camera moving (more than 8) and at least 0.6 of the motion of
+        /// the 3 s after it. Before a start the camera is still on the swimmers set, and it follows them after it.
+        /// </summary>
+        public bool InRace(double frame)
+        {
+            double before = MotionBefore(frame), after = MotionBefore(frame + 3.2 * fps, 3.0, 0.2);
+            return !double.IsNaN(before) && before > 8 && (double.IsNaN(after) || before > 0.6 * after);
+        }
+
+        /// <summary>The motion of a still camera in these frames: a low quantile (20%) of the motion of the frames read.</summary>
+        public double StillMotion()
+        {
+            if (motion.Count < 2)
+                return double.NaN;
+
+            List<double> v = motion.Skip(1).OrderBy(x => x).ToList();
+            return v[(int)(0.2 * (v.Count - 1))];
+        }
+
+        /// <summary>
         /// The light of the start in frames at full size (brightness, rows without padding) when it is too small for the frames of
         /// the reading: the frame (from 'first' to 'last', −1: the end) where the clearest tiny flash comes on: a few pixels (at
         /// most 60 at 1920 wide) 50 brighter than in the two frames before (and their neighbours), at least 170, gone again two
