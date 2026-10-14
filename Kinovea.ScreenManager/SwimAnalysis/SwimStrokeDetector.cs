@@ -100,6 +100,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Camera motion from the previous frame (homography, 9 values row-major, working coordinates), per frame.</summary>
         public List<double[]> Motions = new List<double[]>();
+
+        /// <summary>
+        /// The camera did not move during the reading (a fixed view of the pool): Motion is then the band difference without
+        /// what stays at the same place of the image all along the reading.
+        /// </summary>
+        public bool Still;
     }
 
     /// <summary>
@@ -113,7 +119,8 @@ namespace Kinovea.ScreenManager
     ///    image, is hidden or loses its texture follows the other one with the place it had relative to it.
     /// 3. band difference: |band(t) − band(t−2) moved by the camera|, averaged across the band, per column.
     /// At each count (Finish), with the frames given so far:
-    /// 4. position of the swimmer along the band: Viterbi on the smoothed band difference, with the camera motion.
+    /// 4. position of the swimmer along the band: Viterbi on the smoothed band difference, with the camera motion (a fixed
+    ///    camera: without the motion that stays at the same places of the image, the light on the water and the ropes).
     /// 5. stroke signal: band difference ahead of the swimmer; period by autocorrelation; stroke times by dynamic
     ///    programming (beat tracking: one stroke per period, on the peaks of the signal).
     ///
@@ -673,6 +680,23 @@ namespace Kinovea.ScreenManager
             for (int t = 0; t < T; t++)
                 Array.Copy(shifts[t], 0, S, t * W, W);
 
+            // A fixed camera: the light on the water and the ropes waving move at the same places of the image all along the
+            // reading, as strong as the swimmer far from the camera; taken off, the swimmer is what moves.
+            if (StillQuantile > 0 && IsStill(S, T, W))
+            {
+                RemoveStill(D, T, W);
+                if (StillLocalQuantile > 0)
+                    RemoveStillLocal(D, T, W);
+                result.Still = true;
+                result.Motion.Clear();
+                for (int t = 0; t < T; t++)
+                {
+                    double[] row = new double[W];
+                    Array.Copy(D, t * W, row, 0, W);
+                    result.Motion.Add(row);
+                }
+            }
+
             double x0 = 0.5 * (headX + feetX);
             double[] scale = null;
             if (ScaledSpeed)
@@ -718,6 +742,104 @@ namespace Kinovea.ScreenManager
             result.Period = period;
             result.Strokes = TrackBeats(clipped, fps, period, first, last, 4.0, 0.5, 2.0);
             return result;
+        }
+
+        /// <summary>Mean camera displacement along the band (px a frame) below which the camera is fixed (tests).</summary>
+        internal static double StillShift = 0.25;
+
+        /// <summary>
+        /// Part of the frames of a fixed camera whose band difference at a place is the motion that stays there (light, ropes),
+        /// taken off every frame (tests; 0: off).
+        /// </summary>
+        internal static double StillQuantile = 0.5;
+
+        /// <summary>
+        /// The water the swimmers went through stays rough for a few seconds after them (the light on it moves): the
+        /// StillLocalQuantile of each place over the StillLocalSeconds around each frame is taken off too (tests; 0: off).
+        /// </summary>
+        internal static double StillLocalQuantile = 0.7;
+        internal static double StillLocalSeconds = 2.0;
+
+        /// <summary>The camera did not move during the frames (mean displacement along the band below StillShift).</summary>
+        private static bool IsStill(double[] S, int T, int W)
+        {
+            if (T < 25)
+                return false;
+
+            double sum = 0;
+            long n = 0;
+            for (int t = 1; t < T; t++)
+            {
+                for (int x = 0; x < W; x += 4)
+                {
+                    sum += Math.Abs(S[t * W + x]);
+                    n++;
+                }
+            }
+
+            return n > 0 && sum / n < StillShift;
+        }
+
+        /// <summary>The StillQuantile of each place of the band over the frames taken off the band difference there.</summary>
+        private static void RemoveStill(double[] D, int T, int W)
+        {
+            int from = Math.Min(FrameGap, T - 1);
+            int n = T - from;
+            int k = Clamp((int)Math.Round(StillQuantile * (n - 1)), 0, n - 1);
+            double[] column = new double[n];
+            for (int x = 0; x < W; x++)
+            {
+                for (int t = from; t < T; t++)
+                    column[t - from] = D[t * W + x];
+                Array.Sort(column);
+                double b = column[k];
+                for (int t = 0; t < T; t++)
+                    D[t * W + x] = Math.Max(0, D[t * W + x] - b);
+            }
+        }
+
+        /// <summary>The StillLocalQuantile of each place over the frames around (every 0.2 s, linear between) taken off.</summary>
+        private void RemoveStillLocal(double[] D, int T, int W)
+        {
+            int K = Math.Max(5, (int)Math.Round(StillLocalSeconds * fps));
+            int step = Math.Max(1, (int)Math.Round(0.2 * fps));
+            List<int> centres = new List<int>();
+            for (int c = 0; c < T; c += step)
+                centres.Add(c);
+            if (centres[centres.Count - 1] != T - 1)
+                centres.Add(T - 1);
+
+            int m = centres.Count;
+            double[] B = new double[m * W];
+            double[] buffer = new double[2 * K + 1];
+            for (int i = 0; i < m; i++)
+            {
+                int a = Math.Max(0, centres[i] - K), b = Math.Min(T - 1, centres[i] + K);
+                int n = b - a + 1;
+                int k = Clamp((int)Math.Round(StillLocalQuantile * (n - 1)), 0, n - 1);
+                for (int x = 0; x < W; x++)
+                {
+                    for (int t = a; t <= b; t++)
+                        buffer[t - a] = D[t * W + x];
+                    Array.Sort(buffer, 0, n);
+                    B[i * W + x] = buffer[k];
+                }
+            }
+
+            int seg = 0;
+            for (int t = 0; t < T; t++)
+            {
+                while (seg < m - 2 && t > centres[seg + 1])
+                    seg++;
+                int c0 = centres[seg], c1 = centres[Math.Min(m - 1, seg + 1)];
+                double f = c1 > c0 ? Math.Max(0, Math.Min(1, (t - c0) / (double)(c1 - c0))) : 0;
+                int i0 = seg * W, i1 = Math.Min(m - 1, seg + 1) * W;
+                for (int x = 0; x < W; x++)
+                {
+                    double bg = (1 - f) * B[i0 + x] + f * B[i1 + x];
+                    D[t * W + x] = Math.Max(0, D[t * W + x] - bg);
+                }
+            }
         }
 
         /// <summary>
