@@ -606,6 +606,9 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Frame of the click on the swimmer in the reading (0: the reading starts there; the first length can start at the start).</summary>
             public int ClickIndex;
+
+            /// <summary>Length of the swimmer clicked (working px, head to feet): a swimmer seen from far has his own delays.</summary>
+            public double SwimmerLength = double.NaN;
         }
 
         /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
@@ -973,7 +976,7 @@ namespace Kinovea.ScreenManager
             // Index of the start of the length in the frames read (before them: negative).
             long lapStartTs = lapStartTimestamp == long.MinValue ? Race.StartTimestamp.Value : lapStartTimestamp;
             double lapStart = (lapStartTs - s.Timestamps[0]) / step;
-            LengthRead l = new LengthRead { Session = s, Result = result, LapFrom = s.Wall - Race.Pool };
+            LengthRead l = new LengthRead { Session = s, Result = result, LapFrom = s.Wall - Race.Pool, SwimmerLength = s.Detector.SwimmerLength };
             try
             {
                 l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
@@ -1025,12 +1028,15 @@ namespace Kinovea.ScreenManager
 
             List<Tuple<int, Dictionary<string, double>, double>> items = new List<Tuple<int, Dictionary<string, double>, double>>();
             string style = SwimPresets.StyleAt(Race, s.Wall);
-            double delay = CheckpointDelay(style) * s.Fps;
+            // A swimmer seen from far (a phone in the stands) has his own delays and his own cues for the learning (".f").
+            double far = SwimSplitDetector.FarCheckpointDelay(style, l.SwimmerLength);
+            double delay = (CheckpointDelay(style) + far) * s.Fps;
+            string view = far > 0 ? ".f" : "";
             foreach (SwimSplitFound f in l.Found)
             {
                 Dictionary<string, double> cues = new Dictionary<string, double>();
                 foreach (KeyValuePair<string, double> c in f.Cues)
-                    cues[StyleCue(c.Key + PriorVersion(c.Key, style), style)] = c.Value + delay;
+                    cues[StyleCue(c.Key + PriorVersion(c.Key, style) + view, style)] = c.Value + delay;
                 items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
             }
 
@@ -1736,6 +1742,10 @@ namespace Kinovea.ScreenManager
             // The size of the swimmer clicked and the width of his lane there: his size in the next lengths, where the lane is
             // wider or narrower.
             double clickLength = double.NaN, clickLaneWidth = double.NaN;
+
+            // The swimmer clicked seen from far or close (his length in working px) for the delays of the checkpoints of every length.
+            double scale = (double)StrokeWorkWidth / Math.Max(1, reference.Width);
+            double clickSwimmer = scale * Math.Sqrt((head.X - feet.X) * (head.X - feet.X) + (head.Y - feet.Y) * (head.Y - feet.Y));
             long clickTimestamp = from;
             while (wall <= Race.Distance)
             {
@@ -1784,6 +1794,7 @@ namespace Kinovea.ScreenManager
                     l = AnalyseLength(s, result, lapStart);
                     if (l == null)
                         break;
+                    l.SwimmerLength = clickSwimmer;
 
                     double found = WallSample(l);
                     bool enough = !double.IsNaN(found) && s.Timestamps.Count - 1 - found >= 1.0 * s.Fps;
@@ -1805,6 +1816,7 @@ namespace Kinovea.ScreenManager
                         LengthRead l2 = AnalyseLength(s, again, lapStart);
                         if (l2 != null)
                         {
+                            l2.SwimmerLength = clickSwimmer;
                             result = again;
                             l = l2;
                         }

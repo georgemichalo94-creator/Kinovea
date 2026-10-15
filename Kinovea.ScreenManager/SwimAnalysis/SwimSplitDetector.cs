@@ -416,6 +416,26 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Delay (s) to add to the checkpoints of a swimmer seen from far (a phone in the stands: the swimmer a few dozen pixels
+        /// long at the working size): there the arms and the splashes above the water ahead of his head are the front of the
+        /// moving part. Analysed phone races (OAKA 2025 and 2026, 285 checkpoints, both years alike): backstroke 0.35 s early,
+        /// breaststroke 0.25, butterfly and freestyle 0.1–0.15; camcorder views (swimmers of 80 px and longer) on time. All of it
+        /// up to FarSwimmerFull px, nothing from FarSwimmerNone px on.
+        /// </summary>
+        public static double FarCheckpointDelay(string style, double swimmerLength)
+        {
+            if (double.IsNaN(swimmerLength) || swimmerLength <= 0 || swimmerLength >= FarSwimmerNone)
+                return 0;
+            double share = swimmerLength <= FarSwimmerFull ? 1.0 : (FarSwimmerNone - swimmerLength) / (FarSwimmerNone - FarSwimmerFull);
+            double delay = style == "bk" ? FarDelayBack : style == "br" ? FarDelayBreast : FarDelayOther;
+            return share * delay;
+        }
+
+        /// <summary>See FarCheckpointDelay (tests).</summary>
+        internal static double FarSwimmerFull = 55, FarSwimmerNone = 85;
+        internal static double FarDelayBack = 0.3, FarDelayBreast = 0.15, FarDelayOther = 0.1;
+
+        /// <summary>
         /// Usual delay (s) of a cue of the breakout ("energy", "burst") from the breakout the analysts mark (the head out). In
         /// breaststroke and backstroke the motion starts with the head out (0.1 s) and the first strong splash just after (0.2 s).
         /// In butterfly and freestyle too (analysed races, 2026-10: phone videos from the stands and most camcorder races within

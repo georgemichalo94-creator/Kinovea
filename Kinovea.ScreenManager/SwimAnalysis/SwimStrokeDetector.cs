@@ -265,6 +265,12 @@ namespace Kinovea.ScreenManager
             get { return virtualRope; }
         }
 
+        /// <summary>Length of the swimmer at the start of the reading (head to feet given, working px).</summary>
+        public double SwimmerLength
+        {
+            get { return Math.Sqrt((headX - feetX) * (headX - feetX) + (headY - feetY) * (headY - feetY)); }
+        }
+
         /// <summary>
         /// The first frame at its own size (larger than the working size): the floats of the ropes of the far lanes, one or two
         /// pixels at the working size, are seen there. Given before the first frame when the lane is to be found; used for the
