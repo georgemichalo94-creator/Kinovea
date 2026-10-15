@@ -261,10 +261,11 @@ namespace Kinovea.ScreenManager
             if (!PaceLine(seen, out slope, out intercept))
                 return double.NaN;
 
-            // A checkpoint far from the pace of the others (more than a fifth of the time of 10 m: a mark crossed at another moment,
-            // the swimmer hidden) becomes the pace of the others (the analyst checks it); with four checkpoints the pace stands
-            // without it.
-            double tolerance = 0.2 * 10 * slope;
+            // A checkpoint far from the pace of the others (more than PaceTolerance of the time of 10 m: a mark crossed at another
+            // moment, the swimmer hidden) becomes the pace of the others (the analyst checks it); with four checkpoints the pace
+            // stands without it. The analysts' own checkpoints of a length are within 0.05 of it; 0.1 tried: a wrong checkpoint
+            // then moves the line and a right one goes instead (test races).
+            double tolerance = PaceTolerance * 10 * slope;
             if (seen.Count >= 4)
             {
                 List<SwimSplitFound> far = seen.Where(f => Math.Abs(Time(f.Cues) - (intercept + slope * f.LapDistance)) > tolerance).ToList();
@@ -276,7 +277,7 @@ namespace Kinovea.ScreenManager
                     {
                         slope = s2;
                         intercept = i2;
-                        tolerance = 0.2 * 10 * slope;
+                        tolerance = PaceTolerance * 10 * slope;
                         foreach (SwimSplitFound f in far)
                         {
                             f.Cues.Clear();
@@ -330,6 +331,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>A stop or an end of the ropes far before the wall the pace of the swimmer gets him to is not the wall (tests).</summary>
         internal static bool StopPaceCheck = true;
+
+        /// <summary>Part of the time of 10 m a checkpoint can be off the pace of the others (tests).</summary>
+        internal static double PaceTolerance = 0.2;
 
         /// <summary>The time of the wall from the one checkpoint seen in the length and the start of the length.</summary>
         public const string CuePaceOne = "pace1";
@@ -454,9 +458,32 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Usual delay (s) of the steepest rise of the motion after a turn from the breakout the analysts mark (analysed races:
-        /// the first strokes after the head is out, about 1.2 s later in butterfly and breaststroke, 0.3 s in backstroke).
+        /// the first strokes after the head is out, about 1.2 s later in butterfly, 0.3 s in backstroke; in breaststroke the
+        /// pull-out and the kick under the water come first, the rise 2.7 s after the head is out (median of 6 turns, camcorders
+        /// and phones; 1.2 s from one race before 2026-10-15).
         /// </summary>
         public static double TurnRiseDelay(string style)
+        {
+            if (!TurnBreakout)
+                return 0;
+            switch (style)
+            {
+                case "fly": return -1.25;
+                case "br": return TurnRiseBreast;
+                case "bk": return -0.3;
+                default: return 0;
+            }
+        }
+
+        /// <summary>See TurnRiseDelay (tests).</summary>
+        internal static double TurnRiseBreast = -2.6;
+
+        /// <summary>
+        /// Delay (s) of the steepest rise after a turn from the first stroke counted after it (the strokes of the length start
+        /// there): the delays of the breakout before 2026-10-15 (the strokes after a breaststroke turn are counted from the
+        /// first one at the surface, already a little early).
+        /// </summary>
+        public static double TurnRiseStrokeDelay(string style)
         {
             if (!TurnBreakout)
                 return 0;

@@ -738,7 +738,7 @@ namespace Kinovea.ScreenManager
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
                         continue;
-                    delay = turn ? SwimSplitDetector.TurnRiseDelay(style) : 0;
+                    delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style)) : 0;
                 }
                 else
                 {
@@ -747,7 +747,9 @@ namespace Kinovea.ScreenManager
                     delay = strokes ? SwimSplitDetector.StrokeStartDelay(c.Key, style) : SwimSplitDetector.BreakoutDelay(c.Key, style);
                 }
 
-                string name = c.Key + (turn && SwimSplitDetector.TurnBreakout ? ".t" : "") + PriorVersion(c.Key, style, strokes);
+                // The rise after a breaststroke turn has its delay since 2026-10-15 (".4": the answers kept with the old one do not move it).
+                string version = turn && !strokes && style == "br" && c.Key == SwimSplitDetector.CueRise ? ".4" : "";
+                string name = c.Key + (turn && SwimSplitDetector.TurnBreakout ? ".t" : "") + PriorVersion(c.Key, style, strokes) + version;
                 cues[StyleCue(name, style)] = c.Value + delay * fps;
             }
 
