@@ -18,6 +18,10 @@ env:
 jobs:
   build:
     runs-on: windows-latest
+    # contents: write for the draft release of the portable zip (the deployment to the analysts' computers).
+    permissions:
+      contents: write
+      actions: read
 
     steps:
     - name: Checkout
@@ -99,6 +103,29 @@ jobs:
       with:
         path: Kinovea-Swim-Portable-${{env.VERSION}}.zip
         archive: false
+
+    # The same zip as the asset of a draft release of the branch (drafts are not public): the update of the analysts'
+    # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run.
+    - name: Portable zip as a draft release asset
+      if: github.event_name == 'push' && (github.ref_name == 'swim-stable' || github.ref_name == 'swim-v2')
+      continue-on-error: true
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $zip = "Kinovea-Swim-Portable-$env:VERSION.zip"
+        if (-not (Test-Path $zip)) { Write-Output "no zip"; exit 0 }
+        $tag = "build-${{ github.ref_name }}"
+        $notes = "Portable build of ${{ github.ref_name }} at ${{ github.sha }}"
+        $releases = gh api "repos/${{ github.repository }}/releases?per_page=100" | ConvertFrom-Json
+        $existing = @($releases | Where-Object { $_.tag_name -eq $tag })
+        if ($existing.Count -eq 0) {
+          gh release create $tag --draft --title $tag --notes $notes --target "${{ github.sha }}"
+        } else {
+          gh release edit $tag --notes $notes
+        }
+        gh release upload $tag $zip --clobber
+        Write-Output "draft release $tag: $zip uploaded"
         
     - name: Remove Portable AppData Folder
       shell: cmd
