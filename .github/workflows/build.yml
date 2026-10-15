@@ -114,19 +114,33 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         $zip = "Kinovea-Swim-Portable-$env:VERSION.zip"
-        if (-not (Test-Path $zip)) { Write-Output "no zip"; exit 0 }
+        if (-not (Test-Path $zip)) { Write-Output "::warning title=Draft release::no $zip"; exit 0 }
         $tag = "build-${{ github.ref_name }}"
         $notes = "Portable build of ${{ github.ref_name }} at ${{ github.sha }}"
-        $releases = gh api "repos/${{ github.repository }}/releases?per_page=100" | ConvertFrom-Json
-        $existing = @($releases | Where-Object { $_.tag_name -eq $tag })
-        if ($existing.Count -eq 0) {
-          gh release create $tag --draft --title $tag --notes $notes --target "${{ github.sha }}"
-        } else {
-          gh release edit $tag --notes $notes
+        $api = "https://api.github.com/repos/${{ github.repository }}"
+        $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" }
+        try {
+          $list = Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers
+          $release = $list | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+          if (-not $release) {
+            $body = @{ tag_name = $tag; target_commitish = "${{ github.sha }}"; name = $tag; body = $notes; draft = $true } | ConvertTo-Json
+            $release = Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -Body $body -ContentType "application/json"
+          } else {
+            $body = @{ body = $notes } | ConvertTo-Json
+            $release = Invoke-RestMethod "$api/releases/$($release.id)" -Method Patch -Headers $headers -Body $body -ContentType "application/json"
+          }
+          foreach ($asset in @($release.assets)) {
+            if ($asset -and $asset.name -eq $zip) { Invoke-RestMethod "$api/releases/assets/$($asset.id)" -Method Delete -Headers $headers | Out-Null }
+          }
+          $upload = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=$zip"
+          $asset = Invoke-RestMethod $upload -Method Post -Headers $headers -InFile $zip -ContentType "application/zip"
+          Write-Output "::notice title=Draft release::$tag $($asset.name) $($asset.size) bytes"
+        } catch {
+          $detail = $_.ErrorDetails.Message
+          Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
+          exit 1
         }
-        gh release upload $tag $zip --clobber
-        Write-Output "draft release $tag: $zip uploaded"
-        
+
     - name: Remove Portable AppData Folder
       shell: cmd
       run: rmdir Kinovea\bin\x64\Release\AppData
