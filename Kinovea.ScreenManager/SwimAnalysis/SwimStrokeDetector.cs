@@ -266,6 +266,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// The first frame at its own size (larger than the working size): the floats of the ropes of the far lanes, one or two
+        /// pixels at the working size, are seen there. Given before the first frame when the lane is to be found; used for the
+        /// lane only, then dropped.
+        /// </summary>
+        public SwimStrokeImage Detail { get; set; }
+
+        /// <summary>The lane will be searched in the next frame (the first one, no lane given): a Detail of it helps.</summary>
+        public bool SearchesLane
+        {
+            get { return !initialized && !hasLane0; }
+        }
+
+        /// <summary>
         /// The frames of the reading are no longer needed (a length of the whole race is done): the band of each frame and the
         /// images kept go, the lane and the direction stay. Count is 0 after it.
         /// </summary>
@@ -367,7 +380,8 @@ namespace Kinovea.ScreenManager
                 }
                 else
                 {
-                    ropes = FindLane(image, headX, headY, feetX, feetY, out found, out virtualRope);
+                    ropes = FindLane(image, headX, headY, feetX, feetY, out found, out virtualRope, Detail);
+                    Detail = null;
                 }
                 if (ropes)
                 {
@@ -1030,6 +1044,12 @@ namespace Kinovea.ScreenManager
         /// part of the width of the lane from it and at least 1 - this from the other rope (0: never; tests).</summary>
         internal static double TextureVirtual = 0.35;
 
+        /// <summary>A Detail frame counts when at least this many times as wide as the working size (0: never; tests).</summary>
+        internal static double DetailMin = 1.5;
+
+        /// <summary>The Detail frame is used for a lane found narrower than this (working px; tests).</summary>
+        internal static double DetailMaxLane = 60;
+
         /// <summary>Smallest ratio of a gap of a rope chain to the gap before it: the lanes get wider towards the camera (tests).</summary>
         internal static double GapMin = 0.9;
 
@@ -1546,14 +1566,23 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, out SwimStrokeLane lane, out int virtualRope)
         {
-            // Around the swimmer (2.2 lengths), then closer to him (1 length) when stronger lines elsewhere (the wall of the pool
-            // next to an outer lane, boards) hide the ropes.
-            if (FindLane(img, headX, headY, feetX, feetY, 2.2, out lane, out virtualRope))
-                return true;
-            return FindLane(img, headX, headY, feetX, feetY, 1.0, out lane, out virtualRope);
+            return FindLane(img, headX, headY, feetX, feetY, out lane, out virtualRope, null);
         }
 
-        private static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, double reach, out SwimStrokeLane lane, out int virtualRope)
+        /// <summary>The lane around the swimmer, with the frame at its own size (null: none) for the texture of the ropes.</summary>
+        public static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, out SwimStrokeLane lane, out int virtualRope, SwimStrokeImage detail)
+        {
+            // Around the swimmer (2.2 lengths), then closer to him (1 length) when stronger lines elsewhere (the wall of the pool
+            // next to an outer lane, boards) hide the ropes.
+            if (detail != null && (DetailMin <= 0 || detail.Width < DetailMin * img.Width))
+                detail = null;
+            if (FindLane(img, headX, headY, feetX, feetY, 2.2, out lane, out virtualRope, detail))
+                return true;
+            return FindLane(img, headX, headY, feetX, feetY, 1.0, out lane, out virtualRope, detail);
+        }
+
+        private static bool FindLane(SwimStrokeImage img, double headX, double headY, double feetX, double feetY, double reach, out SwimStrokeLane lane, out int virtualRope,
+            SwimStrokeImage detail)
         {
             lane = new SwimStrokeLane();
             virtualRope = 0;
@@ -1607,7 +1636,7 @@ namespace Kinovea.ScreenManager
                     break;
                 if (LaneAtSlope(-0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, cx, out lane, out virtualRope))
                 {
-                    TextureLane(img, cx, -0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, ref lane, ref virtualRope);
+                    TextureLane(img, detail, cx, -0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, ref lane, ref virtualRope);
                     return true;
                 }
             }
@@ -1620,35 +1649,35 @@ namespace Kinovea.ScreenManager
         /// stands): the lane again with the texture of the lines, kept when it is the lane found or a part of it (one rope or more
         /// missed in it, a rope taken at its shade). Its ropes that are hardly lines of colour are followed by their texture.
         /// </summary>
-        private static void TextureLane(SwimStrokeImage img, double cx, double slope, double[] magnitude, double[] profile, double[] y0s, int n,
+        private static void TextureLane(SwimStrokeImage img, SwimStrokeImage detail, double cx, double slope, double[] magnitude, double[] profile, double[] y0s, int n,
             double headX, double headY, double feetX, double feetY, double L, ref SwimStrokeLane lane, ref int virtualRope)
         {
             double wA = lane.Width(cx);
             if (TextureWeight <= 0 || wA >= TextureMaxLane)
                 return;
 
-            double[] texture = TextureProfile(img, cx, slope, y0s, n);
+            double[] texture = TextureProfile(img, 1.0, cx, slope, y0s, n);
             if (texture == null)
                 return;
 
             double[] m = Gauss1D(magnitude, 1.0);
             double max = Math.Max(1e-9, m.Max());
-            SwimStrokeLane laneB;
-            int virtualB;
-            if (LaneAtSlope(slope, magnitude, profile, y0s, n, headX, headY, feetX, feetY, L, cx, out laneB, out virtualB, texture))
+            bool found = TextureLaneB(texture, texture, false, cx, slope, magnitude, profile, y0s, n, headX, headY, feetX, feetY, L, m, max, wA, ref lane, ref virtualRope);
+
+            // Not found: with the texture of the frame at its own size, around a narrow lane (the floats of the ropes of far lanes,
+            // a pixel at the working size), for ropes missed in the lane only (in a close view the floats are seen at the working
+            // size and the tiles of the floor are lines of texture at its own size). Its ropes are followed by their texture only
+            // when it is seen at the working size too.
+            double[] search = texture;
+            if (!found && detail != null && wA < DetailMaxLane)
             {
-                // A part of the lane found (ropes missed in it), or the same lane on ropes hardly seen by their colour (the lines of
-                // colour found were their shade).
-                int ropes = TextureRopeBits(laneB, virtualB, cx, texture, m, max, y0s, n);
-                double wB = laneB.Width(cx);
-                double overlap = Math.Min(lane.Y2(cx), laneB.Y2(cx)) - Math.Max(lane.Y1(cx), laneB.Y1(cx));
-                if (overlap >= TextureOverlap * wB && (wB <= TextureSplit * wA || (ropes != 0 && wB <= TextureSame * wA)))
+                int r0 = Math.Max(0, (int)Math.Floor(Math.Min(lane.Y1(cx), lane.Y2(cx)) - wA - y0s[0]));
+                int r1 = Math.Min(n - 1, (int)Math.Ceiling(Math.Max(lane.Y1(cx), lane.Y2(cx)) + wA - y0s[0]));
+                double[] fine = TextureProfile(detail, (double)detail.Width / img.Width, cx, slope, y0s, n, r0, r1);
+                if (fine != null)
                 {
-                    if (LaneTrace != null)
-                        LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: texture {0:0}-{1:0} in {2:0}-{3:0} ropes {4}", laneB.Y1(cx), laneB.Y2(cx), lane.Y1(cx), lane.Y2(cx), ropes));
-                    lane = laneB;
-                    virtualRope = virtualB;
-                    lane.TextureRopes = ropes;
+                    search = fine;
+                    TextureLaneB(fine, texture, true, cx, slope, magnitude, profile, y0s, n, headX, headY, feetX, feetY, L, m, max, wA, ref lane, ref virtualRope);
                 }
             }
 
@@ -1664,9 +1693,9 @@ namespace Kinovea.ScreenManager
                     double y = y0s[r];
                     if (Math.Abs(y - yv) > TextureVirtual * w || Math.Abs(y - yr) < (1 - TextureVirtual) * w || (y - yr) * (yv - yr) <= 0)
                         continue;
-                    if (texture[r] < TextureRopeZ || texture[r] < texture[r - 1] || texture[r] < texture[r + 1])
+                    if (search[r] < TextureRopeZ || search[r] < search[r - 1] || search[r] < search[r + 1])
                         continue;
-                    if (best < 0 || texture[r] > texture[best])
+                    if (best < 0 || search[r] > search[best])
                         best = r;
                 }
 
@@ -1683,6 +1712,34 @@ namespace Kinovea.ScreenManager
                     lane.TextureRopes |= TextureRopeBits(lane, 3 - rope, cx, texture, m, max, y0s, n) & rope;
                 }
             }
+        }
+
+        /// <summary>
+        /// The lane with the texture 'search' (rows of floats), kept when it is a part of the lane found (ropes missed in it) or, but
+        /// for 'splitOnly', the same lane on ropes hardly seen by their colour (the lines of colour found were their shade).
+        /// </summary>
+        private static bool TextureLaneB(double[] search, double[] texture, bool splitOnly, double cx, double slope, double[] magnitude, double[] profile,
+            double[] y0s, int n, double headX, double headY, double feetX, double feetY, double L, double[] m, double max, double wA,
+            ref SwimStrokeLane lane, ref int virtualRope)
+        {
+            SwimStrokeLane laneB;
+            int virtualB;
+            if (!LaneAtSlope(slope, magnitude, profile, y0s, n, headX, headY, feetX, feetY, L, cx, out laneB, out virtualB, search))
+                return false;
+
+            int ropes = TextureRopeBits(laneB, virtualB, cx, texture, m, max, y0s, n);
+            double wB = laneB.Width(cx);
+            double overlap = Math.Min(lane.Y2(cx), laneB.Y2(cx)) - Math.Max(lane.Y1(cx), laneB.Y1(cx));
+            if (overlap < TextureOverlap * wB || (wB > TextureSplit * wA && (splitOnly || ropes == 0 || wB > TextureSame * wA)))
+                return false;
+
+            if (LaneTrace != null)
+                LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: texture{5} {0:0}-{1:0} in {2:0}-{3:0} ropes {4}", laneB.Y1(cx), laneB.Y2(cx),
+                    lane.Y1(cx), lane.Y2(cx), ropes, splitOnly ? " (own size)" : ""));
+            lane = laneB;
+            virtualRope = virtualB;
+            lane.TextureRopes = ropes;
+            return true;
         }
 
         /// <summary>The ropes of a lane (bits 1, 2; not the virtual one) with the texture of floats and hardly a line of colour.</summary>
@@ -1713,13 +1770,20 @@ namespace Kinovea.ScreenManager
         /// along; the water, a line of the floor or of a deck hardly), minus its smoothing, the best over the slopes around
         /// 'slope', in units of its usual level (median of its size). Null when too few columns.
         /// </summary>
-        private static double[] TextureProfile(SwimStrokeImage img, double cx, double slope, double[] y0s, int n)
+        private static double[] TextureProfile(SwimStrokeImage img, double scale, double cx, double slope, double[] y0s, int n, int r0 = 0, int r1 = int.MaxValue)
         {
-            int x0 = Math.Max(1, (int)(cx - TextureHalfWidth)), x1 = Math.Min(img.Width - 3, (int)(cx + TextureHalfWidth));
-            int m = x1 - x0 + 1;
-            if (m < 40)
+            r0 = Math.Max(0, r0);
+            r1 = Math.Min(n - 1, r1);
+            if (r1 - r0 < 10)
                 return null;
 
+            // Working coordinates (x, y) at (x, y) * scale in the image; a line of the working size is 'sub' lines of the image.
+            int x0 = Math.Max(1, (int)((cx - TextureHalfWidth) * scale)), x1 = Math.Min(img.Width - 3, (int)((cx + TextureHalfWidth) * scale));
+            int m = x1 - x0 + 1;
+            if (m < 40 * scale)
+                return null;
+
+            int sub = Math.Max(1, (int)Math.Round(scale));
             double[] best = new double[n];
             for (int i = 0; i < n; i++)
                 best[i] = double.MinValue;
@@ -1728,52 +1792,56 @@ namespace Kinovea.ScreenManager
             for (int k = -steps; k <= steps; k++)
             {
                 double a = slope + 0.005 * k;
-                for (int i = 0; i < n; i++)
+                for (int i = r0; i <= r1; i++)
                 {
-                    for (int j = 0; j < m; j++)
+                    t[i] = 0;
+                    for (int q = 0; q < sub; q++)
                     {
-                        double x = x0 + j, y = y0s[i] + a * (x - cx);
-                        if (y < 1 || y > img.Height - 2)
+                        double shift = q - 0.5 * (sub - 1);
+                        for (int j = 0; j < m; j++)
                         {
-                            g[j] = double.NaN;
-                            continue;
+                            double x = x0 + j, y = y0s[i] * scale + a * (x - cx * scale) + shift;
+                            if (y < 1 || y > img.Height - 2)
+                            {
+                                g[j] = double.NaN;
+                                continue;
+                            }
+
+                            double b, gg, r;
+                            img.Sample(x, y, out b, out gg, out r);
+                            g[j] = (b + gg + r) / 3;
                         }
 
-                        double b, gg, r;
-                        img.Sample(x, y, out b, out gg, out r);
-                        g[j] = (b + gg + r) / 3;
-                    }
+                        int nd = 0;
+                        for (int j = 0; j + 2 < m; j++)
+                        {
+                            if (!double.IsNaN(g[j]) && !double.IsNaN(g[j + 2]))
+                                d[nd++] = Math.Abs(g[j + 2] - g[j]);
+                        }
 
-                    int nd = 0;
-                    for (int j = 0; j + 2 < m; j++)
-                    {
-                        if (!double.IsNaN(g[j]) && !double.IsNaN(g[j + 2]))
-                            d[nd++] = Math.Abs(g[j + 2] - g[j]);
-                    }
+                        if (nd < 20)
+                            continue;
 
-                    if (nd < 20)
-                    {
-                        t[i] = 0;
-                        continue;
+                        Array.Sort(d, 0, nd);
+                        int keep = (int)(0.8 * nd);
+                        double sum = 0;
+                        for (int j = 0; j < keep; j++)
+                            sum += d[j];
+                        t[i] = Math.Max(t[i], sum / keep);
                     }
-
-                    Array.Sort(d, 0, nd);
-                    int keep = (int)(0.8 * nd);
-                    double sum = 0;
-                    for (int j = 0; j < keep; j++)
-                        sum += d[j];
-                    t[i] = sum / keep;
                 }
 
-                double[] sm = Gauss1D(t, RopeSigma);
-                for (int i = 0; i < n; i++)
-                    best[i] = Math.Max(best[i], t[i] - sm[i]);
+                double[] part = new double[r1 - r0 + 1];
+                Array.Copy(t, r0, part, 0, part.Length);
+                double[] sm = Gauss1D(part, RopeSigma);
+                for (int i = r0; i <= r1; i++)
+                    best[i] = Math.Max(best[i], t[i] - sm[i - r0]);
             }
 
-            double[] size = best.Select(v => Math.Abs(v)).OrderBy(v => v).ToArray();
+            double[] size = best.Skip(r0).Take(r1 - r0 + 1).Select(v => Math.Abs(v)).OrderBy(v => v).ToArray();
             double usual = Math.Max(1e-6, size[size.Length / 2]);
             for (int i = 0; i < n; i++)
-                best[i] /= usual;
+                best[i] = i < r0 || i > r1 ? 0 : best[i] / usual;
             return best;
         }
 

@@ -618,6 +618,9 @@ namespace Kinovea.ScreenManager
             public byte[] Pixels;
             public double[] Motion;
             public long Timestamp;
+
+            /// <summary>The frame at its own size, for the lane searched in it (the first frame of a session without a lane).</summary>
+            public SwimStrokeImage Detail;
         }
 
         /// <summary>
@@ -637,6 +640,9 @@ namespace Kinovea.ScreenManager
             // A reading in the background stays below the player and the panel (and tells its progress less often).
             bool background = quietThread != null;
             int frames = 0;
+
+            // The lane is searched in the first frame: that frame at its own size too (the floats of the ropes of far lanes).
+            bool wantDetail = s.Timestamps.Count == 0 && s.Detector.SearchesLane;
             using (BlockingCollection<StrokeFrame> queue = new BlockingCollection<StrokeFrame>(8))
             {
                 Task detection = Task.Run(() =>
@@ -654,6 +660,8 @@ namespace Kinovea.ScreenManager
 
                             try
                             {
+                                if (f.Detail != null)
+                                    s.Detector.Detail = f.Detail;
                                 s.Detector.Add(new SwimStrokeImage(s.Width, s.Height, f.Pixels), f.Motion);
                                 s.Timestamps.Add(f.Timestamp);
                             }
@@ -702,6 +710,12 @@ namespace Kinovea.ScreenManager
                                     s.PreviousGray.Dispose();
                                 s.PreviousGray = gray;
                                 item.Pixels = SwimStrokeVideo.Bytes(bgr);
+                            }
+
+                            if (wantDetail)
+                            {
+                                wantDetail = false;
+                                item.Detail = SwimStrokeVideo.Detail(frame.Image, s.Width);
                             }
 
                             queue.Add(item);
@@ -921,6 +935,20 @@ namespace Kinovea.ScreenManager
                     converted.Dispose();
                 return result;
             }
+        }
+
+        /// <summary>
+        /// The frame at its own size (at most 1920 wide), 24-bit BGR, when clearly larger than the working size (null otherwise).
+        /// </summary>
+        public static SwimStrokeImage Detail(Bitmap image, int workingWidth)
+        {
+            if (image == null || image.Width < 1.5 * workingWidth)
+                return null;
+
+            int width = Math.Min(image.Width, 1920);
+            int height = Math.Max(2, (int)Math.Round((double)width * image.Height / image.Width));
+            using (OpenCvSharp.Mat bgr = ToWorking(image, width, height))
+                return new SwimStrokeImage(width, height, Bytes(bgr));
         }
 
         /// <summary>Grayscale image at half the working size (for the camera motion).</summary>
