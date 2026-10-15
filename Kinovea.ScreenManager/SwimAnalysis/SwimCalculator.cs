@@ -327,6 +327,11 @@ namespace Kinovea.ScreenManager
                     double nB = Round(Cumulative(result.Strokes, barriers, row.T.Value), strokeRounding);
                     row.Strokes = Math.Max(0, Round(nB - nA, strokeRounding > 0 ? strokeRounding : 0));
 
+                    // Backstroke after the dive: the first pull is the one that brings the swimmer up (the breakout); the analysts'
+                    // sheets count from the next one (their own stroke marks give one more than their sheets in the first segment).
+                    if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && result.Strokes[0] <= row.T.Value)
+                        row.Strokes = Math.Max(0, row.Strokes.Value - 1);
+
                     double sum = 0;
                     int count = 0;
                     for (int j = 0; j + 1 < result.Strokes.Count; j++)
@@ -1015,6 +1020,9 @@ namespace Kinovea.ScreenManager
 
             return false;
         }
+
+        /// <summary>The first pull of backstroke after the dive is not counted, as in the analysts' sheets (tests).</summary>
+        internal static bool BackstrokeBreakoutPull = true;
 
         /// <summary>
         /// Cumulative stroke count at time t, interpolated between two presses (gives the half strokes at

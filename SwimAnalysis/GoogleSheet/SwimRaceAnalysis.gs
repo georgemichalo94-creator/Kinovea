@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '2.4.0';
+var SWIM_VERSION = '2.4.1';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -783,6 +783,9 @@ function swimAnalyze_(race) {
       var nA = swimRound_(swimCumulativeStrokes_(race.strokes, barriers, tPrev), step);
       var nB = swimRound_(swimCumulativeStrokes_(race.strokes, barriers, row.t), step);
       row.strokes = Math.max(0, swimRound_(nB - nA, step > 0 ? step : 0));
+      // Ύπτιο μετά την εκκίνηση: η πρώτη χεριά είναι αυτή που φέρνει τον αθλητή στην επιφάνεια (η ανάδυση)· τα φύλλα των
+      // αναλυτών μετρούν από την επόμενη (όπως και το Kinovea).
+      if (i === 0 && row.style === 'bk' && race.strokes[0] <= row.t) row.strokes = Math.max(0, row.strokes - 1);
 
       var sum = 0, cnt = 0;
       for (var j = 0; j + 1 < race.strokes.length; j++) {

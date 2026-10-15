@@ -42,13 +42,26 @@ const missing = Object.assign({}, base, {
 const am = S.swimAnalyze_(S.swimNormalizeRace_(missing));
 assert.strictEqual(am.rows.find(r => r.d === 45).strokes, null);
 
+// Backstroke after the dive: the first pull (the breakout) is not counted in the first segment; the others as in freestyle.
+const bkStrokes = [];
+for (let t = 5.6; t < 30.0; t += 0.5) bkStrokes.push(+t.toFixed(2));
+const bk = Object.assign({}, base, {
+  style: 'bk', strokes: bkStrokes, checkpoints: [[15, 6.3], [25, 11.3], [35, 16.3], [45, 21.3], [50, 24.1]].map(([d, t]) => ({ d, t }))
+});
+const ab = S.swimAnalyze_(S.swimNormalizeRace_(bk));
+const bkByD = d => ab.rows.find(r => r.d === d);
+assert.strictEqual(bkByD(15).strokes, 1.5, 'bk 15 m: 2.4 pulls by the times, the breakout pull not counted');
+assert.strictEqual(bkByD(25).strokes, 10, 'bk 25 m as counted');
+const fsFirst = S.swimAnalyze_(S.swimNormalizeRace_(Object.assign({}, bk, { style: 'fs' }))).rows[0].strokes;
+assert.strictEqual(fsFirst, 2.5, 'freestyle 15 m keeps the first stroke');
+
 // Through doPost: the sheet gets the typed counts (column of the strokes).
 S.swimShowConnectionInfo = () => {};
 S.swimSetup();
 const call = body => JSON.parse(S.swimDoPost({ postData: { contents: JSON.stringify(Object.assign({ token: 'tok', app: 'kinovea-swim' }, body)) } }).text);
 const res = call({ action: 'update', race: typed });
 assert.ok(res.ok, JSON.stringify(res));
-assert.strictEqual(call({ action: 'ping' }).version, '2.4.0');
+assert.strictEqual(call({ action: 'ping' }).version, '2.4.1');
 
 console.log('counts from times', autoCounts.join(' '), '· typed 25→9, 35→8.5');
 console.log('ALL STROKE COUNT TESTS PASSED');
