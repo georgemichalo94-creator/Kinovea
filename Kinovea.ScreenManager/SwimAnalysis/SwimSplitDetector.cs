@@ -416,6 +416,36 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Usual delay (s) of a cue of the breakout ("energy", "burst") from the breakout the analysts mark (the head out). In
+        /// breaststroke and backstroke the motion starts with the head out (0.1 s) and the first strong splash just after (0.2 s).
+        /// In butterfly and freestyle too (analysed races, 2026-10: phone videos from the stands and most camcorder races within
+        /// ±0.3 s; the second of delay used before came from one camcorder race, phone breakouts came 1.2 s late with it).
+        /// </summary>
+        public static double BreakoutDelay(string cue, string style)
+        {
+            bool breast = style == "br" || style == "bk";
+            if (cue == CueEnergy)
+                return breast ? 0.1 : 0.0;
+
+            return breast ? 0.2 : 0.0;
+        }
+
+        /// <summary>
+        /// Usual delay (s) of a cue of the breakout from the first stroke the analysts count after it, where the counting of the
+        /// strokes of the length starts: in butterfly and freestyle about a second after the head is out (the delays of the
+        /// breakout before 2026-10-15, kept for the strokes: the steepest rise does not count in freestyle); breaststroke and
+        /// backstroke as the breakout.
+        /// </summary>
+        public static double StrokeStartDelay(string cue, string style)
+        {
+            bool breast = style == "br" || style == "bk";
+            if (cue == CueEnergy)
+                return breast ? 0.1 : 1.4;
+
+            return breast ? 0.2 : 1.0;
+        }
+
+        /// <summary>
         /// The breakout after a wall (or the start): the head breaks the surface and the swimming starts, between the frames
         /// 'from' and 'to' (the 15 m mark: the rules want the head out before it). Underwater the water around the swimmer
         /// hardly moves; at the breakout the motion of the swimming starts (cue "energy": the motion within 1.2 lane widths of
