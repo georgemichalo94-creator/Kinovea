@@ -56,9 +56,16 @@ namespace Kinovea.ScreenManager
     {
         public double A1, B1, A2, B2;
 
+        /// <summary>
+        /// The ropes seen by the texture of their floats (1: the far one, 2: the near one, 3: both): faint ropes of a view from far
+        /// (blue and white floats on blue water), followed on their floats, not on the lines of colour next to them (their shade).
+        /// </summary>
+        public int TextureRopes;
+
         public SwimStrokeLane(double a1, double b1, double a2, double b2)
         {
             A1 = a1; B1 = b1; A2 = a2; B2 = b2;
+            TextureRopes = 0;
         }
 
         public double Y1(double x) { return A1 * x + B1; }
@@ -366,12 +373,14 @@ namespace Kinovea.ScreenManager
                 {
                     double a, b;
                     lane = found;
-                    if (virtualRope != 1 && RefineLine(image, found.A1, found.B1, out a, out b)) { lane.A1 = a; lane.B1 = b; }
-                    if (virtualRope != 2 && RefineLine(image, found.A2, found.B2, out a, out b)) { lane.A2 = a; lane.B2 = b; }
+                    int reach = RefineReach(found.Width(0.5 * (headX + feetX)), RefineShare);
+                    bool t1 = (found.TextureRopes & 1) != 0, t2 = (found.TextureRopes & 2) != 0;
+                    if (virtualRope != 1 && RefineLine(image, found.A1, found.B1, out a, out b, reach, t1)) { lane.A1 = a; lane.B1 = b; }
+                    if (virtualRope != 2 && RefineLine(image, found.A2, found.B2, out a, out b, reach, t2)) { lane.A2 = a; lane.B2 = b; }
 
                     double inside;
-                    ropeStrength1 = RopeStrength(image, lane.A1, lane.B1, out inside);
-                    ropeStrength2 = RopeStrength(image, lane.A2, lane.B2, out inside);
+                    ropeStrength1 = RopeStrength(image, lane.A1, lane.B1, out inside, t1);
+                    ropeStrength2 = RopeStrength(image, lane.A2, lane.B2, out inside, t2);
                     KeepRopeGeometry(lane);
                 }
                 else
@@ -409,6 +418,7 @@ namespace Kinovea.ScreenManager
                 SwimStrokeLane predicted;
                 MapLine(H, before.A1, before.B1, 0, width, out predicted.A1, out predicted.B1);
                 MapLine(H, before.A2, before.B2, 0, width, out predicted.A2, out predicted.B2);
+                predicted.TextureRopes = before.TextureRopes;
                 SwimStrokeLane next = predicted;
                 if (ropes && !blind)
                     next = TrackRopes(image, predicted);
@@ -992,6 +1002,34 @@ namespace Kinovea.ScreenManager
         /// <summary>The strongest blocks of LaneBlocks left out (tests).</summary>
         internal static int LaneDrop = 4;
 
+        /// <summary>
+        /// The ropes of floats found again by their texture in a lane narrower than TextureMaxLane (px): rows with a texture of
+        /// at least TextureZMin (units of its usual level) count as lines, as strong as the strongest line from TextureZRef on
+        /// (TextureWeight; 0: off). Texture of the columns cx ± TextureHalfWidth, slopes ± TextureSlopeRange around the lines (tests).
+        /// </summary>
+        internal static double TextureWeight = 1.0;
+        internal static double TextureZMin = 4.0;
+        internal static double TextureZRef = 15.0;
+        internal static int TextureHalfWidth = 100;
+        internal static double TextureSlopeRange = 0.04;
+        internal static double TextureMaxLane = 120;
+
+        /// <summary>The lane found with the texture is kept when inside the first one for at least TextureOverlap of its width and
+        /// at most TextureSplit times as wide (a part of it), or at most TextureSame times as wide with a rope of floats hardly
+        /// seen by its colour (tests).</summary>
+        internal static double TextureOverlap = 0.7;
+        internal static double TextureSplit = 0.8;
+        internal static double TextureSame = 1.05;
+
+        /// <summary>A rope of that lane is followed by its texture when its texture is at least TextureRopeZ and its line of colour
+        /// weaker than TextureRopeMagnitude of the strongest line (0: never; tests).</summary>
+        internal static double TextureRopeZ = 8.0;
+        internal static double TextureRopeMagnitude = 0.25;
+
+        /// <summary>A rope taken for the wall of an outer lane moves to a rope of floats (texture at least TextureRopeZ) at most this
+        /// part of the width of the lane from it and at least 1 - this from the other rope (0: never; tests).</summary>
+        internal static double TextureVirtual = 0.35;
+
         /// <summary>Smallest ratio of a gap of a rope chain to the gap before it: the lanes get wider towards the camera (tests).</summary>
         internal static double GapMin = 0.9;
 
@@ -1568,14 +1606,179 @@ namespace Kinovea.ScreenManager
                 if (i > 0 && energies[order[i]] < 0.05 * energies[order[0]])
                     break;
                 if (LaneAtSlope(-0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, cx, out lane, out virtualRope))
+                {
+                    TextureLane(img, cx, -0.40 + 0.005 * order[i], magnitudes[order[i]], profiles[order[i]], y0s, n, headX, headY, feetX, feetY, L, ref lane, ref virtualRope);
                     return true;
+                }
             }
 
             return false;
         }
 
+        /// <summary>
+        /// Ropes of floats too faint for the lines of colour (blue and white floats on blue water, the far lanes of a view from the
+        /// stands): the lane again with the texture of the lines, kept when it is the lane found or a part of it (one rope or more
+        /// missed in it, a rope taken at its shade). Its ropes that are hardly lines of colour are followed by their texture.
+        /// </summary>
+        private static void TextureLane(SwimStrokeImage img, double cx, double slope, double[] magnitude, double[] profile, double[] y0s, int n,
+            double headX, double headY, double feetX, double feetY, double L, ref SwimStrokeLane lane, ref int virtualRope)
+        {
+            double wA = lane.Width(cx);
+            if (TextureWeight <= 0 || wA >= TextureMaxLane)
+                return;
+
+            double[] texture = TextureProfile(img, cx, slope, y0s, n);
+            if (texture == null)
+                return;
+
+            double[] m = Gauss1D(magnitude, 1.0);
+            double max = Math.Max(1e-9, m.Max());
+            SwimStrokeLane laneB;
+            int virtualB;
+            if (LaneAtSlope(slope, magnitude, profile, y0s, n, headX, headY, feetX, feetY, L, cx, out laneB, out virtualB, texture))
+            {
+                // A part of the lane found (ropes missed in it), or the same lane on ropes hardly seen by their colour (the lines of
+                // colour found were their shade).
+                int ropes = TextureRopeBits(laneB, virtualB, cx, texture, m, max, y0s, n);
+                double wB = laneB.Width(cx);
+                double overlap = Math.Min(lane.Y2(cx), laneB.Y2(cx)) - Math.Max(lane.Y1(cx), laneB.Y1(cx));
+                if (overlap >= TextureOverlap * wB && (wB <= TextureSplit * wA || (ropes != 0 && wB <= TextureSame * wA)))
+                {
+                    if (LaneTrace != null)
+                        LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: texture {0:0}-{1:0} in {2:0}-{3:0} ropes {4}", laneB.Y1(cx), laneB.Y2(cx), lane.Y1(cx), lane.Y2(cx), ropes));
+                    lane = laneB;
+                    virtualRope = virtualB;
+                    lane.TextureRopes = ropes;
+                }
+            }
+
+            // The rope taken for the wall of an outer lane (at the gap of the ropes next to it) where a faint rope of floats is:
+            // that rope (a far lane next to a rope too faint for the lines of colour).
+            if (TextureVirtual > 0 && virtualRope != 0)
+            {
+                double yv = virtualRope == 1 ? lane.Y1(cx) : lane.Y2(cx), yr = virtualRope == 1 ? lane.Y2(cx) : lane.Y1(cx);
+                double w = Math.Abs(yr - yv);
+                int best = -1;
+                for (int r = 1; r < n - 1; r++)
+                {
+                    double y = y0s[r];
+                    if (Math.Abs(y - yv) > TextureVirtual * w || Math.Abs(y - yr) < (1 - TextureVirtual) * w || (y - yr) * (yv - yr) <= 0)
+                        continue;
+                    if (texture[r] < TextureRopeZ || texture[r] < texture[r - 1] || texture[r] < texture[r + 1])
+                        continue;
+                    if (best < 0 || texture[r] > texture[best])
+                        best = r;
+                }
+
+                if (best >= 0)
+                {
+                    if (LaneTrace != null)
+                        LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "lane: virtual rope {0:0} -> texture {1:0}", yv, y0s[best]));
+                    int rope = virtualRope;
+                    if (rope == 1)
+                        lane.B1 = y0s[best] - lane.A1 * cx;
+                    else
+                        lane.B2 = y0s[best] - lane.A2 * cx;
+                    virtualRope = 0;
+                    lane.TextureRopes |= TextureRopeBits(lane, 3 - rope, cx, texture, m, max, y0s, n) & rope;
+                }
+            }
+        }
+
+        /// <summary>The ropes of a lane (bits 1, 2; not the virtual one) with the texture of floats and hardly a line of colour.</summary>
+        private static int TextureRopeBits(SwimStrokeLane lane, int virtualRope, double cx, double[] texture, double[] m, double max, double[] y0s, int n)
+        {
+            int bits = 0;
+            if (TextureRopeMagnitude <= 0)
+                return bits;
+            for (int rope = 1; rope <= 2; rope++)
+            {
+                if (virtualRope == rope)
+                    continue;
+                int r = (int)Math.Round((rope == 1 ? lane.Y1(cx) : lane.Y2(cx)) - y0s[0]);
+                if (r < 1 || r > n - 2)
+                    continue;
+                double colour = Math.Max(m[r], Math.Max(m[r - 1], m[r + 1])) / max;
+                double z = Math.Max(texture[r], Math.Max(texture[r - 1], texture[r + 1]));
+                if (z >= TextureRopeZ && colour < TextureRopeMagnitude)
+                    bits |= rope;
+            }
+
+            return bits;
+        }
+
+        /// <summary>
+        /// Texture of the lines around the swimmer (columns cx ± TextureHalfWidth): per line the mean of the lower 80 % of the
+        /// brightness differences 2 px apart along it (the floats of a rope, light and dark one after the other, change it all
+        /// along; the water, a line of the floor or of a deck hardly), minus its smoothing, the best over the slopes around
+        /// 'slope', in units of its usual level (median of its size). Null when too few columns.
+        /// </summary>
+        private static double[] TextureProfile(SwimStrokeImage img, double cx, double slope, double[] y0s, int n)
+        {
+            int x0 = Math.Max(1, (int)(cx - TextureHalfWidth)), x1 = Math.Min(img.Width - 3, (int)(cx + TextureHalfWidth));
+            int m = x1 - x0 + 1;
+            if (m < 40)
+                return null;
+
+            double[] best = new double[n];
+            for (int i = 0; i < n; i++)
+                best[i] = double.MinValue;
+            double[] g = new double[m], d = new double[m], t = new double[n];
+            int steps = (int)Math.Round(TextureSlopeRange / 0.005);
+            for (int k = -steps; k <= steps; k++)
+            {
+                double a = slope + 0.005 * k;
+                for (int i = 0; i < n; i++)
+                {
+                    for (int j = 0; j < m; j++)
+                    {
+                        double x = x0 + j, y = y0s[i] + a * (x - cx);
+                        if (y < 1 || y > img.Height - 2)
+                        {
+                            g[j] = double.NaN;
+                            continue;
+                        }
+
+                        double b, gg, r;
+                        img.Sample(x, y, out b, out gg, out r);
+                        g[j] = (b + gg + r) / 3;
+                    }
+
+                    int nd = 0;
+                    for (int j = 0; j + 2 < m; j++)
+                    {
+                        if (!double.IsNaN(g[j]) && !double.IsNaN(g[j + 2]))
+                            d[nd++] = Math.Abs(g[j + 2] - g[j]);
+                    }
+
+                    if (nd < 20)
+                    {
+                        t[i] = 0;
+                        continue;
+                    }
+
+                    Array.Sort(d, 0, nd);
+                    int keep = (int)(0.8 * nd);
+                    double sum = 0;
+                    for (int j = 0; j < keep; j++)
+                        sum += d[j];
+                    t[i] = sum / keep;
+                }
+
+                double[] sm = Gauss1D(t, RopeSigma);
+                for (int i = 0; i < n; i++)
+                    best[i] = Math.Max(best[i], t[i] - sm[i]);
+            }
+
+            double[] size = best.Select(v => Math.Abs(v)).OrderBy(v => v).ToArray();
+            double usual = Math.Max(1e-6, size[size.Length / 2]);
+            for (int i = 0; i < n; i++)
+                best[i] /= usual;
+            return best;
+        }
+
         private static bool LaneAtSlope(double bestSlope, double[] bestMagnitude, double[] profile, double[] y0s, int n, double headX, double headY,
-            double feetX, double feetY, double L, double cx, out SwimStrokeLane lane, out int virtualRope)
+            double feetX, double feetY, double L, double cx, out SwimStrokeLane lane, out int virtualRope, double[] texture = null)
         {
             lane = new SwimStrokeLane();
             virtualRope = 0;
@@ -1585,6 +1788,16 @@ namespace Kinovea.ScreenManager
                 max = Math.Max(max, m[i]);
             if (max <= 0)
                 return false;
+
+            // The ropes of floats seen by their texture (blue and white floats on blue water: hardly a line of colour).
+            if (texture != null && TextureWeight > 0)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (texture[i] >= TextureZMin)
+                        m[i] = Math.Max(m[i], TextureWeight * max * Math.Min(1.0, texture[i] / TextureZRef));
+                }
+            }
 
             List<int> peaks = FindPeaks(m, 4, 0.06 * max);
             if (LaneTrace != null)
@@ -2054,6 +2267,56 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Texture of the lines parallel to (a, b) at the offsets −RopeR … RopeR (as in TextureProfile: the mean of the lower 80 % of
+        /// the brightness differences 2 px apart along the line), minus its smoothing; null if the line is out of the image.
+        /// </summary>
+        private static double[] RopeTexture(SwimStrokeImage img, double a, double b)
+        {
+            int w = img.Width, h = img.Height;
+            int lo = -RopeR - RopeMargin;
+            int count = 2 * (RopeR + RopeMargin) + 1;
+            List<int> columns = new List<int>();
+            for (int x = 0; x + 2 < w; x += RopeStep)
+            {
+                double y1 = Math.Min(a * x + b, a * (x + 2) + b), y2 = Math.Max(a * x + b, a * (x + 2) + b);
+                if (y1 + lo >= 0 && y2 - lo <= h - 1)
+                    columns.Add(x);
+            }
+
+            if (columns.Count < 12)
+                return null;
+
+            double[] t = new double[count];
+            double[] d = new double[columns.Count];
+            int keep = Math.Max(1, (int)(0.8 * columns.Count));
+            for (int k = 0; k < count; k++)
+            {
+                for (int j = 0; j < columns.Count; j++)
+                {
+                    int x = columns[j];
+                    double b1, g1, r1, b2, g2, r2;
+                    img.Sample(x, a * x + b + lo + k, out b1, out g1, out r1);
+                    img.Sample(x + 2, a * (x + 2) + b + lo + k, out b2, out g2, out r2);
+                    d[j] = Math.Abs((b2 + g2 + r2) - (b1 + g1 + r1)) / 3;
+                }
+
+                Array.Sort(d);
+                double sum = 0;
+                for (int j = 0; j < keep; j++)
+                    sum += d[j];
+                t[k] = sum / keep;
+            }
+
+            double[] smooth = Gauss1D(t, RopeSigma);
+            for (int k = 0; k < count; k++)
+                t[k] -= smooth[k];
+            double[] tm = Gauss1D(t, 1.0);
+            double[] result = new double[2 * RopeR + 1];
+            Array.Copy(tm, RopeMargin, result, 0, result.Length);
+            return result;
+        }
+
+        /// <summary>
         /// The two ropes of the lane in this frame, from their place predicted with the camera motion. A rope that leaves the
         /// image, is hidden or loses its texture, or that moves away from the other one, follows the good rope with the last
         /// place it had relative to it instead of drifting on its own (a lane along the near wall, a camera in front).
@@ -2062,9 +2325,11 @@ namespace Kinovea.ScreenManager
         {
             double a1 = predicted.A1, b1 = predicted.B1, a2 = predicted.A2, b2 = predicted.B2;
             bool ok1 = false, ok2 = false;
+            bool t1 = (predicted.TextureRopes & 1) != 0, t2 = (predicted.TextureRopes & 2) != 0;
+            int reach = RefineReach(predicted.Width(width / 2.0), TrackShare);
             Parallel.Invoke(
-                () => ok1 = RefineLine(image, predicted.A1, predicted.B1, out a1, out b1),
-                () => ok2 = RefineLine(image, predicted.A2, predicted.B2, out a2, out b2));
+                () => ok1 = RefineLine(image, predicted.A1, predicted.B1, out a1, out b1, reach, t1),
+                () => ok2 = RefineLine(image, predicted.A2, predicted.B2, out a2, out b2, reach, t2));
             if (!ok1)
             {
                 a1 = predicted.A1;
@@ -2078,8 +2343,8 @@ namespace Kinovea.ScreenManager
             }
 
             double inside1, inside2;
-            double s1 = RopeStrength(image, a1, b1, out inside1);
-            double s2 = RopeStrength(image, a2, b2, out inside2);
+            double s1 = RopeStrength(image, a1, b1, out inside1, t1);
+            double s2 = RopeStrength(image, a2, b2, out inside2, t2);
             double usual1 = ropeStrength1 > 0 ? ropeStrength1 : s1;
             double usual2 = ropeStrength2 > 0 ? ropeStrength2 : s2;
             bool good1 = inside1 >= 0.25 && s1 >= 0.5 * usual1;
@@ -2169,7 +2434,7 @@ namespace Kinovea.ScreenManager
         /// Rope-ness at the line itself (peak within two pixels) and the share of the width of the image where the line and its
         /// margins are inside the image.
         /// </summary>
-        private static double RopeStrength(SwimStrokeImage img, double a, double b, out double inside)
+        private static double RopeStrength(SwimStrokeImage img, double a, double b, out double inside, bool texture = false)
         {
             int columns = 0, total = 0;
             for (int x = 0; x < img.Width; x += RopeStep)
@@ -2181,7 +2446,7 @@ namespace Kinovea.ScreenManager
             }
 
             inside = total > 0 ? (double)columns / total : 0;
-            double[] m = Ropeness(img, a, b);
+            double[] m = texture ? RopeTexture(img, a, b) : Ropeness(img, a, b);
             if (m == null)
                 return 0;
 
@@ -2192,8 +2457,23 @@ namespace Kinovea.ScreenManager
             return best;
         }
 
-        /// <summary>Move a rope line to the nearby offset and slope with the strongest rope-ness.</summary>
-        private static bool RefineLine(SwimStrokeImage img, double a, double b, out double ra, out double rb)
+        /// <summary>A rope line moves at most this part of the width of the lane in the refinement of the first frame (RefineShare)
+        /// and of the next ones (TrackShare), at most RopeR (0: RopeR; tests).</summary>
+        internal static double RefineShare = 0.15;
+        internal static double TrackShare = 0.0;
+
+        /// <summary>The reach of the refinement of a rope line in a lane this wide (px): the lines next to a rope (its shade, a line
+        /// of the floor) are close to it in a narrow lane.</summary>
+        private static int RefineReach(double laneWidth, double share)
+        {
+            if (share <= 0 || double.IsNaN(laneWidth))
+                return RopeR;
+            return Math.Max(2, Math.Min(RopeR, (int)Math.Round(share * Math.Abs(laneWidth))));
+        }
+
+        /// <summary>Move a rope line to the nearby offset (at most 'reach' px) and slope with the strongest rope-ness (texture: of
+        /// its floats).</summary>
+        private static bool RefineLine(SwimStrokeImage img, double a, double b, out double ra, out double rb, int reach = RopeR, bool texture = false)
         {
             ra = a;
             rb = b;
@@ -2205,13 +2485,13 @@ namespace Kinovea.ScreenManager
             {
                 double a2 = a + da;
                 double b2 = b - da * xc;
-                double[] m = Ropeness(img, a2, b2);
+                double[] m = texture ? RopeTexture(img, a2, b2) : Ropeness(img, a2, b2);
                 if (m == null)
                     continue;
 
                 int k = 0;
                 double kBest = double.MinValue;
-                for (int i = 0; i < m.Length; i++)
+                for (int i = Math.Max(0, RopeR - reach); i <= Math.Min(m.Length - 1, RopeR + reach); i++)
                 {
                     double sc = m[i] - 0.15 * Math.Abs(i - RopeR) - 20 * Math.Abs(da);
                     if (sc > kBest)
