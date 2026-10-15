@@ -110,7 +110,7 @@ namespace Kinovea.ScreenManager
                 if (assigned[i] <= 0)
                     continue;
 
-                SwimSplitFound f = new SwimSplitFound { LapDistance = assigned[i], Confidence = marks[i].ContainsKey(CueMiddle) ? 0.8 : 0.55 };
+                SwimSplitFound f = new SwimSplitFound { LapDistance = assigned[i], Confidence = MarkConfidence(marks[i].Keys) };
                 foreach (KeyValuePair<string, double> c in marks[i])
                     f.Cues[c.Key] = c.Value;
                 found.Add(f);
@@ -132,6 +132,33 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The start of the red last 5 m names the marks before it too (tests).</summary>
         internal static bool EndInAssign = true;
+
+        // The confidence shown with a proposal is about the share of such proposals within 0.2 s of the analysts' time (test
+        // races of camcorders and phones, 2026-10-15): the analyst sees which ones to look at closely.
+
+        /// <summary>A checkpoint from the marks: crossed with the line between them 77 %, the far mark only 65 %, the near one only 26 %.</summary>
+        public static double MarkConfidence(ICollection<string> cues)
+        {
+            if (cues.Contains(CueMiddle))
+                return 0.8;
+            if (cues.Count == 1 && cues.Contains(CueFar))
+                return 0.65;
+            if (cues.Count == 1 && cues.Contains(CueNear))
+                return 0.3;
+            return 0.55;
+        }
+
+        /// <summary>A checkpoint from the pace of the others (its mark not seen): 59 %.</summary>
+        public const double PaceConfidence = 0.5;
+
+        /// <summary>A wall from its cues: the head or the body seen at the wall 50-66 %, the swimmer stopped and the pace 43 %, the pace alone 29 %.</summary>
+        public static double WallConfidence(IEnumerable<string> cues)
+        {
+            HashSet<string> seen = new HashSet<string>(cues.Select(k => { int dot = k.IndexOf('.'); return dot > 0 ? k.Substring(0, dot) : k; }));
+            if (seen.Contains(CueWallHead) || seen.Contains(CueWallBody))
+                return 0.6;
+            return seen.Contains(CueStop) ? 0.45 : 0.3;
+        }
 
         /// <summary>The checkpoints far from the time of the length go (tests).</summary>
         internal static bool LengthMarks = true;
@@ -282,7 +309,7 @@ namespace Kinovea.ScreenManager
                         {
                             f.Cues.Clear();
                             f.Cues[CuePace] = intercept + slope * f.LapDistance;
-                            f.Confidence = 0.3;
+                            f.Confidence = PaceConfidence;
                         }
 
                         seen = kept;
@@ -300,7 +327,7 @@ namespace Kinovea.ScreenManager
                 if (t < 0 || t > frames - 1)
                     continue;
 
-                SwimSplitFound added = new SwimSplitFound { LapDistance = d, Confidence = 0.3 };
+                SwimSplitFound added = new SwimSplitFound { LapDistance = d, Confidence = PaceConfidence };
                 added.Cues[CuePace] = t;
                 found.Add(added);
             }

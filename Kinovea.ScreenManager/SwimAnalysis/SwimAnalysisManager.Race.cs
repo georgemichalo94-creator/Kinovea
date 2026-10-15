@@ -1050,7 +1050,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (l.Wall.Count > 0)
-                items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l), 0.5));
+                items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l), SwimSplitDetector.WallConfidence(l.Wall.Keys)));
 
             foreach (Tuple<int, Dictionary<string, double>, double> item in items)
             {
