@@ -1273,6 +1273,7 @@ namespace Kinovea.ScreenManager
                         p.Cues[line.Key] = x;
                 }
 
+                DropOddCrossings(p.Cues, fps);
                 if (p.Cues.Count > 0)
                     points.Add(p);
             }
@@ -1309,6 +1310,26 @@ namespace Kinovea.ScreenManager
 
             return merged;
         }
+
+        /// <summary>
+        /// The crossings of one checkpoint are of lines close together, crossed within a second: one more than OddCrossing s
+        /// from the median of the others (three or more) is the head of another moment (the path ahead of the swimmer on the
+        /// glints of the water) and goes: its main time (the middle line) also names the marks and gives the pace. Test races
+        /// (40 camcorder, 29 phone): a 200 IM last length 1 -> 4 checkpoints (165 m -2.78 -> -0.49 s, 175-195 within 0.14 s;
+        /// its breakout 2.5 s late no longer proposed), a 50 m wall +0.92 -> +0.22 s, the other races unchanged.
+        /// </summary>
+        private static void DropOddCrossings(Dictionary<string, double> cues, double fps)
+        {
+            if (OddCrossing <= 0 || cues.Count < 3)
+                return;
+
+            double median = SwimLearningMedian(cues.Values.ToList());
+            foreach (string k in cues.Where(c => Math.Abs(c.Value - median) > OddCrossing * fps).Select(c => c.Key).ToList())
+                cues.Remove(k);
+        }
+
+        /// <summary>See DropOddCrossings (s; 0: none go; tests).</summary>
+        internal static double OddCrossing = 1.0;
 
         /// <summary>
         /// Frame where the head crosses a point followed from frame 'first' (NaN if it does not): the head minus the point,
