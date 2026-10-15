@@ -609,6 +609,9 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Length of the swimmer clicked (working px, head to feet): a swimmer seen from far has his own delays.</summary>
             public double SwimmerLength = double.NaN;
+
+            /// <summary>Frame of the wall from the pace of the length (also after the frames read; NaN: no pace).</summary>
+            public double PaceWall = double.NaN;
         }
 
         /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
@@ -997,7 +1000,11 @@ namespace Kinovea.ScreenManager
 
                 // The pace of the swimmer: the checkpoints not seen and the wall from the ones found.
                 double ratio = SwimSplitDetector.LastFiveRatio(WallKind(s.Wall), SwimPresets.StyleAt(Race, s.Wall));
-                SwimSplitDetector.AddPace(l.Found, l.Wall, Race.Pool, ratio, n);
+                l.PaceWall = SwimSplitDetector.AddPace(l.Found, l.Wall, Race.Pool, ratio, n);
+
+                // One checkpoint only (the swimmer far or hidden): the wall from it and the start of the length.
+                if (double.IsNaN(l.PaceWall))
+                    l.PaceWall = SwimSplitDetector.AddSinglePace(l.Found, l.Wall, Race.Pool, lapStart, IsDive(lapFrom), WallKind(s.Wall), n);
             }
             catch (Exception e)
             {
@@ -1168,6 +1175,9 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>A reading goes on to the wall of the pace of the length when it is more than this after the wall found (s).</summary>
+        private const double ReadOnToPace = 0.5;
+
         /// <summary>The length that starts at this distance starts with a dive: the start, or the next swimmer of a relay.</summary>
         private bool IsDive(int lapFrom)
         {
@@ -1211,7 +1221,7 @@ namespace Kinovea.ScreenManager
         private static double WallDelay(string cue, string kind)
         {
             // The pace gives the analyst's wall already (time of the last 5 m as the analyses have it).
-            if (cue == SwimSplitDetector.CuePace)
+            if (cue == SwimSplitDetector.CuePace || cue == SwimSplitDetector.CuePaceOne)
                 return 0;
 
             switch (kind)
@@ -1254,6 +1264,7 @@ namespace Kinovea.ScreenManager
                 // The wall: the pace of the length (from its checkpoints) before the image (the swimmer hidden in the splashes of
                 // the turn, the camera turning).
                 case SwimSplitDetector.CuePace: weight = 1.0; spread = 0.15; break;
+                case SwimSplitDetector.CuePaceOne: weight = 1.0; spread = 0.25; break;
                 case SwimSplitDetector.CueBurst: weight = 1.0; spread = 0.3; break;
                 case SwimSplitDetector.CueEnergy: weight = 0.6; spread = 0.5; break;
                 case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
@@ -1798,6 +1809,11 @@ namespace Kinovea.ScreenManager
 
                     double found = WallSample(l);
                     bool enough = !double.IsNaN(found) && s.Timestamps.Count - 1 - found >= 1.0 * s.Fps;
+
+                    // The pace of the length gets the swimmer to the wall after the frames read (a stop or the ends of the ropes
+                    // seen before the wall: the path left him for still water): the frames up to the wall of the pace first.
+                    if (enough && !double.IsNaN(l.PaceWall) && l.PaceWall - found > ReadOnToPace * s.Fps && s.Timestamps.Count - 1 - l.PaceWall < 1.0 * s.Fps)
+                        enough = false;
                     if (enough || target >= last || worker.CancellationPending)
                         break;
                     target = Math.Min(last, target + RealSpan(3.0));

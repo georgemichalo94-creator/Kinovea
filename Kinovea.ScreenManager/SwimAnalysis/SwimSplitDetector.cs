@@ -244,21 +244,22 @@ namespace Kinovea.ScreenManager
         /// between the marks (the next 10 m take 0.96–1.04 of the time of the 10 m before), the last 5 m to the wall take
         /// 'lastFiveRatio' of the 10 m before. The checkpoints not found are added with the cue "pace" only (low confidence: the
         /// analyst checks them), the wall gets the cue "pace". Needs two checkpoints found; only in the frames read (0 to frames − 1).
+        /// Returns the wall of the pace (frames, also after the frames read: the reading goes on to it; NaN: no pace).
         /// </summary>
-        public static void AddPace(List<SwimSplitFound> found, Dictionary<string, double> wall, int pool, double lastFiveRatio, int frames)
+        public static double AddPace(List<SwimSplitFound> found, Dictionary<string, double> wall, int pool, double lastFiveRatio, int frames)
         {
             if (found == null || pool <= 0)
-                return;
+                return double.NaN;
 
             List<SwimSplitFound> seen = found.Where(x => x.Cues.Count > 0 && !(x.Cues.Count == 1 && x.Cues.ContainsKey(CuePace))).ToList();
             if (seen.Count < 2)
-                return;
+                return double.NaN;
 
             // Time per metre and time at the wall of the lap (straight line through the checkpoints: medians of the slopes of
             // each pair and of the intercepts, so that one wrong checkpoint does not move it).
             double slope, intercept;
             if (!PaceLine(seen, out slope, out intercept))
-                return;
+                return double.NaN;
 
             // A checkpoint far from the pace of the others (more than a fifth of the time of 10 m: a mark crossed at another moment,
             // the swimmer hidden) becomes the pace of the others (the analyst checks it); with four checkpoints the pace stands
@@ -324,10 +325,63 @@ namespace Kinovea.ScreenManager
 
             if (wall != null && tWall >= 0 && tWall <= frames - 1)
                 wall[CuePace] = tWall;
+            return tWall;
         }
 
         /// <summary>A stop or an end of the ropes far before the wall the pace of the swimmer gets him to is not the wall (tests).</summary>
         internal static bool StopPaceCheck = true;
+
+        /// <summary>The time of the wall from the one checkpoint seen in the length and the start of the length.</summary>
+        public const string CuePaceOne = "pace1";
+
+        /// <summary>
+        /// The wall of a length where one checkpoint only was seen (a swimmer far or hidden), when it is the 35 or the 45 m of a pool
+        /// of 50: from it and the start of the length (the start signal, the wall before). After a checkpoint the swimmer is slower
+        /// than on average from the start of the length (the dive or the push and the gliding are faster): the time per metre to the
+        /// wall is SinglePaceRatio times the one before (analyses of 69 races: the wall within 0.07–0.24 s of the analyst's,
+        /// median). Cue "pace1" in the frames read (0 to frames − 1, lapStart in the same frames); returns its wall (frames, also
+        /// after the frames read; NaN: none).
+        /// </summary>
+        public static double AddSinglePace(List<SwimSplitFound> found, Dictionary<string, double> wall, int pool, double lapStart, bool dive, string kind, int frames)
+        {
+            if (!SinglePace || found == null || pool != 50 || double.IsNaN(lapStart))
+                return double.NaN;
+
+            List<SwimSplitFound> seen = found.Where(x => x.Cues.Count > 0 && !(x.Cues.Count == 1 && x.Cues.ContainsKey(CuePace))).ToList();
+            if (seen.Count != 1 || (seen[0].LapDistance != 35 && seen[0].LapDistance != 45))
+                return double.NaN;
+
+            int d = seen[0].LapDistance;
+            double t = Time(seen[0].Cues);
+            if (t <= lapStart)
+                return double.NaN;
+
+            double tWall = t + (pool - d) * SinglePaceRatio(dive, d, kind) * (t - lapStart) / d;
+            if (wall != null && tWall >= 0 && tWall <= frames - 1)
+                wall[CuePaceOne] = tWall;
+            return tWall;
+        }
+
+        /// <summary>
+        /// Time per metre from the checkpoint at d (35 or 45) to the wall against the one from the start of the length to it (medians
+        /// of the analysed races: after the dive more than after a push; the analysts mark the feet in a flip turn).
+        /// </summary>
+        internal static double SinglePaceRatio(bool dive, int d, string kind)
+        {
+            if (dive)
+            {
+                if (d == 45)
+                    return kind == "flip" ? 1.17 : kind == "open" ? 1.12 : 1.11;
+                return kind == "flip" ? 1.18 : 1.15;
+            }
+
+            if (d == 45)
+                return kind == "flip" ? 1.11 : kind == "open" ? 1.04 : 1.06;
+            return kind == "flip" ? 1.11 : kind == "open" ? 1.05 : 1.08;
+        }
+
+        /// <summary>The wall from one checkpoint when only one was seen (tests).</summary>
+        internal static bool SinglePace = true;
 
         /// <summary>
         /// The wall cues of a length with their usual delays (frames, keys "cue.kind…"): when the cues seen at the wall (the swimmer
