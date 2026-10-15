@@ -173,6 +173,7 @@ namespace Kinovea.ScreenManager
         private readonly List<SwimStrokeImage> previous = new List<SwimStrokeImage>();
         private readonly List<double[]> previousMotion = new List<double[]>();
         private readonly List<double[]> differences = new List<double[]>();
+        private readonly List<double[]> colourDifferences = new List<double[]>();
         private readonly List<double[]> shifts = new List<double[]>();
         private readonly List<double[]> motions = new List<double[]>();
         private readonly List<SwimStrokeLane> lanes = new List<SwimStrokeLane>();
@@ -293,11 +294,13 @@ namespace Kinovea.ScreenManager
             previous.Clear();
             previousMotion.Clear();
             differences.Clear();
+            colourDifferences.Clear();
             shifts.Clear();
             motions.Clear();
             redFar.Clear();
             redNear.Clear();
             differences.TrimExcess();
+            colourDifferences.TrimExcess();
             shifts.TrimExcess();
         }
 
@@ -453,6 +456,7 @@ namespace Kinovea.ScreenManager
             redNear.Add(ropes && virtualRope != 2 ? RedRuns(image, lane.A2, lane.B2) : new int[0]);
 
             double[] d = new double[width];
+            double[] dc = PathColour > 0 ? new double[width] : null;
             if (previous.Count == FrameGap && quietFrames == 0 && !blind)
             {
                 double[] M = Identity();
@@ -460,12 +464,14 @@ namespace Kinovea.ScreenManager
                     M = Multiply(previousMotion[k], M);
                 M = Multiply(motion ?? Identity(), M);
                 double[] Minv = Invert(M);
-                BandDifference(image, previous[0], Minv, d);
+                BandDifference(image, previous[0], Minv, d, dc);
             }
 
             if (quietFrames > 0)
                 quietFrames--;
             differences.Add(d);
+            if (dc != null)
+                colourDifferences.Add(dc);
             previous.Add(image);
             previousMotion.Add(motion ?? Identity());
             if (previous.Count > FrameGap)
@@ -516,7 +522,7 @@ namespace Kinovea.ScreenManager
         private double[] lastGoodMotion;
         private int quietFrames;
 
-        private void BandDifference(SwimStrokeImage current, SwimStrokeImage before, double[] Minv, double[] d)
+        private void BandDifference(SwimStrokeImage current, SwimStrokeImage before, double[] Minv, double[] d, double[] colour = null)
         {
             int n = BandRows * width;
             double[] cur = new double[n * 3];
@@ -544,7 +550,7 @@ namespace Kinovea.ScreenManager
 
             for (int x = 0; x < width; x++)
             {
-                double sum = 0;
+                double sum = 0, sumColour = 0;
                 int count = 0;
                 for (int row = 0; row < BandRows; row++)
                 {
@@ -553,10 +559,22 @@ namespace Kinovea.ScreenManager
                         continue;
                     double diff = (Math.Abs(cur[i * 3] - prv[i * 3]) + Math.Abs(cur[i * 3 + 1] - prv[i * 3 + 1]) + Math.Abs(cur[i * 3 + 2] - prv[i * 3 + 2])) / 3.0;
                     sum += diff;
+                    if (colour != null)
+                    {
+                        // The colour without the brightness (shares of blue, green, red).
+                        double s1 = cur[i * 3] + cur[i * 3 + 1] + cur[i * 3 + 2] + 30, s0 = prv[i * 3] + prv[i * 3 + 1] + prv[i * 3 + 2] + 30;
+                        double c = 0;
+                        for (int k = 0; k < 3; k++)
+                            c += Math.Abs(cur[i * 3 + k] / s1 - prv[i * 3 + k] / s0);
+                        sumColour += 255.0 * c / 3.0;
+                    }
+
                     count++;
                 }
 
                 d[x] = count > 0 ? sum / count : 0;
+                if (colour != null)
+                    colour[x] = count > 0 ? sumColour / count : 0;
             }
         }
 
@@ -741,7 +759,20 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            int[] path = Locate(D, S, T, W, x0, length, anchorFrame, anchorX, scale, holdFrom, holdTo, holdX, glideFrames, glideX, glideSpeed);
+            // The path in the colour of the band difference (tests).
+            double[] P = D;
+            if (PathColour > 0 && !result.Still && colourDifferences.Count >= T)
+            {
+                P = new double[T * W];
+                for (int t = 0; t < T; t++)
+                {
+                    double[] c = colourDifferences[t < FrameGap ? FrameGap : t];
+                    for (int x = 0; x < W; x++)
+                        P[t * W + x] = PathColour == 1 ? c[x] : 0.5 * (D[t * W + x] + c[x]);
+                }
+            }
+
+            int[] path = Locate(P, S, T, W, x0, length, anchorFrame, anchorX, scale, holdFrom, holdTo, holdX, glideFrames, glideX, glideSpeed);
             result.Path = path;
 
             int ahead = (int)Math.Round(1.6 * length);
@@ -1008,6 +1039,13 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The second pass of the path with the swimmer's speed in lane widths per frame (tests).</summary>
         internal static bool ScaledSpeed = false;
+
+        /// <summary>
+        /// The band difference the path follows: 0 the brightness, 1 the colour without the brightness (the glints of the lights
+        /// and the floor lines seen through the waves change the brightness, the swimmer's skin and cap the colour), 2 the mean
+        /// of both (tests; the strokes, the breakouts and the walls keep the brightness).
+        /// </summary>
+        internal static int PathColour = 0;
 
         /// <summary>Frames on each side of the click where the place clicked holds too, and the weight of it (tests).</summary>
         internal static int AnchorWidth = 0;

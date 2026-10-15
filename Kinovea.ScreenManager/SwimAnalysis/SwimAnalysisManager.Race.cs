@@ -1248,6 +1248,8 @@ namespace Kinovea.ScreenManager
                 cue = cue.Substring(0, at);
             }
 
+            // A cue of the breakout after a turn (".t").
+            bool turn = cue.EndsWith(".t", StringComparison.Ordinal) || cue.Contains(".t.");
             int dot = cue.IndexOf('.');
             if (dot > 0)
                 cue = cue.Substring(0, dot);
@@ -1268,7 +1270,11 @@ namespace Kinovea.ScreenManager
                 case SwimSplitDetector.CuePace: weight = 1.0; spread = 0.15; break;
                 case SwimSplitDetector.CuePaceOne: weight = 1.0; spread = 0.25; break;
                 case SwimSplitDetector.CueBurst: weight = 1.0; spread = 0.3; break;
-                case SwimSplitDetector.CueEnergy: weight = 0.6; spread = 0.5; break;
+                case SwimSplitDetector.CueEnergy:
+                    bool sure = turn && style == "fs" && SwimSplitDetector.TurnEnergyFreestyle;
+                    weight = sure ? 1.0 : 0.6;
+                    spread = sure ? 0.2 : 0.5;
+                    break;
                 case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;

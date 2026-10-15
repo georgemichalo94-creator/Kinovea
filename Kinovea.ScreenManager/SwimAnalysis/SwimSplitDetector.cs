@@ -484,6 +484,14 @@ namespace Kinovea.ScreenManager
         public static bool TurnBreakout = true;
 
         /// <summary>
+        /// After a turn in freestyle the motion of the swimming starting (cue "energy") counts as much as the steepest rise: the
+        /// rise comes later with a breath or a stroke out of time (test races, 32 turns: energy within 0.3 s 84 %, rise 62 %, the
+        /// rise 2-6.5 s late in 6). Weight 1 and spread 0.2 s as the rise instead of 0.6 and 0.5 s: phone breakouts more than
+        /// 1 s off 8 -> 4 of 76 (q90 0.90 -> 0.59 s), the camcorders' three within 0.12 s of before (tests).
+        /// </summary>
+        public static bool TurnEnergyFreestyle = true;
+
+        /// <summary>
         /// Usual delay (s) of the steepest rise of the motion after a turn from the breakout the analysts mark (analysed races:
         /// the first strokes after the head is out, about 1.2 s later in butterfly, 0.3 s in backstroke; in breaststroke the
         /// pull-out and the kick under the water come first, the rise 2.7 s after the head is out (median of 6 turns, camcorders
