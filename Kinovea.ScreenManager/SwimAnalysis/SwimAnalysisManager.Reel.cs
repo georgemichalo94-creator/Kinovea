@@ -7,8 +7,13 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 
 namespace Kinovea.ScreenManager
 {
@@ -332,9 +337,232 @@ namespace Kinovea.ScreenManager
                 Timestamp = timestamp,
                 Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value),
                 FromImage = fromImage,
-                Summary = Settings.ReelSummary
+                Summary = Settings.ReelSummary,
+                Final = Settings.ShowFinalsBoard && PickTarget == SwimPickTarget.None ? FinalForRace() : null,
+                BoardName = BoardName(Race.Athlete),
+                Delta = Settings.ShowDeltaChart
             };
             SwimReelPainter.Paint(g, size, scene);
+        }
+        #endregion
+
+        #region Graphics of the report
+        /// <summary>Size of the graphics of the report: an image over the cells of a Google Sheet has at most 1 million pixels.</summary>
+        private static readonly Size ReportGraphicSize = new Size(1280, 720);
+
+        /// <summary>The graphics of the report are being uploaded before a PDF.</summary>
+        private bool reportGraphicsUploading;
+
+        /// <summary>
+        /// The graphics of the video for the PDF report (PNG): "summary", the summary card of the race; "versus", the race against the
+        /// final of the event (or the reference) after the touch. Empty while the race has no finish.
+        /// </summary>
+        private Dictionary<string, byte[]> RenderReportGraphics()
+        {
+            Dictionary<string, byte[]> images = new Dictionary<string, byte[]>();
+            SwimReel reel = Reel;
+            if (Race == null || Race.IsTraining || Computed == null || reel == null || !reel.Finish.HasValue || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return images;
+
+            SwimFinal final = FinalForRace();
+            try
+            {
+                SwimReelScene scene = new SwimReelScene
+                {
+                    Race = Race,
+                    Computed = Computed,
+                    Reel = reel,
+                    Timing = Timing,
+                    Time = reel.Finish.Value + 10,
+                    Summary = true,
+                    SummaryOnly = true,
+                    Final = final,
+                    BoardName = BoardName(Race.Athlete),
+                    Delta = true
+                };
+                images["summary"] = RenderGraphic(g => SwimReelPainter.Paint(g, ReportGraphicSize, scene));
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not draw the summary card of the report.", e);
+            }
+
+            if (final != null || Computed.Reference != null)
+            {
+                try
+                {
+                    images["versus"] = RenderGraphic(g => DrawVersus(g, final));
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not draw the comparison of the report.", e);
+                }
+            }
+
+            return images;
+        }
+
+        private static byte[] RenderGraphic(Action<Graphics> draw)
+        {
+            using (Bitmap image = new Bitmap(ReportGraphicSize.Width, ReportGraphicSize.Height, PixelFormat.Format24bppRgb))
+            {
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    using (SolidBrush back = new SolidBrush(SwimTheme.Back))
+                        g.FillRectangle(back, 0, 0, image.Width, image.Height);
+                    draw(g);
+                }
+
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    image.Save(stream, ImageFormat.Png);
+                    return stream.ToArray();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The race against the final after the touch, with the graphics of the video: the board of the final at the finish, the race
+        /// board (final time, Δ), the Δ at each checkpoint and the speed of each part. Without a final: against the reference.
+        /// </summary>
+        private void DrawVersus(Graphics g, SwimFinal final)
+        {
+            const float scale = 1.6f;
+            float W = ReportGraphicSize.Width / scale, H = ReportGraphicSize.Height / scale;
+            g.ScaleTransform(scale, scale);
+            using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(0, 0, W, H), SwimTheme.Back, SwimTheme.Surface, LinearGradientMode.Vertical))
+                g.FillRectangle(back, 0, 0, W, H);
+
+            SwimRow finish = Computed.Rows.FirstOrDefault(r => r.D >= Race.Distance && r.T.HasValue);
+            if (finish == null)
+                return;
+
+            List<SwimRow> done = Computed.Rows.Where(r => r.T.HasValue).ToList();
+            string title = final != null
+                ? "Ο ΑΓΩΝΑΣ ΑΝΑΜΕΣΑ ΣΤΟΥΣ ΦΙΝΑΛΙΣΤ  ·  " + SwimAthleteList.Normalize(SwimFinalsPainter.BoardSubtitle(final)) + "  ·  " + SwimAthleteList.Normalize(final.Short)
+                : "Ο ΑΓΩΝΑΣ ΑΠΕΝΑΝΤΙ ΣΤΗΝ ΑΝΑΦΟΡΑ  ·  " + (Computed.Reference != null ? Computed.Reference.Name : "");
+            using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
+            using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+                g.DrawString(title, SwimTheme.Ui(8.5f, FontStyle.Bold), amber, new RectangleF(14, 9, W - 28, 16), noWrap);
+
+            const float top = 32, margin = 12, gap = 10;
+            float right = W - margin;
+            float x = margin;
+            if (final != null)
+            {
+                List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(final, finish.D, finish.T.Value, BoardName(Race.Athlete));
+                float leftWidth = 320;
+                if (rows != null)
+                {
+                    float bs = Math.Min(leftWidth / 260f, (H - top - margin - 70 - gap) / SwimFinalsPainter.BoardHeight(rows.Count, 1f));
+                    int bh = SwimFinalsPainter.BoardHeight(rows.Count, bs);
+                    SwimFinalsPainter.PaintBoard(g, new Rectangle((int)x, (int)top, (int)Math.Round(260 * bs), bh), SwimFinalsPainter.BoardTitle(final, finish.D, true),
+                        SwimFinalsPainter.BoardSubtitle(final), rows, bs);
+                    Rectangle boardCard = new Rectangle((int)x, (int)(H - margin - 70), (int)Math.Round(260 * bs), 70);
+                    DrawCard(g, boardCard, SwimTheme.Accent);
+                    DrawBoard(g, boardCard, finish.T.Value, finish);
+                    x += 260 * bs + gap + 4;
+                }
+            }
+            else
+            {
+                Rectangle boardCard = new Rectangle((int)x, (int)top, (int)(right - x), 70);
+                DrawCard(g, boardCard, SwimTheme.Accent);
+                DrawBoard(g, boardCard, finish.T.Value, finish);
+            }
+
+            float y = final != null ? top : top + 70 + gap;
+            float width = right - x;
+            float bottom = H - margin;
+            if (Computed.Reference != null)
+            {
+                List<SwimDeltaPoint> points = done.Where(r => r.Delta.HasValue).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
+                float h = Math.Min(150, (bottom - y) * 0.42f);
+                SwimFinalsPainter.PaintDelta(g, Rectangle.Round(new RectangleF(x, y, width, h)), points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1.2f);
+                y += h + gap;
+            }
+
+            Rectangle chart = Rectangle.Round(new RectangleF(x, y, width, bottom - y));
+            if (chart.Height > 80)
+            {
+                DrawCard(g, chart, colorAthlete);
+                DrawSpeedChart(g, chart, done, finish);
+            }
+        }
+
+        private static string GraphicHash(byte[] bytes)
+        {
+            using (SHA1 sha = SHA1.Create())
+                return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "");
+        }
+
+        /// <summary>
+        /// Before a PDF: the graphics of the race are drawn, the ones that changed go up to the Drive, then 'then' runs (also after a
+        /// failed upload: the PDF is made without that graphic). False when nothing has to go up ('then' has not run).
+        /// </summary>
+        private bool UploadReportGraphics(Action then)
+        {
+            if (!Settings.IsConfigured || Race == null || Race.IsTraining || reportGraphicsUploading)
+                return false;
+
+            SwimRace race = Race;
+            Dictionary<string, byte[]> images = RenderReportGraphics();
+
+            // A graphic that cannot be drawn anymore (e.g. no final for the event now) leaves the report.
+            if (race.Graphics.RemoveAll(x => !images.ContainsKey(x.Id)) > 0)
+                MarkDirty();
+
+            List<KeyValuePair<string, byte[]>> pending = images.Where(kv =>
+            {
+                SwimReportGraphic old = race.Graphics.FirstOrDefault(x => x.Id == kv.Key);
+                return old == null || string.IsNullOrEmpty(old.FileId) || old.Hash != GraphicHash(kv.Value);
+            }).ToList();
+            if (pending.Count == 0)
+                return false;
+
+            reportGraphicsUploading = true;
+            Status("🎨 Τα γραφικά του βίντεο ανεβαίνουν για το PDF…", false);
+            UploadReportGraphic(race, pending, 0, then);
+            return true;
+        }
+
+        private void UploadReportGraphic(SwimRace race, List<KeyValuePair<string, byte[]>> pending, int index, Action then)
+        {
+            if (index >= pending.Count)
+            {
+                reportGraphicsUploading = false;
+                MarkDirty();
+                if (race == Race)
+                    then();
+                return;
+            }
+
+            string id = pending[index].Key;
+            byte[] bytes = pending[index].Value;
+            client.UploadSnapshot(Settings.WebAppUrl, Settings.Token, race.Id, "report-" + id, bytes, result =>
+            {
+                if (result.Ok && !string.IsNullOrEmpty(result.FileId))
+                {
+                    SwimReportGraphic graphic = race.Graphics.FirstOrDefault(x => x.Id == id);
+                    if (graphic == null)
+                    {
+                        graphic = new SwimReportGraphic { Id = id };
+                        race.Graphics.Add(graphic);
+                    }
+
+                    graphic.FileId = result.FileId;
+                    graphic.Hash = GraphicHash(bytes);
+                }
+                else
+                {
+                    log.Warn("A graphic of the report was not uploaded (" + id + "): " + result.Error);
+                }
+
+                UploadReportGraphic(race, pending, index + 1, then);
+            }, "image/png");
         }
         #endregion
     }

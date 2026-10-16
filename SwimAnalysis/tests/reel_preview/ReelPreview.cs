@@ -31,6 +31,9 @@ public static class ReelPreview
 
         // Drawn as in a video export: on a bigger image, graphics of a screen of this width, then made smaller.
         public int ExportWidth;
+
+        // The final of the event: its board at the checkpoints and the finish, the result in the summary.
+        public SwimFinal Final;
     }
 
     private static long Ts(double seconds)
@@ -235,7 +238,33 @@ public static class ReelPreview
             reels[race] = SwimReel.Build(race, computed[race]);
         }
 
-        foreach (Frame frame in Frames(fly, free))
+        List<Frame> frames = Frames(fly, free);
+        try
+        {
+            // The 100 m backstroke against the fictional final: the board and the Δ of the technical view.
+            string error;
+            SwimFinals finals = SwimFinals.Parse(FinalsJson(), out error);
+            SwimRace back = Backstroke100();
+            SwimFinal final = finals != null ? finals.For(back) : null;
+            if (final == null)
+                throw new InvalidOperationException("no final for the backstroke: " + error);
+            back.Reference = SwimFinals.Reference(final, final.Swimmers[0]);
+            computed[back] = SwimCalculator.Compute(back, timing, 0.5);
+            reels[back] = SwimReel.Build(back, computed[back]);
+            frames.Add(new Frame { Name = "bk-26.5-final", Race = back, Time = 26.5, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-26.5-final-export", Race = back, Time = 26.5, Width = 960, Height = 540, ExportWidth = 1280, Final = final });
+            frames.Add(new Frame { Name = "bk-54.0-finish", Race = back, Time = 54.0, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-58.6-summary", Race = back, Time = 58.6, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-26.5-portrait", Race = back, Time = 26.5, Width = 405, Height = 720, Final = final });
+            frames.Add(new Frame { Name = "bk-26.5-small", Race = back, Time = 26.5, Width = 640, Height = 360, Final = final });
+            RenderReport(folder, names, back, computed[back], final, timing);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("backstroke against the final: " + e);
+        }
+
+        foreach (Frame frame in frames)
         {
             try
             {
@@ -314,6 +343,9 @@ public static class ReelPreview
             scene.Timestamp = timestamp;
             scene.Time = timing.Seconds(timestamp, frame.Race.StartTimestamp.Value);
             scene.Summary = true;
+            scene.Final = frame.Final;
+            scene.BoardName = "ΔΟΚΙΜΑΣΤΙΚΟΣ";
+            scene.Delta = true;
             if (frame.ExportWidth > 0)
             {
                 float scale = Math.Max(0.25f, w / (float)frame.ExportWidth);
@@ -825,6 +857,50 @@ public static class ReelPreview
         SwimSkeleton s = StartSkeleton();
         b.AppendLine("fictional skeleton: " + s.Count + " frames, found " + s.Found);
         return b.ToString();
+    }
+
+    /// <summary>
+    /// The graphics of the PDF report drawn by the program (the summary card, the race against the final) for the fictional backstroke,
+    /// through the swim analysis of the program as in a session (the race of the panel set for the drawing).
+    /// </summary>
+    private static void RenderReport(string folder, List<string> names, SwimRace race, SwimComputed computed, SwimFinal final, SwimTiming timing)
+    {
+        StringBuilder info = new StringBuilder();
+        try
+        {
+            Kinovea.Services.Software.Initialize(new Version(2025, 2, 0));
+            SwimAnalysisManager manager = SwimAnalysisManager.Instance;
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            Type type = typeof(SwimAnalysisManager);
+            type.GetField("currentRace", flags).SetValue(manager, race);
+            type.GetField("currentTiming", flags).SetValue(manager, timing);
+            type.GetProperty("Computed", flags).GetSetMethod(true).Invoke(manager, new object[] { computed });
+            string error;
+            SwimFinals finals = SwimFinals.Parse(FinalsJson(), out error);
+            type.GetProperty("Finals", flags).GetSetMethod(true).Invoke(manager, new object[] { finals });
+            Dictionary<string, byte[]> images = (Dictionary<string, byte[]>)type.GetMethod("RenderReportGraphics", flags).Invoke(manager, new object[0]);
+            foreach (KeyValuePair<string, byte[]> kv in images)
+            {
+                using (MemoryStream stream = new MemoryStream(kv.Value))
+                using (Bitmap image = new Bitmap(stream))
+                {
+                    info.AppendLine(string.Format(ci, "report graphic {0}: {1}x{2} PNG {3} bytes", kv.Key, image.Width, image.Height, kv.Value.Length));
+                    SaveJpeg(image, Path.Combine(folder, "report-" + kv.Key + ".jpg"), 80);
+                }
+
+                names.Add("report-" + kv.Key);
+            }
+
+            if (images.Count == 0)
+                info.AppendLine("report graphics: none drawn");
+        }
+        catch (Exception e)
+        {
+            Exception inner = e.InnerException ?? e;
+            info.AppendLine("report graphics: " + inner);
+        }
+
+        File.AppendAllText(Path.Combine(folder, "report.txt"), info.ToString(), Encoding.UTF8);
     }
 
     private static void SaveJpeg(Bitmap image, string path, long quality)

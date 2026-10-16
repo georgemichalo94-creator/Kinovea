@@ -174,6 +174,10 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.reel_preview }}
     runs-on: windows-latest
     continue-on-error: true
+    # contents: write for the zip of the images on the draft release of the branch.
+    permissions:
+      contents: write
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -197,6 +201,34 @@ jobs:
       run: |
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
         .\SwimAnalysis\tests\reel_preview\reel_preview.ps1 -Mode render -Bin portable -Out reel-preview
+
+    # All the images in one zip on the draft release "build-<branch>" (faster to read than the annotations below).
+    - name: Images as a draft release asset
+      if: always() && matrix.part == 0
+      continue-on-error: true
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if (-not (Test-Path reel-preview)) { Write-Output "::warning title=Reel preview zip::no images"; exit 0 }
+        Compress-Archive -Path reel-preview\* -DestinationPath reel-preview.zip -Force
+        $tag = "build-${{ github.ref_name }}"
+        $api = "https://api.github.com/repos/${{ github.repository }}"
+        $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" }
+        try {
+          $list = Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers
+          $release = $list | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+          if (-not $release) {
+            $body = @{ tag_name = $tag; target_commitish = "${{ github.sha }}"; name = $tag; body = "Builds of ${{ github.ref_name }}"; draft = $true } | ConvertTo-Json
+            $release = Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -Body $body -ContentType "application/json"
+          }
+          $name = "reel-preview-${{ github.run_id }}.zip"
+          $upload = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=$name"
+          $asset = Invoke-RestMethod $upload -Method Post -Headers $headers -InFile reel-preview.zip -ContentType "application/zip"
+          Write-Output "::notice title=Reel preview zip::$name $($asset.size) bytes"
+        } catch {
+          Write-Output "::warning title=Reel preview zip::$($_.Exception.Message) $($_.ErrorDetails.Message)"
+        }
 
     - name: Images 1
       if: always()

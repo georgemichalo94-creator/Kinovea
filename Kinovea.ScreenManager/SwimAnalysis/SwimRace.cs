@@ -152,6 +152,14 @@ namespace Kinovea.ScreenManager
         public string EliteComment = "";
     }
 
+    /// <summary>A graphic of the video in the report ("summary", "versus"): its image on the Drive and the hash of what was drawn.</summary>
+    public class SwimReportGraphic
+    {
+        public string Id = "";
+        public string FileId = "";
+        public string Hash = "";
+    }
+
     /// <summary>
     /// Place of the swimmer in a part of the video (one lap followed): every Step timestamps from Start, the centre of the
     /// moving part of the swimmer along the lane and the ropes of the lane on each side of it (reference image pixels).
@@ -483,6 +491,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Frame of the finish with the graphics of the video (final time, velocity chart), for the race report.</summary>
         public SwimSnapshot FinalFrame;
 
+        /// <summary>Graphics of the video drawn for the PDF report (the summary card, the race against the final), on the Drive.</summary>
+        public List<SwimReportGraphic> Graphics = new List<SwimReportGraphic>();
+
         /// <summary>
         /// Place of the swimmer in the video, found with the automatic strokes or with "Ακολούθηση αθλητή": the athlete label of
         /// the technical view follows it. One part per lap followed.
@@ -694,6 +705,7 @@ namespace Kinovea.ScreenManager
             r.Angles = new List<SwimAngle>();
             r.Snapshots = new List<SwimSnapshot>();
             r.FinalFrame = null;
+            r.Graphics = new List<SwimReportGraphic>();
             r.Tracks = new List<SwimTrack>();
             r.Skeletons = new List<SwimSkeleton>();
             r.Proposals = new List<SwimProposal>();

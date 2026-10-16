@@ -30,6 +30,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Summary card after the finish.</summary>
         public bool Summary = true;
+
+        /// <summary>The final of the event (its board at the checkpoints and at the finish), null without one.</summary>
+        public SwimFinal Final;
+
+        /// <summary>Name of the athlete on the board of the final.</summary>
+        public string BoardName = "";
+
+        /// <summary>The Δ with the reference of the race, in the header and as a card.</summary>
+        public bool Delta = true;
+
+        /// <summary>Only the summary card, whole, on a dark background (the graphics of the report).</summary>
+        public bool SummaryOnly;
     }
 
     /// <summary>
@@ -85,22 +97,58 @@ namespace Kinovea.ScreenManager
             return reel != null && size.Width >= 320 && size.Height >= 180;
         }
 
+        /// <summary>Seconds the board of the final stays after a checkpoint, and after the touch before the summary card.</summary>
+        public const double BoardSeconds = 4.5;
+        public const double FinishBoardSeconds = 5.0;
+
         public static void Paint(Graphics g, Size size, SwimReelScene s)
         {
             if (s == null || s.Race == null || s.Computed == null || !CanPaint(size, s.Reel))
                 return;
 
             Layout layout = new Layout(size);
+            if (s.SummaryOnly)
+            {
+                if (s.Reel.Finish.HasValue)
+                    DrawSummary(g, s, layout, true);
+                return;
+            }
+
             double t = s.Time;
-            bool summary = s.Summary && s.Reel.Finish.HasValue && t >= s.Reel.Finish.Value + 1.0;
+            bool summary = s.Summary && s.Reel.Finish.HasValue && t >= s.Reel.Finish.Value + SummaryDelay(s);
 
             if (s.FromImage != null && !summary)
                 DrawLabel(g, s, layout);
             DrawHeader(g, s, layout);
             DrawChart(g, s, layout);
             DrawBadges(g, s, layout);
+            if (!summary)
+            {
+                RectangleF board = DrawFinalsBoard(g, s, layout);
+                DrawDeltaCard(g, s, layout, board);
+            }
+
             if (summary)
-                DrawSummary(g, s, layout);
+                DrawSummary(g, s, layout, false);
+        }
+
+        /// <summary>After the touch the board of the final comes first (when there is one), then the summary card.</summary>
+        private static double SummaryDelay(SwimReelScene s)
+        {
+            return FinishBoard(s) != null ? FinishBoardSeconds : 1.0;
+        }
+
+        /// <summary>The board of the final at the finish (the athlete among its swimmers), null without a final or a finish time.</summary>
+        private static List<SwimFinalsBoardRow> FinishBoard(SwimReelScene s)
+        {
+            if (s.Final == null || !s.Reel.Finish.HasValue)
+                return null;
+
+            SwimRow finish = s.Computed.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.T.HasValue);
+            if (finish == null || !s.Final.Swimmers.Any(sw => sw.TimeAt(finish.D).HasValue))
+                return null;
+
+            return SwimFinalsCompare.Board(s.Final, finish.D, finish.T.Value, s.BoardName);
         }
 
         #region Helpers
@@ -242,6 +290,21 @@ namespace Kinovea.ScreenManager
                 Text(g, label, caption, SwimTheme.Dim, r.Right - 14 * k, r.Top + 9 * k, StringAlignment.Far);
                 Text(g, SwimReference.FormatTime(last.T.Value), F(19f, k, true), SwimTheme.Text, r.Right - 12 * k, r.Top + 25 * k, StringAlignment.Far);
                 titleRight -= Width(g, label, caption) + 14 * k;
+
+                // The Δ with the reference at that checkpoint, under its time.
+                if (s.Delta && last.Delta.HasValue && s.Computed.Reference != null)
+                {
+                    string delta = SwimReference.FormatDelta(last.Delta.Value);
+                    Font deltaFont = F(10f, k, true);
+                    float dw = Width(g, delta, deltaFont) + 14 * k;
+                    RectangleF pill = new RectangleF(r.Right - 12 * k - dw, r.Top + 54 * k, dw, 20 * k);
+                    SwimTheme.FillRounded(g, last.Delta.Value <= 0 ? SwimFinalsPainter.FasterColor : SwimFinalsPainter.SlowerColor, pill, 5 * k);
+                    Text(g, delta, deltaFont, Color.White, pill.Left + dw / 2, pill.Top + pill.Height / 2, StringAlignment.Center, StringAlignment.Center);
+                    Font vsFont = F(7.5f, k, false, FontStyle.Bold);
+                    float vsLeft = r.Left + Math.Min(r.Width * 0.52f, 280 * k);
+                    TextIn(g, "Δ vs " + ReferenceShort(s.Computed.Reference), vsFont, SwimTheme.Dim,
+                        new RectangleF(vsLeft, pill.Top, Math.Max(10, pill.Left - 6 * k - vsLeft), pill.Height), StringAlignment.Far);
+                }
             }
 
             TextIn(g, Title(s.Race, true), caption, SwimTheme.Dim, new RectangleF(r.Left + 16 * k, r.Top + 6 * k, Math.Max(10, titleRight - r.Left - 16 * k), 18 * k));
@@ -529,18 +592,27 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Summary
-        private static void DrawSummary(Graphics g, SwimReelScene s, Layout L)
+        /// <summary>The summary card after the finish; whole: alone and complete on a dark background (the graphics of the report).</summary>
+        private static void DrawSummary(Graphics g, SwimReelScene s, Layout L, bool whole)
         {
             SwimReel reel = s.Reel;
-            float a = (float)Math.Max(0, Math.Min(1, (s.Time - reel.Finish.Value - 1.0) / 0.4));
+            float a = whole ? 1f : (float)Math.Max(0, Math.Min(1, (s.Time - reel.Finish.Value - SummaryDelay(s)) / 0.4));
             if (a <= 0.01f)
                 return;
 
             float k = L.K;
-            using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(195 * a), 5, 8, 13)))
-                g.FillRectangle(dim, 0, 0, L.W, L.H);
+            if (whole)
+            {
+                using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(0, 0, L.W, L.H), SwimTheme.Back, SwimTheme.Surface, LinearGradientMode.Vertical))
+                    g.FillRectangle(back, 0, 0, L.W, L.H);
+            }
+            else
+            {
+                using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(195 * a), 5, 8, 13)))
+                    g.FillRectangle(dim, 0, 0, L.W, L.H);
+            }
 
-            float mx = Math.Max(L.M, L.W * 0.06f), my = Math.Max(L.M, L.H * 0.06f);
+            float mx = whole ? L.M : Math.Max(L.M, L.W * 0.06f), my = whole ? L.M : Math.Max(L.M, L.H * 0.06f);
             RectangleF card = new RectangleF(mx, my, L.W - 2 * mx, L.H - 2 * my);
             Card(g, card, SwimTheme.Amber, k, a);
 
@@ -548,6 +620,7 @@ namespace Kinovea.ScreenManager
             float inner = card.Width - 60 * k;
             TextIn(g, Title(s.Race, false), F(11f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Top + 14 * k, inner, 24 * k));
             Text(g, SwimReference.FormatTime(reel.Finish.Value), F(54f, k, true), Fade(SwimTheme.Amber, a), x0 - 4 * k, card.Top + 36 * k);
+            DrawResultRibbon(g, s, L, card, a);
 
             // Values of the race.
             SwimComputed c = s.Computed;
@@ -680,6 +753,129 @@ namespace Kinovea.ScreenManager
             }
 
             TextIn(g, note, F(7.25f, k), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Bottom - 26 * k, inner, 18 * k));
+        }
+
+        /// <summary>
+        /// On the right of the final time: the place the athlete would have in the final of the event (and the gap to the first), else
+        /// the Δ with the reference at the finish.
+        /// </summary>
+        private static void DrawResultRibbon(Graphics g, SwimReelScene s, Layout L, RectangleF card, float a)
+        {
+            float k = L.K;
+            string caption = null, value = null;
+            Color color = SwimTheme.Amber;
+            List<SwimFinalsBoardRow> board = FinishBoard(s);
+            SwimFinalsBoardRow me = board != null ? board.FirstOrDefault(b => b.IsAthlete) : null;
+            if (me != null)
+            {
+                caption = "ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ  ·  " + SwimAthleteList.Normalize(s.Final.Short);
+                string gap = me.Place == 1
+                    ? SwimReference.FormatDelta(me.Behind) + " ΑΠΟ ΤΟΝ ΝΙΚΗΤΗ"
+                    : "+" + me.Behind.ToString("0.00", CultureInfo.InvariantCulture) + " ΑΠΟ ΤΟΝ 1Ο";
+                value = me.Place.ToString(CultureInfo.InvariantCulture) + "η  ·  " + gap;
+                if (me.Place <= 3)
+                    color = SwimTheme.Green;
+            }
+            else if (s.Delta && s.Computed.Reference != null)
+            {
+                SwimRow finish = s.Computed.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.Delta.HasValue);
+                if (finish != null)
+                {
+                    caption = "Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ  ·  " + ReferenceShort(s.Computed.Reference);
+                    value = SwimReference.FormatDelta(finish.Delta.Value) + " s";
+                    color = finish.Delta.Value <= 0 ? SwimTheme.Green : SwimTheme.Red;
+                }
+            }
+
+            if (value == null)
+                return;
+
+            float right = card.Right - 30 * k;
+            float left = card.Left + card.Width * 0.42f;
+            TextIn(g, caption, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), new RectangleF(left, card.Top + 46 * k, right - left, 18 * k), StringAlignment.Far);
+            Font font = F(19f, k, true);
+            float size = 19f;
+            while (size > 11f && Width(g, value, font) > right - left)
+            {
+                size -= 1.5f;
+                font = F(size, k, true);
+            }
+
+            Text(g, value, font, Fade(color, a), right, card.Top + 66 * k, StringAlignment.Far);
+        }
+
+        /// <summary>
+        /// The swimmers of the final at the last checkpoint passed and the athlete among them, as on the television, for a few seconds
+        /// (longer at the finish), at the bottom on the left. Its place, empty when it is not drawn.
+        /// </summary>
+        private static RectangleF DrawFinalsBoard(Graphics g, SwimReelScene s, Layout L)
+        {
+            if (s.Final == null)
+                return RectangleF.Empty;
+
+            double t = s.Time;
+            SwimRow row = s.Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= t + 1e-6 && s.Final.Swimmers.Any(sw => sw.TimeAt(r.D).HasValue))
+                .OrderBy(r => r.T.Value).LastOrDefault();
+            if (row == null)
+                return RectangleF.Empty;
+
+            bool finish = row.D >= s.Race.Distance;
+            if (t - row.T.Value > (finish ? FinishBoardSeconds : BoardSeconds))
+                return RectangleF.Empty;
+
+            List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(s.Final, row.D, row.T.Value, s.BoardName);
+            if (rows == null)
+                return RectangleF.Empty;
+
+            // Under the header and its phase, or under the chart when it is under the header (narrow images).
+            float k = L.K;
+            float top = L.Header.Bottom + 42 * k;
+            if (L.Chart.Left < L.Header.Right)
+                top = Math.Max(top, L.Chart.Bottom + 10 * k);
+            float scale = 1.25f * k;
+            float room = L.H - L.M - top;
+            float needed = SwimFinalsPainter.BoardHeight(rows.Count, scale);
+            if (needed > room)
+                scale *= room / needed;
+            if (scale < 0.55f)
+                return RectangleF.Empty;
+
+            int width = (int)Math.Round(Math.Min(260 * scale, L.W - 2 * L.M));
+            int height = SwimFinalsPainter.BoardHeight(rows.Count, scale);
+            Rectangle r0 = new Rectangle((int)Math.Round(L.M), (int)Math.Round(L.H - L.M - height), width, height);
+            SwimFinalsPainter.PaintBoard(g, r0, SwimFinalsPainter.BoardTitle(s.Final, row.D, finish), SwimFinalsPainter.BoardSubtitle(s.Final), rows, scale);
+            return r0;
+        }
+
+        /// <summary>The Δ with the reference at each checkpoint passed, at the bottom on the right (not over the board of the final).</summary>
+        private static void DrawDeltaCard(Graphics g, SwimReelScene s, Layout L, RectangleF board)
+        {
+            if (!s.Delta || s.Computed.Reference == null)
+                return;
+
+            double t = s.Time;
+            List<SwimDeltaPoint> points = s.Computed.Rows.Where(r => r.Delta.HasValue && r.T.HasValue && r.T.Value <= t + 1e-6)
+                .Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
+            if (points.Count == 0)
+                return;
+
+            float k = L.K;
+            float w = Math.Min(400 * k, L.W - 2 * L.M), h = Math.Max(90 * k, w * 0.3f);
+            RectangleF r = new RectangleF(L.W - L.M - w, L.H - L.M - h, w, h);
+            if (!board.IsEmpty && r.Left < board.Right + L.M)
+                return;
+            if (r.Top < L.Header.Bottom + 42 * k)
+                return;
+
+            SwimFinalsPainter.PaintDelta(g, Rectangle.Round(r), points, s.Race.Distance, s.Reel.Pool, ReferenceShort(s.Computed.Reference), true, 1.15f * k);
+        }
+
+        /// <summary>A short name of the reference: "CECCON · ΠΑΡΙΣΙ 2024 (1ος)" for a swimmer of a final, else its name.</summary>
+        private static string ReferenceShort(SwimReference reference)
+        {
+            if (reference == null)
+                return "";
+            return string.IsNullOrWhiteSpace(reference.Name) ? reference.Id ?? "" : reference.Name.Trim();
         }
         #endregion
     }

@@ -202,6 +202,8 @@ namespace Kinovea.ScreenManager
             Athletes = SwimAthleteList.Load();
             References = SwimReferenceList.Load();
             Finals = SwimFinals.Load();
+            if (Finals.Finals.Count == 0)
+                Finals = SwimFinals.ImportNearby() ?? Finals;
             if (Settings.ReferenceByEvent == null)
                 Settings.ReferenceByEvent = new Dictionary<string, string>();
             ReferencesMessage = ReferencesSummary();
@@ -1654,12 +1656,8 @@ namespace Kinovea.ScreenManager
 
             int x = corner.EndsWith("Left", StringComparison.Ordinal) ? size.Width - width - margin : margin;
             int y = corner.StartsWith("Bottom", StringComparison.Ordinal) ? size.Height - height - margin : margin;
-            string title = finish
-                ? "ΤΕΡΜΑΤΙΣΜΟΣ · " + final.Short.ToUpperInvariant()
-                : row.D.ToString(CultureInfo.InvariantCulture) + " M · " + final.Short.ToUpperInvariant();
-            string subtitle = string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleShort(final.Style),
-                final.Gender == "F" ? "Γυναικών" : "Ανδρών");
-            SwimFinalsPainter.PaintBoard(g, new Rectangle(x, y, width, height), title, subtitle, rows, scale);
+            SwimFinalsPainter.PaintBoard(g, new Rectangle(x, y, width, height), SwimFinalsPainter.BoardTitle(final, row.D, finish),
+                SwimFinalsPainter.BoardSubtitle(final), rows, scale);
         }
 
         /// <summary>The family name of the athlete for the boards (the registry writes it first).</summary>
@@ -2149,6 +2147,8 @@ namespace Kinovea.ScreenManager
             }
 
             Finals = finals;
+            if (Race != null && EnsureReference())
+                Changed(false);
             SwimFinal final = FinalForRace();
             Status(string.Format(CultureInfo.InvariantCulture, "🏅 {0}: {1} τελικοί, {2} κολυμβητές.{3}", finals.Source, finals.Finals.Count, finals.SwimmerCount,
                 final != null ? " Αυτός ο αγώνας συγκρίνεται με τον τελικό " + final.Label + "." :
@@ -2241,10 +2241,8 @@ namespace Kinovea.ScreenManager
 
             Race.Reference = reference != null ? reference.Copy() : null;
             string key = EventKey(Race);
-            if (reference != null)
-                Settings.ReferenceByEvent[key] = reference.Id;
-            else
-                Settings.ReferenceByEvent.Remove(key);
+            // "No comparison" is a choice too (an empty id): the winner of the final does not come back for this event.
+            Settings.ReferenceByEvent[key] = reference != null ? reference.Id : "";
 
             Settings.Save();
             Status(reference != null ? "Σύγκριση με: " + reference.Label : "Χωρίς σύγκριση με αναφορά.", false);
@@ -2354,7 +2352,8 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// When the event of the race changes, use the reference chosen last time for this event (if any).
+        /// When the event of the race changes, use the reference chosen last time for this event (if any); when none was ever chosen
+        /// for the event, the winner of its final (e.g. the Olympic champion) once the finals are loaded.
         /// Returns true if the reference of the race changed.
         /// </summary>
         private bool EnsureReference()
@@ -2367,11 +2366,15 @@ namespace Kinovea.ScreenManager
 
             SwimReference remembered = null;
             string id;
-            if (Settings.ReferenceByEvent.TryGetValue(EventKey(Race), out id))
+            bool chosen = Settings.ReferenceByEvent.TryGetValue(EventKey(Race), out id);
+            if (chosen && !string.IsNullOrEmpty(id))
                 remembered = FindReference(id);
 
             if (remembered != null && (!remembered.Matches(Race) || !remembered.GenderMatches(Race.AthleteGender)))
                 remembered = null;
+
+            if (remembered == null && !chosen && Finals != null)
+                remembered = Finals.ReferencesFor(Race).FirstOrDefault();
 
             SwimReference before = Race.Reference;
             Race.Reference = remembered != null ? remembered.Copy() : null;
@@ -2448,10 +2451,14 @@ namespace Kinovea.ScreenManager
             client.Ping(Settings.WebAppUrl, Settings.Token, callback);
         }
 
-        /// <summary>The send and PDF buttons: also retry the snapshots that could not be uploaded.</summary>
+        /// <summary>
+        /// The send and PDF buttons: also retry the snapshots that could not be uploaded. The PDF waits for the graphics of the video
+        /// (the summary card, the race against the final) that changed to go up first.
+        /// </summary>
         public void SendByUser(bool pdf)
         {
-            SendNow(pdf);
+            if (!(pdf && UploadReportGraphics(() => SendNow(true))))
+                SendNow(pdf);
             RetryFailedUploads();
         }
 

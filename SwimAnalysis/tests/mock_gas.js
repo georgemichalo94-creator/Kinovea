@@ -37,10 +37,26 @@ function makeSheet(ss, name, id) {
         addRange: r => { if (!r || !r._nr) throw new Error('bad chart range'); b.ranges.push(r); return api; },
         setOption: (k, v) => { if (v === undefined) throw new Error('undefined chart option ' + k); b.opts[k] = v; return api; },
         setPosition: (r, c, ox, oy) => { b.pos = [r, c, ox || 0, oy || 0]; return api; },
-        build: () => { b.getRanges = () => b.ranges; return b; },
+        build: () => {
+          b.getRanges = () => b.ranges;
+          b._id = b._id || ++sheet._chartSeq;
+          b.getChartId = () => b._id;
+          b.getContainerInfo = () => ({ getAnchorRow: () => b.pos[0], getAnchorColumn: () => b.pos[1], getOffsetX: () => b.pos[2], getOffsetY: () => b.pos[3] });
+          b.getOptions = () => ({ get: k => b.opts[k] });
+          // Η εικόνα του γραφήματος (όπως το σχεδιάζει το Google): ένα PNG με το μέγεθός του.
+          b.getAs = type => { sheet._chartImages = (sheet._chartImages || 0) + 1; const blob = makeBlob([137, 80, 78, 71], type, 'chart.png'); blob._size = [b.opts.width || 546, b.opts.height || 300]; return blob; };
+          // modify(): ο builder του ίδιου γραφήματος (για updateChart).
+          b.modify = () => {
+            const m = { setPosition: (r, c, ox, oy) => { m._pos = [r, c, ox || 0, oy || 0]; return m; }, build: () => ({ _of: b, _pos: m._pos || b.pos }) };
+            return m;
+          };
+          return b;
+        },
       };
       return api;
     },
+    _chartSeq: 0,
+    updateChart: c => { if (!c || !c._of || charts.indexOf(c._of) < 0) throw new Error('updateChart: not a chart of the sheet'); c._of.pos = c._pos; sheet._chartMoves = (sheet._chartMoves || 0) + 1; },
     getImages: () => images.slice(),
     insertImage: (blob, col, row, ox, oy) => {
       if (!blob || !blob._bytes) throw new Error('insertImage needs a blob');
@@ -197,7 +213,10 @@ function makeContext(opts) {
     const H = width * (11.69 - +q('top_margin') - +q('bottom_margin') - pdf.footer) / (8.27 - +q('left_margin') - +q('right_margin'));
     let pages = 1, y = 0;
     for (let r = r1 + 1; r <= r2; r++) { const h = sheet._rowHeights[r] || 21; if (y > 0 && y + h > H) { pages++; y = h; } else y += h; }
-    exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName() });
+    // Τι τυπώνεται: γραφήματα και εικόνες (των γραφημάτων: chart.png) μέσα στην περιοχή του PDF.
+    const printedCharts = sheet._charts.filter(ch => ch.pos && ch.pos[0] <= r2).length;
+    const chartImages = sheet._images.filter(im => im.blob && im.blob._name === 'chart.png' && im.row <= r2).length;
+    exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName(), printedCharts, chartImages });
     let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
     for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
     // Γραφήματα: όπως το PDF του Google, με περιοχή σε % σχεδιάζεται μόνο ο τίτλος (λίγα bytes).

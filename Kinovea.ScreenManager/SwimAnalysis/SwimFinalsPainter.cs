@@ -30,6 +30,31 @@ namespace Kinovea.ScreenManager
         private static readonly Color Slower = Color.FromArgb(255, 214, 64, 64);
         private static readonly Color Finalist = Color.FromArgb(255, 0, 200, 255);
 
+        /// <summary>The colours of a Δ: faster (green) and slower (red) than the reference.</summary>
+        public static Color FasterColor
+        {
+            get { return Faster; }
+        }
+
+        public static Color SlowerColor
+        {
+            get { return Slower; }
+        }
+
+        /// <summary>Title of the board of a checkpoint: "50 M · ΠΑΡΙΣΙ 2024", at the finish "ΤΕΡΜΑΤΙΣΜΟΣ · ΠΑΡΙΣΙ 2024".</summary>
+        public static string BoardTitle(SwimFinal final, int distance, bool finish)
+        {
+            string source = SwimAthleteList.Normalize(final.Short);
+            return finish ? "ΤΕΡΜΑΤΙΣΜΟΣ · " + source : distance.ToString(CultureInfo.InvariantCulture) + " M · " + source;
+        }
+
+        /// <summary>The event of the final: "Τελικός 100μ. ύπτιο Ανδρών".</summary>
+        public static string BoardSubtitle(SwimFinal final)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleShort(final.Style),
+                final.Gender == "F" ? "Γυναικών" : "Ανδρών");
+        }
+
         /// <summary>Translucent dark card with an accent on the left edge (the style of the race board of the video).</summary>
         public static void Card(Graphics g, Rectangle r, Color accent)
         {

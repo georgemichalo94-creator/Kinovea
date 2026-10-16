@@ -16,7 +16,7 @@
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  */
 
-var SWIM_VERSION = '2.4.1';
+var SWIM_VERSION = '2.5.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -30,12 +30,12 @@ var SWIM_YARD = 0.9144;
 /** Γραμματοσειρά και χρώματα των report (μοντέρνο, φωτεινό στυλ που τυπώνεται καλά). */
 var SWIM_FONT = 'Roboto';
 var SWIM_COLORS = {
-  title: '#0B1F33',       // σκούρα μπάντα τίτλου, τίτλοι
+  title: '#0B111A',       // σκούρα μπάντα τίτλου, τίτλοι (όπως οι κάρτες του βίντεο)
   titleText: '#FFFFFF',
-  subText: '#9FB3C8',
-  accent: '#00A3E0',      // γραμμή κάτω από τον τίτλο
+  subText: '#8CA0B6',
+  accent: '#00C8FF',      // γραμμή κάτω από τον τίτλο (το κυανό του βίντεο)
   accentDark: '#123B5C',  // τίτλοι στιγμιοτύπων
-  section: '#12304C',     // επικεφαλίδες ενοτήτων
+  section: '#14243A',     // επικεφαλίδες ενοτήτων
   sectionText: '#FFFFFF',
   header: '#E8EEF5',      // κεφαλίδες πινάκων
   headerText: '#2B3F55',
@@ -59,6 +59,23 @@ var SWIM_COLORS = {
   dak: '#EF6C00',
   swolf: '#5C6BC0'
 };
+
+/**
+ * Τα χρώματα των σειρών στα γραφήματα, όπως στα γραφικά του βίντεο: ο αθλητής πορτοκαλί-κίτρινος, η αναφορά (elite) κυανή,
+ * η συχνότητα πράσινη (πιο σκούρα από το βίντεο, για λευκό φόντο).
+ */
+var SWIM_CHART_COLORS = {};
+SWIM_CHART_COLORS[SWIM_COLORS.athlete] = '#F2A900';
+SWIM_CHART_COLORS[SWIM_COLORS.pb] = '#8CA0B6';
+SWIM_CHART_COLORS[SWIM_COLORS.elite] = '#00A8DB';
+SWIM_CHART_COLORS[SWIM_COLORS.sr] = '#1FAF7A';
+SWIM_CHART_COLORS[SWIM_COLORS.dps] = '#8E5CF6';
+SWIM_CHART_COLORS[SWIM_COLORS.dak] = '#F2711C';
+SWIM_CHART_COLORS[SWIM_COLORS.swolf] = '#5C6BC0';
+
+function swimChartColor_(c) {
+  return SWIM_CHART_COLORS[c] || c;
+}
 
 var SWIM_IM_ORDER = ['fly', 'bk', 'br', 'fs'];
 var SWIM_MEDLEY_RELAY_ORDER = ['bk', 'br', 'fly', 'fs'];
@@ -527,7 +544,9 @@ function swimNormalizeRace_(raw) {
     dq: !!r.dq,
     source: r.source ? String(r.source) : '',
     // Το καρέ του τερματισμού με τα γραφικά του Kinovea (εικόνα στο Drive).
-    finalFrame: swimFinalFrame_(r.finalFrame)
+    finalFrame: swimFinalFrame_(r.finalFrame),
+    // Τα γραφικά του βίντεο για το report: η κάρτα σύνοψης και ο αγώνας απέναντι στον τελικό (εικόνες στο Drive).
+    graphics: swimGraphics_(r.graphics)
   };
 
   var seen = {};
@@ -593,6 +612,17 @@ function swimLayoutFinalsMetrics_(L) {
   g.box(cur, 1, last, 8);
   swimKeepEnd_(L, 'finalsMetrics', last, first + 2);
   L.cur = last + 2;
+}
+
+/** Τα γραφικά του βίντεο από το Kinovea: { summary: fileId, versus: fileId } (μόνο όσα έχουν εικόνα στο Drive). */
+function swimGraphics_(raw) {
+  var out = {};
+  (Array.isArray(raw) ? raw : []).forEach(function (x) {
+    if (!x || typeof x !== 'object') return;
+    var id = String(x.id || ''), fileId = swimDriveId_(x.fileId);
+    if ((id === 'summary' || id === 'versus') && fileId) out[id] = fileId;
+  });
+  return out;
 }
 
 /** { fileId, t }: το τελικό καρέ του Kinovea (t: χρόνος του καρέ από το σήμα), αλλιώς null. */
@@ -1127,6 +1157,7 @@ function swimLayoutSignature_(race, extras, pageHeight) {
     bench: x.benchmarks ? swimHash_(JSON.stringify(x.benchmarks)) : '',
     tech: swimTechSignature_(race),
     final: race.finalFrame ? race.finalFrame.fileId : '',
+    graphics: race.graphics ? [race.graphics.summary || '', race.graphics.versus || ''].join(',') : '',
     page: pageHeight || 0
   });
 }
@@ -1471,8 +1502,9 @@ function swimBuildRaceLayout_(race, analysis, extras, paging) {
   var layout = { signature: '', grid: L.g, charts: [], images: [], inputs: { blocks: [] }, kpi: {}, paging: paging };
   L.layout = layout;
 
-  // Θέσεις που χρειάζονται οι τύποι από την αρχή (KPI): εκκίνηση στη γραμμή 12, χρόνοι από τη 17.
-  L.startRow = 12;
+  // Θέσεις που χρειάζονται οι τύποι από την αρχή (KPI): εκκίνηση στη γραμμή 12, χρόνοι από τη 17 (με την κάρτα σύνοψης
+  // του βίντεο, μετά από αυτήν).
+  L.startRow = 12 + swimSummaryGraphicRows_(race);
   L.T0 = L.startRow + 6;
   L.rowOf = {};
   L.rows.forEach(function (row, i) { L.rowOf[row.d] = L.T0 + i; });
@@ -1484,6 +1516,7 @@ function swimBuildRaceLayout_(race, analysis, extras, paging) {
 
   swimLayoutHeader_(L);
   swimLayoutTiles_(L, false);
+  swimLayoutSummaryGraphic_(L);
   swimLayoutStart_(L);
   swimLayoutTiming_(L);
   swimLayoutPer50_(L);
@@ -1495,6 +1528,7 @@ function swimBuildRaceLayout_(race, analysis, extras, paging) {
   if (extras.pb || extras.elite) swimLayoutCompare_(L);
   if (extras.benchmarks) swimLayoutBenchmarks_(L);
   swimLayoutExtras_(L);
+  swimLayoutVersusGraphic_(L);
   swimLayoutFinalsMetrics_(L);
   swimLayoutFinalFrame_(L);
   swimLayoutCharts_(L);
@@ -2357,6 +2391,46 @@ function swimLayoutExtras_(L) {
   L.cur = cur;
 }
 
+/** Η κάρτα σύνοψης του βίντεο σε όλο το πλάτος (16:9): ύψος εικόνας και γραμμές της ενότητας (τίτλος, εικόνα, κενό). */
+var SWIM_GRAPHIC = { width: 1116, height: 628 };
+
+function swimSummaryGraphicRows_(race) {
+  if (!race.graphics || !race.graphics.summary || race.training) return 0;
+  return 1 + Math.ceil((SWIM_GRAPHIC.height + 8) / SWIM_ROW_H) + 1;
+}
+
+/**
+ * Η κάρτα σύνοψης του αγώνα με τα γραφικά του βίντεο (Kinovea), στην πρώτη σελίδα κάτω από τα πλακίδια: ο χρόνος, η θέση
+ * στον τελικό ή το Δ, αντίδραση, 15μ., έξοδος, χρόνοι, χεριές, συχνότητα, απόσταση και ταχύτητα ανά τμήμα και κύκλο.
+ */
+function swimLayoutSummaryGraphic_(L) {
+  var rows = swimSummaryGraphicRows_(L.race);
+  if (!rows) return;
+  var g = L.g, top = 12;
+  g.section(top, 'Ο αγώνας με τα γραφικά του βίντεο (Kinovea)', L.LAST);
+  var full = swimLayoutWidth_(L.LAST);
+  L.layout.images.push({ fileId: L.race.graphics.summary, row: top + 1, x: Math.round((full - SWIM_GRAPHIC.width) / 2), offsetY: 4,
+    width: SWIM_GRAPHIC.width, height: SWIM_GRAPHIC.height, fit: true });
+}
+
+/**
+ * Ο αγώνας απέναντι στον τελικό του αγωνίσματος (ή στην αναφορά) μετά τον τερματισμό, με τα γραφικά του βίντεο: ο πίνακας
+ * του τελικού, ο πίνακας του αγώνα, το Δ σε κάθε πέρασμα και η ταχύτητα ανά τμήμα. Ολόκληρος σε μία σελίδα.
+ */
+function swimLayoutVersusGraphic_(L) {
+  var gr = L.race.graphics;
+  if (!gr || !gr.versus || L.race.training) return;
+  var g = L.g;
+  var cur = swimKeep_(L, L.cur, 'versus', true);
+  g.section(cur, L.race.finals && L.race.finals.label ? 'Ο αγώνας ανάμεσα στους φιναλίστ στο βίντεο: ' + L.race.finals.label : 'Ο αγώνας απέναντι στην αναφορά στο βίντεο', L.LAST);
+  var full = swimLayoutWidth_(L.LAST);
+  var top = cur + 1, rows = Math.ceil((SWIM_GRAPHIC.height + 8) / SWIM_ROW_H);
+  L.layout.images.push({ fileId: gr.versus, row: top, x: Math.round((full - SWIM_GRAPHIC.width) / 2), offsetY: 4,
+    width: SWIM_GRAPHIC.width, height: SWIM_GRAPHIC.height, fit: true });
+  swimKeepEnd_(L, 'versus', top + rows - 1);
+  L.cur = top + rows + 1;
+}
+
 /**
  * Το καρέ του τερματισμού από το Kinovea, με τα γραφικά του βίντεο (χρόνος, πέρασμα, γράφημα ταχύτητας): μεγάλη
  * εικόνα στο κέντρο, πριν από τα γραφήματα, ολόκληρη σε μία σελίδα.
@@ -3209,8 +3283,8 @@ function swimChartOptions_(spec) {
     var left = 70, right = twoAxes ? 70 : 24, top = 48, bottom = 72;
     o.chartArea = { left: left, top: top, width: Math.max(120, spec.width - left - right), height: Math.max(90, spec.height - top - bottom) };
   }
-  if (spec.colors) o.colors = spec.colors;
-  if (spec.type === 'line') { o.pointSize = 5; o.lineWidth = 3; o.curveType = 'none'; o.interpolateNulls = true; }
+  if (spec.colors) o.colors = spec.colors.map(swimChartColor_);
+  if (spec.type === 'line') { o.pointSize = 6; o.lineWidth = 3; o.curveType = 'none'; o.interpolateNulls = true; }
   if (spec.type === 'combo') o.seriesType = 'bars';
   if (spec.stacked) o.isStacked = true;
   if (spec.type === 'pie') { o.pieHole = 0.45; o.pieSliceTextStyle = { fontName: SWIM_FONT, fontSize: 12, color: '#FFFFFF' }; }
@@ -3220,6 +3294,8 @@ function swimChartOptions_(spec) {
   (spec.labels || []).forEach(function (l, i) { get(i).labelInLegend = l; });
   (spec.seriesTypes || []).forEach(function (t, i) { get(i).type = t; });
   (spec.secondAxis || []).forEach(function (i) { get(i).targetAxisIndex = 1; });
+  // Οι τιμές πάνω στη σειρά του αθλητή (όταν τα σημεία είναι λίγα), ώστε το γράφημα να διαβάζεται και τυπωμένο.
+  if (!spec.noLabels) swimChartLabelSeries_(spec).forEach(function (i) { get(i).dataLabel = 'value'; });
   if (Object.keys(series).length) o.series = series;
 
   if (spec.type !== 'pie') {
@@ -3229,6 +3305,21 @@ function swimChartOptions_(spec) {
     o.hAxis = { title: spec.hTitle || '', textStyle: text, titleTextStyle: { fontName: SWIM_FONT, fontSize: 12, italic: false, color: SWIM_COLORS.dim } };
   }
   return o;
+}
+
+/**
+ * Οι σειρές με τις τιμές τους πάνω στο γράφημα: του αθλητή («Αγώνας»/«Αθλητής», αλλιώς η πρώτη), σε γραμμές και στήλες
+ * με έως 16 σημεία. Όχι στις πίτες και στο radar.
+ */
+function swimChartLabelSeries_(spec) {
+  if (spec.type !== 'line' && spec.type !== 'column' && spec.type !== 'combo') return [];
+  var m = /^[A-Z]+(\d+):[A-Z]+(\d+)$/.exec(String((spec.ranges || [])[0] || ''));
+  var points = m ? Number(m[2]) - Number(m[1]) + 1 : 0;
+  if (!points || points > 16) return [];
+  var labels = spec.labels || [];
+  var i = labels.indexOf('Αγώνας');
+  if (i < 0) i = labels.indexOf('Αθλητής');
+  return [i >= 0 ? i : 0];
 }
 
 function swimChartBuilder_(sheet, type) {
@@ -3242,13 +3333,26 @@ function swimChartBuilder_(sheet, type) {
 }
 
 function swimInsertChart_(sheet, spec, options) {
-  var builder = swimChartBuilder_(sheet, spec.type);
-  spec.ranges.forEach(function (a1) { builder.addRange(sheet.getRange(a1)); });
-  if (spec.transpose) builder.setTransposeRowsAndColumns(true);
+  var make = function (opts) {
+    var builder = swimChartBuilder_(sheet, spec.type);
+    spec.ranges.forEach(function (a1) { builder.addRange(sheet.getRange(a1)); });
+    if (spec.transpose) builder.setTransposeRowsAndColumns(true);
+    Object.keys(opts).forEach(function (k) { builder.setOption(k, opts[k]); });
+    builder.setPosition(spec.row, spec.col, spec.offsetX || 0, spec.offsetY || 0);
+    return builder.build();
+  };
   var o = options || swimChartOptions_(spec);
-  Object.keys(o).forEach(function (k) { builder.setOption(k, o[k]); });
-  builder.setPosition(spec.row, spec.col, spec.offsetX || 0, spec.offsetY || 0);
-  sheet.insertChart(builder.build());
+  var chart;
+  try {
+    chart = make(o);
+  } catch (e) {
+    // Χωρίς τις τιμές πάνω στις σειρές, αν αυτό το γράφημα δεν τις δέχεται.
+    if (options || spec.noLabels) throw e;
+    var plain = JSON.parse(JSON.stringify(spec));
+    plain.noLabels = true;
+    chart = make(swimChartOptions_(plain));
+  }
+  sheet.insertChart(chart);
 }
 
 function swimWriteInputs_(sheet, race, analysis, layout) {
@@ -3897,7 +4001,15 @@ function swimExportPdf_(ss, sheet, area, fresh) {
   if (!sheet) throw new Error('Δεν βρέθηκε το φύλλο για PDF.');
   SpreadsheetApp.flush();
   swimPrepareCharts_(sheet, fresh);
-  var blob = swimPdfFetch_(swimPdfUrl_(ss, sheet, area));
+  // Το Google δεν σχεδιάζει πάντα στο PDF τα γραφήματα ενός φύλλου που δεν είναι ανοιχτό: κάθε γράφημα μπαίνει ως εικόνα
+  // στη θέση του για την εξαγωγή, και μετά επιστρέφει.
+  var swapped = swimChartsAsImages_(sheet, area);
+  var blob;
+  try {
+    blob = swimPdfFetch_(swimPdfUrl_(ss, sheet, area));
+  } finally {
+    swimRestoreCharts_(sheet, swapped);
+  }
   var fileName = sheet.getName() + '.pdf';
   var folder = swimReportFolder_();
   var old = folder.getFilesByName(fileName);
@@ -3915,6 +4027,50 @@ function swimPrepareCharts_(sheet, fresh) {
     sheet.getCharts().forEach(function (chart) { chart.getRanges().forEach(function (range) { range.getValues(); }); });
   } catch (e) { /* τα γραφήματα σχεδιάζονται όπως είναι */ }
   if (fresh) Utilities.sleep(4000);
+}
+
+/**
+ * Κάθε γράφημα του φύλλου ως εικόνα (σχεδιασμένη από το ίδιο το Google, με τις τιμές του) στη θέση του, και το γράφημα έξω
+ * από την περιοχή που τυπώνεται. Επιστρέφει ό,τι χρειάζεται για να γυρίσουν πίσω (swimRestoreCharts_).
+ */
+function swimChartsAsImages_(sheet, area) {
+  var swapped = [];
+  if (!area || !(area.rows > 0)) return swapped;
+  var park = area.rows + 30;
+  try {
+    if (sheet.getMaxRows() < park + 40) sheet.insertRowsAfter(sheet.getMaxRows(), park + 40 - sheet.getMaxRows());
+  } catch (e) { return swapped; }
+  sheet.getCharts().forEach(function (chart) {
+    var image = null;
+    try {
+      var info = chart.getContainerInfo();
+      var options = chart.getOptions();
+      var w = Number(options.get('width')) || SWIM_PAIR.width, h = Number(options.get('height')) || SWIM_CHART_H;
+      var blob = chart.getAs('image/png');
+      image = sheet.insertImage(blob, info.getAnchorColumn(), info.getAnchorRow(), info.getOffsetX(), info.getOffsetY());
+      image.setWidth(w).setHeight(h);
+      var item = { image: image, row: info.getAnchorRow(), col: info.getAnchorColumn(), x: info.getOffsetX(), y: info.getOffsetY(), chart: chart };
+      sheet.updateChart(chart.modify().setPosition(park, 1, 0, 0).build());
+      item.parked = true;
+      swapped.push(item);
+    } catch (e) {
+      // Το γράφημα μένει όπως είναι (και η εικόνα του, αν μπήκε, φεύγει).
+      try { if (image) image.remove(); } catch (e2) { /* τίποτα */ }
+    }
+  });
+  if (swapped.length) SpreadsheetApp.flush();
+  return swapped;
+}
+
+function swimRestoreCharts_(sheet, swapped) {
+  (swapped || []).forEach(function (s) {
+    try { s.image.remove(); } catch (e) { /* τίποτα */ }
+    if (!s.parked) return;
+    try {
+      var chart = sheet.getCharts().filter(function (c) { return c.getChartId && s.chart.getChartId && c.getChartId() === s.chart.getChartId(); })[0] || s.chart;
+      sheet.updateChart(chart.modify().setPosition(s.row, s.col, s.x, s.y).build());
+    } catch (e) { /* μένει έξω από την περιοχή του PDF */ }
+  });
 }
 
 /** A4 κατακόρυφα, περιθώρια σε ίντσες: τα ίδια στην εξαγωγή και στον υπολογισμό των σελίδων. */

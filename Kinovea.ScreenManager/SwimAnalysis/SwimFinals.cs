@@ -149,6 +149,51 @@ namespace Kinovea.ScreenManager
             return new SwimFinals();
         }
 
+        /// <summary>
+        /// The first time on a computer: a file of the finals next to the program (in its folder or in one of the five above it, e.g.
+        /// "ai\OlympicFinalsParis2024.json" beside the portable folder) is imported as with the button. Null if there is none.
+        /// </summary>
+        public static SwimFinals ImportNearby()
+        {
+            try
+            {
+                DirectoryInfo dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                for (int level = 0; dir != null && level < 6; level++, dir = dir.Parent)
+                {
+                    FileInfo[] files;
+                    try
+                    {
+                        files = dir.GetFiles("*.json");
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+
+                    foreach (FileInfo f in files.Where(x => x.Name.IndexOf("final", StringComparison.OrdinalIgnoreCase) >= 0 && x.Length < 20 * 1024 * 1024)
+                        .OrderByDescending(x => x.LastWriteTimeUtc))
+                    {
+                        if (string.Equals(f.FullName, FilePath, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        string error;
+                        SwimFinals finals = Import(f.FullName, out error);
+                        if (finals != null)
+                        {
+                            log.InfoFormat("Finals imported from {0}: {1} finals.", f.FullName, finals.Finals.Count);
+                            return finals;
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not look for a file of the finals next to the program.", e);
+            }
+
+            return null;
+        }
+
         /// <summary>The finals of a file (kept on this computer for the next times); null with the reason if it is not such a file.</summary>
         public static SwimFinals Import(string path, out string error)
         {

@@ -180,13 +180,13 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Upload a snapshot of the technical analysis (JPEG) to the Drive. The callback runs on the UI thread.
         /// </summary>
-        public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] jpeg, Action<SwimSheetResult> callback)
+        public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] image, Action<SwimSheetResult> callback, string mime = "image/jpeg")
         {
             JObject o = NewRequest(token, "image");
             o["raceId"] = raceId;
             o["snapshotId"] = snapshotId;
-            o["mime"] = "image/jpeg";
-            o["data"] = Convert.ToBase64String(jpeg);
+            o["mime"] = mime;
+            o["data"] = Convert.ToBase64String(image);
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
@@ -556,6 +556,19 @@ namespace Kinovea.ScreenManager
                 final["t"] = Math.Round(timing.Seconds(race.FinalFrame.Timestamp, race.StartTimestamp.Value), 3);
                 r["finalFrame"] = final;
             }
+
+            // Graphics of the video for the report (the summary card, the race against the final), once uploaded to the Drive.
+            JArray graphics = new JArray();
+            foreach (SwimReportGraphic graphic in race.Graphics.Where(x => x != null && !string.IsNullOrEmpty(x.FileId)))
+            {
+                JObject item = new JObject();
+                item["id"] = graphic.Id;
+                item["fileId"] = graphic.FileId;
+                graphics.Add(item);
+            }
+
+            if (graphics.Count > 0 && !race.IsTraining)
+                r["graphics"] = graphics;
             r["tech"] = Tech(race, tech, timing, timeOrigin);
 
             JObject body = new JObject();
