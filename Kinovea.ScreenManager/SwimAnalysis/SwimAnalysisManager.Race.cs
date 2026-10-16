@@ -1339,6 +1339,13 @@ namespace Kinovea.ScreenManager
                 pickForRace = true;
                 Status("🤖 Αυτόματη ανάλυση αγώνα: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του. " +
                     "Το Kinovea τον ακολουθεί σε όλα τα μήκη (Esc: ακύρωση).", false);
+
+                // A new reading of the race (not the next lengths after a lost swimmer, nor from a later length): the swimmer the
+                // camera follows is proposed, Enter takes him.
+                long? now = CurrentVideoTimestamp;
+                bool laterLength = Race != null && now.HasValue && Race.Marks.Any(m => m.Type == SwimMarkType.Split && m.Distance >= Race.Pool && m.Timestamp < now.Value);
+                if (resumeWall <= 0 && !laterLength)
+                    ProposeAutoPick();
             }
         }
 

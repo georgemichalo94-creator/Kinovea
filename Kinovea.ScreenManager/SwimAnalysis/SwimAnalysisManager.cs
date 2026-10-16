@@ -837,6 +837,7 @@ namespace Kinovea.ScreenManager
             if (PickTarget == SwimPickTarget.None)
                 return false;
 
+            autoPick = null;
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
             pickForTrack = false;

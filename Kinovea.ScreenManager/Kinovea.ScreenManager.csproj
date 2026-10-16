@@ -1029,6 +1029,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.AutoPick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />

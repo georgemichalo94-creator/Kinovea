@@ -217,6 +217,8 @@ namespace Kinovea.ScreenManager
 
         private void AutoStrokeClick(PointF point, long timestamp)
         {
+            // A click instead of the swimmer proposed for the whole race: this one.
+            autoPick = null;
             if (PickTarget == SwimPickTarget.StrokeHead || !SameFrame(autoStrokeFrame, timestamp))
             {
                 bool moved = PickTarget == SwimPickTarget.StrokeFeet;
@@ -870,6 +872,13 @@ namespace Kinovea.ScreenManager
 
             if (PickTarget == SwimPickTarget.StrokeHead)
             {
+                // The swimmer proposed for the whole race (Enter takes him).
+                if (autoPick != null && pickForRace)
+                {
+                    DrawAutoPick(g, transform, timestamp);
+                    return;
+                }
+
                 DrawLabel(g, PickingTrack ? "Ακολούθηση: κλικ στο κεφάλι του αθλητή (Esc: ακύρωση)" : "Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)",
                     new Point(12, 12), Color.FromArgb(0, 220, 255));
                 return;
