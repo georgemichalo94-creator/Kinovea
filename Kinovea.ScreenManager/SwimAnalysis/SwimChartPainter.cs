@@ -425,13 +425,16 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            foreach (Axis a in new[] { a0, a1 })
+            // The zero of an axis that crosses it: of the left one solid, of the right one dashed in the colour of its series.
+            if (a0.Min < 0 && a0.Max > 0)
             {
-                if (a == null || !(a.Min < 0 && a.Max > 0))
-                    continue;
                 using (Pen zero = new Pen(ZeroLine, 1.2f))
-                    g.DrawLine(zero, plot.Left, a.Y(0), plot.Right, a.Y(0));
-                break;
+                    g.DrawLine(zero, plot.Left, a0.Y(0), plot.Right, a0.Y(0));
+            }
+            else if (a1 != null && a1.Min < 0 && a1.Max > 0)
+            {
+                using (Pen zero = new Pen(Color.FromArgb(150, Vivid(series.First(s => s.Axis == 1).Color)), 1.2f) { DashPattern = new float[] { 4, 3 } })
+                    g.DrawLine(zero, plot.Left, a1.Y(0), plot.Right, a1.Y(0));
             }
 
             Func<int, float> X = i => plot.Left + (i + 0.5f) * band;
