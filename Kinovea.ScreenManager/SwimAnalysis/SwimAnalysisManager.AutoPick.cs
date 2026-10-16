@@ -55,6 +55,20 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void ProposeAutoPick()
         {
+            // Whatever goes wrong here, the click on the swimmer works as before.
+            try
+            {
+                FindAutoPick();
+            }
+            catch (Exception e)
+            {
+                log.Error("Automatic choice of the swimmer failed.", e);
+                autoPick = null;
+            }
+        }
+
+        private void FindAutoPick()
+        {
             autoPick = null;
             RefreshTiming();
             if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || !Timing.IsValid || !HasVideo || AutoStrokesRunning)
@@ -76,35 +90,40 @@ namespace Kinovea.ScreenManager
                 form.RefreshAutoStrokes();
 
             player.BeforeExportVideo();
-            using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
-            using (FormProgressBar progress = new FormProgressBar(true))
+            try
             {
-                progress.CancelAsked += (o, e) => worker.CancelAsync();
-                worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
-                worker.DoWork += (o, e) =>
+                using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
+                using (FormProgressBar progress = new FormProgressBar(true))
                 {
-                    string why;
-                    e.Result = AutoPickProbe(at, zone.Start, (BackgroundWorker)o, out why);
-                    reason = why;
-                };
-                worker.RunWorkerCompleted += (o, e) =>
-                {
-                    error = e.Error;
-                    if (e.Error == null)
-                        found = e.Result as AutoPickResult;
-                    progress.Close();
-                };
+                    progress.CancelAsked += (o, e) => worker.CancelAsync();
+                    worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
+                    worker.DoWork += (o, e) =>
+                    {
+                        string why;
+                        e.Result = AutoPickProbe(at, zone.Start, (BackgroundWorker)o, out why);
+                        reason = why;
+                    };
+                    worker.RunWorkerCompleted += (o, e) =>
+                    {
+                        error = e.Error;
+                        if (e.Error == null)
+                            found = e.Result as AutoPickResult;
+                        progress.Close();
+                    };
 
-                worker.RunWorkerAsync();
-                progress.ShowDialog();
+                    worker.RunWorkerAsync();
+                    progress.ShowDialog();
+                }
             }
-
-            AutoStrokesRunning = false;
-            frameServer.VideoReader.AfterFrameEnumeration();
-            if (player != null && !player.IsDisposed)
-                player.AfterExportVideo();
-            if (form != null && !form.IsDisposed)
-                form.RefreshAutoStrokes();
+            finally
+            {
+                AutoStrokesRunning = false;
+                frameServer.VideoReader.AfterFrameEnumeration();
+                if (player != null && !player.IsDisposed)
+                    player.AfterExportVideo();
+                if (form != null && !form.IsDisposed)
+                    form.RefreshAutoStrokes();
+            }
 
             // The click may have been cancelled meanwhile (Esc).
             if (!pickForRace || !PickingTrack)
