@@ -180,6 +180,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Oldest Apps Script that takes the charts of the PDF drawn by Kinovea (the PDF of Google leaves them empty).</summary>
         private static readonly Version chartsBackend = new Version(2, 6, 0);
+
+        /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
+        public static Version RequiredBackend
+        {
+            get { return chartsBackend; }
+        }
         private bool backendWarned;
         private bool typedStrokesWarned;
         private bool chartsWarned;
@@ -2536,6 +2542,16 @@ namespace Kinovea.ScreenManager
                 Status(string.Format(CultureInfo.InvariantCulture,
                     "Το Apps Script του KOE App είναι η έκδοση {0}: το report δεν έχει ακόμη τις πισίνες σε γιάρδες, τον ΔΑΚ, τις συγκρίσεις και την τεχνική ανάλυση. Βάλε την έκδοση {1} (δες τον οδηγό).",
                     version, minimumBackend.ToString(3)), true);
+            }
+            else if (!chartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < chartsBackend &&
+                Race != null && !Race.IsTraining)
+            {
+                // The code saved in Apps Script runs only after a new version of the deployment: the web app is still the old one.
+                chartsWarned = true;
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    "Η Εφαρμογή Ιστού του Google τρέχει το Apps Script {0}: τα γραφήματα του PDF βγαίνουν άδεια. Βάλε την έκδοση {1} και κάνε " +
+                    "«Ανάπτυξη → Διαχείριση αναπτύξεων → ✏️ → Έκδοση: Νέα έκδοση → Ανάπτυξη» (δες τον οδηγό).",
+                    version, chartsBackend.ToString(3)), true);
             }
             else if (!typedStrokesWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < typedStrokesBackend &&
                 Race != null && Race.StrokeCounts != null && Race.StrokeCounts.Count > 0)

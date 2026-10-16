@@ -2514,8 +2514,14 @@ namespace Kinovea.ScreenManager
 
                 if (result.Ok)
                 {
-                    lblConnection.ForeColor = colorOk;
-                    lblConnection.Text = "✔ Συνδέθηκε με το Google Sheet \"" + result.SpreadsheetName + "\".";
+                    // The version the web app runs (the code saved in Apps Script runs only after "New version" of the deployment).
+                    string version = result.Raw != null && result.Raw["version"] != null ? (string)result.Raw["version"] : null;
+                    Version backend;
+                    bool old = !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < SwimAnalysisManager.RequiredBackend;
+                    lblConnection.ForeColor = old ? colorWarn : colorOk;
+                    lblConnection.Text = "✔ Συνδέθηκε με το Google Sheet \"" + result.SpreadsheetName + "\"" + (string.IsNullOrEmpty(version) ? "." :
+                        " · Apps Script " + version + (old ? ": χρειάζεται η " + SwimAnalysisManager.RequiredBackend.ToString(3) +
+                        " (Ανάπτυξη → Διαχείριση αναπτύξεων → ✏️ → Έκδοση: Νέα έκδοση → Ανάπτυξη)." : "."));
                 }
                 else
                 {
