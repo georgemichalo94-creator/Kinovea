@@ -157,13 +157,48 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
-                ProposeStart(found, stamps, realFps);
+                ProposeStart(PlausibleStarts(found, stamps), stamps, realFps);
             }
             finally
             {
                 RefreshProposalsUi();
                 InvalidatePlayer();
             }
+        }
+
+        /// <summary>
+        /// Shortest time of a race of this distance (s): about the world record pace (0.42 s a metre, a 50 m in 21 s), at least 15 s.
+        /// A start after which the video is shorter cannot be the start of the race of the video.
+        /// </summary>
+        private static double MinRaceSeconds(int distance)
+        {
+            return Math.Max(15.0, 0.42 * Math.Max(0, distance));
+        }
+
+        /// <summary>
+        /// The starts after which the video is too short for the race (the signal of the next race near the end, sounds of the stands
+        /// in the race) after the others, which keep their order; as found when all are so, or the distance is not known.
+        /// </summary>
+        private List<SwimStartCandidate> PlausibleStarts(List<SwimStartCandidate> found, List<long> stamps)
+        {
+            if (found == null || found.Count < 2 || Race == null || Race.Distance <= 0 || stamps.Count == 0)
+                return found;
+
+            long end = frameServer.VideoReader.WorkingZone.End;
+            double need = MinRaceSeconds(Race.Distance);
+            List<SwimStartCandidate> fits = new List<SwimStartCandidate>(), late = new List<SwimStartCandidate>();
+            foreach (SwimStartCandidate c in found)
+            {
+                bool ok = c.Frame >= 0 && c.Frame < stamps.Count && Timing.Seconds(end, stamps[c.Frame]) >= need;
+                (ok ? fits : late).Add(c);
+            }
+
+            if (fits.Count == 0 || late.Count == 0)
+                return found;
+
+            log.DebugFormat("Start: {0} candidate(s) leave less than {1:0} s of video for the race, proposed last.", late.Count, need);
+            fits.AddRange(late);
+            return fits;
         }
 
         /// <summary>
@@ -527,6 +562,14 @@ namespace Kinovea.ScreenManager
                     "στην κάμερα). Έλεγξέ τη στο καρέ του φωτός.", false);
             else if (found[0].Source == "light+sound")
                 Status("💡🔊 Η εκκίνηση στο φως του σήματος, που ακούγεται αμέσως μετά. Έλεγξέ τη.", false);
+
+            // A start after which the video is too short for the race: surely not its start (the signal of the next race?).
+            double left = Timing.Seconds(frameServer.VideoReader.WorkingZone.End, best.Timestamp);
+            double need = MinRaceSeconds(Race.Distance);
+            if (Race.Distance > 0 && left < need)
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    "⚠ Μετά την εκκίνηση που βρέθηκε μένουν μόνο {0:0} s βίντεο, ενώ τα {1} m θέλουν τουλάχιστον {2:0} s: μάλλον δεν είναι η εκκίνηση αυτού του αγώνα. " +
+                    "Δες τις άλλες προτάσεις (→) ή βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος.", Math.Max(0, left), Race.Distance, need), true);
         }
 
         /// <summary>The start proposal is accepted at this frame: it becomes the start of the race (and of the swimmers of the video).</summary>

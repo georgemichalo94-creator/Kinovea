@@ -283,8 +283,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool ReviewKey(PlayerScreenUserInterface screen, Keys key, long timestamp)
         {
-            // Enter while the swimmer of the whole race is proposed: the reading starts with him.
+            // Enter while the swimmer of the whole race is proposed: the reading starts with him; ↑/↓ propose the lane above / below.
             if (key == Keys.Enter && AcceptAutoPick(screen))
+                return true;
+            if ((key == Keys.Up || key == Keys.Down) && MoveAutoPick(screen, key == Keys.Up ? -1 : 1))
                 return true;
 
             if (!Reviewing || !HasVideo || screen != player)

@@ -1614,6 +1614,9 @@ namespace Kinovea.ScreenManager
                     ChangeSpeed(10);
                     break;
                 case PlayerScreenCommands.IncreaseSpeedRoundTo25:
+                    // Swim analysis: ↑ moves the swimmer proposed for the whole race to the lane above.
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Up, m_iCurrentPosition))
+                        break;
                     ChangeSpeed(25);
                     break;
                 case PlayerScreenCommands.DecreaseSpeed1:
@@ -1623,6 +1626,9 @@ namespace Kinovea.ScreenManager
                     ChangeSpeed(-10);
                     break;
                 case PlayerScreenCommands.DecreaseSpeedRoundTo25:
+                    // Swim analysis: ↓ moves the swimmer proposed for the whole race to the lane below.
+                    if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Down, m_iCurrentPosition))
+                        break;
                     ChangeSpeed(-25);
                     break;
 
