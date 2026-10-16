@@ -41,7 +41,8 @@ if ($Mode -eq 'render') {
         $asm = [System.Reflection.Assembly]::LoadFrom($dll)
         # The charts of the PDF report first (they do not need the races).
         try {
-            $charts = $asm.GetType('ReelPreview').GetMethod('RenderCharts').Invoke($null, [object[]]@((Join-Path $here 'charts_sample.json'), $outFull))
+            $sample = [string](Join-Path $here 'charts_sample.json')
+            $charts = $asm.GetType('ReelPreview').GetMethod('RenderCharts').Invoke($null, [object[]]@($sample, [string]$outFull))
             Write-Output $charts
         }
         catch {
