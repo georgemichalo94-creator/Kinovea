@@ -1030,6 +1030,7 @@
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Proposals.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Quiet.cs" />
@@ -1037,6 +1038,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.RaceEvents.cs" />
     <Compile Include="SwimAnalysis\SwimFinals.cs" />
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimChartPainter.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />

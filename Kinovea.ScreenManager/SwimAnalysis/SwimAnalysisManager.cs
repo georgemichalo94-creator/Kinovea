@@ -177,8 +177,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Oldest Apps Script that keeps the strokes confirmed or typed at each checkpoint.</summary>
         private static readonly Version typedStrokesBackend = new Version(2, 3, 0);
+
+        /// <summary>Oldest Apps Script that takes the charts of the PDF drawn by Kinovea (the PDF of Google leaves them empty).</summary>
+        private static readonly Version chartsBackend = new Version(2, 6, 0);
         private bool backendWarned;
         private bool typedStrokesWarned;
+        private bool chartsWarned;
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -2453,16 +2457,17 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The send and PDF buttons: also retry the snapshots that could not be uploaded. The PDF waits for the graphics of the video
-        /// (the summary card, the race against the final) that changed to go up first.
+        /// (the summary card, the race against the final) that changed to go up first, then for its charts (drawCharts: the Apps
+        /// Script sends the values of the charts without an image, Kinovea draws them, uploads them and asks for the PDF again).
         /// </summary>
         public void SendByUser(bool pdf)
         {
-            if (!(pdf && UploadReportGraphics(() => SendNow(true))))
-                SendNow(pdf);
+            if (!(pdf && UploadReportGraphics(() => SendNow(true, true))))
+                SendNow(pdf, pdf);
             RetryFailedUploads();
         }
 
-        public void SendNow(bool pdf)
+        public void SendNow(bool pdf, bool drawCharts = false)
         {
             if (Race == null)
                 return;
@@ -2477,21 +2482,21 @@ namespace Kinovea.ScreenManager
             }
 
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
-            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace());
+            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts);
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
         }
 
         /// <summary>
         /// Send another analysis of the video (e.g. after the upload of one of its snapshots).
         /// </summary>
-        private void SendRace(SwimRace race, bool pdf)
+        private void SendRace(SwimRace race, bool pdf, bool drawCharts = false)
         {
             if (race == null || !Settings.IsConfigured)
                 return;
 
             if (race == Race)
             {
-                SendNow(pdf);
+                SendNow(pdf, drawCharts);
                 return;
             }
 
@@ -2499,7 +2504,7 @@ namespace Kinovea.ScreenManager
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
-                Finals != null ? Finals.For(race) : null), race.Id, pdf);
+                Finals != null ? Finals.For(race) : null, pdf && drawCharts), race.Id, pdf);
         }
 
         public void OpenSheet()
@@ -2556,9 +2561,22 @@ namespace Kinovea.ScreenManager
                     {
                         race.LastPdfUrl = e.Result.PdfUrl;
                         OpenUrl(e.Result.PdfUrl);
+
+                        // An older Apps Script made the PDF with the charts of Google: they come out empty.
+                        if (!chartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < chartsBackend)
+                        {
+                            chartsWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                "Το PDF το έφτιαξε το Apps Script {0}: τα γραφήματα βγαίνουν άδεια. Βάλε την έκδοση {1} και κάνε «Διαχείριση αναπτύξεων → Νέα έκδοση» (δες τον οδηγό).",
+                                version, chartsBackend.ToString(3)), true);
+                        }
                     }
 
                     MarkDirty();
+
+                    // The Apps Script waits for the charts of the PDF: drawn here with the graphics of the video, then the PDF.
+                    if (e.Result.Raw != null && e.Result.Raw.Value<bool?>("needCharts") == true)
+                        DrawChartsForPdf(race, e.Result.Raw["charts"] as JArray);
                 }
             }
 

@@ -152,6 +152,19 @@ namespace Kinovea.ScreenManager
         public string EliteComment = "";
     }
 
+    /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>
+    public class SwimChartImage
+    {
+        public string Id = "";
+        public string FileId = "";
+
+        /// <summary>The hash of the values the image was drawn from (from the Apps Script).</summary>
+        public string Hash = "";
+
+        /// <summary>The version of the drawing (SwimChartPainter.Version): an older drawing is drawn again.</summary>
+        public string Painter = "";
+    }
+
     /// <summary>A graphic of the video in the report ("summary", "versus"): its image on the Drive and the hash of what was drawn.</summary>
     public class SwimReportGraphic
     {
@@ -494,6 +507,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Graphics of the video drawn for the PDF report (the summary card, the race against the final), on the Drive.</summary>
         public List<SwimReportGraphic> Graphics = new List<SwimReportGraphic>();
 
+        /// <summary>The charts of the PDF report drawn by Kinovea with the graphics of the video, on the Drive.</summary>
+        public List<SwimChartImage> ChartImages = new List<SwimChartImage>();
+
         /// <summary>
         /// Place of the swimmer in the video, found with the automatic strokes or with "Ακολούθηση αθλητή": the athlete label of
         /// the technical view follows it. One part per lap followed.
@@ -706,6 +722,7 @@ namespace Kinovea.ScreenManager
             r.Snapshots = new List<SwimSnapshot>();
             r.FinalFrame = null;
             r.Graphics = new List<SwimReportGraphic>();
+            r.ChartImages = new List<SwimChartImage>();
             r.Tracks = new List<SwimTrack>();
             r.Skeletons = new List<SwimSkeleton>();
             r.Proposals = new List<SwimProposal>();

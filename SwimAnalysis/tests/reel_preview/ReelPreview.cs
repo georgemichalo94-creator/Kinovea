@@ -903,6 +903,69 @@ public static class ReelPreview
         File.AppendAllText(Path.Combine(folder, "report.txt"), info.ToString(), Encoding.UTF8);
     }
 
+    /// <summary>
+    /// The charts of the PDF report drawn by the program (SwimChartPainter) from fictional values in the format of the Apps Script
+    /// (charts_sample.json): one PNG per chart (the image that goes to the Drive) and all of them two by two as on the page of the PDF.
+    /// </summary>
+    public static string RenderCharts(string json, string folder)
+    {
+        StringBuilder info = new StringBuilder();
+        List<SwimChartData> charts = new List<SwimChartData>();
+        foreach (Newtonsoft.Json.Linq.JObject o in Newtonsoft.Json.Linq.JArray.Parse(File.ReadAllText(json, Encoding.UTF8)).OfType<Newtonsoft.Json.Linq.JObject>())
+            charts.Add(SwimChartData.FromJson(o));
+
+        List<Bitmap> images = new List<Bitmap>();
+        try
+        {
+            for (int i = 0; i < charts.Count; i++)
+            {
+                SwimChartData chart = charts[i];
+                System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+                byte[] png = SwimChartPainter.RenderPng(chart);
+                watch.Stop();
+                string name = string.Format(ci, "chart-{0:00}-{1}.png", i + 1, chart.Type);
+                File.WriteAllBytes(Path.Combine(folder, name), png);
+                Bitmap image;
+                using (MemoryStream stream = new MemoryStream(png))
+                using (Bitmap loaded = new Bitmap(stream))
+                    image = new Bitmap(loaded);
+                images.Add(image);
+                info.AppendLine(string.Format(ci, "{0}: {1}x{2} PNG {3} bytes, {4} ms · {5}", name, image.Width, image.Height, png.Length, watch.ElapsedMilliseconds, chart.Title));
+            }
+
+            // As on the page: two charts in a row, 546 x 300 each and 32 between them (here at twice the size).
+            const int scale = 2, gap = 32, margin = 16;
+            int rows = (images.Count + 1) / 2;
+            using (Bitmap page = new Bitmap((margin * 2 + 546 * 2 + gap) * scale, (margin + rows * (300 + 24)) * scale, PixelFormat.Format24bppRgb))
+            {
+                using (Graphics g = Graphics.FromImage(page))
+                {
+                    g.Clear(Color.White);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    for (int i = 0; i < images.Count; i++)
+                    {
+                        int x = (margin + (i % 2) * (546 + gap)) * scale, y = (margin + (i / 2) * (300 + 24)) * scale;
+                        g.DrawImage(images[i], new Rectangle(x, y, 546 * scale, 300 * scale));
+                    }
+                }
+
+                SaveJpeg(page, Path.Combine(folder, "charts-page.jpg"), 88);
+            }
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("charts: " + (e.InnerException ?? e));
+        }
+        finally
+        {
+            foreach (Bitmap b in images)
+                b.Dispose();
+        }
+
+        File.AppendAllText(Path.Combine(folder, "charts.txt"), info.ToString(), Encoding.UTF8);
+        return info.ToString();
+    }
+
     private static void SaveJpeg(Bitmap image, string path, long quality)
     {
         ImageCodecInfo codec = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);

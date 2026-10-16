@@ -68,6 +68,11 @@ namespace Kinovea.ScreenManager
             public bool Pdf;
         }
 
+        /// <summary>A PDF can take minutes (the Apps Script can run 6 minutes): it is not cut and sent again meanwhile.</summary>
+        private const int PdfTimeout = 330000;
+        private const int UpdateTimeout = 120000;
+        private const int ImagesTimeout = 180000;
+
         public event EventHandler<SwimSyncEventArgs> StateChanged;
 
         public bool Busy
@@ -116,7 +121,7 @@ namespace Kinovea.ScreenManager
                 if (index >= 0)
                 {
                     if (pending[index].Pdf)
-                        request.Pdf = true;
+                        AsPdf(request);
                     pending[index] = request;
                 }
                 else
@@ -178,6 +183,28 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Upload several images of a race together (the charts of the PDF report, PNG): Raw["files"] has [{ id, fileId } or { id, error }].
+        /// The callback runs on the UI thread.
+        /// </summary>
+        public void UploadImages(string url, string token, string raceId, IList<KeyValuePair<string, byte[]>> images, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "images");
+            o["raceId"] = raceId;
+            JArray list = new JArray();
+            foreach (KeyValuePair<string, byte[]> image in images)
+            {
+                JObject item = new JObject();
+                item["id"] = image.Key;
+                item["mime"] = "image/png";
+                item["data"] = Convert.ToBase64String(image.Value);
+                list.Add(item);
+            }
+
+            o["images"] = list;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, ImagesTimeout);
+        }
+
+        /// <summary>
         /// Upload a snapshot of the technical analysis (JPEG) to the Drive. The callback runs on the UI thread.
         /// </summary>
         public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] image, Action<SwimSheetResult> callback, string mime = "image/jpeg")
@@ -234,9 +261,9 @@ namespace Kinovea.ScreenManager
             Send(url, NewRequest(token, action).ToString(Newtonsoft.Json.Formatting.None), callback);
         }
 
-        private void Send(string url, string body, Action<SwimSheetResult> callback)
+        private void Send(string url, string body, Action<SwimSheetResult> callback, int timeout = 60000)
         {
-            Task.Factory.StartNew(() => Post(url, body)).ContinueWith(t =>
+            Task.Factory.StartNew(() => Post(url, body, timeout)).ContinueWith(t =>
             {
                 SwimSheetResult result = t.IsFaulted ? new SwimSheetResult { Ok = false, Error = t.Exception.GetBaseException().Message } : t.Result;
                 ui.Post(_ => callback(result), null);
@@ -252,7 +279,7 @@ namespace Kinovea.ScreenManager
             if (request.RaceId != null && failed.TryGetValue(request.RaceId, out old))
             {
                 if (old.Pdf)
-                    request.Pdf = true;
+                    AsPdf(request);
                 failed.Remove(request.RaceId);
                 if (failed.Count == 0)
                     retryTimer.Stop();
@@ -260,11 +287,33 @@ namespace Kinovea.ScreenManager
 
             Raise(SwimSyncState.Sending, request.Pdf ? "Δημιουργία PDF…" : "Αποστολή…", request.RaceId, null);
 
-            Task.Factory.StartNew(() => Post(request.Url, request.Body)).ContinueWith(t =>
+            Task.Factory.StartNew(() => Post(request.Url, request.Body, request.Pdf ? PdfTimeout : UpdateTimeout)).ContinueWith(t =>
             {
                 SwimSheetResult result = t.IsFaulted ? new SwimSheetResult { Ok = false, Retry = true, Error = t.Exception.GetBaseException().Message } : t.Result;
                 ui.Post(_ => Completed(request, result), null);
             });
+        }
+
+        /// <summary>
+        /// A newer state of a race replaces a PDF that was asked for: it is sent as a PDF (its body too, which was built as an update),
+        /// with its charts drawn by Kinovea when the Apps Script asks for them.
+        /// </summary>
+        private static void AsPdf(Request request)
+        {
+            request.Pdf = true;
+            try
+            {
+                JObject o = JObject.Parse(request.Body);
+                if (o.Value<string>("action") == "pdf")
+                    return;
+                o["action"] = "pdf";
+                o["drawCharts"] = true;
+                request.Body = o.ToString(Newtonsoft.Json.Formatting.None);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not make a PDF request of an update.", e);
+            }
         }
 
         private void Completed(Request request, SwimSheetResult result)
@@ -290,7 +339,7 @@ namespace Kinovea.ScreenManager
                     {
                         // A newer state of the race is waiting: it is sent instead (with the PDF if one was asked for).
                         if (request.Pdf)
-                            pending[index].Pdf = true;
+                            AsPdf(pending[index]);
                     }
                     else
                     {
@@ -359,7 +408,7 @@ namespace Kinovea.ScreenManager
                 handler(this, new SwimSyncEventArgs { State = state, Message = message, RaceId = raceId, Result = result });
         }
 
-        private static SwimSheetResult Post(string url, string body)
+        private static SwimSheetResult Post(string url, string body, int timeout)
         {
             SwimSheetResult result = new SwimSheetResult();
             try
@@ -368,8 +417,8 @@ namespace Kinovea.ScreenManager
                 request.Method = "POST";
                 request.ContentType = "application/json; charset=utf-8";
                 request.AllowAutoRedirect = true;
-                request.Timeout = 60000;
-                request.ReadWriteTimeout = 60000;
+                request.Timeout = timeout;
+                request.ReadWriteTimeout = timeout;
                 request.UserAgent = "Kinovea-SwimAnalysis";
 
                 byte[] data = Encoding.UTF8.GetBytes(body);
@@ -453,7 +502,7 @@ namespace Kinovea.ScreenManager
         public const string AppId = "kinovea-swim";
 
         public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
-            SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null)
+            SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null, bool drawCharts = false)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
@@ -569,6 +618,21 @@ namespace Kinovea.ScreenManager
 
             if (graphics.Count > 0 && !race.IsTraining)
                 r["graphics"] = graphics;
+
+            // The charts of the report drawn by Kinovea (with the current drawing), with the hash of the values they show.
+            JArray charts = new JArray();
+            foreach (SwimChartImage chart in (race.ChartImages ?? new List<SwimChartImage>()).Where(x => x != null && !string.IsNullOrEmpty(x.FileId) &&
+                !string.IsNullOrEmpty(x.Hash) && x.Painter == SwimChartPainter.Version))
+            {
+                JObject item = new JObject();
+                item["id"] = chart.Id;
+                item["fileId"] = chart.FileId;
+                item["hash"] = chart.Hash;
+                charts.Add(item);
+            }
+
+            if (charts.Count > 0 && !race.IsTraining)
+                r["chartImages"] = charts;
             r["tech"] = Tech(race, tech, timing, timeOrigin);
 
             JObject body = new JObject();
@@ -576,6 +640,8 @@ namespace Kinovea.ScreenManager
             body["token"] = settings.Token ?? "";
             body["action"] = action;
             body["race"] = r;
+            if (drawCharts && !race.IsTraining)
+                body["drawCharts"] = true;
             return body.ToString(Newtonsoft.Json.Formatting.None);
         }
 

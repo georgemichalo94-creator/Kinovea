@@ -39,6 +39,17 @@ if ($Mode -eq 'render') {
         $refs += @('System.Drawing', 'System.Core')
         Add-Type -Path (Join-Path $here 'ReelPreview.cs') -ReferencedAssemblies $refs -OutputAssembly $dll -OutputType Library
         $asm = [System.Reflection.Assembly]::LoadFrom($dll)
+        # The charts of the PDF report first (they do not need the races).
+        try {
+            $charts = $asm.GetType('ReelPreview').GetMethod('RenderCharts').Invoke($null, [object[]]@((Join-Path $here 'charts_sample.json'), $outFull))
+            Write-Output $charts
+        }
+        catch {
+            $text = $_.Exception.ToString()
+            if ($_.Exception.InnerException) { $text = $_.Exception.InnerException.ToString() + "`n" + $text }
+            [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "charts: " + $text + "`n", [System.Text.Encoding]::UTF8)
+            Write-Output $text
+        }
         $result = $asm.GetType('ReelPreview').GetMethod('Render').Invoke($null, [object[]]@($outFull))
         Write-Output $result
     }

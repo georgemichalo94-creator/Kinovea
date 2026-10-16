@@ -66,7 +66,10 @@ function makeSheet(ss, name, id) {
       im.getInherentWidth = () => (blob._size || [1280, 720])[0]; im.getInherentHeight = () => (blob._size || [1280, 720])[1];
       im.setAnchorCell = rng => { im.col = rng.getColumn(); im.row = rng.getRow(); return im; };
       im.setAnchorCellXOffset = x => { im.ox = x; return im; };
-      im.remove = () => { images.splice(images.indexOf(im), 1); };
+      im.getAnchorCell = () => sheet.getRange(im.row, im.col);
+      im.setAltTextTitle = t => { im.alt = String(t); return im; }; im.getAltTextTitle = () => im.alt || '';
+      im.remove = () => { const i = images.indexOf(im); if (i < 0) throw new Error('image already removed'); images.splice(i, 1); };
+      sheet._inserted = (sheet._inserted || 0) + 1;
       images.push(im);
       return im;
     },
@@ -216,7 +219,9 @@ function makeContext(opts) {
     // Τι τυπώνεται: γραφήματα και εικόνες (των γραφημάτων: chart.png) μέσα στην περιοχή του PDF.
     const printedCharts = sheet._charts.filter(ch => ch.pos && ch.pos[0] <= r2).length;
     const chartImages = sheet._images.filter(im => im.blob && im.blob._name === 'chart.png' && im.row <= r2).length;
-    exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName(), printedCharts, chartImages });
+    // Τα γραφήματα του Kinovea (εικόνες <raceId>_chart-….png).
+    const kinoveaCharts = sheet._images.filter(im => im.blob && /_chart-[0-9a-f]{8}\.png$/.test(im.blob._name) && im.row <= r2).length;
+    exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName(), printedCharts, chartImages, kinoveaCharts });
     let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
     for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
     // Γραφήματα: όπως το PDF του Google, με περιοχή σε % σχεδιάζεται μόνο ο τίτλος (λίγα bytes).
