@@ -297,13 +297,13 @@ namespace Kinovea.ScreenManager
                     string delta = SwimReference.FormatDelta(last.Delta.Value);
                     Font deltaFont = F(10f, k, true);
                     float dw = Width(g, delta, deltaFont) + 14 * k;
-                    RectangleF pill = new RectangleF(r.Right - 12 * k - dw, r.Top + 54 * k, dw, 20 * k);
-                    SwimTheme.FillRounded(g, last.Delta.Value <= 0 ? SwimFinalsPainter.FasterColor : SwimFinalsPainter.SlowerColor, pill, 5 * k);
-                    Text(g, delta, deltaFont, Color.White, pill.Left + dw / 2, pill.Top + pill.Height / 2, StringAlignment.Center, StringAlignment.Center);
+                    RectangleF deltaPill = new RectangleF(r.Right - 12 * k - dw, r.Top + 54 * k, dw, 20 * k);
+                    SwimTheme.FillRounded(g, last.Delta.Value <= 0 ? SwimFinalsPainter.FasterColor : SwimFinalsPainter.SlowerColor, deltaPill, 5 * k);
+                    Text(g, delta, deltaFont, Color.White, deltaPill.Left + dw / 2, deltaPill.Top + deltaPill.Height / 2, StringAlignment.Center, StringAlignment.Center);
                     Font vsFont = F(7.5f, k, false, FontStyle.Bold);
                     float vsLeft = r.Left + Math.Min(r.Width * 0.52f, 280 * k);
                     TextIn(g, "Δ vs " + ReferenceShort(s.Computed.Reference), vsFont, SwimTheme.Dim,
-                        new RectangleF(vsLeft, pill.Top, Math.Max(10, pill.Left - 6 * k - vsLeft), pill.Height), StringAlignment.Far);
+                        new RectangleF(vsLeft, deltaPill.Top, Math.Max(10, deltaPill.Left - 6 * k - vsLeft), deltaPill.Height), StringAlignment.Far);
                 }
             }
 
@@ -861,13 +861,13 @@ namespace Kinovea.ScreenManager
 
             float k = L.K;
             float w = Math.Min(400 * k, L.W - 2 * L.M), h = Math.Max(90 * k, w * 0.3f);
-            RectangleF r = new RectangleF(L.W - L.M - w, L.H - L.M - h, w, h);
-            if (!board.IsEmpty && r.Left < board.Right + L.M)
+            RectangleF card = new RectangleF(L.W - L.M - w, L.H - L.M - h, w, h);
+            if (!board.IsEmpty && card.Left < board.Right + L.M)
                 return;
-            if (r.Top < L.Header.Bottom + 42 * k)
+            if (card.Top < L.Header.Bottom + 42 * k)
                 return;
 
-            SwimFinalsPainter.PaintDelta(g, Rectangle.Round(r), points, s.Race.Distance, s.Reel.Pool, ReferenceShort(s.Computed.Reference), true, 1.15f * k);
+            SwimFinalsPainter.PaintDelta(g, Rectangle.Round(card), points, s.Race.Distance, s.Reel.Pool, ReferenceShort(s.Computed.Reference), true, 1.15f * k);
         }
 
         /// <summary>A short name of the reference: "CECCON · ΠΑΡΙΣΙ 2024 (1ος)" for a swimmer of a final, else its name.</summary>
