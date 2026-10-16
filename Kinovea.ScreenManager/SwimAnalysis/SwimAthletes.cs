@@ -154,7 +154,8 @@ namespace Kinovea.ScreenManager
                     b.Append(c);
             }
 
-            string upper = b.ToString().Normalize(NormalizationForm.FormC).ToUpperInvariant();
+            // The final sigma is not made upper case by every version of the .NET Framework.
+            string upper = b.ToString().Normalize(NormalizationForm.FormC).ToUpperInvariant().Replace('ς', 'Σ');
             return string.Join(" ", upper.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries));
         }
     }

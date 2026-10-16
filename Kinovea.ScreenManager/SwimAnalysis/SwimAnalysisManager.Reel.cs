@@ -462,6 +462,11 @@ namespace Kinovea.ScreenManager
                     SwimFinalsPainter.PaintBoard(g, new Rectangle((int)x, (int)top, (int)Math.Round(260 * bs), bh), SwimFinalsPainter.BoardTitle(final, finish.D, true),
                         SwimFinalsPainter.BoardSubtitle(final), rows, bs);
                     Rectangle boardCard = new Rectangle((int)x, (int)(H - margin - 70), (int)Math.Round(260 * bs), 70);
+
+                    // Between them: the place in the final, the gap to the first and to the mean of the final.
+                    Rectangle result = new Rectangle((int)x, (int)(top + bh + gap), boardCard.Width, (int)(boardCard.Top - gap - (top + bh + gap)));
+                    if (result.Height >= 56)
+                        DrawFinalResult(g, result, final, rows, finish);
                     DrawCard(g, boardCard, SwimTheme.Accent);
                     DrawBoard(g, boardCard, finish.T.Value, finish);
                     x += 260 * bs + gap + 4;
@@ -490,6 +495,38 @@ namespace Kinovea.ScreenManager
             {
                 DrawCard(g, chart, colorAthlete);
                 DrawSpeedChart(g, chart, done, finish);
+            }
+        }
+
+        /// <summary>The place of the athlete in the final at the finish, with the gaps to its first and to its mean.</summary>
+        private static void DrawFinalResult(Graphics g, Rectangle r, SwimFinal final, List<SwimFinalsBoardRow> rows, SwimRow finish)
+        {
+            SwimFinalsBoardRow me = rows.FirstOrDefault(b => b.IsAthlete);
+            if (me == null)
+                return;
+
+            DrawCard(g, r, SwimTheme.Amber);
+            Font caption = SwimTheme.Ui(6.75f, FontStyle.Bold);
+            Font place = SwimTheme.Display(24f);
+            Font line = SwimTheme.Ui(7.75f, FontStyle.Bold);
+            double? mean = final.MeanAt(finish.D);
+            double first = rows.Where(b => !b.IsAthlete).Min(b => b.Time);
+            string toFirst = SwimReference.FormatDelta(finish.T.Value - first) + " s από τον 1ο";
+            string toMean = mean.HasValue ? SwimReference.FormatDelta(finish.T.Value - mean.Value) + " s από τον μέσο όρο του τελικού" : "";
+            using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
+            using (SolidBrush text = new SolidBrush(SwimTheme.Text))
+            using (SolidBrush amber = new SolidBrush(me.Place <= 3 ? SwimTheme.Green : SwimTheme.Amber))
+            using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
+            {
+                g.DrawString("ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ", caption, dim, r.Left + 12, r.Top + 7);
+                string p = me.Place.ToString(CultureInfo.InvariantCulture) + "η";
+                g.DrawString(p, place, amber, r.Left + 10, r.Top + 19);
+                float left = r.Left + 14 + g.MeasureString(p, place).Width;
+                float lineH = line.GetHeight(g) + 3;
+                float y0 = r.Top + 22;
+                g.DrawString(toFirst, line, text, new RectangleF(left, y0, r.Right - 8 - left, lineH), noWrap);
+                if (toMean.Length > 0)
+                    g.DrawString(toMean, line, dim, new RectangleF(left, y0 + lineH, r.Right - 8 - left, lineH), noWrap);
             }
         }
 

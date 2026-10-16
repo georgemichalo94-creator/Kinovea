@@ -51,7 +51,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The event of the final: "Τελικός 100μ. ύπτιο Ανδρών".</summary>
         public static string BoardSubtitle(SwimFinal final)
         {
-            return string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleShort(final.Style),
+            return string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleName(final.Style).ToLowerInvariant(),
                 final.Gender == "F" ? "Γυναικών" : "Ανδρών");
         }
 

@@ -126,7 +126,8 @@ jobs:
             $body = @{ tag_name = $tag; target_commitish = "${{ github.sha }}"; name = $tag; body = $notes; draft = $true } | ConvertTo-Json
             $release = Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -Body $body -ContentType "application/json"
           } else {
-            $body = @{ body = $notes } | ConvertTo-Json
+            # The tag again: a draft updated without it loses it ("untagged-…").
+            $body = @{ tag_name = $tag; target_commitish = "${{ github.sha }}"; body = $notes } | ConvertTo-Json
             $release = Invoke-RestMethod "$api/releases/$($release.id)" -Method Patch -Headers $headers -Body $body -ContentType "application/json"
           }
           foreach ($asset in @($release.assets)) {
