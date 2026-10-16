@@ -127,7 +127,52 @@ namespace Kinovea.ScreenManager
                 found.Add(f);
             }
 
+            // The marks of one rope, and the quarter lines, as the line between the marks of the two ropes (MarkDelay).
+            if (pool == 50 && MarkDelays)
+            {
+                foreach (SwimSplitFound f in found)
+                {
+                    foreach (string k in f.Cues.Keys.ToList())
+                        f.Cues[k] += MarkDelay(k, f.LapDistance) * fps;
+                }
+            }
+
             return found.OrderBy(f => f.LapDistance).ToList();
+        }
+
+        /// <summary>
+        /// Delay (s) to add to the crossing of a line of the lane at a checkpoint of a 50 m pool (lap distance 15, 25, 35, 45) for
+        /// the crossing of the line between the marks of the two ropes, which the analysts see: the far rope's mark alone is crossed
+        /// later than that line at 15 m and earlier at 35 and 45 m, the near rope's mark the other way round, the quarter lines in
+        /// between (the lines of the marks lean in the image the more the further the swimmer is along the lap, the same in both
+        /// directions of the pool). Medians of the analysts' races of all the folders (2026-10-16, 883 checkpoints, the same in every
+        /// style): far +0.14 / +0.03 / -0.17 / -0.46 s off at 15 / 25 / 35 / 45 m, near -0.34 / +0.03 / +0.34 / +0.58 s. Fitted on
+        /// one half of the races and tried on the other: checkpoints more than 0.5 s off 22 -> 17 and 42 -> 35, those with one rope
+        /// only median 0.25 -> 0.12 s. The line between the marks itself stays.
+        /// </summary>
+        public static double MarkDelay(string cue, int lapDistance)
+        {
+            int i = Array.IndexOf(new[] { 15, 25, 35, 45 }, lapDistance);
+            if (i < 0)
+                return 0;
+
+            switch (cue)
+            {
+                case CueFar: return new[] { -0.14, -0.03, 0.17, 0.46 }[i];
+                case CueQuarterFar: return new[] { -0.02, -0.04, 0.05, 0.19 }[i];
+                case CueQuarterNear: return new[] { 0.21, -0.03, -0.20, -0.33 }[i];
+                case CueNear: return new[] { 0.34, -0.03, -0.34, -0.58 }[i];
+                default: return 0;
+            }
+        }
+
+        /// <summary>The marks of one rope and the quarter lines with their delay by distance (tests).</summary>
+        internal static bool MarkDelays = true;
+
+        /// <summary>The cues of a checkpoint that MarkDelay moves (their learning is apart from the answers kept before it).</summary>
+        public static bool HasMarkDelay(string cue)
+        {
+            return MarkDelays && (cue == CueFar || cue == CueNear || cue == CueQuarterNear || cue == CueQuarterFar);
         }
 
         /// <summary>The start of the red last 5 m names the marks before it too (tests).</summary>
@@ -317,6 +362,43 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // Four checkpoints and one of them wrong: it also moves the line of the others (half of the pairs have it), enough to
+            // stay within it. Each one against the line of the other three, the farthest goes when it is off by more than
+            // PaceLooTolerance of the time of 10 m (wider than for the line of all four: the line of three that leaves out the 45 m is
+            // that of the faster first part of a sprint; 0.2 moved a right 45 m of a 50 m backstroke). Test races, 192 lengths
+            // with four checkpoints: two such (45 m -2.59 s, 95 m +1.31 s), then within 0.6 s; no other.
+            if (seen.Count == 4 && PaceLeaveOneOut)
+            {
+                SwimSplitFound worst = null;
+                double worstRatio = 1.0, worstSlope = 0, worstIntercept = 0;
+                foreach (SwimSplitFound f in seen)
+                {
+                    double s3, i3;
+                    if (!PaceLine(seen.Where(x => x != f).ToList(), out s3, out i3))
+                        continue;
+
+                    double ratio = Math.Abs(Time(f.Cues) - (i3 + s3 * f.LapDistance)) / (PaceLooTolerance * 10 * s3);
+                    if (ratio > worstRatio)
+                    {
+                        worst = f;
+                        worstRatio = ratio;
+                        worstSlope = s3;
+                        worstIntercept = i3;
+                    }
+                }
+
+                if (worst != null)
+                {
+                    slope = worstSlope;
+                    intercept = worstIntercept;
+                    tolerance = PaceTolerance * 10 * slope;
+                    worst.Cues.Clear();
+                    worst.Cues[CuePace] = intercept + slope * worst.LapDistance;
+                    worst.Confidence = PaceConfidence;
+                    seen = seen.Where(x => x != worst).ToList();
+                }
+            }
+
             int[] marks = pool == 50 ? new[] { 15, 25, 35, 45 } : new[] { 10, 15, 20 };
             foreach (int d in marks)
             {
@@ -361,6 +443,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Part of the time of 10 m a checkpoint can be off the pace of the others (tests).</summary>
         internal static double PaceTolerance = 0.2;
+
+        /// <summary>With four checkpoints each one against the pace of the other three (tests).</summary>
+        internal static bool PaceLeaveOneOut = true;
+
+        /// <summary>Part of the time of 10 m a checkpoint can be off the pace of the other three (tests).</summary>
+        internal static double PaceLooTolerance = 0.3;
 
         /// <summary>The time of the wall from the one checkpoint seen in the length and the start of the length.</summary>
         public const string CuePaceOne = "pace1";
@@ -493,25 +581,49 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Usual delay (s) of the steepest rise of the motion after a turn from the breakout the analysts mark (analysed races:
-        /// the first strokes after the head is out, about 1.2 s later in butterfly, 0.3 s in backstroke; in breaststroke the
+        /// the first strokes after the head is out, about a second later in butterfly, 0.3 s in backstroke; in breaststroke the
         /// pull-out and the kick under the water come first, the rise 2.7 s after the head is out (median of 6 turns, camcorders
         /// and phones; 1.2 s from one race before 2026-10-15).
         /// </summary>
         public static double TurnRiseDelay(string style)
         {
+            return TurnRiseDelay(style, false);
+        }
+
+        /// <summary>
+        /// The same after a turn into another style ('change': the open turns of the medley). Butterfly 1.0 s: the camcorders
+        /// of the races analysed before 1.2 s, the phones in the stands 0.25 s (22 turns: more than a second off 8 -> 5). From
+        /// butterfly to backstroke the rise comes later than after a backstroke turn: 0.6 s after the head is out instead of 0.3 s
+        /// (8 turns of 200 and 400 m medley: median error 0.67 -> 0.43 s, none more than a second off).
+        /// </summary>
+        public static double TurnRiseDelay(string style, bool change)
+        {
             if (!TurnBreakout)
                 return 0;
             switch (style)
             {
-                case "fly": return -1.25;
+                case "fly": return TurnRiseFly;
                 case "br": return TurnRiseBreast;
-                case "bk": return -0.3;
+                case "bk": return change ? TurnRiseBackChange : -0.3;
                 default: return 0;
             }
         }
 
         /// <summary>See TurnRiseDelay (tests).</summary>
-        internal static double TurnRiseBreast = -2.6;
+        internal static double TurnRiseBreast = -2.6, TurnRiseFly = -1.0, TurnRiseBackChange = -0.6;
+
+        /// <summary>
+        /// Usual delay (s) of the steepest rise after the start from the breakout the analysts mark: in breaststroke the first
+        /// stroke at the surface comes 0.3 s after the head is out (10 starts, camcorders and phones: median error 0.53 -> 0.34 s,
+        /// more than a second 2 -> 1); in the other styles the head and the arms come out together.
+        /// </summary>
+        public static double StartRiseDelay(string style)
+        {
+            return style == "br" ? StartRiseBreast : 0;
+        }
+
+        /// <summary>See StartRiseDelay (tests).</summary>
+        internal static double StartRiseBreast = -0.3;
 
         /// <summary>
         /// Delay (s) of the steepest rise after a turn from the first stroke counted after it (the strokes of the length start

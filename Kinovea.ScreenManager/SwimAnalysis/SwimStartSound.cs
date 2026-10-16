@@ -295,6 +295,7 @@ namespace Kinovea.ScreenManager
                 result.AddRange(lights.Where(c => c.Source == "light" && c.Lights >= 2));
             result.AddRange(heard);
             result.AddRange(lights.Where(c => !result.Contains(c)));
+            result = AfterMarks(result, detector, fps);
 
             if (Trace != null)
             {
@@ -304,6 +305,55 @@ namespace Kinovea.ScreenManager
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// "Take your marks": the starter's command through the speakers can be heard more clearly than the signal (an outdoor pool,
+        /// the wind), 1.4-2.4 s before the start. The swimmers do not move just after it (after a start they move 0.22-0.53 s after
+        /// the signal in the test videos). When the start proposed has no dive 0.10-0.55 s after it but a light or a signal 0.5-3 s
+        /// later has its dive just after it, that one is the start: it goes first, the command second.
+        /// </summary>
+        internal static List<SwimStartCandidate> AfterMarks(List<SwimStartCandidate> result, SwimStartLight detector, double fps)
+        {
+            if (result == null || result.Count < 2 || detector == null || result[0].Dive >= 0 || result[0].Source == "dive")
+                return result;
+
+            SwimStartCandidate first = result[0];
+
+            // No race seen after it (no dive, the camera not following within 3 s: the referee's whistle, a voice before the
+            // swimmers are on the blocks): a light or a signal up to 15 s later with the dive or the camera following just after it
+            // is the start (in the test videos the starts without race signs had the next such candidate 25 s or more later, in the race).
+            if (first.Follow < 0)
+            {
+                SwimStartCandidate seen = result.Skip(1).Where(c => (c.Dive >= 0 || c.Follow >= 0) && c.Frame > first.Frame
+                    && c.Frame <= first.Frame + 15 * fps).FirstOrDefault();
+                if (seen != null)
+                {
+                    if (Trace != null)
+                        Trace(string.Format(CultureInfo.InvariantCulture, "start: {0} at frame {1} has no race after it, the start {2} at {3}",
+                            first.Source, first.Frame, seen.Source, seen.Frame));
+                    List<SwimStartCandidate> moved = new List<SwimStartCandidate> { seen };
+                    moved.AddRange(result.Where(c => c != seen));
+                    return moved;
+                }
+            }
+
+            int dive = detector.FirstDiveAfter(first.Frame, 3.0);
+            if (dive < 0 || dive < first.Frame + 0.7 * fps)
+                return result;
+
+            int lo = dive - (int)Math.Round(0.55 * fps), hi = dive - (int)Math.Round(0.10 * fps);
+            SwimStartCandidate start = result.Skip(1).Where(c => c.Source != "dive" && c.Dive >= 0 && c.Frame > first.Frame + 0.5 * fps
+                && c.Frame >= lo && c.Frame <= hi).FirstOrDefault();
+            if (start == null)
+                return result;
+
+            if (Trace != null)
+                Trace(string.Format(CultureInfo.InvariantCulture, "start: {0} at frame {1} is the command (the dive {2} frames later), the start {3} at {4}",
+                    first.Source, first.Frame, dive - first.Frame, start.Source, start.Frame));
+            List<SwimStartCandidate> ordered = new List<SwimStartCandidate> { start };
+            ordered.AddRange(result.Where(c => c != start));
+            return ordered;
         }
         #endregion
 

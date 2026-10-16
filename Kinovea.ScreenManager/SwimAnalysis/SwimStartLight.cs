@@ -1048,6 +1048,21 @@ namespace Kinovea.ScreenManager
             return DiveAfter(frame, dives, spots, out dive) ? dive : -1;
         }
 
+        /// <summary>The first frame 0.10 s to 'seconds' after this frame where the swimmers start to move (−1: none).</summary>
+        public int FirstDiveAfter(int frame, double seconds)
+        {
+            double[] spots;
+            List<int> dives = DiveOnsets(out spots);
+            int lo = frame + (int)Math.Round(0.10 * fps), hi = frame + (int)Math.Round(seconds * fps);
+            foreach (int x in dives)
+            {
+                if (x >= lo && x <= hi)
+                    return x;
+            }
+
+            return -1;
+        }
+
         /// <summary>Frames where the camera starts to follow the race.</summary>
         public List<int> FollowFrames()
         {

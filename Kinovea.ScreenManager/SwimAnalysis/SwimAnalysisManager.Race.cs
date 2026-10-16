@@ -167,12 +167,25 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Shortest time of a race of this distance (s): about the world record pace (0.42 s a metre, a 50 m in 21 s), at least 15 s.
-        /// A start after which the video is shorter cannot be the start of the race of the video.
+        /// The shortest the race can last (s): 0.97 × the world record of freestyle (the fastest stroke) for the distance in this pool
+        /// (long or short course), so that a start leaving less video is surely not the start of this race (the signal of the next race,
+        /// the flashes of cameras during the race: a 400 IM of 254 s with a "start" 170 s before the end); relays, yards and other
+        /// distances: 0.42 s/m (at least 15 s).
         /// </summary>
-        private static double MinRaceSeconds(int distance)
+        internal static double MinRaceSeconds(int distance, int pool = 50, bool relay = false, bool yards = false)
         {
-            return Math.Max(15.0, 0.42 * Math.Max(0, distance));
+            int i = Array.IndexOf(new[] { 50, 100, 200, 400, 800, 1500 }, distance);
+            if (relay || yards || i < 0)
+                return Math.Max(15.0, 0.42 * Math.Max(0, distance));
+
+            double[] records = pool == 25 ? new[] { 19.90, 44.84, 99.37, 212.25, 440.46, 846.88 } : new[] { 20.91, 46.40, 102.00, 219.96, 452.12, 870.67 };
+            return 0.97 * records[i];
+        }
+
+        /// <summary>The shortest the race of the analysis can last (s), see MinRaceSeconds(distance, pool, relay, yards).</summary>
+        private double MinRaceSeconds()
+        {
+            return Race == null ? 15.0 : MinRaceSeconds(Race.Distance, Race.Pool, Race.Relay, Race.IsYards);
         }
 
         /// <summary>
@@ -185,7 +198,7 @@ namespace Kinovea.ScreenManager
                 return found;
 
             long end = frameServer.VideoReader.WorkingZone.End;
-            double need = MinRaceSeconds(Race.Distance);
+            double need = MinRaceSeconds();
             List<SwimStartCandidate> fits = new List<SwimStartCandidate>(), late = new List<SwimStartCandidate>();
             foreach (SwimStartCandidate c in found)
             {
@@ -565,7 +578,7 @@ namespace Kinovea.ScreenManager
 
             // A start after which the video is too short for the race: surely not its start (the signal of the next race?).
             double left = Timing.Seconds(frameServer.VideoReader.WorkingZone.End, best.Timestamp);
-            double need = MinRaceSeconds(Race.Distance);
+            double need = MinRaceSeconds();
             if (Race.Distance > 0 && left < need)
                 Status(string.Format(CultureInfo.InvariantCulture,
                     "⚠ Μετά την εκκίνηση που βρέθηκε μένουν μόνο {0:0} s βίντεο, ενώ τα {1} m θέλουν τουλάχιστον {2:0} s: μάλλον δεν είναι η εκκίνηση αυτού του αγώνα. " +
@@ -760,7 +773,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private Dictionary<string, double> BreakoutCuesDelayed(LengthRead l, bool strokes = false)
         {
-            return BreakoutCuesDelayed(l.Breakout, SwimPresets.StyleAt(Race, l.Session.Wall), l.Session.Fps, !IsDive(l.LapFrom), strokes);
+            string style = SwimPresets.StyleAt(Race, l.Session.Wall);
+            bool turn = !IsDive(l.LapFrom);
+            bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
+            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change);
         }
 
         /// <summary>
@@ -769,9 +785,11 @@ namespace Kinovea.ScreenManager
         /// breaststroke about 1.2 s after it, in backstroke 0.3 s; the first strong splash is not the breakout (freestyle 2.5 s
         /// early, the others ±3 s), nor, in butterfly, the motion starting (±3 s). The cues after a turn are named apart (".t"):
         /// the learning keeps their delays apart from the start's. strokes: the cues of the first stroke counted after the breakout
-        /// (SwimSplitDetector.StrokeStartDelay, with the names and the learning of the breakout before 2026-10-15).
+        /// (SwimSplitDetector.StrokeStartDelay, with the names and the learning of the breakout before 2026-10-15). change: a turn
+        /// into another style (the open turns of the medley): the steepest rise in backstroke has its own delay and learning there
+        /// (".o"; the motion starting after the turn into freestyle tried as not sure: as many breakouts better as worse).
         /// </summary>
-        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false)
+        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false)
         {
             Dictionary<string, double> cues = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in found)
@@ -781,7 +799,8 @@ namespace Kinovea.ScreenManager
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
                         continue;
-                    delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style)) : 0;
+                    delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style, change))
+                        : (strokes ? 0 : SwimSplitDetector.StartRiseDelay(style));
                 }
                 else
                 {
@@ -790,9 +809,15 @@ namespace Kinovea.ScreenManager
                     delay = strokes ? SwimSplitDetector.StrokeStartDelay(c.Key, style) : SwimSplitDetector.BreakoutDelay(c.Key, style);
                 }
 
-                // The rise after a breaststroke turn has its delay since 2026-10-15 (".4": the answers kept with the old one do not move it).
-                string version = turn && !strokes && style == "br" && c.Key == SwimSplitDetector.CueRise ? ".4" : "";
-                string name = c.Key + (turn && SwimSplitDetector.TurnBreakout ? ".t" : "") + PriorVersion(c.Key, style, strokes) + version;
+                // The rise after a breaststroke turn has its delay since 2026-10-15 (".4": the answers kept with the old one do not move
+                // it), after a butterfly turn and after the breaststroke start since 2026-10-16 (".5").
+                string version = "";
+                if (!strokes && c.Key == SwimSplitDetector.CueRise)
+                    version = turn && style == "br" ? ".4" : (turn && style == "fly") || (!turn && style == "br") ? ".5" : "";
+
+                // The open turn of the medley into backstroke: its rise learns apart (".o").
+                bool open = turn && change && SwimSplitDetector.TurnBreakout && style == "bk" && c.Key == SwimSplitDetector.CueRise;
+                string name = c.Key + (turn && SwimSplitDetector.TurnBreakout ? ".t" : "") + (open ? ".o" : "") + PriorVersion(c.Key, style, strokes) + version;
                 cues[StyleCue(name, style)] = c.Value + delay * fps;
             }
 
@@ -1087,8 +1112,12 @@ namespace Kinovea.ScreenManager
             foreach (SwimSplitFound f in l.Found)
             {
                 Dictionary<string, double> cues = new Dictionary<string, double>();
+                // The marks of one rope and the quarter lines have their delay by distance since 2026-10-16 (".6", 50 m pools).
                 foreach (KeyValuePair<string, double> c in f.Cues)
-                    cues[StyleCue(c.Key + PriorVersion(c.Key, style) + view, style)] = c.Value + delay;
+                {
+                    string version = Race.Pool == 50 && SwimSplitDetector.HasMarkDelay(c.Key) ? ".6" : "";
+                    cues[StyleCue(c.Key + PriorVersion(c.Key, style) + version + view, style)] = c.Value + delay;
+                }
                 items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
             }
 
