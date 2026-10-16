@@ -13,6 +13,7 @@ using System.Drawing.Text;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Newtonsoft.Json.Linq;
 
 namespace Kinovea.ScreenManager
@@ -234,16 +235,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The title in capitals and its unit (the part in brackets) beside it, dim. Returns the top of the content.</summary>
         private static float DrawTitle(Graphics g, SwimChartData chart, float W)
         {
-            string main = chart.Title ?? "", unit = "";
-            int open = main.LastIndexOf(" (", StringComparison.Ordinal);
-            if (open > 0 && main.EndsWith(")", StringComparison.Ordinal))
-            {
-                unit = main.Substring(open + 2, main.Length - open - 3);
-                main = main.Substring(0, open);
-            }
+            string main = chart.Title ?? "", unit = TitleUnit(main);
+            if (unit.Length > 0)
+                main = main.Substring(0, main.Length - unit.Length - 3);
 
-            Font font = SwimTheme.Ui(11.5f, FontStyle.Bold);
-            Font unitFont = SwimTheme.Ui(9.5f, FontStyle.Regular);
+            Font font = SwimTheme.Ui(12f, FontStyle.Bold);
+            Font unitFont = SwimTheme.Ui(10f, FontStyle.Regular);
             string title = SwimAthleteList.Normalize(main);
             using (SolidBrush text = new SolidBrush(SwimTheme.Text))
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
@@ -267,7 +264,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The series in a line (or more) from the left: a mark in their colour and their name in capitals. Returns the bottom.</summary>
         private static float DrawLegend(Graphics g, IList<SwimChartSeries> series, float left, float right, float y)
         {
-            Font font = SwimTheme.Ui(8.5f, FontStyle.Bold);
+            Font font = SwimTheme.Ui(9f, FontStyle.Bold);
             float lineH = font.GetHeight(g) + 3;
             float x = left;
             foreach (SwimChartSeries s in series)
@@ -352,42 +349,50 @@ namespace Kinovea.ScreenManager
             if (series.Count > 1)
                 y = DrawLegend(g, series, area.Left, area.Right, y) + 3;
 
-            // The units of the axes above them, in the colour of their first series when there are two.
-            Font small = SwimTheme.Ui(8.5f, FontStyle.Regular);
+            // The units of the axes above them (in the colour of their first series when there are two), unless the title has it.
+            Font small = SwimTheme.Ui(9f, FontStyle.Regular);
             float unitH = small.GetHeight(g);
-            bool units = !string.IsNullOrEmpty(c.VTitle) || (twoAxes && !string.IsNullOrEmpty(c.V2Title));
-            if (units)
+            string leftUnit = c.VTitle ?? "", rightUnit = twoAxes ? (c.V2Title ?? "") : "";
+            if (!twoAxes && SameUnit(leftUnit, TitleUnit(c.Title)))
+                leftUnit = "";
+            if (leftUnit.Length > 0 || rightUnit.Length > 0)
             {
                 Color left = twoAxes ? Vivid(series.First(s => s.Axis == 0).Color) : SwimTheme.Dim;
                 using (SolidBrush b = new SolidBrush(left))
-                    g.DrawString(c.VTitle ?? "", small, b, area.Left - 2, y);
-                if (twoAxes && !string.IsNullOrEmpty(c.V2Title))
+                    g.DrawString(leftUnit, small, b, area.Left - 2, y);
+                if (rightUnit.Length > 0)
                 {
                     using (SolidBrush b = new SolidBrush(Vivid(series.First(s => s.Axis == 1).Color)))
                     {
-                        SizeF us = g.MeasureString(c.V2Title, small);
-                        g.DrawString(c.V2Title, small, b, area.Right - us.Width + 2, y);
+                        SizeF us = g.MeasureString(rightUnit, small);
+                        g.DrawString(rightUnit, small, b, area.Right - us.Width + 2, y);
                     }
                 }
 
                 y += unitH + 2;
             }
 
-            Font tick = SwimTheme.Ui(8.5f, FontStyle.Regular);
+            Font tick = SwimTheme.Ui(9f, FontStyle.Regular);
             float tickH = tick.GetHeight(g);
             float plotTop = y + tickH / 2 + 2;
-            float plotBottom = area.Bottom - tickH - 6;
+
+            // The axes first (their labels decide the width of the plot), then the categories (their lines decide its height).
+            Axis a0 = MakeAxis(series.Where(s => axisOf(s) == 0).ToList(), n, c.Stacked);
+            Axis a1 = twoAxes ? MakeAxis(series.Where(s => axisOf(s) == 1).ToList(), n, c.Stacked) : null;
+            float leftWidth = AxisWidth(g, a0, tick) + 6;
+            float rightWidth = a1 != null ? AxisWidth(g, a1, tick) + 6 : 4;
+            float plotLeft = area.Left + leftWidth, plotWidth = area.Width - leftWidth - rightWidth;
+            float band = plotWidth / n;
+            CategoryLabels labels = CategoryLines(g, c, band, tick);
+            int lines = Math.Max(1, labels.Lines.Where(l => l != null).Select(l => l.Count).DefaultIfEmpty(1).Max());
+            float plotBottom = area.Bottom - lines * labels.Font.GetHeight(g) - 6;
             if (plotBottom - plotTop < 30)
             {
                 Empty(g, area, "Δεν χωράει το γράφημα");
                 return;
             }
 
-            Axis a0 = MakeAxis(series.Where(s => axisOf(s) == 0).ToList(), n, c.Stacked);
-            Axis a1 = twoAxes ? MakeAxis(series.Where(s => axisOf(s) == 1).ToList(), n, c.Stacked) : null;
-            float leftWidth = AxisWidth(g, a0, tick) + 6;
-            float rightWidth = a1 != null ? AxisWidth(g, a1, tick) + 6 : 4;
-            RectangleF plot = new RectangleF(area.Left + leftWidth, plotTop, area.Width - leftWidth - rightWidth, plotBottom - plotTop);
+            RectangleF plot = new RectangleF(plotLeft, plotTop, plotWidth, plotBottom - plotTop);
             foreach (Axis a in new[] { a0, a1 })
             {
                 if (a == null)
@@ -429,9 +434,8 @@ namespace Kinovea.ScreenManager
                 break;
             }
 
-            float band = plot.Width / n;
             Func<int, float> X = i => plot.Left + (i + 0.5f) * band;
-            DrawCategories(g, c, plot, band, X, tick);
+            DrawCategories(g, labels.Lines, plot, X, labels.Font);
 
             List<RectangleF> taken = new List<RectangleF>();
             List<SwimChartSeries> bars = series.Where(s => s.Bars).ToList();
@@ -439,25 +443,40 @@ namespace Kinovea.ScreenManager
                 DrawBars(g, c, bars, series, axisOf, a0, a1, n, band, X, taken);
 
             // Lines: the race last, over the others.
-            List<SwimChartSeries> lines = series.Where(s => !s.Bars).OrderBy(s => c.LabelSeries.Contains(c.Series.IndexOf(s)) ? 1 : 0).ToList();
-            foreach (SwimChartSeries s in lines)
+            List<SwimChartSeries> lineSeries = series.Where(s => !s.Bars).OrderBy(s => c.LabelSeries.Contains(c.Series.IndexOf(s)) ? 1 : 0).ToList();
+            foreach (SwimChartSeries s in lineSeries)
             {
                 Axis a = axisOf(s) == 1 ? a1 : a0;
                 DrawLine(g, s, a, plot, X, n, c.LabelSeries.Contains(c.Series.IndexOf(s)));
             }
 
-            // The values of the race, on top of everything.
-            foreach (int index in c.LabelSeries)
+            // The values of the race on top of everything; with few categories, the values of the other series too (where there is room).
+            List<SwimChartSeries> labelled = c.LabelSeries.Where(i => i >= 0 && i < c.Series.Count).Select(i => c.Series[i]).Where(s => series.Contains(s)).ToList();
+            if (n <= 6)
+                labelled.AddRange(series.Where(s => !labelled.Contains(s)));
+            foreach (SwimChartSeries s in labelled)
             {
-                if (index < 0 || index >= c.Series.Count || !series.Contains(c.Series[index]) || (c.Stacked && c.Series[index].Bars))
+                if (c.Stacked && s.Bars)
                     continue;
-                SwimChartSeries s = c.Series[index];
                 Axis a = axisOf(s) == 1 ? a1 : a0;
                 DrawValueLabels(g, c, s, series, axisOf, a, plot, X, band, taken);
             }
         }
 
-        /// <summary>The axis of these series: nice steps, from zero when there are columns.</summary>
+        /// <summary>The unit in the brackets at the end of a title ("Ταχύτητα ανά τμήμα (m/s)" → "m/s"), else empty.</summary>
+        private static string TitleUnit(string title)
+        {
+            title = title ?? "";
+            int open = title.LastIndexOf(" (", StringComparison.Ordinal);
+            return open > 0 && title.EndsWith(")", StringComparison.Ordinal) ? title.Substring(open + 2, title.Length - open - 3) : "";
+        }
+
+        private static bool SameUnit(string a, string b)
+        {
+            return !string.IsNullOrEmpty(a) && string.Equals(a.Trim(), (b ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>The axis of these series: nice steps (4 to 7 of them, as tight as possible), from zero when there are columns.</summary>
         private static Axis MakeAxis(List<SwimChartSeries> series, int n, bool stacked)
         {
             List<double> values = new List<double>();
@@ -509,25 +528,38 @@ namespace Kinovea.ScreenManager
             else
             {
                 double span = hi - lo;
-                lo -= span * 0.15;
-                hi += span * 0.18;
+                lo -= span * 0.12;
+                hi += span * 0.16;
             }
 
-            double raw = (hi - lo) / 4.5;
-            double mag = Math.Pow(10, Math.Floor(Math.Log10(raw)));
-            double norm = raw / mag;
-            double step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
-            Axis axis = new Axis();
-            axis.Step = step;
-            axis.Min = Math.Floor(lo / step + 1e-9) * step;
-            axis.Max = Math.Ceiling(hi / step - 1e-9) * step;
-            if (axis.Max - axis.Min < step)
-                axis.Max = axis.Min + step;
+            // The step among 1, 2, 2.5, 5 x 10^k that covers [lo, hi] with 4 to 7 steps and the least empty room.
+            double mag = Math.Pow(10, Math.Floor(Math.Log10((hi - lo) / 5)));
+            Axis best = null;
+            foreach (double m in new[] { mag / 10, mag, mag * 10 })
+            {
+                foreach (double f in new[] { 1, 2, 2.5, 5 })
+                {
+                    double step = f * m;
+                    double min = Math.Floor(lo / step + 1e-9) * step, max = Math.Ceiling(hi / step - 1e-9) * step;
+                    int count = (int)Math.Round((max - min) / step);
+                    if (count < 4 || count > 7)
+                        continue;
+                    if (best == null || max - min < best.Max - best.Min - 1e-9 || (Math.Abs(max - min - (best.Max - best.Min)) < 1e-9 && step > best.Step))
+                        best = new Axis { Min = min, Max = max, Step = step };
+                }
+            }
+
+            if (best == null)
+            {
+                double step = Math.Max(1e-9, (hi - lo) / 5);
+                best = new Axis { Min = lo, Max = lo + 5 * step, Step = step };
+            }
+
             int d = 0;
-            while (d < 6 && Math.Abs(step * Math.Pow(10, d) - Math.Round(step * Math.Pow(10, d))) > 1e-6)
+            while (d < 6 && Math.Abs(best.Step * Math.Pow(10, d) - Math.Round(best.Step * Math.Pow(10, d))) > 1e-6)
                 d++;
-            axis.Decimals = d;
-            return axis;
+            best.Decimals = d;
+            return best;
         }
 
         private static float AxisWidth(Graphics g, Axis a, Font font)
@@ -538,29 +570,112 @@ namespace Kinovea.ScreenManager
             return w;
         }
 
-        /// <summary>The categories under the plot (every k-th when they do not fit), the unit of the axis after the last one.</summary>
-        private static void DrawCategories(Graphics g, SwimChartData c, RectangleF plot, float band, Func<int, float> X, Font font)
+        private sealed class CategoryLabels
+        {
+            public Font Font;
+
+            /// <summary>The lines of each category (null: not written).</summary>
+            public List<List<string>> Lines;
+        }
+
+        /// <summary>
+        /// The labels of the categories: on one line when they fit, else on up to three lines (at the spaces and after a "/"), in
+        /// smaller letters if needed, else every k-th on one line. The unit of the axis goes after the last one.
+        /// </summary>
+        private static CategoryLabels CategoryLines(Graphics g, SwimChartData c, float band, Font font)
         {
             int n = c.Categories.Count;
             string unit = (c.HTitle ?? "").Trim();
-            Func<int, string> label = i => i == n - 1 && unit.Length > 0 && unit.Length <= 4 ? c.Categories[i] + unit : c.Categories[i];
-            float widest = 0;
-            for (int i = 0; i < n; i++)
-                widest = Math.Max(widest, g.MeasureString(label(i), font).Width);
+            List<string> labels = Enumerable.Range(0, n).Select(i => i == n - 1 && unit.Length > 0 && unit.Length <= 4 ? c.Categories[i] + unit : c.Categories[i]).ToList();
+            float room = Math.Max(8, band - 4);
+            if (labels.All(t => g.MeasureString(t, font).Width <= room))
+                return new CategoryLabels { Font = font, Lines = labels.Select(t => new List<string> { t }).ToList() };
+
+            foreach (Font f in new[] { font, SwimTheme.Ui(8f, FontStyle.Regular) })
+            {
+                List<List<string>> wrapped = labels.Select(t => Wrap(g, t, f, room)).ToList();
+                if (wrapped.All(w => w != null && w.Count <= 3))
+                    return new CategoryLabels { Font = f, Lines = wrapped };
+            }
+
+            float widest = labels.Max(t => g.MeasureString(t, font).Width);
             int every = Math.Max(1, (int)Math.Ceiling((widest + 6) / Math.Max(1, band)));
+            List<List<string>> some = new List<List<string>>();
+            for (int i = 0; i < n; i++)
+            {
+                bool show = i == n - 1 || (i % every == 0 && !(n - 1 - i < every && every > 1));
+                some.Add(show ? new List<string> { labels[i] } : null);
+            }
+
+            return new CategoryLabels { Font = font, Lines = some };
+        }
+
+        /// <summary>A label in lines no wider than 'room' (at the spaces and after a "/"); null when a word alone is wider.</summary>
+        private static List<string> Wrap(Graphics g, string text, Font font, float room)
+        {
+            List<string> words = new List<string>();
+            StringBuilder word = new StringBuilder();
+            foreach (char ch in text ?? "")
+            {
+                if (ch == ' ')
+                {
+                    if (word.Length > 0)
+                        words.Add(word.ToString());
+                    word.Clear();
+                    continue;
+                }
+
+                word.Append(ch);
+                if (ch == '/')
+                {
+                    words.Add(word.ToString());
+                    word.Clear();
+                }
+            }
+
+            if (word.Length > 0)
+                words.Add(word.ToString());
+
+            List<string> lines = new List<string>();
+            string line = "";
+            foreach (string w in words)
+            {
+                string joined = line.Length == 0 ? w : (line.EndsWith("/", StringComparison.Ordinal) ? line + w : line + " " + w);
+                if (g.MeasureString(joined, font).Width <= room)
+                {
+                    line = joined;
+                    continue;
+                }
+
+                if (g.MeasureString(w, font).Width > room)
+                    return null;
+                if (line.Length > 0)
+                    lines.Add(line);
+                line = w;
+            }
+
+            if (line.Length > 0)
+                lines.Add(line);
+            return lines;
+        }
+
+        private static void DrawCategories(Graphics g, List<List<string>> labels, RectangleF plot, Func<int, float> X, Font font)
+        {
+            float lineH = font.GetHeight(g);
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
             using (Pen tick = new Pen(Grid, 1f))
             {
-                for (int i = 0; i < n; i++)
+                for (int i = 0; i < labels.Count; i++)
                 {
-                    bool last = i == n - 1;
-                    if (!last && (i % every != 0 || (n - 1 - i < every && every > 1)))
+                    if (labels[i] == null)
                         continue;
-                    string text = label(i);
-                    SizeF s = g.MeasureString(text, font);
-                    float x = Math.Max(plot.Left - 6, Math.Min(plot.Right + 6 - s.Width, X(i) - s.Width / 2));
                     g.DrawLine(tick, X(i), plot.Bottom, X(i), plot.Bottom + 3);
-                    g.DrawString(text, font, dim, x, plot.Bottom + 4);
+                    for (int j = 0; j < labels[i].Count; j++)
+                    {
+                        SizeF s = g.MeasureString(labels[i][j], font);
+                        float x = Math.Max(plot.Left - 6, Math.Min(plot.Right + 6 - s.Width, X(i) - s.Width / 2));
+                        g.DrawString(labels[i][j], font, dim, x, plot.Bottom + 4 + j * lineH);
+                    }
                 }
             }
         }
@@ -763,7 +878,7 @@ namespace Kinovea.ScreenManager
         /// <summary>A value in a dark pill, centred on 'at', above it (or below). False when it would cover another.</summary>
         private static bool Pill(Graphics g, string text, PointF at, bool above, Color color, List<RectangleF> taken, float top, float bottom)
         {
-            Font font = SwimTheme.Display(8.75f);
+            Font font = SwimTheme.Display(9.25f);
             SizeF s = g.MeasureString(text, font);
             float w = s.Width + 4, h = s.Height - 1;
             float y = above ? at.Y - h : at.Y;
@@ -841,8 +956,8 @@ namespace Kinovea.ScreenManager
             }
 
             // The parts: name, value and share.
-            Font name = SwimTheme.Ui(9f, FontStyle.Bold);
-            Font value = SwimTheme.Display(10.5f);
+            Font name = SwimTheme.Ui(9.5f, FontStyle.Bold);
+            Font value = SwimTheme.Display(11f);
             float left = ring.Right + 22, right = area.Right - 4;
             float rowH = Math.Min(34, (area.Height - 4) / parts.Count);
             float y = area.Top + (area.Height - rowH * parts.Count) / 2;
@@ -889,7 +1004,7 @@ namespace Kinovea.ScreenManager
 
             float y = DrawLegend(g, series, area.Left, area.Right, area.Top) + 4;
             RectangleF room = new RectangleF(area.Left, y, area.Width, area.Bottom - y);
-            Font label = SwimTheme.Ui(8.5f, FontStyle.Bold);
+            Font label = SwimTheme.Ui(9f, FontStyle.Bold);
             float radius = Math.Min(room.Height / 2 - label.GetHeight(g) - 2, room.Width / 2 - 70);
             if (radius < 30)
             {
