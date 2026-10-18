@@ -72,6 +72,13 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Probes that found the same lane (of AutoPickProbes).</summary>
             public int Agree;
+
+            /// <summary>
+            /// The lane the first probe found on Frame (working coordinates), for the reading of the race: its own search at the swimmer
+            /// placed along the lane could take another pair of ropes there. Null when the proposal was moved (↑/↓).
+            /// </summary>
+            public SwimStrokeLane? Lane;
+            public int VirtualRope;
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
@@ -248,6 +255,7 @@ namespace Kinovea.ScreenManager
             long frame = at;
             double laneWidth = 0, middle = 0;
             int agree = 0;
+            int virtualRope = 0;
             for (int k = 0; k < AutoPickProbes.Length; k++)
             {
                 double px = AutoPickProbes[k][0] * width, probeLength = AutoPickProbes[k][1] * width;
@@ -268,6 +276,7 @@ namespace Kinovea.ScreenManager
                         }
 
                         lane = probe.Detector.CurrentLane;
+                        virtualRope = probe.Detector.VirtualRope;
                         frame = probe.Timestamps[0];
                         laneWidth = Math.Max(5, Math.Abs(lane.Y2(xm) - lane.Y1(xm)));
                         middle = 0.5 * (lane.Y1(xm) + lane.Y2(xm));
@@ -330,7 +339,9 @@ namespace Kinovea.ScreenManager
                 Feet = new PointF((float)((centre - direction * 0.5 * length) / sx), (float)(centreY / sy)),
                 Frame = frame,
                 LaneWidth = (float)(laneWidth / sy),
-                Agree = agree
+                Agree = agree,
+                Lane = lane,
+                VirtualRope = virtualRope
             };
         }
 
@@ -392,7 +403,7 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            AutoRace(p.Head, p.Feet, p.Frame);
+            AutoRace(p.Head, p.Feet, p.Frame, p.Lane, p.VirtualRope);
             return true;
         }
 

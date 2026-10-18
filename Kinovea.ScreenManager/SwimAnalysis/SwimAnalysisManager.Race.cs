@@ -1517,7 +1517,7 @@ namespace Kinovea.ScreenManager
         /// next length is followed from the wall, the other way (the swimmer is where the previous length ended). Then all of them
         /// are proposed for the check.
         /// </summary>
-        private void AutoRace(PointF head, PointF feet, long from)
+        private void AutoRace(PointF head, PointF feet, long from, SwimStrokeLane? lane = null, int virtualRope = 0)
         {
             // The auto pilot reads this race: it puts what is found and makes the report.
             bool pilot = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
@@ -1555,7 +1555,7 @@ namespace Kinovea.ScreenManager
             {
                 ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
-                worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o); };
+                worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o, lane, virtualRope); };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
                     error = e.Error;
@@ -1678,12 +1678,13 @@ namespace Kinovea.ScreenManager
         /// drifts a little); the one that arrives on the lane clicked is the session. Null when it can't be (the caller reads from
         /// the click as before); also null when cancelled (cancelled is then true).
         /// </summary>
-        private StrokeSession StartSession(PointF head, PointF feet, long click, long start, BackgroundWorker worker, out bool cancelled)
+        private StrokeSession StartSession(PointF head, PointF feet, long click, long start, BackgroundWorker worker, out bool cancelled,
+            SwimStrokeLane? clickLane = null, int clickVirtual = 0)
         {
             cancelled = false;
             List<StrokeSession> candidates = new List<StrokeSession>();
             StrokeSession chosen = null;
-            StrokeSession clicked = CreateSession(head, feet, click, null, 0, Race.Pool);
+            StrokeSession clicked = CreateSession(head, feet, click, clickLane, clickVirtual, Race.Pool);
             try
             {
                 // The lane at the click.
@@ -1924,8 +1925,12 @@ namespace Kinovea.ScreenManager
             return completed;
         }
 
-        /// <summary>Background thread: the lengths one after the other. False if cancelled.</summary>
-        private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker)
+        /// <summary>
+        /// Background thread: the lengths one after the other. False if cancelled. clickLane: the lane at the click when it is known
+        /// (the swimmer proposed: the lane its probe found), else searched at the click.
+        /// </summary>
+        private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker, SwimStrokeLane? clickLane = null,
+            int clickVirtual = 0)
         {
             long lapStart = LapStartTimestamp(from);
             int wall = NextWallDistance(from);
@@ -1948,8 +1953,8 @@ namespace Kinovea.ScreenManager
 
             double previousSeconds = 0;
             Size reference = ReadingReader.Info.ReferenceSize;
-            SwimStrokeLane? nextLane = null;
-            int nextVirtual = 0;
+            SwimStrokeLane? nextLane = clickLane;
+            int nextVirtual = clickLane.HasValue ? clickVirtual : 0;
 
             // After a turn: where the swimmer goes under the water from the wall (first frame of the next reading, px a frame).
             int nextGlideFrames = 0;
@@ -1972,7 +1977,7 @@ namespace Kinovea.ScreenManager
                     from > lapStart + RealSpan(1.0))
                 {
                     bool cancelled;
-                    s = StartSession(head, feet, from, lapStart, worker, out cancelled);
+                    s = StartSession(head, feet, from, lapStart, worker, out cancelled, clickLane, clickVirtual);
                     if (cancelled)
                         return false;
                 }
