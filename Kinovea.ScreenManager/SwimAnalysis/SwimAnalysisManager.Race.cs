@@ -1528,7 +1528,8 @@ namespace Kinovea.ScreenManager
                 pilotStep = PilotStep.Reading;
 
                 // (The question of the swimmer or its countdown stayed on the status line during the reading until 2.7.1.)
-                Status(pilotWasLost ? "✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα από τον αθλητή που έδειξες… (Cancel: σταμάτημα)" :
+                Status(pilotWasLost ? string.Format(CultureInfo.InvariantCulture, "✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα μετά τον τοίχο των " +
+                    "{0}{1}… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", pilotLostWall, Race.Unit) :
                     "✈ Ο αυτόματος πιλότος διαβάζει τον αγώνα… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", false);
                 RefreshPilotUi();
             }
