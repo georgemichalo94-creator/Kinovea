@@ -697,6 +697,54 @@ namespace Kinovea.ScreenManager
             return gb <= 0.3 * range && gb >= -0.5 * range;
         }
 
+        /// <summary>
+        /// Where it moves most along the lane (working x), NaN without motion: the mean of the band differences of the frames read
+        /// (from the third: the first ones have none) in a box of the swimmer's length, weighted by a Gaussian of 'half' x the width
+        /// around 'centre'. For the swimmer the camera follows: his arms, his head and the water they push, ahead of his middle.
+        /// </summary>
+        public static double MotionPeak(IList<double[]> motion, double length, double half, double centre)
+        {
+            if (motion == null || motion.Count <= FrameGap)
+                return double.NaN;
+
+            int w = motion[0].Length;
+            double[] profile = new double[w];
+            int rows = 0;
+            for (int t = FrameGap; t < motion.Count; t++)
+            {
+                if (motion[t] == null || motion[t].Length != w)
+                    continue;
+                for (int x = 0; x < w; x++)
+                    profile[x] += motion[t][x];
+                rows++;
+            }
+
+            if (rows == 0)
+                return double.NaN;
+
+            double[] sum = new double[w + 1];
+            for (int x = 0; x < w; x++)
+                sum[x + 1] = sum[x] + profile[x] / rows;
+
+            int box = Math.Max(3, (int)Math.Round(length));
+            double sigma = Math.Max(1.0, half * w);
+            double best = 0;
+            int found = -1;
+            for (int x = 0; x < w; x++)
+            {
+                int lo = Math.Max(0, x - box / 2), hi = Math.Min(w, x - box / 2 + box);
+                double z = (x - centre) / sigma;
+                double s = (sum[hi] - sum[lo]) / box * Math.Exp(-0.5 * z * z);
+                if (s > best)
+                {
+                    best = s;
+                    found = x;
+                }
+            }
+
+            return found < 0 ? double.NaN : found;
+        }
+
         #region Finish
         /// <summary>
         /// Strokes between the frames first and last (indices of the frames given to the detector).

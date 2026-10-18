@@ -51,6 +51,16 @@ namespace Kinovea.ScreenManager
 
         private const int AutoPickAgree = 4;
 
+        /// <summary>
+        /// Where the swimmer is along his lane (since 2.7.3): what moves in the lane over this long after the frame (s), weighted around
+        /// the middle of the image (a Gaussian of this part of its width), the peak (arms, head, bow wave) this part of his length
+        /// ahead of his middle. Lab, the analysts' clicks of 41 camcorder races: within half a length of the swimmer 34 (the middle of
+        /// the image, as before: 15; the middle with a fixed lead: 27).
+        /// </summary>
+        private const double AutoPickAlongSeconds = 0.55;
+        private const double AutoPickAlongHalf = 0.2;
+        private const double AutoPickAlongLead = 0.5;
+
         private sealed class AutoPickResult
         {
             public PointF Head;
@@ -288,10 +298,36 @@ namespace Kinovea.ScreenManager
             }
 
             double length = AutoPickLength * laneWidth;
+            double centre = xm, centreY = middle;
+            {
+                // The swimmer along the lane from what moves in it (the lane of the first probe read for a moment): the camera keeps room
+                // ahead of him, so he is rarely at the middle of the image.
+                double px = AutoPickProbes[0][0] * width, probeLength = AutoPickProbes[0][1] * width;
+                PointF head = new PointF((float)((px + direction * 0.5 * probeLength) / sx), (float)(ym / sy));
+                PointF feet = new PointF((float)((px - direction * 0.5 * probeLength) / sx), (float)(ym / sy));
+                using (StrokeSession along = CreateSession(head, feet, at))
+                {
+                    if (!ReadFrames(along, at + RealSpan(AutoPickAlongSeconds), worker))
+                        return null;
+
+                    if (along.Detector.Count > 0 && along.Detector.FoundRopes)
+                    {
+                        SwimStrokeResult r = along.Detector.Finish(0, along.Detector.Count - 1);
+                        double peak = SwimStrokeDetector.MotionPeak(r.Motion, length, AutoPickAlongHalf, xm);
+                        if (!double.IsNaN(peak))
+                        {
+                            centre = Math.Max(0.5 * length, Math.Min(width - 0.5 * length, peak - direction * AutoPickAlongLead * length));
+                            centreY = 0.5 * (lane.Y1(centre) + lane.Y2(centre));
+                            log.DebugFormat("Automatic choice of the swimmer: motion peak at {0:0}, swimmer at {1:0} (middle {2:0}).", peak, centre, xm);
+                        }
+                    }
+                }
+            }
+
             return new AutoPickResult
             {
-                Head = new PointF((float)((xm + direction * 0.5 * length) / sx), (float)(middle / sy)),
-                Feet = new PointF((float)((xm - direction * 0.5 * length) / sx), (float)(middle / sy)),
+                Head = new PointF((float)((centre + direction * 0.5 * length) / sx), (float)(centreY / sy)),
+                Feet = new PointF((float)((centre - direction * 0.5 * length) / sx), (float)(centreY / sy)),
                 Frame = frame,
                 LaneWidth = (float)(laneWidth / sy),
                 Agree = agree
