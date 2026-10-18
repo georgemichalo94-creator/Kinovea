@@ -524,6 +524,13 @@ namespace Kinovea.ScreenManager
                 if (added == null || (markType == SwimMarkType.Split && added.Distance != pilot.Distance))
                     return;
                 ReplacePilotMark(pilot, added);
+
+                // As Enter at this frame: the automatic strokes before the breakout go, its underwater distance again.
+                if (p.Kind == KindRaceBreakout)
+                {
+                    TrimAutoStrokesBeforeBreakout(p.Index, timestamp);
+                    EstimateUnderwaterDistance(p.Index, timestamp);
+                }
             }
 
             Answer(p, timestamp, true);

@@ -454,25 +454,36 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void PilotAccept(List<SwimProposal> made)
         {
+            bool finish = false;
             foreach (SwimProposal p in made.Where(x => x.Kind == KindRaceSplit).OrderBy(x => x.Index).ToList())
-                PilotSplit(p);
+                finish |= PilotSplit(p);
             foreach (SwimProposal p in made.Where(x => x.Kind == KindRaceBreakout).OrderBy(x => x.Index).ToList())
                 PilotBreakout(p);
+
+            // The final frame of the report: the frame of the finish shown (it is the frame painted), with the graphics of all the race.
+            SwimMark end = Race.GetSplit(Race.Distance);
+            if (finish && end != null && HasVideo)
+            {
+                Recompute();
+                SeekTo(end.Timestamp);
+                CaptureFinalFrame(end.Timestamp);
+            }
         }
 
-        private void PilotSplit(SwimProposal p)
+        /// <summary>The checkpoint of the proposal put by the pilot. True when it is a new finish (its final frame is taken).</summary>
+        private bool PilotSplit(SwimProposal p)
         {
             // The analyst's checkpoint stays (none is proposed where he has one).
             int distance = p.Index;
             SwimMark existing = Race.GetSplit(distance);
             if (existing != null && existing.Pilot == null)
-                return;
+                return false;
 
             p.Pilot = true;
             if (existing != null && SameFrame(existing.Timestamp, p.Timestamp))
             {
                 p.PilotMark = existing.Id;
-                return;
+                return false;
             }
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = p.Timestamp, Distance = distance, Pilot = new SwimPilotMark { Wall = distance } };
@@ -487,8 +498,7 @@ namespace Kinovea.ScreenManager
             }
 
             p.PilotMark = mark.Id;
-            if (distance == Race.Distance)
-                CaptureFinalFrame(p.Timestamp);
+            return distance == Race.Distance;
         }
 
         private void PilotBreakout(SwimProposal p)
@@ -646,6 +656,7 @@ namespace Kinovea.ScreenManager
             List<SwimProposal> put = Race.Proposals.Where(p => p.Pilot && PilotMarkOf(p) != null).ToList();
             int splits = put.Count(p => p.Kind == KindRaceSplit);
             int breakouts = put.Count(p => p.Kind == KindRaceBreakout);
+            int raceSplits = Race.Marks.Count(m => m.Type == SwimMarkType.Split);
             int doubtful = PilotDoubtful;
             int waiting = Race.Proposals.Count(p => !p.Pilot);
             int strokes = AutoStrokeCount;
@@ -656,7 +667,7 @@ namespace Kinovea.ScreenManager
             if (Race.StartTimestamp.HasValue)
                 SeekTo(Math.Max(frameServer.VideoReader.WorkingZone.Start, Race.StartTimestamp.Value - RealSpan(1.0)));
 
-            if (read == 0 || splits == 0)
+            if (read == 0 || raceSplits == 0)
             {
                 string why = "✈ Ο αυτόματος πιλότος δεν μπόρεσε να διαβάσει τον αγώνα: δεν βρέθηκαν τα σημάδια των σχοινιών στη διαδρομή του " +
                     "αθλητή (π.χ. πλάνο χωρίς σχοινιά, ή ο αθλητής δεν ακολουθήθηκε). Δοκίμασε «🤖 Όλος ο αγώνας» με κλικ στον αθλητή σε άλλο " +
@@ -675,9 +686,11 @@ namespace Kinovea.ScreenManager
             b.Append("Ο αγώνας αναλύθηκε από τον αυτόματο πιλότο.\n\n");
             if (!string.IsNullOrEmpty(pilotStartNote))
                 b.Append("• Εκκίνηση: ").Append(pilotStartNote).Append(".\n");
-            b.Append(pilotSwimmerAuto ? "• Αθλητής: αυτός που ακολουθεί η κάμερα (τον διάλεξε μόνος του· δες ότι είναι ο σωστός).\n" :
-                "• Αθλητής: αυτός που έδειξες.\n");
+            b.Append(pilotSwimmerAuto ? "• Αθλητής: αυτός που ακολουθεί η κάμερα, χωρίς ερώτηση (δες ότι είναι ο σωστός).\n" :
+                "• Αθλητής: αυτός που επέλεξες.\n");
             b.AppendFormat(CultureInfo.InvariantCulture, "• Μπήκαν {0} περάσματα και τοίχοι, {1} έξοδοι από το νερό και {2} χεριές.\n", splits, breakouts, strokes);
+            if (raceSplits > splits)
+                b.AppendFormat(CultureInfo.InvariantCulture, "• {0} περάσματα και τοίχοι ήταν ήδη δικά σου: έμειναν όπως ήταν.\n", raceSplits - splits);
             if (finish != null && Race.StartTimestamp.HasValue)
                 b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(".\n");
             else
