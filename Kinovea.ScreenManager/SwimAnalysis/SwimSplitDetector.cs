@@ -169,6 +169,55 @@ namespace Kinovea.ScreenManager
         /// <summary>The marks of one rope and the quarter lines with their delay by distance (tests).</summary>
         internal static bool MarkDelays = true;
 
+        /// <summary>
+        /// Delay (s) to add, on top of MarkDelay, to a cue of the 15 m of a lap after a turn in a 50 m pool (not in backstroke): there
+        /// the swimmer comes up near the line and the arms of the first strokes and their splash reach it before the head the analysts
+        /// mark, while after the start the 15 m is read on time. Analysts' races of all the folders (2026-10): after a turn the 15 m
+        /// came 0.12-0.16 s early in freestyle, butterfly and breaststroke (the middle line 0.17 s), on time in backstroke.
+        /// </summary>
+        public static double FifteenDelay(string cue, bool afterTurn, string style)
+        {
+            if (!FifteenDelays || !afterTurn || style == "bk" || cue == CuePace || cue == CuePaceOne)
+                return 0;
+
+            return cue == CueMiddle ? FifteenMiddle : FifteenOther;
+        }
+
+        /// <summary>The 15 m of a lap after a turn with its delay (tests and lab variants).</summary>
+        internal static bool FifteenDelays = true;
+        internal static double FifteenMiddle = 0.17, FifteenOther = 0.07;
+
+        /// <summary>
+        /// Frame where the search of the breakout of a length ends: the main time of its 15 m (MainFrame) before the FifteenDelay of
+        /// that cue (50 m pools). The delay makes the checkpoint right, but the steepest rise of the first strokes after the
+        /// breakout must stay outside the search (2026-10-18: with the window up to the delayed 15 m some turn breakouts went to
+        /// the first stroke, e.g. +0.26 -> +1.44 s).
+        /// </summary>
+        public static double BreakoutSearchEnd(Dictionary<string, double> cues15, bool afterTurn, string style, double fps, int pool)
+        {
+            if (cues15 == null || cues15.Count == 0)
+                return double.NaN;
+
+            string key = cues15.ContainsKey(CueMiddle) ? CueMiddle : cues15.ContainsKey(CueFar) ? CueFar : cues15.ContainsKey(CueNear) ? CueNear : cues15.Keys.First();
+            return cues15[key] - (pool == 50 ? FifteenDelay(key, afterTurn, style) * fps : 0);
+        }
+
+        /// <summary>FifteenDelay on the checkpoints of a length just read (50 m pools); afterTurn: the length starts at a wall, not with a dive.</summary>
+        public static void AddFifteenDelay(List<SwimSplitFound> found, double fps, int pool, bool afterTurn, string style)
+        {
+            if (found == null || pool != 50)
+                return;
+
+            foreach (SwimSplitFound f in found)
+            {
+                if (f.LapDistance != 15)
+                    continue;
+
+                foreach (string k in f.Cues.Keys.ToList())
+                    f.Cues[k] += FifteenDelay(k, afterTurn, style) * fps;
+            }
+        }
+
         /// <summary>The cues of a checkpoint that MarkDelay moves (their learning is apart from the answers kept before it).</summary>
         public static bool HasMarkDelay(string cue)
         {
@@ -615,15 +664,17 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Usual delay (s) of the steepest rise after the start from the breakout the analysts mark: in breaststroke the first
         /// stroke at the surface comes 0.3 s after the head is out (10 starts, camcorders and phones: median error 0.53 -> 0.34 s,
-        /// more than a second 2 -> 1); in the other styles the head and the arms come out together.
+        /// more than a second 2 -> 1); in the other styles the arms of the first stroke come 0.15 s after the head (2026-10-18:
+        /// 86 starts in freestyle, butterfly and backstroke, the delay fitted on one half of the races and tried on the other:
+        /// median error 0.25 -> 0.12 s and 0.17 -> 0.11 s, camcorders and phones alike).
         /// </summary>
         public static double StartRiseDelay(string style)
         {
-            return style == "br" ? StartRiseBreast : 0;
+            return style == "br" ? StartRiseBreast : StartRiseOther;
         }
 
         /// <summary>See StartRiseDelay (tests).</summary>
-        internal static double StartRiseBreast = -0.3;
+        internal static double StartRiseBreast = -0.3, StartRiseOther = -0.15;
 
         /// <summary>
         /// Delay (s) of the steepest rise after a turn from the first stroke counted after it (the strokes of the length start
@@ -692,6 +743,9 @@ namespace Kinovea.ScreenManager
 
             return breast ? 0.2 : 1.0;
         }
+
+        /// <summary>The steepest rise of the breakout measured inside the window only (tests and lab variants).</summary>
+        internal static bool RiseInsideWindow = true;
 
         /// <summary>
         /// The breakout after a wall (or the start): the head breaks the surface and the swimming starts, between the frames
@@ -798,11 +852,13 @@ namespace Kinovea.ScreenManager
                 break;
             }
 
-            // The steepest rise of the motion in the window (a rise of at least a tenth of the usual level).
+            // The steepest rise of the motion in the window (a rise of at least a tenth of the usual level), measured inside the
+            // window only (2026-10-18: at its very first frame the rise took the motion of the turn itself before the window, 1.5 s
+            // before the head was out; after the quietest moment instead lost a medley breakout).
             int h = Math.Max(1, (int)Math.Round(0.3 * fps));
             double steepest = 0.1 * usual;
             int tRise = -1;
-            for (int t = Math.Max(from, h); t <= Math.Min(to, T - 1 - h); t++)
+            for (int t = Math.Max(h, from + (RiseInsideWindow ? h : 0)); t <= Math.Min(to, T - 1 - h); t++)
             {
                 double up = es[t + h] - es[t - h];
                 if (up > steepest)

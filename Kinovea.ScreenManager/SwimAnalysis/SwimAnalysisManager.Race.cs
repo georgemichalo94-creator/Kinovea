@@ -701,16 +701,19 @@ namespace Kinovea.ScreenManager
             {
                 int from = (int)Math.Ceiling(Math.Max(0, lapStart + (dive ? 1.5 : 1.0) * s.Fps));
                 SwimSplitFound f15 = l.Found.FirstOrDefault(f => f.LapDistance == 15);
-                double at15 = f15 != null ? SwimSplitDetector.MainFrame(f15.Cues) : double.NaN;
+                double at15 = f15 != null ? SwimSplitDetector.BreakoutSearchEnd(f15.Cues, !dive, style, s.Fps, Race.Pool) : double.NaN;
                 int to = !double.IsNaN(at15) ? (int)Math.Round(at15) : from + (int)Math.Round(8 * s.Fps);
                 l.Breakout = SwimSplitDetector.BreakoutCues(l.Result, s.Fps, from, to);
 
                 // After the start not before 3 s (entry and glide of the fastest). Cues earlier than that are the kicks under the
-                // surface before the head is out (distance freestyle): the breakout is then that of the first stroke counted.
+                // surface before the head is out (distance freestyle): the breakout is then that of the first stroke counted. The
+                // 3 s are those of the cues before the delay of the steepest rise after the start (StartRiseDelay: with it a breakout
+                // at 3.0 s came at 2.87 s and went to the first stroke, without the test on the cues the kicks at 2.9 s stayed).
                 double b = BreakoutSample(l), bs = BreakoutSample(l, true);
-                if (dive && !double.IsNaN(b) && b < lapStart + 3.0 * s.Fps)
+                double floor = lapStart + 3.0 * s.Fps;
+                if (dive && !double.IsNaN(b) && BreakoutSample(l, false, true) < floor)
                 {
-                    if (!double.IsNaN(bs) && bs >= lapStart + 3.0 * s.Fps)
+                    if (!double.IsNaN(bs) && bs >= floor)
                     {
                         foreach (string k in l.Breakout.Keys.ToList())
                             l.Breakout[k] += bs - b;
@@ -771,12 +774,12 @@ namespace Kinovea.ScreenManager
         /// head and the arms coming out, in every style (freestyle too: within ±0.3 s after the turns of the phone videos).
         /// Named after the style of the length (the learning keeps each style apart).
         /// </summary>
-        private Dictionary<string, double> BreakoutCuesDelayed(LengthRead l, bool strokes = false)
+        private Dictionary<string, double> BreakoutCuesDelayed(LengthRead l, bool strokes = false, bool startUndelayed = false)
         {
             string style = SwimPresets.StyleAt(Race, l.Session.Wall);
             bool turn = !IsDive(l.LapFrom);
             bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
-            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change);
+            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change, startUndelayed);
         }
 
         /// <summary>
@@ -789,7 +792,7 @@ namespace Kinovea.ScreenManager
         /// into another style (the open turns of the medley): the steepest rise in backstroke has its own delay and learning there
         /// (".o"; the motion starting after the turn into freestyle tried as not sure: as many breakouts better as worse).
         /// </summary>
-        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false)
+        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false, bool startUndelayed = false)
         {
             Dictionary<string, double> cues = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in found)
@@ -800,7 +803,7 @@ namespace Kinovea.ScreenManager
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
                         continue;
                     delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style, change))
-                        : (strokes ? 0 : SwimSplitDetector.StartRiseDelay(style));
+                        : (strokes || startUndelayed ? 0 : SwimSplitDetector.StartRiseDelay(style));
                 }
                 else
                 {
@@ -810,10 +813,11 @@ namespace Kinovea.ScreenManager
                 }
 
                 // The rise after a breaststroke turn has its delay since 2026-10-15 (".4": the answers kept with the old one do not move
-                // it), after a butterfly turn and after the breaststroke start since 2026-10-16 (".5").
+                // it), after a butterfly turn and after the breaststroke start since 2026-10-16 (".5"), after the start in the other
+                // styles since 2026-10-18 (".7").
                 string version = "";
                 if (!strokes && c.Key == SwimSplitDetector.CueRise)
-                    version = turn && style == "br" ? ".4" : (turn && style == "fly") || (!turn && style == "br") ? ".5" : "";
+                    version = turn && style == "br" ? ".4" : (turn && style == "fly") || (!turn && style == "br") ? ".5" : !turn ? ".7" : "";
 
                 // The open turn of the medley into backstroke: its rise learns apart (".o").
                 bool open = turn && change && SwimSplitDetector.TurnBreakout && style == "bk" && c.Key == SwimSplitDetector.CueRise;
@@ -848,13 +852,13 @@ namespace Kinovea.ScreenManager
         /// Frame of the breakout of a length read (index of its frames, NaN if not seen): its cues as for the proposal; strokes: the
         /// first stroke counted after it.
         /// </summary>
-        private double BreakoutSample(LengthRead l, bool strokes = false)
+        private double BreakoutSample(LengthRead l, bool strokes = false, bool startUndelayed = false)
         {
             if (l == null || l.Breakout.Count == 0)
                 return double.NaN;
 
             SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = 1.0 };
-            foreach (KeyValuePair<string, double> c in BreakoutCuesDelayed(l, strokes))
+            foreach (KeyValuePair<string, double> c in BreakoutCuesDelayed(l, strokes, startUndelayed))
             {
                 double weight, spread;
                 CueWeight(c.Key, out weight, out spread);
@@ -1053,6 +1057,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
+                SwimSplitDetector.AddFifteenDelay(l.Found, s.Fps, Race.Pool, l.LapFrom > 0 && !IsDive(l.LapFrom), SwimPresets.StyleAt(Race, s.Wall));
                 double last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
                 l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last, lapStart, Race.Pool, s.Shortest);
 
