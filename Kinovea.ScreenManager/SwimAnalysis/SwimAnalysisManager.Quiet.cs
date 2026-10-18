@@ -517,7 +517,8 @@ namespace Kinovea.ScreenManager
             long to = start + RealSpan(StartEventsSeconds);
             if ((mark.Type == SwimMarkType.Reaction || mark.Type == SwimMarkType.FeetOff || mark.Type == SwimMarkType.Entry) && mark.Timestamp > start && mark.Timestamp <= to)
             {
-                if (FirstStartMark(mark.Type) != mark)
+                // Not from a start of the auto pilot not checked yet (taught when the analyst checks it).
+                if (FirstStartMark(mark.Type) != mark || Race.PilotStart)
                     return null;
 
                 string kind = mark.Type == SwimMarkType.Reaction ? KindRaceReaction : mark.Type == SwimMarkType.FeetOff ? KindRaceBlock : KindRaceEntry;
@@ -537,8 +538,9 @@ namespace Kinovea.ScreenManager
 
             if (mark.Type == SwimMarkType.FeetOff)
             {
+                // Not from a wall of the auto pilot not checked yet.
                 SwimMark wall = WallBefore(mark);
-                if (wall == null || FirstPushoff(wall) != mark)
+                if (wall == null || wall.Pilot != null || FirstPushoff(wall) != mark)
                     return null;
 
                 string wallKind = WallKind(wall.Distance);

@@ -488,6 +488,13 @@ namespace Kinovea.ScreenManager
         /// <summary>Video timestamp of the start signal (race time zero).</summary>
         public long? StartTimestamp;
 
+        /// <summary>
+        /// The start was put by the auto pilot and the analyst has not checked it yet (since 2026-10-18): the events of the start
+        /// marked by the analyst do not teach their usual times from it, and the light found again is proposed, not taken as his.
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool PilotStart;
+
         public List<SwimMark> Marks = new List<SwimMark>();
 
         /// <summary>
@@ -771,6 +778,7 @@ namespace Kinovea.ScreenManager
             r.Date = Date;
             r.Checkpoints = new List<int>(Checkpoints);
             r.StartTimestamp = StartTimestamp;
+            r.PilotStart = PilotStart;
             r.Reference = Reference != null ? Reference.Copy() : null;
             return r;
         }

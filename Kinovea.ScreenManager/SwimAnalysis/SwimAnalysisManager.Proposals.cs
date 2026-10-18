@@ -163,8 +163,8 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // The proposals of an older reading of the same part go.
-            Race.Proposals.RemoveAll(p => p.Timestamp >= skeleton.Start && p.Timestamp <= skeleton.End);
+            // The proposals of an older reading of the same part go (not the ones the auto pilot put: their marks wait for the check).
+            Race.Proposals.RemoveAll(p => p.Timestamp >= skeleton.Start && p.Timestamp <= skeleton.End && !IsPilotPut(p));
             string batch = Guid.NewGuid().ToString("N");
             int added = 0;
             foreach (SwimDetection d in found)
@@ -266,6 +266,13 @@ namespace Kinovea.ScreenManager
             bool was = reviewId != null;
             reviewId = null;
             reviewDoubtful = false;
+
+            // The auto pilot waited in this check for the start (Esc, «Τέλος», the last candidate deleted): it stops, what it put stays.
+            if (PilotActive && pilotStep == PilotStep.Start)
+            {
+                StopPilot();
+                done = (string.IsNullOrEmpty(done) ? "" : done + "  →  ") + "✈ Ο αυτόματος πιλότος σταμάτησε (βάλε την εκκίνηση και πάτα ξανά ✈)";
+            }
             if (was && report)
             {
                 int left = Race == null ? 0 : Race.Proposals.Count;
@@ -310,10 +317,7 @@ namespace Kinovea.ScreenManager
 
             if (key == Keys.Escape)
             {
-                bool pilotStops = PilotActive && pilotStep == PilotStep.Start;
-                if (pilotStops)
-                    StopPilot();
-                EndReview(true, pilotStops ? "✈ Ο αυτόματος πιλότος σταμάτησε" : null);
+                EndReview();
                 return true;
             }
 
@@ -419,7 +423,7 @@ namespace Kinovea.ScreenManager
                     estimated = EstimateUnderwaterDistance(p.Index, timestamp);
                 }
 
-                Changed(estimated.Length > 0);
+                Changed(estimated.Length > 0 || pilot != null);
 
                 // What the command said stays visible with the next proposal.
                 done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
@@ -627,10 +631,12 @@ namespace Kinovea.ScreenManager
                 return;
 
             int n = Race.Proposals.Count;
+            int pilot = Race.Proposals.Count(IsPilotPut);
             Race.Proposals.Clear();
             EndReview(false);
             Changed(false);
-            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).", n), false);
+            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).{1}", n,
+                pilot > 0 ? string.Format(CultureInfo.InvariantCulture, " Τα {0} σημάδια του πιλότου μένουν στην ανάλυση, χωρίς έλεγχο (δεν διδάσκουν).", pilot) : ""), false);
         }
 
         private static bool CommandOf(SwimMarkType type, out PlayerScreenCommands command)

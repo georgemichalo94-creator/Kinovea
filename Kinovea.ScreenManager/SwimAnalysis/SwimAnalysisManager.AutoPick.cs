@@ -64,6 +64,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
         private AutoPickResult autoPick;
 
+        /// <summary>The last search of the swimmer was cancelled (its progress window).</summary>
+        private bool autoPickCancelled;
+
         /// <summary>
         /// While the click on the swimmer of the whole race is waited for: the swimmer the camera follows, on a frame of the first
         /// length (the frame shown when it is after the breakout of the start, else 6 s after the start). The video goes there.
@@ -85,6 +88,7 @@ namespace Kinovea.ScreenManager
         private void FindAutoPick()
         {
             autoPick = null;
+            autoPickCancelled = false;
             RefreshTiming();
             if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || !Timing.IsValid || !HasVideo || AutoStrokesRunning)
                 return;
@@ -139,6 +143,9 @@ namespace Kinovea.ScreenManager
                 if (form != null && !form.IsDisposed)
                     form.RefreshAutoStrokes();
             }
+
+            // Cancelled (no reason, no error): the click works as before; the auto pilot stops.
+            autoPickCancelled = error == null && found == null && reason == null;
 
             // The click may have been cancelled meanwhile (Esc).
             if (!pickForRace || !PickingTrack)

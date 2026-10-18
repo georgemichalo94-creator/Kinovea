@@ -386,15 +386,26 @@ namespace Kinovea.ScreenManager
             long? old = Race.StartTimestamp;
             Race.StartTimestamp = timestamp;
 
+            // The analyst put the start: it is his (one the auto pilot had put too). The pilot waiting for it goes on (below).
+            bool pilotStart = Race.PilotStart;
+            if (!resolvingProposal)
+                Race.PilotStart = false;
+            bool pilotWaited = !resolvingProposal && PilotActive && pilotStep == PilotStep.Start;
+            if (pilotWaited)
+                pilotStep = PilotStep.None;
+
             // Other swimmers analysed on the same video share the same start signal.
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
+                {
                     other.StartTimestamp = timestamp;
+                    other.PilotStart = Race.PilotStart;
+                }
             }
 
             Status(old == null ? "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ." : "Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά.", false);
-            if (old.HasValue && old.Value != timestamp)
+            if ((old.HasValue && old.Value != timestamp) || (pilotStart && !Race.PilotStart))
                 RecheckStartLessons();
 
             // The start put with its key answers the proposal of the start light near it (the other candidates go).
@@ -418,7 +429,7 @@ namespace Kinovea.ScreenManager
             }
 
             // The auto pilot waited for the start: the analyst put it, the pilot goes on with the whole race.
-            if (!resolvingProposal && PilotActive && pilotStep == PilotStep.Start)
+            if (pilotWaited)
             {
                 pilotStartNote = "την έβαλες εσύ";
                 PilotLater(PilotRace);

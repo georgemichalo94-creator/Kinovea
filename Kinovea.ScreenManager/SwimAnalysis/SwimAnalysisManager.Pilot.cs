@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 using Kinovea.Services;
@@ -65,6 +66,9 @@ namespace Kinovea.ScreenManager
         private string pilotStartNote;
         private bool pilotSwimmerAuto;
         private int pilotLostWall;
+
+        /// <summary>The reading of the pilot goes on after a swimmer lost (the click after the breakout).</summary>
+        private bool pilotWasLost;
         private Timer pdfTimer;
         private string pdfRace;
         private int pdfWait;
@@ -240,12 +244,18 @@ namespace Kinovea.ScreenManager
                 case PilotStep.Lost:
                     if (!pickForRace || !PickingTrack)
                     {
+                        // (Another click replaced it: cancelled without stopping the pilot, then armed again.)
+                        pilotStep = PilotStep.None;
                         StartWholeRace();
+                        if (!PilotActive)
+                            return;
                         if (!PickingTrack)
                         {
                             StopPilot();
                             return;
                         }
+
+                        pilotStep = PilotStep.Lost;
                     }
 
                     PilotPrompt();
@@ -267,6 +277,7 @@ namespace Kinovea.ScreenManager
         private void PilotSetStart(SwimProposal best)
         {
             Race.Proposals.RemoveAll(x => x.Kind == KindRaceStart && x.Id != best.Id);
+            Race.PilotStart = true;
             resolvingProposal = true;
             try
             {
@@ -323,6 +334,15 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // The search of the swimmer cancelled (its progress window): the pilot stops, as with the other readings.
+            if (autoPickCancelled)
+            {
+                CancelPick();
+                StopPilot();
+                Status("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+                return;
+            }
+
             pilotStep = PilotStep.Swimmer;
             AutoPickResult pick = autoPick;
             if (pick != null && PilotTrustsPick(pick))
@@ -363,6 +383,10 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // Not while another reading or a window waits (a progress, a dialog, a message): the countdown waits with them.
+            if (StartLightRunning || AutoStrokesRunning || SkeletonRunning || ModalOpen())
+                return;
+
             pilotCountdown--;
             if (pilotCountdown > 0)
             {
@@ -382,11 +406,36 @@ namespace Kinovea.ScreenManager
                 pilotTimer.Stop();
         }
 
+        /// <summary>A modal window of the program is open: the progress of a reading, a dialog, a message (its owner is disabled).</summary>
+        private bool ModalOpen()
+        {
+            foreach (Form f in Application.OpenForms)
+            {
+                if (f.Modal)
+                    return true;
+            }
+
+            Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
+            return owner != null && owner.IsHandleCreated && !IsWindowEnabled(owner.Handle);
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowEnabled(IntPtr hWnd);
+
         /// <summary>What the pilot waits for, on the status line.</summary>
         private void PilotPrompt()
         {
             if (!PilotActive)
                 return;
+
+            // The head was clicked: the feet now.
+            if ((pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost) && PickTarget == SwimPickTarget.StrokeFeet)
+            {
+                Status("✈ Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ: μετά ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", false);
+                RefreshPilotUi();
+                return;
+            }
 
             switch (pilotStep)
             {
@@ -512,7 +561,11 @@ namespace Kinovea.ScreenManager
             p.Pilot = true;
             if (old != null && SameFrame(old.Timestamp, p.Timestamp))
             {
+                // The length was read again: its new automatic strokes before the breakout go as with Enter (the ones kept
+                // before were of the old reading).
                 p.PilotMark = old.Id;
+                List<SwimMark> again = TrimAutoStrokesBeforeBreakout(p.Index, p.Timestamp);
+                old.Pilot.Strokes = again.Count > 0 ? again : null;
                 return;
             }
 
@@ -533,13 +586,39 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The mark the pilot put for a proposal that waits for the check, null if none (or the analyst made it his).</summary>
+        /// <summary>
+        /// The mark the pilot put for the event of a proposal, not checked yet: the mark of the pilot's proposal, or the pilot's mark of
+        /// the same event (the checkpoint of its distance, the breakout after its wall) for a proposal of a later reading. Null if
+        /// none (or the analyst made it his).
+        /// </summary>
         private SwimMark PilotMarkOf(SwimProposal p)
         {
-            if (p == null || Race == null || !p.Pilot || string.IsNullOrEmpty(p.PilotMark))
+            if (p == null || Race == null)
                 return null;
 
-            return Race.Marks.FirstOrDefault(m => m.Id == p.PilotMark && m.Pilot != null);
+            if (p.Pilot && !string.IsNullOrEmpty(p.PilotMark))
+            {
+                SwimMark own = Race.Marks.FirstOrDefault(m => m.Id == p.PilotMark && m.Pilot != null);
+                if (own != null)
+                    return own;
+            }
+
+            if (p.Kind == KindRaceSplit)
+            {
+                SwimMark split = Race.GetSplit(p.Index);
+                return split != null && split.Pilot != null ? split : null;
+            }
+
+            if (p.Kind == KindRaceBreakout)
+                return Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && m.Pilot.Wall == p.Index);
+
+            return null;
+        }
+
+        /// <summary>A proposal the pilot put as a mark, not checked yet: it stays at the frame of its mark (not moved by the answers).</summary>
+        private bool IsPilotPut(SwimProposal p)
+        {
+            return p.Pilot && PilotMarkOf(p) != null;
         }
 
         /// <summary>
@@ -570,6 +649,10 @@ namespace Kinovea.ScreenManager
             undoStack.Remove(pilot.Id);
             if (pilot.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(pilot.Distance);
+
+            // The final frame of the report was of this finish (with its time): it goes with it.
+            if (pilot.Type == SwimMarkType.Split && pilot.Distance == Race.Distance && Race.FinalFrame != null && SameFrame(Race.FinalFrame.Timestamp, pilot.Timestamp))
+                Race.FinalFrame = null;
         }
 
         /// <summary>
@@ -584,9 +667,11 @@ namespace Kinovea.ScreenManager
 
             if (pilot.Strokes != null)
             {
+                // Only while the length has the strokes of that reading (read again, its strokes are the new ones).
+                HashSet<string> batches = new HashSet<string>(Race.Marks.Where(m => m.Type == SwimMarkType.Stroke && m.Batch != null).Select(m => m.Batch));
                 foreach (SwimMark s in pilot.Strokes)
                 {
-                    if (!Race.Marks.Any(m => m.Type == SwimMarkType.Stroke && SameFrame(m.Timestamp, s.Timestamp)))
+                    if (s.Batch != null && batches.Contains(s.Batch) && !Race.Marks.Any(m => m.Type == SwimMarkType.Stroke && SameFrame(m.Timestamp, s.Timestamp)))
                         Race.Marks.Add(s);
                 }
             }
@@ -622,18 +707,42 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            if (resumeWall > 0 && Race.StartTimestamp.HasValue)
+            if (read == 0 && pilotWasLost && Race.StartTimestamp.HasValue)
             {
-                // The swimmer lost after a wall (the camera turned fast): the next click goes on from there.
-                pilotStep = PilotStep.Lost;
-                pilotLostWall = resumeWall - Race.Pool;
-                long at = resumeAt;
+                // The click after the lost swimmer read nothing (another frame, another swimmer): the click again.
+                pilotStep = PilotStep.None;
                 StartWholeRace();
+                if (!PilotActive)
+                    return;
                 if (!PickingTrack)
                 {
                     StopPilot();
                     return;
                 }
+
+                pilotStep = PilotStep.Lost;
+                Status("✈ Από αυτό το κλικ δεν διαβάστηκε κανένα μήκος: κλικ ξανά στο κεφάλι και μετά στα πόδια του αθλητή, σε ένα καρέ μετά " +
+                    "την έξοδο από το νερό (Esc: σταμάτημα· ό,τι μπήκε μένει).", true);
+                RefreshPilotUi();
+                return;
+            }
+
+            if (resumeWall > 0 && Race.StartTimestamp.HasValue)
+            {
+                // The swimmer lost after a wall (the camera turned fast): the next click goes on from there.
+                pilotStep = PilotStep.None;
+                pilotLostWall = resumeWall - Race.Pool;
+                long at = resumeAt;
+                StartWholeRace();
+                if (!PilotActive)
+                    return;
+                if (!PickingTrack)
+                {
+                    StopPilot();
+                    return;
+                }
+
+                pilotStep = PilotStep.Lost;
 
                 if (at != long.MinValue)
                     SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, at + RealSpan(3.0)));
@@ -667,7 +776,7 @@ namespace Kinovea.ScreenManager
             if (Race.StartTimestamp.HasValue)
                 SeekTo(Math.Max(frameServer.VideoReader.WorkingZone.Start, Race.StartTimestamp.Value - RealSpan(1.0)));
 
-            if (read == 0 || raceSplits == 0)
+            if (raceSplits == 0)
             {
                 string why = "✈ Ο αυτόματος πιλότος δεν μπόρεσε να διαβάσει τον αγώνα: δεν βρέθηκαν τα σημάδια των σχοινιών στη διαδρομή του " +
                     "αθλητή (π.χ. πλάνο χωρίς σχοινιά, ή ο αθλητής δεν ακολουθήθηκε). Δοκίμασε «🤖 Όλος ο αγώνας» με κλικ στον αθλητή σε άλλο " +

@@ -259,9 +259,10 @@ namespace Kinovea.ScreenManager
             if (kind == "finish")
                 return null;
 
+            // A wall of the auto pilot not checked yet: the wall proposed now first (a new reading puts it in its place).
             SwimMark mark = Race.GetSplit(wall);
             SwimProposal p = proposed.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == wall);
-            long? wallTs = mark != null ? mark.Timestamp : p != null ? p.Timestamp : (long?)null;
+            long? wallTs = mark != null && (mark.Pilot == null || p == null) ? mark.Timestamp : p != null ? p.Timestamp : (long?)null;
             if (!wallTs.HasValue)
                 return null;
 
@@ -343,6 +344,10 @@ namespace Kinovea.ScreenManager
             string video = SwimLearning.VideoCode(videoPath);
             foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == kind && x.Cues.Count > 0).ToList())
             {
+                // A breakout the auto pilot put stays at the frame of its mark (Enter there: right).
+                if (IsPilotPut(p))
+                    continue;
+
                 if (events)
                 {
                     CombineEvent(p, EventConfidence(kind));
