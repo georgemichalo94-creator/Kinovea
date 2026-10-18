@@ -641,11 +641,19 @@ namespace Kinovea.ScreenManager
             string where = frames == 0 ? "στο καρέ της πρότασης" : string.Format(CultureInfo.InvariantCulture, "{0:+0;−0} καρέ από την πρόταση", frames);
             string keys = Reviewing ? "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος" : "«Έλεγχος» για να απαντήσεις";
 
-            PaintProposalPrompt(g, title, where, keys, frames == 0, renderingSize);
+            // A doubtful proposal (less than half of such proposals within 0.2 s of the analysts) says so (since 2026-10-18).
+            bool doubtful = p.Confidence < DoubtfulConfidence;
+            if (doubtful)
+                title = "⚠ " + title + " · έλεγξε προσεκτικά";
+
+            PaintProposalPrompt(g, title, where, keys, frames == 0, renderingSize, doubtful);
         }
 
-        /// <summary>The box of a proposal at the top of the video: title, where the frame is, the keys.</summary>
-        public static void PaintProposalPrompt(Graphics g, string title, string where, string keys, bool atProposal, Size renderingSize)
+        /// <summary>Below this confidence a proposal is shown as doubtful (amber, "check carefully").</summary>
+        internal const double DoubtfulConfidence = 0.5;
+
+        /// <summary>The box of a proposal at the top of the video: title, where the frame is, the keys; a doubtful one in amber.</summary>
+        public static void PaintProposalPrompt(Graphics g, string title, string where, string keys, bool atProposal, Size renderingSize, bool doubtful = false)
         {
             // Fonts of the theme are shared: not disposed here.
             Font big = SwimTheme.Display(11f);
@@ -661,7 +669,7 @@ namespace Kinovea.ScreenManager
             using (SolidBrush dim = new SolidBrush(Color.FromArgb(230, 190, 205, 220)))
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             {
-                g.DrawString(title, big, white, x + 12, y + 5);
+                g.DrawString(title, big, doubtful ? amber : white, x + 12, y + 5);
                 g.DrawString(where, small, atProposal ? dim : amber, x + 12, y + 7 + s1.Height);
                 g.DrawString(keys, small, dim, x + 12 + g.MeasureString(where + "   ", small).Width, y + 7 + s1.Height);
             }

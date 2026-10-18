@@ -890,7 +890,14 @@ namespace Kinovea.ScreenManager
 
             StrokeSession s = l.Session;
             Dictionary<string, double> cues = BreakoutCuesDelayed(l);
-            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom) { Confidence = cues.Count > 1 ? 0.6 : 0.45 };
+            // The confidence shown by the kind of breakout as measured on the analysts' races (since 2026-10-18).
+            string style = SwimPresets.StyleAt(Race, s.Wall);
+            bool turn = !IsDive(l.LapFrom);
+            bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
+            SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom)
+            {
+                Confidence = SwimSplitDetector.BreakoutConfidence(style, turn, change, cues.Count)
+            };
             foreach (KeyValuePair<string, double> c in cues)
             {
                 double weight, spread;
@@ -1134,7 +1141,8 @@ namespace Kinovea.ScreenManager
                     string version = Race.Pool == 50 && SwimSplitDetector.HasMarkDelay(c.Key) ? ".6" : "";
                     cues[StyleCue(c.Key + PriorVersion(c.Key, style) + version + view, style)] = c.Value + delay;
                 }
-                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, f.Confidence));
+                // The confidence shown as measured on the analysts' races (cues apart, the 45 m; since 2026-10-18).
+                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, SwimSplitDetector.CheckpointConfidence(f, s.Fps, Race.Pool)));
             }
 
             if (l.Wall.Count > 0)
