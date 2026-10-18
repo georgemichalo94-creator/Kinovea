@@ -639,7 +639,7 @@ namespace Kinovea.ScreenManager
 
             SwimMark split = Race.GetSplit(distance);
             if (split != null)
-                player.ForcePosition(split.Timestamp, true);
+                SeekNearest(split.Timestamp);
         }
 
         private static string MarkLabel(SwimMark mark)

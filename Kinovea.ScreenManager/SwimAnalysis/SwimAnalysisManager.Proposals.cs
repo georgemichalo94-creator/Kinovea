@@ -250,7 +250,7 @@ namespace Kinovea.ScreenManager
 
         private void ShowProposal(SwimProposal p, string done = null)
         {
-            SeekTo(p.Timestamp);
+            SeekNearest(p.Timestamp);
             int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
             bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
             bool pilot = PilotMarkOf(p) != null;
@@ -280,8 +280,9 @@ namespace Kinovea.ScreenManager
                 int left = Race == null ? 0 : Race.Proposals.Count;
                 bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
                 Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
-                    "Έλεγχος προτάσεων: {0} απαντήσεις ({1} σωστές, {2} διορθωμένες, {3} λάθος){4}.",
-                    reviewAnswered, reviewAnswered - reviewCorrected - reviewWrong, reviewCorrected, reviewWrong,
+                    "Έλεγχος προτάσεων: {0} ({1}, {2}, {3} λάθος){4}.",
+                    CountOf(reviewAnswered, "απάντηση", "απαντήσεις"), CountOf(reviewAnswered - reviewCorrected - reviewWrong, "σωστή", "σωστές"),
+                    CountOf(reviewCorrected, "διορθωμένη", "διορθωμένες"), reviewWrong,
                     left > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)", left) : ""), warning);
             }
 
