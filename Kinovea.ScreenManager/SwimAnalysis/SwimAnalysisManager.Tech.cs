@@ -278,7 +278,7 @@ namespace Kinovea.ScreenManager
         {
             const double correction = 2.0;
             bool hadStart = EnsureStart();
-            int last = SwimTechCalculator.LastWallBefore(Race, timestamp);
+            int last = SwimTechCalculator.LastWallBefore(Race, timestamp, HalfFrame);
             SwimMark lastSplit = last > 0 ? Race.GetSplit(last) : null;
             int wall = lastSplit != null && Timing.Seconds(timestamp, lastSplit.Timestamp) < correction ? last : last + PoolLength;
             string unit = Race.Unit;
@@ -377,7 +377,7 @@ namespace Kinovea.ScreenManager
             string unit = Race.Unit;
             if (!Race.IsTraining)
             {
-                wall = offset < 0 ? SwimTechCalculator.LastWallBefore(Race, timestamp) + PoolLength : phase.Wall;
+                wall = offset < 0 ? SwimTechCalculator.LastWallBefore(Race, timestamp, HalfFrame) + PoolLength : phase.Wall;
                 if (offset < 0 && (wall >= Race.Distance || SwimTechCalculator.IsExchange(Race, wall)))
                 {
                     SystemSounds.Beep.Play();
@@ -478,6 +478,20 @@ namespace Kinovea.ScreenManager
         {
             if (HasVideo)
                 player.ForcePosition(timestamp, true);
+        }
+
+        /// <summary>
+        /// Shows the frame nearest to this time. The checkpoints and the breakouts read from the video fall between two frames, and
+        /// the player shows the first frame at or after the time asked: half a frame earlier then. Since 2.7.1 (the auto pilot tried
+        /// on the analysis computer, 2026-10-18): the check showed the frame after such a time, so Enter there moved a mark of the
+        /// pilot by up to a frame and counted it as corrected, and the answers taught half a frame late on average.
+        /// </summary>
+        public void SeekNearest(long timestamp)
+        {
+            if (!HasVideo)
+                return;
+
+            SeekTo(Math.Max(frameServer.VideoReader.WorkingZone.Start, timestamp - HalfFrame));
         }
         #endregion
 

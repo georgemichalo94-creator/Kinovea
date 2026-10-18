@@ -299,6 +299,12 @@ namespace Kinovea.ScreenManager
             return string.Format(CultureInfo.InvariantCulture, "{0} ({1:0}%)", from, 100 * p.Confidence);
         }
 
+        /// <summary>"1 χεριά", "65 χεριές".</summary>
+        private static string CountOf(int n, string one, string many)
+        {
+            return n.ToString(CultureInfo.InvariantCulture) + " " + (n == 1 ? one : many);
+        }
+
         /// <summary>The swimmer, then the whole race (it starts at once with a swimmer seen near, after the countdown).</summary>
         private void PilotRace()
         {
@@ -519,7 +525,7 @@ namespace Kinovea.ScreenManager
             if (finish && end != null && HasVideo)
             {
                 Recompute();
-                SeekTo(end.Timestamp);
+                SeekNearest(end.Timestamp);
                 CaptureFinalFrame(end.Timestamp);
             }
         }
@@ -721,7 +727,8 @@ namespace Kinovea.ScreenManager
             {
                 StopPilot();
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0} μήκη: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο».", read), true);
+                    "✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0}: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο».",
+                    CountOf(read, "μήκος", "μήκη")), true);
                 return;
             }
 
@@ -815,19 +822,24 @@ namespace Kinovea.ScreenManager
                 b.Append("• Εκκίνηση: ").Append(pilotStartNote).Append(".\n");
             b.Append(pilotSwimmerAuto ? "• Αθλητής: αυτός που ακολουθεί η κάμερα, χωρίς ερώτηση (δες ότι είναι ο σωστός).\n" :
                 "• Αθλητής: αυτός που επέλεξες.\n");
-            b.AppendFormat(CultureInfo.InvariantCulture, "• Μπήκαν {0} περάσματα και τοίχοι, {1} έξοδοι από το νερό και {2} χεριές.\n", splits, breakouts, strokes);
-            if (raceSplits > splits)
+            b.Append("• Μπήκαν ").Append(CountOf(splits, "πέρασμα ή τοίχος", "περάσματα και τοίχοι")).Append(", ")
+                .Append(CountOf(breakouts, "έξοδος από το νερό", "έξοδοι από το νερό")).Append(" και ").Append(CountOf(strokes, "χεριά", "χεριές")).Append(".\n");
+            if (raceSplits - splits == 1)
+                b.Append("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n");
+            else if (raceSplits > splits)
                 b.AppendFormat(CultureInfo.InvariantCulture, "• {0} περάσματα και τοίχοι ήταν ήδη δικά σου: έμειναν όπως ήταν.\n", raceSplits - splits);
             if (finish != null && Race.StartTimestamp.HasValue)
                 b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(".\n");
             else
                 b.Append("• ⚠ Δεν βρέθηκε ο τερματισμός: μάρκαρέ τον στο καρέ της επαφής και πάτα «PDF».\n");
             if (doubtful > 0)
-                b.AppendFormat(CultureInfo.InvariantCulture, "• ⚠ {0} αβέβαια (κάτω από 50%, πορτοκαλί στον έλεγχο): δες αυτά πρώτα.\n", doubtful);
+                b.Append("• ⚠ ").Append(CountOf(doubtful, "αβέβαιο", "αβέβαια")).Append(" (κάτω από 50%, πορτοκαλί στον έλεγχο): δες ")
+                    .Append(doubtful == 1 ? "αυτό" : "αυτά").Append(" πρώτα.\n");
             if (waiting > 0)
                 b.AppendFormat(CultureInfo.InvariantCulture,
-                    "• {0} σημεία περιμένουν τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση " +
-                    "από τους τοίχους) προτείνονται στους συνήθεις χρόνους και μπαίνουν στην ανάλυση μόνο αν τα επιβεβαιώσεις.\n", waiting);
+                    "• {0} τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση " +
+                    "από τους τοίχους) προτείνονται στους συνήθεις χρόνους και μπαίνουν στην ανάλυση μόνο αν τα επιβεβαιώσεις.\n",
+                    waiting == 1 ? "1 σημείο περιμένει" : CountOf(waiting, "σημείο", "σημεία") + " περιμένουν");
             if (pdf)
                 b.Append("• PDF: ετοιμάζεται και ανοίγει μόνο του.\n");
             else if (finish != null)
@@ -836,9 +848,10 @@ namespace Kinovea.ScreenManager
                 "διόρθωση, Delete = λάθος. Από αυτές τις απαντήσεις μαθαίνει.\n\n");
             b.Append(doubtful > 0 ? "Να ξεκινήσει τώρα ο έλεγχος, από τα αβέβαια;" : "Να ξεκινήσει τώρα ο έλεγχος;");
 
-            Status(string.Format(CultureInfo.InvariantCulture, "✈ Ο πιλότος τελείωσε: {0} περάσματα και τοίχοι, {1} έξοδοι, {2} χεριές{3}{4} · «✨ Έλεγχος» " +
-                "για να τα δεις (μαθαίνει από τις απαντήσεις σου).", splits, breakouts, strokes,
-                doubtful > 0 ? string.Format(CultureInfo.InvariantCulture, " · ⚠ {0} αβέβαια", doubtful) : "",
+            Status(string.Format(CultureInfo.InvariantCulture, "✈ Ο πιλότος τελείωσε: {0}, {1}, {2}{3}{4} · «✨ Έλεγχος» " +
+                "για να τα δεις (μαθαίνει από τις απαντήσεις σου).", CountOf(splits, "πέρασμα ή τοίχος", "περάσματα και τοίχοι"),
+                CountOf(breakouts, "έξοδος", "έξοδοι"), CountOf(strokes, "χεριά", "χεριές"),
+                doubtful > 0 ? " · ⚠ " + CountOf(doubtful, "αβέβαιο", "αβέβαια") : "",
                 pdf ? " · το PDF ανοίγει μόλις είναι έτοιμο" : ""), doubtful > 0 || finish == null);
             RefreshProposalsUi();
             InvalidatePlayer();

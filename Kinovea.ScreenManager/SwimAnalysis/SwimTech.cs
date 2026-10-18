@@ -511,14 +511,17 @@ namespace Kinovea.ScreenManager
             return race.Relay && race.Distance % 4 == 0 && wall % (race.Distance / 4) == 0;
         }
 
-        /// <summary>Race: the last wall already touched at a timestamp (0 before the first one).</summary>
-        public static int LastWallBefore(SwimRace race, long timestamp)
+        /// <summary>
+        /// Race: the last wall already touched at a timestamp (0 before the first one). Tolerance: a wall up to this much later is
+        /// touched too (half a frame: the walls of the auto pilot fall between two frames).
+        /// </summary>
+        public static int LastWallBefore(SwimRace race, long timestamp, long tolerance = 0)
         {
             int wall = 0;
             foreach (int w in TurnWalls(race))
             {
                 SwimMark split = race.GetSplit(w);
-                if (split != null && split.Timestamp <= timestamp)
+                if (split != null && split.Timestamp <= timestamp + tolerance)
                     wall = w;
             }
 

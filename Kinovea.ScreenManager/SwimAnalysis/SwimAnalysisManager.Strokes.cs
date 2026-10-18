@@ -756,7 +756,7 @@ namespace Kinovea.ScreenManager
         {
             int pool = Math.Max(1, Race.Pool);
             SwimMark wall = Race.Marks
-                .Where(m => m.Type == SwimMarkType.Split && m.Distance % pool == 0 && m.Timestamp <= timestamp)
+                .Where(m => m.Type == SwimMarkType.Split && m.Distance % pool == 0 && m.Timestamp <= timestamp + HalfFrame)
                 .OrderBy(m => m.Timestamp)
                 .LastOrDefault();
             if (wall != null)
@@ -769,7 +769,7 @@ namespace Kinovea.ScreenManager
         {
             int pool = Math.Max(1, Race.Pool);
             SwimMark before = Race.Marks
-                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp <= timestamp)
+                .Where(m => m.Type == SwimMarkType.Split && m.Timestamp <= timestamp + HalfFrame)
                 .OrderBy(m => m.Timestamp)
                 .LastOrDefault();
             int d = before == null ? 0 : before.Distance;
