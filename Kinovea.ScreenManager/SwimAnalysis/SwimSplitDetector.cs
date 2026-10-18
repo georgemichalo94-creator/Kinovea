@@ -757,13 +757,14 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Delay (s) of a cue of a turn ("open", "flip") from the pace of the length ("pace", "pace1") for a swimmer seen from far:
         /// the pace runs through the checkpoints as read, before their FarCheckpointDelay, so its turn came that much early in the
-        /// phone videos (2026-10-18, 115 analysts' races, the turns of the phones: backstroke -0.40 s, breaststroke -0.20,
-        /// butterfly -0.18, freestyle -0.07; the camcorders' near 0). The finish (a hand at the wall: the front of the moving
-        /// part the pace follows) was on time already (backstroke -0.01, freestyle +0.10). The other cues of the wall: 0.
+        /// phone videos (2026-10-18, 115 analysts' races, the turns of the phones: backstroke flip -0.40 s, butterfly -0.18,
+        /// breaststroke -0.17, freestyle -0.04; the camcorders' near 0). A hand at the wall on the back was on time already: the
+        /// finish (backstroke +0.05) and the medley turn from backstroke to breaststroke (-0.12; with the delay 4 better, 7 worse)
+        /// keep none. With it, the phones' walls: median 0.23 -> 0.20 s, more than 0.5 s 40 -> 32 of 223. The other cues: 0.
         /// </summary>
         public static double FarWallDelay(string cue, string kind, string style, double swimmerLength)
         {
-            if (!FarWallPace || (cue != CuePace && cue != CuePaceOne) || (kind == "finish" && !FarWallFinish))
+            if (!FarWallPace || (cue != CuePace && cue != CuePaceOne) || (kind == "finish" && !FarWallFinish) || (kind == "open" && style == "bk"))
                 return 0;
             return FarCheckpointDelay(style, swimmerLength);
         }
