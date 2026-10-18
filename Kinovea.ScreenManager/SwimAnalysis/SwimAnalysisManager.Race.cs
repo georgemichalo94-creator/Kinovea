@@ -109,7 +109,7 @@ namespace Kinovea.ScreenManager
             using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
             using (FormProgressBar progress = new FormProgressBar(true))
             {
-                progress.CancelAsked += (o, e) => worker.CancelAsync();
+                ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) =>
                 {
@@ -120,7 +120,7 @@ namespace Kinovea.ScreenManager
                 {
                     error = e.Error;
                     result = e.Error == null ? e.Result as StartFound : null;
-                    cancelled = e.Error == null && (result == null || !result.Completed);
+                    cancelled = e.Error == null && (cancel.Asked || result == null || !result.Completed);
                     progress.Close();
                 };
 
@@ -1528,7 +1528,8 @@ namespace Kinovea.ScreenManager
                 pilotStep = PilotStep.Reading;
 
                 // (The question of the swimmer or its countdown stayed on the status line during the reading until 2.7.1.)
-                Status(pilotWasLost ? "✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα από τον αθλητή που έδειξες… (Cancel: σταμάτημα)" :
+                Status(pilotWasLost ? string.Format(CultureInfo.InvariantCulture, "✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα μετά τον τοίχο των " +
+                    "{0}{1}… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", pilotLostWall, Race.Unit) :
                     "✈ Ο αυτόματος πιλότος διαβάζει τον αγώνα… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", false);
                 RefreshPilotUi();
             }
@@ -1552,13 +1553,13 @@ namespace Kinovea.ScreenManager
             using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
             using (FormProgressBar progress = new FormProgressBar(true))
             {
-                progress.CancelAsked += (o, e) => worker.CancelAsync();
+                ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o); };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
                     error = e.Error;
-                    cancelled = e.Error == null && e.Result is bool && !(bool)e.Result;
+                    cancelled = e.Error == null && (cancel.Asked || e.Result is bool && !(bool)e.Result);
                     progress.Close();
                 };
 
@@ -1614,7 +1615,8 @@ namespace Kinovea.ScreenManager
 
                 // (The auto pilot says it itself after the reading: the swimmer lost, or the report.)
                 if (!pilot && cancelled)
-                    Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0} μήκη: προτείνονται όσα βρέθηκαν.", lengths.Count), true);
+                    Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0}: προτείνονται όσα βρέθηκαν.",
+                        CountOf(lengths.Count, "μήκος", "μήκη")), true);
                 else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
                         "🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» " +

@@ -67,6 +67,12 @@ namespace Kinovea.ScreenManager
         private bool pilotSwimmerAuto;
         private int pilotLostWall;
 
+        /// <summary>The walls after which the swimmer was lost and taken again without an answer (2.7.2).</summary>
+        private readonly List<int> pilotRefound = new List<int>();
+
+        /// <summary>The wall after which the pilot has just taken the swimmer again by itself, until the reading from there ends (-1: none).</summary>
+        private int pilotRefoundPending = -1;
+
         /// <summary>The reading of the pilot goes on after a swimmer lost (the click after the breakout).</summary>
         private bool pilotWasLost;
         private Timer pdfTimer;
@@ -100,7 +106,7 @@ namespace Kinovea.ScreenManager
                     case PilotStep.Swimmer:
                         return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, "συνεχίζει σε {0} s", pilotCountdown) : "δείξε τον αθλητή";
                     case PilotStep.Lost:
-                        return "δείξε ξανά τον αθλητή";
+                        return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, "συνεχίζει σε {0} s", pilotCountdown) : "δείξε ξανά τον αθλητή";
                     default:
                         return "αναλύει…";
                 }
@@ -163,6 +169,8 @@ namespace Kinovea.ScreenManager
             pilotRace = Race.Id;
             pilotStep = PilotStep.None;
             pilotSwimmerAuto = false;
+            pilotRefound.Clear();
+            pilotRefoundPending = -1;
             pilotStartNote = Race.StartTimestamp.HasValue ? "ήταν ήδη βαλμένη" : null;
             RefreshPilotUi();
 
@@ -348,18 +356,22 @@ namespace Kinovea.ScreenManager
             pilotStep = PilotStep.Swimmer;
             AutoPickResult pick = autoPick;
             if (pick != null && PilotTrustsPick(pick))
-            {
-                pilotCountdown = PilotPickSeconds;
-                if (pilotTimer == null)
-                {
-                    pilotTimer = new Timer { Interval = 1000 };
-                    pilotTimer.Tick += PilotTimer_Tick;
-                }
-
-                pilotTimer.Start();
-            }
+                StartPilotCountdown();
 
             PilotPrompt();
+        }
+
+        /// <summary>The swimmer proposed is taken after PilotPickSeconds without an answer.</summary>
+        private void StartPilotCountdown()
+        {
+            pilotCountdown = PilotPickSeconds;
+            if (pilotTimer == null)
+            {
+                pilotTimer = new Timer { Interval = 1000 };
+                pilotTimer.Tick += PilotTimer_Tick;
+            }
+
+            pilotTimer.Start();
         }
 
         /// <summary>
@@ -382,10 +394,11 @@ namespace Kinovea.ScreenManager
 
         private void PilotTimer_Tick(object sender, EventArgs e)
         {
-            if (!PilotActive || pilotStep != PilotStep.Swimmer || autoPick == null || !pickForRace || !PickingTrack || player == null || player.IsDisposed)
+            bool waiting = pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost;
+            if (!PilotActive || !waiting || autoPick == null || !pickForRace || !PickingTrack || player == null || player.IsDisposed)
             {
                 StopPilotCountdown();
-                if (PilotActive && pilotStep == PilotStep.Swimmer)
+                if (PilotActive && waiting)
                     PilotPrompt();
                 return;
             }
@@ -402,8 +415,21 @@ namespace Kinovea.ScreenManager
             }
 
             StopPilotCountdown();
-            pilotSwimmerAuto = true;
-            AcceptAutoPick(player);
+
+            // Taken without an answer: the swimmer of the start, or the swimmer again after a wall (in the report once the reading from
+            // there has read: PilotAfterReading).
+            bool lost = pilotStep == PilotStep.Lost;
+            if (lost)
+                pilotRefoundPending = pilotLostWall;
+            else
+                pilotSwimmerAuto = true;
+            if (!AcceptAutoPick(player))
+            {
+                pilotRefoundPending = -1;
+                if (!lost)
+                    pilotSwimmerAuto = false;
+                PilotPrompt();
+            }
         }
 
         private void StopPilotCountdown()
@@ -470,9 +496,19 @@ namespace Kinovea.ScreenManager
                             "στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF.", true);
                     break;
                 case PilotStep.Lost:
-                    Status(string.Format(CultureInfo.InvariantCulture,
-                        "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και " +
-                        "μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit), true);
+                    if (autoPick != null && pilotCountdown > 0)
+                        Status(string.Format(CultureInfo.InvariantCulture,
+                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε {2} s ο πιλότος συνεχίζει με τον αθλητή που ακολουθεί η κάμερα " +
+                            "(σημειωμένος στο βίντεο) · Enter: τώρα · ↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.",
+                            pilotLostWall, Race.Unit, pilotCountdown), false);
+                    else if (autoPick != null)
+                        Status(string.Format(CultureInfo.InvariantCulture,
+                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: είναι αυτός (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · " +
+                            "ή κλικ στο κεφάλι και μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit), true);
+                    else
+                        Status(string.Format(CultureInfo.InvariantCulture,
+                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και " +
+                            "μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit), true);
                     break;
             }
 
@@ -720,8 +756,13 @@ namespace Kinovea.ScreenManager
         /// <summary>After a reading of the pilot: the swimmer lost (the analyst shows him again, then it goes on), or the report.</summary>
         private void PilotAfterReading(bool cancelled, int read)
         {
+            int refound = pilotRefoundPending;
+            pilotRefoundPending = -1;
             if (!PilotActive)
                 return;
+
+            if (refound >= 0 && read > 0)
+                pilotRefound.Add(refound);
 
             if (cancelled)
             {
@@ -746,6 +787,19 @@ namespace Kinovea.ScreenManager
                 }
 
                 pilotStep = PilotStep.Lost;
+                if (refound >= 0)
+                {
+                    // The swimmer the pilot took by itself read nothing, and nobody may be watching: a message waits for the analyst.
+                    RefreshPilotUi();
+                    PilotPrompt();
+                    MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
+                        "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε. Ο πιλότος τον βρήκε μόνος του, αλλά από εκεί δεν διαβάστηκε κανένα μήκος.\n\n" +
+                        "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ο πιλότος συνεχίζει μόνος " +
+                        "του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", refound, Race.Unit),
+                        "✈ Ο αυτόματος πιλότος χρειάζεται εσένα", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
                 Status("✈ Από αυτό το κλικ δεν διαβάστηκε κανένα μήκος: κλικ ξανά στο κεφάλι και μετά στα πόδια του αθλητή, σε ένα καρέ μετά " +
                     "την έξοδο από το νερό (Esc: σταμάτημα· ό,τι μπήκε μένει).", true);
                 RefreshPilotUi();
@@ -771,11 +825,43 @@ namespace Kinovea.ScreenManager
 
                 if (at != long.MinValue)
                     SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, at + RealSpan(3.0)));
+
+                // Since 2.7.2: the swimmer the camera follows proposed there, as at the start, and taken after the countdown when the
+                // pilot trusts the proposal (lab, the 3 races of the analysts lost after a wall: 1 taken, read on with 13 of its 15
+                // checkpoints within 0.5 s; the 2 others, where a proposal would have been another swimmer, still asked).
+                long? here = CurrentVideoTimestamp;
+                if (here.HasValue)
+                    ProposeAutoPick(here.Value);
+                if (!PilotActive)
+                    return;
+                if (autoPickCancelled)
+                {
+                    CancelPick();
+                    StopPilot();
+                    Status("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+                    return;
+                }
+
+                if (!pickForRace || !PickingTrack)
+                {
+                    StopPilot();
+                    return;
+                }
+
+                if (autoPick != null && PilotTrustsPick(autoPick))
+                {
+                    StartPilotCountdown();
+                    PilotPrompt();
+                    return;
+                }
+
                 PilotPrompt();
                 MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
-                    "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n" +
-                    "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ο πιλότος συνεχίζει " +
-                    "μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit),
+                    "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}" +
+                    "ο πιλότος συνεχίζει μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit,
+                    autoPick != null ? "Ο πιλότος σημείωσε τον αθλητή που ακολουθεί η κάμερα: Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα " +
+                        "καρέ μετά την έξοδο από το νερό κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: " :
+                        "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: "),
                     "✈ Ο αυτόματος πιλότος χρειάζεται εσένα", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -822,6 +908,9 @@ namespace Kinovea.ScreenManager
                 b.Append("• Εκκίνηση: ").Append(pilotStartNote).Append(".\n");
             b.Append(pilotSwimmerAuto ? "• Αθλητής: αυτός που ακολουθεί η κάμερα, χωρίς ερώτηση (δες ότι είναι ο σωστός).\n" :
                 "• Αθλητής: αυτός που επέλεξες.\n");
+            foreach (int wall in pilotRefound)
+                b.AppendFormat(CultureInfo.InvariantCulture, "• Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε και ο πιλότος τον βρήκε ξανά μόνος του " +
+                    "(δες ότι είναι ο ίδιος από εκεί και μετά).\n", wall, Race.Unit);
             b.Append("• Μπήκαν ").Append(CountOf(splits, "πέρασμα ή τοίχος", "περάσματα και τοίχοι")).Append(", ")
                 .Append(CountOf(breakouts, "έξοδος από το νερό", "έξοδοι από το νερό")).Append(" και ").Append(CountOf(strokes, "χεριά", "χεριές")).Append(".\n");
             if (raceSplits - splits == 1)

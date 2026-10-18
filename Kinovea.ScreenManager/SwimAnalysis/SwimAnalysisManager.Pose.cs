@@ -167,7 +167,7 @@ namespace Kinovea.ScreenManager
             using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
             using (FormProgressBar progress = new FormProgressBar(true))
             {
-                progress.CancelAsked += (o, e) => worker.CancelAsync();
+                ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) =>
                 {
@@ -176,7 +176,7 @@ namespace Kinovea.ScreenManager
                 worker.RunWorkerCompleted += (o, e) =>
                 {
                     error = e.Error;
-                    cancelled = e.Error == null && e.Result is bool && !(bool)e.Result;
+                    cancelled = e.Error == null && (cancel.Asked || e.Result is bool && !(bool)e.Result);
                     progress.Close();
                 };
 
