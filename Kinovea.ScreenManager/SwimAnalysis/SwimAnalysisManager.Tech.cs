@@ -278,7 +278,7 @@ namespace Kinovea.ScreenManager
         {
             const double correction = 2.0;
             bool hadStart = EnsureStart();
-            int last = SwimTechCalculator.LastWallBefore(Race, timestamp);
+            int last = SwimTechCalculator.LastWallBefore(Race, timestamp, HalfFrame);
             SwimMark lastSplit = last > 0 ? Race.GetSplit(last) : null;
             int wall = lastSplit != null && Timing.Seconds(timestamp, lastSplit.Timestamp) < correction ? last : last + PoolLength;
             string unit = Race.Unit;
@@ -377,7 +377,7 @@ namespace Kinovea.ScreenManager
             string unit = Race.Unit;
             if (!Race.IsTraining)
             {
-                wall = offset < 0 ? SwimTechCalculator.LastWallBefore(Race, timestamp) + PoolLength : phase.Wall;
+                wall = offset < 0 ? SwimTechCalculator.LastWallBefore(Race, timestamp, HalfFrame) + PoolLength : phase.Wall;
                 if (offset < 0 && (wall >= Race.Distance || SwimTechCalculator.IsExchange(Race, wall)))
                 {
                     SystemSounds.Beep.Play();
@@ -491,8 +491,7 @@ namespace Kinovea.ScreenManager
             if (!HasVideo)
                 return;
 
-            long half = (long)Math.Floor(Math.Max(0, Timing.AverageTimestampsPerFrame) * 0.5);
-            SeekTo(Math.Max(frameServer.VideoReader.WorkingZone.Start, timestamp - half));
+            SeekTo(Math.Max(frameServer.VideoReader.WorkingZone.Start, timestamp - HalfFrame));
         }
         #endregion
 

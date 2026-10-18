@@ -677,7 +677,7 @@ namespace Kinovea.ScreenManager
             foreach (int d in Race.Checkpoints)
             {
                 SwimMark split = Race.GetSplit(d);
-                if (split != null && split.Timestamp <= timestamp && d > last)
+                if (split != null && split.Timestamp <= timestamp + HalfFrame && d > last)
                     last = d;
             }
 
@@ -750,7 +750,7 @@ namespace Kinovea.ScreenManager
                 foreach (int w in TurnWalls)
                 {
                     SwimMark split = Race.GetSplit(w);
-                    if (split != null && split.Timestamp <= now)
+                    if (split != null && split.Timestamp <= now + HalfFrame)
                         wall = w;
                 }
 
@@ -1364,6 +1364,15 @@ namespace Kinovea.ScreenManager
         {
             double tolerance = Timing.AverageTimestampsPerFrame > 0 ? Timing.AverageTimestampsPerFrame * 0.5 : 0;
             return Math.Abs(a - b) <= tolerance;
+        }
+
+        /// <summary>
+        /// Half a frame (timestamps). A mark up to half a frame after a frame is on that frame: the checkpoints and breakouts the auto
+        /// pilot puts keep the time read from the video, between two frames, and the frame shown for them is the nearest one (2.7.1).
+        /// </summary>
+        private long HalfFrame
+        {
+            get { return Timing != null && Timing.AverageTimestampsPerFrame > 0 ? (long)Math.Floor(Timing.AverageTimestampsPerFrame * 0.5) : 0; }
         }
 
         private double RaceSeconds(long timestamp)

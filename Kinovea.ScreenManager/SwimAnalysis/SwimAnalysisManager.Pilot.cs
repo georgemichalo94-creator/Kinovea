@@ -727,7 +727,8 @@ namespace Kinovea.ScreenManager
             {
                 StopPilot();
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0} μήκη: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο».", read), true);
+                    "✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0}: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο».",
+                    CountOf(read, "μήκος", "μήκη")), true);
                 return;
             }
 
