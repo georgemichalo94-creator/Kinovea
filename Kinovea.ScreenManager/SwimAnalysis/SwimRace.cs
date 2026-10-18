@@ -489,8 +489,8 @@ namespace Kinovea.ScreenManager
         public long? StartTimestamp;
 
         /// <summary>
-        /// The start was put by the auto pilot and the analyst has not checked it yet (since 2026-10-18): the events of the start
-        /// marked by the analyst do not teach their usual times from it, and the light found again is proposed, not taken as his.
+        /// The start was put by the auto pilot and the analyst has not checked it yet (since 2026-10-18): shown with ✈, and the light
+        /// found again is proposed for the check instead of being taken as his start (which would teach the light from itself).
         /// </summary>
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public bool PilotStart;

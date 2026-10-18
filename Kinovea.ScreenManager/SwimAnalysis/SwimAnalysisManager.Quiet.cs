@@ -517,8 +517,7 @@ namespace Kinovea.ScreenManager
             long to = start + RealSpan(StartEventsSeconds);
             if ((mark.Type == SwimMarkType.Reaction || mark.Type == SwimMarkType.FeetOff || mark.Type == SwimMarkType.Entry) && mark.Timestamp > start && mark.Timestamp <= to)
             {
-                // Not from a start of the auto pilot not checked yet (taught when the analyst checks it).
-                if (FirstStartMark(mark.Type) != mark || Race.PilotStart)
+                if (FirstStartMark(mark.Type) != mark)
                     return null;
 
                 string kind = mark.Type == SwimMarkType.Reaction ? KindRaceReaction : mark.Type == SwimMarkType.FeetOff ? KindRaceBlock : KindRaceEntry;
@@ -583,11 +582,6 @@ namespace Kinovea.ScreenManager
         private void Reteach(SwimMark mark)
         {
             if (TeachPrior(mark) || string.IsNullOrEmpty(mark.Taught))
-                return;
-
-            // A start of the auto pilot not checked yet: the answers of the start events wait for it (not forgotten).
-            if (Race.PilotStart && (mark.Type == SwimMarkType.Reaction || mark.Type == SwimMarkType.Entry || mark.Type == SwimMarkType.FeetOff) &&
-                Race.StartTimestamp.HasValue && mark.Timestamp > Race.StartTimestamp.Value && mark.Timestamp <= Race.StartTimestamp.Value + RealSpan(StartEventsSeconds))
                 return;
 
             string key = mark.Taught;

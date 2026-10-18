@@ -387,28 +387,24 @@ namespace Kinovea.ScreenManager
             Race.StartTimestamp = timestamp;
 
             // The analyst put the start: it is his (one the auto pilot had put too). The pilot waiting for it goes on (below).
-            bool pilotStart = Race.PilotStart;
             if (!resolvingProposal)
                 Race.PilotStart = false;
             bool pilotWaited = !resolvingProposal && PilotActive && pilotStep == PilotStep.Start;
             if (pilotWaited)
                 pilotStep = PilotStep.None;
 
-            // Other swimmers analysed on the same video share the same start signal (a start of the pilot that became the
-            // analyst's: their start events teach when they are shown).
+            // Other swimmers analysed on the same video share the same start signal (and whether the pilot put it).
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
                 {
-                    if (other.PilotStart && !Race.PilotStart)
-                        startRecheck.Add(other.Id);
                     other.StartTimestamp = timestamp;
                     other.PilotStart = Race.PilotStart;
                 }
             }
 
             Status(old == null ? "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ." : "Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά.", false);
-            if ((old.HasValue && old.Value != timestamp) || (pilotStart && !Race.PilotStart))
+            if (old.HasValue && old.Value != timestamp)
                 RecheckStartLessons();
 
             // The start put with its key answers the proposal of the start light near it (the other candidates go).
@@ -1931,7 +1927,6 @@ namespace Kinovea.ScreenManager
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
             ClearUndo();
-            RecheckStartIfPut();
             PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
             RefreshPbCandidates();

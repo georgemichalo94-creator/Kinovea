@@ -69,9 +69,6 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The reading of the pilot goes on after a swimmer lost (the click after the breakout).</summary>
         private bool pilotWasLost;
-
-        /// <summary>Other races of the video whose start (shared, the pilot's) the analyst put: their start events teach when shown.</summary>
-        private readonly HashSet<string> startRecheck = new HashSet<string>();
         private Timer pdfTimer;
         private string pdfRace;
         private int pdfWait;
@@ -620,30 +617,20 @@ namespace Kinovea.ScreenManager
             if (p.Kind == KindRaceBreakout)
                 return Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && m.Pilot.Wall == p.Index);
 
-            // A breakout proposed by another reading (the skeleton): the pilot's breakout near it (the same length).
-            if (p.Type == SwimMarkType.Breakout && Timing != null && Timing.IsValid)
-            {
-                return Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && Math.Abs(Timing.Seconds(m.Timestamp, p.Timestamp)) <= PilotSameBreakout)
-                    .OrderBy(m => Math.Abs(m.Timestamp - p.Timestamp)).FirstOrDefault();
-            }
-
             return null;
         }
 
-        /// <summary>Two breakouts closer than this (s) are the same one (the breakouts of two lengths are many seconds apart).</summary>
+        /// <summary>
+        /// Two breakouts closer than this (s) are the same one (the breakouts of two lengths are many seconds apart): the skeleton
+        /// does not propose a breakout there, the pilot's own proposal is the one to answer.
+        /// </summary>
         private const double PilotSameBreakout = 4.0;
 
-        /// <summary>The events of the start proposed at their usual times from the start signal.</summary>
-        private static bool IsStartEventKind(string kind)
+        /// <summary>A breakout of the pilot, not checked yet, near this frame (the same breakout).</summary>
+        private bool PilotBreakoutNear(long timestamp)
         {
-            return kind == KindRaceReaction || kind == KindRaceBlock || kind == KindRaceEntry;
-        }
-
-        /// <summary>Another race of the video is shown: if the analyst put its shared start meanwhile, its start events teach now.</summary>
-        private void RecheckStartIfPut()
-        {
-            if (Race != null && startRecheck.Remove(Race.Id) && !Race.PilotStart)
-                RecheckStartLessons();
+            return Race != null && Timing != null && Timing.IsValid &&
+                Race.Marks.Any(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && Math.Abs(Timing.Seconds(m.Timestamp, timestamp)) <= PilotSameBreakout);
         }
 
         /// <summary>A proposal the pilot put as a mark, not checked yet: it stays at the frame of its mark (not moved by the answers).</summary>

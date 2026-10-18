@@ -594,9 +594,8 @@ namespace Kinovea.ScreenManager
         private void AcceptStartProposal(SwimProposal p, long timestamp)
         {
             // The other start candidates go (no answer: the learning does not change). The start is the analyst's now (also one
-            // the auto pilot had put): the events of the start he marked teach from it.
+            // the auto pilot had put).
             Race.Proposals.RemoveAll(x => x.Kind == KindRaceStart && x.Id != p.Id);
-            bool pilotStart = Race.PilotStart;
             Race.PilotStart = false;
             resolvingProposal = true;
             try
@@ -609,8 +608,6 @@ namespace Kinovea.ScreenManager
             }
 
             Answer(p, timestamp, true);
-            if (pilotStart)
-                RecheckStartLessons();
             Changed(false);
             string done = "✓ " + ProposalLabel(p) + ": t = 0 σε αυτό το καρέ.";
 

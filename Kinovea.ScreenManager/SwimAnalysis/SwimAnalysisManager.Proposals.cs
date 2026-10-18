@@ -181,8 +181,9 @@ namespace Kinovea.ScreenManager
                 if (ts < skeleton.Start || ts > skeleton.End)
                     continue;
 
-                // Already marked by the analyst near there: nothing to propose.
-                if (HasMarkNear(d.Type, ts, d.Type == SwimMarkType.Kick ? 0.12 : 0.3))
+                // Already marked by the analyst near there: nothing to propose. A breakout the auto pilot put near there: its own
+                // proposal waits for the check (one answer for one breakout).
+                if (HasMarkNear(d.Type, ts, d.Type == SwimMarkType.Kick ? 0.12 : 0.3) || (d.Type == SwimMarkType.Breakout && PilotBreakoutNear(ts)))
                     continue;
 
                 SwimProposal p = new SwimProposal
@@ -456,11 +457,14 @@ namespace Kinovea.ScreenManager
 
             long at = p.Timestamp;
 
-            // The mark the auto pilot put for it goes (there is no such event there). The start it put stays: the right one is put
-            // with «Εκκίνηση» (all the times follow it).
+            // The mark the auto pilot put for it goes (there is no such event there): its own mark, or the pilot's mark of the event
+            // near this proposal of another reading (one far from it is not what was answered). The start it put stays: the right
+            // one is put with «Εκκίνηση» (all the times follow it).
             SwimMark pilot = PilotMarkOf(p);
-            if (pilot != null)
+            if (pilot != null && (pilot.Id == p.PilotMark || Math.Abs(Timing.Seconds(pilot.Timestamp, p.Timestamp)) <= 1.0))
                 RemovePilotMark(pilot);
+            else
+                pilot = null;
             bool pilotStart = p.Pilot && p.Kind == KindRaceStart;
             Answer(p, at, false);
             Changed(pilot != null);
@@ -587,17 +591,11 @@ namespace Kinovea.ScreenManager
                 record.Measures = MeasuresAt(p, timestamp);
             }
 
-            // The events of the start while the start is the auto pilot's, not checked yet: their usual times count from it, so
-            // no answer to the learning (the marks teach when the analyst checks the start).
-            bool learn = !(Race.PilotStart && IsStartEventKind(p.Kind));
-            if (learn)
-            {
-                Learning.Add(record);
-                Learning.Save();
-            }
+            Learning.Add(record);
+            Learning.Save();
 
             // The mark of the event keeps its answer: undone, deleted or replaced, the answer goes with it.
-            if (learn && right && record.Key != null)
+            if (right && record.Key != null)
             {
                 SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
                 SwimMark mark = Race.Marks.Where(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)).FirstOrDefault();
