@@ -774,6 +774,20 @@ namespace Kinovea.ScreenManager
         internal static bool FarWallPace = true, FarWallFinish = false;
 
         /// <summary>
+        /// The first strong splash after the dive ("burst") counts for the breakout of a swimmer seen from far (FarShare at least
+        /// 0.5) only: near the swimmer (a camcorder) the kicks under the surface splash before the head is out (2026-10-18, the
+        /// analysts' camcorder starts: burst 0.9 s before their breakout, median; it pulled 7 of 29 starts 0.1-0.4 s early once
+        /// within reach of the steepest rise).
+        /// </summary>
+        public static bool StartBurst(double far)
+        {
+            return !NearStartNoBurst || far >= 0.5;
+        }
+
+        /// <summary>The first splash after the dive left out near the swimmer (tests and lab variants).</summary>
+        internal static bool NearStartNoBurst = true;
+
+        /// <summary>
         /// Usual delay (s) of a cue of the breakout ("energy", "burst") from the breakout the analysts mark (the head out). In
         /// breaststroke and backstroke the motion starts with the head out (0.1 s) and the first strong splash just after (0.2 s).
         /// In butterfly and freestyle too (analysed races, 2026-10: phone videos from the stands and most camcorder races within

@@ -812,6 +812,9 @@ namespace Kinovea.ScreenManager
                 {
                     if (turn && SwimSplitDetector.TurnBreakout && (c.Key == SwimSplitDetector.CueBurst || (style == "fly" && c.Key == SwimSplitDetector.CueEnergy)))
                         continue;
+                    // After the dive the first strong splash is the breakout of a swimmer seen from far only (since 2026-10-18).
+                    if (!turn && !strokes && c.Key == SwimSplitDetector.CueBurst && !SwimSplitDetector.StartBurst(far))
+                        continue;
                     delay = strokes ? SwimSplitDetector.StrokeStartDelay(c.Key, style) : SwimSplitDetector.BreakoutDelay(c.Key, style);
                 }
 
