@@ -568,6 +568,7 @@ namespace Kinovea.ScreenManager
             using (FormProgressBar progress = new FormProgressBar(true))
             {
                 progress.CancelAsked += (o, e) => worker.CancelAsync();
+                KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) => { e.Result = ReadFrames(s, target, (BackgroundWorker)o); };
                 worker.RunWorkerCompleted += (o, e) =>
@@ -623,6 +624,20 @@ namespace Kinovea.ScreenManager
 
             /// <summary>The frame at its own size, for the lane searched in it (the first frame of a session without a lane).</summary>
             public SwimStrokeImage Detail;
+        }
+
+        /// <summary>
+        /// The progress window of a reading stays open until its worker has stopped. Its Cancel button closes the window at once
+        /// (DialogResult) while the worker still decodes the video: the code after ShowDialog would then use the reader and the results
+        /// of a reading still going on (the result of a start search not there yet, a partial race taken as read).
+        /// </summary>
+        private static void KeepOpenWhileBusy(FormProgressBar progress, BackgroundWorker worker)
+        {
+            progress.FormClosing += (o, e) =>
+            {
+                if (worker.IsBusy)
+                    e.Cancel = true;
+            };
         }
 
         /// <summary>

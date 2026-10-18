@@ -110,6 +110,7 @@ namespace Kinovea.ScreenManager
             using (FormProgressBar progress = new FormProgressBar(true))
             {
                 progress.CancelAsked += (o, e) => worker.CancelAsync();
+                KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) =>
                 {
@@ -1554,6 +1555,7 @@ namespace Kinovea.ScreenManager
             using (FormProgressBar progress = new FormProgressBar(true))
             {
                 progress.CancelAsked += (o, e) => worker.CancelAsync();
+                KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                 worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o); };
                 worker.RunWorkerCompleted += (o, e) =>
