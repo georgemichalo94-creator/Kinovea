@@ -1135,7 +1135,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (l.Wall.Count > 0)
-                items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l), SwimSplitDetector.WallConfidence(l.Wall.Keys)));
+                items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l, true), SwimSplitDetector.WallConfidence(l.Wall.Keys)));
 
             foreach (Tuple<int, Dictionary<string, double>, double> item in items)
             {
@@ -1200,14 +1200,23 @@ namespace Kinovea.ScreenManager
             return style == "bk" ? -0.15 : 0;
         }
 
-        /// <summary>The cues of the wall of a length named after its kind (finish, open turn, flip turn), each with its usual delay before any learning.</summary>
-        private Dictionary<string, double> WallCuesOfKind(LengthRead l)
+        /// <summary>
+        /// The cues of the wall of a length named after its kind (finish, open turn, flip turn), each with its usual delay before
+        /// any learning. proposal: the wall proposed to the analyst (the reading goes on from the wall without it).
+        /// </summary>
+        private Dictionary<string, double> WallCuesOfKind(LengthRead l, bool proposal = false)
         {
             string kind = WallKind(l.Session.Wall);
             string style = SwimPresets.StyleAt(Race, l.Session.Wall);
             Dictionary<string, double> wall = new Dictionary<string, double>();
             foreach (KeyValuePair<string, double> c in l.Wall)
-                wall[StyleCue(c.Key + "." + kind, style)] = c.Value + WallDelay(c.Key, kind) * l.Session.Fps;
+            {
+                // The turn of the pace of a swimmer seen from far, as proposed, has the delay of his checkpoints since 2026-10-18,
+                // and learns apart (".f"); the reading goes on from the wall without it (the next length, its strokes: as before).
+                double far = proposal ? SwimSplitDetector.FarWallDelay(c.Key, kind, style, l.SwimmerLength) : 0;
+                wall[StyleCue(c.Key + "." + kind + (far > 0 ? ".f" : ""), style)] = c.Value + (WallDelay(c.Key, kind) + far) * l.Session.Fps;
+            }
+
             SwimSplitDetector.PreferSeenWall(wall, l.Session.Fps);
             return wall;
         }

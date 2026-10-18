@@ -755,6 +755,25 @@ namespace Kinovea.ScreenManager
         internal static double FarDelayBack = 0.3, FarDelayBreast = 0.15, FarDelayOther = 0.1;
 
         /// <summary>
+        /// Delay (s) of a cue of a turn ("open", "flip") from the pace of the length ("pace", "pace1") for a swimmer seen from far:
+        /// the pace runs through the checkpoints as read, before their FarCheckpointDelay, so its turn came that much early in the
+        /// phone videos (2026-10-18, 115 analysts' races, the turns of the phones: backstroke flip -0.40 s, butterfly -0.18,
+        /// breaststroke -0.17, freestyle -0.04; the camcorders' near 0). A hand at the wall first was on time already and keeps
+        /// none: the finish (the phones' backstroke +0.05, freestyle +0.10) and the medley turn from backstroke to breaststroke (a
+        /// hand on the back: -0.12; with the delay 4 better, 7 worse). With it, the phones' walls: median 0.23 -> 0.20 s, more than
+        /// 0.5 s 40 -> 32 of 223. The other cues: 0.
+        /// </summary>
+        public static double FarWallDelay(string cue, string kind, string style, double swimmerLength)
+        {
+            if (!FarWallPace || (cue != CuePace && cue != CuePaceOne) || (kind == "finish" && !FarWallFinish) || (kind == "open" && style == "bk"))
+                return 0;
+            return FarCheckpointDelay(style, swimmerLength);
+        }
+
+        /// <summary>The turn of the pace with the delay of the swimmer seen from far; the finish too (tests and lab variants).</summary>
+        internal static bool FarWallPace = true, FarWallFinish = false;
+
+        /// <summary>
         /// Usual delay (s) of a cue of the breakout ("energy", "burst") from the breakout the analysts mark (the head out). In
         /// breaststroke and backstroke the motion starts with the head out (0.1 s) and the first strong splash just after (0.2 s).
         /// In butterfly and freestyle too (analysed races, 2026-10: phone videos from the stands and most camcorder races within
