@@ -416,6 +416,13 @@ namespace Kinovea.ScreenManager
                     NextProposal(timestamp);
                 }
             }
+
+            // The auto pilot waited for the start: the analyst put it, the pilot goes on with the whole race.
+            if (!resolvingProposal && PilotActive && pilotStep == PilotStep.Start)
+            {
+                pilotStartNote = "την έβαλες εσύ";
+                PilotLater(PilotRace);
+            }
         }
 
         private bool EnsureStart()
@@ -542,6 +549,7 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            UndoPilotEffects(mark);
             ForgetTaught(mark);
             if (mark.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(mark.Distance);
@@ -578,6 +586,7 @@ namespace Kinovea.ScreenManager
 
         private void ClearUndo()
         {
+            StopPilot();
             undoStack.Clear();
             replacedBy.Clear();
             ClearWaitingFrames();
@@ -843,6 +852,7 @@ namespace Kinovea.ScreenManager
             if (PickTarget == SwimPickTarget.None)
                 return false;
 
+            bool pilotWaited = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
             autoPick = null;
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
@@ -851,6 +861,12 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             Status("Ακυρώθηκε.", false);
+            if (pilotWaited)
+            {
+                StopPilot();
+                Status("✈ Ο αυτόματος πιλότος σταμάτησε. Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+            }
+
             return true;
         }
 

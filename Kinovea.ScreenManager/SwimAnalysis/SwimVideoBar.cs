@@ -152,7 +152,8 @@ namespace Kinovea.ScreenManager
             b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription).Append('|');
             b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription).Append('|');
             b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
-            b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "");
+            b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "").Append('|');
+            b.Append(manager.PilotWaiting).Append('|').Append(manager.PilotDoubtful).Append('|').Append(manager.StartLightRunning);
             return b.ToString();
         }
         #endregion
@@ -698,10 +699,16 @@ namespace Kinovea.ScreenManager
             list.Add(new Item { Id = "sync", Bounds = line, Tip = (manager.SyncMessage ?? "") + sheet });
 
             bool configured = manager.Settings.IsConfigured;
-            RectangleF send = new RectangleF(area.Left, line.Top - S(3) - S(30), area.Width, S(30));
+            RectangleF sendRow = new RectangleF(area.Left, line.Top - S(3) - S(30), area.Width, S(30));
+            RectangleF send = new RectangleF(sendRow.Left, sendRow.Top, (sendRow.Width - S(4)) * 0.62f, sendRow.Height);
             DrawButton(g, list, "send", send, "Αποστολή τώρα", null, null, Look.Normal, !configured,
                 configured ? "Στέλνει την ανάλυση στο Google Sheet τώρα." : "Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα.",
                 () => manager.SendByUser(false));
+            RectangleF pdf = new RectangleF(send.Right + S(4), sendRow.Top, sendRow.Right - send.Right - S(4), sendRow.Height);
+            DrawButton(g, list, "pdf", pdf, "PDF", null, null, Look.Normal, !configured,
+                configured ? "Το PDF του report: ανοίγει μόνο του όταν είναι έτοιμο (όπως το «PDF report» του πίνακα)." :
+                    "Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα.",
+                () => manager.SendByUser(true));
 
             bool open = manager.PanelOpen;
             RectangleF panel = new RectangleF(area.Left, send.Top - S(6) - S(34), area.Width, S(34));
@@ -739,7 +746,41 @@ namespace Kinovea.ScreenManager
                 "Η ετικέτα με το όνομα ακολουθεί τον αθλητή μέχρι τον τοίχο του μήκους (ένα μήκος κάθε φορά)." +
                 (tracked.Length > 0 ? "\nΑκολουθείται: " + tracked : ""),
                 () => manager.BeginTrackSwimmer());
-            return row.Top;
+
+            // The check of the proposals of the race (whole race, auto pilot), also from here (since 2026-10-18).
+            int pending = race.Proposals.Count;
+            if (!manager.Reviewing && pending == 0)
+                return row.Top;
+
+            RectangleF check = new RectangleF(area.Left, row.Top - S(6) - S(28), area.Width, S(28));
+            if (manager.Reviewing)
+            {
+                float third = (check.Width - 2 * S(4)) / 3;
+                DrawButton(g, list, "race-right", new RectangleF(check.Left, check.Top, third, check.Height), "✓ Σωστό", null, null, Look.Primary, false,
+                    "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται.",
+                    () => manager.AcceptCurrentProposal());
+                DrawButton(g, list, "race-wrong", new RectangleF(check.Left + third + S(4), check.Top, third, check.Height), "✕ Λάθος", null, null, Look.Normal,
+                    false, "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).", () => manager.RejectCurrentProposal());
+                DrawButton(g, list, "race-end", new RectangleF(check.Left + 2 * (third + S(4)), check.Top, check.Right - check.Left - 2 * (third + S(4)), check.Height),
+                    "Τέλος", null, null, Look.Normal, false, "Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν.", () => manager.EndReview());
+            }
+            else
+            {
+                int doubtful = manager.PilotDoubtful;
+                DrawButton(g, list, "race-review", check, "✨ Έλεγχος " + pending.ToString(CultureInfo.InvariantCulture) +
+                    (doubtful > 0 ? "  ·  ⚠ " + doubtful.ToString(CultureInfo.InvariantCulture) : ""), null, null, Look.Primary, false,
+                    "Οι προτάσεις μία μία στο βίντεο: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος. Από τις απαντήσεις σου μαθαίνει." +
+                    (doubtful > 0 ? "\nΠρώτα τα αβέβαια του αυτόματου πιλότου (⚠: κάτω από 50%)." : ""),
+                    () =>
+                    {
+                        if (manager.PilotDoubtful > 0)
+                            manager.BeginPilotReview();
+                        else
+                            manager.BeginReview();
+                    });
+            }
+
+            return check.Top;
         }
         #endregion
 
@@ -780,6 +821,7 @@ namespace Kinovea.ScreenManager
                         Tip = "Αυτόματα: το καρέ που ανάβουν τα φώτα εκκίνησης, για έλεγχο (Enter σωστό, Delete λάθος).",
                         Action = () => manager.FindStartLight()
                     });
+                    list.Add(PilotButton());
                     list.Add(B("reaction", PlayerScreenCommands.SwimReaction, "Αντίδραση", Seconds(c.ReactionTime),
                         "Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης)."));
                     list.Add(B("block", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση", Seconds(c.BlockTime),
@@ -805,6 +847,7 @@ namespace Kinovea.ScreenManager
                             "(Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος).",
                         Action = () => manager.BeginAutoRace()
                     });
+                    list.Add(PilotButton());
                     break;
                 case 2:
                     int wall = manager.CurrentTurnWall;
@@ -826,6 +869,24 @@ namespace Kinovea.ScreenManager
 
             list.Add(SplitButton(race));
             return list;
+        }
+
+        /// <summary>The auto pilot: the whole analysis of the race without the analyst, then the PDF (since 2026-10-18).</summary>
+        private Btn PilotButton()
+        {
+            string waiting = manager.PilotWaiting;
+            return new Btn
+            {
+                Id = "auto-pilot",
+                Text = waiting.Length > 0 ? "✈ " + waiting : "✈ Αυτόματος πιλότος",
+                Primary = waiting.Length > 0,
+                Dim = manager.AutoStrokesRunning || manager.StartLightRunning,
+                Tip = "Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα τα μήκη\n" +
+                    "(περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση, αθλητής).\n" +
+                    "Ό,τι έβαλε περιμένει στον «✨ Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n" +
+                    "μαθαίνει· ό,τι δεν ελέγξεις δεν διδάσκει.",
+                Action = () => manager.RunAutoPilot()
+            };
         }
 
         /// <summary>The checkpoint button says which checkpoint the next press marks.</summary>

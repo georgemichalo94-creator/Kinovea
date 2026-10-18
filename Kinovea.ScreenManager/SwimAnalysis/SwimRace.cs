@@ -77,6 +77,28 @@ namespace Kinovea.ScreenManager
         /// <summary>The answer of the learning this mark gave (its event, SwimLearningRecord.Key): it goes if the mark goes.</summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string Taught;
+
+        /// <summary>
+        /// Put by the auto pilot and not checked yet (since 2026-10-18): it does not teach the learning. The analyst's answer to its
+        /// proposal makes it his (Enter at its frame) or replaces it (another frame). Null for the other marks.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SwimPilotMark Pilot;
+    }
+
+    /// <summary>A mark of the auto pilot: what putting it changed, undone when the analyst moves or removes it.</summary>
+    public class SwimPilotMark
+    {
+        /// <summary>The wall of a breakout (0: the start), the distance of a checkpoint.</summary>
+        public int Wall;
+
+        /// <summary>The automatic strokes before the breakout that went with it (as Enter on it removes them).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<SwimMark> Strokes;
+
+        /// <summary>The underwater distance estimated with the breakout (null: none).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? Underwater;
     }
 
     public class SwimTurnManual
@@ -712,7 +734,8 @@ namespace Kinovea.ScreenManager
         public SwimRace CopyForReading()
         {
             SwimRace r = (SwimRace)MemberwiseClone();
-            r.Marks = Marks.Select(m => new SwimMark { Id = m.Id, Type = m.Type, Timestamp = m.Timestamp, Distance = m.Distance, Wall = m.Wall, Batch = m.Batch }).ToList();
+            r.Marks = Marks.Select(m => new SwimMark { Id = m.Id, Type = m.Type, Timestamp = m.Timestamp, Distance = m.Distance, Wall = m.Wall, Batch = m.Batch,
+                Pilot = m.Pilot }).ToList();
             r.Checkpoints = new List<int>(Checkpoints);
             r.StrokeCounts = new Dictionary<int, double>(StrokeCounts);
             r.Turns = new Dictionary<int, SwimTurnManual>();

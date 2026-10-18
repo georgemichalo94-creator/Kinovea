@@ -311,6 +311,13 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
             Status("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · " +
                 "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+
+            // The auto pilot does not take a swimmer the analyst is choosing: it waits for his Enter.
+            if (PilotActive && pilotStep == PilotStep.Swimmer)
+            {
+                StopPilotCountdown();
+                PilotPrompt();
+            }
             return true;
         }
 

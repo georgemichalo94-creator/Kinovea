@@ -430,9 +430,10 @@ namespace Kinovea.ScreenManager
             if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || !Timing.IsValid || Settings == null || !Settings.LearnFromMarks)
                 return;
 
+            // (A mark of the auto pilot not checked yet does not teach.)
             SwimMarkType markType = type == SwimMarkType.WallContact ? SwimMarkType.Split : type;
             SwimMark mark = Race.Marks.Where(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)).OrderBy(m => Math.Abs(m.Timestamp - timestamp)).FirstOrDefault();
-            if (mark == null)
+            if (mark == null || mark.Pilot != null)
                 return;
 
             bool taught = false;
@@ -482,7 +483,7 @@ namespace Kinovea.ScreenManager
 
         private bool TeachQuiet(SwimProposal p, SwimMark mark)
         {
-            if (Race.Proposals.Any(x => x.Kind == p.Kind && x.Index == p.Index) || Math.Abs(Timing.Seconds(mark.Timestamp, p.Timestamp)) > QuietWindow)
+            if (mark.Pilot != null || Race.Proposals.Any(x => x.Kind == p.Kind && x.Index == p.Index) || Math.Abs(Timing.Seconds(mark.Timestamp, p.Timestamp)) > QuietWindow)
                 return false;
 
             Answer(p, mark.Timestamp, true);
@@ -493,6 +494,9 @@ namespace Kinovea.ScreenManager
         /// <summary>A mark of an event with a usual time teaches it (within half a second of it: further, it is another event).</summary>
         private bool TeachPrior(SwimMark mark)
         {
+            if (mark.Pilot != null)
+                return false;
+
             SwimProposal p = PriorEventFor(mark);
             if (p == null || Race.Proposals.Any(x => x.Kind == p.Kind && x.Index == p.Index) || Math.Abs(Timing.Seconds(mark.Timestamp, p.Timestamp)) > 0.5)
                 return false;

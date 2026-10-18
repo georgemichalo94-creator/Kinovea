@@ -124,6 +124,8 @@ namespace Kinovea.ScreenManager
         private CheckBox chkReelSummary;
         private Button btnTrack;
         private Label lblTrack;
+        private Button btnPilot;
+        private Button btnRaceReview;
         private ComboBox cmbReference;
         private Label lblReferences;
         private ComboBox cmbPb;
@@ -499,8 +501,26 @@ namespace Kinovea.ScreenManager
             autoRace.Click += (s, e) => manager.BeginAutoRace();
             toolTip.SetToolTip(autoRace, "Μετά την εκκίνηση: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό. Το Kinovea τον ακολουθεί\n" +
                 "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.");
+            // The auto pilot (since 2026-10-18): the whole analysis without the analyst, then the PDF; its marks wait for the check.
+            btnPilot = new SwimNoFocusButton { Text = "✈ Αυτόματος πιλότος", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnPilot.Click += (s, e) => manager.RunAutoPilot();
+            toolTip.SetToolTip(btnPilot, "Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα\n" +
+                "τα μήκη (περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση,\n" +
+                "αθλητής). Ό,τι έβαλε περιμένει στον «Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n" +
+                "μαθαίνει· ό,τι δεν ελέγξεις δεν διδάσκει. Η πρώτη κίνηση, η αποδέσμευση, η είσοδος και η αποκόλληση από τους τοίχους δεν\n" +
+                "φαίνονται καθαρά από την κερκίδα: μένουν προτάσεις στους συνήθεις χρόνους και μπαίνουν μόνο αν τις επιβεβαιώσεις.");
+            btnRaceReview = new SwimNoFocusButton { Text = "▶ Έλεγχος", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnRaceReview.Click += (s, e) =>
+            {
+                if (manager.PilotDoubtful > 0)
+                    manager.BeginPilotReview();
+                else
+                    manager.BeginReview();
+            };
+            toolTip.SetToolTip(btnRaceReview, "Οι προτάσεις του αγώνα μία μία στο βίντεο: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος.\n" +
+                "Πρώτα τα αβέβαια του αυτόματου πιλότου (⚠: κάτω από 50%). Από τις απαντήσεις σου μαθαίνει.");
             AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Εκκίνηση",
-                "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight, autoRace);
+                "Στο καρέ του σήματος εκκίνησης (φως/καπνός/ήχος): εκεί γίνεται t = 0.", lblStartSignal, startLight, autoRace, btnPilot, btnRaceReview);
 
             // Learning from the marks of a manual analysis.
             const string learnHelp = "Ανάλυση με το χέρι (χωρίς «🤖 Όλος ο αγώνας»): κάθε σημάδι σου διδάσκει το πρόγραμμα, όπως οι απαντήσεις στις προτάσεις.\n" +
@@ -1350,6 +1370,7 @@ namespace Kinovea.ScreenManager
             RefreshSync();
             RefreshCalibration();
             RefreshPick();
+            RefreshPilot();
             if (!string.IsNullOrEmpty(manager.LastStatus))
                 ShowStatus(manager.LastStatus, manager.LastStatusIsWarning);
         }
@@ -2735,6 +2756,26 @@ namespace Kinovea.ScreenManager
             lblAutoStrokes.ForeColor = color;
             btnAutoStrokes.Enabled = !manager.AutoStrokesRunning;
             RefreshReel();
+            RefreshPilot();
+        }
+
+        /// <summary>The auto pilot (what it waits for) and the check of the proposals of the race, on the start page.</summary>
+        public void RefreshPilot()
+        {
+            if (IsDisposed || btnPilot == null || btnRaceReview == null)
+                return;
+
+            string waiting = manager.PilotWaiting;
+            btnPilot.Text = waiting.Length > 0 ? "✈ " + waiting : "✈ Αυτόματος πιλότος";
+            Highlight(btnPilot, waiting.Length > 0);
+            btnPilot.Enabled = !manager.AutoStrokesRunning && !manager.StartLightRunning;
+
+            int pending = manager.Race != null ? manager.Race.Proposals.Count : 0;
+            int doubtful = manager.PilotDoubtful;
+            btnRaceReview.Text = pending > 0
+                ? "▶ Έλεγχος " + pending.ToString(CultureInfo.InvariantCulture) + (doubtful > 0 ? " · ⚠ " + doubtful.ToString(CultureInfo.InvariantCulture) : "")
+                : "▶ Έλεγχος";
+            btnRaceReview.Enabled = pending > 0 && !manager.Reviewing;
         }
 
         /// <summary>Technical view of the race: on/off, the swimmer followed for the label.</summary>

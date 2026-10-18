@@ -183,7 +183,7 @@ namespace Kinovea.ScreenManager
             if (p == null)
                 return null;
 
-            SwimMark marked = Race.Marks.Where(m => m.Type == type && m.Timestamp >= searchFrom && m.Timestamp <= searchTo)
+            SwimMark marked = Race.Marks.Where(m => m.Type == type && m.Pilot == null && m.Timestamp >= searchFrom && m.Timestamp <= searchTo)
                 .OrderBy(m => Math.Abs(m.Timestamp - p.Timestamp)).FirstOrDefault();
             if (marked != null)
             {
@@ -238,7 +238,7 @@ namespace Kinovea.ScreenManager
             // An event the analyst marked already moves the next ones (as his answer would).
             foreach (Tuple<string, SwimMarkType> e in new[] { Tuple.Create(KindRaceReaction, SwimMarkType.Reaction), Tuple.Create(KindRaceBlock, SwimMarkType.FeetOff) })
             {
-                SwimMark marked = Race.Marks.Where(m => m.Type == e.Item2 && m.Timestamp >= start && m.Timestamp <= to).OrderBy(m => m.Timestamp).FirstOrDefault();
+                SwimMark marked = Race.Marks.Where(m => m.Type == e.Item2 && m.Pilot == null && m.Timestamp >= start && m.Timestamp <= to).OrderBy(m => m.Timestamp).FirstOrDefault();
                 if (marked != null)
                     MoveEventProposals(e.Item1, 0, marked.Timestamp, made);
             }
