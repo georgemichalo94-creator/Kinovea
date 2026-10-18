@@ -361,12 +361,16 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The swimmer proposed is seen near (his length at least the size of a swimmer near the camera, as the delays of the
-        /// checkpoints count it): a camera following him. Far (a phone in the stands), the swimmer in the middle of the image is
-        /// often another one.
+        /// The swimmer proposed may be taken without an answer: all the probes found his lane (lab, 69 races: 20 camcorders so, 18 of
+        /// them read as well as from the analyst's click, 2 with checkpoints about 0.5 s off; no phone of the stands so, where the
+        /// lane in the middle was often another swimmer's) and he is seen near (his length as the delays of the checkpoints count
+        /// it): a camera following him.
         /// </summary>
         private bool PilotTrustsPick(AutoPickResult p)
         {
+            if (p.Agree < AutoPickProbes.Length)
+                return false;
+
             Size reference = ReadingReader.Info.ReferenceSize;
             double scale = (double)StrokeWorkWidth / Math.Max(1, reference.Width);
             double dx = p.Head.X - p.Feet.X, dy = p.Head.Y - p.Feet.Y;

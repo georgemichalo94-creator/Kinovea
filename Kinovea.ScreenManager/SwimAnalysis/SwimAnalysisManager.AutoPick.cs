@@ -59,6 +59,9 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Width of the lane at the swimmer, in pixels of the image.</summary>
             public float LaneWidth;
+
+            /// <summary>Probes that found the same lane (of AutoPickProbes).</summary>
+            public int Agree;
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
@@ -279,7 +282,8 @@ namespace Kinovea.ScreenManager
                 Head = new PointF((float)((xm + direction * 0.5 * length) / sx), (float)(middle / sy)),
                 Feet = new PointF((float)((xm - direction * 0.5 * length) / sx), (float)(middle / sy)),
                 Frame = frame,
-                LaneWidth = (float)(laneWidth / sy)
+                LaneWidth = (float)(laneWidth / sy),
+                Agree = agree
             };
         }
 
