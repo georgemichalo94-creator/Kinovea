@@ -74,12 +74,12 @@ namespace Kinovea.ScreenManager
         /// While the click on the swimmer of the whole race is waited for: the swimmer the camera follows, on a frame of the first
         /// length (the frame shown when it is after the breakout of the start, else 6 s after the start). The video goes there.
         /// </summary>
-        private void ProposeAutoPick()
+        private void ProposeAutoPick(long? at = null)
         {
             // Whatever goes wrong here, the click on the swimmer works as before.
             try
             {
-                FindAutoPick();
+                FindAutoPick(at);
             }
             catch (Exception e)
             {
@@ -88,7 +88,8 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private void FindAutoPick()
+        /// <summary>The search of the swimmer (atFrame: on this frame, e.g. after a wall where he was lost; else a little after the start).</summary>
+        private void FindAutoPick(long? atFrame = null)
         {
             autoPick = null;
             autoPickCancelled = false;
@@ -97,9 +98,17 @@ namespace Kinovea.ScreenManager
                 return;
 
             long start = Race.StartTimestamp.Value;
-            long? now = CurrentVideoTimestamp;
-            double since = now.HasValue ? Timing.Seconds(now.Value, start) : -1;
-            long at = since >= 3.5 && since <= 10 ? now.Value : start + RealSpan(AutoPickSeconds);
+            long at;
+            if (atFrame.HasValue)
+            {
+                at = atFrame.Value;
+            }
+            else
+            {
+                long? now = CurrentVideoTimestamp;
+                double since = now.HasValue ? Timing.Seconds(now.Value, start) : -1;
+                at = since >= 3.5 && since <= 10 ? now.Value : start + RealSpan(AutoPickSeconds);
+            }
             VideoSection zone = frameServer.VideoReader.WorkingZone;
             if (at > zone.End || at <= zone.Start)
                 return;
@@ -324,7 +333,7 @@ namespace Kinovea.ScreenManager
                 "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
 
             // The auto pilot does not take a swimmer the analyst is choosing: it waits for his Enter.
-            if (PilotActive && pilotStep == PilotStep.Swimmer)
+            if (PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost))
             {
                 StopPilotCountdown();
                 PilotPrompt();
