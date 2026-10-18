@@ -163,8 +163,9 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // The proposals of an older reading of the same part go.
-            Race.Proposals.RemoveAll(p => p.Timestamp >= skeleton.Start && p.Timestamp <= skeleton.End);
+            // The proposals of an older reading of the same part go (not the ones the auto pilot put: their marks wait for the check).
+            Race.Proposals.RemoveAll(p => p.Timestamp >= skeleton.Start && p.Timestamp <= skeleton.End && !IsPilotPut(p) &&
+                !(p.Pilot && p.Kind == KindRaceStart && Race.PilotStart));
             string batch = Guid.NewGuid().ToString("N");
             int added = 0;
             foreach (SwimDetection d in found)
@@ -180,8 +181,9 @@ namespace Kinovea.ScreenManager
                 if (ts < skeleton.Start || ts > skeleton.End)
                     continue;
 
-                // Already marked by the analyst near there: nothing to propose.
-                if (HasMarkNear(d.Type, ts, d.Type == SwimMarkType.Kick ? 0.12 : 0.3))
+                // Already marked by the analyst near there: nothing to propose. A breakout the auto pilot put near there: its own
+                // proposal waits for the check (one answer for one breakout).
+                if (HasMarkNear(d.Type, ts, d.Type == SwimMarkType.Kick ? 0.12 : 0.3) || (d.Type == SwimMarkType.Breakout && PilotBreakoutNear(ts)))
                     continue;
 
                 SwimProposal p = new SwimProposal
@@ -251,9 +253,11 @@ namespace Kinovea.ScreenManager
             SeekTo(p.Timestamp);
             int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
             bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
+            bool pilot = PilotMarkOf(p) != null;
             Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
-                "✨ Πρόταση {0}/{1}: {2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος · Esc: τέλος.",
-                index, Race.Proposals.Count, ProposalLabel(p)), warning);
+                "✨ Πρόταση {0}/{1}: {2}{3}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος{4} · Esc: τέλος.",
+                index, Race.Proposals.Count, ProposalLabel(p), pilot ? " · ✈ την έβαλε ο πιλότος (η απάντησή σου διδάσκει)" : "",
+                pilot ? " (σβήνεται)" : ""), warning);
             RefreshProposalsUi();
             InvalidatePlayer();
         }
@@ -263,6 +267,14 @@ namespace Kinovea.ScreenManager
         {
             bool was = reviewId != null;
             reviewId = null;
+            reviewDoubtful = false;
+
+            // The auto pilot waited in this check for the start (Esc, «Τέλος», the last candidate deleted): it stops, what it put stays.
+            if (PilotActive && pilotStep == PilotStep.Start)
+            {
+                StopPilot();
+                done = (string.IsNullOrEmpty(done) ? "" : done + "  →  ") + "✈ Ο αυτόματος πιλότος σταμάτησε (βάλε την εκκίνηση και πάτα ξανά ✈)";
+            }
             if (was && report)
             {
                 int left = Race == null ? 0 : Race.Proposals.Count;
@@ -342,6 +354,18 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // A proposal the auto pilot put: at the frame of its mark the mark becomes the analyst's (his answer teaches); at another
+            // frame the mark of his answer replaces it (a checkpoint: replaced as any split, Undo puts it back).
+            SwimMark pilot = PilotMarkOf(p);
+            if (pilot != null && SameFrame(pilot.Timestamp, timestamp))
+            {
+                pilot.Pilot = null;
+                pilot = null;
+            }
+
+            // The wall of the breakout answered (0: the start; -1: not a breakout of the race): what Enter does after it.
+            int breakoutWall = p.Kind == KindRaceBreakout ? p.Index : pilot != null && pilot.Type == SwimMarkType.Breakout && pilot.Pilot != null ? pilot.Pilot.Wall : -1;
+
             // The start signal of a race: the start of the race, not a mark.
             if (p.Kind == KindRaceStart)
             {
@@ -364,9 +388,20 @@ namespace Kinovea.ScreenManager
             string done;
             if (exists || !CommandOf(p.Type, out command))
             {
+                string again = "";
+                if (pilot != null)
+                {
+                    ReplacePilotMark(pilot, Race.Marks.FirstOrDefault(m => m.Type == markType && m.Pilot == null && SameFrame(m.Timestamp, timestamp)));
+                    if (breakoutWall >= 0)
+                    {
+                        TrimAutoStrokesBeforeBreakout(breakoutWall, timestamp);
+                        again = EstimateUnderwaterDistance(breakoutWall, timestamp);
+                    }
+                }
+
                 Answer(p, timestamp, true);
-                Changed(false);
-                done = "✓ " + ProposalLabel(p) + (exists ? ": υπήρχε ήδη σημάδι σε αυτό το καρέ." : ".");
+                Changed(pilot != null);
+                done = "✓ " + ProposalLabel(p) + (exists ? ": υπήρχε ήδη σημάδι σε αυτό το καρέ." : ".") + again;
             }
             else
             {
@@ -391,15 +426,18 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
+                // The pilot's mark of this event at another frame goes (what it changed with it too): this one replaces it.
+                if (pilot != null)
+                    ReplacePilotMark(pilot, Race.Marks.FirstOrDefault(m => m.Type == markType && m.Pilot == null && SameFrame(m.Timestamp, timestamp)));
                 Answer(p, timestamp, true);
                 string estimated = "";
-                if (p.Kind == KindRaceBreakout)
+                if (p.Kind == KindRaceBreakout || (pilot != null && breakoutWall >= 0))
                 {
-                    TrimAutoStrokesBeforeBreakout(p.Index, timestamp);
-                    estimated = EstimateUnderwaterDistance(p.Index, timestamp);
+                    TrimAutoStrokesBeforeBreakout(breakoutWall, timestamp);
+                    estimated = EstimateUnderwaterDistance(breakoutWall, timestamp);
                 }
 
-                Changed(estimated.Length > 0);
+                Changed(estimated.Length > 0 || pilot != null);
 
                 // What the command said stays visible with the next proposal.
                 done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
@@ -418,9 +456,20 @@ namespace Kinovea.ScreenManager
                 return;
 
             long at = p.Timestamp;
+
+            // The mark the auto pilot put for it goes (there is no such event there): its own mark, or the pilot's mark of the event
+            // near this proposal of another reading (one far from it is not what was answered). The start it put stays: the right
+            // one is put with «Εκκίνηση» (all the times follow it).
+            SwimMark pilot = PilotMarkOf(p);
+            if (pilot != null && (pilot.Id == p.PilotMark || Math.Abs(Timing.Seconds(pilot.Timestamp, p.Timestamp)) <= 1.0))
+                RemovePilotMark(pilot);
+            else
+                pilot = null;
+            bool pilotStart = p.Pilot && p.Kind == KindRaceStart;
             Answer(p, at, false);
-            Changed(false);
-            NextProposal(at, ProposalLabel(p) + ": δεν κρατήθηκε.");
+            Changed(pilot != null);
+            NextProposal(at, pilotStart ? "⚠ Η εκκίνηση του πιλότου μένει: βάλε τη σωστή με το «Εκκίνηση» στο καρέ του σήματος (οι χρόνοι υπολογίζονται ξανά)." :
+                ProposalLabel(p) + ": δεν κρατήθηκε." + (pilot != null ? " Το σημάδι του πιλότου σβήστηκε." : ""));
         }
 
         private void NextProposal(long after, string done = null)
@@ -432,7 +481,18 @@ namespace Kinovea.ScreenManager
             }
 
             List<SwimProposal> pending = PendingProposals;
-            SwimProposal next = pending.FirstOrDefault(x => x.Timestamp > after) ?? pending.FirstOrDefault();
+            SwimProposal next = null;
+            if (reviewDoubtful)
+            {
+                // The doubtful proposals of the auto pilot first, then all of them in the order of the video.
+                List<SwimProposal> doubtful = pending.Where(IsDoubtfulPilot).ToList();
+                next = doubtful.FirstOrDefault(x => x.Timestamp > after) ?? doubtful.FirstOrDefault();
+                if (next == null)
+                    reviewDoubtful = false;
+            }
+
+            if (next == null)
+                next = pending.FirstOrDefault(x => x.Timestamp > after) ?? pending.FirstOrDefault();
             if (next == null)
             {
                 EndReview(true, done);
@@ -474,6 +534,26 @@ namespace Kinovea.ScreenManager
 
             if (p == null)
                 return;
+
+            // A proposal the auto pilot put: the analyst's mark replaces the pilot's mark at another frame (a checkpoint: of the
+            // same distance only; else it is not the answer to it).
+            SwimMark pilot = PilotMarkOf(p);
+            if (pilot != null)
+            {
+                SwimMarkType markType = type == SwimMarkType.WallContact ? SwimMarkType.Split : type;
+                SwimMark added = Race.Marks.LastOrDefault(m => m.Type == markType && m.Pilot == null && SameFrame(m.Timestamp, timestamp));
+                if (added == null || (markType == SwimMarkType.Split && added.Distance != pilot.Distance))
+                    return;
+                int wall = pilot.Type == SwimMarkType.Breakout && pilot.Pilot != null ? pilot.Pilot.Wall : -1;
+                ReplacePilotMark(pilot, added);
+
+                // As Enter at this frame: the automatic strokes before the breakout go, its underwater distance again.
+                if (wall >= 0)
+                {
+                    TrimAutoStrokesBeforeBreakout(wall, timestamp);
+                    EstimateUnderwaterDistance(wall, timestamp);
+                }
+            }
 
             Answer(p, timestamp, true);
             RecombineWaitingProposals(p.Kind);
@@ -569,10 +649,14 @@ namespace Kinovea.ScreenManager
                 return;
 
             int n = Race.Proposals.Count;
+            bool pilotStops = PilotActive && pilotStep == PilotStep.Start;
             Race.Proposals.Clear();
             EndReview(false);
             Changed(false);
-            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).", n), false);
+            int pilot = Race.Marks.Count(m => m.Pilot != null);
+            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).{1}{2}", n,
+                pilot > 0 ? string.Format(CultureInfo.InvariantCulture, " Τα {0} σημάδια του πιλότου μένουν στην ανάλυση, χωρίς έλεγχο (δεν διδάσκουν).", pilot) : "",
+                pilotStops ? " ✈ Ο αυτόματος πιλότος σταμάτησε." : ""), false);
         }
 
         private static bool CommandOf(SwimMarkType type, out PlayerScreenCommands command)
@@ -639,7 +723,15 @@ namespace Kinovea.ScreenManager
             int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
             string title = string.Format(CultureInfo.InvariantCulture, "✨ {0}/{1}  {2}", index, Race.Proposals.Count, ProposalLabel(p));
             string where = frames == 0 ? "στο καρέ της πρότασης" : string.Format(CultureInfo.InvariantCulture, "{0:+0;−0} καρέ από την πρόταση", frames);
-            string keys = Reviewing ? "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος" : "«Έλεγχος» για να απαντήσεις";
+            SwimMark pilotMark = PilotMarkOf(p);
+            bool pilot = pilotMark != null;
+            if (pilot)
+            {
+                long away = (long)Math.Round((pilotMark.Timestamp - p.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
+                title += away == 0 ? " · ✈ μπήκε" : string.Format(CultureInfo.InvariantCulture, " · ✈ μπήκε στο {0:+0;−0} καρέ", away);
+            }
+            string keys = Reviewing ? (pilot ? "Enter σωστό · ← → καρέ · Delete λάθος (σβήνεται) · Esc τέλος" : "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος") :
+                "«Έλεγχος» για να απαντήσεις";
 
             // A doubtful proposal (less than half of such proposals within 0.2 s of the analysts) says so (since 2026-10-18).
             bool doubtful = p.Confidence < DoubtfulConfidence;

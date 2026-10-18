@@ -183,7 +183,7 @@ namespace Kinovea.ScreenManager
             if (p == null)
                 return null;
 
-            SwimMark marked = Race.Marks.Where(m => m.Type == type && m.Timestamp >= searchFrom && m.Timestamp <= searchTo)
+            SwimMark marked = Race.Marks.Where(m => m.Type == type && m.Pilot == null && m.Timestamp >= searchFrom && m.Timestamp <= searchTo)
                 .OrderBy(m => Math.Abs(m.Timestamp - p.Timestamp)).FirstOrDefault();
             if (marked != null)
             {
@@ -238,7 +238,7 @@ namespace Kinovea.ScreenManager
             // An event the analyst marked already moves the next ones (as his answer would).
             foreach (Tuple<string, SwimMarkType> e in new[] { Tuple.Create(KindRaceReaction, SwimMarkType.Reaction), Tuple.Create(KindRaceBlock, SwimMarkType.FeetOff) })
             {
-                SwimMark marked = Race.Marks.Where(m => m.Type == e.Item2 && m.Timestamp >= start && m.Timestamp <= to).OrderBy(m => m.Timestamp).FirstOrDefault();
+                SwimMark marked = Race.Marks.Where(m => m.Type == e.Item2 && m.Pilot == null && m.Timestamp >= start && m.Timestamp <= to).OrderBy(m => m.Timestamp).FirstOrDefault();
                 if (marked != null)
                     MoveEventProposals(e.Item1, 0, marked.Timestamp, made);
             }
@@ -259,9 +259,10 @@ namespace Kinovea.ScreenManager
             if (kind == "finish")
                 return null;
 
+            // A wall of the auto pilot not checked yet: the wall proposed now first (a new reading puts it in its place).
             SwimMark mark = Race.GetSplit(wall);
             SwimProposal p = proposed.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == wall);
-            long? wallTs = mark != null ? mark.Timestamp : p != null ? p.Timestamp : (long?)null;
+            long? wallTs = mark != null && (mark.Pilot == null || p == null) ? mark.Timestamp : p != null ? p.Timestamp : (long?)null;
             if (!wallTs.HasValue)
                 return null;
 
@@ -343,6 +344,10 @@ namespace Kinovea.ScreenManager
             string video = SwimLearning.VideoCode(videoPath);
             foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == kind && x.Cues.Count > 0).ToList())
             {
+                // A breakout the auto pilot put stays at the frame of its mark (Enter there: right).
+                if (IsPilotPut(p))
+                    continue;
+
                 if (events)
                 {
                     CombineEvent(p, EventConfidence(kind));

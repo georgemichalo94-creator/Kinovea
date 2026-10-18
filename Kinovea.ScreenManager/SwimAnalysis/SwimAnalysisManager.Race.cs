@@ -61,6 +61,8 @@ namespace Kinovea.ScreenManager
         public void FindStartLight()
         {
             RefreshTiming();
+            startLightCancelled = false;
+            StopPilotCountdown();
             if (Race == null || !HasVideo || StartLightRunning)
                 return;
 
@@ -136,12 +138,14 @@ namespace Kinovea.ScreenManager
                 if (error != null)
                 {
                     log.Error("Start light reading failed.", error);
+                    startLightCancelled = true;
                     Status("Η αυτόματη εκκίνηση απέτυχε: " + error.Message, true);
                     return;
                 }
 
                 if (cancelled)
                 {
+                    startLightCancelled = true;
                     Status("Η αναζήτηση της εκκίνησης ακυρώθηκε.", false);
                     return;
                 }
@@ -548,9 +552,10 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // The analyst already put the start near the flash: that is his answer (learning), nothing to check.
+            // The analyst already put the start near the flash: that is his answer (learning), nothing to check (not a start of
+            // the auto pilot not checked yet: proposed for the check).
             SwimProposal best = made[0];
-            if (Race.StartTimestamp.HasValue && Math.Abs(Timing.Seconds(Race.StartTimestamp.Value, best.Timestamp)) <= 0.2)
+            if (Race.StartTimestamp.HasValue && !Race.PilotStart && Math.Abs(Timing.Seconds(Race.StartTimestamp.Value, best.Timestamp)) <= 0.2)
             {
                 long marked = Race.StartTimestamp.Value;
                 Race.Proposals.Add(best);
@@ -588,8 +593,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The start proposal is accepted at this frame: it becomes the start of the race (and of the swimmers of the video).</summary>
         private void AcceptStartProposal(SwimProposal p, long timestamp)
         {
-            // The other start candidates go (no answer: the learning does not change).
+            // The other start candidates go (no answer: the learning does not change). The start is the analyst's now (also one
+            // the auto pilot had put).
             Race.Proposals.RemoveAll(x => x.Kind == KindRaceStart && x.Id != p.Id);
+            Race.PilotStart = false;
             resolvingProposal = true;
             try
             {
@@ -604,9 +611,19 @@ namespace Kinovea.ScreenManager
             Changed(false);
             string done = "✓ " + ProposalLabel(p) + ": t = 0 σε αυτό το καρέ.";
 
+            // The auto pilot waited for this check of the start: it goes on with the whole race.
+            if (PilotActive && pilotStep == PilotStep.Start)
+            {
+                pilotStep = PilotStep.None;
+                EndReview(false);
+                pilotStartNote = "την επιβεβαίωσες εσύ";
+                PilotLater(PilotRace);
+                return;
+            }
+
             // A new analysis (nothing else waiting, no checkpoint yet): straight on to the whole race, a little after the breakout,
-            // where the analyst clicks the swimmer (Esc: not now).
-            if (PendingProposals.Count == 0 && PoolHasMarks && !Race.IsTraining && !Race.Marks.Any(m => m.Type == SwimMarkType.Split))
+            // where the analyst clicks the swimmer (Esc: not now). Not while the auto pilot works (it asks for the swimmer itself).
+            if (!PilotActive && PendingProposals.Count == 0 && PoolHasMarks && !Race.IsTraining && !Race.Marks.Any(m => m.Type == SwimMarkType.Split))
             {
                 EndReview(false);
                 SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, timestamp + RealSpan(5.0)));
@@ -923,12 +940,13 @@ namespace Kinovea.ScreenManager
             foreach (KeyValuePair<string, double> c in cues)
                 p.Cues[c.Key] = SessionStamp(s, c.Value);
 
-            // A breakout marked by the analyst after this wall (an analysis made before): his frame teaches without asking.
+            // A breakout marked by the analyst after this wall (an analysis made before): his frame teaches without asking (not one
+            // of the auto pilot not checked yet: proposed again).
             if (all)
                 return p;
 
             long lapStart = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
-            SwimMark marked = Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Timestamp > lapStart && m.Timestamp <= lapStart + RealSpan(12))
+            SwimMark marked = Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Pilot == null && m.Timestamp > lapStart && m.Timestamp <= lapStart + RealSpan(12))
                 .OrderBy(m => m.Timestamp).FirstOrDefault();
             if (marked != null)
             {
@@ -997,19 +1015,21 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The breakout after the wall at 'wall' (0: the start) is at this frame: the automatic strokes of the length before it (more
-        /// than the breakout stroke, 0.4 s) go.
+        /// than the breakout stroke, 0.4 s) go. Returns them.
         /// </summary>
-        private void TrimAutoStrokesBeforeBreakout(int wall, long breakout)
+        private List<SwimMark> TrimAutoStrokesBeforeBreakout(int wall, long breakout)
         {
             if (Race == null || !Race.StartTimestamp.HasValue)
-                return;
+                return new List<SwimMark>();
 
             SwimMark wallMark = wall > 0 ? Race.GetSplit(wall) : null;
             long from = wall == 0 ? Race.StartTimestamp.Value : wallMark != null ? wallMark.Timestamp : breakout - RealSpan(8);
             long to = breakout - RealSpan(0.4);
-            int removed = Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > from && m.Timestamp < to);
-            if (removed > 0)
-                log.DebugFormat("Breakout after {0}: {1} automatic strokes before it removed.", wall, removed);
+            List<SwimMark> removed = Race.Marks.Where(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > from && m.Timestamp < to).ToList();
+            Race.Marks.RemoveAll(m => removed.Contains(m));
+            if (removed.Count > 0)
+                log.DebugFormat("Breakout after {0}: {1} automatic strokes before it removed.", wall, removed.Count);
+            return removed;
         }
 
         /// <summary>
@@ -1181,8 +1201,11 @@ namespace Kinovea.ScreenManager
                     p.Cues[c.Key] = SessionStamp(s, c.Value);
 
                 // Already marked by the analyst (an analysis made before): his frame is the answer, it teaches without asking.
-                // (All of them for the reading in the background: its caller teaches with the marks.)
+                // (All of them for the reading in the background: its caller teaches with the marks. A checkpoint of the auto pilot
+                // not checked yet is proposed again.)
                 SwimMark marked = all ? null : Race.GetSplit(distance);
+                if (marked != null && marked.Pilot != null)
+                    marked = null;
                 if (marked != null)
                 {
                     if (Math.Abs(Timing.Seconds(marked.Timestamp, p.Timestamp)) <= 1.5)
@@ -1266,6 +1289,10 @@ namespace Kinovea.ScreenManager
             string video = SwimLearning.VideoCode(videoPath);
             foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceSplit && x.Cues.Count > 0))
             {
+                // A checkpoint the auto pilot put stays at the frame of its mark (Enter there: right).
+                if (IsPilotPut(p))
+                    continue;
+
                 long origin = p.Cues.Values.Min();
                 SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, p.Index) { Confidence = 1.0 };
                 foreach (KeyValuePair<string, long> c in p.Cues)
@@ -1388,8 +1415,11 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The proposals made replace the waiting ones of the same distances and the check starts.</summary>
-        private void ShowSplitProposals(List<SwimProposal> made, int lengths, int strokes = 0)
+        /// <summary>
+        /// The proposals made replace the waiting ones of the same distances and the check starts (the auto pilot: they are put as
+        /// marks and wait for the check).
+        /// </summary>
+        private void ShowSplitProposals(List<SwimProposal> made, int lengths, int strokes = 0, bool pilot = false)
         {
             Race.Proposals.RemoveAll(p => IsWholeRaceKind(p.Kind) && made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
             Race.QuietProposals.RemoveAll(p => made.Any(m => m.Kind == p.Kind && m.Index == p.Index));
@@ -1409,6 +1439,14 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Proposals.AddRange(made);
+            if (pilot)
+            {
+                PilotAccept(made);
+                Changed(true);
+                RefreshProposalsUi();
+                return;
+            }
+
             Changed(false);
             BeginReview(made.OrderBy(p => p.Timestamp).First());
             if (lengths > 1 || strokes > 0)
@@ -1426,6 +1464,26 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
         public void BeginAutoRace()
+        {
+            // The button of the analyst: the auto pilot (if it waited for him) stops, the reading is his; the click on the swimmer
+            // it waited for stays armed for it.
+            if (PilotActive)
+            {
+                bool armed = (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost) && pickForRace && PickingTrack;
+                StopPilot();
+                if (armed)
+                {
+                    Status("🤖 Όλος ο αγώνας: ο αυτόματος πιλότος σταμάτησε, η ανάγνωση είναι δική σου. Κλικ στο κεφάλι του αθλητή και μετά στα " +
+                        "πόδια του, σε ένα καρέ μετά την έξοδο από το νερό (Esc: ακύρωση).", false);
+                    return;
+                }
+            }
+
+            StartWholeRace();
+        }
+
+        /// <summary>The click on the swimmer for the whole race is waited for (the swimmer the camera follows proposed).</summary>
+        private void StartWholeRace()
         {
             if (!PoolHasMarks && Race != null)
             {
@@ -1461,9 +1519,23 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void AutoRace(PointF head, PointF feet, long from)
         {
+            // The auto pilot reads this race: it puts what is found and makes the report.
+            bool pilot = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
+            if (pilot)
+            {
+                pilotWasLost = pilotStep == PilotStep.Lost;
+                StopPilotCountdown();
+                pilotStep = PilotStep.Reading;
+                RefreshPilotUi();
+            }
+
             RefreshTiming();
             if (!Timing.IsValid || Race == null || !Race.StartTimestamp.HasValue)
+            {
+                if (pilot)
+                    StopPilot();
                 return;
+            }
 
             List<LengthRead> lengths = new List<LengthRead>();
             Exception error = null;
@@ -1502,6 +1574,8 @@ namespace Kinovea.ScreenManager
                 if (error != null)
                 {
                     log.Error("Automatic race analysis failed.", error);
+                    if (pilot)
+                        StopPilot();
                     Status("Η αυτόματη ανάλυση του αγώνα απέτυχε: " + error.Message, true);
                     return;
                 }
@@ -1532,10 +1606,12 @@ namespace Kinovea.ScreenManager
                 }
 
                 Changed(strokes > 0);
-                ShowSplitProposals(made, lengths.Count, strokes);
-                if (cancelled)
+                ShowSplitProposals(made, lengths.Count, strokes, pilot);
+
+                // (The auto pilot says it itself after the reading: the swimmer lost, or the report.)
+                if (!pilot && cancelled)
                     Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0} μήκη: προτείνονται όσα βρέθηκαν.", lengths.Count), true);
-                else if (resumeWall > 0)
+                else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
                         "🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» " +
                         "σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί.", resumeWall - Race.Pool, Race.Unit), true);
@@ -1548,6 +1624,9 @@ namespace Kinovea.ScreenManager
                 if (form != null && !form.IsDisposed)
                     form.RefreshReel();
             }
+
+            if (pilot)
+                PilotAfterReading(cancelled, lengths.Count);
         }
 
         /// <summary>
@@ -1558,7 +1637,7 @@ namespace Kinovea.ScreenManager
         {
             long end = ReadingZone.End;
             SwimMark split = Race.GetSplit(wall);
-            if (split != null && split.Timestamp > from)
+            if (split != null && split.Pilot == null && split.Timestamp > from)
             {
                 // The wall is marked already (an analysis made before): a little after it.
                 target = last = Math.Min(end, split.Timestamp + RealSpan(1.2));

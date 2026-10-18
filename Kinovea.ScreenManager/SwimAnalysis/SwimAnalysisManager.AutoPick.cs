@@ -59,10 +59,16 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Width of the lane at the swimmer, in pixels of the image.</summary>
             public float LaneWidth;
+
+            /// <summary>Probes that found the same lane (of AutoPickProbes).</summary>
+            public int Agree;
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
         private AutoPickResult autoPick;
+
+        /// <summary>The last search of the swimmer was cancelled (its progress window).</summary>
+        private bool autoPickCancelled;
 
         /// <summary>
         /// While the click on the swimmer of the whole race is waited for: the swimmer the camera follows, on a frame of the first
@@ -85,6 +91,7 @@ namespace Kinovea.ScreenManager
         private void FindAutoPick()
         {
             autoPick = null;
+            autoPickCancelled = false;
             RefreshTiming();
             if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || !Timing.IsValid || !HasVideo || AutoStrokesRunning)
                 return;
@@ -139,6 +146,9 @@ namespace Kinovea.ScreenManager
                 if (form != null && !form.IsDisposed)
                     form.RefreshAutoStrokes();
             }
+
+            // Cancelled (no reason, no error): the click works as before; the auto pilot stops.
+            autoPickCancelled = error == null && found == null && reason == null;
 
             // The click may have been cancelled meanwhile (Esc).
             if (!pickForRace || !PickingTrack)
@@ -272,7 +282,8 @@ namespace Kinovea.ScreenManager
                 Head = new PointF((float)((xm + direction * 0.5 * length) / sx), (float)(middle / sy)),
                 Feet = new PointF((float)((xm - direction * 0.5 * length) / sx), (float)(middle / sy)),
                 Frame = frame,
-                LaneWidth = (float)(laneWidth / sy)
+                LaneWidth = (float)(laneWidth / sy),
+                Agree = agree
             };
         }
 
@@ -311,6 +322,13 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
             Status("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · " +
                 "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+
+            // The auto pilot does not take a swimmer the analyst is choosing: it waits for his Enter.
+            if (PilotActive && pilotStep == PilotStep.Swimmer)
+            {
+                StopPilotCountdown();
+                PilotPrompt();
+            }
             return true;
         }
 

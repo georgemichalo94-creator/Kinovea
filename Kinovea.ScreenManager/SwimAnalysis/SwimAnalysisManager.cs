@@ -386,11 +386,21 @@ namespace Kinovea.ScreenManager
             long? old = Race.StartTimestamp;
             Race.StartTimestamp = timestamp;
 
-            // Other swimmers analysed on the same video share the same start signal.
+            // The analyst put the start: it is his (one the auto pilot had put too). The pilot waiting for it goes on (below).
+            if (!resolvingProposal)
+                Race.PilotStart = false;
+            bool pilotWaited = !resolvingProposal && PilotActive && pilotStep == PilotStep.Start;
+            if (pilotWaited)
+                pilotStep = PilotStep.None;
+
+            // Other swimmers analysed on the same video share the same start signal (and whether the pilot put it).
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
+                {
                     other.StartTimestamp = timestamp;
+                    other.PilotStart = Race.PilotStart;
+                }
             }
 
             Status(old == null ? "Σήμα εκκίνησης: t = 0 σε αυτό το καρέ." : "Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά.", false);
@@ -415,6 +425,13 @@ namespace Kinovea.ScreenManager
                 {
                     NextProposal(timestamp);
                 }
+            }
+
+            // The auto pilot waited for the start: the analyst put it, the pilot goes on with the whole race.
+            if (pilotWaited)
+            {
+                pilotStartNote = "την έβαλες εσύ";
+                PilotLater(PilotRace);
             }
         }
 
@@ -542,6 +559,7 @@ namespace Kinovea.ScreenManager
             }
 
             Race.Marks.Remove(mark);
+            UndoPilotEffects(mark);
             ForgetTaught(mark);
             if (mark.Type == SwimMarkType.Split)
                 Race.StrokeCounts.Remove(mark.Distance);
@@ -578,6 +596,7 @@ namespace Kinovea.ScreenManager
 
         private void ClearUndo()
         {
+            StopPilot();
             undoStack.Clear();
             replacedBy.Clear();
             ClearWaitingFrames();
@@ -843,6 +862,7 @@ namespace Kinovea.ScreenManager
             if (PickTarget == SwimPickTarget.None)
                 return false;
 
+            bool pilotWaited = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
             autoPick = null;
             pendingMeasure = SwimPickTarget.None;
             calibrationClicks.Clear();
@@ -851,6 +871,12 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             Status("Ακυρώθηκε.", false);
+            if (pilotWaited)
+            {
+                StopPilot();
+                Status("✈ Ο αυτόματος πιλότος σταμάτησε. Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+            }
+
             return true;
         }
 
@@ -2813,9 +2839,14 @@ namespace Kinovea.ScreenManager
             Settings.Save();
             form = null;
 
-            // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks).
+            // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks), and the
+            // auto pilot with it.
             if (!Settings.VideoBars || !BarsVisible)
+            {
                 analysisOn = false;
+                StopPilot();
+            }
+
             UpdateBars();
 
             if (PickTarget != SwimPickTarget.None && !Active)

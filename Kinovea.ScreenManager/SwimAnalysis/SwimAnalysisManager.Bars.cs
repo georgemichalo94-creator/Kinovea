@@ -131,6 +131,7 @@ namespace Kinovea.ScreenManager
         public void CloseAnalysis()
         {
             analysisOn = false;
+            StopPilot();
             if (PickTarget != SwimPickTarget.None)
                 CancelPick();
             if (PanelOpen)

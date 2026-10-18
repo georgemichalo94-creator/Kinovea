@@ -652,6 +652,7 @@ namespace Kinovea.ScreenManager
             btnDeleteProposals.Enabled = pending > 0;
             lblProposals.Text = reviewing && manager.CurrentProposal != null ? "ελέγχεις: " + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal) : manager.ProposalsDescription;
             lblProposals.ForeColor = reviewing ? SwimTheme.Amber : pending > 0 ? SwimTheme.Accent : SwimTheme.Dim;
+            RefreshPilot();
         }
 
         private void RefreshTechPhasePage(SwimPhaseKind kind)

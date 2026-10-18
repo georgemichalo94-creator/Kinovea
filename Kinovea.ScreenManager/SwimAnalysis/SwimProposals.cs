@@ -46,6 +46,16 @@ namespace Kinovea.ScreenManager
         /// <summary>Values measured on the image at the cues (for example the water level of the entry), for the learning.</summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public Dictionary<string, double> Measures;
+
+        /// <summary>
+        /// Put by the auto pilot (since 2026-10-18): its mark is in the analysis, this proposal waits for the analyst's check (his
+        /// answer teaches the learning). PilotMark: the id of that mark (none for the start of the race).
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Pilot;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string PilotMark;
     }
 
     /// <summary>
