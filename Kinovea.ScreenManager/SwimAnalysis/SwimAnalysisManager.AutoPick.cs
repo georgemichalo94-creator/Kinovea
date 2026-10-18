@@ -126,8 +126,7 @@ namespace Kinovea.ScreenManager
                 using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
                 using (FormProgressBar progress = new FormProgressBar(true))
                 {
-                    progress.CancelAsked += (o, e) => worker.CancelAsync();
-                    KeepOpenWhileBusy(progress, worker);
+                    ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                     worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
                     worker.DoWork += (o, e) =>
                     {
@@ -138,8 +137,10 @@ namespace Kinovea.ScreenManager
                     worker.RunWorkerCompleted += (o, e) =>
                     {
                         error = e.Error;
-                        if (e.Error == null)
+                        if (e.Error == null && !cancel.Asked)
                             found = e.Result as AutoPickResult;
+                        if (cancel.Asked)
+                            reason = null;
                         progress.Close();
                     };
 
