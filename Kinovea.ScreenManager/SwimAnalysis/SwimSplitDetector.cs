@@ -245,13 +245,64 @@ namespace Kinovea.ScreenManager
         /// <summary>A checkpoint from the pace of the others (its mark not seen): 59 %.</summary>
         public const double PaceConfidence = 0.5;
 
-        /// <summary>A wall from its cues: the head or the body seen at the wall 50-66 %, the swimmer stopped and the pace 43 %, the pace alone 29 %.</summary>
+        /// <summary>
+        /// The confidence shown with a checkpoint of a 50 m pool: the part of such checkpoints within 0.2 s of the analysts
+        /// (2026-10-18, 115 analysts' races): the middle line with the other marks within 0.3 s 85 % (at the 45 m 71 %), within
+        /// 0.6 s 76 % (57 %), farther apart 50 % (28 %); the far rope's mark alone 88 % (41 %), the near one's 65 % (59 %); the pace
+        /// 45-60 %. Other pools (no data): MarkConfidence. found: the checkpoint as read (frames); fps: of the reading.
+        /// </summary>
+        public static double CheckpointConfidence(SwimSplitFound found, double fps, int pool)
+        {
+            if (found == null)
+                return 0;
+            if (!CalibratedConfidence || pool != 50 || fps <= 0)
+                return found.Confidence;
+
+            List<string> seen = found.Cues.Keys.Where(k => k != CuePace).ToList();
+            bool last = found.LapDistance == pool - 5;
+            if (seen.Count == 0)
+                return PaceConfidence;
+            if (seen.Count == 1)
+                return seen[0] == CueFar ? (last ? 0.4 : 0.85) : seen[0] == CueNear ? (last ? 0.6 : 0.65) : found.Confidence;
+            if (!seen.Contains(CueMiddle))
+                return 0.55;
+
+            double spread = (seen.Max(k => found.Cues[k]) - seen.Min(k => found.Cues[k])) / fps;
+            if (spread < 0.3)
+                return last ? 0.7 : 0.85;
+            if (spread < 0.6)
+                return last ? 0.55 : 0.75;
+            return last ? 0.3 : 0.5;
+        }
+
+        /// <summary>The confidences shown as measured on the analysts' races (tests: the ones before 2026-10-18).</summary>
+        internal static bool CalibratedConfidence = true;
+
+        /// <summary>
+        /// A wall from its cues: the head or the body seen at the wall 64 % within 0.2 s of the analysts, the swimmer stopped 39 %,
+        /// the pace alone 43 % (2026-10-18; before: 60 / 45 / 30 %).
+        /// </summary>
         public static double WallConfidence(IEnumerable<string> cues)
         {
             HashSet<string> seen = new HashSet<string>(cues.Select(k => { int dot = k.IndexOf('.'); return dot > 0 ? k.Substring(0, dot) : k; }));
             if (seen.Contains(CueWallHead) || seen.Contains(CueWallBody))
-                return 0.6;
-            return seen.Contains(CueStop) ? 0.45 : 0.3;
+                return CalibratedConfidence ? 0.65 : 0.6;
+            if (!CalibratedConfidence)
+                return seen.Contains(CueStop) ? 0.45 : 0.3;
+            return 0.4;
+        }
+
+        /// <summary>
+        /// The confidence shown with a breakout (the part within 0.2 s of the analysts, 2026-10-18): after the start 64 %; after a
+        /// turn in backstroke 76 %, freestyle 61 %, breaststroke 43 %, butterfly 35 %; after the turns of the medley into another
+        /// style 27 %. One cue only: three quarters of it. (Before: 60 % with more cues, 45 % with one.)
+        /// </summary>
+        public static double BreakoutConfidence(string style, bool turn, bool change, int cues)
+        {
+            if (!CalibratedConfidence)
+                return cues > 1 ? 0.6 : 0.45;
+            double c = !turn ? 0.65 : change ? 0.3 : style == "bk" ? 0.75 : style == "fs" ? 0.6 : style == "br" ? 0.4 : style == "fly" ? 0.35 : 0.5;
+            return cues > 1 ? c : 0.75 * c;
         }
 
         /// <summary>The checkpoints far from the time of the length go (tests).</summary>
