@@ -647,19 +647,49 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static double TurnRiseDelay(string style, bool change)
         {
+            return TurnRiseDelay(style, change, 1.0);
+        }
+
+        /// <summary>
+        /// The same for a swimmer seen from far by the share 'far' (FarShare): the delays above are those of the phones in the stands;
+        /// a camcorder near the swimmer sees the head out sooner after the steepest rise: butterfly 1.25 s, from butterfly to
+        /// backstroke 0.3 s (2026-10-18, 115 analysts' races: the camcorders' butterfly turns +0.30 s late with 1.0 s, +0.06 with
+        /// 1.25; the phones' -0.26 with 1.25, -0.01 with 1.0).
+        /// </summary>
+        public static double TurnRiseDelay(string style, bool change, double far)
+        {
             if (!TurnBreakout)
                 return 0;
+            far = Math.Max(0, Math.Min(1, far));
             switch (style)
             {
-                case "fly": return TurnRiseFly;
+                case "fly": return TurnRiseFlyNear + far * (TurnRiseFly - TurnRiseFlyNear);
                 case "br": return TurnRiseBreast;
-                case "bk": return change ? TurnRiseBackChange : -0.3;
+                case "bk": return change ? TurnRiseBackChangeNear + far * (TurnRiseBackChange - TurnRiseBackChangeNear) : -0.3;
                 default: return 0;
             }
         }
 
         /// <summary>See TurnRiseDelay (tests).</summary>
         internal static double TurnRiseBreast = -2.6, TurnRiseFly = -1.0, TurnRiseBackChange = -0.6;
+        internal static double TurnRiseFlyNear = -1.25, TurnRiseBackChangeNear = -0.3;
+
+        /// <summary>
+        /// Share (0-1) of a swimmer seen from far (a phone in the stands) by his length at the working size, as FarCheckpointDelay:
+        /// all of it up to FarSwimmerFull px, nothing from FarSwimmerNone px on; an unknown length counts as far (the delays used
+        /// before 2026-10-18).
+        /// </summary>
+        public static double FarShare(double swimmerLength)
+        {
+            if (!ViewBreakout || double.IsNaN(swimmerLength) || swimmerLength <= 0 || swimmerLength <= FarSwimmerFull)
+                return 1;
+            if (swimmerLength >= FarSwimmerNone)
+                return 0;
+            return (FarSwimmerNone - swimmerLength) / (FarSwimmerNone - FarSwimmerFull);
+        }
+
+        /// <summary>The breakout delays by the view of the swimmer (tests and lab variants).</summary>
+        internal static bool ViewBreakout = true;
 
         /// <summary>
         /// Usual delay (s) of the steepest rise after the start from the breakout the analysts mark: in breaststroke the first
@@ -670,11 +700,21 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static double StartRiseDelay(string style)
         {
-            return style == "br" ? StartRiseBreast : StartRiseOther;
+            return StartRiseDelay(style, 1.0);
+        }
+
+        /// <summary>
+        /// The same for a swimmer seen from far by the share 'far' (FarShare): the 0.3 s of breaststroke are those of the phones in
+        /// the stands; a camcorder near the swimmer had the breaststroke starts on time without it (2026-10-18: 4 of 5 worse with it).
+        /// </summary>
+        public static double StartRiseDelay(string style, double far)
+        {
+            far = Math.Max(0, Math.Min(1, far));
+            return style == "br" ? StartRiseBreastNear + far * (StartRiseBreast - StartRiseBreastNear) : StartRiseOther;
         }
 
         /// <summary>See StartRiseDelay (tests).</summary>
-        internal static double StartRiseBreast = -0.3, StartRiseOther = -0.15;
+        internal static double StartRiseBreast = -0.3, StartRiseOther = -0.15, StartRiseBreastNear = 0;
 
         /// <summary>
         /// Delay (s) of the steepest rise after a turn from the first stroke counted after it (the strokes of the length start

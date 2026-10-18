@@ -779,7 +779,7 @@ namespace Kinovea.ScreenManager
             string style = SwimPresets.StyleAt(Race, l.Session.Wall);
             bool turn = !IsDive(l.LapFrom);
             bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
-            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change, startUndelayed);
+            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change, startUndelayed, l.SwimmerLength);
         }
 
         /// <summary>
@@ -792,9 +792,12 @@ namespace Kinovea.ScreenManager
         /// into another style (the open turns of the medley): the steepest rise in backstroke has its own delay and learning there
         /// (".o"; the motion starting after the turn into freestyle tried as not sure: as many breakouts better as worse).
         /// </summary>
-        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false, bool startUndelayed = false)
+        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false, bool startUndelayed = false, double swimmerLength = double.NaN)
         {
             Dictionary<string, double> cues = new Dictionary<string, double>();
+
+            // By the view of the swimmer since 2026-10-18 (a camcorder near him sees the head out sooner than a phone in the stands).
+            double far = SwimSplitDetector.FarShare(swimmerLength);
             foreach (KeyValuePair<string, double> c in found)
             {
                 double delay;
@@ -802,8 +805,8 @@ namespace Kinovea.ScreenManager
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
                         continue;
-                    delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style, change))
-                        : (strokes || startUndelayed ? 0 : SwimSplitDetector.StartRiseDelay(style));
+                    delay = turn ? (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) : SwimSplitDetector.TurnRiseDelay(style, change, far))
+                        : (strokes || startUndelayed ? 0 : SwimSplitDetector.StartRiseDelay(style, far));
                 }
                 else
                 {
@@ -814,10 +817,15 @@ namespace Kinovea.ScreenManager
 
                 // The rise after a breaststroke turn has its delay since 2026-10-15 (".4": the answers kept with the old one do not move
                 // it), after a butterfly turn and after the breaststroke start since 2026-10-16 (".5"), after the start in the other
-                // styles since 2026-10-18 (".7").
+                // styles since 2026-10-18 (".7"). The rises whose delay depends on the view since 2026-10-18 (butterfly turns, the
+                // breaststroke start, the medley turn into backstroke) learn apart near the swimmer (".8": a camcorder).
                 string version = "";
                 if (!strokes && c.Key == SwimSplitDetector.CueRise)
+                {
                     version = turn && style == "br" ? ".4" : (turn && style == "fly") || (!turn && style == "br") ? ".5" : !turn ? ".7" : "";
+                    if (far < 0.5 && ((turn && style == "fly") || (!turn && style == "br") || (turn && change && style == "bk")))
+                        version += ".8";
+                }
 
                 // The open turn of the medley into backstroke: its rise learns apart (".o").
                 bool open = turn && change && SwimSplitDetector.TurnBreakout && style == "bk" && c.Key == SwimSplitDetector.CueRise;
