@@ -640,6 +640,16 @@ namespace Kinovea.ScreenManager
         private static ProgressCancel KeepOpenWhileBusy(FormProgressBar progress, BackgroundWorker worker)
         {
             ProgressCancel cancel = new ProgressCancel();
+
+            // No button of the window takes the focus: a reading often starts with Enter (a proposal taken, a start accepted), and a
+            // second Enter (the key held, a double press) went to the focused Cancel and stopped the reading at once (seen in the
+            // test of 2.7.2: the swimmer proposed taken with Enter, "0 lengths"). Cancel stays a click.
+            foreach (Control c in progress.Controls)
+            {
+                if (c is IButtonControl)
+                    c.TabStop = false;
+            }
+
             progress.CancelAsked += (o, e) =>
             {
                 cancel.Asked = true;
