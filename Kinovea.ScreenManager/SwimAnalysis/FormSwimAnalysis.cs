@@ -1661,8 +1661,8 @@ namespace Kinovea.ScreenManager
         private void RefreshPhases(SwimRace race, SwimComputed computed)
         {
             // Start, in the order of the events.
-            lblStartSignal.Text = race.StartTimestamp.HasValue ? "✔ t = 0" : "δεν έχει οριστεί";
-            lblStartSignal.ForeColor = race.StartTimestamp.HasValue ? colorOk : colorWarn;
+            lblStartSignal.Text = !race.StartTimestamp.HasValue ? "δεν έχει οριστεί" : race.PilotStart ? "✈ t = 0 · έλεγξέ τη" : "✔ t = 0";
+            lblStartSignal.ForeColor = race.StartTimestamp.HasValue && !race.PilotStart ? colorOk : colorWarn;
             lblReactionAuto.Text = Seconds(computed.ReactionTime);
             lblBlock.Text = Seconds(computed.BlockTime);
             lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? " · πτήση " + Seconds(computed.FlightTime) : "");

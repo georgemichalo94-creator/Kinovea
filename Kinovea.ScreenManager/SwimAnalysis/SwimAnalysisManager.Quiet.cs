@@ -585,6 +585,11 @@ namespace Kinovea.ScreenManager
             if (TeachPrior(mark) || string.IsNullOrEmpty(mark.Taught))
                 return;
 
+            // A start of the auto pilot not checked yet: the answers of the start events wait for it (not forgotten).
+            if (Race.PilotStart && (mark.Type == SwimMarkType.Reaction || mark.Type == SwimMarkType.Entry || mark.Type == SwimMarkType.FeetOff) &&
+                Race.StartTimestamp.HasValue && mark.Timestamp > Race.StartTimestamp.Value && mark.Timestamp <= Race.StartTimestamp.Value + RealSpan(StartEventsSeconds))
+                return;
+
             string key = mark.Taught;
             mark.Taught = null;
             if (!Race.Marks.Any(m => m.Taught == key))

@@ -394,11 +394,14 @@ namespace Kinovea.ScreenManager
             if (pilotWaited)
                 pilotStep = PilotStep.None;
 
-            // Other swimmers analysed on the same video share the same start signal.
+            // Other swimmers analysed on the same video share the same start signal (a start of the pilot that became the
+            // analyst's: their start events teach when they are shown).
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
                 {
+                    if (other.PilotStart && !Race.PilotStart)
+                        startRecheck.Add(other.Id);
                     other.StartTimestamp = timestamp;
                     other.PilotStart = Race.PilotStart;
                 }
@@ -1928,6 +1931,7 @@ namespace Kinovea.ScreenManager
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
             ClearUndo();
+            RecheckStartIfPut();
             PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
             RefreshPbCandidates();
@@ -2840,9 +2844,14 @@ namespace Kinovea.ScreenManager
             Settings.Save();
             form = null;
 
-            // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks).
+            // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks), and the
+            // auto pilot with it.
             if (!Settings.VideoBars || !BarsVisible)
+            {
                 analysisOn = false;
+                StopPilot();
+            }
+
             UpdateBars();
 
             if (PickTarget != SwimPickTarget.None && !Active)

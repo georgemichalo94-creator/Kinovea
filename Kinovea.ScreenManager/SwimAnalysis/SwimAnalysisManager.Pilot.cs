@@ -69,6 +69,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The reading of the pilot goes on after a swimmer lost (the click after the breakout).</summary>
         private bool pilotWasLost;
+
+        /// <summary>Other races of the video whose start (shared, the pilot's) the analyst put: their start events teach when shown.</summary>
+        private readonly HashSet<string> startRecheck = new HashSet<string>();
         private Timer pdfTimer;
         private string pdfRace;
         private int pdfWait;
@@ -214,17 +217,13 @@ namespace Kinovea.ScreenManager
             switch (pilotStep)
             {
                 case PilotStep.Start:
-                    if (Race.StartTimestamp.HasValue)
-                    {
-                        PilotRace();
-                        return;
-                    }
-
+                    // (A start put meanwhile by a key of a mark is Kinovea's zero, not the signal: the check again.)
                     SwimProposal start = Race.Proposals.Where(p => p.Kind == KindRaceStart).OrderBy(p => p.Index).FirstOrDefault();
                     if (start == null)
                     {
                         StopPilot();
-                        RunAutoPilot();
+                        Status("✈ Ο πιλότος σταμάτησε: βάλε την εκκίνηση με το κουμπί «Εκκίνηση» (G) στο καρέ του σήματος και πάτα ξανά " +
+                            "«✈ Αυτόματος πιλότος».", true);
                         return;
                     }
 
@@ -361,14 +360,15 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The swimmer proposed may be taken without an answer: all the probes found his lane (lab, 69 races: 20 camcorders so, 18 of
-        /// them read as well as from the analyst's click, 2 with checkpoints about 0.5 s off; no phone of the stands so, where the
-        /// lane in the middle was often another swimmer's) and he is seen near (his length as the delays of the checkpoints count
-        /// it): a camera following him.
+        /// The swimmer proposed may be taken without an answer: a file of a camcorder (AVCHD .mts/.m2ts), all the probes found his
+        /// lane and he is seen near (his length as the delays of the checkpoints count it). Lab, 97 races: 17 camcorder files so,
+        /// 15 of them read as well as from the analyst's click, 2 with checkpoints about 0.5 s off (the swimmer not in the middle);
+        /// the 2 phones of the stands so had another swimmer in the middle. Anything else: the analyst is asked.
         /// </summary>
         private bool PilotTrustsPick(AutoPickResult p)
         {
-            if (p.Agree < AutoPickProbes.Length)
+            string ext = string.IsNullOrEmpty(videoPath) ? "" : System.IO.Path.GetExtension(videoPath).ToLowerInvariant();
+            if ((ext != ".mts" && ext != ".m2ts") || p.Agree < AutoPickProbes.Length)
                 return false;
 
             Size reference = ReadingReader.Info.ReferenceSize;
@@ -420,7 +420,11 @@ namespace Kinovea.ScreenManager
             }
 
             Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
-            return owner != null && owner.IsHandleCreated && !IsWindowEnabled(owner.Handle);
+            if (owner != null && owner.IsHandleCreated && !IsWindowEnabled(owner.Handle))
+                return true;
+
+            // A message of the panel (shown with the panel as its owner) disables the panel only.
+            return form != null && !form.IsDisposed && form.IsHandleCreated && !IsWindowEnabled(form.Handle);
         }
 
         [DllImport("user32.dll")]
@@ -616,7 +620,30 @@ namespace Kinovea.ScreenManager
             if (p.Kind == KindRaceBreakout)
                 return Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && m.Pilot.Wall == p.Index);
 
+            // A breakout proposed by another reading (the skeleton): the pilot's breakout near it (the same length).
+            if (p.Type == SwimMarkType.Breakout && Timing != null && Timing.IsValid)
+            {
+                return Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && Math.Abs(Timing.Seconds(m.Timestamp, p.Timestamp)) <= PilotSameBreakout)
+                    .OrderBy(m => Math.Abs(m.Timestamp - p.Timestamp)).FirstOrDefault();
+            }
+
             return null;
+        }
+
+        /// <summary>Two breakouts closer than this (s) are the same one (the breakouts of two lengths are many seconds apart).</summary>
+        private const double PilotSameBreakout = 4.0;
+
+        /// <summary>The events of the start proposed at their usual times from the start signal.</summary>
+        private static bool IsStartEventKind(string kind)
+        {
+            return kind == KindRaceReaction || kind == KindRaceBlock || kind == KindRaceEntry;
+        }
+
+        /// <summary>Another race of the video is shown: if the analyst put its shared start meanwhile, its start events teach now.</summary>
+        private void RecheckStartIfPut()
+        {
+            if (Race != null && startRecheck.Remove(Race.Id) && !Race.PilotStart)
+                RecheckStartLessons();
         }
 
         /// <summary>A proposal the pilot put as a mark, not checked yet: it stays at the frame of its mark (not moved by the answers).</summary>

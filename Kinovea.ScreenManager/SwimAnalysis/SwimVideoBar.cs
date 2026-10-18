@@ -811,8 +811,9 @@ namespace Kinovea.ScreenManager
             {
                 case 0:
                     title = "ΕΚΚΙΝΗΣΗ";
-                    list.Add(B("start", PlayerScreenCommands.SwimStart, "Εκκίνηση", race.StartTimestamp.HasValue ? "✓" : null,
-                        "Στο καρέ του σήματος εκκίνησης (φως, καπνός, ήχος): εκεί γίνεται t = 0."));
+                    list.Add(B("start", PlayerScreenCommands.SwimStart, "Εκκίνηση", race.StartTimestamp.HasValue ? (race.PilotStart ? "✈?" : "✓") : null,
+                        "Στο καρέ του σήματος εκκίνησης (φως, καπνός, ήχος): εκεί γίνεται t = 0." +
+                        (race.PilotStart ? "\n✈ Την έβαλε ο αυτόματος πιλότος: έλεγξέ τη (Enter στον «Έλεγχο», ή G στο σωστό καρέ)." : "")));
                     list.Add(new Btn
                     {
                         Id = "start-light",
