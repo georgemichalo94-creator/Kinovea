@@ -117,6 +117,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Last reference chosen for each event (style|distance|pool|gender → reference id).</summary>
         public Dictionary<string, string> ReferenceByEvent = new Dictionary<string, string>();
 
+        /// <summary>
+        /// The numbering of the lanes of the views of the whole pool (phones), per folder of videos: the lanes the analyst confirmed,
+        /// "number:place:lanes;..." (the place counted from the near wall, 0 at the near wall).
+        /// </summary>
+        public Dictionary<string, string> LaneNumbering = new Dictionary<string, string>();
+
         [JsonIgnore]
         public bool IsConfigured
         {

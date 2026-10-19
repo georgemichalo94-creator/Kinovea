@@ -217,7 +217,10 @@ namespace Kinovea.ScreenManager
 
         private void AutoStrokeClick(PointF point, long timestamp)
         {
-            // A click instead of the swimmer proposed for the whole race: this one.
+            // A click instead of the swimmer proposed for the whole race: this one (a swimmer of a lane proposed: the lane clicked
+            // teaches the numbering of the pool).
+            if (PickTarget == SwimPickTarget.StrokeHead && pickForRace)
+                LearnLaneFromClick(autoPick, point, timestamp);
             autoPick = null;
             if (PickTarget == SwimPickTarget.StrokeHead || !SameFrame(autoStrokeFrame, timestamp))
             {
