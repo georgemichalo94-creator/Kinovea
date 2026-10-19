@@ -123,6 +123,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public Dictionary<string, string> LaneNumbering = new Dictionary<string, string>();
 
+        /// <summary>
+        /// The link of the official results last used for each competition (its name as typed, normalized; since 2.7.6): the next race
+        /// of the competition finds its results without the link pasted again.
+        /// </summary>
+        public Dictionary<string, string> ResultsLinks = new Dictionary<string, string>();
+
         [JsonIgnore]
         public bool IsConfigured
         {

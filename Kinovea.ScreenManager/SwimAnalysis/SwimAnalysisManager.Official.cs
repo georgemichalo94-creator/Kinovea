@@ -73,7 +73,13 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // No link: the one used for another race of the same competition (as typed in the race details).
             Race.ResultsLink = (link ?? "").Trim();
+            string competitionKey = SwimAthleteList.Normalize(Race.Competition ?? "");
+            string known;
+            if (Race.ResultsLink.Length == 0 && competitionKey.Length > 0 && Settings.ResultsLinks != null &&
+                Settings.ResultsLinks.TryGetValue(competitionKey, out known) && !string.IsNullOrWhiteSpace(known))
+                Race.ResultsLink = known;
             OfficialQuery q = new OfficialQuery
             {
                 Link = Race.ResultsLink,
@@ -399,6 +405,16 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrWhiteSpace(Race.Athlete))
                 Race.Athlete = e.Name.Length > 0 ? e.Name : e.NameLatin;
             OfficialChanged(times, e.Reaction);
+
+            // The link of the competition, for its next races.
+            string competition = SwimAthleteList.Normalize(Race.Competition ?? "");
+            if (competition.Length > 0 && !string.IsNullOrWhiteSpace(q.Link))
+            {
+                if (Settings.ResultsLinks == null)
+                    Settings.ResultsLinks = new Dictionary<string, string>();
+                Settings.ResultsLinks[competition] = q.Link.Trim();
+                Settings.Save();
+            }
             if (form != null)
                 form.RefreshAll();
 
