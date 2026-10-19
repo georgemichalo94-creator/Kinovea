@@ -246,12 +246,40 @@ namespace Kinovea.ScreenManager
         public const double PaceConfidence = 0.5;
 
         /// <summary>
+        /// A checkpoint from the pace alone of a swimmer seen from far (a phone in the stands), shown as doubtful (under 50 %: the
+        /// analyst checks it first). 2026-10-19, the analysts' phone races (their clicks and the lane picks of 2.7.4): within 0.2 s
+        /// of the analysts at 15, 25 or 35 m 35-45 % (more than 0.5 s off 7-23 %), at the 45 m 16-23 % (54-63 %); the marks seen
+        /// 60-80 % (2-9 %).
+        /// </summary>
+        public const double FarPaceConfidence = 0.4, FarPaceLastConfidence = 0.2;
+
+        /// <summary>The pace alone of a swimmer seen from far shown as doubtful (tests).</summary>
+        internal static bool FarPaceDoubtful = true;
+
+        /// <summary>The confidence of a wall at its official time (typed from the results) and of the 45 m from it.</summary>
+        public const double OfficialConfidence = 0.95, OfficialLastConfidence = 0.85;
+
+        /// <summary>
+        /// The checkpoint 5 m before a wall of a 50 m pool from the official time of the wall and the 35 m (seconds, or frames):
+        /// the last 5 m take LastFiveRatio of the 10 m before (the analysts' walls and 45 m: 0.49–0.53 of them in the camcorder
+        /// races, 0.44–0.62 in the phone ones, q10–q90). 2026-10-19, 115 analysts' races with their wall as the official time:
+        /// 45 m more than 0.3 s off 17 -> 1 of 69 (camcorders), 39 -> 7 of 158 (phones), more than 0.5 s 22 -> 0; better than
+        /// keeping the 45 m seen when they agree (within 0.1-0.3 s), the same with official times 0.05 s off the analysts'.
+        /// </summary>
+        public static double LastFromWall(double wall, double before, string kind, string style)
+        {
+            double r = LastFiveRatio(kind, style);
+            return (wall + r * before) / (1 + r);
+        }
+
+        /// <summary>
         /// The confidence shown with a checkpoint of a 50 m pool: the part of such checkpoints within 0.2 s of the analysts
         /// (2026-10-18, 115 analysts' races): the middle line with the other marks within 0.3 s 85 % (at the 45 m 71 %), within
         /// 0.6 s 76 % (57 %), farther apart 50 % (28 %); the far rope's mark alone 88 % (41 %), the near one's 65 % (59 %); the pace
-        /// 45-60 %. Other pools (no data): MarkConfidence. found: the checkpoint as read (frames); fps: of the reading.
+        /// 45-60 %. Other pools (no data): MarkConfidence. found: the checkpoint as read (frames); fps: of the reading. far: a swimmer
+        /// seen from far (a phone in the stands, FarShare 0.5 and more), where the pace alone is FarPaceConfidence.
         /// </summary>
-        public static double CheckpointConfidence(SwimSplitFound found, double fps, int pool)
+        public static double CheckpointConfidence(SwimSplitFound found, double fps, int pool, bool far = false)
         {
             if (found == null)
                 return 0;
@@ -261,7 +289,7 @@ namespace Kinovea.ScreenManager
             List<string> seen = found.Cues.Keys.Where(k => k != CuePace).ToList();
             bool last = found.LapDistance == pool - 5;
             if (seen.Count == 0)
-                return PaceConfidence;
+                return far && FarPaceDoubtful ? (last ? FarPaceLastConfidence : FarPaceConfidence) : PaceConfidence;
             if (seen.Count == 1)
                 return seen[0] == CueFar ? (last ? 0.4 : 0.85) : seen[0] == CueNear ? (last ? 0.6 : 0.65) : found.Confidence;
             if (!seen.Contains(CueMiddle))
@@ -273,6 +301,16 @@ namespace Kinovea.ScreenManager
             if (spread < 0.6)
                 return last ? 0.55 : 0.75;
             return last ? 0.3 : 0.5;
+        }
+
+        /// <summary>
+        /// The checkpoint is the pace alone of a swimmer seen from far, with FarPaceConfidence (see CheckpointConfidence): shown as
+        /// doubtful after the reading (since 2026-10-19).
+        /// </summary>
+        public static bool FarPaceOnly(SwimSplitFound found, double fps, int pool, bool far)
+        {
+            return far && FarPaceDoubtful && CalibratedConfidence && found != null && pool == 50 && fps > 0 &&
+                found.Cues.Count > 0 && found.Cues.Keys.All(k => k == CuePace);
         }
 
         /// <summary>The confidences shown as measured on the analysts' races (tests: the ones before 2026-10-18).</summary>

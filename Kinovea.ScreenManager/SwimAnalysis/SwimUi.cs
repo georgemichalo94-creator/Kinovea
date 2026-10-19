@@ -294,6 +294,9 @@ namespace Kinovea.ScreenManager
             Cursor = Cursors.Hand;
         }
 
+        /// <summary>A click puts in what is being typed in the window first (see OnMouseDown); not for «Αναίρεση».</summary>
+        public bool CommitsTyping = true;
+
         /// <summary>Hotkey shown in the badge ("S", "Backspace"), empty for none.</summary>
         public string Key
         {
@@ -349,6 +352,12 @@ namespace Kinovea.ScreenManager
             {
                 pressed = true;
                 Invalidate();
+
+                // A button of the panel does not take the focus: what is being typed in the window (the official times) counts before
+                // it acts (since 2026-10-19), except for the buttons that would undo it (CommitsTyping false).
+                FormSwimAnalysis form = GetStyle(ControlStyles.Selectable) || !CommitsTyping ? null : FindForm() as FormSwimAnalysis;
+                if (form != null)
+                    form.CommitTyping();
             }
 
             base.OnMouseDown(e);

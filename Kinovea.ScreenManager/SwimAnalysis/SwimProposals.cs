@@ -56,6 +56,37 @@ namespace Kinovea.ScreenManager
 
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string PilotMark;
+
+        /// <summary>
+        /// At an official time of the results (since 2026-10-19: the wall typed, the 45 m from it and the 35 m): no cues, its answer
+        /// teaches nothing. Read: what the reading itself found for this checkpoint (null: nothing, it is there only from the
+        /// official time), where it goes back when the official time is taken away.
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Official;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SwimProposalRead Read;
+
+        /// <summary>
+        /// A checkpoint from the pace of a swimmer seen from far alone (its line not seen in the video; since 2026-10-19): shown as
+        /// doubtful after the reading. Not kept in the file.
+        /// </summary>
+        [JsonIgnore]
+        public bool FarPace;
+    }
+
+    /// <summary>A proposal as the reading made it (frame, confidence, cues), kept while an official time stands in its place.</summary>
+    public class SwimProposalRead
+    {
+        public long Timestamp;
+        public double Confidence;
+        public Dictionary<string, long> Cues = new Dictionary<string, long>();
+
+        public static SwimProposalRead Of(SwimProposal p)
+        {
+            return p == null ? null : new SwimProposalRead { Timestamp = p.Timestamp, Confidence = p.Confidence, Cues = new Dictionary<string, long>(p.Cues) };
+        }
     }
 
     /// <summary>

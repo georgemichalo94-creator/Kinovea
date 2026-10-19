@@ -749,7 +749,7 @@ namespace Kinovea.ScreenManager
                     first = Math.Max(0, (int)Math.Round((double.IsNaN(bs) ? b : bs) + (dive ? 0.1 : -0.4) * s.Fps));
             }
 
-            double wall = WallSample(l);
+            double wall = GoOnSample(l);
             int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
             last = Math.Min(n - 1, last);
             first = Math.Max(0, Math.Min(n - 1, first));
@@ -1044,7 +1044,7 @@ namespace Kinovea.ScreenManager
                 return 0;
 
             long lapStart = s.LapStart == long.MinValue && Race.StartTimestamp.HasValue ? Race.StartTimestamp.Value : s.LapStart;
-            double wall = WallSample(l);
+            double wall = GoOnSample(l);
             long lapEnd = double.IsNaN(wall) ? s.Timestamps[n - 1] : SessionStamp(s, wall);
             Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > lapStart && m.Timestamp < lapEnd);
 
@@ -1128,6 +1128,17 @@ namespace Kinovea.ScreenManager
             return l;
         }
 
+        /// <summary>Timestamp at a frame index of a reading, before or after its frames by the average step (see SessionIndex).</summary>
+        private static long SessionStampOut(StrokeSession s, double index)
+        {
+            int n = s.Timestamps.Count;
+            if (n < 2 || double.IsNaN(index) || (index >= 0 && index <= n - 1))
+                return SessionStamp(s, double.IsNaN(index) ? 0 : index);
+
+            double step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)(n - 1);
+            return (long)Math.Round(index < 0 ? s.Timestamps[0] + index * step : s.Timestamps[n - 1] + (index - (n - 1)) * step);
+        }
+
         /// <summary>Timestamp at a frame index of a reading (fractions between the frames).</summary>
         private static long SessionStamp(StrokeSession s, double index)
         {
@@ -1152,6 +1163,9 @@ namespace Kinovea.ScreenManager
             double far = SwimSplitDetector.FarCheckpointDelay(style, l.SwimmerLength);
             double delay = (CheckpointDelay(style) + far) * s.Fps;
             string view = far > 0 ? ".f" : "";
+            // (A swimmer of unknown size is not taken as seen from far here.)
+            bool farView = !double.IsNaN(l.SwimmerLength) && l.SwimmerLength > 0 && SwimSplitDetector.FarShare(l.SwimmerLength) >= 0.5;
+            HashSet<int> farPace = new HashSet<int>();
             foreach (SwimSplitFound f in l.Found)
             {
                 Dictionary<string, double> cues = new Dictionary<string, double>();
@@ -1161,57 +1175,100 @@ namespace Kinovea.ScreenManager
                     string version = Race.Pool == 50 && SwimSplitDetector.HasMarkDelay(c.Key) ? ".6" : "";
                     cues[StyleCue(c.Key + PriorVersion(c.Key, style) + version + view, style)] = c.Value + delay;
                 }
-                // The confidence shown as measured on the analysts' races (cues apart, the 45 m; since 2026-10-18).
-                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, SwimSplitDetector.CheckpointConfidence(f, s.Fps, Race.Pool)));
+                // The confidence shown as measured on the analysts' races (cues apart, the 45 m; since 2026-10-18; the pace alone of
+                // a swimmer seen from far as doubtful since 2026-10-19).
+                items.Add(Tuple.Create(l.LapFrom + f.LapDistance, cues, SwimSplitDetector.CheckpointConfidence(f, s.Fps, Race.Pool, farView)));
+                if (SwimSplitDetector.FarPaceOnly(f, s.Fps, Race.Pool, farView))
+                    farPace.Add(l.LapFrom + f.LapDistance);
             }
 
             if (l.Wall.Count > 0)
                 items.Add(Tuple.Create(s.Wall, WallCuesOfKind(l, true), SwimSplitDetector.WallConfidence(l.Wall.Keys)));
 
+            // The official time of the wall (typed from the results, since 2026-10-19): the wall at it and, in a 50 m pool, the 45 m from
+            // it and the 35 m (the analyst's, else the one proposed). These have no cues: they teach nothing and the learning does
+            // not move them. Not for the learning in the background (all): its answers are those of the cues.
+            long? officialWall = all ? null : OfficialWallStamp(s.Wall);
+            int lastDistance = officialWall.HasValue && Race.Pool == 50 && s.Wall - 5 > l.LapFrom ? s.Wall - 5 : -1;
+            SwimMark analyst35 = lastDistance > 0 ? Race.GetSplit(s.Wall - 15) : null;
+            long? before = analyst35 != null && analyst35.Pilot == null ? (long?)analyst35.Timestamp : null;
+            if (lastDistance > 0 && !items.Any(x => x.Item1 == lastDistance))
+            {
+                int at = items.FindIndex(x => x.Item1 > lastDistance);
+                items.Insert(at >= 0 ? at : items.Count, Tuple.Create(lastDistance, new Dictionary<string, double>(), 0.0));
+            }
+
+            if (officialWall.HasValue && !items.Any(x => x.Item1 == s.Wall))
+                items.Add(Tuple.Create(s.Wall, new Dictionary<string, double>(), 0.0));
+
             foreach (Tuple<int, Dictionary<string, double>, double> item in items)
             {
                 int distance = item.Item1;
+
+                // What the reading itself found (null: nothing).
+                SwimProposal read = null;
+                if (item.Item2.Count > 0)
+                {
+                    SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, distance) { Confidence = item.Item3 };
+                    foreach (KeyValuePair<string, double> c in item.Item2)
+                    {
+                        double weight, spread;
+                        CueWeight(c.Key, out weight, out spread);
+                        d.Cue(c.Key, c.Value, weight, spread);
+                    }
+
+                    double confidence;
+                    double sample = SwimProposalMath.Combine(d, learning, video, s.Fps, out confidence);
+                    if (!double.IsNaN(sample))
+                    {
+                        read = new SwimProposal
+                        {
+                            Type = SwimMarkType.Split,
+                            Kind = KindRaceSplit,
+                            Timestamp = SessionStamp(s, sample),
+                            Confidence = Math.Round(confidence, 2),
+                            Index = distance,
+                            Batch = batch,
+                            FarPace = farPace.Contains(distance)
+                        };
+
+                        foreach (KeyValuePair<string, double> c in item.Item2)
+                            read.Cues[c.Key] = SessionStamp(s, c.Value);
+                    }
+                }
+
+                // At the official time instead (what the reading found kept with it, for the learning and for when it goes).
+                SwimProposal p = read;
+                if (officialWall.HasValue && distance == s.Wall)
+                {
+                    p = OfficialSplitProposal(distance, officialWall.Value, SwimSplitDetector.OfficialConfidence, batch, read);
+                }
+                else if (distance == lastDistance && before.HasValue)
+                {
+                    string kind = WallKind(s.Wall);
+                    long from = (long)Math.Round(SwimSplitDetector.LastFromWall(officialWall.Value, before.Value, kind, style));
+                    p = OfficialSplitProposal(distance, from, SwimSplitDetector.OfficialLastConfidence, batch, read);
+                }
+
+                if (p == null)
+                    continue;
+                if (lastDistance > 0 && distance == s.Wall - 15 && !before.HasValue)
+                    before = p.Timestamp;
                 if (!Race.Checkpoints.Contains(distance))
                     continue;
 
-                SwimDetection d = new SwimDetection(KindRaceSplit, SwimMarkType.Split, distance) { Confidence = item.Item3 };
-                foreach (KeyValuePair<string, double> c in item.Item2)
-                {
-                    double weight, spread;
-                    CueWeight(c.Key, out weight, out spread);
-                    d.Cue(c.Key, c.Value, weight, spread);
-                }
-
-                double confidence;
-                double sample = SwimProposalMath.Combine(d, learning, video, s.Fps, out confidence);
-                if (double.IsNaN(sample))
-                    continue;
-
-                SwimProposal p = new SwimProposal
-                {
-                    Type = SwimMarkType.Split,
-                    Kind = KindRaceSplit,
-                    Timestamp = SessionStamp(s, sample),
-                    Confidence = Math.Round(confidence, 2),
-                    Index = distance,
-                    Batch = batch
-                };
-
-                foreach (KeyValuePair<string, double> c in item.Item2)
-                    p.Cues[c.Key] = SessionStamp(s, c.Value);
-
-                // Already marked by the analyst (an analysis made before): his frame is the answer, it teaches without asking.
-                // (All of them for the reading in the background: its caller teaches with the marks. A checkpoint of the auto pilot
-                // not checked yet is proposed again.)
+                // Already marked by the analyst (an analysis made before): his frame is the answer to what the reading found, it
+                // teaches without asking. (All of them for the reading in the background: its caller teaches with the marks. A
+                // checkpoint of the auto pilot not checked yet is proposed again.)
                 SwimMark marked = all ? null : Race.GetSplit(distance);
                 if (marked != null && marked.Pilot != null)
                     marked = null;
                 if (marked != null)
                 {
-                    if (Math.Abs(Timing.Seconds(marked.Timestamp, p.Timestamp)) <= 1.5)
+                    if (read != null && Math.Abs(Timing.Seconds(marked.Timestamp, read.Timestamp)) <= 1.5)
                     {
-                        Race.Proposals.Add(p);
-                        Answer(p, marked.Timestamp, true);
+                        Race.Proposals.Add(read);
+                        Answer(read, marked.Timestamp, true);
                         learnedFromMarks++;
                     }
 
@@ -1222,6 +1279,461 @@ namespace Kinovea.ScreenManager
             }
 
             return made;
+        }
+
+        /// <summary>
+        /// A checkpoint proposed at an official time (of a wall, the 45 m from it) without cues: the learning does not move it and its
+        /// answer teaches what the reading itself found there (read, null: nothing).
+        /// </summary>
+        private static SwimProposal OfficialSplitProposal(int distance, long timestamp, double confidence, string batch, SwimProposal read)
+        {
+            return new SwimProposal
+            {
+                Type = SwimMarkType.Split,
+                Kind = KindRaceSplit,
+                Timestamp = timestamp,
+                Confidence = confidence,
+                Index = distance,
+                Batch = batch,
+                Official = true,
+                Read = SwimProposalRead.Of(read)
+            };
+        }
+
+        /// <summary>The proposal as the reading made it before an official time stood in its place (Read), for the learning.</summary>
+        private static SwimProposal ReadOf(SwimProposal p)
+        {
+            return new SwimProposal
+            {
+                Id = p.Id,
+                Type = p.Type,
+                Kind = p.Kind,
+                Index = p.Index,
+                Batch = p.Batch,
+                Measures = p.Measures,
+                Timestamp = p.Read.Timestamp,
+                Confidence = p.Read.Confidence,
+                Cues = new Dictionary<string, long>(p.Read.Cues)
+            };
+        }
+
+        /// <summary>
+        /// The timestamp of the official time of a wall (Race.Official, typed from the results; since 2026-10-19): the start of the
+        /// race and the official time after it. Null: none typed for that wall, or no start.
+        /// </summary>
+        private long? OfficialWallStamp(int wall)
+        {
+            double seconds;
+            if (Race == null || !Race.StartTimestamp.HasValue || !Timing.IsValid || !Race.OfficialTimes().TryGetValue(wall, out seconds))
+                return null;
+            return Race.StartTimestamp.Value + RealSpan(seconds);
+        }
+
+        /// <summary>A change of the official times, for «Αναίρεση»: the times before it and how to put back what it moved.</summary>
+        private sealed class OfficialUndo
+        {
+            public List<double> Official;
+            public readonly List<Action> Back = new List<Action>();
+
+            /// <summary>The checkpoints it moved (their push off follows them back).</summary>
+            public readonly HashSet<int> Distances = new HashSet<int>();
+        }
+
+        /// <summary>The changes of the official times in the undo stack, by their id there ("official:…"; since 2026-10-19).</summary>
+        private readonly Dictionary<string, OfficialUndo> officialUndo = new Dictionary<string, OfficialUndo>();
+        private const string OfficialUndoPrefix = "official:";
+
+        /// <summary>
+        /// The official times typed by the analyst (SwimRace.Official, since 2026-10-19): the analysis shows them (SwimCalculator), and
+        /// the checkpoints he has not made his go to them: the marks of the pilot not checked yet and the proposals still waiting at
+        /// the walls with an official time, and before them, in a 50 m pool, the 45 m from it and the 35 m. Where an official time is
+        /// taken away they go back to what the reading found; «Αναίρεση» puts all back as it was. Null or empty: none.
+        /// </summary>
+        public void OfficialChanged(List<double> official)
+        {
+            if (Race == null)
+                return;
+
+            SwimProposal current = CurrentProposal;
+            long? currentBefore = current != null ? (long?)current.Timestamp : null;
+            OfficialUndo undo = new OfficialUndo { Official = Race.Official == null ? null : new List<double>(Race.Official) };
+            Race.Official = official == null || official.Count == 0 ? null : new List<double>(official);
+            int moved = ApplyOfficial(undo);
+            PushOfficialUndo(undo);
+            AfterOfficial(undo.Distances.Contains(Race.Distance), current, currentBefore);
+
+            string movedText = moved == 1 ? "1 σημάδι που δεν είχες ελέγξει" : moved.ToString(CultureInfo.InvariantCulture) + " σημάδια που δεν είχες ελέγξει";
+            string warning = Race.Official == null ? null : SwimRace.OfficialWarning(Race.Official, Race.Distance, Race.K, Race.Unit);
+            if (Race.Official == null)
+                Status("Οι επίσημοι χρόνοι αφαιρέθηκαν: η ανάλυση δείχνει ξανά τους χρόνους των σημαδιών" +
+                    (moved > 0 ? "· " + movedText + " γύρισαν εκεί που τα βρήκε η ανάγνωση." : ".") + " «Αναίρεση»: πίσω.", false);
+            else if (!Race.StartTimestamp.HasValue)
+                Status("Οι επίσημοι χρόνοι κρατήθηκαν· μπαίνουν στα σημάδια όταν οριστεί η εκκίνηση.", false);
+            else
+                Status((moved > 0
+                    ? "Οι επίσημοι χρόνοι μπήκαν στην ανάλυση· " + movedText + " πήγαν σε αυτούς («Αναίρεση»: πίσω)."
+                    : "Οι επίσημοι χρόνοι μπήκαν στην ανάλυση. Τα σημάδια που έχεις ελέγξει μένουν όπου είναι (η διαφορά φαίνεται στο «Τερματισμός»).") +
+                    (warning != null ? " ⚠ " + warning + "." : ""), warning != null);
+        }
+
+        /// <summary>«Αναίρεση» of a change of the official times (its id in the undo stack): the times before it, the checkpoints back.</summary>
+        private bool UndoOfficial(string id)
+        {
+            OfficialUndo undo;
+            if (Race == null || id == null || !officialUndo.TryGetValue(id, out undo))
+                return false;
+
+            officialUndo.Remove(id);
+            SwimProposal current = CurrentProposal;
+            long? currentBefore = current != null ? (long?)current.Timestamp : null;
+            Race.Official = undo.Official == null ? null : new List<double>(undo.Official);
+            for (int i = undo.Back.Count - 1; i >= 0; i--)
+                undo.Back[i]();
+            foreach (int distance in undo.Distances)
+                FollowWall(distance);
+
+            // The times restored placed again in the race as it is now (a reading since, a start moved since); none: what a reading put
+            // at the times since goes back to its own.
+            OfficialUndo again = new OfficialUndo();
+            if (Race.Official == null || OfficialPlaceable())
+                ApplyOfficial(again);
+            AfterOfficial(undo.Distances.Contains(Race.Distance) || again.Distances.Contains(Race.Distance), current, currentBefore);
+            Status("Αναιρέθηκε η αλλαγή των επίσημων χρόνων" + (Race.Official == null ? ": χωρίς επίσημους χρόνους." : ": " + SwimRace.FormatOfficial(Race.Official) + "."), false);
+            return true;
+        }
+
+        /// <summary>
+        /// The checkpoints the analyst has not made his at the official times as they are now (see OfficialChanged): back to what the
+        /// reading found where there is none any more, at it where there is one. Returns how many moved (undo: how to put them back).
+        /// </summary>
+        private int ApplyOfficial(OfficialUndo undo)
+        {
+            if (Race == null)
+                return 0;
+
+            // Without the start (or the timing of the video) they cannot be placed: what is at them stays until the start is set (the
+            // panel says so). Taken away, the checkpoints at them go back to what the reading found.
+            bool placeable = Race.StartTimestamp.HasValue && Timing.IsValid;
+            if (Race.Official != null && !placeable)
+                return 0;
+
+            Dictionary<int, double> official = placeable ? Race.OfficialTimes() : new Dictionary<int, double>();
+            int moved = 0;
+            foreach (int distance in OfficialDistances().OrderBy(d => d).ToList())
+            {
+                if (!official.ContainsKey(OfficialWallOf(distance)) && RestoreSplit(distance, undo))
+                    moved++;
+            }
+
+            foreach (KeyValuePair<int, double> o in official.OrderBy(x => x.Key))
+            {
+                long wall = Race.StartTimestamp.Value + RealSpan(o.Value);
+                if (MoveSplitTo(o.Key, wall, SwimSplitDetector.OfficialConfidence, undo))
+                    moved++;
+
+                long? before = Race.Pool == 50 && o.Key % 50 == 0 ? SplitStamp(o.Key - 15) : null;
+                if (before.HasValue)
+                {
+                    long from = (long)Math.Round(SwimSplitDetector.LastFromWall(wall, before.Value, WallKind(o.Key), SwimPresets.StyleAt(Race, o.Key)));
+                    if (MoveSplitTo(o.Key - 5, from, SwimSplitDetector.OfficialLastConfidence, undo))
+                        moved++;
+                }
+            }
+
+            foreach (int distance in undo.Distances)
+                FollowWall(distance);
+            return moved;
+        }
+
+        /// <summary>
+        /// After the official times changed (typed, taken away, undone): the analysis again; the final frame of the report taken again
+        /// (it shows the times), at the finish when it moved; the check shows its proposal where it is now; else the video stays where
+        /// it was.
+        /// </summary>
+        private void AfterOfficial(bool finishMoved, SwimProposal current, long? currentBefore)
+        {
+            Recompute();
+            SwimMark end = Race.GetSplit(Race.Distance);
+            bool currentMoved = current != null && Race.Proposals.Contains(current) && currentBefore.HasValue && current.Timestamp != currentBefore.Value;
+            if (HasVideo && end != null && !Race.IsTraining && Race.StartTimestamp.HasValue)
+            {
+                // (At the finish: the final frame shows it with the final time; the video back where the analyst was.)
+                long back = player.CurrentTimestamp;
+                SeekNearest(end.Timestamp);
+                CaptureFinalFrame(end.Timestamp);
+                if (!currentMoved)
+                    SeekTo(back);
+            }
+
+            // The check shows its proposal where it is now, when it moved.
+            if (currentMoved && HasVideo)
+                SeekNearest(current.Timestamp);
+
+            Changed(true);
+            RefreshProposalsUi();
+            InvalidatePlayer();
+            if (form != null)
+                form.RefreshManualFields();
+        }
+
+        /// <summary>A change of the official times on the undo stack (when it changed something or the times).</summary>
+        private void PushOfficialUndo(OfficialUndo undo)
+        {
+            string id = OfficialUndoPrefix + Guid.NewGuid().ToString("N");
+            officialUndo[id] = undo;
+            undoStack.Add(id);
+        }
+
+        /// <summary>
+        /// The official times placed again in the race as it is now (a new start, other race details): the checkpoints not checked
+        /// move with them. Not when the times do not fit the race any more (the panel says so): nothing moves or goes then.
+        /// </summary>
+        private void ReapplyOfficial()
+        {
+            if (!OfficialPlaceable())
+                return;
+
+            ApplyOfficial(new OfficialUndo());
+        }
+
+        /// <summary>
+        /// The race has official times that can be placed in it as it is now: they fit it (distance, pool) and the start is set. Else
+        /// nothing at them moves or goes (a start taken away to be marked again, a distance being changed).
+        /// </summary>
+        private bool OfficialPlaceable()
+        {
+            return Race != null && Race.Official != null && Race.StartTimestamp.HasValue && Timing.IsValid &&
+                SwimRace.OfficialProblem(Race.Official, Race.Distance, Race.Pool, Race.K, Race.Unit) == null;
+        }
+
+        /// <summary>A reading of the video runs (the race, the start light, the skeleton, the one in the background).</summary>
+        public bool ReadingBusy
+        {
+            get { return AutoStrokesRunning || StartLightRunning || SkeletonRunning || QuietReadingRunning; }
+        }
+
+        /// <summary>The checkpoints at an official time now: proposals, the pilot's marks.</summary>
+        private IEnumerable<int> OfficialDistances()
+        {
+            return Race.Proposals.Where(p => p.Kind == KindRaceSplit && p.Official).Select(p => p.Index)
+                .Concat(Race.Marks.Where(m => m.Type == SwimMarkType.Split && m.Pilot != null && m.Pilot.Official).Select(m => m.Distance))
+                .Distinct();
+        }
+
+        /// <summary>The wall whose official time places a checkpoint: the wall itself, or the one 5 m after the 45 m of a 50 m pool (-1: none).</summary>
+        private int OfficialWallOf(int distance)
+        {
+            if (Race.Pool > 0 && distance % Race.Pool == 0)
+                return distance;
+            return Race.Pool == 50 && distance % 50 == 45 ? distance + 5 : -1;
+        }
+
+        /// <summary>
+        /// A checkpoint the analyst has not made his (the pilot's mark, the proposals waiting) at this frame, with no cues (the learning
+        /// does not move it, the answer teaches what the reading found, kept: Read). False when nothing moved (none there, the
+        /// analyst's own mark).
+        /// </summary>
+        private bool MoveSplitTo(int distance, long timestamp, double confidence, OfficialUndo undo)
+        {
+            SwimMark mark = Race.GetSplit(distance);
+            if (mark != null && mark.Pilot == null)
+                return false;
+
+            bool moved = false;
+            if (mark != null && (mark.Timestamp != timestamp || !mark.Pilot.Official))
+            {
+                Remember(undo, mark);
+                if (!mark.Pilot.Official)
+                {
+                    mark.Pilot.Read = mark.Timestamp;
+                    mark.Pilot.Official = true;
+                }
+
+                moved |= mark.Timestamp != timestamp;
+                mark.Timestamp = timestamp;
+            }
+
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceSplit && x.Index == distance).ToList())
+            {
+                if (p.Official && p.Timestamp == timestamp && p.Cues.Count == 0 && Math.Abs(p.Confidence - confidence) < 1e-9)
+                    continue;
+
+                Remember(undo, p);
+                if (!p.Official)
+                {
+                    p.Read = SwimProposalRead.Of(p);
+                    p.Official = true;
+                }
+
+                moved |= p.Timestamp != timestamp;
+                p.Timestamp = timestamp;
+                p.Confidence = confidence;
+                p.Cues.Clear();
+            }
+
+            if (moved)
+                undo.Distances.Add(distance);
+            return moved;
+        }
+
+        /// <summary>
+        /// A checkpoint whose official time was taken away back to what the reading found (Read); one there only from the official time
+        /// goes (its proposal, the pilot's mark made from it). True when something changed.
+        /// </summary>
+        private bool RestoreSplit(int distance, OfficialUndo undo)
+        {
+            bool changed = false;
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceSplit && x.Index == distance && x.Official).ToList())
+            {
+                Remember(undo, p);
+                if (p.Read != null)
+                {
+                    p.Timestamp = p.Read.Timestamp;
+                    p.Confidence = p.Read.Confidence;
+                    p.Cues = new Dictionary<string, long>(p.Read.Cues);
+                    p.Read = null;
+                    p.Official = false;
+                }
+                else
+                {
+                    SwimProposal gone = p;
+                    Race.Proposals.Remove(gone);
+                    undo.Back.Add(() =>
+                    {
+                        if (!Race.Proposals.Any(x => x == gone || (x.Kind == KindRaceSplit && x.Index == gone.Index)))
+                            Race.Proposals.Add(gone);
+                    });
+                }
+
+                changed = true;
+            }
+
+            SwimMark mark = Race.GetSplit(distance);
+            if (mark != null && mark.Pilot != null && mark.Pilot.Official)
+            {
+                Remember(undo, mark);
+                if (mark.Pilot.Read.HasValue)
+                {
+                    mark.Timestamp = mark.Pilot.Read.Value;
+                    mark.Pilot.Read = null;
+                    mark.Pilot.Official = false;
+                }
+                else
+                {
+                    // (The final frame of the report of that finish goes with it, as with Delete on it; taken again with the finish.)
+                    SwimMark gone = mark;
+                    SwimSnapshot final = Race.FinalFrame;
+                    int undoAt = undoStack.IndexOf(gone.Id);
+                    double strokes;
+                    bool hadStrokes = Race.StrokeCounts.TryGetValue(distance, out strokes);
+                    Race.Marks.Remove(gone);
+                    undoStack.Remove(gone.Id);
+                    Race.StrokeCounts.Remove(distance);
+                    if (distance == Race.Distance && final != null && SameFrame(final.Timestamp, gone.Timestamp))
+                        Race.FinalFrame = null;
+                    undo.Back.Add(() =>
+                    {
+                        if (Race.GetSplit(gone.Distance) != null)
+                            return;
+                        Race.Marks.Add(gone);
+                        if (undoAt >= 0 && !undoStack.Contains(gone.Id))
+                            undoStack.Insert(Math.Min(undoAt, undoStack.Count), gone.Id);
+                        if (hadStrokes && !Race.StrokeCounts.ContainsKey(gone.Distance))
+                            Race.StrokeCounts[gone.Distance] = strokes;
+                        if (Race.FinalFrame == null)
+                            Race.FinalFrame = final;
+                    });
+                }
+
+                changed = true;
+            }
+
+            if (changed)
+                undo.Distances.Add(distance);
+            return changed;
+        }
+
+        /// <summary>The state of a proposal before an official time moves it (for «Αναίρεση»).</summary>
+        private static void Remember(OfficialUndo undo, SwimProposal p)
+        {
+            long timestamp = p.Timestamp;
+            double confidence = p.Confidence;
+            Dictionary<string, long> cues = new Dictionary<string, long>(p.Cues);
+            bool official = p.Official;
+            SwimProposalRead read = p.Read;
+            undo.Back.Add(() =>
+            {
+                p.Timestamp = timestamp;
+                p.Confidence = confidence;
+                p.Cues = new Dictionary<string, long>(cues);
+                p.Official = official;
+                p.Read = read;
+            });
+        }
+
+        /// <summary>The frame of a pilot's mark before an official time moves it (for «Αναίρεση»: only while it is still the pilot's).</summary>
+        private static void Remember(OfficialUndo undo, SwimMark m)
+        {
+            long timestamp = m.Timestamp;
+            SwimPilotMark pilot = m.Pilot;
+            long? read = pilot != null ? pilot.Read : null;
+            bool official = pilot != null && pilot.Official;
+            undo.Back.Add(() =>
+            {
+                if (pilot == null || m.Pilot != pilot)
+                    return;
+                m.Timestamp = timestamp;
+                pilot.Read = read;
+                pilot.Official = official;
+            });
+        }
+
+        /// <summary>The push off waiting after a turn follows its wall where it is now (as when the wall is kept).</summary>
+        private void FollowWall(int distance)
+        {
+            if (Race == null || Race.Pool <= 0 || distance <= 0 || distance >= Race.Distance || distance % Race.Pool != 0)
+                return;
+
+            long? wall = SplitStamp(distance);
+            if (wall.HasValue)
+                MoveEventProposals(KindRaceSplit, distance, wall.Value);
+        }
+
+        /// <summary>The frame of a checkpoint: its mark, else its proposal still waiting (null: none).</summary>
+        private long? SplitStamp(int distance)
+        {
+            SwimMark mark = Race.GetSplit(distance);
+            if (mark != null)
+                return mark.Timestamp;
+            SwimProposal p = Race.Proposals.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == distance);
+            return p != null ? (long?)p.Timestamp : null;
+        }
+
+        /// <summary>
+        /// Index of a timestamp in the frames of a reading: between two frames read, the fraction between them; before or after them,
+        /// by the average step (the reading of a length reads on while the official time of its wall is after its frames; the callers
+        /// keep the index within the frames where they need one).
+        /// </summary>
+        private static double SessionIndex(StrokeSession s, long timestamp)
+        {
+            List<long> t = s.Timestamps;
+            int n = t.Count;
+            if (n < 2)
+                return double.NaN;
+
+            if (timestamp >= t[0] && timestamp <= t[n - 1])
+            {
+                int i = t.BinarySearch(timestamp);
+                if (i >= 0)
+                    return i;
+                i = ~i;
+                return i - 1 + (timestamp - t[i - 1]) / (double)Math.Max(1, t[i] - t[i - 1]);
+            }
+
+            double step = (t[n - 1] - t[0]) / (double)(n - 1);
+            if (step <= 0)
+                return double.NaN;
+            return timestamp < t[0] ? (timestamp - t[0]) / step : n - 1 + (timestamp - t[n - 1]) / step;
         }
 
         /// <summary>
@@ -1253,6 +1765,31 @@ namespace Kinovea.ScreenManager
 
             SwimSplitDetector.PreferSeenWall(wall, l.Session.Fps);
             return wall;
+        }
+
+        /// <summary>
+        /// Frame of the wall a length goes on from (index of its frames, NaN if none): the reading's own (WallSample), else the official
+        /// time of the wall (typed from the results, since 2026-10-19), so that the reading goes on where it found no wall. Not the
+        /// official one where the reading found its own: in the lab (the analysts' wall as the official one, 115 races) going on from
+        /// it lost the swimmer after some open turns of the cameras (the place at the wall from the path a little before the touch).
+        /// </summary>
+        private double GoOnSample(LengthRead l)
+        {
+            bool official;
+            return GoOnSample(l, out official);
+        }
+
+        /// <summary>GoOnSample; official: the wall is the official one (the reading found none).</summary>
+        private double GoOnSample(LengthRead l, out bool official)
+        {
+            official = false;
+            double own = WallSample(l);
+            if (!double.IsNaN(own) || l == null)
+                return own;
+
+            long? stamp = OfficialWallStamp(l.Session.Wall);
+            official = stamp.HasValue;
+            return stamp.HasValue ? SessionIndex(l.Session, stamp.Value) : double.NaN;
         }
 
         /// <summary>Frame of the wall of a length read (index of its frames, NaN if not found): its cues as for the proposal.</summary>
@@ -1449,8 +1986,47 @@ namespace Kinovea.ScreenManager
 
             Changed(false);
             BeginReview(made.OrderBy(p => p.Timestamp).First());
-            if (lengths > 1 || strokes > 0)
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις.{2} ", lengths, made.Count, strokesText) + LastStatus, false);
+            int paceOnly = made.Count(IsDoubtfulPace);
+            string notes = (paceOnly > 0 ? " ⚠ " + PaceOnlyText(paceOnly) + ": έλεγξέ " + (paceOnly == 1 ? "το" : "τα") + " προσεκτικά." : "") +
+                OfficialNote(made);
+            if (lengths > 1 || strokes > 0 || notes.Length > 0)
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις.{2}{3} ", lengths, made.Count, strokesText, notes) + LastStatus,
+                    paceOnly > 0);
+        }
+
+        /// <summary>
+        /// A checkpoint from the pace of the swimmer alone (its line not seen in the video) and shown as doubtful (a swimmer seen from
+        /// far, since 2026-10-19: almost half of them more than 0.5 s off in the analysts' phone races).
+        /// </summary>
+        private bool IsDoubtfulPace(SwimProposal p)
+        {
+            return p != null && p.Kind == KindRaceSplit && p.FarPace && !p.Official && p.Confidence < DoubtfulConfidence;
+        }
+
+        /// <summary>"3 περάσματα βγήκαν μόνο από τον ρυθμό του αθλητή (η γραμμή τους δεν φάνηκε στο βίντεο)".</summary>
+        private static string PaceOnlyText(int count)
+        {
+            return (count == 1 ? "1 πέρασμα βγήκε" : count.ToString(CultureInfo.InvariantCulture) + " περάσματα βγήκαν") +
+                " μόνο από τον ρυθμό του αθλητή (η γραμμή " + (count == 1 ? "του" : "τους") + " δεν φάνηκε στο βίντεο)";
+        }
+
+        /// <summary>" Από τους επίσημους χρόνους: ο τερματισμός, οι τοίχοι των 50, 100μ. και τα 45 μ. πριν από αυτούς." ("" for none).</summary>
+        private string OfficialNote(IEnumerable<SwimProposal> made)
+        {
+            Dictionary<int, double> official = Race == null ? new Dictionary<int, double>() : Race.OfficialTimes();
+            List<int> walls = made.Where(p => p.Kind == KindRaceSplit && p.Official && official.ContainsKey(p.Index)).Select(p => p.Index).Distinct().OrderBy(d => d).ToList();
+            if (walls.Count == 0)
+                return "";
+
+            bool finish = walls.Contains(Race.Distance);
+            List<int> turns = walls.Where(d => d != Race.Distance).ToList();
+            List<string> parts = new List<string>();
+            if (finish)
+                parts.Add("ο τερματισμός");
+            if (turns.Count > 0)
+                parts.Add((turns.Count == 1 ? "ο τοίχος των " : "οι τοίχοι των ") + string.Join(", ", turns.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToArray()) + Race.Unit);
+            bool last = made.Any(p => p.Kind == KindRaceSplit && p.Official && !official.ContainsKey(p.Index));
+            return " Από τους επίσημους χρόνους: " + string.Join(" και ", parts.ToArray()) + (last ? " (και τα τελευταία 5" + Race.Unit + " πριν από αυτούς)." : ".");
         }
 
         #region Whole race
@@ -1465,6 +2041,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
         public void BeginAutoRace()
         {
+            // Official times typed in the panel that cannot be read: corrected first (the walls would be read without them).
+            if (form != null && !form.IsDisposed && form.OfficialTypedWrong())
+                return;
+
             // The button of the analyst: the auto pilot (if it waited for him) stops, the reading is his; the click on the swimmer
             // it waited for stays armed for it.
             if (PilotActive)
@@ -2301,7 +2881,8 @@ namespace Kinovea.ScreenManager
                     break;
 
                 // The wall: the swimmer turns there; the next length starts from it, the other way, a little after.
-                double w = WallSample(l);
+                bool officialWall;
+                double w = GoOnSample(l, out officialWall);
                 if (double.IsNaN(w) || result.Path == null || result.Path.Length == 0)
                     break;
 
@@ -2326,7 +2907,8 @@ namespace Kinovea.ScreenManager
                 double lw = Math.Max(5, Math.Abs(lane.Y2(x) - lane.Y1(x)));
                 double length = clickLength * lw / clickLaneWidth;
                 int direction = -s.Detector.Direction;
-                long wallTs = SessionStamp(s, w);
+                // (An official wall after the frames read: its own time, not the last frame; the reading's own within its frames.)
+                long wallTs = officialWall ? SessionStampOut(s, w) : SessionStamp(s, w);
                 previousSeconds = Math.Max(10, Timing.Seconds(wallTs, lapStart));
 
                 head = new PointF((float)((x + direction * 0.45 * length) / sx), (float)(y / sy));

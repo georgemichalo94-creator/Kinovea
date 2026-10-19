@@ -281,7 +281,7 @@ namespace Kinovea.ScreenManager
 
             // Last checkpoint passed on the right, name and event on the left.
             Font caption = F(9f, k, false, FontStyle.Bold);
-            SwimRow last = s.Computed.Rows.Where(row => row.T.HasValue && row.T.Value <= t + 1e-6).OrderBy(row => row.T.Value).LastOrDefault();
+            SwimRow last = s.Computed.Rows.Where(row => row.PassedAt(t)).OrderBy(row => row.OnVideo).LastOrDefault();
             float titleRight = r.Right - 14 * k;
             if (last != null)
             {
@@ -309,7 +309,9 @@ namespace Kinovea.ScreenManager
 
             TextIn(g, Title(s.Race, true), caption, SwimTheme.Dim, new RectangleF(r.Left + 16 * k, r.Top + 6 * k, Math.Max(10, titleRight - r.Left - 16 * k), 18 * k));
 
-            double clock = reel.Finish.HasValue ? Math.Min(Math.Max(0, t), reel.Finish.Value) : Math.Max(0, t);
+            // At the frame of the finish and after it the final time (the official one when typed), before it the time of the frame.
+            double final = reel.FinalTime ?? reel.Finish ?? double.PositiveInfinity;
+            double clock = reel.Finish.HasValue && t >= reel.Finish.Value - reel.FrameSlack - 1e-6 ? final : Math.Min(Math.Max(0, t), final);
             Text(g, SwimReference.FormatTime(clock), F(36f, k, true), Color.White, r.Left + 12 * k, r.Top + 19 * k);
 
             // Strokes of the length, tempo and distance of the last cycle, speed.
@@ -443,7 +445,7 @@ namespace Kinovea.ScreenManager
                 Text(g, ((int)d0).ToString(CultureInfo.InvariantCulture), axis, SwimTheme.Faint, plot.Left, plot.Bottom + 4 * k, StringAlignment.Center);
                 foreach (SwimRow row in s.Computed.Rows.Where(row => row.D > d0 && row.D <= d1))
                 {
-                    bool done = row.T.HasValue && row.T.Value <= t + 1e-6;
+                    bool done = row.PassedAt(t);
                     float x = X(row.D);
                     g.DrawLine(done ? passed : coming, x, plot.Top, x, plot.Bottom);
                     Text(g, row.D.ToString(CultureInfo.InvariantCulture), tick, done ? SwimTheme.Amber : SwimTheme.Faint, x, plot.Bottom + 4 * k, StringAlignment.Center);
@@ -619,7 +621,7 @@ namespace Kinovea.ScreenManager
             float x0 = card.Left + 30 * k;
             float inner = card.Width - 60 * k;
             TextIn(g, Title(s.Race, false), F(11f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Top + 14 * k, inner, 24 * k));
-            Text(g, SwimReference.FormatTime(reel.Finish.Value), F(54f, k, true), Fade(SwimTheme.Amber, a), x0 - 4 * k, card.Top + 36 * k);
+            Text(g, SwimReference.FormatTime(reel.FinalTime ?? reel.Finish.Value), F(54f, k, true), Fade(SwimTheme.Amber, a), x0 - 4 * k, card.Top + 36 * k);
             DrawResultRibbon(g, s, L, card, a);
 
             // Values of the race.
@@ -814,13 +816,13 @@ namespace Kinovea.ScreenManager
                 return RectangleF.Empty;
 
             double t = s.Time;
-            SwimRow row = s.Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= t + 1e-6 && s.Final.Swimmers.Any(sw => sw.TimeAt(r.D).HasValue))
-                .OrderBy(r => r.T.Value).LastOrDefault();
+            SwimRow row = s.Computed.Rows.Where(r => r.PassedAt(t) && s.Final.Swimmers.Any(sw => sw.TimeAt(r.D).HasValue))
+                .OrderBy(r => r.OnVideo).LastOrDefault();
             if (row == null)
                 return RectangleF.Empty;
 
             bool finish = row.D >= s.Race.Distance;
-            if (t - row.T.Value > (finish ? FinishBoardSeconds : BoardSeconds))
+            if (t - row.OnVideo > (finish ? FinishBoardSeconds : BoardSeconds))
                 return RectangleF.Empty;
 
             List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(s.Final, row.D, row.T.Value, s.BoardName);
@@ -854,7 +856,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             double t = s.Time;
-            List<SwimDeltaPoint> points = s.Computed.Rows.Where(r => r.Delta.HasValue && r.T.HasValue && r.T.Value <= t + 1e-6)
+            List<SwimDeltaPoint> points = s.Computed.Rows.Where(r => r.Delta.HasValue && r.PassedAt(t))
                 .Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
             if (points.Count == 0)
                 return;

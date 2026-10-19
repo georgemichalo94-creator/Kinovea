@@ -148,11 +148,17 @@ namespace Kinovea.ScreenManager
 
         public static string FormatTime(double seconds)
         {
-            if (seconds < 60)
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || Math.Abs(seconds) > 1e9)
                 return seconds.ToString("0.00", CultureInfo.InvariantCulture);
 
-            int minutes = (int)(seconds / 60);
-            double rest = seconds - minutes * 60;
+            // Rounded to the hundredth as shown first (since 2026-10-19): 59.996 is 1:00.00 and 119.996 2:00.00, not 60.00 and 1:60.00
+            // (an official time typed back is read as it is shown).
+            decimal t = Math.Round((decimal)seconds, 2, MidpointRounding.AwayFromZero);
+            if (t < 60)
+                return t.ToString("0.00", CultureInfo.InvariantCulture);
+
+            int minutes = (int)(t / 60);
+            decimal rest = t - minutes * 60;
             return minutes.ToString(CultureInfo.InvariantCulture) + ":" + rest.ToString("00.00", CultureInfo.InvariantCulture);
         }
 

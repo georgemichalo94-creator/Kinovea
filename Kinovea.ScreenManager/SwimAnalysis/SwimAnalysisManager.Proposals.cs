@@ -574,29 +574,36 @@ namespace Kinovea.ScreenManager
         private void Answer(SwimProposal p, long timestamp, bool right)
         {
             bool shown = Race.Proposals.Remove(p);
-            SwimLearningRecord record = new SwimLearningRecord
+
+            // One at an official time (since 2026-10-19) has no cues: the frame kept teaches what the reading itself found there (Read)
+            // when it is near it (as the analyst's marks teach), or nothing (none, far, or Delete: not an answer about the reading).
+            SwimProposal taught = !p.Official ? p : right && p.Read != null && Math.Abs(Timing.Seconds(timestamp, p.Read.Timestamp)) <= 1.5 ? ReadOf(p) : null;
+            SwimLearningRecord record = taught == null ? null : new SwimLearningRecord
             {
                 Date = DateTime.Now,
-                Kind = p.Kind,
+                Kind = taught.Kind,
                 Video = SwimLearning.VideoCode(videoPath),
                 Right = right,
-                Confidence = p.Confidence,
-                Key = AnswerKey(p)
+                Confidence = taught.Confidence,
+                Key = AnswerKey(taught)
             };
 
-            if (right)
+            if (record != null && right)
             {
-                record.Error = Timing.Seconds(timestamp, p.Timestamp);
-                foreach (KeyValuePair<string, long> c in p.Cues)
+                record.Error = Timing.Seconds(timestamp, taught.Timestamp);
+                foreach (KeyValuePair<string, long> c in taught.Cues)
                     record.Cues[c.Key] = Timing.Seconds(timestamp, c.Value);
-                record.Measures = MeasuresAt(p, timestamp);
+                record.Measures = MeasuresAt(taught, timestamp);
             }
 
-            Learning.Add(record);
-            Learning.Save();
+            if (record != null)
+            {
+                Learning.Add(record);
+                Learning.Save();
+            }
 
             // The mark of the event keeps its answer: undone, deleted or replaced, the answer goes with it.
-            if (right && record.Key != null)
+            if (record != null && right && record.Key != null)
             {
                 SwimMarkType markType = p.Type == SwimMarkType.WallContact && !Race.IsTraining ? SwimMarkType.Split : p.Type;
                 SwimMark mark = Race.Marks.Where(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)).FirstOrDefault();
@@ -695,7 +702,10 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.Breakout: name = "Έξοδος από το νερό" + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? " μετά τα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : " μετά την εκκίνηση") : ""); break;
                 case SwimMarkType.WallContact: name = "Επαφή στον τοίχο"; break;
                 case SwimMarkType.RotationStart: name = "Αρχή περιστροφής"; break;
-                case SwimMarkType.Split: name = p.Kind == KindRaceSplit ? "Πέρασμα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : "Πέρασμα"; break;
+                case SwimMarkType.Split:
+                    name = (p.Kind == KindRaceSplit ? "Πέρασμα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : "Πέρασμα") +
+                        (p.Official ? " · από τον επίσημο χρόνο" : "");
+                    break;
                 case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? "Σήμα εκκίνησης (φως)" + (p.Index > 1 ? " · εναλλακτική " + (p.Index - 1) : "") : "Σήμα εκκίνησης"; break;
                 default: name = p.Type.ToString(); break;
             }

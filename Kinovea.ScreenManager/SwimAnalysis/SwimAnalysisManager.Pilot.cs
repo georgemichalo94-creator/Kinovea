@@ -127,6 +127,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The button "✈ Αυτόματος πιλότος": the whole analysis of the race of the video, then the report.</summary>
         public void RunAutoPilot()
         {
+            // Official times typed in the panel that cannot be read: corrected first (the walls would be read without them).
+            if (form != null && !form.IsDisposed && form.OfficialTypedWrong())
+                return;
+
             if (Race == null || !HasVideo)
             {
                 Status("Άνοιξε πρώτα ένα βίντεο αγώνα σε οθόνη αναπαραγωγής.", true);
@@ -580,14 +584,28 @@ namespace Kinovea.ScreenManager
             if (existing != null && existing.Pilot == null)
                 return false;
 
+            // A proposal at an official time: the mark knows it (and where the reading itself put it), to go back with it when that
+            // official time goes.
             p.Pilot = true;
             if (existing != null && SameFrame(existing.Timestamp, p.Timestamp))
             {
                 p.PilotMark = existing.Id;
+                if (p.Official && existing.Pilot != null && !existing.Pilot.Official)
+                {
+                    existing.Pilot.Official = true;
+                    existing.Pilot.Read = p.Read != null ? p.Read.Timestamp : existing.Timestamp;
+                }
+
                 return false;
             }
 
-            SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = p.Timestamp, Distance = distance, Pilot = new SwimPilotMark { Wall = distance } };
+            SwimMark mark = new SwimMark
+            {
+                Type = SwimMarkType.Split,
+                Timestamp = p.Timestamp,
+                Distance = distance,
+                Pilot = new SwimPilotMark { Wall = distance, Official = p.Official, Read = p.Official && p.Read != null ? (long?)p.Read.Timestamp : null }
+            };
             if (existing != null)
             {
                 AddReplacing(mark, m => m.Type == SwimMarkType.Split && m.Distance == distance);
@@ -922,13 +940,23 @@ namespace Kinovea.ScreenManager
                 b.Append("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n");
             else if (raceSplits > splits)
                 b.AppendFormat(CultureInfo.InvariantCulture, "• {0} περάσματα και τοίχοι ήταν ήδη δικά σου: έμειναν όπως ήταν.\n", raceSplits - splits);
+            // The final time of the analysis: the official one when it stands at the finish (since 2026-10-19).
+            Recompute();
+            SwimRow finalRow = Computed == null ? null : Computed.Rows.FirstOrDefault(r => r.D == Race.Distance && r.T.HasValue);
             if (finish != null && Race.StartTimestamp.HasValue)
-                b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(".\n");
+                b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(finalRow != null && finalRow.Marked ? finalRow.T.Value :
+                    Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(finalRow != null && finalRow.Official ? " (επίσημος χρόνος)" : "").Append(".\n");
             else
                 b.Append("• ⚠ Δεν βρέθηκε ο τερματισμός: μάρκαρέ τον στο καρέ της επαφής και πάτα «PDF».\n");
+            string official = OfficialNote(put);
+            if (official.Length > 0)
+                b.Append("•").Append(official).Append('\n');
+            int paceOnly = put.Count(IsDoubtfulPace);
             if (doubtful > 0)
                 b.Append("• ⚠ ").Append(CountOf(doubtful, "αβέβαιο", "αβέβαια")).Append(" (κάτω από 50%, πορτοκαλί στον έλεγχο): δες ")
                     .Append(doubtful == 1 ? "αυτό" : "αυτά").Append(" πρώτα.\n");
+            if (paceOnly > 0)
+                b.Append("• ⚠ ").Append(doubtful > paceOnly ? "Από αυτά, " : "").Append(PaceOnlyText(paceOnly)).Append(".\n");
             if (waiting > 0)
                 b.AppendFormat(CultureInfo.InvariantCulture,
                     "• {0} τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση " +
