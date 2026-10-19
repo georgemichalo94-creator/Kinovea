@@ -209,6 +209,9 @@ namespace Kinovea.ScreenManager
         private SwimAnalysisManager()
         {
             Settings = SwimSettings.Load();
+
+            // The language of the settings (also when it was read before the settings folder was known).
+            SwimLang.English = Settings.Language == "en";
             Athletes = SwimAthleteList.Load();
             References = SwimReferenceList.Load();
             Finals = SwimFinals.Load();
