@@ -290,7 +290,8 @@ namespace Kinovea.ScreenManager
                 Clear = clear,
                 LaneLearned = learned,
                 Sx = sx,
-                Sy = sy
+                Sy = sy,
+                Lane = grid.Lane(place)
             };
         }
 

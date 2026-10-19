@@ -82,6 +82,12 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Working pixels a pixel of the image.</summary>
             public double Sx = 1, Sy = 1;
+
+            /// <summary>
+            /// (A view of the whole pool) his lane on the grid (working pixels): the reading takes it instead of searching the ropes
+            /// at the proposal, where narrow far lanes let it take two lanes for one (lab).
+            /// </summary>
+            public SwimStrokeLane? Lane;
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
@@ -413,7 +419,7 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            AutoRace(p.Head, p.Feet, p.Frame);
+            AutoRace(p.Head, p.Feet, p.Frame, p.Lane);
             return true;
         }
 

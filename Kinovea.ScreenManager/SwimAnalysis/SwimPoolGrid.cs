@@ -82,6 +82,29 @@ namespace Kinovea.ScreenManager
             return LineY(yc, x);
         }
 
+        /// <summary>
+        /// Lane k as the reading knows a lane (working pixels): its far rope (top of the image) and its near rope as straight lines
+        /// (the ropes are lines through the vanishing point).
+        /// </summary>
+        public SwimStrokeLane Lane(int k)
+        {
+            double a1, b1, a2, b2;
+            RopeLine(k + 1, out a1, out b1);
+            RopeLine(k, out a2, out b2);
+            if (a1 * X + b1 > a2 * X + b2)
+                return new SwimStrokeLane(a2, b2, a1, b1);
+            return new SwimStrokeLane(a1, b1, a2, b2);
+        }
+
+        /// <summary>Rope k as the line y = a x + b.</summary>
+        private void RopeLine(int k, out double a, out double b)
+        {
+            double yc = RopeY(k, X);
+            double dx = X - Vx;
+            a = Math.Abs(dx) < 1e-6 ? 0 : (yc - Vy) / dx;
+            b = yc - a * X;
+        }
+
         /// <summary>The y at x of the line through the vanishing point and (X, yc).</summary>
         private double LineY(double yc, double x)
         {
