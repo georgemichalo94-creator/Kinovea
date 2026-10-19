@@ -1641,7 +1641,7 @@ namespace Kinovea.ScreenManager
             int y = corner.StartsWith("Bottom", StringComparison.Ordinal) ? size.Height - height - margin : margin;
 
             // Splits reached at this moment of the video.
-            List<SwimRow> done = Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= now + 1e-6).ToList();
+            List<SwimRow> done = Computed.Rows.Where(r => r.PassedAt(now)).ToList();
             SwimRow last = done.OrderBy(r => r.T.Value).LastOrDefault();
 
             int top = y;
@@ -1682,7 +1682,7 @@ namespace Kinovea.ScreenManager
             if (final == null || Computed == null)
                 return;
 
-            SwimRow row = Computed.Rows.Where(r => r.T.HasValue && r.T.Value <= now + 1e-6 && final.Swimmers.Any(s => s.TimeAt(r.D).HasValue))
+            SwimRow row = Computed.Rows.Where(r => r.PassedAt(now) && final.Swimmers.Any(s => s.TimeAt(r.D).HasValue))
                 .OrderBy(r => r.T.Value).LastOrDefault();
             if (row == null)
                 return;
@@ -1771,7 +1771,7 @@ namespace Kinovea.ScreenManager
             }
 
             // ΔΑΚ of the last 50 completed, and the reference.
-            SwimBlock block = Computed.Blocks.Where(b => b.Dak.HasValue && Computed.Rows.Any(row => row.D == b.To && row.T.HasValue && row.T.Value <= now + 1e-6))
+            SwimBlock block = Computed.Blocks.Where(b => b.Dak.HasValue && Computed.Rows.Any(row => row.D == b.To && row.PassedAt(now)))
                 .OrderBy(b => b.To).LastOrDefault();
             float bx = r.Left + 10;
             if (block != null)

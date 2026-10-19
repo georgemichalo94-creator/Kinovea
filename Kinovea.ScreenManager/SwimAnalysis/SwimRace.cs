@@ -513,6 +513,15 @@ namespace Kinovea.ScreenManager
         public double? UnderwaterDist;
         public double? BreakoutDist;
         public double? FinishLastStrokeDist;
+
+        /// <summary>
+        /// The official times of the results, typed by the analyst (since 2026-10-19): the final time alone, or the times at every
+        /// Distance / Official.Count (the 50 m splits of the results, the last one the final time). The walls at those distances
+        /// are read at them and the analysis shows them (OfficialTimes). Null: none.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<double> Official;
+
         public Dictionary<int, SwimTurnManual> Turns = new Dictionary<int, SwimTurnManual>();
 
         /// <summary>Distances measured for the attempts of a training video, by attempt id.</summary>
@@ -620,6 +629,106 @@ namespace Kinovea.ScreenManager
         public SwimMark GetSplit(int distance)
         {
             return Marks.FirstOrDefault(m => m.Type == SwimMarkType.Split && m.Distance == distance);
+        }
+
+        /// <summary>
+        /// The official times by distance (Official): the last one at the distance of the race, the others every Distance / count
+        /// when that falls on the walls of the pool (the 50 m splits of the results in a 50 m or a 25 m pool). Empty when none was
+        /// typed or they do not fit the race (see OfficialProblem).
+        /// </summary>
+        public Dictionary<int, double> OfficialTimes()
+        {
+            Dictionary<int, double> times = new Dictionary<int, double>();
+            List<double> official = Official == null ? null : Official.ToList();
+            if (official == null || official.Count == 0 || OfficialProblem(official, Distance, Pool) != null)
+                return times;
+
+            int step = Distance / official.Count;
+            for (int i = 0; i < official.Count; i++)
+                times[step * (i + 1)] = official[i];
+            return times;
+        }
+
+        /// <summary>
+        /// Why official times do not fit a race (null: they do): each one after the one before, and as many as the walls they fall
+        /// on (one: the final time; else every distance / count, a multiple of the pool).
+        /// </summary>
+        public static string OfficialProblem(List<double> official, int distance, int pool)
+        {
+            if (official == null || official.Count == 0)
+                return null;
+            if (official.Any(t => double.IsNaN(t) || t <= 0))
+                return "οι χρόνοι πρέπει να είναι θετικοί";
+            for (int i = 1; i < official.Count; i++)
+            {
+                if (official[i] <= official[i - 1])
+                    return "κάθε χρόνος πρέπει να είναι μετά τον προηγούμενο (οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα)";
+            }
+
+            if (official.Count == 1)
+                return null;
+            if (distance <= 0 || pool <= 0 || distance % official.Count != 0 || (distance / official.Count) % pool != 0)
+                return string.Format(CultureInfo.InvariantCulture, "{0} χρόνοι δεν μοιράζουν τα {1} σε τοίχους της πισίνας: γράψε τον τελικό, " +
+                    "ή όλους τους ενδιάμεσους των 50 (ή των 100) και τον τελικό", official.Count, distance);
+            return null;
+        }
+
+        /// <summary>
+        /// Official times as typed: "1:01.23", or the splits and the final time ("28.45 1:01.23", "28,45 / 1:01,23"). Minutes
+        /// with ':', the decimals after '.' or ','. Null when nothing was typed; error: what could not be read.
+        /// </summary>
+        public static List<double> ParseOfficial(string text, out string error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            List<double> times = new List<double>();
+            foreach (string token in text.Split(new[] { ' ', '\t', '/', ';', '|', '–', '-' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                double t = ParseRaceTime(token);
+                if (double.IsNaN(t))
+                {
+                    error = "δεν διαβάζεται το «" + token + "» (γράψε π.χ. 1:01.23)";
+                    return null;
+                }
+
+                times.Add(t);
+            }
+
+            return times.Count == 0 ? null : times;
+        }
+
+        /// <summary>"1:01.23", "61.23", "61,23", "1:01,23" in seconds; NaN when it is not a time.</summary>
+        public static double ParseRaceTime(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return double.NaN;
+
+            string s = token.Trim().Replace(',', '.');
+            int minutes = 0;
+            int colon = s.IndexOf(':');
+            if (colon >= 0)
+            {
+                if (colon == 0 || s.IndexOf(':', colon + 1) >= 0 || !int.TryParse(s.Substring(0, colon), NumberStyles.None, CultureInfo.InvariantCulture, out minutes))
+                    return double.NaN;
+                s = s.Substring(colon + 1);
+            }
+
+            double seconds;
+            if (s.Length == 0 || !double.TryParse(s, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out seconds))
+                return double.NaN;
+            if (colon >= 0 && seconds >= 60)
+                return double.NaN;
+            return minutes * 60 + seconds;
+        }
+
+        /// <summary>Official times as the analyst types them ("28.45 1:01.23"), "" for none.</summary>
+        public static string FormatOfficial(List<double> official)
+        {
+            if (official == null || official.Count == 0)
+                return "";
+            return string.Join(" ", official.Select(SwimReference.FormatTime).ToArray());
         }
 
         /// <summary>The part of the skeleton that contains this timestamp, null if none.</summary>

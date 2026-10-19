@@ -926,9 +926,15 @@ namespace Kinovea.ScreenManager
                 b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(".\n");
             else
                 b.Append("• ⚠ Δεν βρέθηκε ο τερματισμός: μάρκαρέ τον στο καρέ της επαφής και πάτα «PDF».\n");
+            string official = OfficialNote(put);
+            if (official.Length > 0)
+                b.Append("•").Append(official).Append('\n');
+            int paceOnly = put.Count(IsDoubtfulPace);
             if (doubtful > 0)
                 b.Append("• ⚠ ").Append(CountOf(doubtful, "αβέβαιο", "αβέβαια")).Append(" (κάτω από 50%, πορτοκαλί στον έλεγχο): δες ")
                     .Append(doubtful == 1 ? "αυτό" : "αυτά").Append(" πρώτα.\n");
+            if (paceOnly > 0)
+                b.Append("• ⚠ ").Append(doubtful > paceOnly ? "Από αυτά, " : "").Append(PaceOnlyText(paceOnly)).Append(".\n");
             if (waiting > 0)
                 b.AppendFormat(CultureInfo.InvariantCulture,
                     "• {0} τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση " +

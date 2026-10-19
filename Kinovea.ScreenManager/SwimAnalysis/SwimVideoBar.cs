@@ -535,7 +535,7 @@ namespace Kinovea.ScreenManager
                 SwimComputed c = manager.Computed;
                 if (now.HasValue && c.Reference != null)
                 {
-                    SwimRow last = c.Rows.Where(r => r.T.HasValue && r.Delta.HasValue && r.T.Value <= now.Value + 1e-6).OrderBy(r => r.T.Value).LastOrDefault();
+                    SwimRow last = c.Rows.Where(r => r.Delta.HasValue && r.PassedAt(now.Value)).OrderBy(r => r.OnVideo).LastOrDefault();
                     if (last != null)
                         chips.Add(new SwimChip("Δ " + last.D + race.Unit, SwimReference.FormatDelta(last.Delta.Value), last.Delta.Value > 0.0049 ? SwimTheme.Red : SwimTheme.Green));
                 }
@@ -543,7 +543,7 @@ namespace Kinovea.ScreenManager
                 if (now.HasValue)
                 {
                     SwimBlock block = c.Blocks
-                        .Where(b => b.Dak.HasValue && c.Rows.Any(r => r.D == b.To && r.T.HasValue && r.T.Value <= now.Value + 1e-6))
+                        .Where(b => b.Dak.HasValue && c.Rows.Any(r => r.D == b.To && r.PassedAt(now.Value)))
                         .OrderBy(b => b.To)
                         .LastOrDefault();
                     if (block != null)

@@ -46,6 +46,32 @@ namespace Kinovea.ScreenManager
         public double? SegTime;
 
         /// <summary>
+        /// T is the official time of the results (SwimRace.Official, since 2026-10-19): the mark is at its frame (or there is none).
+        /// OfficialTime: the official time typed for this distance, also when the analyst's mark is elsewhere (T is the mark's then).
+        /// </summary>
+        public bool Official;
+        public double? OfficialTime;
+
+        /// <summary>The time of the mark on the video when T is the official time beside it (the frames round it off).</summary>
+        public double? MarkT;
+
+        /// <summary>
+        /// The checkpoint is passed at this race time of the video: its mark's frame (T without a mark), so that the graphics of the
+        /// frame of the mark show it when T is the official time a little after the frame.
+        /// </summary>
+        public bool PassedAt(double t)
+        {
+            double? at = MarkT ?? T;
+            return at.HasValue && at.Value <= t + 1e-6;
+        }
+
+        /// <summary>Its time on the video (MarkT, else T; NaN: none), for the order of the checkpoints passed.</summary>
+        public double OnVideo
+        {
+            get { return (MarkT ?? T) ?? double.NaN; }
+        }
+
+        /// <summary>
         /// Average velocity of the segment. Outside the clean swimming (start, turns, last 5 m before a wall) it is
         /// conventional: the checkpoint at a wall is the touch (hands or feet), not the head, and the segment
         /// contains the dive, the glide, the turn or the underwater phase.
@@ -260,7 +286,13 @@ namespace Kinovea.ScreenManager
             int pool = race.Pool <= 0 ? 50 : race.Pool;
             int distance = race.Distance;
 
-            // Checkpoint times.
+            // Checkpoint times. The official time of the results (typed, since 2026-10-19) stands as it is where the mark is at its
+            // frame or the next one (the reading puts the walls there and the frames round it; the analyst's touch a frame off) or
+            // where there is no mark; a mark farther (the start or the official time off) keeps its own time, the official one is
+            // shown beside it.
+            Dictionary<int, double> official = race.OfficialTimes();
+            double hsf = timing.HighSpeedFactor <= 0 ? 1.0 : timing.HighSpeedFactor;
+            double nearFrames = 1.5 * timing.FrameIntervalMilliseconds / hsf / 1000.0 + 1e-6;
             Dictionary<int, double> timeAt = new Dictionary<int, double>();
             for (int i = 0; i < race.Checkpoints.Count; i++)
             {
@@ -274,6 +306,19 @@ namespace Kinovea.ScreenManager
                 {
                     row.T = timing.Seconds(split.Timestamp, origin);
                     timeAt[row.D] = row.T.Value;
+                }
+
+                double typed;
+                if (official.TryGetValue(row.D, out typed))
+                {
+                    row.OfficialTime = typed;
+                    if (!row.T.HasValue || Math.Abs(row.T.Value - typed) <= nearFrames)
+                    {
+                        row.MarkT = row.T;
+                        row.T = typed;
+                        row.Official = true;
+                        timeAt[row.D] = typed;
+                    }
                 }
 
                 if (result.Reference != null)

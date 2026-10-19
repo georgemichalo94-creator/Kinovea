@@ -78,8 +78,14 @@ namespace Kinovea.ScreenManager
         public int Distance;
         public int Pool = 50;
 
-        /// <summary>Final time (s), null until the finish is marked.</summary>
+        /// <summary>Final time (s) on the video (the frame of the finish), null until the finish is marked.</summary>
         public double? Finish;
+
+        /// <summary>
+        /// The final time shown: the official one of the results when it was typed (since 2026-10-19, up to a frame and a half from
+        /// Finish), else Finish.
+        /// </summary>
+        public double? FinalTime;
 
         /// <summary>
         /// Time of each wall of the race (the turns, not the finish): marked, or from the curve when a later checkpoint is
@@ -127,19 +133,23 @@ namespace Kinovea.ScreenManager
             // Distance-time model: the start and the checkpoints with a time, both increasing.
             reel.knotT.Add(0);
             reel.knotD.Add(0);
-            foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.T.Value))
+            // (On the video: the frame of a mark when its time is the official one beside it.)
+            foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
             {
-                if (row.T.Value <= reel.knotT[reel.knotT.Count - 1] + 1e-6 || row.D <= reel.knotD[reel.knotD.Count - 1])
+                if (row.OnVideo <= reel.knotT[reel.knotT.Count - 1] + 1e-6 || row.D <= reel.knotD[reel.knotD.Count - 1])
                     continue;
 
-                reel.knotT.Add(row.T.Value);
+                reel.knotT.Add(row.OnVideo);
                 reel.knotD.Add(row.D);
             }
 
             reel.slopes = PchipSlopes(reel.knotT, reel.knotD);
             SwimRow finish = computed.Rows.FirstOrDefault(r => r.D == race.Distance && r.T.HasValue);
             if (finish != null)
-                reel.Finish = finish.T.Value;
+            {
+                reel.Finish = finish.OnVideo;
+                reel.FinalTime = finish.T.Value;
+            }
 
             double lastD = reel.knotD[reel.knotD.Count - 1];
             reel.nextCheckpoint = computed.Rows.Where(r => r.D > lastD).Select(r => (double)r.D).DefaultIfEmpty(race.Distance).Min();
@@ -151,7 +161,7 @@ namespace Kinovea.ScreenManager
                 int d = wall * reel.Pool;
                 SwimRow row = computed.Rows.FirstOrDefault(r => r.D == d && r.T.HasValue);
                 if (row != null)
-                    reel.Walls.Add(row.T.Value);
+                    reel.Walls.Add(row.OnVideo);
                 else if (reel.HasModel && d < lastD)
                     reel.Walls.Add(reel.TimeAtDistance(d));
                 else
@@ -296,14 +306,14 @@ namespace Kinovea.ScreenManager
 
                 // The swimmer from the breakout to the next checkpoint goes about as fast as in the following segment:
                 // back from that checkpoint with that speed (the curve alone is too smooth during the underwater phase).
-                SwimRow next = computed.Rows.Where(r => r.T.HasValue && r.T.Value > b && r.D > wall).OrderBy(r => r.T.Value).FirstOrDefault();
-                SwimRow after = next == null ? null : computed.Rows.Where(r => r.T.HasValue && r.T.Value > next.T.Value && r.D > next.D)
-                    .OrderBy(r => r.T.Value).FirstOrDefault();
+                SwimRow next = computed.Rows.Where(r => r.T.HasValue && r.OnVideo > b && r.D > wall).OrderBy(r => r.OnVideo).FirstOrDefault();
+                SwimRow after = next == null ? null : computed.Rows.Where(r => r.T.HasValue && r.OnVideo > next.OnVideo && r.D > next.D)
+                    .OrderBy(r => r.OnVideo).FirstOrDefault();
                 if (next == null || after == null || next.D % Pool == 0)
                     continue;
 
-                double v = (after.D - next.D) / (after.T.Value - next.T.Value);
-                double d = next.D - v * (next.T.Value - b) - wall;
+                double v = (after.D - next.D) / (after.OnVideo - next.OnVideo);
+                double d = next.D - v * (next.OnVideo - b) - wall;
                 if (d > 0 && d < Pool)
                     BreakoutDistances[lap] = d;
             }
@@ -337,7 +347,7 @@ namespace Kinovea.ScreenManager
                 Badges.Add(new SwimReelBadge { Time = b, Title = lap == 0 ? "BREAKOUT" : "BREAKOUT ΣΤΡΟΦΗΣ", Value = value, Detail = under, Tone = SwimReelTone.Green });
             }
 
-            foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.T.Value))
+            foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
             {
                 bool wall = row.D % Pool == 0;
                 string title, detail;
@@ -362,7 +372,7 @@ namespace Kinovea.ScreenManager
                     tone = row.D % 25 == 0 ? SwimReelTone.Amber : SwimReelTone.Accent;
                 }
 
-                Badges.Add(new SwimReelBadge { Time = row.T.Value, Title = title, Value = SwimReference.FormatTime(row.T.Value), Detail = detail, Tone = tone });
+                Badges.Add(new SwimReelBadge { Time = row.OnVideo, Title = title, Value = SwimReference.FormatTime(row.T.Value), Detail = detail, Tone = tone });
             }
 
             Badges.Sort((a, b) => a.Time.CompareTo(b.Time));

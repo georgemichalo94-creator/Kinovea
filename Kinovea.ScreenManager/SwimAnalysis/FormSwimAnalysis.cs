@@ -157,6 +157,8 @@ namespace Kinovea.ScreenManager
         // Tab: finish
         private Label lblFinishGap;
         private Label lblFinalTime;
+        private TextBox tbOfficial;
+        private Label lblOfficial;
         private Button btnFinalFrame;
         private Label lblFinalFrame;
         private TextBox tbFinishDist;
@@ -869,6 +871,25 @@ namespace Kinovea.ScreenManager
             AddEventRow(t, "Τερματισμός (επαφή στον τοίχο)", PlayerScreenCommands.SwimSplit, "Τερματισμός",
                 "Το χέρι ακουμπά τον τοίχο: τελικός χρόνος (το τελευταίο σημείο ελέγχου).", lblFinalTime);
 
+            const string officialHelp = "Ο επίσημος χρόνος από τα αποτελέσματα, π.χ. 1:01.23. Μπορείς να γράψεις και τους επίσημους ενδιάμεσους " +
+                "των 50 πριν από αυτόν (αθροιστικά, όπως στα αποτελέσματα): 28.45 1:01.23.\n" +
+                "Το «Όλος ο αγώνας» και ο αυτόματος πιλότος βάζουν τον τερματισμό και τους τοίχους αυτών των αποστάσεων στους επίσημους χρόνους " +
+                "και τα 45 μ. πριν από αυτούς από αυτούς· η ανάλυση και το PDF δείχνουν τους επίσημους χρόνους.\n" +
+                "Γραμμένο μετά την ανάγνωση, μετακινεί τα σημάδια του πιλότου που δεν έχεις ελέγξει ακόμη.";
+            tbOfficial = new TextBox { Width = 150, Margin = new Padding(3, 3, 2, 3) };
+            tbOfficial.Leave += (s, e) => CommitOfficial();
+            tbOfficial.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    CommitOfficial();
+                }
+            };
+            toolTip.SetToolTip(tbOfficial, officialHelp);
+            lblOfficial = ValueLabel();
+            AddEventRow(t, "Επίσημος χρόνος (αποτελέσματα)", null, null, officialHelp, tbOfficial, lblOfficial);
+
             tbFinishDist = NumberBox();
             AddEventRow(t, "Απόσταση τελευταίας χεριάς", null, null,
                 "Απόσταση από τον τοίχο τερματισμού τη στιγμή της τελευταίας χεριάς.",
@@ -1466,6 +1487,10 @@ namespace Kinovea.ScreenManager
             try
             {
                 SetText(tbReaction, Format(r.Reaction));
+                // The official times: as typed while the analyst types them.
+                string official = SwimRace.FormatOfficial(r.Official);
+                if (!tbOfficial.Focused && tbOfficial.Text != official)
+                    tbOfficial.Text = official;
                 SetText(tbEntryDistHands, Format(r.EntryDistHands));
                 SetText(tbEntryDistHips, Format(r.EntryDistHips));
                 SetText(tbEntryVelHands, Format(r.EntryVelHands));
@@ -1675,9 +1700,11 @@ namespace Kinovea.ScreenManager
 
             // Finish.
             lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? "τελ. χεριά → τοίχος " + Seconds(computed.FinishLastStrokeGap) : "–";
-            lblFinalTime.Text = computed.FinalTime.HasValue ? "τελικός χρόνος " + FormatRaceTime(computed.FinalTime.Value) : "–";
-            RefreshFinalFrame();
             SwimRow finalRow = computed.Rows.LastOrDefault();
+            lblFinalTime.Text = computed.FinalTime.HasValue ? "τελικός χρόνος " + FormatRaceTime(computed.FinalTime.Value) +
+                (finalRow != null && finalRow.Official ? " (επίσημος)" : "") : "–";
+            RefreshFinalFrame();
+            RefreshOfficial(race, computed);
             string finalDelta = finalRow != null && finalRow.Delta.HasValue && computed.Reference != null
                 ? string.Format(" · Δ τελικού {0} από «{1}»", SwimReference.FormatDelta(finalRow.Delta.Value), computed.Reference.Name)
                 : "";
@@ -1828,14 +1855,14 @@ namespace Kinovea.ScreenManager
                 chips.Add(new SwimChip("ΧΕΡΙΕΣ", SwimCalculator.PressesSinceLastSplit(manager.Computed).ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
                 if (now.HasValue && manager.Computed.Reference != null)
                 {
-                    SwimRow last = manager.Computed.Rows.Where(r => r.T.HasValue && r.Delta.HasValue && r.T.Value <= now.Value + 1e-6).OrderBy(r => r.T.Value).LastOrDefault();
+                    SwimRow last = manager.Computed.Rows.Where(r => r.Delta.HasValue && r.PassedAt(now.Value)).OrderBy(r => r.OnVideo).LastOrDefault();
                     if (last != null)
                         chips.Add(new SwimChip("Δ " + last.D + race.Unit, SwimReference.FormatDelta(last.Delta.Value), last.Delta.Value > 0.0049 ? SwimTheme.Red : SwimTheme.Green));
                 }
 
                 if (now.HasValue)
                 {
-                    SwimBlock block = manager.Computed.Blocks.Where(b => b.Dak.HasValue && manager.Computed.Rows.Any(r => r.D == b.To && r.T.HasValue && r.T.Value <= now.Value + 1e-6))
+                    SwimBlock block = manager.Computed.Blocks.Where(b => b.Dak.HasValue && manager.Computed.Rows.Any(r => r.D == b.To && r.PassedAt(now.Value)))
                         .OrderBy(b => b.To).LastOrDefault();
                     if (block != null)
                         chips.Add(new SwimChip("ΔΑΚ " + block.From + "-" + block.To, block.Dak.Value.ToString("0.00", CultureInfo.InvariantCulture), SwimTheme.Amber));
@@ -2398,6 +2425,62 @@ namespace Kinovea.ScreenManager
             r.Checkpoints = parsed;
             tbCheckpoints.Text = SwimPresets.FormatCheckpoints(parsed);
             manager.RaceInfoChanged(true);
+        }
+
+        /// <summary>
+        /// The official times typed (Enter or leaving the box): read and checked against the race, then the manager puts them in the
+        /// analysis (and moves the pilot's marks not checked yet to them).
+        /// </summary>
+        private void CommitOfficial()
+        {
+            if (updating || manager.Race == null)
+                return;
+
+            SwimRace r = manager.Race;
+            string error;
+            List<double> official = SwimRace.ParseOfficial(tbOfficial.Text, out error);
+            if (error == null)
+                error = SwimRace.OfficialProblem(official, r.Distance, r.Pool);
+            if (error != null)
+            {
+                lblOfficial.Text = "⚠ " + error;
+                lblOfficial.ForeColor = colorWarn;
+                ShowStatus("Επίσημος χρόνος: " + error + ".", true);
+                return;
+            }
+
+            if (SwimRace.FormatOfficial(official) == SwimRace.FormatOfficial(r.Official))
+                return;
+
+            manager.OfficialChanged(official);
+        }
+
+        /// <summary>What the official times give in the analysis: the final time and the splits typed, and a mark elsewhere.</summary>
+        private void RefreshOfficial(SwimRace race, SwimComputed computed)
+        {
+            Dictionary<int, double> official = race.OfficialTimes();
+            if (official.Count == 0)
+            {
+                // A text that could not be read stays with its warning until it is corrected.
+                if (!lblOfficial.Text.StartsWith("⚠", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(tbOfficial.Text))
+                {
+                    lblOfficial.Text = "–";
+                    lblOfficial.ForeColor = colorValue;
+                }
+
+                return;
+            }
+
+            List<string> apart = new List<string>();
+            foreach (SwimRow row in computed.Rows.Where(x => x.OfficialTime.HasValue && !x.Official && x.T.HasValue))
+                apart.Add(string.Format(CultureInfo.InvariantCulture, "{0}{1}: σημάδι {2} (Δ {3} s)", row.D, race.Unit,
+                    FormatRaceTime(row.T.Value), SwimReference.FormatDelta(row.T.Value - row.OfficialTime.Value)));
+
+            int splits = official.Count - 1;
+            string text = "τελικός " + SwimReference.FormatTime(official.Values.Max()) +
+                (splits > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} ενδιάμεσοι", splits) : "");
+            lblOfficial.Text = apart.Count == 0 ? "✔ " + text + " στην ανάλυση" : text + " · ⚠ " + string.Join(" · ", apart.ToArray());
+            lblOfficial.ForeColor = apart.Count == 0 ? colorOk : colorWarn;
         }
 
         private void CommitManualValues()
