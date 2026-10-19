@@ -137,7 +137,8 @@ namespace Kinovea.ScreenManager
 
     /// <summary>
     /// The official results of the competitions on the web (since 2026-10-19): the KOE live results (live.koe.org.gr, the
-    /// competitions of the federation and the international ones of the Greek athletes), read-only and public. Calls block: run
+    /// competitions of the federation and the international ones of the Greek athletes), the Microplus results sites and World
+    /// Aquatics (the reaction times and the athletes' codes), read-only and public. Calls block: run
     /// them off the UI thread.
     /// </summary>
     public static class SwimOfficialResults
@@ -547,6 +548,124 @@ namespace Kinovea.ScreenManager
             }
 
             return true;
+        }
+
+        public const string WorldAquaticsApi = "https://api.worldaquatics.com/fina/";
+
+        /// <summary>The competition of a World Aquatics link (worldaquatics.com/competitions/4725/…): its id, 0 when it is not one.</summary>
+        public static int WorldAquaticsCompetition(string link)
+        {
+            Match m = Regex.Match(link ?? "", @"worldaquatics\.com/competitions/(\d+)", RegexOptions.IgnoreCase);
+            int id;
+            return m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out id) ? id : 0;
+        }
+
+        /// <summary>
+        /// The swimming events of a World Aquatics competition (one unit per event, its heats and results not read yet: see
+        /// WorldAquaticsHeats).
+        /// </summary>
+        public static List<SwimOfficialUnit> WorldAquaticsEvents(int competition)
+        {
+            List<SwimOfficialUnit> units = new List<SwimOfficialUnit>();
+            JObject o = GetJson(WorldAquaticsApi + "competitions/" + competition.ToString(CultureInfo.InvariantCulture) + "/events");
+            JArray sports = o == null ? null : o["Sports"] as JArray;
+            JToken swimming = sports == null ? null : sports.FirstOrDefault(s => Str(s["Code"]) == "SW");
+            JArray list = swimming == null ? null : swimming["DisciplineList"] as JArray;
+            if (list == null)
+                return units;
+
+            foreach (JToken d in list)
+            {
+                SwimOfficialUnit u = new SwimOfficialUnit
+                {
+                    Source = "worldaquatics",
+                    CompetitionCode = competition.ToString(CultureInfo.InvariantCulture),
+                    UnitCode = Str(d["Id"]),
+                    Event = Str(d["DisciplineName"]),
+                    Category = Str(d["Gender"]),
+                    Gender = CategoryGender(Str(d["Gender"]), "")
+                };
+                ParseEvent(u.Event, out u.Distance, out u.Style, out u.Relay);
+                if (u.Distance > 0 && u.UnitCode.Length > 0)
+                    units.Add(u);
+            }
+
+            return units;
+        }
+
+        /// <summary>
+        /// The heats (semifinals, finals) of an event of World Aquatics with their results: the lane, the final time, the cumulative
+        /// splits, the reaction time and the athlete's World Aquatics code (IfId). Empty when it could not be read.
+        /// </summary>
+        public static List<SwimOfficialUnit> WorldAquaticsHeats(SwimOfficialUnit ev)
+        {
+            List<SwimOfficialUnit> heats = new List<SwimOfficialUnit>();
+            JObject o = GetJson(WorldAquaticsApi + "events/" + Uri.EscapeDataString(ev.UnitCode));
+            JArray list = o == null ? null : o["Heats"] as JArray;
+            if (list == null)
+                return heats;
+
+            foreach (JToken h in list)
+            {
+                string phase = Str(h["PhaseName"]), name = Str(h["Name"]);
+                if (phase.Equals("Summary", StringComparison.OrdinalIgnoreCase) || Str(h["IsSummary"]).Equals("true", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                Match number = Regex.Match(name, @"(\d+)\s*$");
+                SwimOfficialUnit u = new SwimOfficialUnit
+                {
+                    Source = ev.Source,
+                    CompetitionCode = ev.CompetitionCode,
+                    UnitCode = Str(h["UnitCode"]).Length > 0 ? Str(h["UnitCode"]) : ev.UnitCode + "/" + name,
+                    Event = ev.Event,
+                    Distance = ev.Distance,
+                    Style = ev.Style,
+                    Relay = ev.Relay,
+                    Gender = ev.Gender,
+                    Category = ev.Category,
+                    Phase = phase,
+                    Round = Round("", phase + " " + name),
+                    Heat = number.Success ? int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture) : 1,
+                    Date = Date(h["Date"])
+                };
+
+                JArray results = h["Results"] as JArray;
+                foreach (JToken r in results ?? new JArray())
+                {
+                    SwimOfficialEntry e = new SwimOfficialEntry
+                    {
+                        Heat = u.Heat,
+                        Lane = Int(r["Lane"]),
+                        IfId = Str(r["GmsId"]),
+                        FamilyNameLatin = Str(r["LastName"]),
+                        GivenNameLatin = Str(r["FirstName"]),
+                        Nation = Str(r["NAT"]),
+                        Gender = u.Gender == "X" ? "" : u.Gender,
+                        Time = Time(Str(r["Time"])),
+                        Reaction = Time(Str(r["RT"]))
+                    };
+                    if (!e.Time.HasValue)
+                        e.Status = Str(r["Time"]);
+
+                    // The age at the race only: the year of birth one of two (left unknown).
+                    SortedDictionary<double, double> at = new SortedDictionary<double, double>();
+                    JArray splits = r["Splits"] as JArray;
+                    foreach (JToken s in splits ?? new JArray())
+                    {
+                        Match m = Regex.Match(Str(s["Distance"]), @"^(\d+)\s*m$", RegexOptions.IgnoreCase);
+                        double? t = Time(Str(s["Time"]));
+                        if (m.Success && t.HasValue)
+                            at[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] = t.Value;
+                    }
+
+                    e.Splits = SplitsEvery50(at, u.Distance);
+                    u.Entries.Add(e);
+                }
+
+                heats.Add(u);
+            }
+
+            return heats;
         }
 
         /// <summary>"M", "F", "X" of a category of Microplus ("WOMEN - GENERAL", "MEN - JUNIORS", its code "ASF").</summary>

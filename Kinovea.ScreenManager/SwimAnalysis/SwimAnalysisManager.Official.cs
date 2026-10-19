@@ -158,6 +158,17 @@ namespace Kinovea.ScreenManager
                 units = SwimOfficialResults.MicroplusSchedule(mp);
             }
 
+            // A World Aquatics competition (worldaquatics.com/competitions/4725/…): the event, then its heats with their results.
+            int worldAquatics = SwimOfficialResults.WorldAquaticsCompetition(q.Link);
+            if (units == null && worldAquatics > 0)
+            {
+                found.Source = "World Aquatics";
+                units = new List<SwimOfficialUnit>();
+                foreach (SwimOfficialUnit ev in SwimOfficialResults.WorldAquaticsEvents(worldAquatics)
+                    .Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && (q.Gender.Length == 0 || u.Gender == q.Gender || u.Gender == "X")))
+                    units.AddRange(SwimOfficialResults.WorldAquaticsHeats(ev));
+            }
+
             // The competition of the KOE live results: from the link (…/#/athletic-sports-schedule/1/8729, …/#/swimming-result/1/8729/<unit>).
             int code = 0;
             string unitCode = "";
@@ -169,8 +180,8 @@ namespace Kinovea.ScreenManager
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !Regex.IsMatch(q.Link.Trim(), @"^\d+$"))
             {
-                found.Error = "ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr) ούτε σελίδα αποτελεσμάτων της Microplus· " +
-                    "άφησέ τον κενό για αναζήτηση με την ημερομηνία";
+                found.Error = "ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr), σελίδα αποτελεσμάτων της Microplus ή " +
+                    "διοργάνωση της World Aquatics (worldaquatics.com/competitions/…)· άφησέ τον κενό για αναζήτηση με την ημερομηνία";
                 return found;
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !int.TryParse(q.Link.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out code))
@@ -242,7 +253,7 @@ namespace Kinovea.ScreenManager
             {
                 if (u.Source == "microplus")
                     SwimOfficialResults.MicroplusResults(u);
-                else
+                else if (u.Source == "koe")
                     SwimOfficialResults.KoeResults(u);
             }
 
@@ -250,10 +261,11 @@ namespace Kinovea.ScreenManager
                 .SelectMany(u => u.Entries.Where(e => e.Time.HasValue).Select(e => new KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>(u, e))).ToList();
             List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> chosen = null;
 
-            // 1. The registry number (the KOE results carry the federation's number of the Greek athletes).
+            // 1. The registry number (the KOE results carry the federation's number of the Greek athletes; an international athlete of
+            // the registry has "WA" and his World Aquatics code).
             if (q.AthleteId.Length > 0)
             {
-                chosen = entries.Where(x => x.Value.Code == q.AthleteId).ToList();
+                chosen = entries.Where(x => x.Value.Code == q.AthleteId || (x.Value.IfId.Length > 0 && WorldAquaticsId(x.Value.IfId) == q.AthleteId)).ToList();
                 found.How = "με τον αριθμό μητρώου";
             }
 
@@ -305,6 +317,12 @@ namespace Kinovea.ScreenManager
             found.Unit = chosen[0].Key;
             found.Entry = chosen[0].Value;
             return found;
+        }
+
+        /// <summary>The registry's code of an international athlete from his World Aquatics code ("WA123456").</summary>
+        public static string WorldAquaticsId(string ifId)
+        {
+            return string.IsNullOrWhiteSpace(ifId) ? "" : "WA" + ifId.Trim();
         }
 
         /// <summary>How alike two names of competitions are (0-1), word by word in Latin letters.</summary>
@@ -404,7 +422,7 @@ namespace Kinovea.ScreenManager
             if (registry == null || e == null)
                 return null;
 
-            SwimAthlete byCode = registry.Find(e.Code);
+            SwimAthlete byCode = (e.Code.Length > 0 ? registry.Find(e.Code) : null) ?? (e.IfId.Length > 0 ? registry.Find(WorldAquaticsId(e.IfId)) : null);
             if (byCode != null)
             {
                 string f, g;

@@ -26,6 +26,7 @@ function makeSheet(ss, name, id) {
     getLastRow: () => { let m = 0; for (const k in cells) { const r = +k.split(':')[0]; if (cells[k].v !== '' && cells[k].v !== null && r > m) m = r; } return m; },
     getLastColumn: () => { let m = 0; for (const k in cells) { const c = +k.split(':')[1]; if (cells[k].v !== '' && cells[k].v !== null && c > m) m = c; } return m; },
     clear: () => { for (const k in cells) delete cells[k]; },
+    appendRow: values => { const r = sheet.getLastRow() + 1; sheet.getRange(r, 1, 1, values.length).setValues([values]); return sheet; },
     getCharts: () => charts.slice(), removeChart: c => charts.splice(charts.indexOf(c), 1),
     insertChart: c => charts.push(c),
     newChart: () => {

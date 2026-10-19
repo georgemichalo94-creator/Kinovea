@@ -21,6 +21,16 @@ var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
 var SWIM_ATHLETES_SHEET = 'Στοιχεία Αθλητών/τριων';
+
+/**
+ * Οι διεθνείς αθλητές (2.7.6): ένας μοναδικός κωδικός ο καθένας, WA και ο κωδικός του στη World Aquatics, αλλιώς X-<ΧΩΡΑ>-<αύξων>,
+ * σε δικό τους φύλλο (το μητρώο της ΚΟΕ μένει όπως είναι). Οι άλλες γραφές των ονομάτων των αθλητών του μητρώου (π.χ. με λατινικά σε
+ * αποτελέσματα του εξωτερικού) σε δικό τους φύλλο.
+ */
+var SWIM_INTL_SHEET = 'Διεθνείς αθλητές';
+var SWIM_INTL_HEADERS = ['Κωδικός', 'Ονοματεπώνυμο', 'Χώρα', 'Φύλο', 'Έτος γέννησης', 'Σωματείο', 'Κωδικός World Aquatics', 'Άλλες γραφές', 'Καταχώρηση'];
+var SWIM_ALIAS_SHEET = 'Άλλες γραφές ονομάτων';
+var SWIM_ALIAS_HEADERS = ['Αριθμός μητρώου', 'Όνομα όπως γράφεται', 'Καταχώρηση'];
 var SWIM_REPORTS_TITLE = 'Αναλύσεις Αγώνων Κολύμβησης (Kinovea)';
 var SWIM_REPORT_FOLDER = 'Swim Race Reports';
 
@@ -169,6 +179,14 @@ function swimHandle_(req) {
       return swimJson_(swimSaveEliteFrame_(req));
     }
 
+    if (action === 'addAthlete') {
+      return swimJson_(swimAddAthlete_(req));
+    }
+
+    if (action === 'addAlias') {
+      return swimJson_(swimAddAlias_(req));
+    }
+
     if (action === 'update' || action === 'pdf') {
       // drawCharts: το Kinovea σχεδιάζει τα γραφήματα του PDF με τα γραφικά του βίντεο. Όσα δεν έχουν ακόμη εικόνα για τις
       // τρέχουσες τιμές τους επιστρέφονται (τιμές και ρυθμίσεις) χωρίς PDF· το Kinovea τα ανεβάζει και ζητά ξανά το PDF.
@@ -277,8 +295,28 @@ function swimHeaderMap_(headerRow) {
   return map;
 }
 
-/** Επιστρέφει { sheet, athletes: [{id, name, gender, birthYear, category, club}] } χωρίς διπλότυπα μητρώα. */
+/**
+ * Επιστρέφει { sheet, athletes: [{id, name, gender, birthYear, category, club, aliases}] } χωρίς διπλότυπα μητρώα, και μετά τους
+ * διεθνείς αθλητές ({…, nation, waId, intl: true}).
+ */
 function swimAthletes_() {
+  var list = swimRegistryAthletes_();
+  var ss = swimDataSpreadsheet_();
+  var aliases = swimAliasRows_(ss.getSheetByName(SWIM_ALIAS_SHEET));
+  list.athletes.forEach(function (a) { a.aliases = aliases[a.id] || []; });
+  var seen = {};
+  list.athletes.forEach(function (a) { seen[a.id] = true; });
+  swimIntlRows_(ss.getSheetByName(SWIM_INTL_SHEET)).forEach(function (r) {
+    if (seen[r.id]) return;
+    seen[r.id] = true;
+    list.athletes.push({ id: r.id, name: r.name, gender: r.gender, birthYear: r.birthYear, category: '', club: r.club, nation: r.nation,
+      waId: r.waId, aliases: r.aliases, intl: true });
+  });
+  return list;
+}
+
+/** Το μητρώο της ΚΟΕ: { sheet, athletes: [{id, name, gender, birthYear, category, club}] } χωρίς διπλότυπα μητρώα. */
+function swimRegistryAthletes_() {
   var ss = swimDataSpreadsheet_();
   var preferred = swimProps_().getProperty('SWIM_ATHLETES_SHEET') || SWIM_ATHLETES_SHEET;
   var sheet = ss.getSheetByName(preferred);
@@ -308,6 +346,132 @@ function swimAthletes_() {
   }
 
   return { sheet: '', athletes: [] };
+}
+
+/** Το όνομα για σύγκριση: κεφαλαία χωρίς τόνους, μόνο γράμματα, οι λέξεις με αλφαβητική σειρά (επώνυμο και όνομα με όποια σειρά). */
+function swimNameKey_(name) {
+  return swimNormText_(name).replace(/[^A-ZΑ-Ω ]/g, ' ').split(' ').filter(function (w) { return w; }).sort().join(' ');
+}
+
+/** Οι διεθνείς αθλητές του φύλλου τους: [{id, name, nation, gender, birthYear, club, waId, aliases}]. */
+function swimIntlRows_(sh) {
+  if (!sh || sh.getLastRow() < 2) return [];
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, SWIM_INTL_HEADERS.length).getValues();
+  var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  return values.filter(function (row) { return text(row[0]) && text(row[1]); }).map(function (row) {
+    return { id: text(row[0]), name: text(row[1]), nation: text(row[2]).toUpperCase(), gender: text(row[3]), birthYear: text(row[4]),
+      club: text(row[5]), waId: text(row[6]), aliases: text(row[7]).split(';').map(function (x) { return x.trim(); }).filter(function (x) { return x; }) };
+  });
+}
+
+/** Οι άλλες γραφές των ονομάτων των αθλητών του μητρώου, ανά αριθμό μητρώου. */
+function swimAliasRows_(sh) {
+  var map = {};
+  if (!sh || sh.getLastRow() < 2) return map;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (row) {
+    var id = String(row[0] === null ? '' : row[0]).trim(), alias = String(row[1] === null ? '' : row[1]).trim();
+    if (!id || !alias) return;
+    (map[id] = map[id] || []).push(alias);
+  });
+  return map;
+}
+
+/** Ένα φύλλο του κύριου αρχείου με τις επικεφαλίδες του (δημιουργείται την πρώτη φορά). */
+function swimSheetWithHeaders_(name, headers) {
+  var ss = swimDataSpreadsheet_();
+  var sh = ss.getSheetByName(name);
+  if (sh) return sh;
+  sh = ss.insertSheet(name);
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+/**
+ * Ένας διεθνής αθλητής (από τα επίσημα αποτελέσματα στο Kinovea, 2.7.6) στο φύλλο «Διεθνείς αθλητές», με μοναδικό κωδικό: WA και ο
+ * κωδικός του στη World Aquatics, αλλιώς X-<ΧΩΡΑ>-<αύξων>. Αν υπάρχει ήδη (ίδιος κωδικός World Aquatics, ή ίδιο όνομα, χώρα και έτος
+ * γέννησης) επιστρέφει τον κωδικό του. Ίδιο όνομα και χώρα χωρίς έτος γέννησης στον έναν από τους δύο: duplicates, για να διαλέξει ο
+ * αναλυτής (force: νέος αθλητής).
+ */
+function swimAddAthlete_(req) {
+  var a = req.athlete || {};
+  var name = String(a.name || '').replace(/\s+/g, ' ').trim();
+  var nation = String(a.nation || '').trim().toUpperCase();
+  if (!name || !/^[A-Z]{3}$/.test(nation))
+    return { ok: false, error: 'Χρειάζονται το ονοματεπώνυμο και η χώρα (κωδικός τριών γραμμάτων, π.χ. ITA).' };
+  if (nation === 'GRE')
+    return { ok: false, error: 'Οι αθλητές της Ελλάδας είναι στο μητρώο της ΚΟΕ, με τον αριθμό μητρώου τους.' };
+
+  var wa = String(a.waId || '').replace(/\D/g, '');
+  var born = String(a.birthYear || '').replace(/\D/g, '');
+  if (born.length !== 4) born = '';
+  var aliases = (a.aliases || []).map(function (x) { return String(x).replace(/\s+/g, ' ').trim(); })
+    .filter(function (x) { return x && x !== name; });
+  var sh = swimSheetWithHeaders_(SWIM_INTL_SHEET, SWIM_INTL_HEADERS);
+  var rows = swimIntlRows_(sh);
+  var key = swimNameKey_(name);
+  var i;
+  if (wa) {
+    for (i = 0; i < rows.length; i++)
+      if (rows[i].waId === wa || rows[i].id === 'WA' + wa) return { ok: true, id: rows[i].id, existed: true };
+  }
+
+  var maybe = [];
+  for (i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.nation !== nation || (wa && r.waId && r.waId !== wa)) continue;
+    var same = swimNameKey_(r.name) === key || r.aliases.some(function (x) { return swimNameKey_(x) === key; });
+    if (!same) continue;
+    if (born && r.birthYear === born) return { ok: true, id: r.id, existed: true };
+    if (!born || !r.birthYear) maybe.push({ id: r.id, name: r.name, nation: r.nation, birthYear: r.birthYear });
+  }
+
+  if (maybe.length && !req.force)
+    return { ok: false, duplicates: maybe, error: 'Μοιάζει με αθλητή που υπάρχει ήδη στους διεθνείς.' };
+
+  var id = wa ? 'WA' + wa : swimNextIntlId_(rows, nation);
+  sh.appendRow([id, name, nation, String(a.gender || '').trim(), born, String(a.club || '').trim(), wa, aliases.join('; '), new Date()]);
+  return { ok: true, id: id, created: true };
+}
+
+/** Ο επόμενος κωδικός διεθνούς αθλητή χωρίς κωδικό World Aquatics: X-ITA-0001, X-ITA-0002… */
+function swimNextIntlId_(rows, nation) {
+  var max = 0, re = new RegExp('^X-' + nation + '-(\\d+)$');
+  rows.forEach(function (r) { var m = re.exec(r.id); if (m) max = Math.max(max, Number(m[1])); });
+  return 'X-' + nation + '-' + ('000' + (max + 1)).slice(-4);
+}
+
+/**
+ * Μια άλλη γραφή του ονόματος ενός αθλητή (π.χ. με λατινικά σε αποτελέσματα του εξωτερικού, 2.7.6): των διεθνών στη γραμμή τους, του
+ * μητρώου στο φύλλο «Άλλες γραφές ονομάτων». Μία φορά η καθεμία.
+ */
+function swimAddAlias_(req) {
+  var id = String(req.id === undefined || req.id === null ? '' : req.id).trim();
+  var alias = String(req.alias || '').replace(/\s+/g, ' ').trim();
+  if (!id || !alias) return { ok: false, error: 'Χρειάζονται ο κωδικός του αθλητή και το όνομα.' };
+  var key = swimNameKey_(alias);
+
+  var ss = swimDataSpreadsheet_();
+  var intl = ss.getSheetByName(SWIM_INTL_SHEET);
+  var rows = swimIntlRows_(intl);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].id !== id) continue;
+    if (swimNameKey_(rows[i].name) === key || rows[i].aliases.some(function (x) { return swimNameKey_(x) === key; }))
+      return { ok: true, existed: true };
+    var list = rows[i].aliases.concat([alias]);
+    var values = intl.getRange(2, 1, intl.getLastRow() - 1, 1).getValues();
+    for (var r = 0; r < values.length; r++) {
+      if (String(values[r][0]).trim() === id) {
+        intl.getRange(r + 2, 8).setValue(list.join('; '));
+        return { ok: true, created: true };
+      }
+    }
+  }
+
+  var known = swimAliasRows_(ss.getSheetByName(SWIM_ALIAS_SHEET))[id] || [];
+  if (known.some(function (x) { return swimNameKey_(x) === key; })) return { ok: true, existed: true };
+  swimSheetWithHeaders_(SWIM_ALIAS_SHEET, SWIM_ALIAS_HEADERS).appendRow([id, alias, new Date()]);
+  return { ok: true, created: true };
 }
 
 // ---------------------------------------------------------------------------------------------
