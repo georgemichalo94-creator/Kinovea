@@ -1948,10 +1948,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Background thread: the race read from the swimmer of a lane proposed at each of ProposedReadings after the start (the
-        /// place in the grid confirmed on the proposal), each reading on its own; the one closest to the other two (the largest
-        /// difference of their common checkpoints and walls, half a second more for each one read by only one) is kept in
-        /// 'lengths', the others are disposed. With two readings, the first. None (no proposal at those times): the proposal
-        /// once. False if cancelled (what the reading under way found is kept).
+        /// place in the grid confirmed on the proposal), each reading on its own; the one closest to the other two is kept in
+        /// 'lengths' (MiddleReading), the others are disposed. With two readings, the first. None (no proposal at those times):
+        /// the proposal once. False if cancelled (the reading with the most lengths so far is kept).
         /// </summary>
         private bool ReadRaceThree(AutoPickResult proposed, List<LengthRead> lengths, BackgroundWorker worker)
         {
@@ -1974,7 +1973,16 @@ namespace Kinovea.ScreenManager
                         break;
                     }
 
-                    AutoPickResult p = LanePick(start + RealSpan(seconds), width, height, sx, sy, worker, proposed.LanePlace, proposed.Grid.Lanes);
+                    AutoPickResult p = null;
+                    try
+                    {
+                        p = LanePick(start + RealSpan(seconds), width, height, sx, sy, worker, proposed.LanePlace, proposed.Grid.Lanes);
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("The proposed swimmer could not be found again for a reading.", e);
+                    }
+
                     if (p == null)
                     {
                         log.DebugFormat("Reading of the proposed swimmer from {0:0} s: no proposal there.", seconds);
@@ -1995,7 +2003,8 @@ namespace Kinovea.ScreenManager
                 if (runs.Count == 0)
                     return ReadRace(proposed.Head, proposed.Feet, proposed.Frame, lengths, worker, proposed.Lane);
 
-                kept = completed ? MiddleReading(runs) : runs.Count - 1;
+                // Cancelled: the reading with the most lengths (the first of them), the one under way included.
+                kept = completed ? MiddleReading(runs) : runs.Select((r, i) => new { r.Count, i }).OrderByDescending(x => x.Count).ThenBy(x => x.i).First().i;
                 lengths.AddRange(runs[kept]);
                 resumeWall = states[kept].Item1;
                 resumeLapStart = states[kept].Item2;
@@ -2015,32 +2024,38 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The reading closest to the others (index), the first of two.</summary>
+        /// <summary>
+        /// The reading closest to the others (index; the first of two): the smallest sum of its distances to the others (MarksApart);
+        /// among those within 0.1 s of it, the one that read the most marks (a reading that lost the swimmer after a turn
+        /// agrees with the others as far as it went), then the first.
+        /// </summary>
         private int MiddleReading(List<List<LengthRead>> runs)
         {
             if (runs.Count < 3)
                 return 0;
 
             List<Dictionary<int, double>> marks = runs.Select(ReadingMarks).ToList();
-            int best = 0;
-            double bestSum = double.MaxValue;
+            double[] score = new double[marks.Count];
             for (int i = 0; i < marks.Count; i++)
             {
-                double sum = 0;
                 for (int j = 0; j < marks.Count; j++)
                 {
                     if (j != i)
-                        sum += MarksApart(marks[i], marks[j]);
-                }
-
-                if (sum < bestSum)
-                {
-                    bestSum = sum;
-                    best = i;
+                        score[i] += MarksApart(marks[i], marks[j]);
                 }
             }
 
-            return best;
+            double least = score.Min();
+            int kept = -1;
+            for (int i = 0; i < marks.Count; i++)
+            {
+                if (score[i] <= least + 0.1 && (kept < 0 || marks[i].Count > marks[kept].Count))
+                    kept = i;
+            }
+
+            log.DebugFormat(CultureInfo.InvariantCulture, "Three readings: {0} (marks {1}).",
+                string.Join(" / ", score.Select(x => x.ToString("0.00", CultureInfo.InvariantCulture))), string.Join(" / ", marks.Select(m => m.Count)));
+            return kept;
         }
 
         /// <summary>Seconds from the start of the checkpoints (distance) and walls (minus the distance) of a reading: the median of their cues.</summary>
@@ -2064,14 +2079,13 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// How far two readings are: the largest difference of their common marks (s; a length lost after a turn shows in a few
-        /// marks only), 0.5 more for each mark read by one only.
+        /// How far two readings are: the largest difference of their common marks (s; a length read wrong shows in a few marks
+        /// only), 99 without any.
         /// </summary>
         private static double MarksApart(Dictionary<int, double> a, Dictionary<int, double> b)
         {
             List<double> d = a.Keys.Where(b.ContainsKey).Select(k => Math.Abs(a[k] - b[k])).ToList();
-            int alone = a.Keys.Count(k => !b.ContainsKey(k)) + b.Keys.Count(k => !a.ContainsKey(k));
-            return (d.Count == 0 ? 99.0 : d.Max()) + 0.5 * alone;
+            return d.Count == 0 ? 99.0 : d.Max();
         }
 
         private static double Median(IEnumerable<double> values)

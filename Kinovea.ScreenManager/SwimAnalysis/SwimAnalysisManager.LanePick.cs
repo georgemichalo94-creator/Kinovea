@@ -309,8 +309,10 @@ namespace Kinovea.ScreenManager
             if (double.IsNaN(x) || direction == 0)
                 return null;
 
-            // The head from the front of what moves (the hands) less their reach for the stroke of this length.
-            double head = grid.SwimmerHead(place, motion, LaneBody(grid, place, x), direction, PickStyle(at), out clear);
+            // The head from the front of what moves (the hands) less their reach for the stroke of this length (the clearness
+            // stays the one of the swimmer's place above, as the lab measured it for the pilot).
+            double clearAtHead;
+            double head = grid.SwimmerHead(place, motion, LaneBody(grid, place, x), direction, PickStyle(at), out clearAtHead);
             if (double.IsNaN(head))
                 return null;
 
