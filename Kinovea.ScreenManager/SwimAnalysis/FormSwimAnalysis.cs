@@ -90,6 +90,7 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbPool;
         private ComboBox cmbKind;
         private TextBox tbCompetition;
+        private TextBox tbResultsLink;
         private TextBox tbLocation;
         private ComboBox cmbRound;
         private TextBox tbDate;
@@ -1089,6 +1090,29 @@ namespace Kinovea.ScreenManager
             AddRow(table, "Τόπος", tbLocation);
             AddRow(table, "Φάση", cmbRound);
             AddRow(table, "Ημερομηνία", tbDate);
+
+            // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site,
+            // a World Aquatics competition), or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
+            tbResultsLink = new TextBox { Dock = DockStyle.Fill };
+            tbResultsLink.TextChanged += (s, e) => CommitRaceInfo(false);
+            Button btnResults = new SwimNoFocusButton { Text = "🔗 Επίσημα αποτελέσματα", AutoSize = true, Height = 26 };
+            btnResults.Click += (s, e) =>
+            {
+                officialEditRace = null;
+                officialError = null;
+                manager.LinkOfficialResults(tbResultsLink.Text);
+            };
+            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα: της ΚΟΕ (live.koe.org.gr), μιας σελίδας αποτελεσμάτων της " +
+                "Microplus (results.microplustimingservices.com) ή μιας διοργάνωσης της World Aquatics (worldaquatics.com/competitions/…). Τη " +
+                "διοργάνωση από τον σύνδεσμο που επικολλάς εδώ (ή, αν τον αφήσεις κενό, από " +
+                "την ημερομηνία και το όνομα της διοργάνωσης στα live της ΚΟΕ), το αγώνισμα από το στυλ και την απόσταση, τη φάση από τη φάση " +
+                "και την ημέρα, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον " +
+                "τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.";
+            toolTip.SetToolTip(tbResultsLink, resultsHelp);
+            toolTip.SetToolTip(btnResults, resultsHelp);
+            AddRow(table, "Αποτελέσματα (σύνδεσμος)", tbResultsLink);
+            AddRow(table, "", btnResults);
+
             AddRow(table, "Σημεία ελέγχου", tbCheckpoints);
             AddRow(table, "", btnDefaults);
 
@@ -1373,6 +1397,8 @@ namespace Kinovea.ScreenManager
                     tbLocation.Text = r.Location;
                     cmbRound.Text = r.Round;
                     tbDate.Text = r.Date;
+                    if (!tbResultsLink.Focused)
+                        tbResultsLink.Text = r.ResultsLink ?? "";
                     tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
                 }
 
@@ -1718,7 +1744,7 @@ namespace Kinovea.ScreenManager
             lblStartSignal.Text = !race.StartTimestamp.HasValue ? "δεν έχει οριστεί" : race.PilotStart ? "✈ t = 0 · έλεγξέ τη" : "✔ t = 0";
             lblStartSignal.ForeColor = race.StartTimestamp.HasValue && !race.PilotStart ? colorOk : colorWarn;
             lblReactionAuto.Text = Seconds(computed.ReactionTime);
-            lblBlock.Text = Seconds(computed.BlockTime);
+            lblBlock.Text = Seconds(computed.BlockTime) + (computed.BlockOfficial ? " (επίσημος χρόνος αντίδρασης)" : "");
             lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? " · πτήση " + Seconds(computed.FlightTime) : "");
             lblStartKicks.Text = computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             lblBreakout.Text = Seconds(computed.StartUnderwaterTime);
@@ -2326,6 +2352,8 @@ namespace Kinovea.ScreenManager
             r.Location = tbLocation.Text.Trim();
             r.Round = cmbRound.Text.Trim();
             r.Date = tbDate.Text.Trim();
+            if (tbResultsLink != null)
+                r.ResultsLink = tbResultsLink.Text.Trim();
             manager.RaceInfoChanged(structureChanged);
 
             // The previous races of the PB are those of the event.

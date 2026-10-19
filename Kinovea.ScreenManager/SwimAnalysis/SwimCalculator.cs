@@ -203,6 +203,13 @@ namespace Kinovea.ScreenManager
         public double? BlockTime;
         public double? EntryTime;
 
+        /// <summary>
+        /// BlockTime is the official reaction time of the results (SwimRace.OfficialReaction, since 2026-10-19): the release from the
+        /// block marked at it (BlockMarkTime) or not marked.
+        /// </summary>
+        public bool BlockOfficial;
+        public double? BlockMarkTime;
+
         /// <summary>Flight: feet leave the block → hands enter the water.</summary>
         public double? FlightTime;
         public double? StartUnderwaterTime;
@@ -458,6 +465,17 @@ namespace Kinovea.ScreenManager
             double firstWallT = barriers.Count > 0 ? barriers[0] : double.MaxValue;
             result.ReactionTime = First(result.Reactions, t => t > 0 && t < firstWallT);
             result.BlockTime = First(result.FeetOff, t => t > 0 && t < firstWallT);
+
+            // The official reaction time of the results (from the touch pads of the blocks, since 2026-10-19) is the release from the
+            // block: it stands where the mark is at it (as the checkpoints) or there is none.
+            if (race.OfficialReaction.HasValue && race.OfficialReaction.Value > 0 &&
+                (!result.BlockTime.HasValue || Math.Abs(result.BlockTime.Value - race.OfficialReaction.Value) <= nearFrames))
+            {
+                result.BlockMarkTime = result.BlockTime;
+                result.BlockTime = race.OfficialReaction.Value;
+                result.BlockOfficial = true;
+            }
+
             result.EntryTime = First(result.Entries, t => t > 0 && t < firstWallT);
             if (result.BlockTime.HasValue && result.EntryTime.HasValue && result.EntryTime.Value > result.BlockTime.Value)
                 result.FlightTime = result.EntryTime.Value - result.BlockTime.Value;

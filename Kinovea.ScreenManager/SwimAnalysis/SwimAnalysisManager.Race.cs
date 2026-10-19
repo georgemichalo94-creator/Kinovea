@@ -1333,7 +1333,11 @@ namespace Kinovea.ScreenManager
         private sealed class OfficialUndo
         {
             public List<double> Official;
+            public double? Reaction;
             public readonly List<Action> Back = new List<Action>();
+
+            /// <summary>The race's details as they were before the results of the web filled them (athlete, lane, day…); null: none.</summary>
+            public Action Details;
 
             /// <summary>The checkpoints it moved (their push off follows them back).</summary>
             public readonly HashSet<int> Distances = new HashSet<int>();
@@ -1351,13 +1355,30 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void OfficialChanged(List<double> official)
         {
+            // (Times taken away: the official reaction time of the results goes with them; else it stays theirs.)
+            if (Race != null)
+                OfficialChanged(official, official == null || official.Count == 0 ? null : Race.OfficialReaction);
+        }
+
+        /// <summary>
+        /// The official times and the official reaction time (of the results on the web, since 2026-10-19; null: none): see
+        /// OfficialChanged; the release from the block waiting for the check goes to the reaction time.
+        /// </summary>
+        public void OfficialChanged(List<double> official, double? reaction, Action detailsBack = null)
+        {
             if (Race == null)
                 return;
 
             SwimProposal current = CurrentProposal;
             long? currentBefore = current != null ? (long?)current.Timestamp : null;
-            OfficialUndo undo = new OfficialUndo { Official = Race.Official == null ? null : new List<double>(Race.Official) };
+            OfficialUndo undo = new OfficialUndo
+            {
+                Official = Race.Official == null ? null : new List<double>(Race.Official),
+                Reaction = Race.OfficialReaction,
+                Details = detailsBack
+            };
             Race.Official = official == null || official.Count == 0 ? null : new List<double>(official);
+            Race.OfficialReaction = reaction.HasValue && reaction.Value > 0 ? reaction : null;
             int moved = ApplyOfficial(undo);
             PushOfficialUndo(undo);
             AfterOfficial(undo.Distances.Contains(Race.Distance), current, currentBefore);
@@ -1387,10 +1408,21 @@ namespace Kinovea.ScreenManager
             SwimProposal current = CurrentProposal;
             long? currentBefore = current != null ? (long?)current.Timestamp : null;
             Race.Official = undo.Official == null ? null : new List<double>(undo.Official);
+            Race.OfficialReaction = undo.Reaction;
             for (int i = undo.Back.Count - 1; i >= 0; i--)
                 undo.Back[i]();
             foreach (int distance in undo.Distances)
                 FollowWall(distance);
+
+            // The race's details the results filled back as they were (athlete, lane, day, round, competition, link).
+            if (undo.Details != null)
+            {
+                undo.Details();
+                EnsureReference();
+                RefreshPbCandidates();
+                if (form != null)
+                    form.RefreshAll();
+            }
 
             // The times restored placed again in the race as it is now (a reading since, a start moved since); none: what a reading put
             // at the times since goes back to its own.
@@ -1440,9 +1472,80 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // The official reaction time: the release from the block still waiting at it, or back to its usual time without it (the
+            // entry after it follows).
+            long? release = OfficialReleaseStamp();
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceBlock).ToList())
+            {
+                if (release.HasValue && (!p.Official || p.Timestamp != release.Value))
+                {
+                    RememberEntry(undo);
+                    SetOfficialProposal(p, release.Value, SwimSplitDetector.OfficialConfidence, undo);
+                    MoveEventProposals(KindRaceBlock, 0, release.Value);
+                    moved++;
+                }
+                else if (!release.HasValue && p.Official)
+                {
+                    RememberEntry(undo);
+                    Remember(undo, p);
+                    if (p.Read != null)
+                    {
+                        p.Timestamp = p.Read.Timestamp;
+                        p.Confidence = p.Read.Confidence;
+                        p.Cues = new Dictionary<string, long>(p.Read.Cues);
+                        p.Read = null;
+                        p.Official = false;
+                        MoveEventProposals(KindRaceBlock, 0, p.Timestamp);
+                    }
+                    else
+                    {
+                        SwimProposal gone = p;
+                        Race.Proposals.Remove(gone);
+                        undo.Back.Add(() =>
+                        {
+                            if (!Race.Proposals.Any(x => x == gone || x.Kind == KindRaceBlock))
+                                Race.Proposals.Add(gone);
+                        });
+                    }
+
+                    moved++;
+                }
+            }
+
             foreach (int distance in undo.Distances)
                 FollowWall(distance);
             return moved;
+        }
+
+        /// <summary>The release from the block at the official reaction time (Race.OfficialReaction; null: none, or no start).</summary>
+        private long? OfficialReleaseStamp()
+        {
+            if (Race == null || !Race.StartTimestamp.HasValue || !Timing.IsValid || !Race.OfficialReaction.HasValue || Race.OfficialReaction.Value <= 0)
+                return null;
+            return Race.StartTimestamp.Value + RealSpan(Race.OfficialReaction.Value);
+        }
+
+        /// <summary>A proposal at an official time: no cues, what it had kept the first time (Read, null: nothing).</summary>
+        private static void SetOfficialProposal(SwimProposal p, long timestamp, double confidence, OfficialUndo undo)
+        {
+            if (undo != null)
+                Remember(undo, p);
+            if (!p.Official)
+            {
+                p.Read = p.Cues.Count > 0 ? SwimProposalRead.Of(p) : null;
+                p.Official = true;
+            }
+
+            p.Timestamp = timestamp;
+            p.Confidence = confidence;
+            p.Cues.Clear();
+        }
+
+        /// <summary>The entry waiting for the check before the release from the block moves it (for «Αναίρεση»).</summary>
+        private void RememberEntry(OfficialUndo undo)
+        {
+            foreach (SwimProposal e in Race.Proposals.Where(x => x.Kind == KindRaceEntry))
+                Remember(undo, e);
         }
 
         /// <summary>

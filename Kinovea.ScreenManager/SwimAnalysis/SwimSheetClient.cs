@@ -152,6 +152,28 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// An international athlete in the sheet "Διεθνείς αθλητές" (since 2.7.6): Raw["id"] his unique code (a new one, or his own when he
+        /// is there already); Raw["duplicates"] the athletes he may be (same name and country, a year of birth unknown) unless force.
+        /// The callback runs on the UI thread.
+        /// </summary>
+        public void AddAthlete(string url, string token, JObject athlete, bool force, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "addAthlete");
+            o["athlete"] = athlete;
+            o["force"] = force;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>Another spelling of the name of an athlete (since 2.7.6). The callback runs on the UI thread.</summary>
+        public void AddAlias(string url, string token, string id, string alias, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "addAlias");
+            o["id"] = id;
+            o["alias"] = alias;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>
         /// Download the elite references (sheet "Elite αναφορές"). The callback runs on the UI thread.
         /// </summary>
         public void GetReferences(string url, string token, Action<SwimSheetResult> callback)
@@ -557,7 +579,17 @@ namespace Kinovea.ScreenManager
             }
             r["kicks"] = Times(computed.Kicks);
             r["breakouts"] = Times(computed.Breakouts);
-            r["feetOff"] = Times(computed.FeetOff);
+            // The release from the block at the official reaction time when it stands (since 2026-10-19).
+            List<double> feetOff = new List<double>(computed.FeetOff);
+            if (computed.BlockOfficial && computed.BlockTime.HasValue)
+            {
+                if (computed.BlockMarkTime.HasValue)
+                    feetOff.Remove(computed.BlockMarkTime.Value);
+                feetOff.Add(computed.BlockTime.Value);
+                feetOff.Sort();
+            }
+
+            r["feetOff"] = Times(feetOff);
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();

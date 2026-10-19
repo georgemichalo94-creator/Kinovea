@@ -16,7 +16,8 @@ using Newtonsoft.Json;
 namespace Kinovea.ScreenManager
 {
     /// <summary>
-    /// One athlete of the federation registry (sheet "Στοιχεία Αθλητών/τριων" of the main Google Sheet).
+    /// One athlete of the federation registry (sheet "Στοιχεία Αθλητών/τριων" of the main Google Sheet), or an international one
+    /// (sheet "Διεθνείς αθλητές", since 2.7.6: a unique code, WA and his World Aquatics code or X-<ΧΩΡΑ>-<αύξων>).
     /// </summary>
     public class SwimAthlete
     {
@@ -26,6 +27,20 @@ namespace Kinovea.ScreenManager
         public string BirthYear = "";
         public string Category = "";
         public string Club = "";
+
+        /// <summary>An international athlete: his country (IOC code) and his World Aquatics code ("" when unknown).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool International;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Nation;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string WaId;
+
+        /// <summary>Other spellings of the name (in Latin letters in results abroad, a married name…).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<string> Aliases;
 
         [JsonIgnore]
         public string SearchKey;

@@ -105,9 +105,10 @@ jobs:
         archive: false
 
     # The same zip as the asset of a draft release of the branch (drafts are not public): the update of the analysts'
-    # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run.
+    # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run. A work in
+    # progress branch (swim-wip-…) built on demand gets one too, for a test on one computer before it is released.
     - name: Portable zip as a draft release asset
-      if: github.event_name == 'push' && (github.ref_name == 'swim-stable' || github.ref_name == 'swim-v2')
+      if: (github.event_name == 'push' && (github.ref_name == 'swim-stable' || github.ref_name == 'swim-v2')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'swim-wip-'))
       continue-on-error: true
       shell: pwsh
       env:
