@@ -122,6 +122,19 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>A competition of a Microplus results site: its address and the folder of its files.</summary>
+    public class SwimMicroplusCompetition
+    {
+        public string Site = "";
+        public string Files = "";
+        public string Name = "";
+
+        public override string ToString()
+        {
+            return Name;
+        }
+    }
+
     /// <summary>
     /// The official results of the competitions on the web (since 2026-10-19): the KOE live results (live.koe.org.gr, the
     /// competitions of the federation and the international ones of the Greek athletes), read-only and public. Calls block: run
@@ -373,6 +386,214 @@ namespace Kinovea.ScreenManager
         {
             DateTime d;
             return DateTime.TryParse(Str(t), CultureInfo.InvariantCulture, DateTimeStyles.None, out d) ? d : (DateTime?)null;
+        }
+
+        public const string MicroplusHost = "results.microplustimingservices.com";
+
+        /// <summary>
+        /// The competition of a link of a Microplus results site (results.microplustimingservices.com/ACROPOLIS2024/, any page of it):
+        /// the folder of its files, from its home page (its "pathManifestazione"). Null when it is not one or it cannot be read.
+        /// </summary>
+        public static SwimMicroplusCompetition MicroplusCompetition(string link)
+        {
+            Uri uri;
+            if (string.IsNullOrWhiteSpace(link) || !Uri.TryCreate(link.Trim(), UriKind.Absolute, out uri) ||
+                !uri.Host.EndsWith(MicroplusHost, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            string[] segments = uri.AbsolutePath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+                return null;
+
+            // The home page of the site, after its redirections (location = "….php").
+            string root = "https://" + uri.Host + "/" + segments[0] + "/";
+            string page = root;
+            for (int i = 0; i < 3; i++)
+            {
+                string html = GetText(page);
+                if (html == null)
+                    return null;
+
+                Match path = Regex.Match(html, @"pathManifestazione\s*=\s*[""']([^""']*)[""']");
+                if (path.Success)
+                {
+                    Match title = Regex.Match(html, @"<title>\s*([^<]*?)\s*</title>", RegexOptions.IgnoreCase);
+                    return new SwimMicroplusCompetition
+                    {
+                        Site = root,
+                        Files = root + "export/" + path.Groups[1].Value.Trim('/') + (path.Groups[1].Value.Trim('/').Length > 0 ? "/" : "") + "NU/",
+                        Name = title.Success ? WebUtility.HtmlDecode(title.Groups[1].Value) : segments[0]
+                    };
+                }
+
+                Match next = Regex.Match(html, @"location(?:\.href)?\s*=\s*[""']([^""']+)[""']");
+                if (!next.Success)
+                    return null;
+                page = new Uri(new Uri(page), next.Groups[1].Value).AbsoluteUri;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The rounds of the events of a Microplus competition with their results published (one unit per round: its results file
+        /// has all the heats, each swimmer with his heat), without their results.
+        /// </summary>
+        public static List<SwimOfficialUnit> MicroplusSchedule(SwimMicroplusCompetition c)
+        {
+            List<SwimOfficialUnit> units = new List<SwimOfficialUnit>();
+            JObject counters = c == null ? null : GetJson(c.Files + "Contatori.json");
+            JArray files = counters == null ? null : counters["contatori"] as JArray;
+            if (files == null)
+                return units;
+
+            HashSet<string> results = new HashSet<string>(files.Select(f => Str(f["nomefile"])).Where(n => n.Contains("CLAS")), StringComparer.OrdinalIgnoreCase);
+            foreach (string category in files.Select(f => Str(f["c0"])).Where(x => x.Length > 0).Distinct())
+            {
+                JObject schedule = GetJson(c.Files + "ScheduleByEvent_" + category + ".JSON");
+                JArray events = schedule == null ? null : schedule["e"] as JArray;
+                if (events == null)
+                    continue;
+
+                foreach (JToken e in events)
+                {
+                    string ev = Str(e["c1"]), round = Str(e["c2"]), part = Str(e["c3"]);
+                    string file = "NU" + category + ev + "CLAS" + (round.Length == 3 ? round.Substring(1) : round) + " " + part + ".JSON";
+                    if (!results.Contains(file))
+                        continue;
+
+                    SwimOfficialUnit u = new SwimOfficialUnit
+                    {
+                        Source = "microplus",
+                        CompetitionCode = c.Files,
+                        UnitCode = file,
+                        Event = Str(e["d_en"]),
+                        Category = Str(e["d3_en"]),
+                        Phase = Str(e["d1_en"]),
+                        Round = Round("", Str(e["d1_en"])),
+                        Gender = CategoryGender(Str(e["d3_en"]), category),
+                        Date = DayMonthYear(Str(e["gi"]))
+                    };
+                    ParseEvent(u.Event, out u.Distance, out u.Style, out u.Relay);
+                    if (u.Distance > 0)
+                        units.Add(u);
+                }
+            }
+
+            return units;
+        }
+
+        /// <summary>The results of a round of a Microplus competition (its entries, each with its heat; false when not read).</summary>
+        public static bool MicroplusResults(SwimOfficialUnit unit)
+        {
+            JObject o = GetJson(unit.CompetitionCode + Uri.EscapeDataString(unit.UnitCode));
+            JArray data = o == null ? null : o["data"] as JArray;
+            if (data == null)
+                return false;
+
+            // The columns of the times: "R.T.", "50m", "100m"…, "FINISH".
+            List<string> columns = new List<string>();
+            JArray details = o.SelectToken("ExtraDetails.Eng") as JArray;
+            if (details != null)
+                columns.AddRange(details.Select(d => Str(d["Field"]).ToUpperInvariant()));
+
+            unit.Entries.Clear();
+            foreach (JToken d in data)
+            {
+                SwimOfficialEntry e = new SwimOfficialEntry
+                {
+                    Heat = Int(d["b"]),
+                    Lane = Int(d["PlaLane"]),
+                    Code = Str(d["PlaCod"]),
+                    Nation = Str(d["PlaNat"]),
+                    BirthYear = Int(d["PlaBirth"]),
+                    Club = Str(d["TeamDescrIta"]).Length > 0 ? Str(d["TeamDescrIta"]) : Str(d["PlaTeamCod"]),
+                    Gender = unit.Gender == "X" ? "" : unit.Gender,
+                    Time = Time(Str(d["MemPrest"]))
+                };
+                if (!e.Time.HasValue)
+                    e.Status = Str(d["MemPrest"]);
+
+                // The names as published: in Greek letters, or in Latin ones.
+                string family = Str(d["PlaSurname"]), given = Str(d["PlaName"]);
+                if (SwimNameMatch.HasGreek(family + given))
+                {
+                    e.FamilyName = family;
+                    e.GivenName = given;
+                }
+                else
+                {
+                    e.FamilyNameLatin = family;
+                    e.GivenNameLatin = given;
+                }
+
+                SortedDictionary<double, double> at = new SortedDictionary<double, double>();
+                JArray fields = d["MemFields"] as JArray;
+                for (int i = 0; fields != null && i < fields.Count && i < columns.Count; i++)
+                {
+                    double? value = Time(Str(fields[i]["V"]));
+                    if (!value.HasValue)
+                        continue;
+
+                    Match m = Regex.Match(columns[i], @"^(\d+)\s*M$");
+                    if (columns[i].Replace(".", "").Replace(" ", "") == "RT")
+                        e.Reaction = value;
+                    else if (m.Success)
+                        at[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] = value.Value;
+                }
+
+                e.Splits = SplitsEvery50(at, unit.Distance);
+                unit.Entries.Add(e);
+            }
+
+            return true;
+        }
+
+        /// <summary>"M", "F", "X" of a category of Microplus ("WOMEN - GENERAL", "MEN - JUNIORS", its code "ASF").</summary>
+        private static string CategoryGender(string name, string code)
+        {
+            string s = (name ?? "").ToUpperInvariant();
+            if (s.Contains("MIX"))
+                return "X";
+            if (s.Contains("WOMEN") || s.Contains("GIRL") || s.Contains("FEMALE") || s.Contains("ΓΥΝΑΙΚ") || s.Contains("ΚΟΡΑΣ"))
+                return "F";
+            if (s.Contains("MEN") || s.Contains("BOY") || s.Contains("MALE") || s.Contains("ΑΝΔΡ") || s.Contains("ΑΓΟΡ"))
+                return "M";
+            string c = (code ?? "").ToUpperInvariant();
+            return c.EndsWith("F", StringComparison.Ordinal) ? "F" : c.EndsWith("M", StringComparison.Ordinal) ? "M" : "";
+        }
+
+        /// <summary>"26/04/2024".</summary>
+        private static DateTime? DayMonthYear(string text)
+        {
+            DateTime d;
+            return DateTime.TryParseExact((text ?? "").Trim(), new[] { "d/M/yyyy", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out d)
+                ? d : (DateTime?)null;
+        }
+
+        /// <summary>A GET of a page (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>
+        private static string GetText(string url)
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "GET";
+                request.Timeout = 20000;
+                request.ReadWriteTimeout = 20000;
+                request.UserAgent = "Kinovea-SwimAnalysis";
+                request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not read " + url + ".", e);
+                return null;
+            }
         }
 
         /// <summary>A GET of JSON (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>

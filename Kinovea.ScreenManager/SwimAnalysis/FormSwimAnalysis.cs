@@ -1091,14 +1091,21 @@ namespace Kinovea.ScreenManager
             AddRow(table, "Φάση", cmbRound);
             AddRow(table, "Ημερομηνία", tbDate);
 
-            // The official results on the web (since 2026-10-19): the competition's link of the KOE live results, or none (the date).
+            // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site),
+            // or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
             tbResultsLink = new TextBox { Dock = DockStyle.Fill };
             Button btnResults = new SwimNoFocusButton { Text = "🔗 Επίσημα αποτελέσματα", AutoSize = true, Height = 26 };
-            btnResults.Click += (s, e) => manager.LinkOfficialResults(tbResultsLink.Text);
-            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα της ΚΟΕ (live.koe.org.gr): τη διοργάνωση από τον σύνδεσμο που " +
-                "επικολλάς εδώ (ή, αν τον αφήσεις κενό, από την ημερομηνία και το όνομα της διοργάνωσης), το αγώνισμα από το στυλ και την " +
-                "απόσταση, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον τελικό " +
-                "χρόνο και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.";
+            btnResults.Click += (s, e) =>
+            {
+                officialEditRace = null;
+                officialError = null;
+                manager.LinkOfficialResults(tbResultsLink.Text);
+            };
+            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα: της ΚΟΕ (live.koe.org.gr) ή μιας σελίδας αποτελεσμάτων της " +
+                "Microplus (results.microplustimingservices.com). Τη διοργάνωση από τον σύνδεσμο που επικολλάς εδώ (ή, αν τον αφήσεις κενό, από " +
+                "την ημερομηνία και το όνομα της διοργάνωσης στα live της ΚΟΕ), το αγώνισμα από το στυλ και την απόσταση, τη φάση από τη φάση " +
+                "και την ημέρα, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον " +
+                "τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.";
             toolTip.SetToolTip(tbResultsLink, resultsHelp);
             toolTip.SetToolTip(btnResults, resultsHelp);
             AddRow(table, "Αποτελέσματα (σύνδεσμος)", tbResultsLink);
@@ -1735,7 +1742,7 @@ namespace Kinovea.ScreenManager
             lblStartSignal.Text = !race.StartTimestamp.HasValue ? "δεν έχει οριστεί" : race.PilotStart ? "✈ t = 0 · έλεγξέ τη" : "✔ t = 0";
             lblStartSignal.ForeColor = race.StartTimestamp.HasValue && !race.PilotStart ? colorOk : colorWarn;
             lblReactionAuto.Text = Seconds(computed.ReactionTime);
-            lblBlock.Text = Seconds(computed.BlockTime);
+            lblBlock.Text = Seconds(computed.BlockTime) + (computed.BlockOfficial ? " (επίσημος χρόνος αντίδρασης)" : "");
             lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? " · πτήση " + Seconds(computed.FlightTime) : "");
             lblStartKicks.Text = computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             lblBreakout.Text = Seconds(computed.StartUnderwaterTime);

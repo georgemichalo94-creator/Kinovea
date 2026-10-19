@@ -49,6 +49,9 @@ namespace Kinovea.ScreenManager
             public SwimOfficialUnit Unit;
             public SwimOfficialEntry Entry;
             public string How = "";
+
+            /// <summary>The competition as the source names it (Microplus).</summary>
+            public string Source = "";
             public List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> Choices = new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
             public string Error;
         }
@@ -140,26 +143,43 @@ namespace Kinovea.ScreenManager
         {
             OfficialFound found = new OfficialFound();
 
-            // The competition: from the link (KOE live: …/#/athletic-sports-schedule/1/8729, …/#/swimming-result/1/8729/<unit>).
+            // A Microplus results site (results.microplustimingservices.com/ACROPOLIS2024/…): its own files.
+            List<SwimOfficialUnit> units = null;
+            if (Regex.IsMatch(q.Link ?? "", SwimOfficialResults.MicroplusHost.Replace(".", "\\."), RegexOptions.IgnoreCase))
+            {
+                SwimMicroplusCompetition mp = SwimOfficialResults.MicroplusCompetition(q.Link);
+                if (mp == null)
+                {
+                    found.Error = "η σελίδα της Microplus δεν διαβάστηκε (έλεγξε τον σύνδεσμο και τη σύνδεση στο διαδίκτυο)";
+                    return found;
+                }
+
+                found.Source = mp.Name;
+                units = SwimOfficialResults.MicroplusSchedule(mp);
+            }
+
+            // The competition of the KOE live results: from the link (…/#/athletic-sports-schedule/1/8729, …/#/swimming-result/1/8729/<unit>).
             int code = 0;
             string unitCode = "";
             Match m = Regex.Match(q.Link ?? "", @"#/[a-z\-]+/\d+/(\d+)(?:/([0-9A-Fa-f\-]{36}))?");
-            if (m.Success)
+            if (units == null && m.Success)
             {
                 code = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
                 unitCode = m.Groups[2].Success ? m.Groups[2].Value : "";
             }
-            else if (!string.IsNullOrWhiteSpace(q.Link) && !Regex.IsMatch(q.Link.Trim(), @"^\d+$"))
+            else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !Regex.IsMatch(q.Link.Trim(), @"^\d+$"))
             {
-                found.Error = "ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr)· άφησέ τον κενό για αναζήτηση με την ημερομηνία";
+                found.Error = "ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr) ούτε σελίδα αποτελεσμάτων της Microplus· " +
+                    "άφησέ τον κενό για αναζήτηση με την ημερομηνία";
                 return found;
             }
-            else if (!string.IsNullOrWhiteSpace(q.Link))
+            else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !int.TryParse(q.Link.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out code))
             {
-                code = int.Parse(q.Link.Trim(), CultureInfo.InvariantCulture);
+                found.Error = "ο κωδικός της διοργάνωσης δεν διαβάζεται";
+                return found;
             }
 
-            if (code == 0)
+            if (units == null && code == 0)
             {
                 // By the date (the season of a competition: the year it ends in; October to December belong to the next one) and the name.
                 if (!q.Date.HasValue)
@@ -196,9 +216,10 @@ namespace Kinovea.ScreenManager
                 code = on[0].Code;
             }
 
-            // The units of the event, then the round (when typed) and the unit of the link.
-            List<SwimOfficialUnit> units = SwimOfficialResults.KoeSchedule(code)
-                .Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay).ToList();
+            // The units of the event, then the round (when typed), the day of the race and the unit of the link.
+            if (units == null)
+                units = SwimOfficialResults.KoeSchedule(code);
+            units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay).ToList();
             if (q.Gender == "M" || q.Gender == "F")
                 units = units.Where(u => u.Gender == "" || u.Gender == q.Gender || u.Gender == "X").ToList();
             if (!string.IsNullOrEmpty(unitCode) && units.Any(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)))
@@ -206,6 +227,8 @@ namespace Kinovea.ScreenManager
             string round = RaceRound(q.Round);
             if (round.Length > 0 && units.Any(u => u.Round == round || (round == "final" && u.Round == "timed")))
                 units = units.Where(u => u.Round == round || (round == "final" && u.Round == "timed")).ToList();
+            if (q.Date.HasValue && units.Any(u => u.Date.HasValue && u.Date.Value.Date == q.Date.Value.Date))
+                units = units.Where(u => !u.Date.HasValue || u.Date.Value.Date == q.Date.Value.Date).ToList();
             if (units.Count == 0)
             {
                 found.Error = "η διοργάνωση δεν έχει το αγώνισμα " + q.Distance.ToString(CultureInfo.InvariantCulture) + "μ. " + SwimPresets.StyleShort(q.Style) +
@@ -216,7 +239,12 @@ namespace Kinovea.ScreenManager
             if (units.Count > 60)
                 units = units.Take(60).ToList();
             foreach (SwimOfficialUnit u in units)
-                SwimOfficialResults.KoeResults(u);
+            {
+                if (u.Source == "microplus")
+                    SwimOfficialResults.MicroplusResults(u);
+                else
+                    SwimOfficialResults.KoeResults(u);
+            }
 
             List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> entries = units
                 .SelectMany(u => u.Entries.Where(e => e.Time.HasValue).Select(e => new KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>(u, e))).ToList();
@@ -364,7 +392,9 @@ namespace Kinovea.ScreenManager
             string name = e.Name.Length > 0 ? e.Name : e.NameLatin;
             string about = string.Join(", ", new[] { e.Club, e.Nation, e.BirthYear > 0 ? e.BirthYear.ToString(CultureInfo.InvariantCulture) : "" }
                 .Where(x => !string.IsNullOrEmpty(x)).ToArray());
-            return string.Format(CultureInfo.InvariantCulture, "{0} · {1} {2} · διάδρομος {3} · {4}{5} · {6}", u.Event, u.Phase, u.Heat, e.Lane, name,
+            int heat = e.Heat > 0 ? e.Heat : u.Heat;
+            return string.Format(CultureInfo.InvariantCulture, "{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}", u.Event, u.Phase,
+                heat > 0 ? " " + heat.ToString(CultureInfo.InvariantCulture) : "", e.Lane, name,
                 about.Length > 0 ? " (" + about + ")" : "", e.Time.HasValue ? SwimReference.FormatTime(e.Time.Value) : e.Status);
         }
 

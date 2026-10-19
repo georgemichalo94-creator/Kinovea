@@ -168,6 +168,12 @@ namespace Kinovea.ScreenManager
             given = space < 0 ? "" : s.Substring(space + 1).Trim();
         }
 
+        /// <summary>The text has Greek letters (a name published in Greek, not in Latin letters).</summary>
+        public static bool HasGreek(string text)
+        {
+            return !string.IsNullOrEmpty(text) && text.Any(c => (c >= '\u0370' && c <= '\u03FF') || (c >= '\u1F00' && c <= '\u1FFF'));
+        }
+
         /// <summary>Jaro-Winkler similarity of two strings (0-1).</summary>
         public static double JaroWinkler(string a, string b)
         {

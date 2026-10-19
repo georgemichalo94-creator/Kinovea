@@ -557,7 +557,17 @@ namespace Kinovea.ScreenManager
             }
             r["kicks"] = Times(computed.Kicks);
             r["breakouts"] = Times(computed.Breakouts);
-            r["feetOff"] = Times(computed.FeetOff);
+            // The release from the block at the official reaction time when it stands (since 2026-10-19).
+            List<double> feetOff = new List<double>(computed.FeetOff);
+            if (computed.BlockOfficial && computed.BlockTime.HasValue)
+            {
+                if (computed.BlockMarkTime.HasValue)
+                    feetOff.Remove(computed.BlockMarkTime.Value);
+                feetOff.Add(computed.BlockTime.Value);
+                feetOff.Sort();
+            }
+
+            r["feetOff"] = Times(feetOff);
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();
