@@ -966,6 +966,23 @@ public static class ReelPreview
         return info.ToString();
     }
 
+    /// <summary>The same images in English (the switch ΕΛ / EN of the panel, since 2.7.7), in the folder.</summary>
+    public static string RenderEnglish(string chartsJson, string folder)
+    {
+        bool was = SwimLang.English;
+        SwimLang.English = true;
+        try
+        {
+            Directory.CreateDirectory(folder);
+            string charts = RenderCharts(chartsJson, folder);
+            return charts + "\n" + Render(folder);
+        }
+        finally
+        {
+            SwimLang.English = was;
+        }
+    }
+
     private static void SaveJpeg(Bitmap image, string path, long quality)
     {
         ImageCodecInfo codec = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);

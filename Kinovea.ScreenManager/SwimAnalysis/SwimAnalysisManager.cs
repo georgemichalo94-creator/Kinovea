@@ -229,6 +229,7 @@ namespace Kinovea.ScreenManager
 
             client = new SwimSheetClient();
             client.StateChanged += Client_StateChanged;
+            SwimLang.Changed += SwimLang_Changed;
 
             saveTimer = new Timer();
             saveTimer.Interval = 800;
@@ -2879,6 +2880,10 @@ namespace Kinovea.ScreenManager
             SaveNow();
             Settings.Save();
             form = null;
+
+            // Closed to open again in the other language: the analysis stays as it is.
+            if (reopeningForm)
+                return;
 
             // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks), and the
             // auto pilot with it.

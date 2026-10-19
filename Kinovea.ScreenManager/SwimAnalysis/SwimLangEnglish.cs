@@ -594,6 +594,7 @@ namespace Kinovea.ScreenManager
             { "Η βαθμονόμηση ", "The calibration " },
             { "Η βαθμονόμηση δεν είναι έγκυρη.", "The calibration is not valid." },
             { "Η βαθμονόμηση δεν είναι αντιστρέψιμη.", "The calibration is not invertible." },
+            { "Η γλώσσα αλλάζει όταν τελειώσει η ανάγνωση του βίντεο.", "The language changes when the reading of the video ends." },
             { "Η ετικέτα με το όνομα ακολουθεί τον αθλητή μέχρι τον τοίχο του μήκους (ένα μήκος κάθε φορά).", "The name label follows the swimmer up to the wall of the length (one length at a time)." },
             { "Η κίτρινη γραμμή είναι το επόμενο σημείο.", "The yellow line is the next checkpoint." },
             { "Η λίστα αθλητών δεν έχει φορτωθεί.", "The swimmer list has not been loaded." },

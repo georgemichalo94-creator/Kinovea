@@ -1156,7 +1156,7 @@ namespace Kinovea.ScreenManager
             if (image == null)
                 return;
 
-            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = SwimLang.T("Τερματισμός"), Chosen = chosen };
+            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός", Chosen = chosen };
             try
             {
                 frame.File = Path.GetFileName(SaveSnapshotImage(image, frame.Id));

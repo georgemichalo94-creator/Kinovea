@@ -2252,7 +2252,7 @@ namespace Kinovea.ScreenManager
             mnuLinearKinematics.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "…";
             mnuAngularKinematics.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "…";
             mnuAngleAngleDiagram.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "…";
-            mnuSwimAnalysis.Text = "Ανάλυση αγώνα κολύμβησης (Swim race analysis)…";
+            mnuSwimAnalysis.Text = SwimLang.English ? "Swim race analysis…" : "Ανάλυση αγώνα κολύμβησης (Swim race analysis)…";
 
             // Options
             mnuVariables.Text = Kinovea.ScreenManager.Languages.ScreenManagerLang.mnuContext;

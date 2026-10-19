@@ -275,6 +275,7 @@ namespace Kinovea.ScreenManager
             o["app"] = SwimPayload.AppId;
             o["token"] = token;
             o["action"] = action;
+            o["lang"] = SwimLang.Code;
             return o;
         }
 
@@ -549,6 +550,9 @@ namespace Kinovea.ScreenManager
             r["video"] = videoName ?? "";
             r["strokeRounding"] = settings.StrokeRounding;
 
+            // The language of the report and the PDF (since 2.7.7; an older script makes them in Greek). The values stay in Greek.
+            r["lang"] = SwimLang.Code;
+
             JArray checkpoints = new JArray();
             if (!race.IsTraining)
             {
@@ -671,6 +675,7 @@ namespace Kinovea.ScreenManager
             body["app"] = AppId;
             body["token"] = settings.Token ?? "";
             body["action"] = action;
+            body["lang"] = SwimLang.Code;
             body["race"] = r;
             if (drawCharts && !race.IsTraining)
                 body["drawCharts"] = true;

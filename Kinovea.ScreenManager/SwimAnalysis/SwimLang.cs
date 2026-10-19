@@ -19,7 +19,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimLang
     {
-        private static bool english;
+        private static bool english = SavedEnglish();
 
         /// <summary>The analysis is shown in English (else in Greek).</summary>
         public static bool English
@@ -34,6 +34,19 @@ namespace Kinovea.ScreenManager
                 EventHandler changed = Changed;
                 if (changed != null)
                     changed(null, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>The language of the settings (the program starts in it, before the panel is opened).</summary>
+        private static bool SavedEnglish()
+        {
+            try
+            {
+                return SwimSettings.Load().Language == "en";
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 

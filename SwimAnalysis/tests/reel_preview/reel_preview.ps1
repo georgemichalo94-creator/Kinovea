@@ -53,6 +53,18 @@ if ($Mode -eq 'render') {
         }
         $result = $asm.GetType('ReelPreview').GetMethod('Render').Invoke($null, [object[]]@($outFull))
         Write-Output $result
+        # The same images in English, in the folder en (in the zip only).
+        try {
+            $sample = [string](Join-Path $here 'charts_sample.json')
+            $english = $asm.GetType('ReelPreview').GetMethod('RenderEnglish').Invoke($null, [object[]]@($sample, [string](Join-Path $outFull 'en')))
+            Write-Output $english
+        }
+        catch {
+            $text = $_.Exception.ToString()
+            if ($_.Exception.InnerException) { $text = $_.Exception.InnerException.ToString() + "`n" + $text }
+            [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "english: " + $text + "`n", [System.Text.Encoding]::UTF8)
+            Write-Output $text
+        }
     }
     catch {
         $text = $_.Exception.ToString()

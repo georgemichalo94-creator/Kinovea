@@ -62,6 +62,7 @@ namespace Kinovea.ScreenManager
         private Label lblStatus;
         private Button btnUndo;
         private SwimSegmented modeSwitch;
+        private SwimSegmented langSwitch;
         private Label lblWordmark;
         private Label lblBrandSub;
 
@@ -255,6 +256,29 @@ namespace Kinovea.ScreenManager
             SwimTheme.DarkTitleBar(Handle);
         }
 
+        /// <summary>The page shown (its place among all the pages): the panel opens again on it in the other language.</summary>
+        public int PageIndex
+        {
+            get { return Array.IndexOf(AllPages, tabs.SelectedTab); }
+            set
+            {
+                SwimPage[] all = AllPages;
+                if (value >= 0 && value < all.Length && tabs.VisiblePages.Contains(all[value]))
+                    tabs.SelectedTab = all[value];
+            }
+        }
+
+        private SwimPage[] AllPages
+        {
+            get { return new SwimPage[] { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabFinals, tabTechStart, tabTechTurns, tabTechMedia, tabConnection }; }
+        }
+
+        /// <summary>The switch of the language as the analysis is (a change refused during a reading).</summary>
+        public void RefreshLanguageSwitch()
+        {
+            langSwitch.SetSelected(SwimLang.English ? 1 : 0);
+        }
+
         protected override void OnDeactivate(EventArgs e)
         {
             // Checkpoints typed and not committed yet (the user goes back to the video to mark them),
@@ -356,15 +380,25 @@ namespace Kinovea.ScreenManager
             lblBrandSub = new Label { Text = SwimLang.T("Κ.Ο.Ε. · KINOVEA"), AutoSize = true, Font = SwimTheme.Ui(7f, FontStyle.Bold), ForeColor = SwimTheme.Accent, Location = new Point(170, 16) };
             modeSwitch = new SwimSegmented("RACE ANALYSIS", SwimLang.T("ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ")) { Size = new Size(300, 28), Location = new Point(360, 7), Anchor = AnchorStyles.Top | AnchorStyles.Right };
             modeSwitch.SelectedIndexChanged += (s, e) => SetTechnicalView(modeSwitch.SelectedIndex == 1, true);
+
+            // The language of the whole analysis: the panel, the graphics of the video, the PDF and the menus of Kinovea.
+            langSwitch = new SwimSegmented("ΕΛ", "EN") { Size = new Size(76, 28), Location = new Point(276, 7), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+            langSwitch.SetSelected(SwimLang.English ? 1 : 0);
+            langSwitch.SelectedIndexChanged += (s, e) => BeginInvoke((Action)(() => manager.SetLanguage(langSwitch.SelectedIndex == 1)));
+            toolTip.SetToolTip(langSwitch, "Ελληνικά / English: το πάνελ, τα γραφικά του βίντεο, το PDF και τα μενού του Kinovea.\n" +
+                "Greek / English: the panel, the graphics of the video, the PDF and the menus of Kinovea.");
             toolTip.SetToolTip(modeSwitch, SwimLang.T("Race analysis: περάσματα, χεριές, στροφές και τερματισμός του αγώνα.\n") +
                 SwimLang.T("Τεχνική ανάλυση: φάσεις της εκκίνησης και των στροφών, χρόνοι 5/10/15, γωνίες, στιγμιότυπα με σχόλια και elite καρέ."));
             brand.Controls.Add(lblWordmark);
             brand.Controls.Add(lblBrandSub);
             brand.Controls.Add(modeSwitch);
+            brand.Controls.Add(langSwitch);
             brand.Resize += (s, e) =>
             {
                 modeSwitch.Left = brand.ClientSize.Width - modeSwitch.Width - 8;
+                langSwitch.Left = modeSwitch.Left - langSwitch.Width - 8;
                 lblBrandSub.Left = lblWordmark.Right + 6;
+                lblBrandSub.Visible = lblBrandSub.Right <= langSwitch.Left - 6;
             };
             brand.Paint += (s, e) =>
             {
