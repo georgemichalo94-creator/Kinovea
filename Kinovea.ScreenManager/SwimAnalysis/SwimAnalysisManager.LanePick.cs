@@ -22,14 +22,12 @@ namespace Kinovea.ScreenManager
     /// lane, the way he swims from where the dive moved. The numbering of a pool is learned from the lanes the analyst confirms in
     /// the videos of the same folder (Enter on the proposal, ↑/↓ then Enter, a click on another swimmer); until then lane 1 is the
     /// lane at the near wall (the analysts' phone videos of the national pool) and the pilot asks.
-    /// (Lab, 51 phone races of the national pool with both walls in view: the lane of the race in 29 of 29 with a known lane, the
-    /// swimmer within a body in 44 of 50, the way he swims in 50 of 51.)
+    /// (Lab, 51 phone races of the analysts with the whole pool in view: the lane and the way he swims right in 50 of 50, one view
+    /// not taken for a whole pool; the head within a quarter of a body of the analyst's click in 26 of 50, more than a body off
+    /// in 4. The race is read from three proposals: see ReadRaceThree.)
     /// </summary>
     public partial class SwimAnalysisManager
     {
-        /// <summary>The swimmer is looked for this long after the start (after the breakout of most strokes), as the camera follows.</summary>
-        private const double LanePickSeconds = 6.0;
-
         /// <summary>The pilot takes the swimmer of a lane only when he stands out of the motion of the lane this much (lab: 1.15).</summary>
         private const double LanePickClear = 1.15;
 
@@ -249,8 +247,9 @@ namespace Kinovea.ScreenManager
         /// Background thread: the swimmer of the race's lane on a view of the whole pool (phones), at 'at'. Null when the lane of
         /// the race is not known, the view is not one of the whole pool (both walls in view, a clear grid of ropes), the lane is not
         /// in it, nothing moves in it, or the start end is not clear: then the swimmer the camera follows, or the click, as before.
+        /// placeOf: the place from the near wall confirmed on another frame, in a pool of lanesOf lanes (else the numbering's).
         /// </summary>
-        private AutoPickResult LanePick(long at, int width, int height, double sx, double sy, BackgroundWorker worker)
+        private AutoPickResult LanePick(long at, int width, int height, double sx, double sy, BackgroundWorker worker, int placeOf = -1, int lanesOf = 0)
         {
             if (Race == null)
                 return null;
@@ -275,6 +274,15 @@ namespace Kinovea.ScreenManager
             bool numberingSure;
             LaneRule rule = LaneRuleOf(number, grid.Lanes, out numberingSure);
             int place = LanePlace(rule, number, grid.Lanes);
+
+            // The place confirmed on another frame (the readings of a proposed swimmer): the same lane of the same pool.
+            if (placeOf >= 0)
+            {
+                if (grid.Lanes != lanesOf)
+                    return null;
+                place = placeOf;
+            }
+
             if (place < 0 || place >= grid.Lanes)
             {
                 log.DebugFormat("Swimmer of lane {0}: the lane is not in the pool of {1} lanes.", number, grid.Lanes);

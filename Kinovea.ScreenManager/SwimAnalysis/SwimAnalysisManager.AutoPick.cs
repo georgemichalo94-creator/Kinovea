@@ -429,7 +429,11 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            AutoRace(p.Head, p.Feet, p.Frame, p.Lane);
+
+            // The swimmer of a lane proposed at the start: read from three proposals, the middle reading kept.
+            bool three = p.Grid != null && p.LaneNumber > 0 && p.LanePlace >= 0 && Race != null && Race.StartTimestamp.HasValue &&
+                Timing.Seconds(p.Frame, Race.StartTimestamp.Value) <= ProposedReadingsUntil;
+            AutoRace(p.Head, p.Feet, p.Frame, p.Lane, 0, three ? p : null);
             return true;
         }
 
