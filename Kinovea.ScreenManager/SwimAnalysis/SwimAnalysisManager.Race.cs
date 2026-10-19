@@ -153,7 +153,7 @@ namespace Kinovea.ScreenManager
                 if (result.SoundError != null)
                     log.WarnFormat("Start signal: the sound was not read ({0}).", result.SoundError);
 
-                List<SwimStartCandidate> found = result.Candidates;
+                List<SwimStartCandidate> found = WithLineStarts(result.Candidates, detector, stamps);
                 if (found.Count == 0 || stamps.Count == 0)
                 {
                     Status(SwimLang.T("Δεν βρέθηκε σήμα εκκίνησης πριν από την κολύμβηση (δεν φαίνεται το φως, δεν ακούγεται το σήμα ή η κάμερα δεν ακολουθεί ") +
@@ -216,6 +216,47 @@ namespace Kinovea.ScreenManager
             log.DebugFormat("Start: {0} candidate(s) leave less than {1:0} s of video for the race, proposed last.", late.Count, need);
             fits.AddRange(late);
             return fits;
+        }
+
+        /// <summary>
+        /// No start found, or none after which the video is long enough for the race (an outdoor pool: no light seen, the signal not
+        /// heard over the wind, a sound of the race or of the next one taken for it): the starts seen from the swimmers leaving the
+        /// blocks together (SwimStartLight.LineStarts, since 2.7.8) come first, the first in time that leaves the video for the race
+        /// (lab 2026-10-19: the 8 videos of an outdoor meet with the start known from the analyst's stopwatch: 4 starts found 2-68 s
+        /// off before, 0.01-0.31 s with it; the 102 other verified starts unchanged). They are proposals to check: the pilot asks.
+        /// </summary>
+        private List<SwimStartCandidate> WithLineStarts(List<SwimStartCandidate> found, SwimStartLight detector, List<long> stamps)
+        {
+            found = found ?? new List<SwimStartCandidate>();
+            if (detector == null || stamps.Count == 0)
+                return found;
+
+            long end = frameServer.VideoReader.WorkingZone.End;
+            bool known = Race != null && Race.Distance > 0;
+            double need = known ? MinRaceSeconds() : 0;
+            Func<SwimStartCandidate, bool> fits = c => c.Frame >= 0 && c.Frame < stamps.Count && (!known || Timing.Seconds(end, stamps[c.Frame]) >= need);
+            if (found.Count > 0 && (!known || found.Any(fits)))
+                return found;
+
+            List<SwimStartCandidate> lines;
+            try
+            {
+                lines = detector.LineStarts().Where(fits).ToList();
+            }
+            catch (Exception e)
+            {
+                log.Error("The start from the swimmers leaving the blocks could not be looked for.", e);
+                return found;
+            }
+
+            if (lines.Count == 0)
+                return found;
+
+            log.DebugFormat(CultureInfo.InvariantCulture, "Start: {0} start(s) from the swimmers leaving the blocks (no start found that fits the race).", lines.Count);
+            List<SwimStartCandidate> result = new List<SwimStartCandidate> { lines[0] };
+            result.AddRange(found);
+            result.AddRange(lines.Skip(1));
+            return result;
         }
 
         /// <summary>
@@ -502,13 +543,13 @@ namespace Kinovea.ScreenManager
 
                 // A start put before the dive of the swimmers (no light fits), or from the signal heard (no light seen before it), is
                 // its own cue: its delay is learned apart.
-                string cue = c.Source == "dive" ? "dive" : c.Source == "sound" ? "sound" : "light";
+                string cue = c.Source == "dive" ? "dive" : c.Source == "line" ? "line" : c.Source == "sound" ? "sound" : "light";
                 SwimDetection d = new SwimDetection(KindRaceStart, SwimMarkType.Signal, k + 1) { Confidence = k == 0 ? confidence0 : 0.35 * confidence0 };
                 double heardStart = double.IsNaN(c.Beep) ? double.NaN : c.Beep - SwimStartSound.Delay * realFps;
                 if (cue == "sound")
                     d.Cue(cue, heardStart, 1.0, 0.03);
                 else
-                    d.Cue(cue, c.Frame, 1.0, c.Source == "dive" ? 0.1 : 0.02);
+                    d.Cue(cue, c.Frame, 1.0, c.Source == "dive" || c.Source == "line" ? 0.1 : 0.02);
                 double confidence;
                 double sample = SwimProposalMath.Combine(d, l, video, realFps, out confidence);
                 if (double.IsNaN(sample))
@@ -572,7 +613,10 @@ namespace Kinovea.ScreenManager
             Race.Proposals.AddRange(made);
             Changed(false);
             BeginReview(best);
-            if (best.Cues.ContainsKey("dive"))
+            if (best.Cues.ContainsKey("line"))
+                Status(SwimLang.T("⚠ Δεν βρέθηκε σήμα εκκίνησης που να ταιριάζει με τον αγώνα: η πρόταση είναι λίγο πριν φύγουν όλοι μαζί από τους βατήρες. ") +
+                    SwimLang.T("Έλεγξέ τη στο καρέ του σήματος."), true);
+            else if (best.Cues.ContainsKey("dive"))
                 Status(SwimLang.T("⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. ") +
                     SwimLang.T("Έλεγξέ τη στο καρέ του σήματος."), true);
             else if (found[0].Source == "sound")
@@ -815,9 +859,28 @@ namespace Kinovea.ScreenManager
 
             // By the view of the swimmer since 2026-10-18 (a camcorder near him sees the head out sooner than a phone in the stands).
             double far = SwimSplitDetector.FarShare(swimmerLength);
+            bool first = SwimSplitDetector.UsesRiseFirst(style, turn, change) && found.ContainsKey(SwimSplitDetector.CueRiseFirst);
             foreach (KeyValuePair<string, double> c in found)
             {
                 double delay;
+
+                // After a butterfly turn the first rise instead of the steepest (since 2.7.8: the steepest can be the second stroke);
+                // the first rise counts nowhere else.
+                if (c.Key == SwimSplitDetector.CueRiseFirst)
+                {
+                    if (!first)
+                        continue;
+                    // The first stroke counted: as far before the breakout as with the steepest rise.
+                    string name1 = c.Key + ".t";
+                    double delay1 = SwimSplitDetector.TurnRiseFirstDelay(style, far)
+                        + (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) - SwimSplitDetector.TurnRiseDelay(style, change, far) : 0);
+                    cues[StyleCue(name1, style)] = c.Value + delay1 * fps;
+                    continue;
+                }
+
+                if (c.Key == SwimSplitDetector.CueRise && first)
+                    continue;
+
                 if (c.Key == SwimSplitDetector.CueRise)
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
@@ -2067,7 +2130,8 @@ namespace Kinovea.ScreenManager
                     weight = sure ? 1.0 : 0.6;
                     spread = sure ? 0.2 : 0.5;
                     break;
-                case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
+                case SwimSplitDetector.CueRise:
+                case SwimSplitDetector.CueRiseFirst: weight = 1.0; spread = 0.2; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
                 case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;

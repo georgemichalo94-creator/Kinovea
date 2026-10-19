@@ -706,6 +706,37 @@ namespace Kinovea.ScreenManager
         /// <summary>The steepest rise of the motion around the swimmer (breakout).</summary>
         public const string CueRise = "rise";
 
+        /// <summary>
+        /// The first rise of the motion around the swimmer at least RiseFirstShare of the steepest (breakout, since 2.7.8): after a
+        /// butterfly turn the first stroke can splash less than the second, which is then the steepest rise, a stroke late.
+        /// </summary>
+        public const string CueRiseFirst = "rise1";
+
+        /// <summary>The first rise counts from this share of the steepest (CueRiseFirst).</summary>
+        internal static double RiseFirstShare = 0.5;
+
+        /// <summary>The breakouts after a turn that take the first rise instead of the steepest (tests: off = before 2.7.8).</summary>
+        internal static bool RiseFirstTurns = false;
+
+        /// <summary>
+        /// The breakout after a turn in this style takes the first rise (CueRiseFirst) instead of the steepest (CueRise): butterfly,
+        /// not the medley's turns into it (since 2.7.8, see TurnRiseFirstDelay).
+        /// </summary>
+        public static bool UsesRiseFirst(string style, bool turn, bool change)
+        {
+            return RiseFirstTurns && TurnBreakout && turn && !change && style == "fly";
+        }
+
+        /// <summary>Usual delay (s) of the first rise after a turn from the breakout the analysts mark (UsesRiseFirst).</summary>
+        public static double TurnRiseFirstDelay(string style, double far)
+        {
+            far = Math.Max(0, Math.Min(1, far));
+            return TurnRiseFirstFlyNear + far * (TurnRiseFirstFly - TurnRiseFirstFlyNear);
+        }
+
+        /// <summary>See TurnRiseFirstDelay (tests).</summary>
+        internal static double TurnRiseFirstFly = -0.2, TurnRiseFirstFlyNear = -0.2;
+
         /// <summary>The breakout after a turn with its own cues and delays (tests).</summary>
         public static bool TurnBreakout = true;
 
@@ -1031,7 +1062,25 @@ namespace Kinovea.ScreenManager
             }
 
             if (tRise >= 0)
+            {
                 cues[CueRise] = tRise;
+
+                // The first local peak of the rise of at least RiseFirstShare of the steepest (and a tenth of the usual level).
+                for (int t = Math.Max(h, from + (RiseInsideWindow ? h : 0)); t <= Math.Min(to, T - 1 - h); t++)
+                {
+                    double up = es[t + h] - es[t - h];
+                    if (up < RiseFirstShare * steepest || up <= 0.1 * usual)
+                        continue;
+
+                    double before = t - 1 - h >= 0 ? es[t - 1 + h] - es[t - 1 - h] : double.NegativeInfinity;
+                    double after = t + 1 + h <= T - 1 ? es[t + 1 + h] - es[t + 1 - h] : double.NegativeInfinity;
+                    if (up >= before && up >= after)
+                    {
+                        cues[CueRiseFirst] = t;
+                        break;
+                    }
+                }
+            }
 
             // The splash: the first peak of the stroke signal after the quiet moment as strong as the strokes of the swimming.
             double[] o = result.Onset;

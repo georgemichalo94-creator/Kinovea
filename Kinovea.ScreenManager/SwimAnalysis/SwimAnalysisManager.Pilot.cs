@@ -274,7 +274,7 @@ namespace Kinovea.ScreenManager
         /// <summary>A start proposal the pilot takes without asking: sure enough, and with video enough after it for the race.</summary>
         private bool PilotTrustsStart(SwimProposal best)
         {
-            if (best.Confidence < PilotStartConfidence || best.Cues.ContainsKey("dive"))
+            if (best.Confidence < PilotStartConfidence || best.Cues.ContainsKey("dive") || best.Cues.ContainsKey("line"))
                 return false;
 
             double left = Timing.Seconds(frameServer.VideoReader.WorkingZone.End, best.Timestamp);
@@ -306,6 +306,7 @@ namespace Kinovea.ScreenManager
         private static string StartNote(SwimProposal p)
         {
             string from = p.Cues.ContainsKey("dive") ? SwimLang.T("λίγο πριν τη βουτιά (δεν φάνηκε φως ούτε ακούστηκε σήμα)") :
+                p.Cues.ContainsKey("line") ? SwimLang.T("λίγο πριν φύγουν όλοι μαζί από τους βατήρες (κανένα σήμα δεν ταίριαζε με τον αγώνα)") :
                 p.Cues.ContainsKey("light") ? (p.Cues.ContainsKey("sound") ? SwimLang.T("από το φως και τον ήχο του σήματος") : SwimLang.T("από το φως του σήματος")) :
                 p.Cues.ContainsKey("sound") ? SwimLang.T("από τον ήχο του σήματος") : SwimLang.T("από το βίντεο");
             return string.Format(CultureInfo.InvariantCulture, "{0} ({1:0}%)", from, 100 * p.Confidence);
