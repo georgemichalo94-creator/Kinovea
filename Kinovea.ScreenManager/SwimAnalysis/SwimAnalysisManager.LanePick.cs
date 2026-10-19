@@ -294,23 +294,44 @@ namespace Kinovea.ScreenManager
             if (length % 2 == 1)
                 direction = -direction;
             float[] motion = SwimPoolGrid.Motion(pick.Select(d => d.Value).ToList());
-            double body = AutoPickLength * grid.LaneWidth(place, width / 2.0);
             double clear;
-            double x = grid.SwimmerAlong(place, motion, body, out clear);
+            double x = grid.SwimmerAlong(place, motion, LaneBody(grid, place, width / 2.0), out clear);
             log.DebugFormat("Swimmer of lane {0}: place {1} of {2} from the near wall ({3}), at {4:0} (clear {5:0.00}), direction {6}.", number, place,
                 grid.Lanes, rule.Seen > 0 ? "numbering seen " + rule.Seen + " times" + (numberingSure ? "" : ", not sure for this lane") : "numbering not confirmed", x, clear, direction);
             if (double.IsNaN(x) || direction == 0)
                 return null;
 
-            return LaneResult(grid, motion, number, place, x, direction, clear, pick[0].Key, sx, sy, numberingSure);
+            // The head from the front of what moves (the hands) less their reach for the stroke of this length.
+            double head = grid.SwimmerHead(place, motion, LaneBody(grid, place, x), direction, PickStyle(at), out clear);
+            if (double.IsNaN(head))
+                return null;
+
+            return LaneResult(grid, motion, number, place, head, direction, clear, pick[0].Key, sx, sy, numberingSure);
         }
 
-        /// <summary>The proposal of the swimmer of lane 'place' of the grid, at x, swimming that way.</summary>
-        private static AutoPickResult LaneResult(SwimPoolGrid grid, float[] motion, int number, int place, double x, int direction, double clear,
+        /// <summary>
+        /// The swimmer's length (working px) in lane 'place' of the grid at x: the lane's width there times a share that grows
+        /// with the lane's place from the near wall (the far lanes, seen at a grazing angle, are thinner for the same swimmer;
+        /// from the analysts' clicks on 50 phone races: 0.61 + 2.44 place / lanes, at least 1.5).
+        /// </summary>
+        private static double LaneBody(SwimPoolGrid grid, int place, double x)
+        {
+            return Math.Max(1.5, 0.61 + 2.44 * place / Math.Max(1, grid.Lanes)) * grid.LaneWidth(place, x);
+        }
+
+        /// <summary>The stroke swum at this time of the race (freestyle for a medley without its order).</summary>
+        private string PickStyle(long at)
+        {
+            string style = SwimPresets.StyleAt(Race, NextWallDistance(at));
+            return style == "im" ? "fs" : style;
+        }
+
+        /// <summary>The proposal of the swimmer of lane 'place' of the grid, his head at the column 'head', swimming that way.</summary>
+        private static AutoPickResult LaneResult(SwimPoolGrid grid, float[] motion, int number, int place, double head, int direction, double clear,
             long frame, double sx, double sy, bool learned)
         {
-            double body = AutoPickLength * grid.LaneWidth(place, x);
-            double hx = x + direction * 0.5 * body, fx = x - direction * 0.5 * body;
+            double body = LaneBody(grid, place, head);
+            double hx = head, fx = head - direction * body, x = head - direction * 0.5 * body;
             return new AutoPickResult
             {
                 Head = new PointF((float)(hx / sx), (float)(grid.LaneMiddle(place, hx) / sy)),
@@ -340,10 +361,14 @@ namespace Kinovea.ScreenManager
 
             double x = 0.5 * (p.Head.X + p.Feet.X) * p.Sx;
             double clear;
-            double found = p.Grid.SwimmerAlong(place, p.Motion, AutoPickLength * p.Grid.LaneWidth(place, x), out clear);
-            if (!double.IsNaN(found))
-                x = found;
-            return LaneResult(p.Grid, p.Motion, p.LaneNumber, place, x, p.Direction, double.IsNaN(found) ? 0 : clear, p.Frame, p.Sx, p.Sy, false);
+            double head = p.Grid.SwimmerHead(place, p.Motion, LaneBody(p.Grid, place, x), p.Direction, PickStyle(p.Frame), out clear);
+            if (double.IsNaN(head))
+            {
+                head = x + p.Direction * 0.5 * LaneBody(p.Grid, place, x);
+                clear = 0;
+            }
+
+            return LaneResult(p.Grid, p.Motion, p.LaneNumber, place, head, p.Direction, clear, p.Frame, p.Sx, p.Sy, false);
         }
 
         /// <summary>Who the proposal is (subject), for the texts.</summary>

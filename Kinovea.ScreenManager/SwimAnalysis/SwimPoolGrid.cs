@@ -258,23 +258,7 @@ namespace Kinovea.ScreenManager
             if (k < 0 || k >= Lanes || motion == null || motion.Length != width * height)
                 return double.NaN;
 
-            double[] profile = new double[width];
-            for (int x = 0; x < width; x++)
-            {
-                double a = RopeY(k, x), b = RopeY(k + 1, x);
-                double lo = Math.Min(a, b), hi = Math.Max(a, b), w = hi - lo;
-                lo += 0.2 * w;
-                hi -= 0.2 * w;
-                int i0 = Math.Max(0, (int)Math.Ceiling(lo)), i1 = Math.Min(height - 1, (int)Math.Floor(hi));
-                if (i1 < i0)
-                    continue;
-                double sum = 0;
-                for (int y = i0; y <= i1; y++)
-                    sum += pool[y * width + x] && Inside(x, y) ? motion[y * width + x] : 0;
-                profile[x] = sum / (i1 - i0 + 1);
-            }
-
-            double[] smooth = Smooth(profile, Math.Max(3, 0.5 * body));
+            double[] smooth = Smooth(Profile(k, motion), Math.Max(3, 0.5 * body));
             int peak = 0;
             for (int x = 1; x < width; x++)
                 if (smooth[x] > smooth[peak])
@@ -295,7 +279,87 @@ namespace Kinovea.ScreenManager
             }
 
             clear = any ? smooth[peak] / Math.Max(1e-6, second) : 9.9;
+            if (AlongEstimate == 1)
+            {
+                // The middle of what moves around the peak (above half of it, within 1.5 bodies).
+                double sw = 0, sxw = 0, half = 0.5 * smooth[peak];
+                int lo = Math.Max(0, (int)(peak - 1.5 * body)), hi = Math.Min(width - 1, (int)(peak + 1.5 * body));
+                for (int x = lo; x <= hi; x++)
+                {
+                    if (smooth[x] < half)
+                        continue;
+                    sw += smooth[x];
+                    sxw += x * smooth[x];
+                }
+
+                if (sw > 0)
+                    return sxw / sw;
+            }
+
             return peak;
+        }
+
+        /// <summary>The swimmer's place from the profile: 0 the peak, 1 the middle of what moves around it (tests).</summary>
+        internal static int AlongEstimate = 0;
+
+        /// <summary>The motion across the inner 60% of lane k (in the water), column by column.</summary>
+        private double[] Profile(int k, float[] motion)
+        {
+            double[] profile = new double[width];
+            for (int x = 0; x < width; x++)
+            {
+                double a = RopeY(k, x), b = RopeY(k + 1, x);
+                double lo = Math.Min(a, b), hi = Math.Max(a, b), w = hi - lo;
+                lo += 0.2 * w;
+                hi -= 0.2 * w;
+                int i0 = Math.Max(0, (int)Math.Ceiling(lo)), i1 = Math.Min(height - 1, (int)Math.Floor(hi));
+                if (i1 < i0)
+                    continue;
+                double sum = 0;
+                for (int y = i0; y <= i1; y++)
+                    sum += pool[y * width + x] && Inside(x, y) ? motion[y * width + x] : 0;
+                profile[x] = sum / (i1 - i0 + 1);
+            }
+
+            return profile;
+        }
+
+        /// <summary>
+        /// The head of the swimmer of lane k swimming that way (+1: to the right): the front of what moves around him (where the
+        /// motion, smoothed by a quarter body, falls under half of its peak near the swimmer of SwimmerAlong), less the reach of
+        /// his hands ahead of the head (HandReach). NaN when there is no swimmer.
+        /// </summary>
+        public double SwimmerHead(int k, float[] motion, double body, int direction, string style, out double clear)
+        {
+            double along = SwimmerAlong(k, motion, body, out clear);
+            if (double.IsNaN(along) || direction == 0)
+                return double.NaN;
+
+            double[] fine = Smooth(Profile(k, motion), Math.Max(2, 0.25 * body));
+            int lo = Math.Max(0, (int)Math.Floor(along - body)), hi = Math.Min(width - 1, (int)Math.Ceiling(along + body));
+            int p = lo;
+            for (int x = lo; x <= hi; x++)
+                if (fine[x] > fine[p])
+                    p = x;
+            int front = p;
+            while (front + direction >= 0 && front + direction < width && fine[front + direction] >= 0.5 * fine[p])
+                front += direction;
+            return front - direction * HandReach(style) * body;
+        }
+
+        /// <summary>
+        /// How far ahead of the head the hands enter the water (swimmer lengths): the front of the motion is the hands. From the
+        /// analysts' clicks on 50 phone races (front of the motion against the head clicked): backstroke 0.2 (the most regular),
+        /// breaststroke and freestyle 0.4, butterfly 0.5.
+        /// </summary>
+        public static double HandReach(string style)
+        {
+            switch (style)
+            {
+                case "bk": return 0.2;
+                case "fly": return 0.5;
+                default: return 0.4;
+            }
         }
 
         /// <summary>The least motion of a swimmer, mean grey difference across his lane (the frames 0.1 s apart).</summary>

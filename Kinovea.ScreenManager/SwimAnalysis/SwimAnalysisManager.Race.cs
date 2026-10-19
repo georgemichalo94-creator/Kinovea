@@ -1926,6 +1926,46 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// Background thread: the lane of a pool's grid checked against the reading's own rope search at the click. Null: the
+        /// two agree at the swimmer (middle within 0.35 of the grid's width, width within 10%), the reading searches the ropes
+        /// itself as from an analyst's click; else the grid's lane.
+        /// </summary>
+        private SwimStrokeLane? CheckedLane(PointF head, PointF feet, long click, SwimStrokeLane grid, BackgroundWorker worker, out bool cancelled)
+        {
+            cancelled = false;
+            StrokeSession own = CreateSession(head, feet, click, null, 0);
+            try
+            {
+                if (!ReadFrames(own, click, worker))
+                {
+                    cancelled = true;
+                    return grid;
+                }
+
+                if (own.Timestamps.Count == 0 || !own.Detector.FoundRopes)
+                    return grid;
+
+                Size reference = ReadingReader.Info.ReferenceSize;
+                double xc = 0.5 * (head.X + feet.X) * own.Width / reference.Width;
+                SwimStrokeLane l = own.Detector.CurrentLane;
+                double wg = Math.Abs(grid.Y2(xc) - grid.Y1(xc)), mg = 0.5 * (grid.Y1(xc) + grid.Y2(xc));
+                double wo = Math.Abs(l.Y2(xc) - l.Y1(xc)), mo = 0.5 * (l.Y1(xc) + l.Y2(xc));
+                bool agree = Math.Abs(mo - mg) <= LaneCheckMiddle * wg && Math.Abs(wo / Math.Max(1, wg) - 1) <= LaneCheckWidth;
+                log.DebugFormat("Lane of the grid {0:0.0} px wide at {1:0.0}, the ropes found {2:0.0} px at {3:0.0}: {4}.", wg, mg, wo, mo,
+                    agree ? "the ropes found" : "the grid's");
+                return agree ? (SwimStrokeLane?)null : grid;
+            }
+            finally
+            {
+                own.Dispose();
+            }
+        }
+
+        /// <summary>The ropes found at a proposed swimmer agree with the grid's lane: middles this share of its width apart at
+        /// most, widths this share apart at most.</summary>
+        private const double LaneCheckMiddle = 0.35, LaneCheckWidth = 0.10;
+
+        /// <summary>
         /// Background thread: the lengths one after the other. False if cancelled. clickLane: the lane at the click when it is known
         /// (the swimmer of a lane of a view of the whole pool: its lane on the grid of the pool), else searched at the click.
         /// </summary>
@@ -1949,6 +1989,17 @@ namespace Kinovea.ScreenManager
                 resumeWall = -1;
                 resumeLapStart = long.MinValue;
                 resumeAt = long.MinValue;
+            }
+
+            // The lane of the pool's grid (the swimmer proposed by the program) against the ropes found at the click as for an
+            // analyst's click: those when the two agree at the swimmer (the ropes of the image follow the lens and the camera
+            // better than the straight lines of the grid), the grid's when not (the search took two lanes, or the next one).
+            if (clickLane.HasValue)
+            {
+                bool cancelledCheck;
+                clickLane = CheckedLane(head, feet, from, clickLane.Value, worker, out cancelledCheck);
+                if (cancelledCheck)
+                    return false;
             }
 
             double previousSeconds = 0;
