@@ -717,6 +717,9 @@ namespace Kinovea.ScreenManager
                 request.Timeout = 20000;
                 request.ReadWriteTimeout = 20000;
                 request.UserAgent = "Kinovea-SwimAnalysis";
+                string referer = RefererFor(url);
+                if (referer != null)
+                    request.Referer = referer;
                 request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
@@ -732,6 +735,23 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>A GET of JSON (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>
+        /// <summary>
+        /// The page a request comes from, as a browser sends it with the results' own pages (the KOE live results answer "401"
+        /// without it): the site, the World Aquatics site for its API, the competition's folder of a Microplus site.
+        /// </summary>
+        private static string RefererFor(string url)
+        {
+            Uri u;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out u))
+                return null;
+            string host = u.Host.ToLowerInvariant();
+            if (host.EndsWith("worldaquatics.com", StringComparison.Ordinal))
+                return "https://www.worldaquatics.com/";
+            if (host == MicroplusHost && u.Segments.Length > 1)
+                return u.Scheme + "://" + u.Host + "/" + u.Segments[1];
+            return u.Scheme + "://" + u.Host + "/";
+        }
+
         private static JObject FetchJson(string url)
         {
             try
@@ -743,6 +763,9 @@ namespace Kinovea.ScreenManager
                 request.Timeout = 20000;
                 request.ReadWriteTimeout = 20000;
                 request.UserAgent = "Kinovea-SwimAnalysis";
+                string referer = RefererFor(url);
+                if (referer != null)
+                    request.Referer = referer;
                 request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
