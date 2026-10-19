@@ -382,6 +382,11 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private bool PilotTrustsPick(AutoPickResult p)
         {
+            // The swimmer of a lane of a view of the whole pool: when the numbering of that pool was confirmed in this folder and he
+            // stands out of the motion of his lane.
+            if (p.LaneNumber > 0)
+                return p.LaneLearned && p.Clear >= LanePickClear;
+
             string ext = string.IsNullOrEmpty(videoPath) ? "" : System.IO.Path.GetExtension(videoPath).ToLowerInvariant();
             if ((ext != ".mts" && ext != ".m2ts") || p.Agree < AutoPickProbes.Length)
                 return false;
@@ -486,8 +491,8 @@ namespace Kinovea.ScreenManager
                 case PilotStep.Swimmer:
                     if (autoPick != null && pilotCountdown > 0)
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Σε {0} s ο πιλότος συνεχίζει με τον αθλητή που ακολουθεί η κάμερα (σημειωμένος στο βίντεο) · Enter: τώρα · " +
-                            "↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.", pilotCountdown), false);
+                            "✈ Σε {0} s ο πιλότος συνεχίζει με {1} (σημειωμένος στο βίντεο) · Enter: τώρα · " +
+                            "↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.", pilotCountdown, PickWho(autoPick)), false);
                     else if (autoPick != null)
                         Status("✈ Ο πιλότος περιμένει: είναι αυτός ο αθλητής (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · " +
                             "ή κλικ στο κεφάλι και μετά στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF.", true);
@@ -498,9 +503,9 @@ namespace Kinovea.ScreenManager
                 case PilotStep.Lost:
                     if (autoPick != null && pilotCountdown > 0)
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε {2} s ο πιλότος συνεχίζει με τον αθλητή που ακολουθεί η κάμερα " +
+                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε {2} s ο πιλότος συνεχίζει με {3} " +
                             "(σημειωμένος στο βίντεο) · Enter: τώρα · ↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.",
-                            pilotLostWall, Race.Unit, pilotCountdown), false);
+                            pilotLostWall, Race.Unit, pilotCountdown, PickWho(autoPick)), false);
                     else if (autoPick != null)
                         Status(string.Format(CultureInfo.InvariantCulture,
                             "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: είναι αυτός (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · " +
@@ -859,7 +864,7 @@ namespace Kinovea.ScreenManager
                 MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
                     "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}" +
                     "ο πιλότος συνεχίζει μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit,
-                    autoPick != null ? "Ο πιλότος σημείωσε τον αθλητή που ακολουθεί η κάμερα: Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα " +
+                    autoPick != null ? "Ο πιλότος σημείωσε " + PickWho(autoPick) + ": Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα " +
                         "καρέ μετά την έξοδο από το νερό κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: " :
                         "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: "),
                     "✈ Ο αυτόματος πιλότος χρειάζεται εσένα", MessageBoxButtons.OK, MessageBoxIcon.Information);

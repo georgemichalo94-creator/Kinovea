@@ -62,6 +62,32 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Probes that found the same lane (of AutoPickProbes).</summary>
             public int Agree;
+
+            /// <summary>(A view of the whole pool) the lane of the race the swimmer is in, 0 for the swimmer the camera follows.</summary>
+            public int LaneNumber;
+
+            /// <summary>(A view of the whole pool) the place of his lane from the near wall, the lanes of the pool, its motion.</summary>
+            public int LanePlace = -1;
+            public SwimPoolGrid Grid;
+            public float[] Motion;
+
+            /// <summary>(A view of the whole pool) the way he swims (+1 to the right of the image).</summary>
+            public int Direction;
+
+            /// <summary>(A view of the whole pool) his motion over the strongest other motion of his lane.</summary>
+            public double Clear;
+
+            /// <summary>(A view of the whole pool) the numbering of the pool was confirmed in this folder before.</summary>
+            public bool LaneLearned;
+
+            /// <summary>Working pixels a pixel of the image.</summary>
+            public double Sx = 1, Sy = 1;
+
+            /// <summary>
+            /// (A view of the whole pool) his lane on the grid (working pixels): the reading takes it instead of searching the ropes
+            /// at the proposal, where narrow far lanes let it take two lanes for one (lab).
+            /// </summary>
+            public SwimStrokeLane? Lane;
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
@@ -188,8 +214,14 @@ namespace Kinovea.ScreenManager
             autoPick = found;
             SeekTo(found.Frame);
             InvalidatePlayer();
-            Status("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · " +
-                "↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση).", false);
+            if (found.LaneNumber > 0)
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Ο αθλητής του διαδρόμου {0} σημειώθηκε στο βίντεο ({1}ος από την κοντινή πλευρά της πισίνας{2}): " +
+                    "Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: " +
+                    "κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση).", found.LaneNumber, found.LanePlace + 1,
+                    found.LaneLearned ? "" : " · με το Enter το πρόγραμμα μαθαίνει την αρίθμηση αυτής της πισίνας"), false);
+            else
+                Status("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · " +
+                    "↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση).", false);
         }
 
         /// <summary>
@@ -208,6 +240,21 @@ namespace Kinovea.ScreenManager
             double realFps = 1000.0 * hsf / Timing.FrameIntervalMilliseconds;
             int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
             double xm = width / 2.0, ym = height / 2.0;
+
+            // A view of the whole pool from the stands (phones) with the lane of the race known: the swimmer of that lane. Whatever
+            // goes wrong there, the swimmer the camera follows is looked for as before.
+            AutoPickResult byLane = null;
+            try
+            {
+                byLane = LanePick(at, width, height, sx, sy, worker);
+            }
+            catch (Exception e)
+            {
+                log.Error("The swimmer of the race's lane could not be found.", e);
+            }
+
+            if (byLane != null || worker.CancellationPending)
+                return byLane;
 
             // The middle of the image moves with the camera: the mean of the motion at the middle, as the lab measures it.
             double sum = 0;
@@ -308,6 +355,26 @@ namespace Kinovea.ScreenManager
             if (p == null || screen != player || !HasVideo || !pickForRace || !PickingTrack || PickTarget != SwimPickTarget.StrokeHead)
                 return false;
 
+            // The swimmer of a lane of the pool: the swimmer of the next lane of its grid.
+            if (p.Grid != null)
+            {
+                AutoPickResult moved = MoveLanePick(p, step);
+                if (moved == null)
+                    return true;
+                autoPick = moved;
+                SeekTo(p.Frame);
+                InvalidatePlayer();
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Η πρόταση άλλαξε διαδρομή ({0}η από την κοντινή πλευρά): Enter και η ανάγνωση όλου του αγώνα " +
+                    "ξεκινά με αυτόν τον αθλητή (και το πρόγραμμα μαθαίνει ότι εδώ είναι ο διάδρομος {1}) · ↑/↓ για άλλη διαδρομή · " +
+                    "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", moved.LanePlace + 1, moved.LaneNumber), false);
+                if (PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost))
+                {
+                    StopPilotCountdown();
+                    PilotPrompt();
+                }
+                return true;
+            }
+
             float dx = p.Head.X - p.Feet.X, dy = p.Head.Y - p.Feet.Y;
             float length = (float)Math.Sqrt(dx * dx + dy * dy);
             if (length < 1 || p.LaneWidth <= 0)
@@ -343,12 +410,18 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
-        /// <summary>Enter while the swimmer of the whole race is proposed: the reading starts with him. False when not used.</summary>
-        private bool AcceptAutoPick(PlayerScreenUserInterface screen)
+        /// <summary>
+        /// Enter while the swimmer of the whole race is proposed (byAnalyst; else the pilot takes him): the reading starts with him.
+        /// The analyst's Enter on the swimmer of a lane confirms the numbering of the pool. False when not used.
+        /// </summary>
+        private bool AcceptAutoPick(PlayerScreenUserInterface screen, bool byAnalyst = false)
         {
             AutoPickResult p = autoPick;
             if (p == null || screen != player || !HasVideo || !pickForRace || !PickingTrack || PickTarget != SwimPickTarget.StrokeHead)
                 return false;
+
+            if (byAnalyst && p.Grid != null && p.LaneNumber > 0)
+                LearnLane(p.LaneNumber, p.LanePlace, p.Grid.Lanes);
 
             autoPick = null;
             pickForTrack = false;
@@ -356,7 +429,11 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             SetPick(SwimPickTarget.None);
             InvalidatePlayer();
-            AutoRace(p.Head, p.Feet, p.Frame);
+
+            // The swimmer of a lane proposed at the start: read from three proposals, the middle reading kept.
+            bool three = p.Grid != null && p.LaneNumber > 0 && p.LanePlace >= 0 && Race != null && Race.StartTimestamp.HasValue &&
+                Timing.Seconds(p.Frame, Race.StartTimestamp.Value) <= ProposedReadingsUntil;
+            AutoRace(p.Head, p.Feet, p.Frame, p.Lane, 0, three ? p : null);
             return true;
         }
 
@@ -374,7 +451,7 @@ namespace Kinovea.ScreenManager
             if (!SameFrame(p.Frame, timestamp))
             {
                 DrawLabel(g, string.Format(CultureInfo.InvariantCulture,
-                    "🤖 Όλος ο αγώνας: Enter = ο αθλητής που ακολουθεί η κάμερα (σημειωμένος στο καρέ των {0:0.00} s) · ↑/↓ άλλη διαδρομή · ή κλικ στο κεφάλι άλλου αθλητή (Esc: ακύρωση)",
+                    "🤖 Όλος ο αγώνας: Enter = " + PickWhoNominative(p) + " (σημειωμένος στο καρέ των {0:0.00} s) · ↑/↓ άλλη διαδρομή · ή κλικ στο κεφάλι άλλου αθλητή (Esc: ακύρωση)",
                     Timing.Seconds(p.Frame, Race.StartTimestamp.Value)), new Point(12, 12), amber);
                 return;
             }
@@ -407,7 +484,7 @@ namespace Kinovea.ScreenManager
             float top = Math.Min(Math.Min(band[0].Y, band[1].Y), Math.Min(band[2].Y, band[3].Y));
             float left = Math.Min(Math.Min(band[0].X, band[1].X), Math.Min(band[2].X, band[3].X));
             DrawLabel(g, "🤖 Enter: αυτός ο αθλητής · ↑/↓: άλλη διαδρομή · ή κλικ σε άλλον", new Point((int)left, (int)Math.Max(4, top - 26)), amber);
-            DrawLabel(g, "🤖 Όλος ο αγώνας: Enter = ο αθλητής που ακολουθεί η κάμερα · ↑/↓ άλλη διαδρομή · κλικ στο κεφάλι για άλλον (Esc: ακύρωση)", new Point(12, 12), amber);
+            DrawLabel(g, "🤖 Όλος ο αγώνας: Enter = " + PickWhoNominative(p) + " · ↑/↓ άλλη διαδρομή · κλικ στο κεφάλι για άλλον (Esc: ακύρωση)", new Point(12, 12), amber);
         }
     }
 }

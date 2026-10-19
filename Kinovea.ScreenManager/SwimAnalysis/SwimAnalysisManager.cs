@@ -216,6 +216,8 @@ namespace Kinovea.ScreenManager
                 Finals = SwimFinals.ImportNearby() ?? Finals;
             if (Settings.ReferenceByEvent == null)
                 Settings.ReferenceByEvent = new Dictionary<string, string>();
+            if (Settings.LaneNumbering == null)
+                Settings.LaneNumbering = new Dictionary<string, string>();
             ReferencesMessage = ReferencesSummary();
             AthletesMessage = AthletesSummary();
             Timing = new SwimTiming();

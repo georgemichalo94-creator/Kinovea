@@ -1517,7 +1517,7 @@ namespace Kinovea.ScreenManager
         /// next length is followed from the wall, the other way (the swimmer is where the previous length ended). Then all of them
         /// are proposed for the check.
         /// </summary>
-        private void AutoRace(PointF head, PointF feet, long from)
+        private void AutoRace(PointF head, PointF feet, long from, SwimStrokeLane? lane = null, int virtualRope = 0, AutoPickResult proposed = null)
         {
             // The auto pilot reads this race: it puts what is found and makes the report.
             bool pilot = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
@@ -1542,6 +1542,11 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            if (proposed != null && !pilot)
+                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Ο αγώνας διαβάζεται τρεις φορές, από {0} στα {1} s μετά την εκκίνηση· " +
+                    "κρατιέται η ανάγνωση που συμφωνεί με τις άλλες δύο… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", PickWho(proposed),
+                    string.Join(", ", ProposedReadings.Select(t => t.ToString("0", CultureInfo.InvariantCulture)))), false);
+
             List<LengthRead> lengths = new List<LengthRead>();
             Exception error = null;
             bool cancelled = false;
@@ -1555,7 +1560,11 @@ namespace Kinovea.ScreenManager
             {
                 ProgressCancel cancel = KeepOpenWhileBusy(progress, worker);
                 worker.ProgressChanged += (o, e) => progress.Update(e.ProgressPercentage, 100, true);
-                worker.DoWork += (o, e) => { e.Result = ReadRace(head, feet, from, lengths, (BackgroundWorker)o); };
+                worker.DoWork += (o, e) =>
+                {
+                    e.Result = proposed != null ? ReadRaceThree(proposed, lengths, (BackgroundWorker)o)
+                        : ReadRace(head, feet, from, lengths, (BackgroundWorker)o, lane, virtualRope);
+                };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
                     error = e.Error;
@@ -1678,12 +1687,13 @@ namespace Kinovea.ScreenManager
         /// drifts a little); the one that arrives on the lane clicked is the session. Null when it can't be (the caller reads from
         /// the click as before); also null when cancelled (cancelled is then true).
         /// </summary>
-        private StrokeSession StartSession(PointF head, PointF feet, long click, long start, BackgroundWorker worker, out bool cancelled)
+        private StrokeSession StartSession(PointF head, PointF feet, long click, long start, BackgroundWorker worker, out bool cancelled,
+            SwimStrokeLane? clickLane = null, int clickVirtual = 0)
         {
             cancelled = false;
             List<StrokeSession> candidates = new List<StrokeSession>();
             StrokeSession chosen = null;
-            StrokeSession clicked = CreateSession(head, feet, click, null, 0, Race.Pool);
+            StrokeSession clicked = CreateSession(head, feet, click, clickLane, clickVirtual, Race.Pool);
             try
             {
                 // The lane at the click.
@@ -1924,8 +1934,214 @@ namespace Kinovea.ScreenManager
             return completed;
         }
 
-        /// <summary>Background thread: the lengths one after the other. False if cancelled.</summary>
-        private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker)
+        /// <summary>
+        /// The swimmer of a lane proposed at the start (phones) is read three times, from his proposals this long after the start
+        /// (s), and the reading in the middle of the three is kept: a phone's reading depends on where it starts (a splash taken
+        /// for the swimmer, a turn read a little slower). Lab, 51 phone races of the analysts, races worse than from the analyst's
+        /// click by more than 0.3 s (and better): one reading from the proposal at 6 s 5 (2), at 7 s 4 (3), at 8 s 8 (4); the
+        /// middle one of the three 2 (3), as the analyst's click moved by a quarter of a body: 2 (1).
+        /// </summary>
+        private static readonly double[] ProposedReadings = { 6.0, 7.0, 8.0 };
+
+        /// <summary>A proposal this long after the start at most is read three times (later ones: after a turn, once).</summary>
+        private const double ProposedReadingsUntil = 12.0;
+
+        /// <summary>
+        /// Background thread: the race read from the swimmer of a lane proposed at each of ProposedReadings after the start (the
+        /// place in the grid confirmed on the proposal), each reading on its own; the one closest to the other two is kept in
+        /// 'lengths' (MiddleReading), the others are disposed. With two readings, the first. None (no proposal at those times):
+        /// the proposal once. False if cancelled (the reading with the most lengths so far is kept).
+        /// </summary>
+        private bool ReadRaceThree(AutoPickResult proposed, List<LengthRead> lengths, BackgroundWorker worker)
+        {
+            Size reference = ReadingReader.Info.ReferenceSize;
+            int width = StrokeWorkWidth;
+            int height = Math.Max(2, (int)Math.Round(width * (double)reference.Height / reference.Width / 2.0) * 2);
+            double sx = (double)width / reference.Width, sy = (double)height / reference.Height;
+            long start = Race.StartTimestamp.Value;
+            List<List<LengthRead>> runs = new List<List<LengthRead>>();
+            List<Tuple<int, long, long>> states = new List<Tuple<int, long, long>>();
+            bool completed = true;
+            int kept = -1;
+            try
+            {
+                foreach (double seconds in ProposedReadings)
+                {
+                    if (worker.CancellationPending)
+                    {
+                        completed = false;
+                        break;
+                    }
+
+                    AutoPickResult p = null;
+                    try
+                    {
+                        p = LanePick(start + RealSpan(seconds), width, height, sx, sy, worker, proposed.LanePlace, proposed.Grid.Lanes);
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("The proposed swimmer could not be found again for a reading.", e);
+                    }
+
+                    if (p == null)
+                    {
+                        log.DebugFormat("Reading of the proposed swimmer from {0:0} s: no proposal there.", seconds);
+                        continue;
+                    }
+
+                    List<LengthRead> run = new List<LengthRead>();
+                    runs.Add(run);
+                    bool done = ReadRace(p.Head, p.Feet, p.Frame, run, worker, p.Lane);
+                    states.Add(Tuple.Create(resumeWall, resumeLapStart, resumeAt));
+                    if (!done || worker.CancellationPending)
+                    {
+                        completed = false;
+                        break;
+                    }
+                }
+
+                if (runs.Count == 0)
+                    return ReadRace(proposed.Head, proposed.Feet, proposed.Frame, lengths, worker, proposed.Lane);
+
+                // Cancelled: the reading with the most lengths (the first of them), the one under way included.
+                kept = completed ? MiddleReading(runs) : runs.Select((r, i) => new { r.Count, i }).OrderByDescending(x => x.Count).ThenBy(x => x.i).First().i;
+                lengths.AddRange(runs[kept]);
+                resumeWall = states[kept].Item1;
+                resumeLapStart = states[kept].Item2;
+                resumeAt = states[kept].Item3;
+                log.DebugFormat("Proposed swimmer read {0} times, reading {1} kept.", runs.Count, kept + 1);
+                return completed;
+            }
+            finally
+            {
+                for (int i = 0; i < runs.Count; i++)
+                {
+                    if (i == kept)
+                        continue;
+                    foreach (LengthRead l in runs[i])
+                        l.Session.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// The reading closest to the others (index; the first of two): the smallest sum of its distances to the others (MarksApart);
+        /// among those within 0.1 s of it, the one that read the most marks (a reading that lost the swimmer after a turn
+        /// agrees with the others as far as it went), then the first.
+        /// </summary>
+        private int MiddleReading(List<List<LengthRead>> runs)
+        {
+            if (runs.Count < 3)
+                return 0;
+
+            List<Dictionary<int, double>> marks = runs.Select(ReadingMarks).ToList();
+            double[] score = new double[marks.Count];
+            for (int i = 0; i < marks.Count; i++)
+            {
+                for (int j = 0; j < marks.Count; j++)
+                {
+                    if (j != i)
+                        score[i] += MarksApart(marks[i], marks[j]);
+                }
+            }
+
+            double least = score.Min();
+            int kept = -1;
+            for (int i = 0; i < marks.Count; i++)
+            {
+                if (score[i] <= least + 0.1 && (kept < 0 || marks[i].Count > marks[kept].Count))
+                    kept = i;
+            }
+
+            log.DebugFormat(CultureInfo.InvariantCulture, "Three readings: {0} (marks {1}).",
+                string.Join(" / ", score.Select(x => x.ToString("0.00", CultureInfo.InvariantCulture))), string.Join(" / ", marks.Select(m => m.Count)));
+            return kept;
+        }
+
+        /// <summary>Seconds from the start of the checkpoints (distance) and walls (minus the distance) of a reading: the median of their cues.</summary>
+        private Dictionary<int, double> ReadingMarks(List<LengthRead> run)
+        {
+            Dictionary<int, double> marks = new Dictionary<int, double>();
+            long start = Race.StartTimestamp.Value;
+            foreach (LengthRead l in run)
+            {
+                foreach (SwimSplitFound f in l.Found)
+                {
+                    if (f.Cues.Count > 0)
+                        marks[l.LapFrom + f.LapDistance] = Timing.Seconds(SessionStamp(l.Session, Median(f.Cues.Values)), start);
+                }
+
+                if (l.Wall.Count > 0)
+                    marks[-l.Session.Wall] = Timing.Seconds(SessionStamp(l.Session, Median(l.Wall.Values)), start);
+            }
+
+            return marks;
+        }
+
+        /// <summary>
+        /// How far two readings are: the largest difference of their common marks (s; a length read wrong shows in a few marks
+        /// only), 99 without any.
+        /// </summary>
+        private static double MarksApart(Dictionary<int, double> a, Dictionary<int, double> b)
+        {
+            List<double> d = a.Keys.Where(b.ContainsKey).Select(k => Math.Abs(a[k] - b[k])).ToList();
+            return d.Count == 0 ? 99.0 : d.Max();
+        }
+
+        private static double Median(IEnumerable<double> values)
+        {
+            List<double> v = values.OrderBy(x => x).ToList();
+            if (v.Count == 0)
+                return double.NaN;
+            return v.Count % 2 == 1 ? v[v.Count / 2] : 0.5 * (v[v.Count / 2 - 1] + v[v.Count / 2]);
+        }
+
+        /// <summary>
+        /// Background thread: the lane of a pool's grid checked against the reading's own rope search at the click. Null: the
+        /// two agree at the swimmer (middle within 0.35 of the grid's width, width within 10%), the reading searches the ropes
+        /// itself as from an analyst's click; else the grid's lane.
+        /// </summary>
+        private SwimStrokeLane? CheckedLane(PointF head, PointF feet, long click, SwimStrokeLane grid, BackgroundWorker worker, out bool cancelled)
+        {
+            cancelled = false;
+            StrokeSession own = CreateSession(head, feet, click, null, 0);
+            try
+            {
+                if (!ReadFrames(own, click, worker))
+                {
+                    cancelled = true;
+                    return grid;
+                }
+
+                if (own.Timestamps.Count == 0 || !own.Detector.FoundRopes)
+                    return grid;
+
+                Size reference = ReadingReader.Info.ReferenceSize;
+                double xc = 0.5 * (head.X + feet.X) * own.Width / reference.Width;
+                SwimStrokeLane l = own.Detector.CurrentLane;
+                double wg = Math.Abs(grid.Y2(xc) - grid.Y1(xc)), mg = 0.5 * (grid.Y1(xc) + grid.Y2(xc));
+                double wo = Math.Abs(l.Y2(xc) - l.Y1(xc)), mo = 0.5 * (l.Y1(xc) + l.Y2(xc));
+                bool agree = Math.Abs(mo - mg) <= LaneCheckMiddle * wg && Math.Abs(wo / Math.Max(1, wg) - 1) <= LaneCheckWidth;
+                log.DebugFormat("Lane of the grid {0:0.0} px wide at {1:0.0}, the ropes found {2:0.0} px at {3:0.0}: {4}.", wg, mg, wo, mo,
+                    agree ? "the ropes found" : "the grid's");
+                return agree ? (SwimStrokeLane?)null : grid;
+            }
+            finally
+            {
+                own.Dispose();
+            }
+        }
+
+        /// <summary>The ropes found at a proposed swimmer agree with the grid's lane: middles this share of its width apart at
+        /// most, widths this share apart at most.</summary>
+        private const double LaneCheckMiddle = 0.35, LaneCheckWidth = 0.10;
+
+        /// <summary>
+        /// Background thread: the lengths one after the other. False if cancelled. clickLane: the lane at the click when it is known
+        /// (the swimmer of a lane of a view of the whole pool: its lane on the grid of the pool), else searched at the click.
+        /// </summary>
+        private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker, SwimStrokeLane? clickLane = null,
+            int clickVirtual = 0)
         {
             long lapStart = LapStartTimestamp(from);
             int wall = NextWallDistance(from);
@@ -1946,10 +2162,21 @@ namespace Kinovea.ScreenManager
                 resumeAt = long.MinValue;
             }
 
+            // The lane of the pool's grid (the swimmer proposed by the program) against the ropes found at the click as for an
+            // analyst's click: those when the two agree at the swimmer (the ropes of the image follow the lens and the camera
+            // better than the straight lines of the grid), the grid's when not (the search took two lanes, or the next one).
+            if (clickLane.HasValue)
+            {
+                bool cancelledCheck;
+                clickLane = CheckedLane(head, feet, from, clickLane.Value, worker, out cancelledCheck);
+                if (cancelledCheck)
+                    return false;
+            }
+
             double previousSeconds = 0;
             Size reference = ReadingReader.Info.ReferenceSize;
-            SwimStrokeLane? nextLane = null;
-            int nextVirtual = 0;
+            SwimStrokeLane? nextLane = clickLane;
+            int nextVirtual = clickLane.HasValue ? clickVirtual : 0;
 
             // After a turn: where the swimmer goes under the water from the wall (first frame of the next reading, px a frame).
             int nextGlideFrames = 0;
@@ -1972,7 +2199,7 @@ namespace Kinovea.ScreenManager
                     from > lapStart + RealSpan(1.0))
                 {
                     bool cancelled;
-                    s = StartSession(head, feet, from, lapStart, worker, out cancelled);
+                    s = StartSession(head, feet, from, lapStart, worker, out cancelled, clickLane, clickVirtual);
                     if (cancelled)
                         return false;
                 }
