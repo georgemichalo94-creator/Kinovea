@@ -398,8 +398,13 @@ namespace Kinovea.ScreenManager
             // Live line: race time, next checkpoint, strokes, delta, ΔΑΚ, phase + undo.
             Panel live = new Panel { Dock = DockStyle.Top, Height = 58, Padding = new Padding(6, 4, 6, 4) };
             lblLive = new SwimLiveStrip { Dock = DockStyle.Fill };
-            btnUndo = new SwimNoFocusButton { Dock = DockStyle.Right, Width = 150, Font = buttonFont, Accent = SwimTheme.Red };
-            btnUndo.Click += (s, e) => RunCommand(PlayerScreenCommands.SwimUndo);
+            // («Αναίρεση» drops official times being typed, it does not put them in first: CommitsTyping.)
+            btnUndo = new SwimNoFocusButton { Dock = DockStyle.Right, Width = 150, Font = buttonFont, Accent = SwimTheme.Red, CommitsTyping = false };
+            btnUndo.Click += (s, e) =>
+            {
+                DropTypedOfficial();
+                RunCommand(PlayerScreenCommands.SwimUndo);
+            };
             toolTip.SetToolTip(btnUndo, "Αναίρεση του τελευταίου σημαδιού");
             RegisterCommandButton(PlayerScreenCommands.SwimUndo, btnUndo, "Αναίρεση");
             live.Controls.Add(lblLive);
@@ -511,22 +516,12 @@ namespace Kinovea.ScreenManager
                 "από την αρχή μέχρι να ξεκινήσει η κάμερα να ακολουθεί τους αθλητές. Το προτείνει για έλεγχο: Enter σωστό,\n" +
                 "βελάκια και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια). Μαθαίνει από τις απαντήσεις σου.");
             Button autoRace = new SwimNoFocusButton { Text = "🤖 Όλος ο αγώνας", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
-            autoRace.Click += (s, e) =>
-            {
-                if (OfficialTypedWrong())
-                    return;
-                manager.BeginAutoRace();
-            };
+            autoRace.Click += (s, e) => manager.BeginAutoRace();
             toolTip.SetToolTip(autoRace, "Μετά την εκκίνηση: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό. Το Kinovea τον ακολουθεί\n" +
                 "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.");
             // The auto pilot (since 2026-10-18): the whole analysis without the analyst, then the PDF; its marks wait for the check.
             btnPilot = new SwimNoFocusButton { Text = "✈ Αυτόματος πιλότος", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
-            btnPilot.Click += (s, e) =>
-            {
-                if (OfficialTypedWrong())
-                    return;
-                manager.RunAutoPilot();
-            };
+            btnPilot.Click += (s, e) => manager.RunAutoPilot();
             toolTip.SetToolTip(btnPilot, "Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα\n" +
                 "τα μήκη (περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση,\n" +
                 "αθλητής). Ό,τι έβαλε περιμένει στον «Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n" +
@@ -2467,9 +2462,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void CommitOfficial()
         {
-            // Only what was typed for this race (another one selected meanwhile: dropped, see RefreshManualFields).
+            // Only what was typed for this race (another one selected meanwhile: dropped, see RefreshManualFields). Not while a reading
+            // of the video runs (it reads the marks and the frames): it waits, typed, for Enter or the next click after it.
             SwimRace r = manager.Race;
-            if (updating || r == null || officialEditRace == null)
+            if (updating || r == null || officialEditRace == null || manager.ReadingBusy)
                 return;
             if (officialEditRace != r)
             {
@@ -2512,16 +2508,26 @@ namespace Kinovea.ScreenManager
         /// </summary>
         internal void CommitTyping()
         {
-            if (tbCheckpoints != null && tbCheckpoints.Focused)
-                CommitCheckpoints(true);
             CommitOfficial();
+        }
+
+        /// <summary>«Αναίρεση» while official times were being typed: what was typed goes (the box shows the race's own again).</summary>
+        private void DropTypedOfficial()
+        {
+            if (officialEditRace == null)
+                return;
+            officialEditRace = null;
+            officialError = null;
+            RefreshManualFields();
+            if (manager.Race != null)
+                RefreshOfficial(manager.Race, manager.Computed);
         }
 
         /// <summary>
         /// Official times typed for this race that could not be put in: the reading waits for them to be corrected (it would place the
         /// walls without them). Says so.
         /// </summary>
-        private bool OfficialTypedWrong()
+        internal bool OfficialTypedWrong()
         {
             if (officialEditRace == null || officialEditRace != manager.Race || officialError == null)
                 return false;
@@ -2551,9 +2557,15 @@ namespace Kinovea.ScreenManager
             {
                 // Kept but not fitting the race any more (its distance or pool changed): said, not hidden.
                 string problem = race.Official == null ? null : SwimRace.OfficialProblem(race.Official, race.Distance, race.Pool, race.K, race.Unit);
-                lblOfficial.Text = problem != null ? "⚠ δεν μπαίνουν στην ανάλυση: " + problem : race.Official != null && !race.StartTimestamp.HasValue ?
-                    "μπαίνουν όταν οριστεί η εκκίνηση" : "–";
+                lblOfficial.Text = problem != null ? "⚠ δεν μπαίνουν στην ανάλυση: " + problem : "–";
                 lblOfficial.ForeColor = problem != null ? colorWarn : colorValue;
+                return;
+            }
+
+            if (!race.StartTimestamp.HasValue)
+            {
+                lblOfficial.Text = "μπαίνουν στην ανάλυση όταν οριστεί η εκκίνηση";
+                lblOfficial.ForeColor = colorValue;
                 return;
             }
 

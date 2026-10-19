@@ -127,6 +127,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The button "✈ Αυτόματος πιλότος": the whole analysis of the race of the video, then the report.</summary>
         public void RunAutoPilot()
         {
+            // Official times typed in the panel that cannot be read: corrected first (the walls would be read without them).
+            if (form != null && !form.IsDisposed && form.OfficialTypedWrong())
+                return;
+
             if (Race == null || !HasVideo)
             {
                 Status("Άνοιξε πρώτα ένα βίντεο αγώνα σε οθόνη αναπαραγωγής.", true);

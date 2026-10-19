@@ -669,6 +669,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Slowest average speed of a part of a race in official times that is not questioned (m/s; see OfficialWarning).</summary>
         public const double OfficialSlowest = 0.5;
 
+        /// <summary>Slower than this (m/s) is a typo ("6123" for 1:01.23): an error, the times are not taken.</summary>
+        public const double OfficialSlowestError = 0.2;
+
         /// <summary>
         /// Why official times do not fit a race (null: they do): each one after the one before, as many as the walls they fall on
         /// (one: the final time; else every distance / count, a multiple of the pool), and no part faster than a swimmer can be
@@ -696,6 +699,9 @@ namespace Kinovea.ScreenManager
                     return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πιο γρήγορο απ' ό,τι κολυμπά άνθρωπος: έλεγξε " +
                         "ότι είναι ο τελικός χρόνος (όχι ενδιάμεσος) και οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα",
                         SwimReference.FormatTime(part.Time), part.From, part.To, unit);
+                if (part.Speed < OfficialSlowestError)
+                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πολύ αργό για χρόνος αγώνα: έλεγξε τα λεπτά " +
+                        "και τα δευτερόλεπτα (π.χ. 1:01.23)", SwimReference.FormatTime(part.Time), part.From, part.To, unit);
             }
 
             return null;

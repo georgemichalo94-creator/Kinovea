@@ -575,9 +575,9 @@ namespace Kinovea.ScreenManager
         {
             bool shown = Race.Proposals.Remove(p);
 
-            // One at an official time (since 2026-10-19) has no cues: the frame kept teaches what the reading itself found there (Read),
-            // or nothing (none, or Delete: not an answer about the reading).
-            SwimProposal taught = !p.Official ? p : right && p.Read != null ? ReadOf(p) : null;
+            // One at an official time (since 2026-10-19) has no cues: the frame kept teaches what the reading itself found there (Read)
+            // when it is near it (as the analyst's marks teach), or nothing (none, far, or Delete: not an answer about the reading).
+            SwimProposal taught = !p.Official ? p : right && p.Read != null && Math.Abs(Timing.Seconds(timestamp, p.Read.Timestamp)) <= 1.5 ? ReadOf(p) : null;
             SwimLearningRecord record = taught == null ? null : new SwimLearningRecord
             {
                 Date = DateTime.Now,

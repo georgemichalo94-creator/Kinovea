@@ -410,8 +410,8 @@ namespace Kinovea.ScreenManager
                 RecheckStartLessons();
 
             // The official times are after the start (since 2026-10-19): the checkpoints at them not checked yet move with it.
-            if (old != timestamp && Race.Official != null)
-                ApplyOfficial(new OfficialUndo());
+            if (old != timestamp)
+                ReapplyOfficial();
 
             // The start put with its key answers the proposal of the start light near it (the other candidates go).
             if (!resolvingProposal && Race.Proposals.Any(x => x.Kind == KindRaceStart))
@@ -1951,6 +1951,9 @@ namespace Kinovea.ScreenManager
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
             ClearUndo();
+
+            // Its official times placed in it as it is now (a start moved while another swimmer of the video was shown).
+            ReapplyOfficial();
             PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
             RefreshPbCandidates();
@@ -2005,9 +2008,10 @@ namespace Kinovea.ScreenManager
             if (structureChanged)
                 Race.RemoveOrphanSplits();
 
-            // The official times by distance follow the race (since 2026-10-19): the checkpoints at them not checked yet too.
+            // The official times by distance follow the race (since 2026-10-19): the checkpoints at them not checked yet too (not when
+            // the times do not fit it: nothing goes then, the panel says so).
             if (structureChanged)
-                ApplyOfficial(new OfficialUndo());
+                ReapplyOfficial();
 
             // The list of references depends on the event (style, distance, pool).
             EnsureReference();

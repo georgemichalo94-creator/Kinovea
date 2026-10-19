@@ -1354,13 +1354,13 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            SwimProposal current = CurrentProposal;
+            long? currentBefore = current != null ? (long?)current.Timestamp : null;
             OfficialUndo undo = new OfficialUndo { Official = Race.Official == null ? null : new List<double>(Race.Official) };
             Race.Official = official == null || official.Count == 0 ? null : new List<double>(official);
             int moved = ApplyOfficial(undo);
-            string id = OfficialUndoPrefix + Guid.NewGuid().ToString("N");
-            officialUndo[id] = undo;
-            undoStack.Add(id);
-            AfterOfficial(undo.Distances.Contains(Race.Distance));
+            PushOfficialUndo(undo);
+            AfterOfficial(undo.Distances.Contains(Race.Distance), current, currentBefore);
 
             string movedText = moved == 1 ? "1 σημάδι που δεν είχες ελέγξει" : moved.ToString(CultureInfo.InvariantCulture) + " σημάδια που δεν είχες ελέγξει";
             string warning = Race.Official == null ? null : SwimRace.OfficialWarning(Race.Official, Race.Distance, Race.K, Race.Unit);
@@ -1384,12 +1384,20 @@ namespace Kinovea.ScreenManager
                 return false;
 
             officialUndo.Remove(id);
+            SwimProposal current = CurrentProposal;
+            long? currentBefore = current != null ? (long?)current.Timestamp : null;
             Race.Official = undo.Official == null ? null : new List<double>(undo.Official);
             for (int i = undo.Back.Count - 1; i >= 0; i--)
                 undo.Back[i]();
             foreach (int distance in undo.Distances)
                 FollowWall(distance);
-            AfterOfficial(undo.Distances.Contains(Race.Distance));
+
+            // The times restored placed again in the race as it is now (a reading since, a start moved since); none: what a reading put
+            // at the times since goes back to its own.
+            OfficialUndo again = new OfficialUndo();
+            if (Race.Official == null || OfficialPlaceable())
+                ApplyOfficial(again);
+            AfterOfficial(undo.Distances.Contains(Race.Distance) || again.Distances.Contains(Race.Distance), current, currentBefore);
             Status("Αναιρέθηκε η αλλαγή των επίσημων χρόνων" + (Race.Official == null ? ": χωρίς επίσημους χρόνους." : ": " + SwimRace.FormatOfficial(Race.Official) + "."), false);
             return true;
         }
@@ -1403,7 +1411,13 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return 0;
 
-            Dictionary<int, double> official = Race.StartTimestamp.HasValue && Timing.IsValid ? Race.OfficialTimes() : new Dictionary<int, double>();
+            // Without the start (or the timing of the video) they cannot be placed: what is at them stays until the start is set (the
+            // panel says so). Taken away, the checkpoints at them go back to what the reading found.
+            bool placeable = Race.StartTimestamp.HasValue && Timing.IsValid;
+            if (Race.Official != null && !placeable)
+                return 0;
+
+            Dictionary<int, double> official = placeable ? Race.OfficialTimes() : new Dictionary<int, double>();
             int moved = 0;
             foreach (int distance in OfficialDistances().OrderBy(d => d).ToList())
             {
@@ -1436,22 +1450,23 @@ namespace Kinovea.ScreenManager
         /// (it shows the times), at the finish when it moved; the check shows its proposal where it is now; else the video stays where
         /// it was.
         /// </summary>
-        private void AfterOfficial(bool finishMoved)
+        private void AfterOfficial(bool finishMoved, SwimProposal current, long? currentBefore)
         {
             Recompute();
             SwimMark end = Race.GetSplit(Race.Distance);
-            SwimProposal current = CurrentProposal;
+            bool currentMoved = current != null && Race.Proposals.Contains(current) && currentBefore.HasValue && current.Timestamp != currentBefore.Value;
             if (HasVideo && end != null && !Race.IsTraining && Race.StartTimestamp.HasValue)
             {
+                // (At the finish: the final frame shows it with the final time; the video back where the analyst was.)
                 long back = player.CurrentTimestamp;
-                long at = finishMoved || Race.FinalFrame == null ? end.Timestamp : Race.FinalFrame.Timestamp;
-                SeekNearest(at);
-                CaptureFinalFrame(at);
-                if (current == null)
+                SeekNearest(end.Timestamp);
+                CaptureFinalFrame(end.Timestamp);
+                if (!currentMoved)
                     SeekTo(back);
             }
 
-            if (current != null && HasVideo)
+            // The check shows its proposal where it is now, when it moved.
+            if (currentMoved && HasVideo)
                 SeekNearest(current.Timestamp);
 
             Changed(true);
@@ -1459,6 +1474,42 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
             if (form != null)
                 form.RefreshManualFields();
+        }
+
+        /// <summary>A change of the official times on the undo stack (when it changed something or the times).</summary>
+        private void PushOfficialUndo(OfficialUndo undo)
+        {
+            string id = OfficialUndoPrefix + Guid.NewGuid().ToString("N");
+            officialUndo[id] = undo;
+            undoStack.Add(id);
+        }
+
+        /// <summary>
+        /// The official times placed again in the race as it is now (a new start, other race details): the checkpoints not checked
+        /// move with them. Not when the times do not fit the race any more (the panel says so): nothing moves or goes then.
+        /// </summary>
+        private void ReapplyOfficial()
+        {
+            if (!OfficialPlaceable())
+                return;
+
+            ApplyOfficial(new OfficialUndo());
+        }
+
+        /// <summary>
+        /// The race has official times that can be placed in it as it is now: they fit it (distance, pool) and the start is set. Else
+        /// nothing at them moves or goes (a start taken away to be marked again, a distance being changed).
+        /// </summary>
+        private bool OfficialPlaceable()
+        {
+            return Race != null && Race.Official != null && Race.StartTimestamp.HasValue && Timing.IsValid &&
+                SwimRace.OfficialProblem(Race.Official, Race.Distance, Race.Pool, Race.K, Race.Unit) == null;
+        }
+
+        /// <summary>A reading of the video runs (the race, the start light, the skeleton, the one in the background).</summary>
+        public bool ReadingBusy
+        {
+            get { return AutoStrokesRunning || StartLightRunning || SkeletonRunning || QuietReadingRunning; }
         }
 
         /// <summary>The checkpoints at an official time now: proposals, the pilot's marks.</summary>
@@ -1572,6 +1623,9 @@ namespace Kinovea.ScreenManager
                     // (The final frame of the report of that finish goes with it, as with Delete on it; taken again with the finish.)
                     SwimMark gone = mark;
                     SwimSnapshot final = Race.FinalFrame;
+                    int undoAt = undoStack.IndexOf(gone.Id);
+                    double strokes;
+                    bool hadStrokes = Race.StrokeCounts.TryGetValue(distance, out strokes);
                     Race.Marks.Remove(gone);
                     undoStack.Remove(gone.Id);
                     Race.StrokeCounts.Remove(distance);
@@ -1579,8 +1633,13 @@ namespace Kinovea.ScreenManager
                         Race.FinalFrame = null;
                     undo.Back.Add(() =>
                     {
-                        if (Race.GetSplit(gone.Distance) == null)
-                            Race.Marks.Add(gone);
+                        if (Race.GetSplit(gone.Distance) != null)
+                            return;
+                        Race.Marks.Add(gone);
+                        if (undoAt >= 0 && !undoStack.Contains(gone.Id))
+                            undoStack.Insert(Math.Min(undoAt, undoStack.Count), gone.Id);
+                        if (hadStrokes && !Race.StrokeCounts.ContainsKey(gone.Distance))
+                            Race.StrokeCounts[gone.Distance] = strokes;
                         if (Race.FinalFrame == null)
                             Race.FinalFrame = final;
                     });
@@ -1716,12 +1775,21 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private double GoOnSample(LengthRead l)
         {
+            bool official;
+            return GoOnSample(l, out official);
+        }
+
+        /// <summary>GoOnSample; official: the wall is the official one (the reading found none).</summary>
+        private double GoOnSample(LengthRead l, out bool official)
+        {
+            official = false;
             double own = WallSample(l);
             if (!double.IsNaN(own) || l == null)
                 return own;
 
-            long? official = OfficialWallStamp(l.Session.Wall);
-            return official.HasValue ? SessionIndex(l.Session, official.Value) : double.NaN;
+            long? stamp = OfficialWallStamp(l.Session.Wall);
+            official = stamp.HasValue;
+            return stamp.HasValue ? SessionIndex(l.Session, stamp.Value) : double.NaN;
         }
 
         /// <summary>Frame of the wall of a length read (index of its frames, NaN if not found): its cues as for the proposal.</summary>
@@ -1973,6 +2041,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
         public void BeginAutoRace()
         {
+            // Official times typed in the panel that cannot be read: corrected first (the walls would be read without them).
+            if (form != null && !form.IsDisposed && form.OfficialTypedWrong())
+                return;
+
             // The button of the analyst: the auto pilot (if it waited for him) stops, the reading is his; the click on the swimmer
             // it waited for stays armed for it.
             if (PilotActive)
@@ -2809,7 +2881,8 @@ namespace Kinovea.ScreenManager
                     break;
 
                 // The wall: the swimmer turns there; the next length starts from it, the other way, a little after.
-                double w = GoOnSample(l);
+                bool officialWall;
+                double w = GoOnSample(l, out officialWall);
                 if (double.IsNaN(w) || result.Path == null || result.Path.Length == 0)
                     break;
 
@@ -2834,8 +2907,8 @@ namespace Kinovea.ScreenManager
                 double lw = Math.Max(5, Math.Abs(lane.Y2(x) - lane.Y1(x)));
                 double length = clickLength * lw / clickLaneWidth;
                 int direction = -s.Detector.Direction;
-                // (An official wall after the frames read: its own time, not the last frame.)
-                long wallTs = SessionStampOut(s, w);
+                // (An official wall after the frames read: its own time, not the last frame; the reading's own within its frames.)
+                long wallTs = officialWall ? SessionStampOut(s, w) : SessionStamp(s, w);
                 previousSeconds = Math.Max(10, Timing.Seconds(wallTs, lapStart));
 
                 head = new PointF((float)((x + direction * 0.45 * length) / sx), (float)(y / sy));
