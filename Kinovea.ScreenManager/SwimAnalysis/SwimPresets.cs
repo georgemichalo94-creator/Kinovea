@@ -19,7 +19,12 @@ namespace Kinovea.ScreenManager
     public static class SwimPresets
     {
         public static readonly string[] Styles = new string[] { "fs", "bk", "br", "fly", "im" };
-        public static readonly string[] StyleNames = new string[] { "Ελεύθερο (fs)", "Ύπτιο (bk)", "Πρόσθιο (br)", "Πεταλούδα (fly)", "Μικτή (medley)" };
+
+        /// <summary>The names of the styles in the language of the analysis (the order of Styles).</summary>
+        public static string[] StyleNames
+        {
+            get { return new string[] { SwimLang.T("Ελεύθερο (fs)"), SwimLang.T("Ύπτιο (bk)"), SwimLang.T("Πρόσθιο (br)"), SwimLang.T("Πεταλούδα (fly)"), SwimLang.T("Μικτή (medley)") }; }
+        }
 
         /// <summary>Distance choices shown in the UI. "4x100" means a 400m relay.</summary>
         public static readonly string[] DistanceChoices = new string[] { "50", "100", "200", "400", "800", "1500", "4x50", "4x100", "4x200" };
@@ -27,8 +32,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Events of the 25 yard pools (NCAA / US short course).</summary>
         public static readonly string[] YardDistanceChoices = new string[] { "50", "100", "200", "400", "500", "1000", "1650", "4x50", "4x100", "4x200" };
 
-        /// <summary>Pools: length and unit, in the order of the UI.</summary>
-        public static readonly string[] PoolNames = new string[] { "50μ. (Long Course)", "25μ. (Short Course)", "25yd (Short Course Yards)" };
+        /// <summary>Pools: length and unit, in the order of the UI, in the language of the analysis.</summary>
+        public static string[] PoolNames
+        {
+            get { return new string[] { SwimLang.T("50μ. (Long Course)"), SwimLang.T("25μ. (Short Course)"), "25yd (Short Course Yards)" }; }
+        }
+
         private static readonly int[] poolLengths = new int[] { 50, 25, 25 };
         private static readonly string[] poolUnits = new string[] { SwimRace.UnitMeters, SwimRace.UnitMeters, SwimRace.UnitYards };
 

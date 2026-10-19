@@ -326,14 +326,14 @@ namespace Kinovea.ScreenManager
         private void BuildBadges(SwimRace race, SwimComputed computed)
         {
             if (computed.ReactionTime.HasValue)
-                Badges.Add(new SwimReelBadge { Time = computed.ReactionTime.Value, Title = "ΑΝΤΙΔΡΑΣΗ", Value = Seconds(computed.ReactionTime.Value), Detail = "από το σήμα εκκίνησης", Tone = SwimReelTone.Accent });
+                Badges.Add(new SwimReelBadge { Time = computed.ReactionTime.Value, Title = SwimLang.T("ΑΝΤΙΔΡΑΣΗ"), Value = Seconds(computed.ReactionTime.Value), Detail = SwimLang.T("από το σήμα εκκίνησης"), Tone = SwimReelTone.Accent });
 
             if (Entry.HasValue)
             {
                 string detail = race.EntryDistHands.HasValue
-                    ? string.Format(CultureInfo.InvariantCulture, "χέρια στο νερό στα {0:0.0} {1}", race.EntryDistHands.Value, UnitShort)
-                    : "χέρια στο νερό";
-                Badges.Add(new SwimReelBadge { Time = Entry.Value, Title = "ΕΙΣΟΔΟΣ", Value = Seconds(Entry.Value), Detail = detail, Tone = SwimReelTone.Accent });
+                    ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("χέρια στο νερό στα {0:0.0} {1}"), race.EntryDistHands.Value, UnitShort)
+                    : SwimLang.T("χέρια στο νερό");
+                Badges.Add(new SwimReelBadge { Time = Entry.Value, Title = SwimLang.T("ΕΙΣΟΔΟΣ"), Value = Seconds(Entry.Value), Detail = detail, Tone = SwimReelTone.Accent });
             }
 
             for (int lap = 0; lap < lapBreakouts.Count; lap++)
@@ -343,12 +343,12 @@ namespace Kinovea.ScreenManager
                     continue;
 
                 double from = lap == 0 ? (Entry ?? 0) : (!double.IsNaN(lapFeetOff[lap]) ? lapFeetOff[lap] : lapStarts[lap]);
-                string under = string.Format(CultureInfo.InvariantCulture, "{0:0.00} s κάτω από το νερό", b - from);
+                string under = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0:0.00} s κάτω από το νερό"), b - from);
                 double d;
                 string value = BreakoutDistances.TryGetValue(lap, out d)
                     ? (BreakoutMeasured.Contains(lap) ? "" : "≈") + d.ToString("0.0", CultureInfo.InvariantCulture) + " " + UnitShort
                     : Seconds(b);
-                Badges.Add(new SwimReelBadge { Time = b, Title = lap == 0 ? "BREAKOUT" : "BREAKOUT ΣΤΡΟΦΗΣ", Value = value, Detail = under, Tone = SwimReelTone.Green });
+                Badges.Add(new SwimReelBadge { Time = b, Title = lap == 0 ? "BREAKOUT" : SwimLang.T("BREAKOUT ΣΤΡΟΦΗΣ"), Value = value, Detail = under, Tone = SwimReelTone.Green });
             }
 
             foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
@@ -358,21 +358,21 @@ namespace Kinovea.ScreenManager
                 SwimReelTone tone;
                 if (row.D == Distance)
                 {
-                    title = "ΤΕΡΜΑΤΙΣΜΟΣ";
+                    title = SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ");
                     detail = string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}", Distance, UnitShort, Lower(SwimPresets.StyleName(race.Style)));
                     tone = SwimReelTone.Amber;
                 }
                 else if (wall)
                 {
                     title = row.D.ToString(CultureInfo.InvariantCulture) + " " + UnitShort.ToUpperInvariant();
-                    detail = "στροφή";
+                    detail = SwimLang.T("στροφή");
                     tone = SwimReelTone.Amber;
                 }
                 else
                 {
                     title = row.D.ToString(CultureInfo.InvariantCulture) + " " + UnitShort.ToUpperInvariant();
                     int fromWall = row.D % Pool;
-                    detail = row.D == 15 ? "από την εκκίνηση" : (fromWall == 15 ? "15 " + UnitShort + " μετά τον τοίχο" : "ενδιάμεσος");
+                    detail = row.D == 15 ? SwimLang.T("από την εκκίνηση") : (fromWall == 15 ? "15 " + UnitShort + SwimLang.T(" μετά τον τοίχο") : SwimLang.T("ενδιάμεσος"));
                     tone = row.D % 25 == 0 ? SwimReelTone.Amber : SwimReelTone.Accent;
                 }
 
@@ -607,7 +607,7 @@ namespace Kinovea.ScreenManager
             return Cycles.LastOrDefault(c => c.Lap == lap && c.Time <= t + 1e-6);
         }
 
-        /// <summary>Phase of the race at a time after the start (upper case, as on the video).</summary>
+        /// <summary>Phase of the race at a time after the start (upper case, as on the video; in Greek, shown with SwimLang.T).</summary>
         public string PhaseAt(double t)
         {
             if (t < 0)

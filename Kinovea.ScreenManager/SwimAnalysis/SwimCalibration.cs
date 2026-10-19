@@ -133,11 +133,11 @@ namespace Kinovea.ScreenManager
             poolToImage = null;
 
             if (Points == null || Points.Count != 4)
-                return "Χρειάζονται 4 σημεία.";
+                return SwimLang.T("Χρειάζονται 4 σημεία.");
             if (Math.Abs(Line1 - Line2) < 0.99)
-                return "Οι δύο γραμμές πρέπει να απέχουν τουλάχιστον 1 μέτρο.";
+                return SwimLang.T("Οι δύο γραμμές πρέπει να απέχουν τουλάχιστον 1 μέτρο.");
             if (LaneWidth <= 0.5 || LaneWidth > 5)
-                return "Το πλάτος του διαδρόμου πρέπει να είναι μεταξύ 0.5 και 5 μέτρων.";
+                return SwimLang.T("Το πλάτος του διαδρόμου πρέπει να είναι μεταξύ 0.5 και 5 μέτρων.");
 
             PointF[] pool = PoolPoints(Line1, Line2, LaneWidth);
             double[] sx = new double[4], sy = new double[4], dx = new double[4], dy = new double[4];
@@ -154,13 +154,13 @@ namespace Kinovea.ScreenManager
                 for (int j = i + 1; j < 4; j++)
                 {
                     if (Math.Abs(sx[i] - sx[j]) + Math.Abs(sy[i] - sy[j]) < 4)
-                        return "Δύο σημεία είναι σχεδόν στην ίδια θέση.";
+                        return SwimLang.T("Δύο σημεία είναι σχεδόν στην ίδια θέση.");
                 }
             }
 
             double[] h = SwimHomography.Solve(sx, sy, dx, dy);
             if (h == null)
-                return "Τα σημεία είναι σε ευθεία γραμμή: δεν βγαίνει βαθμονόμηση.";
+                return SwimLang.T("Τα σημεία είναι σε ευθεία γραμμή: δεν βγαίνει βαθμονόμηση.");
 
             // All the points must be on the same side of the horizon line, otherwise the clicks were not in
             // the expected order (the quadrilateral is crossed).
@@ -169,17 +169,17 @@ namespace Kinovea.ScreenManager
             {
                 double w = SwimHomography.W(h, sx[i], sy[i]);
                 if (double.IsNaN(w) || double.IsInfinity(w))
-                    return "Η βαθμονόμηση δεν είναι έγκυρη.";
+                    return SwimLang.T("Η βαθμονόμηση δεν είναι έγκυρη.");
 
                 int s = Math.Sign(w);
                 if (s == 0 || (sign != 0 && s != sign))
-                    return "Τα σημεία δεν είναι με τη σωστή σειρά (κοντινό/μακρινό σχοινί). Ξανάκανε τη βαθμονόμηση.";
+                    return SwimLang.T("Τα σημεία δεν είναι με τη σωστή σειρά (κοντινό/μακρινό σχοινί). Ξανάκανε τη βαθμονόμηση.");
                 sign = s;
             }
 
             double[] inverse = SwimHomography.Invert(h);
             if (inverse == null)
-                return "Η βαθμονόμηση δεν είναι αντιστρέψιμη.";
+                return SwimLang.T("Η βαθμονόμηση δεν είναι αντιστρέψιμη.");
 
             imageToPool = h;
             poolToImage = inverse;

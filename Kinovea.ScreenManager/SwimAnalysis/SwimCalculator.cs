@@ -196,7 +196,7 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Meters per pool unit (1 or 0.9144) and the label of the unit ("μ." or "yd").</summary>
         public double K = 1.0;
-        public string Unit = "μ.";
+        public string Unit = SwimLang.T("μ.");
         /// <summary>First movement after the signal (marked on the video). The official reaction time of the
         /// touch pads corresponds to the block release (BlockTime).</summary>
         public double? ReactionTime;
@@ -389,7 +389,7 @@ namespace Kinovea.ScreenManager
                 if (row.T.HasValue)
                 {
                     if (lastT.HasValue && row.T.Value <= lastT.Value)
-                        result.Warnings.Add(string.Format("Ο χρόνος στα {0}{1} δεν είναι μεγαλύτερος από τον προηγούμενο.", row.D, race.Unit));
+                        result.Warnings.Add(string.Format(SwimLang.T("Ο χρόνος στα {0}{1} δεν είναι μεγαλύτερος από τον προηγούμενο."), row.D, race.Unit));
                     lastT = row.T;
                 }
 
@@ -777,8 +777,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static void CheckStart(SwimComputed result)
         {
-            string[] names = { "η αντίδραση", "η αποδέσμευση από τον βατήρα", "η είσοδος στο νερό", "η έξοδος από το νερό" };
-            string[] after = { "την αντίδραση", "την αποδέσμευση από τον βατήρα", "την είσοδο στο νερό", "την έξοδο από το νερό" };
+            string[] names = { SwimLang.T("η αντίδραση"), SwimLang.T("η αποδέσμευση από τον βατήρα"), SwimLang.T("η είσοδος στο νερό"), SwimLang.T("η έξοδος από το νερό") };
+            string[] after = { SwimLang.T("την αντίδραση"), SwimLang.T("την αποδέσμευση από τον βατήρα"), SwimLang.T("την είσοδο στο νερό"), SwimLang.T("την έξοδο από το νερό") };
             double?[] times = { result.ReactionTime, result.BlockTime, result.EntryTime, result.StartUnderwaterTime };
             int previous = -1;
             for (int i = 0; i < times.Length; i++)
@@ -788,7 +788,7 @@ namespace Kinovea.ScreenManager
 
                 if (previous >= 0 && times[i].Value <= times[previous].Value)
                 {
-                    result.Warnings.Add(Format("Εκκίνηση: {0} ({1:0.00} s) πρέπει να είναι μετά {2} ({3:0.00} s). Έλεγξε τα σημάδια.",
+                    result.Warnings.Add(Format(SwimLang.T("Εκκίνηση: {0} ({1:0.00} s) πρέπει να είναι μετά {2} ({3:0.00} s). Έλεγξε τα σημάδια."),
                         names[i], times[i].Value, after[previous], times[previous].Value));
                 }
 
@@ -797,7 +797,7 @@ namespace Kinovea.ScreenManager
 
             if (result.BlockTime.HasValue && (result.BlockTime.Value < 0.35 || result.BlockTime.Value > 1.3))
             {
-                result.Warnings.Add(Format("Εκκίνηση: αποδέσμευση από τον βατήρα στα {0:0.00} s από το σήμα (συνήθως 0.55–0.95 s). Έλεγξε το καρέ του σήματος εκκίνησης.",
+                result.Warnings.Add(Format(SwimLang.T("Εκκίνηση: αποδέσμευση από τον βατήρα στα {0:0.00} s από το σήμα (συνήθως 0.55–0.95 s). Έλεγξε το καρέ του σήματος εκκίνησης."),
                     result.BlockTime.Value));
             }
         }
@@ -812,7 +812,7 @@ namespace Kinovea.ScreenManager
             if (median >= 0.6 && median <= 2.6)
                 return false;
 
-            result.Warnings.Add(Format("Η ταχύτητα κολύμβησης βγαίνει {0:0.00} m/s (διάμεσος): δεν είναι ρεαλιστική. Έλεγξε τον συντελεστή αργής κίνησης (high speed) του βίντεο και ότι τα περάσματα είναι στα σωστά σημεία.", median));
+            result.Warnings.Add(Format(SwimLang.T("Η ταχύτητα κολύμβησης βγαίνει {0:0.00} m/s (διάμεσος): δεν είναι ρεαλιστική. Έλεγξε τον συντελεστή αργής κίνησης (high speed) του βίντεο και ότι τα περάσματα είναι στα σωστά σημεία."), median));
             return true;
         }
 
@@ -827,7 +827,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (found.Count > 0)
-                result.Warnings.Add("Μη ρεαλιστική ταχύτητα στο τμήμα " + Join(found) + ": έλεγξε τα δύο περάσματα του τμήματος.");
+                result.Warnings.Add(SwimLang.T("Μη ρεαλιστική ταχύτητα στο τμήμα ") + Join(found) + SwimLang.T(": έλεγξε τα δύο περάσματα του τμήματος."));
         }
 
         private static void CheckStrokeRates(SwimComputed result)
@@ -837,7 +837,7 @@ namespace Kinovea.ScreenManager
                 .Select(r => Format("{0}–{1}{2} ({3:0.0})", r.PrevD, r.D, result.Unit, r.Sr.Value))
                 .ToList();
             if (found.Count > 0)
-                result.Warnings.Add("Συχνότητα εκτός ορίων (15–80 κύκλοι/λεπτό) στο τμήμα " + Join(found) + ": έλεγξε τα πατήματα χεριάς και τα περάσματα.");
+                result.Warnings.Add(SwimLang.T("Συχνότητα εκτός ορίων (15–80 κύκλοι/λεπτό) στο τμήμα ") + Join(found) + SwimLang.T(": έλεγξε τα πατήματα χεριάς και τα περάσματα."));
 
             // Cycle length of each style. In freestyle and backstroke every hand entry is one press (two per cycle):
             // one press per cycle doubles the length.
@@ -852,12 +852,12 @@ namespace Kinovea.ScreenManager
                 double sl = distance / cycles;
                 if (sl > 3.4)
                 {
-                    result.Warnings.Add(Format("Μήκος κύκλου {0:0.00} m ({1}): πολύ μεγάλο. {2}", sl, StyleName(group.Key),
-                        ppc == 2 ? "Στο ελεύθερο και στο ύπτιο πατάς σε κάθε είσοδο χεριού (δύο πατήματα ανά κύκλο)." : "Μήπως λείπουν πατήματα χεριάς;"));
+                    result.Warnings.Add(Format(SwimLang.T("Μήκος κύκλου {0:0.00} m ({1}): πολύ μεγάλο. {2}"), sl, StyleName(group.Key),
+                        ppc == 2 ? SwimLang.T("Στο ελεύθερο και στο ύπτιο πατάς σε κάθε είσοδο χεριού (δύο πατήματα ανά κύκλο).") : SwimLang.T("Μήπως λείπουν πατήματα χεριάς;")));
                 }
                 else if (sl < 0.9)
                 {
-                    result.Warnings.Add(Format("Μήκος κύκλου {0:0.00} m ({1}): πολύ μικρό. Μήπως υπάρχουν διπλά πατήματα χεριάς;", sl, StyleName(group.Key)));
+                    result.Warnings.Add(Format(SwimLang.T("Μήκος κύκλου {0:0.00} m ({1}): πολύ μικρό. Μήπως υπάρχουν διπλά πατήματα χεριάς;"), sl, StyleName(group.Key)));
                 }
             }
         }
@@ -932,9 +932,9 @@ namespace Kinovea.ScreenManager
             }
 
             if (missed.Count > 0)
-                result.Warnings.Add("Χεριές: μεγάλο κενό ανάμεσα σε δύο πατήματα στα " + Join(missed) + " (σχεδόν διπλάσιο από το συνηθισμένο): μήπως λείπει ένα πάτημα;");
+                result.Warnings.Add(SwimLang.T("Χεριές: μεγάλο κενό ανάμεσα σε δύο πατήματα στα ") + Join(missed) + SwimLang.T(" (σχεδόν διπλάσιο από το συνηθισμένο): μήπως λείπει ένα πάτημα;"));
             if (doubled.Count > 0)
-                result.Warnings.Add("Χεριές: πολύ κοντινά πατήματα στα " + Join(doubled) + ": μήπως διπλό πάτημα;");
+                result.Warnings.Add(SwimLang.T("Χεριές: πολύ κοντινά πατήματα στα ") + Join(doubled) + SwimLang.T(": μήπως διπλό πάτημα;"));
         }
 
         /// <summary>
@@ -947,15 +947,15 @@ namespace Kinovea.ScreenManager
             List<string> found = new List<string>();
             foreach (SwimTurnComputed turn in result.Turns)
             {
-                string name = (turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit;
+                string name = (turn.Exchange ? SwimLang.T("αλλαγή ") : SwimLang.T("στροφή ")) + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit;
                 if (turn.TurnTime.HasValue && turn.TurnTime.Value > (turn.Exchange ? 1.5 : (turn.Flip ? 3.0 : 2.5)))
-                    found.Add(Format("{0}: χρόνος {1:0.00} s", name, turn.TurnTime.Value));
+                    found.Add(Format(SwimLang.T("{0}: χρόνος {1:0.00} s"), name, turn.TurnTime.Value));
                 else if (turn.UnderwaterTime.HasValue && turn.UnderwaterTime.Value > 12)
-                    found.Add(Format("{0}: υποβρύχια {1:0.00} s", name, turn.UnderwaterTime.Value));
+                    found.Add(Format(SwimLang.T("{0}: υποβρύχια {1:0.00} s"), name, turn.UnderwaterTime.Value));
             }
 
             if (found.Count > 0)
-                result.Warnings.Add("Στροφές: " + Join(found) + ". Έλεγξε την επαφή στον τοίχο (μήπως το πέρασμα γράφτηκε σε άλλο σημείο), την τελευταία χεριά πριν την ανάποδη στροφή, την αποκόλληση και την έξοδο.");
+                result.Warnings.Add(SwimLang.T("Στροφές: ") + Join(found) + SwimLang.T(". Έλεγξε την επαφή στον τοίχο (μήπως το πέρασμα γράφτηκε σε άλλο σημείο), την τελευταία χεριά πριν την ανάποδη στροφή, την αποκόλληση και την έξοδο."));
 
             // Flip turns are timed from the last hand entry: without the last press the gap to the wall is one stroke longer.
             List<SwimTurnComputed> flips = result.Turns.Where(x => x.Flip && x.LastStrokeGap.HasValue).ToList();
@@ -969,7 +969,7 @@ namespace Kinovea.ScreenManager
                 .ToList();
             if (gaps.Count > 0)
             {
-                result.Warnings.Add(Format("Ανάποδες στροφές: η τελευταία χεριά είναι πολύ πριν τον τοίχο στα {0}, ενώ συνήθως {1:0.00} s. Μήπως λείπει το πάτημα της τελευταίας χεριάς; Από αυτή μετράει ο χρόνος στροφής.",
+                result.Warnings.Add(Format(SwimLang.T("Ανάποδες στροφές: η τελευταία χεριά είναι πολύ πριν τον τοίχο στα {0}, ενώ συνήθως {1:0.00} s. Μήπως λείπει το πάτημα της τελευταίας χεριάς; Από αυτή μετράει ο χρόνος στροφής."),
                     Join(gaps), usual));
             }
         }
@@ -982,12 +982,12 @@ namespace Kinovea.ScreenManager
         {
             List<int> walls = new List<int> { 0 };
             List<double?> breakouts = new List<double?> { result.StartUnderwaterTime };
-            List<string> names = new List<string> { "εκκίνηση" };
+            List<string> names = new List<string> { SwimLang.T("εκκίνηση") };
             foreach (SwimTurnComputed turn in result.Turns)
             {
                 walls.Add(turn.Wall);
                 breakouts.Add(turn.Breakout);
-                names.Add((turn.Exchange ? "αλλαγή " : "στροφή ") + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit);
+                names.Add((turn.Exchange ? SwimLang.T("αλλαγή ") : SwimLang.T("στροφή ")) + turn.Wall.ToString(CultureInfo.InvariantCulture) + result.Unit);
             }
 
             List<string> found = new List<string>();
@@ -999,11 +999,11 @@ namespace Kinovea.ScreenManager
                 int wall = walls[i];
                 SwimRow row = result.Rows.FirstOrDefault(r => r.D >= wall + 15 && r.D < wall + pool && r.T.HasValue);
                 if (row != null && breakouts[i].Value > row.T.Value + 0.1)
-                    found.Add(Format("{0}: {1:0.00} s, μετά το πέρασμα των {2}{3} ({4:0.00} s)", names[i], breakouts[i].Value, row.D, result.Unit, row.T.Value));
+                    found.Add(Format(SwimLang.T("{0}: {1:0.00} s, μετά το πέρασμα των {2}{3} ({4:0.00} s)"), names[i], breakouts[i].Value, row.D, result.Unit, row.T.Value));
             }
 
             if (found.Count > 0)
-                result.Warnings.Add("Έξοδος από το νερό μετά τα 15" + result.Unit + " (" + Join(found) + "). Έλεγξε το σημάδι εξόδου: το επόμενο τμήμα μετράει ως καθαρή κολύμβηση.");
+                result.Warnings.Add(SwimLang.T("Έξοδος από το νερό μετά τα 15") + result.Unit + " (" + Join(found) + SwimLang.T("). Έλεγξε το σημάδι εξόδου: το επόμενο τμήμα μετράει ως καθαρή κολύμβηση."));
         }
 
         /// <summary>
@@ -1024,8 +1024,8 @@ namespace Kinovea.ScreenManager
 
             if (lengths.Count > 0)
             {
-                result.Warnings.Add(Format("Δεν υπάρχει τμήμα καθαρής κολύμβησης {0} {1}, οπότε εκεί δεν βγαίνουν συχνότητα και μήκος χεριάς. Χρειάζονται δύο σημεία ελέγχου ανάμεσα στα +15 και −5 από τους τοίχους (π.χ. {2} και {3}{4}).",
-                    lengths.Count == 1 ? "στο μήκος" : "στα μήκη", Join(lengths), 15, pool - 5, result.Unit));
+                result.Warnings.Add(Format(SwimLang.T("Δεν υπάρχει τμήμα καθαρής κολύμβησης {0} {1}, οπότε εκεί δεν βγαίνουν συχνότητα και μήκος χεριάς. Χρειάζονται δύο σημεία ελέγχου ανάμεσα στα +15 και −5 από τους τοίχους (π.χ. {2} και {3}{4})."),
+                    lengths.Count == 1 ? SwimLang.T("στο μήκος") : SwimLang.T("στα μήκη"), Join(lengths), 15, pool - 5, result.Unit));
             }
         }
 
@@ -1042,7 +1042,7 @@ namespace Kinovea.ScreenManager
             const int max = 3;
             string text = string.Join(", ", items.Take(max).ToArray());
             if (items.Count > max)
-                text += Format(" και {0} ακόμη", items.Count - max);
+                text += Format(SwimLang.T(" και {0} ακόμη"), items.Count - max);
 
             return text;
         }

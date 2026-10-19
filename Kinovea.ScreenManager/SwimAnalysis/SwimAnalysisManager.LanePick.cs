@@ -385,16 +385,16 @@ namespace Kinovea.ScreenManager
         private static string PickWhoNominative(AutoPickResult p)
         {
             if (p == null || p.LaneNumber <= 0)
-                return "ο αθλητής που ακολουθεί η κάμερα";
-            return string.Format(CultureInfo.InvariantCulture, "ο αθλητής του διαδρόμου {0}", p.LaneNumber);
+                return SwimLang.T("ο αθλητής που ακολουθεί η κάμερα");
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("ο αθλητής του διαδρόμου {0}"), p.LaneNumber);
         }
 
         /// <summary>Who the proposal is (object), for the texts: the swimmer of the lane, or the swimmer the camera follows.</summary>
         private static string PickWho(AutoPickResult p)
         {
             if (p == null || p.LaneNumber <= 0)
-                return "τον αθλητή που ακολουθεί η κάμερα";
-            return string.Format(CultureInfo.InvariantCulture, "τον αθλητή του διαδρόμου {0}", p.LaneNumber);
+                return SwimLang.T("τον αθλητή που ακολουθεί η κάμερα");
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("τον αθλητή του διαδρόμου {0}"), p.LaneNumber);
         }
     }
 }

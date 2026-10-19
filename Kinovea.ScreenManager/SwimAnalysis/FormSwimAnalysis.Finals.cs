@@ -29,38 +29,38 @@ namespace Kinovea.ScreenManager
         private Control BuildDeltaView()
         {
             deltaView = new SwimDeltaView { Dock = DockStyle.Top, Height = 118, Visible = false, Margin = new Padding(0, 4, 0, 4) };
-            toolTip.SetToolTip(deltaView, "Δ από την αναφορά σε κάθε πέρασμα: πάνω και πράσινο = πιο γρήγορα, κάτω και κόκκινο = πιο αργά.");
+            toolTip.SetToolTip(deltaView, SwimLang.T("Δ από την αναφορά σε κάθε πέρασμα: πάνω και πράσινο = πιο γρήγορα, κάτω και κόκκινο = πιο αργά."));
             return deltaView;
         }
 
         /// <summary>Button of the swimming page: the file of the finals (once, kept on this computer).</summary>
         private Button BuildFinalsImportButton()
         {
-            Button button = new SwimNoFocusButton { Text = "🏅 Τελικοί…", AutoSize = true, Height = 25, Margin = new Padding(4, 2, 0, 2) };
+            Button button = new SwimNoFocusButton { Text = SwimLang.T("🏅 Τελικοί…"), AutoSize = true, Height = 25, Margin = new Padding(4, 2, 0, 2) };
             button.Click += (s, e) => ImportFinals();
-            toolTip.SetToolTip(button, "Φόρτωση του αρχείου με τους τελικούς (π.χ. οι 8 του ολυμπιακού τελικού σε κάθε αγώνισμα).\n" +
-                "Μία φορά: κρατιούνται σε αυτόν τον υπολογιστή. Κάθε φιναλίστ γίνεται αναφορά για το Δ,\n" +
-                "και η καρτέλα «Τελικός ΟΑ» και ο πίνακας στο βίντεο συγκρίνουν τον αθλητή με τους 8 (ίδιο αγώνισμα, στυλ, απόσταση, φύλο).");
+            toolTip.SetToolTip(button, SwimLang.T("Φόρτωση του αρχείου με τους τελικούς (π.χ. οι 8 του ολυμπιακού τελικού σε κάθε αγώνισμα).\n") +
+                SwimLang.T("Μία φορά: κρατιούνται σε αυτόν τον υπολογιστή. Κάθε φιναλίστ γίνεται αναφορά για το Δ,\n") +
+                SwimLang.T("και η καρτέλα «Τελικός ΟΑ» και ο πίνακας στο βίντεο συγκρίνουν τον αθλητή με τους 8 (ίδιο αγώνισμα, στυλ, απόσταση, φύλο)."));
             return button;
         }
 
         /// <summary>Choices of the video: the graphic of the Δ, the board of the final at each checkpoint.</summary>
         private void AddFinalsOverlayOptions(FlowLayoutPanel overlay)
         {
-            chkDeltaChart = new CheckBox { Text = "Γράφημα Δ", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
-            chkFinalsBoard = new CheckBox { Text = "Πίνακας τελικού", AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            chkDeltaChart = new CheckBox { Text = SwimLang.T("Γράφημα Δ"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            chkFinalsBoard = new CheckBox { Text = SwimLang.T("Πίνακας τελικού"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
             chkDeltaChart.CheckedChanged += (s, e) => CommitOverlayOptions();
             chkFinalsBoard.CheckedChanged += (s, e) => CommitOverlayOptions();
-            toolTip.SetToolTip(chkDeltaChart, "Γράφημα με το Δ από την αναφορά σε κάθε πέρασμα, κάτω από το γράφημα ταχύτητας στο βίντεο.");
-            toolTip.SetToolTip(chkFinalsBoard, "Σε κάθε σημείο (15μ., 25μ., 50μ., στροφές, τερματισμός) πίνακας με τους φιναλίστ του τελικού\n" +
-                "και τον αθλητή στη θέση που θα είχε, για λίγα δευτερόλεπτα, στην άλλη πλευρά του βίντεο.");
+            toolTip.SetToolTip(chkDeltaChart, SwimLang.T("Γράφημα με το Δ από την αναφορά σε κάθε πέρασμα, κάτω από το γράφημα ταχύτητας στο βίντεο."));
+            toolTip.SetToolTip(chkFinalsBoard, SwimLang.T("Σε κάθε σημείο (15μ., 25μ., 50μ., στροφές, τερματισμός) πίνακας με τους φιναλίστ του τελικού\n") +
+                SwimLang.T("και τον αθλητή στη θέση που θα είχε, για λίγα δευτερόλεπτα, στην άλλη πλευρά του βίντεο."));
             overlay.Controls.Add(chkDeltaChart);
             overlay.Controls.Add(chkFinalsBoard);
         }
 
         private SwimPage BuildFinalsTab()
         {
-            SwimPage page = new SwimPage("🏅 Τελικός ΟΑ");
+            SwimPage page = new SwimPage(SwimLang.T("🏅 Τελικός ΟΑ"));
             page.Padding = new Padding(6);
             lblFinals = new Label { Dock = DockStyle.Top, Height = 38, ForeColor = SwimTheme.Dim, AutoEllipsis = true, Padding = new Padding(2, 2, 2, 0) };
             Panel scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = SwimTheme.Back };
@@ -75,8 +75,8 @@ namespace Kinovea.ScreenManager
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Title = "Αρχείο τελικών";
-                dialog.Filter = "Τελικοί (*.json)|*.json|Όλα τα αρχεία (*.*)|*.*";
+                dialog.Title = SwimLang.T("Αρχείο τελικών");
+                dialog.Filter = SwimLang.T("Τελικοί (*.json)|*.json|Όλα τα αρχεία (*.*)|*.*");
                 if (dialog.ShowDialog(this) != DialogResult.OK)
                     return;
 
@@ -103,7 +103,7 @@ namespace Kinovea.ScreenManager
             SwimFinal final = manager.FinalForRace();
             if (finals == null || finals.Finals.Count == 0)
             {
-                lblFinals.Text = "Δεν έχουν φορτωθεί τελικοί: κουμπί «🏅 Τελικοί…» στην καρτέλα 2 · Κολύμβηση (αρχείο με τους 8 κάθε τελικού).";
+                lblFinals.Text = SwimLang.T("Δεν έχουν φορτωθεί τελικοί: κουμπί «🏅 Τελικοί…» στην καρτέλα 2 · Κολύμβηση (αρχείο με τους 8 κάθε τελικού).");
                 finalsView.SetData(null, "", "");
                 return;
             }
@@ -112,16 +112,16 @@ namespace Kinovea.ScreenManager
             {
                 string gender = SwimReference.NormalizeGender(race.AthleteGender);
                 lblFinals.Text = gender.Length == 0
-                    ? "Για τη σύγκριση χρειάζεται το φύλο του αθλητή (Στοιχεία αγώνα → αθλητής από το μητρώο)."
+                    ? SwimLang.T("Για τη σύγκριση χρειάζεται το φύλο του αθλητή (Στοιχεία αγώνα → αθλητής από το μητρώο).")
                     : race.Pool != 50 || race.IsYards || race.Relay
-                        ? "Οι τελικοί είναι σε πισίνα 50μ., ατομικά αγωνίσματα."
-                        : "Δεν υπάρχει τελικός για αυτό το αγώνισμα στο αρχείο (" + finals.Source + "): π.χ. τα 50μ. πεταλούδα, ύπτιο και πρόσθιο δεν είναι ολυμπιακά.";
+                        ? SwimLang.T("Οι τελικοί είναι σε πισίνα 50μ., ατομικά αγωνίσματα.")
+                        : SwimLang.T("Δεν υπάρχει τελικός για αυτό το αγώνισμα στο αρχείο (") + finals.Source + SwimLang.T("): π.χ. τα 50μ. πεταλούδα, ύπτιο και πρόσθιο δεν είναι ολυμπιακά.");
                 finalsView.SetData(null, "", "");
                 return;
             }
 
             List<SwimFinalsMetric> metrics = SwimFinalsCompare.Metrics(race, computed, final);
-            lblFinals.Text = string.Format(CultureInfo.InvariantCulture, "{0}: {1}. Κάθε τιμή του αγώνα ανάμεσα στους {2} του τελικού · η θέση που θα είχε ο αθλητής.",
+            lblFinals.Text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1}. Κάθε τιμή του αγώνα ανάμεσα στους {2} του τελικού · η θέση που θα είχε ο αθλητής."),
                 final.Source, string.Join(", ", final.Swimmers.Take(3).Select(s => s.Rank.ToString(CultureInfo.InvariantCulture) + ". " + s.Name + " " + SwimReference.FormatTime(s.Final)).ToArray()) +
                 (final.Swimmers.Count > 3 ? " …" : ""), final.Swimmers.Count);
             finalsView.SetData(metrics, final.Label, race.Athlete);

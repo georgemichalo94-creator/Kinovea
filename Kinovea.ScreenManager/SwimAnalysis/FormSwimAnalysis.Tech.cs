@@ -20,6 +20,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public partial class FormSwimAnalysis
     {
+        // The values kept in the files and the sheet (Greek), shown with SwimLang.Label.
         private static readonly string[] stagesStart = { "Θέση ετοιμότητας", "Φάση βατήρα", "Αποδέσμευση", "Πτήση", "Είσοδος στο νερό", "Υποβρύχια φάση", "Έξοδος από το νερό", "Κολύμβηση" };
         private static readonly string[] stagesTurn = { "Προσέγγιση", "Περιστροφή", "Επαφή στον τοίχο", "Αποκόλληση", "Υποβρύχια φάση", "Έξοδος από το νερό", "Κολύμβηση" };
         private static readonly string[] angleNames = { "Γόνατο", "Ισχίο", "Κορμός", "Αγκώνας", "Ώμος", "Αστράγαλος", "Κεφάλι", "Γωνία εισόδου στο νερό", "Γωνία ώθησης", "Γωνία πτήσης" };
@@ -122,7 +123,7 @@ namespace Kinovea.ScreenManager
 
             public override string ToString()
             {
-                return Frame == null ? "(χωρίς elite καρέ)" : Frame.Display;
+                return Frame == null ? SwimLang.T("(χωρίς elite καρέ)") : Frame.Display;
             }
         }
 
@@ -144,13 +145,13 @@ namespace Kinovea.ScreenManager
             bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             Label title = new Label { Text = caption, AutoSize = true, Font = valueFont, ForeColor = SwimTheme.Accent, Margin = new Padding(0, 7, 6, 3) };
             ComboBox c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(0, 3, 4, 3) };
-            Button go = new SwimNoFocusButton { Text = "▶ βίντεο", Width = 76, Height = 26, Margin = new Padding(0, 2, 4, 2) };
-            Button del = new SwimNoFocusButton { Text = "Διαγραφή", Width = 76, Height = 26, Margin = new Padding(0, 2, 0, 2), Accent = SwimTheme.Red };
+            Button go = new SwimNoFocusButton { Text = SwimLang.T("▶ βίντεο"), Width = 76, Height = 26, Margin = new Padding(0, 2, 4, 2) };
+            Button del = new SwimNoFocusButton { Text = SwimLang.T("Διαγραφή"), Width = 76, Height = 26, Margin = new Padding(0, 2, 0, 2), Accent = SwimTheme.Red };
             ComboBox local = c;
             go.Click += (s, e) => { SwimTechPhase p = SelectedPhase(local); if (p != null) seek(p); };
             del.Click += (s, e) => { SwimTechPhase p = SelectedPhase(local); if (p != null) delete(p); };
-            toolTip.SetToolTip(go, "Μετάβαση του βίντεο στο σήμα (εκκίνηση) ή στην επαφή στον τοίχο (στροφή).");
-            toolTip.SetToolTip(del, "Διαγραφή των σημαδιών αυτής της προσπάθειας.");
+            toolTip.SetToolTip(go, SwimLang.T("Μετάβαση του βίντεο στο σήμα (εκκίνηση) ή στην επαφή στον τοίχο (στροφή)."));
+            toolTip.SetToolTip(del, SwimLang.T("Διαγραφή των σημαδιών αυτής της προσπάθειας."));
             Label i = new Label { AutoSize = false, Height = 18, Dock = DockStyle.Fill, ForeColor = SwimTheme.Dim, AutoEllipsis = true, Margin = new Padding(0, 0, 0, 2) };
             bar.Controls.Add(title, 0, 0);
             bar.Controls.Add(c, 1, 0);
@@ -167,7 +168,7 @@ namespace Kinovea.ScreenManager
         {
             Button b = new SwimNoFocusButton { Text = text, AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
             b.Click += (s, e) => manager.BeginPhaseMeasure(phase(), entry);
-            toolTip.SetToolTip(b, tooltip + " (χρειάζεται βαθμονόμηση: δες κάτω)");
+            toolTip.SetToolTip(b, tooltip + SwimLang.T(" (χρειάζεται βαθμονόμηση: δες κάτω)"));
             techPickButtons[b] = targets;
             return b;
         }
@@ -176,15 +177,15 @@ namespace Kinovea.ScreenManager
         {
             Button b = new SwimNoFocusButton { Text = text, Width = 44, Height = 26, Margin = new Padding(3, 2, 0, 2) };
             b.Click += (s, e) => manager.MarkTechSplit(offset, kind);
-            toolTip.SetToolTip(b, "Τεχνικό πέρασμα σε αυτό το καρέ: το κεφάλι στα " + text + " (αντί για το επόμενο της σειράς του πλήκτρου).");
+            toolTip.SetToolTip(b, SwimLang.T("Τεχνικό πέρασμα σε αυτό το καρέ: το κεφάλι στα ") + text + SwimLang.T(" (αντί για το επόμενο της σειράς του πλήκτρου)."));
             return b;
         }
 
         private SwimPage BuildTechStartTab()
         {
-            SwimPage page = new SwimPage("Εκκινήσεις");
+            SwimPage page = new SwimPage(SwimLang.T("Εκκινήσεις"));
             page.Padding = new Padding(6);
-            TableLayoutPanel bar = PhaseBar("Εκκίνηση:", out cmbStartPhase, out lblStartPhaseInfo, p => manager.SeekTo(p.Origin), p => DeletePhase(p));
+            TableLayoutPanel bar = PhaseBar(SwimLang.T("Εκκίνηση:"), out cmbStartPhase, out lblStartPhaseInfo, p => manager.SeekTo(p.Origin), p => DeletePhase(p));
             cmbStartPhase.SelectedIndexChanged += (s, e) =>
             {
                 if (updating)
@@ -196,44 +197,44 @@ namespace Kinovea.ScreenManager
 
             TableLayoutPanel t = NewEventTable();
             lblTsSignal = ValueLabel();
-            AddEventRow(t, "Σήμα εκκίνησης", PlayerScreenCommands.SwimStart, "Σήμα",
-                "Στο καρέ του σήματος. Στον αγώνα: t = 0. Στην προπόνηση: κάθε πάτημα ξεκινά νέα προσπάθεια εκκίνησης.", lblTsSignal);
+            AddEventRow(t, SwimLang.T("Σήμα εκκίνησης"), PlayerScreenCommands.SwimStart, SwimLang.T("Σήμα"),
+                SwimLang.T("Στο καρέ του σήματος. Στον αγώνα: t = 0. Στην προπόνηση: κάθε πάτημα ξεκινά νέα προσπάθεια εκκίνησης."), lblTsSignal);
             lblTsReaction = ValueLabel();
-            AddEventRow(t, "Αντίδραση (πρώτη κίνηση)", PlayerScreenCommands.SwimReaction, "Αντίδραση",
-                "Η πρώτη κίνηση του αθλητή μετά το σήμα.", lblTsReaction);
+            AddEventRow(t, SwimLang.T("Αντίδραση (πρώτη κίνηση)"), PlayerScreenCommands.SwimReaction, SwimLang.T("Αντίδραση"),
+                SwimLang.T("Η πρώτη κίνηση του αθλητή μετά το σήμα."), lblTsReaction);
             lblTsHands = ValueLabel();
-            AddEventRow(t, "Χέρια φεύγουν από τον βατήρα", PlayerScreenCommands.SwimHandsOff, "Χέρια",
-                "Τα χέρια αφήνουν τον βατήρα.", lblTsHands);
+            AddEventRow(t, SwimLang.T("Χέρια φεύγουν από τον βατήρα"), PlayerScreenCommands.SwimHandsOff, SwimLang.T("Χέρια"),
+                SwimLang.T("Τα χέρια αφήνουν τον βατήρα."), lblTsHands);
             lblTsBackFoot = ValueLabel();
-            AddEventRow(t, "Πίσω πόδι φεύγει", PlayerScreenCommands.SwimBackFoot, "Πίσω πόδι",
-                "Εκκίνηση track: το πίσω πόδι αφήνει τον βατήρα / τη σφήνα.", lblTsBackFoot);
+            AddEventRow(t, SwimLang.T("Πίσω πόδι φεύγει"), PlayerScreenCommands.SwimBackFoot, SwimLang.T("Πίσω πόδι"),
+                SwimLang.T("Εκκίνηση track: το πίσω πόδι αφήνει τον βατήρα / τη σφήνα."), lblTsBackFoot);
             lblTsBlock = ValueLabel();
-            AddEventRow(t, "Αποδέσμευση (μπροστινό πόδι)", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση",
-                "Το μπροστινό πόδι αφήνει τον βατήρα: τέλος της φάσης βατήρα (ο επίσημος χρόνος αντίδρασης).", lblTsBlock);
+            AddEventRow(t, SwimLang.T("Αποδέσμευση (μπροστινό πόδι)"), PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"),
+                SwimLang.T("Το μπροστινό πόδι αφήνει τον βατήρα: τέλος της φάσης βατήρα (ο επίσημος χρόνος αντίδρασης)."), lblTsBlock);
             lblTsEntry = ValueLabel();
-            AddEventRow(t, "Είσοδος χεριών στο νερό", PlayerScreenCommands.SwimEntry, "Είσοδος",
-                "Τα χέρια μπαίνουν στο νερό: τέλος της πτήσης.", lblTsEntry,
-                TechPickButton("📍 Απόσταση", "Κλικ εκεί που τα χέρια μπαίνουν στο νερό: απόσταση εισόδου.", () => SelectedPhase(cmbStartPhase), true,
+            AddEventRow(t, SwimLang.T("Είσοδος χεριών στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"),
+                SwimLang.T("Τα χέρια μπαίνουν στο νερό: τέλος της πτήσης."), lblTsEntry,
+                TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ εκεί που τα χέρια μπαίνουν στο νερό: απόσταση εισόδου."), () => SelectedPhase(cmbStartPhase), true,
                     SwimPickTarget.EntryHands, SwimPickTarget.PhaseEntry));
             lblTsKicks = ValueLabel();
-            AddEventRow(t, "Υποβρύχιοι δελφινισμοί", PlayerScreenCommands.SwimKick, "Δελφινισμός",
-                "Ένα πάτημα για κάθε δελφινισμό: πλήθος και συχνότητα.", lblTsKicks);
+            AddEventRow(t, SwimLang.T("Υποβρύχιοι δελφινισμοί"), PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"),
+                SwimLang.T("Ένα πάτημα για κάθε δελφινισμό: πλήθος και συχνότητα."), lblTsKicks);
             lblTsBreakout = ValueLabel();
-            AddEventRow(t, "Έξοδος από το νερό (κεφάλι)", PlayerScreenCommands.SwimBreakout, "Έξοδος",
-                "Το κεφάλι βγαίνει από το νερό: τέλος της υποβρύχιας φάσης.", lblTsBreakout,
-                TechPickButton("📍 Απόσταση", "Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: απόσταση εξόδου.", () => SelectedPhase(cmbStartPhase), false,
+            AddEventRow(t, SwimLang.T("Έξοδος από το νερό (κεφάλι)"), PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"),
+                SwimLang.T("Το κεφάλι βγαίνει από το νερό: τέλος της υποβρύχιας φάσης."), lblTsBreakout,
+                TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: απόσταση εξόδου."), () => SelectedPhase(cmbStartPhase), false,
                     SwimPickTarget.StartBreakout, SwimPickTarget.PhaseBreakout));
             lblTsSplits = ValueLabel();
-            AddEventRow(t, "Κεφάλι στα 5 / 10 / 15", PlayerScreenCommands.SwimTechSplit, "5 / 10 / 15",
-                "Το κεφάλι περνά τα 5, 10 και 15 (με τη σειρά, ή με τα κουμπιά για συγκεκριμένη απόσταση).", lblTsSplits,
+            AddEventRow(t, SwimLang.T("Κεφάλι στα 5 / 10 / 15"), PlayerScreenCommands.SwimTechSplit, "5 / 10 / 15",
+                SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 (με τη σειρά, ή με τα κουμπιά για συγκεκριμένη απόσταση)."), lblTsSplits,
                 OffsetButton("5", 5, SwimPhaseKind.Start), OffsetButton("10", 10, SwimPhaseKind.Start), OffsetButton("15", 15, SwimPhaseKind.Start));
             lblTsFirstStroke = ValueLabel();
-            AddEventRow(t, "Πρώτη χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
-                "Η πρώτη είσοδος χεριού μετά την έξοδο.", lblTsFirstStroke);
+            AddEventRow(t, SwimLang.T("Πρώτη χεριά"), PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"),
+                SwimLang.T("Η πρώτη είσοδος χεριού μετά την έξοδο."), lblTsFirstStroke);
 
             gridTechStart = CreateTechGrid();
             Label hint = new Label { Dock = DockStyle.Bottom, Height = 30, ForeColor = SwimTheme.Dim,
-                Text = "Χρόνοι από το σήμα εκκίνησης · Στην προπόνηση κάθε στήλη είναι μια προσπάθεια, με την καλύτερη και τον μέσο όρο." };
+                Text = SwimLang.T("Χρόνοι από το σήμα εκκίνησης · Στην προπόνηση κάθε στήλη είναι μια προσπάθεια, με την καλύτερη και τον μέσο όρο.") };
 
             page.Controls.Add(gridTechStart);
             page.Controls.Add(hint);
@@ -244,9 +245,9 @@ namespace Kinovea.ScreenManager
 
         private SwimPage BuildTechTurnsTab()
         {
-            SwimPage page = new SwimPage("Στροφές");
+            SwimPage page = new SwimPage(SwimLang.T("Στροφές"));
             page.Padding = new Padding(6);
-            TableLayoutPanel bar = PhaseBar("Στροφή:", out cmbTurnPhase, out lblTurnPhaseInfo, p => manager.SeekTo(p.Origin), p => DeletePhase(p));
+            TableLayoutPanel bar = PhaseBar(SwimLang.T("Στροφή:"), out cmbTurnPhase, out lblTurnPhaseInfo, p => manager.SeekTo(p.Origin), p => DeletePhase(p));
             cmbTurnPhase.SelectedIndexChanged += (s, e) =>
             {
                 if (updating)
@@ -258,39 +259,39 @@ namespace Kinovea.ScreenManager
 
             TableLayoutPanel t = NewEventTable();
             lblTtIn = ValueLabel();
-            AddEventRow(t, "Κεφάλι στα −5 πριν τον τοίχο", PlayerScreenCommands.SwimTechSplit, "−5",
-                "Το κεφάλι στα 5 πριν τον τοίχο: χρόνος προσέγγισης.", lblTtIn, OffsetButton("−5", -5, SwimPhaseKind.Turn));
+            AddEventRow(t, SwimLang.T("Κεφάλι στα −5 πριν τον τοίχο"), PlayerScreenCommands.SwimTechSplit, "−5",
+                SwimLang.T("Το κεφάλι στα 5 πριν τον τοίχο: χρόνος προσέγγισης."), lblTtIn, OffsetButton("−5", -5, SwimPhaseKind.Turn));
             lblTtLastStroke = ValueLabel();
-            AddEventRow(t, "Τελευταία χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
-                "Η τελευταία είσοδος χεριού πριν τον τοίχο (από εκεί μετράει ο χρόνος της ανάποδης στροφής).", lblTtLastStroke);
+            AddEventRow(t, SwimLang.T("Τελευταία χεριά"), PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"),
+                SwimLang.T("Η τελευταία είσοδος χεριού πριν τον τοίχο (από εκεί μετράει ο χρόνος της ανάποδης στροφής)."), lblTtLastStroke);
             lblTtRotation = ValueLabel();
-            AddEventRow(t, "Αρχή περιστροφής", PlayerScreenCommands.SwimRotation, "Περιστροφή",
-                "Ανάποδη στροφή: το κεφάλι αρχίζει να κατεβαίνει (αρχή της τούμπας).", lblTtRotation);
+            AddEventRow(t, SwimLang.T("Αρχή περιστροφής"), PlayerScreenCommands.SwimRotation, SwimLang.T("Περιστροφή"),
+                SwimLang.T("Ανάποδη στροφή: το κεφάλι αρχίζει να κατεβαίνει (αρχή της τούμπας)."), lblTtRotation);
             lblTtContact = ValueLabel();
-            AddEventRow(t, "Επαφή στον τοίχο", PlayerScreenCommands.SwimWallContact, "Επαφή",
-                "Πόδια (ανάποδη) ή χέρια (ανοιχτή) στον τοίχο. Στον αγώνα είναι το πέρασμα του τοίχου, στην προπόνηση ξεκινά νέα προσπάθεια στροφής.", lblTtContact);
+            AddEventRow(t, SwimLang.T("Επαφή στον τοίχο"), PlayerScreenCommands.SwimWallContact, SwimLang.T("Επαφή"),
+                SwimLang.T("Πόδια (ανάποδη) ή χέρια (ανοιχτή) στον τοίχο. Στον αγώνα είναι το πέρασμα του τοίχου, στην προπόνηση ξεκινά νέα προσπάθεια στροφής."), lblTtContact);
             lblTtPushoff = ValueLabel();
-            AddEventRow(t, "Αποκόλληση", PlayerScreenCommands.SwimFeetOff, "Αποκόλληση",
-                "Τα πόδια φεύγουν από τον τοίχο: χρόνος επαφής και χρόνος στροφής.", lblTtPushoff);
+            AddEventRow(t, SwimLang.T("Αποκόλληση"), PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποκόλληση"),
+                SwimLang.T("Τα πόδια φεύγουν από τον τοίχο: χρόνος επαφής και χρόνος στροφής."), lblTtPushoff);
             lblTtKicks = ValueLabel();
-            AddEventRow(t, "Υποβρύχιοι δελφινισμοί", PlayerScreenCommands.SwimKick, "Δελφινισμός",
-                "Ένα πάτημα για κάθε δελφινισμό μετά την αποκόλληση.", lblTtKicks);
+            AddEventRow(t, SwimLang.T("Υποβρύχιοι δελφινισμοί"), PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"),
+                SwimLang.T("Ένα πάτημα για κάθε δελφινισμό μετά την αποκόλληση."), lblTtKicks);
             lblTtBreakout = ValueLabel();
-            AddEventRow(t, "Έξοδος από το νερό (κεφάλι)", PlayerScreenCommands.SwimBreakout, "Έξοδος",
-                "Το κεφάλι βγαίνει από το νερό.", lblTtBreakout,
-                TechPickButton("📍 Απόσταση", "Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: απόσταση από τον τοίχο.", () => SelectedPhase(cmbTurnPhase), false,
+            AddEventRow(t, SwimLang.T("Έξοδος από το νερό (κεφάλι)"), PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"),
+                SwimLang.T("Το κεφάλι βγαίνει από το νερό."), lblTtBreakout,
+                TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: απόσταση από τον τοίχο."), () => SelectedPhase(cmbTurnPhase), false,
                     SwimPickTarget.TurnUnderwater, SwimPickTarget.PhaseBreakout));
             lblTtSplits = ValueLabel();
-            AddEventRow(t, "Κεφάλι στα +5 / +10 / +15", PlayerScreenCommands.SwimTechSplit, "+5 / +10 / +15",
-                "Το κεφάλι περνά τα 5, 10 και 15 από τον τοίχο.", lblTtSplits,
+            AddEventRow(t, SwimLang.T("Κεφάλι στα +5 / +10 / +15"), PlayerScreenCommands.SwimTechSplit, "+5 / +10 / +15",
+                SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 από τον τοίχο."), lblTtSplits,
                 OffsetButton("+5", 5, SwimPhaseKind.Turn), OffsetButton("+10", 10, SwimPhaseKind.Turn), OffsetButton("+15", 15, SwimPhaseKind.Turn));
             lblTtFirstStroke = ValueLabel();
-            AddEventRow(t, "Πρώτη χεριά", PlayerScreenCommands.SwimStroke, "Χεριά",
-                "Η πρώτη είσοδος χεριού μετά την έξοδο.", lblTtFirstStroke);
+            AddEventRow(t, SwimLang.T("Πρώτη χεριά"), PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"),
+                SwimLang.T("Η πρώτη είσοδος χεριού μετά την έξοδο."), lblTtFirstStroke);
 
             gridTechTurns = CreateTechGrid();
             Label hint = new Label { Dock = DockStyle.Bottom, Height = 30, ForeColor = SwimTheme.Dim,
-                Text = "Χρόνοι από την επαφή στον τοίχο (αρνητικοί πριν την επαφή) · Χρόνος στροφής: ανάποδη από την τελευταία χεριά, ανοιχτή από την επαφή." };
+                Text = SwimLang.T("Χρόνοι από την επαφή στον τοίχο (αρνητικοί πριν την επαφή) · Χρόνος στροφής: ανάποδη από την τελευταία χεριά, ανοιχτή από την επαφή.") };
 
             page.Controls.Add(gridTechTurns);
             page.Controls.Add(hint);
@@ -318,62 +319,62 @@ namespace Kinovea.ScreenManager
 
         private SwimPage BuildTechMediaTab()
         {
-            SwimPage page = new SwimPage("Στιγμιότυπα & γωνίες");
+            SwimPage page = new SwimPage(SwimLang.T("Στιγμιότυπα & γωνίες"));
             page.Padding = new Padding(6);
 
             // Tools: snapshot, angle (with its name).
             FlowLayoutPanel tools = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 4) };
             Button btnSnapshot = new SwimNoFocusButton { Width = 150, Height = 32, Primary = true };
             btnSnapshot.Click += (s, e) => RunCommand(PlayerScreenCommands.SwimSnapshot);
-            RegisterCommandButton(PlayerScreenCommands.SwimSnapshot, btnSnapshot, "📷 Στιγμιότυπο");
-            toolTip.SetToolTip(btnSnapshot, "Το καρέ του βίντεο (με τα σχέδια και τις γωνίες του) μπαίνει στο report με τα σχόλιά σου.");
+            RegisterCommandButton(PlayerScreenCommands.SwimSnapshot, btnSnapshot, SwimLang.T("📷 Στιγμιότυπο"));
+            toolTip.SetToolTip(btnSnapshot, SwimLang.T("Το καρέ του βίντεο (με τα σχέδια και τις γωνίες του) μπαίνει στο report με τα σχόλιά σου."));
             Button btnAngle = new SwimNoFocusButton { Width = 120, Height = 32 };
             btnAngle.Click += (s, e) => RunCommand(PlayerScreenCommands.SwimAngle);
-            RegisterCommandButton(PlayerScreenCommands.SwimAngle, btnAngle, "📐 Γωνία");
-            toolTip.SetToolTip(btnAngle, "Τρία κλικ στο σταματημένο βίντεο: άκρο, κορυφή, άκρο. Η γωνία μπαίνει στις τιμές της φάσης.");
+            RegisterCommandButton(PlayerScreenCommands.SwimAngle, btnAngle, SwimLang.T("📐 Γωνία"));
+            toolTip.SetToolTip(btnAngle, SwimLang.T("Τρία κλικ στο σταματημένο βίντεο: άκρο, κορυφή, άκρο. Η γωνία μπαίνει στις τιμές της φάσης."));
             techPickButtons[btnAngle] = new SwimPickTarget[] { SwimPickTarget.Angle };
             cmbAngleName = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 170, Margin = new Padding(6, 6, 3, 3) };
-            cmbAngleName.Items.AddRange(angleNames);
-            cmbAngleName.Text = manager.AngleName;
-            cmbAngleName.TextChanged += (s, e) => manager.AngleName = cmbAngleName.Text;
-            toolTip.SetToolTip(cmbAngleName, "Όνομα της επόμενης γωνίας (π.χ. γόνατο στη θέση ετοιμότητας, γωνία εισόδου στο νερό).");
-            chkAutoSnapshots = new CheckBox { Text = "αυτόματα σε κάθε γεγονός", AutoSize = true, Margin = new Padding(4, 9, 8, 3) };
+            cmbAngleName.Items.AddRange(angleNames.Select(SwimLang.Label).ToArray());
+            cmbAngleName.Text = SwimLang.Label(manager.AngleName);
+            cmbAngleName.TextChanged += (s, e) => manager.AngleName = SwimLang.Greek(cmbAngleName.Text, angleNames);
+            toolTip.SetToolTip(cmbAngleName, SwimLang.T("Όνομα της επόμενης γωνίας (π.χ. γόνατο στη θέση ετοιμότητας, γωνία εισόδου στο νερό)."));
+            chkAutoSnapshots = new CheckBox { Text = SwimLang.T("αυτόματα σε κάθε γεγονός"), AutoSize = true, Margin = new Padding(4, 9, 8, 3) };
             chkAutoSnapshots.CheckedChanged += (s, e) =>
             {
                 if (!updating)
                     manager.SetAutoSnapshots(chkAutoSnapshots.Checked);
             };
-            toolTip.SetToolTip(chkAutoSnapshots, "Όταν μαρκάρεις ένα γεγονός της εκκίνησης ή της στροφής (σήμα, χέρια, αποδέσμευση, είσοδο, πρώτο δελφινισμό,\n" +
-                "έξοδο, πρώτη και τελευταία χεριά, περιστροφή, επαφή στον τοίχο, αποκόλληση) το καρέ του γίνεται στιγμιότυπο με το όνομά του.\n" +
-                "Ξανά στο ίδιο γεγονός σε άλλο καρέ: αλλάζει το στιγμιότυπο. Αναίρεση του σημαδιού: φεύγει και το στιγμιότυπο.\n" +
-                "Με το «📷 Στιγμιότυπο» (P) τραβάς όποιο άλλο καρέ θέλεις.");
+            toolTip.SetToolTip(chkAutoSnapshots, SwimLang.T("Όταν μαρκάρεις ένα γεγονός της εκκίνησης ή της στροφής (σήμα, χέρια, αποδέσμευση, είσοδο, πρώτο δελφινισμό,\n") +
+                SwimLang.T("έξοδο, πρώτη και τελευταία χεριά, περιστροφή, επαφή στον τοίχο, αποκόλληση) το καρέ του γίνεται στιγμιότυπο με το όνομά του.\n") +
+                SwimLang.T("Ξανά στο ίδιο γεγονός σε άλλο καρέ: αλλάζει το στιγμιότυπο. Αναίρεση του σημαδιού: φεύγει και το στιγμιότυπο.\n") +
+                SwimLang.T("Με το «📷 Στιγμιότυπο» (P) τραβάς όποιο άλλο καρέ θέλεις."));
             tools.Controls.Add(btnSnapshot);
             tools.Controls.Add(chkAutoSnapshots);
             tools.Controls.Add(btnAngle);
-            tools.Controls.Add(Caption("όνομα γωνίας:"));
+            tools.Controls.Add(Caption(SwimLang.T("όνομα γωνίας:")));
             tools.Controls.Add(cmbAngleName);
 
             // Skeleton of the swimmer: one click, then the angles of any frame.
-            btnSkeleton = new SwimNoFocusButton { Text = "🦴 Σκελετός", Width = 120, Height = 32 };
+            btnSkeleton = new SwimNoFocusButton { Text = SwimLang.T("🦴 Σκελετός"), Width = 120, Height = 32 };
             btnSkeleton.Click += (s, e) => manager.BeginSkeleton();
-            toolTip.SetToolTip(btnSkeleton, "Σε ένα καρέ όπου ο αθλητής φαίνεται καθαρά (π.χ. στη θέση ετοιμότητας ή πριν την επαφή), κλικ πάνω του.\n" +
-                "Το βίντεο διαβάζεται από εκεί και μετά, όσο τον βλέπει, και ο σκελετός του σχεδιάζεται στο βίντεο με τις γωνίες\n" +
-                "του γονάτου, του ισχίου και του αγκώνα. Για κάμερες σε σταθερή θέση, πάνω ή κάτω από το νερό.");
+            toolTip.SetToolTip(btnSkeleton, SwimLang.T("Σε ένα καρέ όπου ο αθλητής φαίνεται καθαρά (π.χ. στη θέση ετοιμότητας ή πριν την επαφή), κλικ πάνω του.\n") +
+                SwimLang.T("Το βίντεο διαβάζεται από εκεί και μετά, όσο τον βλέπει, και ο σκελετός του σχεδιάζεται στο βίντεο με τις γωνίες\n") +
+                SwimLang.T("του γονάτου, του ισχίου και του αγκώνα. Για κάμερες σε σταθερή θέση, πάνω ή κάτω από το νερό."));
             techPickButtons[btnSkeleton] = new SwimPickTarget[] { SwimPickTarget.Skeleton };
-            btnSkeletonAngles = new SwimNoFocusButton { Text = "📐 Γωνίες σκελετού", Width = 150, Height = 32 };
+            btnSkeletonAngles = new SwimNoFocusButton { Text = SwimLang.T("📐 Γωνίες σκελετού"), Width = 150, Height = 32 };
             btnSkeletonAngles.Click += (s, e) => manager.AddSkeletonAngles();
-            toolTip.SetToolTip(btnSkeletonAngles, "Οι γωνίες του σκελετού σε αυτό το καρέ (γόνατο, ισχίο, αγκώνας, ώμος της πλευράς που φαίνεται)\n" +
-                "μπαίνουν στην ανάλυση όπως οι γωνίες με κλικ: στις τιμές της φάσης, στο Google Sheet και στο report.");
+            toolTip.SetToolTip(btnSkeletonAngles, SwimLang.T("Οι γωνίες του σκελετού σε αυτό το καρέ (γόνατο, ισχίο, αγκώνας, ώμος της πλευράς που φαίνεται)\n") +
+                SwimLang.T("μπαίνουν στην ανάλυση όπως οι γωνίες με κλικ: στις τιμές της φάσης, στο Google Sheet και στο report."));
             Button btnDeleteSkeleton = new SwimNoFocusButton { Text = "✕", Width = 32, Height = 32 };
             btnDeleteSkeleton.Click += (s, e) => manager.DeleteSkeleton();
-            toolTip.SetToolTip(btnDeleteSkeleton, "Διαγραφή του σκελετού αυτού του σημείου του βίντεο (ή όλων, αν δεν υπάρχει εδώ)");
-            chkSkeleton = new CheckBox { Text = "στο βίντεο", AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
+            toolTip.SetToolTip(btnDeleteSkeleton, SwimLang.T("Διαγραφή του σκελετού αυτού του σημείου του βίντεο (ή όλων, αν δεν υπάρχει εδώ)"));
+            chkSkeleton = new CheckBox { Text = SwimLang.T("στο βίντεο"), AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
             chkSkeleton.CheckedChanged += (s, e) =>
             {
                 if (!updating)
                     manager.SetSkeletonOverlay(chkSkeleton.Checked);
             };
-            chkSkeletonAngles = new CheckBox { Text = "με γωνίες", AutoSize = true, Margin = new Padding(4, 9, 3, 3) };
+            chkSkeletonAngles = new CheckBox { Text = SwimLang.T("με γωνίες"), AutoSize = true, Margin = new Padding(4, 9, 3, 3) };
             chkSkeletonAngles.CheckedChanged += (s, e) =>
             {
                 if (!updating)
@@ -390,38 +391,38 @@ namespace Kinovea.ScreenManager
             tools.SetFlowBreak(lblSkeleton, true);
 
             // Automatic proposals from the skeleton, checked one by one on the video; the learning of this computer.
-            btnPropose = new SwimNoFocusButton { Text = "✨ Προτάσεις", Width = 120, Height = 32 };
+            btnPropose = new SwimNoFocusButton { Text = SwimLang.T("✨ Προτάσεις"), Width = 120, Height = 32 };
             btnPropose.Click += (s, e) => manager.ProposeHere();
-            toolTip.SetToolTip(btnPropose, "Από τον σκελετό αυτού του σημείου: προτάσεις για πρώτη κίνηση, χέρια, πίσω πόδι, αποκόλληση, είσοδο\n" +
-                "(εκκίνηση από τη θέση ετοιμότητας), δελφινισμούς και έξοδο (κάτω από το νερό), επαφή και αποκόλληση (στροφή).\n" +
-                "Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος.");
-            btnReview = new SwimNoFocusButton { Text = "▶ Έλεγχος", Width = 104, Height = 32, Primary = true };
+            toolTip.SetToolTip(btnPropose, SwimLang.T("Από τον σκελετό αυτού του σημείου: προτάσεις για πρώτη κίνηση, χέρια, πίσω πόδι, αποκόλληση, είσοδο\n") +
+                SwimLang.T("(εκκίνηση από τη θέση ετοιμότητας), δελφινισμούς και έξοδο (κάτω από το νερό), επαφή και αποκόλληση (στροφή).\n") +
+                SwimLang.T("Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος."));
+            btnReview = new SwimNoFocusButton { Text = SwimLang.T("▶ Έλεγχος"), Width = 104, Height = 32, Primary = true };
             btnReview.Click += (s, e) => manager.BeginReview();
-            toolTip.SetToolTip(btnReview, "Το βίντεο πηγαίνει στην πρώτη πρόταση που περιμένει απάντηση.");
-            btnProposalRight = new SwimNoFocusButton { Text = "✓ Σωστό", Width = 90, Height = 32 };
+            toolTip.SetToolTip(btnReview, SwimLang.T("Το βίντεο πηγαίνει στην πρώτη πρόταση που περιμένει απάντηση."));
+            btnProposalRight = new SwimNoFocusButton { Text = SwimLang.T("✓ Σωστό"), Width = 90, Height = 32 };
             btnProposalRight.Click += (s, e) => manager.AcceptCurrentProposal();
-            toolTip.SetToolTip(btnProposalRight, "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Αν μετακίνησες το βίντεο με τα βελάκια, κρατιέται η διόρθωσή σου.");
-            btnProposalWrong = new SwimNoFocusButton { Text = "✕ Λάθος", Width = 86, Height = 32 };
+            toolTip.SetToolTip(btnProposalRight, SwimLang.T("Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Αν μετακίνησες το βίντεο με τα βελάκια, κρατιέται η διόρθωσή σου."));
+            btnProposalWrong = new SwimNoFocusButton { Text = SwimLang.T("✕ Λάθος"), Width = 86, Height = 32 };
             btnProposalWrong.Click += (s, e) => manager.RejectCurrentProposal();
-            toolTip.SetToolTip(btnProposalWrong, "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).");
+            toolTip.SetToolTip(btnProposalWrong, SwimLang.T("Δεν υπάρχει τέτοιο γεγονός εδώ (Delete)."));
             btnDeleteProposals = new SwimNoFocusButton { Text = "🗑", Width = 34, Height = 32 };
             btnDeleteProposals.Click += (s, e) => manager.DeleteProposals();
-            toolTip.SetToolTip(btnDeleteProposals, "Διαγραφή των προτάσεων που περιμένουν (χωρίς απάντηση: η μάθηση δεν αλλάζει).");
-            chkProposeAuto = new CheckBox { Text = "αμέσως μετά τον σκελετό", AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
+            toolTip.SetToolTip(btnDeleteProposals, SwimLang.T("Διαγραφή των προτάσεων που περιμένουν (χωρίς απάντηση: η μάθηση δεν αλλάζει)."));
+            chkProposeAuto = new CheckBox { Text = SwimLang.T("αμέσως μετά τον σκελετό"), AutoSize = true, Margin = new Padding(8, 9, 3, 3) };
             chkProposeAuto.CheckedChanged += (s, e) =>
             {
                 if (!updating)
                     manager.SetProposeAfterSkeleton(chkProposeAuto.Checked);
             };
             lblProposals = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 10, 0, 3), Text = "–" };
-            LinkLabel resetLearning = new LinkLabel { Text = "↺ μάθηση", AutoSize = true, Margin = new Padding(8, 10, 0, 3), LinkColor = SwimTheme.Accent };
+            LinkLabel resetLearning = new LinkLabel { Text = SwimLang.T("↺ μάθηση"), AutoSize = true, Margin = new Padding(8, 10, 0, 3), LinkColor = SwimTheme.Accent };
             resetLearning.LinkClicked += (s, e) =>
             {
-                if (MessageBox.Show(this, "Να ξεχάσει ό,τι έμαθε από τις απαντήσεις σου στις προτάσεις;\n(Οι αναλύσεις και τα σημάδια δεν αλλάζουν.)",
-                    "Μάθηση των προτάσεων", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                if (MessageBox.Show(this, SwimLang.T("Να ξεχάσει ό,τι έμαθε από τις απαντήσεις σου στις προτάσεις;\n(Οι αναλύσεις και τα σημάδια δεν αλλάζουν.)"),
+                    SwimLang.T("Μάθηση των προτάσεων"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                     manager.ResetLearning();
             };
-            toolTip.SetToolTip(resetLearning, "Η μάθηση κρατιέται μόνο σε αυτόν τον υπολογιστή (αριθμοί, χωρίς ονόματα ή εικόνες).");
+            toolTip.SetToolTip(resetLearning, SwimLang.T("Η μάθηση κρατιέται μόνο σε αυτόν τον υπολογιστή (αριθμοί, χωρίς ονόματα ή εικόνες)."));
             tools.Controls.Add(btnPropose);
             tools.Controls.Add(btnReview);
             tools.Controls.Add(btnProposalRight);
@@ -461,20 +462,20 @@ namespace Kinovea.ScreenManager
             details.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             picSnapshot = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = SwimTheme.Input, Margin = new Padding(0, 0, 3, 3) };
             picElite = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = SwimTheme.Input, Margin = new Padding(3, 0, 0, 3) };
-            toolTip.SetToolTip(picSnapshot, "Το στιγμιότυπο του αθλητή (διπλό κλικ στη λίστα: μετάβαση στο καρέ).");
-            toolTip.SetToolTip(picElite, "Το elite καρέ για σύγκριση (μπαίνει δίπλα στο στιγμιότυπο στο report).");
+            toolTip.SetToolTip(picSnapshot, SwimLang.T("Το στιγμιότυπο του αθλητή (διπλό κλικ στη λίστα: μετάβαση στο καρέ)."));
+            toolTip.SetToolTip(picElite, SwimLang.T("Το elite καρέ για σύγκριση (μπαίνει δίπλα στο στιγμιότυπο στο report)."));
 
             FlowLayoutPanel stageRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
             cmbStage = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Width = 190, Margin = new Padding(3, 3, 3, 3) };
             cmbStage.TextChanged += (s, e) => CommitSnapshotText();
             lblSnapshotInfo = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 3, 3) };
-            stageRow.Controls.Add(Caption("Στάδιο:"));
+            stageRow.Controls.Add(Caption(SwimLang.T("Στάδιο:")));
             stageRow.Controls.Add(cmbStage);
             stageRow.Controls.Add(lblSnapshotInfo);
 
             tbComment = new TextBox { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, Margin = new Padding(0, 3, 0, 3) };
             tbComment.TextChanged += (s, e) => CommitSnapshotText();
-            toolTip.SetToolTip(tbComment, "Σχόλια για αυτή την εικόνα: μπαίνουν κάτω από την εικόνα στο report.");
+            toolTip.SetToolTip(tbComment, SwimLang.T("Σχόλια για αυτή την εικόνα: μπαίνουν κάτω από την εικόνα στο report."));
 
             TableLayoutPanel eliteRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4, Margin = new Padding(0) };
             eliteRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -483,22 +484,22 @@ namespace Kinovea.ScreenManager
             eliteRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             cmbElite = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(0, 3, 4, 3) };
             cmbElite.SelectedIndexChanged += CmbElite_SelectedIndexChanged;
-            toolTip.SetToolTip(cmbElite, "Καρέ elite κολυμβητή στο ίδιο στάδιο, από το φύλλο «Elite καρέ» του Google Sheet.");
+            toolTip.SetToolTip(cmbElite, SwimLang.T("Καρέ elite κολυμβητή στο ίδιο στάδιο, από το φύλλο «Elite καρέ» του Google Sheet."));
             Button btnEliteRefresh = new SwimNoFocusButton { Text = "↻", Width = 30, Height = 25, Margin = new Padding(0, 2, 4, 2) };
             btnEliteRefresh.Click += (s, e) => manager.RefreshEliteFrames();
-            toolTip.SetToolTip(btnEliteRefresh, "Ανανέωση της βιβλιοθήκης elite καρέ");
-            Button btnSaveElite = new SwimNoFocusButton { Text = "Ως elite καρέ…", AutoSize = true, Height = 25, Margin = new Padding(0, 2, 0, 2) };
+            toolTip.SetToolTip(btnEliteRefresh, SwimLang.T("Ανανέωση της βιβλιοθήκης elite καρέ"));
+            Button btnSaveElite = new SwimNoFocusButton { Text = SwimLang.T("Ως elite καρέ…"), AutoSize = true, Height = 25, Margin = new Padding(0, 2, 0, 2) };
             btnSaveElite.Click += (s, e) => SaveSnapshotAsElite();
-            toolTip.SetToolTip(btnSaveElite, "Το στιγμιότυπο μπαίνει στη βιβλιοθήκη elite καρέ (π.χ. από βίντεο elite κολυμβητή), για σύγκριση σε επόμενες αναλύσεις.");
+            toolTip.SetToolTip(btnSaveElite, SwimLang.T("Το στιγμιότυπο μπαίνει στη βιβλιοθήκη elite καρέ (π.χ. από βίντεο elite κολυμβητή), για σύγκριση σε επόμενες αναλύσεις."));
             eliteRow.Controls.Add(Caption("Elite:"), 0, 0);
             eliteRow.Controls.Add(cmbElite, 1, 0);
             eliteRow.Controls.Add(btnEliteRefresh, 2, 0);
             eliteRow.Controls.Add(btnSaveElite, 3, 0);
 
             FlowLayoutPanel snapButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            Button btnSnapGo = new SwimNoFocusButton { Text = "▶ βίντεο", Width = 76, Height = 26, Margin = new Padding(0, 2, 4, 2) };
+            Button btnSnapGo = new SwimNoFocusButton { Text = SwimLang.T("▶ βίντεο"), Width = 76, Height = 26, Margin = new Padding(0, 2, 4, 2) };
             btnSnapGo.Click += (s, e) => { SwimSnapshot snap = SelectedSnapshot(); if (snap != null) manager.SeekTo(snap.Timestamp); };
-            Button btnSnapDelete = new SwimNoFocusButton { Text = "Διαγραφή", Width = 80, Height = 26, Margin = new Padding(0, 2, 4, 2), Accent = SwimTheme.Red };
+            Button btnSnapDelete = new SwimNoFocusButton { Text = SwimLang.T("Διαγραφή"), Width = 80, Height = 26, Margin = new Padding(0, 2, 4, 2), Accent = SwimTheme.Red };
             btnSnapDelete.Click += (s, e) => DeleteSnapshot();
             lblElite = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 3, 3) };
             snapButtons.Controls.Add(btnSnapGo);
@@ -519,13 +520,13 @@ namespace Kinovea.ScreenManager
             snaps.Controls.Add(details, 1, 0);
 
             // Angles of the analysis.
-            Label lblAngles = new Label { Text = "Γωνίες", Dock = DockStyle.Top, Height = 24, Font = valueFont, ForeColor = SwimTheme.Accent, TextAlign = ContentAlignment.BottomLeft };
+            Label lblAngles = new Label { Text = SwimLang.T("Γωνίες"), Dock = DockStyle.Top, Height = 24, Font = valueFont, ForeColor = SwimTheme.Accent, TextAlign = ContentAlignment.BottomLeft };
             gridAngles = CreateGrid();
             gridAngles.ReadOnly = false;
-            gridAngles.Columns.Add(Column("name", "Γωνία", 120));
-            gridAngles.Columns.Add(Column("deg", "Μοίρες", 60));
-            gridAngles.Columns.Add(Column("phase", "Φάση", 90));
-            gridAngles.Columns.Add(Column("t", "Χρόνος (s)", 64));
+            gridAngles.Columns.Add(Column("name", SwimLang.T("Γωνία"), 120));
+            gridAngles.Columns.Add(Column("deg", SwimLang.T("Μοίρες"), 60));
+            gridAngles.Columns.Add(Column("phase", SwimLang.T("Φάση"), 90));
+            gridAngles.Columns.Add(Column("t", SwimLang.T("Χρόνος (s)"), 64));
             foreach (DataGridViewColumn c in gridAngles.Columns)
             {
                 c.ReadOnly = c.Name != "name";
@@ -545,7 +546,7 @@ namespace Kinovea.ScreenManager
             };
 
             // Notes of the training (in the report).
-            Label lblNotes = new Label { Text = "Σημειώσεις (μπαίνουν στην αρχή του report τεχνικής ανάλυσης)", Dock = DockStyle.Bottom, Height = 22, ForeColor = SwimTheme.Dim, TextAlign = ContentAlignment.BottomLeft };
+            Label lblNotes = new Label { Text = SwimLang.T("Σημειώσεις (μπαίνουν στην αρχή του report τεχνικής ανάλυσης)"), Dock = DockStyle.Bottom, Height = 22, ForeColor = SwimTheme.Dim, TextAlign = ContentAlignment.BottomLeft };
             tbNotes = new TextBox { Dock = DockStyle.Bottom, Height = 52, Multiline = true, ScrollBars = ScrollBars.Vertical };
             tbNotes.TextChanged += (s, e) =>
             {
@@ -605,27 +606,27 @@ namespace Kinovea.ScreenManager
                 return;
 
             bool picking = manager.PickTarget == SwimPickTarget.Skeleton;
-            btnSkeleton.Text = picking ? "Ακύρωση" : "🦴 Σκελετός";
+            btnSkeleton.Text = picking ? SwimLang.T("Ακύρωση") : SwimLang.T("🦴 Σκελετός");
             btnSkeleton.Enabled = !manager.SkeletonRunning;
             string parts = manager.SkeletonDescription;
             if (manager.SkeletonRunning)
             {
-                lblSkeleton.Text = "ανάγνωση του βίντεο…";
+                lblSkeleton.Text = SwimLang.T("ανάγνωση του βίντεο…");
                 lblSkeleton.ForeColor = SwimTheme.Amber;
             }
             else if (picking)
             {
-                lblSkeleton.Text = "κλικ πάνω στον αθλητή";
+                lblSkeleton.Text = SwimLang.T("κλικ πάνω στον αθλητή");
                 lblSkeleton.ForeColor = SwimTheme.Amber;
             }
             else if (parts.Length > 0)
             {
-                lblSkeleton.Text = "σκελετός: " + parts;
+                lblSkeleton.Text = SwimLang.T("σκελετός: ") + parts;
                 lblSkeleton.ForeColor = SwimTheme.Green;
             }
             else
             {
-                lblSkeleton.Text = "χωρίς σκελετό";
+                lblSkeleton.Text = SwimLang.T("χωρίς σκελετό");
                 lblSkeleton.ForeColor = SwimTheme.Dim;
             }
 
@@ -646,11 +647,11 @@ namespace Kinovea.ScreenManager
             bool reviewing = manager.Reviewing;
             btnPropose.Enabled = parts.Length > 0 && !manager.SkeletonRunning;
             btnReview.Enabled = pending > 0 && !reviewing;
-            btnReview.Text = pending > 0 ? "▶ Έλεγχος " + pending : "▶ Έλεγχος";
+            btnReview.Text = pending > 0 ? SwimLang.T("▶ Έλεγχος ") + pending : SwimLang.T("▶ Έλεγχος");
             btnProposalRight.Enabled = reviewing;
             btnProposalWrong.Enabled = reviewing;
             btnDeleteProposals.Enabled = pending > 0;
-            lblProposals.Text = reviewing && manager.CurrentProposal != null ? "ελέγχεις: " + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal) : manager.ProposalsDescription;
+            lblProposals.Text = reviewing && manager.CurrentProposal != null ? SwimLang.T("ελέγχεις: ") + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal) : manager.ProposalsDescription;
             lblProposals.ForeColor = reviewing ? SwimTheme.Amber : pending > 0 ? SwimTheme.Accent : SwimTheme.Dim;
             RefreshPilot();
         }
@@ -710,13 +711,13 @@ namespace Kinovea.ScreenManager
             if (phases.Count == 0)
             {
                 info.Text = race.IsTraining
-                    ? (kind == SwimPhaseKind.Start ? "Καμία εκκίνηση: πάτησε G στο καρέ του σήματος για να ξεκινήσει η πρώτη προσπάθεια." : "Καμία στροφή: πάτησε W στο καρέ της επαφής στον τοίχο.")
-                    : (kind == SwimPhaseKind.Start ? "Ορίσε πρώτα το σήμα εκκίνησης (G)." : "Οι στροφές εμφανίζονται με το πέρασμα κάθε τοίχου (S).");
+                    ? (kind == SwimPhaseKind.Start ? SwimLang.T("Καμία εκκίνηση: πάτησε G στο καρέ του σήματος για να ξεκινήσει η πρώτη προσπάθεια.") : SwimLang.T("Καμία στροφή: πάτησε W στο καρέ της επαφής στον τοίχο."))
+                    : (kind == SwimPhaseKind.Start ? SwimLang.T("Ορίσε πρώτα το σήμα εκκίνησης (G).") : SwimLang.T("Οι στροφές εμφανίζονται με το πέρασμα κάθε τοίχου (S)."));
             }
             else if (phase != null)
             {
-                info.Text = string.Format(CultureInfo.InvariantCulture, "{0} · {1} τιμές{2}", phase.Title, phase.Values.Count,
-                    kind == SwimPhaseKind.Turn ? (phase.Flip ? " · ανάποδη στροφή" : " · ανοιχτή στροφή") : "");
+                info.Text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} · {1} τιμές{2}"), phase.Title, phase.Values.Count,
+                    kind == SwimPhaseKind.Turn ? (phase.Flip ? SwimLang.T(" · ανάποδη στροφή") : SwimLang.T(" · ανοιχτή στροφή")) : "");
             }
 
             Func<double?, string> sec = v => v.HasValue ? v.Value.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
@@ -751,12 +752,12 @@ namespace Kinovea.ScreenManager
                 lblTsHands.Text = sec(phase != null ? phase.HandsOff : null);
                 lblTsBackFoot.Text = sec(phase != null ? phase.BackFoot : null);
                 string blockPhase = val("blockPhase");
-                lblTsBlock.Text = sec(phase != null ? phase.Block : null) + (blockPhase != null ? " · φάση βατήρα " + blockPhase + " s" : "");
+                lblTsBlock.Text = sec(phase != null ? phase.Block : null) + (blockPhase != null ? SwimLang.T(" · φάση βατήρα ") + blockPhase + " s" : "");
                 string flight = val("flight");
-                lblTsEntry.Text = sec(phase != null ? phase.Entry : null) + (flight != null ? " · πτήση " + flight + " s" : "") + dist(phase != null ? phase.EntryDist : null, "απόσταση");
+                lblTsEntry.Text = sec(phase != null ? phase.Entry : null) + (flight != null ? SwimLang.T(" · πτήση ") + flight + " s" : "") + dist(phase != null ? phase.EntryDist : null, SwimLang.T("απόσταση"));
                 lblTsKicks.Text = kicks();
                 string uw = val("underwater");
-                lblTsBreakout.Text = sec(phase != null ? phase.Breakout : null) + (uw != null ? " · υποβρύχια " + uw + " s" : "") + dist(phase != null ? phase.BreakoutDist : null, "στα");
+                lblTsBreakout.Text = sec(phase != null ? phase.Breakout : null) + (uw != null ? SwimLang.T(" · υποβρύχια ") + uw + " s" : "") + dist(phase != null ? phase.BreakoutDist : null, SwimLang.T("στα"));
                 lblTsSplits.Text = splits(SwimTechCalculator.StartOffsets);
                 lblTsFirstStroke.Text = sec(phase != null ? phase.FirstStroke : null);
             }
@@ -764,16 +765,16 @@ namespace Kinovea.ScreenManager
             {
                 double tIn = 0;
                 bool hasIn = phase != null && phase.Splits.TryGetValue(-5, out tIn);
-                lblTtIn.Text = hasIn ? (-tIn).ToString("0.00", CultureInfo.InvariantCulture) + " s πριν την επαφή" : "–";
-                lblTtLastStroke.Text = phase != null && phase.LastStroke.HasValue ? "→ τοίχος " + (-phase.LastStroke.Value).ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
+                lblTtIn.Text = hasIn ? (-tIn).ToString("0.00", CultureInfo.InvariantCulture) + SwimLang.T(" s πριν την επαφή") : "–";
+                lblTtLastStroke.Text = phase != null && phase.LastStroke.HasValue ? SwimLang.T("→ τοίχος ") + (-phase.LastStroke.Value).ToString("0.00", CultureInfo.InvariantCulture) + " s" : "–";
                 string rotation = val("rotation");
-                lblTtRotation.Text = rotation != null ? "περιστροφή " + rotation + " s" : (phase != null && phase.RotationStart.HasValue ? sec(phase.RotationStart) : "–");
+                lblTtRotation.Text = rotation != null ? SwimLang.T("περιστροφή ") + rotation + " s" : (phase != null && phase.RotationStart.HasValue ? sec(phase.RotationStart) : "–");
                 lblTtContact.Text = phase != null ? "✔ t = 0" : "–";
                 string turnTime = val("turnTime");
-                lblTtPushoff.Text = sec(phase != null ? phase.Pushoff : null) + (turnTime != null ? " · χρόνος στροφής " + turnTime + " s" : "");
+                lblTtPushoff.Text = sec(phase != null ? phase.Pushoff : null) + (turnTime != null ? SwimLang.T(" · χρόνος στροφής ") + turnTime + " s" : "");
                 lblTtKicks.Text = kicks();
                 string uw = val("underwater");
-                lblTtBreakout.Text = sec(phase != null ? phase.Breakout : null) + (uw != null ? " · υποβρύχια " + uw + " s" : "") + dist(phase != null ? phase.BreakoutDist : null, "στα");
+                lblTtBreakout.Text = sec(phase != null ? phase.Breakout : null) + (uw != null ? SwimLang.T(" · υποβρύχια ") + uw + " s" : "") + dist(phase != null ? phase.BreakoutDist : null, SwimLang.T("στα"));
                 lblTtSplits.Text = splits(new int[] { 5, 10, 15 });
                 lblTtFirstStroke.Text = sec(phase != null ? phase.FirstStroke : null);
             }
@@ -804,7 +805,7 @@ namespace Kinovea.ScreenManager
                 grid.Tag = sig;
                 grid.Rows.Clear();
                 grid.Columns.Clear();
-                DataGridViewTextBoxColumn first = Column("metric", "Τιμή", 190);
+                DataGridViewTextBoxColumn first = Column("metric", SwimLang.T("Τιμή"), 190);
                 first.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
                 first.Width = 210;
                 grid.Columns.Add(first);
@@ -818,11 +819,11 @@ namespace Kinovea.ScreenManager
 
                 if (many)
                 {
-                    DataGridViewTextBoxColumn best = Column("best", "Καλύτερη", 64);
+                    DataGridViewTextBoxColumn best = Column("best", SwimLang.T("Καλύτερη"), 64);
                     best.Width = 74;
                     best.DefaultCellStyle.ForeColor = SwimTheme.Green;
                     grid.Columns.Add(best);
-                    DataGridViewTextBoxColumn mean = Column("mean", "Μ.ό.", 60);
+                    DataGridViewTextBoxColumn mean = Column("mean", SwimLang.T("Μ.ό."), 60);
                     mean.Width = 64;
                     grid.Columns.Add(mean);
                 }
@@ -830,7 +831,7 @@ namespace Kinovea.ScreenManager
                 foreach (SwimTechMetric m in metrics)
                     grid.Rows[grid.Rows.Add()].Cells[0].Value = SwimTechCalculator.Label(m, race.Unit);
                 foreach (string name in angles)
-                    grid.Rows[grid.Rows.Add()].Cells[0].Value = (name.StartsWith("Γωνία", StringComparison.OrdinalIgnoreCase) ? name : "Γωνία: " + name) + " (°)";
+                    grid.Rows[grid.Rows.Add()].Cells[0].Value = (name.StartsWith("Γωνία", StringComparison.OrdinalIgnoreCase) ? SwimLang.Label(name) : SwimLang.T("Γωνία: ") + SwimLang.Label(name)) + " (°)";
             }
             else
             {
@@ -905,8 +906,8 @@ namespace Kinovea.ScreenManager
                 List<SnapshotItem> items = race.Snapshots.OrderBy(s => s.Timestamp).Select(s =>
                 {
                     SwimTechPhase p = SwimTechCalculator.PhaseAt(manager.TechPhases, s.Timestamp);
-                    string text = string.Format("{0}{1}{2}{3}", p != null ? p.Title : "Στιγμιότυπο", string.IsNullOrEmpty(s.Event) ? "" : " · 📷 " + s.Event,
-                        string.IsNullOrEmpty(s.Stage) || s.Stage == s.Event ? "" : " · " + s.Stage, string.IsNullOrEmpty(s.FileId) ? "  ⏳" : "  ✔");
+                    string text = string.Format("{0}{1}{2}{3}", p != null ? p.Title : SwimLang.T("Στιγμιότυπο"), string.IsNullOrEmpty(s.Event) ? "" : " · 📷 " + SwimLang.Label(s.Event),
+                        string.IsNullOrEmpty(s.Stage) || s.Stage == s.Event ? "" : " · " + SwimLang.Label(s.Stage), string.IsNullOrEmpty(s.FileId) ? "  ⏳" : "  ✔");
                     return new SnapshotItem(s, text);
                 }).ToList();
                 List<SnapshotItem> shown = lbSnapshots.Items.Cast<object>().OfType<SnapshotItem>().ToList();
@@ -952,7 +953,7 @@ namespace Kinovea.ScreenManager
                         SwimTechPhase p = SwimTechCalculator.PhaseAt(manager.TechPhases, a.Timestamp);
                         DataGridViewRow row = gridAngles.Rows[i];
                         row.Tag = a;
-                        row.Cells["name"].Value = a.Name;
+                        row.Cells["name"].Value = SwimLang.Label(a.Name);
                         row.Cells["deg"].Value = a.Degrees.HasValue ? a.Degrees.Value.ToString("0.0", CultureInfo.InvariantCulture) + "°" : "";
                         row.Cells["phase"].Value = p != null ? p.Title : "";
                         row.Cells["t"].Value = p != null ? manager.Timing.Seconds(a.Timestamp, p.Origin).ToString("0.00", CultureInfo.InvariantCulture) : "";
@@ -981,7 +982,7 @@ namespace Kinovea.ScreenManager
                 tbComment.Enabled = has;
                 cmbElite.Enabled = has;
                 SwimTechPhase phase = has ? SwimTechCalculator.PhaseAt(manager.TechPhases, snap.Timestamp) : null;
-                string[] stages = phase != null && phase.Kind == SwimPhaseKind.Turn ? stagesTurn : stagesStart;
+                string[] stages = (phase != null && phase.Kind == SwimPhaseKind.Turn ? stagesTurn : stagesStart).Select(SwimLang.Label).ToArray();
                 if (cmbStage.Items.Count != stages.Length || (cmbStage.Items.Count > 0 && (string)cmbStage.Items[0] != stages[0]))
                 {
                     cmbStage.Items.Clear();
@@ -989,12 +990,12 @@ namespace Kinovea.ScreenManager
                 }
 
                 if (!cmbStage.Focused)
-                    cmbStage.Text = has ? snap.Stage : "";
+                    cmbStage.Text = has ? SwimLang.Label(snap.Stage) : "";
                 if (!tbComment.Focused && tbComment.Text != (has ? snap.Comment : ""))
                     tbComment.Text = has ? snap.Comment : "";
                 lblSnapshotInfo.Text = has && phase != null
-                    ? string.Format(CultureInfo.InvariantCulture, "t = {0:0.00} s · {1}", manager.Timing.Seconds(snap.Timestamp, phase.Origin), string.IsNullOrEmpty(snap.FileId) ? "δεν έχει ανέβει ακόμη" : "στο Drive")
-                    : (has ? (string.IsNullOrEmpty(snap.FileId) ? "δεν έχει ανέβει ακόμη" : "στο Drive") : "Πάτησε «📷 Στιγμιότυπο» (P) σε ένα καρέ του βίντεο.");
+                    ? string.Format(CultureInfo.InvariantCulture, "t = {0:0.00} s · {1}", manager.Timing.Seconds(snap.Timestamp, phase.Origin), string.IsNullOrEmpty(snap.FileId) ? SwimLang.T("δεν έχει ανέβει ακόμη") : SwimLang.T("στο Drive"))
+                    : (has ? (string.IsNullOrEmpty(snap.FileId) ? SwimLang.T("δεν έχει ανέβει ακόμη") : SwimLang.T("στο Drive")) : SwimLang.T("Πάτησε «📷 Στιγμιότυπο» (P) σε ένα καρέ του βίντεο."));
 
                 // Elite frames: those of the kind of the phase first.
                 List<SwimEliteFrame> frames = manager.EliteLibrary.For(manager.Race.Style, phase != null ? (SwimPhaseKind?)phase.Kind : null);
@@ -1097,15 +1098,15 @@ namespace Kinovea.ScreenManager
             {
                 double t = manager.Timing.Seconds(manager.CurrentVideoTimestamp.Value, phase.Origin);
                 clock = (t < 0 ? "−" : "") + Math.Abs(t).ToString("0.00", CultureInfo.InvariantCulture);
-                chips.Add(new SwimChip("ΦΑΣΗ", phase.Title, SwimTheme.Amber));
+                chips.Add(new SwimChip(SwimLang.T("ΦΑΣΗ"), phase.Title, SwimTheme.Amber));
                 SwimTechPhase owner;
                 int? next = SwimTechCalculator.NextOffset(race, manager.Timing, manager.TechPhases, manager.CurrentVideoTimestamp.Value, out owner);
                 string nextText = !next.HasValue ? "– (S)"
                     : (next.Value < 0 ? "−5" : (owner != null && owner.Kind == SwimPhaseKind.Turn ? "+" : "") + next.Value.ToString(CultureInfo.InvariantCulture)) + race.Unit;
-                chips.Add(new SwimChip("T ΕΠΟΜΕΝΟ", nextText, next.HasValue ? SwimTheme.Accent : SwimTheme.Dim));
+                chips.Add(new SwimChip(SwimLang.T("T ΕΠΟΜΕΝΟ"), nextText, next.HasValue ? SwimTheme.Accent : SwimTheme.Dim));
                 int kicks = phase.Kicks.Count(k => k <= t + 1e-6);
                 if (kicks > 0)
-                    chips.Add(new SwimChip("ΔΕΛΦΙΝΙΣΜΟΙ", kicks.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+                    chips.Add(new SwimChip(SwimLang.T("ΔΕΛΦΙΝΙΣΜΟΙ"), kicks.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
                 string key = phase.Kind == SwimPhaseKind.Start ? "t15" : "out15";
                 double? v15 = phase.Value(key);
                 if (v15.HasValue)
@@ -1113,12 +1114,12 @@ namespace Kinovea.ScreenManager
             }
             else
             {
-                chips.Add(new SwimChip("ΦΑΣΗ", race.IsTraining ? "G: νέα εκκίνηση · W: νέα στροφή" : "εκτός εκκίνησης / στροφής", SwimTheme.Dim));
+                chips.Add(new SwimChip(SwimLang.T("ΦΑΣΗ"), race.IsTraining ? SwimLang.T("G: νέα εκκίνηση · W: νέα στροφή") : SwimLang.T("εκτός εκκίνησης / στροφής"), SwimTheme.Dim));
             }
 
-            chips.Add(new SwimChip("ΣΤΙΓΜΙΟΤΥΠΑ", race.Snapshots.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
-            chips.Add(new SwimChip("ΓΩΝΙΕΣ", race.Angles.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
-            lblLive.SetValues(phase != null ? (phase.Kind == SwimPhaseKind.Start ? "ΑΠΟ ΤΟ ΣΗΜΑ" : "ΑΠΟ ΤΗΝ ΕΠΑΦΗ") : "ΤΕΧΝΙΚΗ", clock, chips);
+            chips.Add(new SwimChip(SwimLang.T("ΣΤΙΓΜΙΟΤΥΠΑ"), race.Snapshots.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+            chips.Add(new SwimChip(SwimLang.T("ΓΩΝΙΕΣ"), race.Angles.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+            lblLive.SetValues(phase != null ? (phase.Kind == SwimPhaseKind.Start ? SwimLang.T("ΑΠΟ ΤΟ ΣΗΜΑ") : SwimLang.T("ΑΠΟ ΤΗΝ ΕΠΑΦΗ")) : SwimLang.T("ΤΕΧΝΙΚΗ"), clock, chips);
         }
 
         /// <summary>
@@ -1170,8 +1171,8 @@ namespace Kinovea.ScreenManager
             if (phase == null)
                 return;
 
-            string what = manager.Race.IsTraining ? "όλα τα σημάδια της προσπάθειας" : "τα σημάδια της τεχνικής ανάλυσης (5/10/15, χέρια, πίσω πόδι, περιστροφή)";
-            DialogResult answer = MessageBox.Show(this, "Διαγραφή: " + phase.Title + ", " + what + ";", "Διαγραφή", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            string what = manager.Race.IsTraining ? SwimLang.T("όλα τα σημάδια της προσπάθειας") : SwimLang.T("τα σημάδια της τεχνικής ανάλυσης (5/10/15, χέρια, πίσω πόδι, περιστροφή)");
+            DialogResult answer = MessageBox.Show(this, SwimLang.T("Διαγραφή: ") + phase.Title + ", " + what + ";", SwimLang.T("Διαγραφή"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (answer == DialogResult.Yes)
                 manager.DeletePhase(phase);
         }
@@ -1185,7 +1186,7 @@ namespace Kinovea.ScreenManager
             if (snap == null)
                 return;
 
-            snap.Stage = cmbStage.Text.Trim();
+            snap.Stage = SwimLang.Greek(cmbStage.Text.Trim(), stagesStart.Concat(stagesTurn));
             snap.Comment = tbComment.Text;
             manager.SnapshotChanged(snap);
         }
@@ -1209,14 +1210,14 @@ namespace Kinovea.ScreenManager
             SwimSnapshot snap = SelectedSnapshot();
             if (snap == null)
             {
-                ShowStatus("Επίλεξε πρώτα ένα στιγμιότυπο.", true);
+                ShowStatus(SwimLang.T("Επίλεξε πρώτα ένα στιγμιότυπο."), true);
                 return;
             }
 
             SwimRace race = manager.Race;
             string athlete = string.IsNullOrWhiteSpace(race.Athlete) ? "" : race.Athlete.Trim();
-            string name = AskText("Νέο elite καρέ", "Τίτλος του καρέ στη βιβλιοθήκη (π.χ. «Pan Zhanle – είσοδος στο νερό»):",
-                (athlete.Length > 0 ? athlete + " – " : "") + (string.IsNullOrEmpty(snap.Stage) ? "καρέ" : snap.Stage.ToLowerInvariant()));
+            string name = AskText(SwimLang.T("Νέο elite καρέ"), SwimLang.T("Τίτλος του καρέ στη βιβλιοθήκη (π.χ. «Pan Zhanle – είσοδος στο νερό»):"),
+                (athlete.Length > 0 ? athlete + " – " : "") + (string.IsNullOrEmpty(snap.Stage) ? SwimLang.T("καρέ") : SwimLang.Label(snap.Stage).ToLowerInvariant()));
             if (name == null)
                 return;
 
@@ -1230,7 +1231,7 @@ namespace Kinovea.ScreenManager
             if (snap == null)
                 return;
 
-            DialogResult answer = MessageBox.Show(this, "Διαγραφή του στιγμιότυπου από την ανάλυση (και από το report);", "Στιγμιότυπο", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            DialogResult answer = MessageBox.Show(this, SwimLang.T("Διαγραφή του στιγμιότυπου από την ανάλυση (και από το report);"), SwimLang.T("Στιγμιότυπο"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (answer != DialogResult.Yes)
                 return;
 
@@ -1246,7 +1247,7 @@ namespace Kinovea.ScreenManager
             SwimAngle angle = gridAngles.Rows[e.RowIndex].Tag as SwimAngle;
             string name = Convert.ToString(gridAngles.Rows[e.RowIndex].Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture);
             if (angle != null && !string.IsNullOrWhiteSpace(name))
-                BeginInvoke((Action)(() => manager.RenameAngle(angle, name)));
+                BeginInvoke((Action)(() => manager.RenameAngle(angle, SwimLang.Greek(name.Trim(), angleNames))));
         }
 
         private void GridAngles_KeyDown(object sender, KeyEventArgs e)

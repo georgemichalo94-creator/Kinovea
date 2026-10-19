@@ -307,7 +307,7 @@ namespace Kinovea.ScreenManager
                     retryTimer.Stop();
             }
 
-            Raise(SwimSyncState.Sending, request.Pdf ? "Δημιουργία PDF…" : "Αποστολή…", request.RaceId, null);
+            Raise(SwimSyncState.Sending, request.Pdf ? SwimLang.T("Δημιουργία PDF…") : SwimLang.T("Αποστολή…"), request.RaceId, null);
 
             Task.Factory.StartNew(() => Post(request.Url, request.Body, request.Pdf ? PdfTimeout : UpdateTimeout)).ContinueWith(t =>
             {
@@ -345,7 +345,7 @@ namespace Kinovea.ScreenManager
             if (result.Ok)
             {
                 failures = 0;
-                string message = "Συγχρονίστηκε " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                string message = SwimLang.T("Συγχρονίστηκε ") + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
                 Raise(SwimSyncState.Synced, message, request.RaceId, result);
             }
             else
@@ -461,19 +461,19 @@ namespace Kinovea.ScreenManager
                 if (response != null)
                 {
                     int code = (int)response.StatusCode;
-                    result.Error = string.Format("Σφάλμα HTTP {0} από το Google. Έλεγξε τη διεύθυνση της Εφαρμογής Ιστού.", code);
+                    result.Error = string.Format(SwimLang.T("Σφάλμα HTTP {0} από το Google. Έλεγξε τη διεύθυνση της Εφαρμογής Ιστού."), code);
                     result.Retry = code >= 500 || code == 429;
                 }
                 else
                 {
-                    result.Error = "Χωρίς σύνδεση με το Google (" + e.Status + "). Τα δεδομένα είναι αποθηκευμένα, θα ξαναπροσπαθήσει.";
+                    result.Error = SwimLang.T("Χωρίς σύνδεση με το Google (") + e.Status + SwimLang.T("). Τα δεδομένα είναι αποθηκευμένα, θα ξαναπροσπαθήσει.");
                     result.Retry = true;
                 }
             }
             catch (UriFormatException)
             {
                 result.Ok = false;
-                result.Error = "Μη έγκυρη διεύθυνση Εφαρμογής Ιστού.";
+                result.Error = SwimLang.T("Μη έγκυρη διεύθυνση Εφαρμογής Ιστού.");
             }
             catch (Exception e)
             {
@@ -495,7 +495,7 @@ namespace Kinovea.ScreenManager
             catch (Exception)
             {
                 result.Ok = false;
-                result.Error = "Η απάντηση δεν είναι JSON. Έλεγξε ότι η Εφαρμογή Ιστού έχει πρόσβαση \"Οποιοσδήποτε\" και ότι η διεύθυνση τελειώνει σε /exec.";
+                result.Error = SwimLang.T("Η απάντηση δεν είναι JSON. Έλεγξε ότι η Εφαρμογή Ιστού έχει πρόσβαση \"Οποιοσδήποτε\" και ότι η διεύθυνση τελειώνει σε /exec.");
                 return;
             }
 
@@ -684,7 +684,7 @@ namespace Kinovea.ScreenManager
         private static JObject Finals(SwimFinal final, List<SwimFinalsMetric> metrics)
         {
             JObject f = new JObject();
-            f["label"] = final.Label;
+            f["label"] = final.LabelGreek;
             f["source"] = final.Source ?? "";
             JArray swimmers = new JArray();
             foreach (SwimFinalist s in final.Swimmers.OrderBy(x => x.Rank > 0 ? x.Rank : int.MaxValue).Take(8))
@@ -756,7 +756,7 @@ namespace Kinovea.ScreenManager
                 o["kind"] = p.Kind == SwimPhaseKind.Turn ? "turn" : "start";
                 o["wall"] = p.Wall;
                 o["attempt"] = p.Attempt;
-                o["label"] = p.Title;
+                o["label"] = p.TitleGreek ?? p.Title;
                 JObject values = new JObject();
                 foreach (KeyValuePair<string, double> pair in p.Values)
                     values[pair.Key] = pair.Value;

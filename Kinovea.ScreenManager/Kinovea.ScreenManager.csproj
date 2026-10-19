@@ -1048,6 +1048,8 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimAthletes.cs" />
     <Compile Include="SwimAnalysis\SwimNameMatch.cs" />
+    <Compile Include="SwimAnalysis\SwimLang.cs" />
+    <Compile Include="SwimAnalysis\SwimLangEnglish.cs" />
     <Compile Include="SwimAnalysis\SwimOfficialResults.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />

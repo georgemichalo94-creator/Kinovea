@@ -264,7 +264,7 @@ namespace Kinovea.ScreenManager
         {
             string name = string.IsNullOrWhiteSpace(race.Athlete) ? "" : SwimAthleteList.Normalize(race.Athlete);
             string ev = string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}", race.DistanceLabel, UnitCaps(race), SwimAthleteList.Normalize(SwimPresets.StyleName(race.Style)));
-            string lane = race.Lane > 0 ? "ΔΙΑΔΡΟΜΟΣ " + race.Lane.ToString(CultureInfo.InvariantCulture) : "";
+            string lane = race.Lane > 0 ? SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + race.Lane.ToString(CultureInfo.InvariantCulture) : "";
             List<string> parts = athleteFirst ? new List<string> { name, ev, lane } : new List<string> { ev, name, lane };
             return string.Join("  ·  ", parts.Where(p => p.Length > 0));
         }
@@ -286,7 +286,7 @@ namespace Kinovea.ScreenManager
             if (last != null)
             {
                 bool finished = last.D >= s.Race.Distance;
-                string label = finished ? "ΤΕΛΙΚΟΣ" : last.D.ToString(CultureInfo.InvariantCulture) + " " + UnitCaps(s.Race);
+                string label = finished ? SwimLang.T("ΤΕΛΙΚΟΣ") : last.D.ToString(CultureInfo.InvariantCulture) + " " + UnitCaps(s.Race);
                 Text(g, label, caption, SwimTheme.Dim, r.Right - 14 * k, r.Top + 9 * k, StringAlignment.Far);
                 Text(g, SwimReference.FormatTime(last.T.Value), F(19f, k, true), SwimTheme.Text, r.Right - 12 * k, r.Top + 25 * k, StringAlignment.Far);
                 titleRight -= Width(g, label, caption) + 14 * k;
@@ -302,7 +302,7 @@ namespace Kinovea.ScreenManager
                     Text(g, delta, deltaFont, Color.White, deltaPill.Left + dw / 2, deltaPill.Top + deltaPill.Height / 2, StringAlignment.Center, StringAlignment.Center);
                     Font vsFont = F(7.5f, k, false, FontStyle.Bold);
                     float vsLeft = r.Left + Math.Min(r.Width * 0.52f, 280 * k);
-                    TextIn(g, "Δ vs " + ReferenceShort(s.Computed.Reference), vsFont, SwimTheme.Dim,
+                    TextIn(g, SwimLang.T("Δ vs ") + ReferenceShort(s.Computed.Reference), vsFont, SwimTheme.Dim,
                         new RectangleF(vsLeft, deltaPill.Top, Math.Max(10, deltaPill.Left - 6 * k - vsLeft), deltaPill.Height), StringAlignment.Far);
                 }
             }
@@ -317,7 +317,7 @@ namespace Kinovea.ScreenManager
             // Strokes of the length, tempo and distance of the last cycle, speed.
             SwimReelCycle cycle = t >= 0 ? reel.LastCycle(t) : null;
             bool swimming = reel.Swimming(t) && reel.HasModel;
-            string[] captions = { "ΧΕΡΙΕΣ", "ΣΥΧΝΟΤΗΤΑ", "ΑΠΟΣΤ./ΚΥΚΛΟ", "ΤΑΧΥΤΗΤΑ" };
+            string[] captions = { SwimLang.T("ΧΕΡΙΕΣ"), SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), SwimLang.T("ΑΠΟΣΤ./ΚΥΚΛΟ"), SwimLang.T("ΤΑΧΥΤΗΤΑ") };
             string[] values =
             {
                 (t >= 0 ? reel.StrokesInLength(t) : 0).ToString(CultureInfo.InvariantCulture),
@@ -325,7 +325,7 @@ namespace Kinovea.ScreenManager
                 cycle != null && reel.HasModel ? "≈" + cycle.Dps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
                 swimming ? reel.SpeedAt(t).ToString("0.00", CultureInfo.InvariantCulture) : "–"
             };
-            string[] units = { "", "s/κύκλο", "m", "m/s" };
+            string[] units = { "", SwimLang.T("s/κύκλο"), "m", "m/s" };
             Color[] colors = { SwimTheme.Text, SwimTheme.Accent, SwimTheme.Amber, SwimTheme.Green };
 
             float gap = 8 * k;
@@ -350,13 +350,14 @@ namespace Kinovea.ScreenManager
 
             // Phase of the race under the card.
             string phase = reel.PhaseAt(t);
+            string phaseText = SwimLang.T(phase);
             Font phaseFont = F(9.5f, k, false, FontStyle.Bold);
-            RectangleF pill = new RectangleF(r.Left, r.Bottom + 8 * k, Width(g, phase, phaseFont) + 34 * k, 24 * k);
+            RectangleF pill = new RectangleF(r.Left, r.Bottom + 8 * k, Width(g, phaseText, phaseFont) + 34 * k, 24 * k);
             Pill(g, pill, Color.FromArgb(220, 9, 14, 22), Color.FromArgb(70, 255, 255, 255), Math.Max(1f, k));
             Color dot = phase == "ΥΠΟΒΡΥΧΙΑ" ? SwimTheme.Green : (phase == "ΤΕΡΜΑΤΙΣΜΟΣ" || phase == "ΣΤΡΟΦΗ" ? SwimTheme.Amber : SwimTheme.Accent);
             using (SolidBrush brush = new SolidBrush(dot))
                 g.FillEllipse(brush, pill.Left + 10 * k, pill.Top + 8 * k, 8 * k, 8 * k);
-            Text(g, phase, phaseFont, SwimTheme.Text, pill.Left + 23 * k, pill.Top + pill.Height / 2, StringAlignment.Near, StringAlignment.Center);
+            Text(g, phaseText, phaseFont, SwimTheme.Text, pill.Left + 23 * k, pill.Top + pill.Height / 2, StringAlignment.Near, StringAlignment.Center);
         }
         #endregion
 
@@ -374,13 +375,13 @@ namespace Kinovea.ScreenManager
 
             int laps = Math.Max(1, (int)Math.Ceiling(s.Race.Distance / (double)reel.Pool - 1e-9));
             int lap = t >= 0 ? reel.LapAt(t) : 0;
-            Text(g, laps > 1 ? "ΑΝΑ ΚΥΚΛΟ  ·  ΜΗΚΟΣ " + (lap + 1).ToString(CultureInfo.InvariantCulture) : "ΑΝΑ ΚΥΚΛΟ",
+            Text(g, laps > 1 ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  ΜΗΚΟΣ ") + (lap + 1).ToString(CultureInfo.InvariantCulture) : SwimLang.T("ΑΝΑ ΚΥΚΛΟ"),
                 F(8.25f, k, false, FontStyle.Bold), SwimTheme.Dim, r.Left + 16 * k, r.Top + 8 * k);
 
             // Legend.
             Font legend = F(7.25f, k);
             float lx = r.Right - 14 * k;
-            string distanceLegend = "απόσταση/κύκλο m", speedLegend = "ταχύτητα m/s";
+            string distanceLegend = SwimLang.T("απόσταση/κύκλο m"), speedLegend = SwimLang.T("ταχύτητα m/s");
             lx -= Width(g, distanceLegend, legend);
             Text(g, distanceLegend, legend, SwimTheme.Amber, lx, r.Top + 9 * k);
             using (SolidBrush b = new SolidBrush(SwimTheme.Amber))
@@ -433,7 +434,7 @@ namespace Kinovea.ScreenManager
                     using (SolidBrush b = new SolidBrush(Color.FromArgb(36, SwimTheme.Green)))
                         g.FillRectangle(b, plot.Left, plot.Top, Math.Max(0, bx - plot.Left), plot.Height);
                     if (bx - plot.Left > 70 * k)
-                        Text(g, "ΥΠΟΒΡΥΧΙΑ", F(6.75f, k, false, FontStyle.Bold), SwimTheme.Green, plot.Left + 5 * k, plot.Bottom - 3 * k, StringAlignment.Near, StringAlignment.Far);
+                        Text(g, SwimLang.T("ΥΠΟΒΡΥΧΙΑ"), F(6.75f, k, false, FontStyle.Bold), SwimTheme.Green, plot.Left + 5 * k, plot.Bottom - 3 * k, StringAlignment.Near, StringAlignment.Far);
                 }
             }
 
@@ -578,7 +579,7 @@ namespace Kinovea.ScreenManager
             using (Pen ring = new Pen(Color.FromArgb((int)(215 * a), SwimTheme.Accent), Math.Max(1.2f, 2f * k)))
                 g.DrawEllipse(ring, c.X - rx, c.Y - ry, 2 * rx, 2 * ry);
 
-            string surname = string.IsNullOrWhiteSpace(s.Race.Athlete) ? "ΑΘΛΗΤΗΣ" : SwimAthleteList.Normalize(s.Race.Athlete).Split(' ')[0];
+            string surname = string.IsNullOrWhiteSpace(s.Race.Athlete) ? SwimLang.T("ΑΘΛΗΤΗΣ") : SwimAthleteList.Normalize(s.Race.Athlete).Split(' ')[0];
             string text = s.Race.Lane > 0 ? surname + " · " + s.Race.Lane.ToString(CultureInfo.InvariantCulture) : surname;
             Font font = F(10.5f, k, false, FontStyle.Bold);
             float w = Width(g, text, font) + 22 * k, h = 25 * k;
@@ -635,20 +636,20 @@ namespace Kinovea.ScreenManager
             double bd;
             bool hasBreakout = reel.BreakoutDistances.TryGetValue(0, out bd);
             string under = reel.FirstBreakout.HasValue
-                ? string.Format(CultureInfo.InvariantCulture, "{0:0.00} s κάτω από το νερό", reel.FirstBreakout.Value - (reel.Entry ?? 0))
+                ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0:0.00} s κάτω από το νερό"), reel.FirstBreakout.Value - (reel.Entry ?? 0))
                 : "";
             List<string[]> tiles = new List<string[]>
             {
-                new[] { "ΑΝΤΙΔΡΑΣΗ", reaction.HasValue ? SwimReel.Seconds(reaction.Value) : "–",
-                    c.BlockTime.HasValue ? string.Format(CultureInfo.InvariantCulture, "πόδια εκτός βατήρα {0:0.00} s", c.BlockTime.Value) : "" },
-                new[] { "15 " + UnitCaps(s.Race) + " ΑΠΟ ΤΗΝ ΕΚΚΙΝΗΣΗ", c.Start15.HasValue ? SwimReel.Seconds(c.Start15.Value) : "–",
-                    c.EntryTime.HasValue ? string.Format(CultureInfo.InvariantCulture, "είσοδος στο νερό {0:0.00} s", c.EntryTime.Value) : "" },
+                new[] { SwimLang.T("ΑΝΤΙΔΡΑΣΗ"), reaction.HasValue ? SwimReel.Seconds(reaction.Value) : "–",
+                    c.BlockTime.HasValue ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("πόδια εκτός βατήρα {0:0.00} s"), c.BlockTime.Value) : "" },
+                new[] { "15 " + UnitCaps(s.Race) + SwimLang.T(" ΑΠΟ ΤΗΝ ΕΚΚΙΝΗΣΗ"), c.Start15.HasValue ? SwimReel.Seconds(c.Start15.Value) : "–",
+                    c.EntryTime.HasValue ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("είσοδος στο νερό {0:0.00} s"), c.EntryTime.Value) : "" },
                 new[] { "BREAKOUT", hasBreakout ? (reel.BreakoutMeasured.Contains(0) ? "" : "≈") + bd.ToString("0.0", CultureInfo.InvariantCulture) + " " + unit : "–", under },
-                new[] { "ΧΡΟΝΟΣ ΑΝΑ ΤΜΗΜΑ", string.Join(" / ", reel.Parts.Select(p => p.Time.HasValue ? SwimReference.FormatTime(p.Time.Value) : "–")), partsLabel + " " + unit },
-                new[] { "ΧΕΡΙΕΣ", string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), "σημάδια χεριών ανά τμήμα" },
-                new[] { "ΣΥΧΝΟΤΗΤΑ", joined(p => p.Tempo, "0.00"), "δευτερόλεπτα ανά κύκλο" },
-                new[] { "ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ", "≈" + joined(p => p.Dps, "0.00"), "μέτρα ανά κύκλο" },
-                new[] { "ΤΑΧΥΤΗΤΑ", joined(p => p.Speed, "0.00"), "m/s ανά τμήμα" }
+                new[] { SwimLang.T("ΧΡΟΝΟΣ ΑΝΑ ΤΜΗΜΑ"), string.Join(" / ", reel.Parts.Select(p => p.Time.HasValue ? SwimReference.FormatTime(p.Time.Value) : "–")), partsLabel + " " + unit },
+                new[] { SwimLang.T("ΧΕΡΙΕΣ"), string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), SwimLang.T("σημάδια χεριών ανά τμήμα") },
+                new[] { SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), joined(p => p.Tempo, "0.00"), SwimLang.T("δευτερόλεπτα ανά κύκλο") },
+                new[] { SwimLang.T("ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ"), "≈" + joined(p => p.Dps, "0.00"), SwimLang.T("μέτρα ανά κύκλο") },
+                new[] { SwimLang.T("ΤΑΧΥΤΗΤΑ"), joined(p => p.Speed, "0.00"), SwimLang.T("m/s ανά τμήμα") }
             };
 
             float gap = 12 * k;
@@ -702,9 +703,9 @@ namespace Kinovea.ScreenManager
                 float space = perCycle ? 0.6f : 0f;
                 float bw = inner / (bars.Count + space * (lengths.Count - 1));
                 bool labels = bw >= 24 * k;
-                string barsTitle = !perCycle ? "ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)"
-                    : labels ? "ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)"
-                    : "ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (s)";
+                string barsTitle = !perCycle ? SwimLang.T("ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)")
+                    : labels ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)")
+                    : SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (s)");
                 Text(g, barsTitle, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), x0, by0 - 8 * k, StringAlignment.Near, StringAlignment.Far);
                 double median = bars.Select(v => v.Key).OrderBy(v => v).ElementAt(bars.Count / 2);
                 double dpsTop = DpsScale(bars.Select(v => v.Key));
@@ -739,7 +740,7 @@ namespace Kinovea.ScreenManager
                     if (!labels && lastOfLength)
                     {
                         List<SwimReelCycle> length = lengths[lapOfBar[i]];
-                        string caption = string.Format(CultureInfo.InvariantCulture, "ΜΗΚΟΣ {0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                        string caption = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΜΗΚΟΣ {0} · {1:0.00} s"), lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
                         if (Width(g, caption, tempoFont) > x - groupLeft - 4 * k)
                             caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
                         TextIn(g, caption, tempoFont, Fade(SwimTheme.Dim, a), new RectangleF(groupLeft, by1 + 2 * k, x - groupLeft, 14 * k), StringAlignment.Center);
@@ -747,10 +748,10 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            string note = "Χρόνοι και χεριές από τα σημάδια της ανάλυσης · απόσταση και ταχύτητα ανά κύκλο εκτιμώνται από τα περάσματα (≈)";
+            string note = SwimLang.T("Χρόνοι και χεριές από τα σημάδια της ανάλυσης · απόσταση και ταχύτητα ανά κύκλο εκτιμώνται από τα περάσματα (≈)");
             if (reel.DoubleMarks.Count > 0)
             {
-                note += string.Format(CultureInfo.InvariantCulture, " · {0} διπλό χτύπημα χεριάς δεν μετρήθηκε ({1})", reel.DoubleMarks.Count,
+                note += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} διπλό χτύπημα χεριάς δεν μετρήθηκε ({1})"), reel.DoubleMarks.Count,
                     string.Join(", ", reel.DoubleMarks.Take(3).Select(d => d.ToString("0.00", CultureInfo.InvariantCulture) + " s")));
             }
 
@@ -770,11 +771,11 @@ namespace Kinovea.ScreenManager
             SwimFinalsBoardRow me = board != null ? board.FirstOrDefault(b => b.IsAthlete) : null;
             if (me != null)
             {
-                caption = "ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ  ·  " + SwimAthleteList.Normalize(s.Final.Short);
+                caption = SwimLang.T("ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ  ·  ") + SwimAthleteList.Normalize(s.Final.Short);
                 string gap = me.Place == 1
-                    ? SwimReference.FormatDelta(me.Behind) + " ΑΠΟ ΤΟΝ ΝΙΚΗΤΗ"
-                    : "+" + me.Behind.ToString("0.00", CultureInfo.InvariantCulture) + " ΑΠΟ ΤΟΝ 1Ο";
-                value = me.Place.ToString(CultureInfo.InvariantCulture) + "η  ·  " + gap;
+                    ? SwimReference.FormatDelta(me.Behind) + SwimLang.T(" ΑΠΟ ΤΟΝ ΝΙΚΗΤΗ")
+                    : "+" + me.Behind.ToString("0.00", CultureInfo.InvariantCulture) + SwimLang.T(" ΑΠΟ ΤΟΝ 1Ο");
+                value = SwimLang.Ordinal(me.Place) + "  ·  " + gap;
                 if (me.Place <= 3)
                     color = SwimTheme.Green;
             }
@@ -783,7 +784,7 @@ namespace Kinovea.ScreenManager
                 SwimRow finish = s.Computed.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.Delta.HasValue);
                 if (finish != null)
                 {
-                    caption = "Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ  ·  " + ReferenceShort(s.Computed.Reference);
+                    caption = SwimLang.T("Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ  ·  ") + ReferenceShort(s.Computed.Reference);
                     value = SwimReference.FormatDelta(finish.Delta.Value) + " s";
                     color = finish.Delta.Value <= 0 ? SwimTheme.Green : SwimTheme.Red;
                 }

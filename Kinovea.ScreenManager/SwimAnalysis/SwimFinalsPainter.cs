@@ -45,14 +45,14 @@ namespace Kinovea.ScreenManager
         public static string BoardTitle(SwimFinal final, int distance, bool finish)
         {
             string source = SwimAthleteList.Normalize(final.Short);
-            return finish ? "ΤΕΡΜΑΤΙΣΜΟΣ · " + source : distance.ToString(CultureInfo.InvariantCulture) + " M · " + source;
+            return finish ? SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ · ") + source : distance.ToString(CultureInfo.InvariantCulture) + " M · " + source;
         }
 
         /// <summary>The event of the final: "Τελικός 100μ. ύπτιο Ανδρών".</summary>
         public static string BoardSubtitle(SwimFinal final)
         {
-            return string.Format(CultureInfo.InvariantCulture, "Τελικός {0}μ. {1} {2}", final.Distance, SwimPresets.StyleName(final.Style).ToLowerInvariant(),
-                final.Gender == "F" ? "Γυναικών" : "Ανδρών");
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("Τελικός {0}μ. {1} {2}"), final.Distance, SwimPresets.StyleName(final.Style).ToLowerInvariant(),
+                SwimLang.Label(final.Gender == "F" ? "Γυναικών" : "Ανδρών"));
         }
 
         /// <summary>Translucent dark card with an accent on the left edge (the style of the race board of the video).</summary>
@@ -167,7 +167,7 @@ namespace Kinovea.ScreenManager
             using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
-                string head = "Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ (s)";
+                string head = SwimLang.T("Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ (s)");
                 g.DrawString(head, caption, dim, left, r.Top + 5 * scale);
                 SizeF hs = g.MeasureString(head, caption);
                 if (!string.IsNullOrEmpty(reference))
@@ -217,7 +217,7 @@ namespace Kinovea.ScreenManager
 
                 if (list.Count == 0)
                 {
-                    string hint = string.IsNullOrEmpty(reference) ? "διάλεξε αναφορά για το Δ" : "το Δ εμφανίζεται με τα περάσματα";
+                    string hint = string.IsNullOrEmpty(reference) ? SwimLang.T("διάλεξε αναφορά για το Δ") : SwimLang.T("το Δ εμφανίζεται με τα περάσματα");
                     SizeF hs2 = g.MeasureString(hint, small);
                     g.DrawString(hint, small, dim, plot.Left + (plot.Width - hs2.Width) / 2, zero - hs2.Height - 2);
                     return;
@@ -301,7 +301,7 @@ namespace Kinovea.ScreenManager
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
                 g.DrawString(title ?? "", titleFont, accent, new RectangleF(r.Left + 8, r.Top + 6, r.Width - 16, 18), noWrap);
-                string legend = "● τελικός (μεγάλος: ο νικητής)   ● " + (string.IsNullOrWhiteSpace(athlete) ? "αθλητής" : athlete.Trim());
+                string legend = SwimLang.T("● τελικός (μεγάλος: ο νικητής)   ● ") + (string.IsNullOrWhiteSpace(athlete) ? SwimLang.T("αθλητής") : athlete.Trim());
                 g.DrawString(legend, small, dim, new RectangleF(r.Left + 8, r.Top + 20, r.Width - 16, 14), noWrap);
                 if (metrics == null || metrics.Count == 0)
                     return;
@@ -318,13 +318,13 @@ namespace Kinovea.ScreenManager
                         group = m.Group;
                         using (SolidBrush band = new SolidBrush(SwimTheme.Surface))
                             g.FillRectangle(band, r.Left + 4, y + 2, r.Width - 8, GroupHeight - 4);
-                        g.DrawString(group.ToUpperInvariant(), groupFont, text, r.Left + 10, y + 5);
+                        g.DrawString(SwimLang.Label(group).ToUpperInvariant(), groupFont, text, r.Left + 10, y + 5);
                         y += GroupHeight;
                     }
 
                     // Label and the value of the athlete.
-                    g.DrawString(m.Label, labelFont, text, new RectangleF(r.Left + 10, y + 2, labelWidth - 70, 16), noWrap);
-                    string unit = m.Unit == "s" ? "" : " " + m.Unit;
+                    g.DrawString(SwimLang.Label(m.Label), labelFont, text, new RectangleF(r.Left + 10, y + 2, labelWidth - 70, 16), noWrap);
+                    string unit = m.Unit == "s" ? "" : " " + SwimLang.T(m.Unit);
                     g.DrawString(m.Athlete.HasValue ? m.Format(m.Athlete) + unit : "–", valueFont, m.Athlete.HasValue ? amber : dim,
                         new RectangleF(r.Left + 10, y + 14, labelWidth, 16), noWrap);
 
@@ -374,7 +374,7 @@ namespace Kinovea.ScreenManager
                     float rx = r.Right - rightWidth - 4;
                     if (m.Athlete.HasValue && !m.Neutral && m.Rank > 0)
                     {
-                        string rank = m.Rank.ToString(CultureInfo.InvariantCulture) + "ος/" + (m.Count + 1).ToString(CultureInfo.InvariantCulture);
+                        string rank = m.Rank.ToString(CultureInfo.InvariantCulture) + SwimLang.T("ος/") + (m.Count + 1).ToString(CultureInfo.InvariantCulture);
                         g.DrawString(rank, rankFont, m.Rank <= 3 ? amber : text, rx, y + 3);
                     }
 
@@ -382,8 +382,8 @@ namespace Kinovea.ScreenManager
                     {
                         double toBest = m.Athlete.Value - m.Best.Value, toMean = m.Athlete.Value - m.Mean.Value;
                         string diffs = m.Neutral
-                            ? "μ.ό. " + m.Format(m.Mean)
-                            : "1ος " + Signed(toBest, m.Decimals) + " · μ.ό. " + Signed(toMean, m.Decimals);
+                            ? SwimLang.T("μ.ό. ") + m.Format(m.Mean)
+                            : SwimLang.T("1ος ") + Signed(toBest, m.Decimals) + SwimLang.T(" · μ.ό. ") + Signed(toMean, m.Decimals);
                         g.DrawString(diffs, small, dim, new RectangleF(rx, y + 18, rightWidth, 13), noWrap);
                     }
 

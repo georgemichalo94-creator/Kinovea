@@ -59,12 +59,12 @@ namespace Kinovea.ScreenManager
             {
                 bool tracked = Race != null && Race.Tracks.Count > 0;
                 Status(tracked
-                    ? "Τεχνική ανάλυση στο βίντεο: ανοιχτή."
-                    : "Τεχνική ανάλυση στο βίντεο: ανοιχτή. Για την ετικέτα πάνω στον αθλητή: «Ακολούθηση αθλητή» και κλικ στο κεφάλι και στα πόδια του.", false);
+                    ? SwimLang.T("Τεχνική ανάλυση στο βίντεο: ανοιχτή.")
+                    : SwimLang.T("Τεχνική ανάλυση στο βίντεο: ανοιχτή. Για την ετικέτα πάνω στον αθλητή: «Ακολούθηση αθλητή» και κλικ στο κεφάλι και στα πόδια του."), false);
             }
             else
             {
-                Status("Τεχνική ανάλυση στο βίντεο: κλειστή.", false);
+                Status(SwimLang.T("Τεχνική ανάλυση στο βίντεο: κλειστή."), false);
             }
 
             InvalidatePlayer();
@@ -131,13 +131,13 @@ namespace Kinovea.ScreenManager
 
             if (!HasVideo || Race == null)
             {
-                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                Status(SwimLang.T("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής."), true);
                 return;
             }
 
             if (Race.IsTraining || !Race.StartTimestamp.HasValue)
             {
-                Status("Η ακολούθηση του αθλητή είναι για την ανάλυση αγώνα, μετά το σήμα εκκίνησης (G).", true);
+                Status(SwimLang.T("Η ακολούθηση του αθλητή είναι για την ανάλυση αγώνα, μετά το σήμα εκκίνησης (G)."), true);
                 return;
             }
 
@@ -148,7 +148,7 @@ namespace Kinovea.ScreenManager
             pickForQuiet = false;
             pickForTrack = true;
             SetPick(SwimPickTarget.StrokeHead);
-            Status("Ακολούθηση: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+            Status(SwimLang.T("Ακολούθηση: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
             InvalidatePlayer();
             if (form != null && !form.IsDisposed)
                 form.RefreshReel();
@@ -160,14 +160,14 @@ namespace Kinovea.ScreenManager
             RefreshTiming();
             if (!Timing.IsValid || Race == null)
             {
-                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η ακολούθηση δεν μπορεί να γίνει.", true);
+                Status(SwimLang.T("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η ακολούθηση δεν μπορεί να γίνει."), true);
                 return;
             }
 
             long target = TrackEnd(from);
             if (target <= from)
             {
-                Status("Δεν υπάρχει βίντεο μετά από αυτό το καρέ.", true);
+                Status(SwimLang.T("Δεν υπάρχει βίντεο μετά από αυτό το καρέ."), true);
                 return;
             }
 
@@ -179,15 +179,15 @@ namespace Kinovea.ScreenManager
 
                 if (s.Timestamps.Count < 10)
                 {
-                    Status("Πολύ λίγα καρέ για την ακολούθηση του αθλητή.", true);
+                    Status(SwimLang.T("Πολύ λίγα καρέ για την ακολούθηση του αθλητή."), true);
                     return;
                 }
 
                 SwimStrokeResult result = s.Detector.Finish(0, s.Timestamps.Count - 1);
                 StoreTrack(s, result);
                 Changed(false);
-                Status(string.Format(CultureInfo.InvariantCulture, "Ακολούθηση: ο αθλητής βρέθηκε μέχρι τα {0:0.00} s{1}. Η ετικέτα του φαίνεται στην τεχνική ανάλυση.",
-                    Timing.Seconds(s.LastRead, Race.StartTimestamp.Value), result.Ropes ? "" : " (χωρίς σχοινιά διαδρομής)"), false);
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Ακολούθηση: ο αθλητής βρέθηκε μέχρι τα {0:0.00} s{1}. Η ετικέτα του φαίνεται στην τεχνική ανάλυση."),
+                    Timing.Seconds(s.LastRead, Race.StartTimestamp.Value), result.Ropes ? "" : SwimLang.T(" (χωρίς σχοινιά διαδρομής)")), false);
 
                 // The checkpoints of the length from the marks of the ropes, for the check.
                 if (Settings.ProposeSplitsAfterTrack)
@@ -312,7 +312,7 @@ namespace Kinovea.ScreenManager
             Race.Tracks.Clear();
             Changed(false);
             InvalidatePlayer();
-            Status("Διαγράφηκε η ακολούθηση του αθλητή (η ετικέτα δεν φαίνεται πια).", false);
+            Status(SwimLang.T("Διαγράφηκε η ακολούθηση του αθλητή (η ετικέτα δεν φαίνεται πια)."), false);
             if (form != null && !form.IsDisposed)
                 form.RefreshReel();
         }
@@ -442,8 +442,8 @@ namespace Kinovea.ScreenManager
 
             List<SwimRow> done = Computed.Rows.Where(r => r.T.HasValue).ToList();
             string title = final != null
-                ? "Ο ΑΓΩΝΑΣ ΑΝΑΜΕΣΑ ΣΤΟΥΣ ΦΙΝΑΛΙΣΤ  ·  " + SwimAthleteList.Normalize(SwimFinalsPainter.BoardSubtitle(final)) + "  ·  " + SwimAthleteList.Normalize(final.Short)
-                : "Ο ΑΓΩΝΑΣ ΑΠΕΝΑΝΤΙ ΣΤΗΝ ΑΝΑΦΟΡΑ  ·  " + (Computed.Reference != null ? Computed.Reference.Name : "");
+                ? SwimLang.T("Ο ΑΓΩΝΑΣ ΑΝΑΜΕΣΑ ΣΤΟΥΣ ΦΙΝΑΛΙΣΤ  ·  ") + SwimAthleteList.Normalize(SwimFinalsPainter.BoardSubtitle(final)) + "  ·  " + SwimAthleteList.Normalize(final.Short)
+                : SwimLang.T("Ο ΑΓΩΝΑΣ ΑΠΕΝΑΝΤΙ ΣΤΗΝ ΑΝΑΦΟΡΑ  ·  ") + (Computed.Reference != null ? Computed.Reference.Name : "");
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
                 g.DrawString(title, SwimTheme.Ui(8.5f, FontStyle.Bold), amber, new RectangleF(14, 9, W - 28, 16), noWrap);
@@ -511,15 +511,15 @@ namespace Kinovea.ScreenManager
             Font line = SwimTheme.Ui(7.75f, FontStyle.Bold);
             double? mean = final.MeanAt(finish.D);
             double first = rows.Where(b => !b.IsAthlete).Min(b => b.Time);
-            string toFirst = SwimReference.FormatDelta(finish.T.Value - first) + " s από τον 1ο";
-            string toMean = mean.HasValue ? SwimReference.FormatDelta(finish.T.Value - mean.Value) + " s από τον μέσο όρο του τελικού" : "";
+            string toFirst = SwimReference.FormatDelta(finish.T.Value - first) + SwimLang.T(" s από τον 1ο");
+            string toMean = mean.HasValue ? SwimReference.FormatDelta(finish.T.Value - mean.Value) + SwimLang.T(" s από τον μέσο όρο του τελικού") : "";
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
             using (SolidBrush text = new SolidBrush(SwimTheme.Text))
             using (SolidBrush amber = new SolidBrush(me.Place <= 3 ? SwimTheme.Green : SwimTheme.Amber))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
-                g.DrawString("ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ", caption, dim, r.Left + 12, r.Top + 7);
-                string p = me.Place.ToString(CultureInfo.InvariantCulture) + "η";
+                g.DrawString(SwimLang.T("ΘΕΣΗ ΣΤΟΝ ΤΕΛΙΚΟ"), caption, dim, r.Left + 12, r.Top + 7);
+                string p = SwimLang.Ordinal(me.Place);
                 g.DrawString(p, place, amber, r.Left + 10, r.Top + 19);
                 float left = r.Left + 14 + g.MeasureString(p, place).Width;
                 float lineH = line.GetHeight(g) + 3;
@@ -561,7 +561,7 @@ namespace Kinovea.ScreenManager
                 return false;
 
             reportGraphicsUploading = true;
-            Status("🎨 Τα γραφικά του βίντεο ανεβαίνουν για το PDF…", false);
+            Status(SwimLang.T("🎨 Τα γραφικά του βίντεο ανεβαίνουν για το PDF…"), false);
             UploadReportGraphic(race, pending, 0, then);
             return true;
         }

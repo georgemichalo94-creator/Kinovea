@@ -77,8 +77,8 @@ namespace Kinovea.ScreenManager
             {
                 int pending = Race == null ? 0 : Race.Proposals.Count;
                 int answers = Learning.Records.Count;
-                string p = pending == 0 ? "καμία πρόταση σε αναμονή" : pending == 1 ? "1 πρόταση σε αναμονή" : pending + " προτάσεις σε αναμονή";
-                string l = answers == 0 ? "δεν έχει μάθει ακόμα" : "έμαθε από " + answers + (answers == 1 ? " απάντηση" : " απαντήσεις");
+                string p = pending == 0 ? SwimLang.T("καμία πρόταση σε αναμονή") : pending == 1 ? SwimLang.T("1 πρόταση σε αναμονή") : pending + SwimLang.T(" προτάσεις σε αναμονή");
+                string l = answers == 0 ? SwimLang.T("δεν έχει μάθει ακόμα") : SwimLang.T("έμαθε από ") + answers + (answers == 1 ? SwimLang.T(" απάντηση") : SwimLang.T(" απαντήσεις"));
                 return p + " · " + l;
             }
         }
@@ -94,7 +94,7 @@ namespace Kinovea.ScreenManager
         {
             Learning.Reset();
             Learning.Save();
-            Status("Η μάθηση των προτάσεων ξεκινά από την αρχή.", false);
+            Status(SwimLang.T("Η μάθηση των προτάσεων ξεκινά από την αρχή."), false);
             RefreshProposalsUi();
         }
 
@@ -103,7 +103,7 @@ namespace Kinovea.ScreenManager
         {
             if (Race == null || !HasVideo)
             {
-                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                Status(SwimLang.T("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής."), true);
                 return;
             }
 
@@ -113,7 +113,7 @@ namespace Kinovea.ScreenManager
                 skeleton = Race.Skeletons.OrderBy(s => s.Start).LastOrDefault();
             if (skeleton == null)
             {
-                Status("Για τις προτάσεις χρειάζεται ο σκελετός: «🦴 Σκελετός» και κλικ στον αθλητή πριν την κίνηση (π.χ. στη θέση ετοιμότητας).", true);
+                Status(SwimLang.T("Για τις προτάσεις χρειάζεται ο σκελετός: «🦴 Σκελετός» και κλικ στον αθλητή πριν την κίνηση (π.χ. στη θέση ετοιμότητας)."), true);
                 return;
             }
 
@@ -159,7 +159,7 @@ namespace Kinovea.ScreenManager
             catch (Exception e)
             {
                 log.Error("Automatic proposals failed.", e);
-                Status("Οι αυτόματες προτάσεις απέτυχαν: " + e.Message, true);
+                Status(SwimLang.T("Οι αυτόματες προτάσεις απέτυχαν: ") + e.Message, true);
                 return;
             }
 
@@ -207,7 +207,7 @@ namespace Kinovea.ScreenManager
             Changed(false);
             if (added == 0)
             {
-                Status("Αυτόματες προτάσεις: δεν βρέθηκε γεγονός σε αυτό το κομμάτι (εκκίνηση από τη θέση ετοιμότητας, δελφινισμοί, στροφή).", false);
+                Status(SwimLang.T("Αυτόματες προτάσεις: δεν βρέθηκε γεγονός σε αυτό το κομμάτι (εκκίνηση από τη θέση ετοιμότητας, δελφινισμοί, στροφή)."), false);
                 RefreshProposalsUi();
                 return;
             }
@@ -232,7 +232,7 @@ namespace Kinovea.ScreenManager
             SwimProposal p = from ?? PendingProposals.FirstOrDefault();
             if (p == null)
             {
-                Status("Δεν υπάρχουν προτάσεις σε αναμονή. «✨ Προτάσεις» μετά τον σκελετό.", false);
+                Status(SwimLang.T("Δεν υπάρχουν προτάσεις σε αναμονή. «✨ Προτάσεις» μετά τον σκελετό."), false);
                 EndReview(false);
                 return;
             }
@@ -255,9 +255,9 @@ namespace Kinovea.ScreenManager
             bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
             bool pilot = PilotMarkOf(p) != null;
             Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
-                "✨ Πρόταση {0}/{1}: {2}{3}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος{4} · Esc: τέλος.",
-                index, Race.Proposals.Count, ProposalLabel(p), pilot ? " · ✈ την έβαλε ο πιλότος (η απάντησή σου διδάσκει)" : "",
-                pilot ? " (σβήνεται)" : ""), warning);
+                SwimLang.T("✨ Πρόταση {0}/{1}: {2}{3}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος{4} · Esc: τέλος."),
+                index, Race.Proposals.Count, ProposalLabel(p), pilot ? SwimLang.T(" · ✈ την έβαλε ο πιλότος (η απάντησή σου διδάσκει)") : "",
+                pilot ? SwimLang.T(" (σβήνεται)") : ""), warning);
             RefreshProposalsUi();
             InvalidatePlayer();
         }
@@ -273,17 +273,17 @@ namespace Kinovea.ScreenManager
             if (PilotActive && pilotStep == PilotStep.Start)
             {
                 StopPilot();
-                done = (string.IsNullOrEmpty(done) ? "" : done + "  →  ") + "✈ Ο αυτόματος πιλότος σταμάτησε (βάλε την εκκίνηση και πάτα ξανά ✈)";
+                done = (string.IsNullOrEmpty(done) ? "" : done + "  →  ") + SwimLang.T("✈ Ο αυτόματος πιλότος σταμάτησε (βάλε την εκκίνηση και πάτα ξανά ✈)");
             }
             if (was && report)
             {
                 int left = Race == null ? 0 : Race.Proposals.Count;
                 bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
                 Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
-                    "Έλεγχος προτάσεων: {0} ({1}, {2}, {3} λάθος){4}.",
-                    CountOf(reviewAnswered, "απάντηση", "απαντήσεις"), CountOf(reviewAnswered - reviewCorrected - reviewWrong, "σωστή", "σωστές"),
-                    CountOf(reviewCorrected, "διορθωμένη", "διορθωμένες"), reviewWrong,
-                    left > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)", left) : ""), warning);
+                    SwimLang.T("Έλεγχος προτάσεων: {0} ({1}, {2}, {3} λάθος){4}."),
+                    CountOf(reviewAnswered, SwimLang.T("απάντηση"), SwimLang.T("απαντήσεις")), CountOf(reviewAnswered - reviewCorrected - reviewWrong, SwimLang.T("σωστή"), SwimLang.T("σωστές")),
+                    CountOf(reviewCorrected, SwimLang.T("διορθωμένη"), SwimLang.T("διορθωμένες")), reviewWrong,
+                    left > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} σε αναμονή («Έλεγχος» για να συνεχίσεις)"), left) : ""), warning);
             }
 
             RefreshProposalsUi();
@@ -351,7 +351,7 @@ namespace Kinovea.ScreenManager
             if (Math.Abs(Timing.Seconds(timestamp, p.Timestamp)) > 1.0)
             {
                 SystemSounds.Beep.Play();
-                Status("Το καρέ είναι μακριά από την πρόταση (πάνω από 1 s): πήγαινε κοντά της με τα βελάκια, ή Delete αν δεν υπάρχει τέτοιο γεγονός.", true);
+                Status(SwimLang.T("Το καρέ είναι μακριά από την πρόταση (πάνω από 1 s): πήγαινε κοντά της με τα βελάκια, ή Delete αν δεν υπάρχει τέτοιο γεγονός."), true);
                 return;
             }
 
@@ -402,7 +402,7 @@ namespace Kinovea.ScreenManager
 
                 Answer(p, timestamp, true);
                 Changed(pilot != null);
-                done = "✓ " + ProposalLabel(p) + (exists ? ": υπήρχε ήδη σημάδι σε αυτό το καρέ." : ".") + again;
+                done = "✓ " + ProposalLabel(p) + (exists ? SwimLang.T(": υπήρχε ήδη σημάδι σε αυτό το καρέ.") : ".") + again;
             }
             else
             {
@@ -420,7 +420,7 @@ namespace Kinovea.ScreenManager
                 // (the learning does not change) and the reason stays visible with the next one.
                 if (!Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)))
                 {
-                    string reason = "⚠ " + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) + ": δεν μπήκε σημάδι." : LastStatus);
+                    string reason = "⚠ " + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) + SwimLang.T(": δεν μπήκε σημάδι.") : LastStatus);
                     Race.Proposals.Remove(p);
                     Changed(false);
                     NextProposal(timestamp, reason);
@@ -469,8 +469,8 @@ namespace Kinovea.ScreenManager
             bool pilotStart = p.Pilot && p.Kind == KindRaceStart;
             Answer(p, at, false);
             Changed(pilot != null);
-            NextProposal(at, pilotStart ? "⚠ Η εκκίνηση του πιλότου μένει: βάλε τη σωστή με το «Εκκίνηση» στο καρέ του σήματος (οι χρόνοι υπολογίζονται ξανά)." :
-                ProposalLabel(p) + ": δεν κρατήθηκε." + (pilot != null ? " Το σημάδι του πιλότου σβήστηκε." : ""));
+            NextProposal(at, pilotStart ? SwimLang.T("⚠ Η εκκίνηση του πιλότου μένει: βάλε τη σωστή με το «Εκκίνηση» στο καρέ του σήματος (οι χρόνοι υπολογίζονται ξανά).") :
+                ProposalLabel(p) + SwimLang.T(": δεν κρατήθηκε.") + (pilot != null ? SwimLang.T(" Το σημάδι του πιλότου σβήστηκε.") : ""));
         }
 
         private void NextProposal(long after, string done = null)
@@ -662,9 +662,9 @@ namespace Kinovea.ScreenManager
             EndReview(false);
             Changed(false);
             int pilot = Race.Marks.Count(m => m.Pilot != null);
-            Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).{1}{2}", n,
-                pilot > 0 ? string.Format(CultureInfo.InvariantCulture, " Τα {0} σημάδια του πιλότου μένουν στην ανάλυση, χωρίς έλεγχο (δεν διδάσκουν).", pilot) : "",
-                pilotStops ? " ✈ Ο αυτόματος πιλότος σταμάτησε." : ""), false);
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Διαγράφηκαν {0} προτάσεις (χωρίς απάντηση: η μάθηση δεν αλλάζει).{1}{2}"), n,
+                pilot > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Τα {0} σημάδια του πιλότου μένουν στην ανάλυση, χωρίς έλεγχο (δεν διδάσκουν)."), pilot) : "",
+                pilotStops ? SwimLang.T(" ✈ Ο αυτόματος πιλότος σταμάτησε.") : ""), false);
         }
 
         private static bool CommandOf(SwimMarkType type, out PlayerScreenCommands command)
@@ -690,23 +690,23 @@ namespace Kinovea.ScreenManager
             string name;
             switch (p.Type)
             {
-                case SwimMarkType.Reaction: name = "Πρώτη κίνηση (αντίδραση)"; break;
-                case SwimMarkType.HandsOff: name = "Χέρια φεύγουν από τον βατήρα"; break;
-                case SwimMarkType.BackFoot: name = "Πίσω πόδι φεύγει"; break;
+                case SwimMarkType.Reaction: name = SwimLang.T("Πρώτη κίνηση (αντίδραση)"); break;
+                case SwimMarkType.HandsOff: name = SwimLang.T("Χέρια φεύγουν από τον βατήρα"); break;
+                case SwimMarkType.BackFoot: name = SwimLang.T("Πίσω πόδι φεύγει"); break;
                 case SwimMarkType.FeetOff:
-                    name = p.Kind == KindRacePushoff ? "Αποκόλληση από τον τοίχο των " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." :
-                        p.Kind == SwimEventDetector.TurnFeet ? "Αποκόλληση από τον τοίχο" : p.Kind == KindRaceBlock ? "Αποκόλληση ποδιών (εκκίνηση)" : "Αποκόλληση ποδιών";
+                    name = p.Kind == KindRacePushoff ? SwimLang.T("Αποκόλληση από τον τοίχο των ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") :
+                        p.Kind == SwimEventDetector.TurnFeet ? SwimLang.T("Αποκόλληση από τον τοίχο") : p.Kind == KindRaceBlock ? SwimLang.T("Αποκόλληση ποδιών (εκκίνηση)") : SwimLang.T("Αποκόλληση ποδιών");
                     break;
-                case SwimMarkType.Entry: name = "Είσοδος χεριών στο νερό"; break;
-                case SwimMarkType.Kick: name = "Δελφινισμός" + (p.Index > 0 ? " " + p.Index : ""); break;
-                case SwimMarkType.Breakout: name = "Έξοδος από το νερό" + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? " μετά τα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : " μετά την εκκίνηση") : ""); break;
-                case SwimMarkType.WallContact: name = "Επαφή στον τοίχο"; break;
-                case SwimMarkType.RotationStart: name = "Αρχή περιστροφής"; break;
+                case SwimMarkType.Entry: name = SwimLang.T("Είσοδος χεριών στο νερό"); break;
+                case SwimMarkType.Kick: name = SwimLang.T("Δελφινισμός") + (p.Index > 0 ? " " + p.Index : ""); break;
+                case SwimMarkType.Breakout: name = SwimLang.T("Έξοδος από το νερό") + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? SwimLang.T(" μετά τα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T(" μετά την εκκίνηση")) : ""); break;
+                case SwimMarkType.WallContact: name = SwimLang.T("Επαφή στον τοίχο"); break;
+                case SwimMarkType.RotationStart: name = SwimLang.T("Αρχή περιστροφής"); break;
                 case SwimMarkType.Split:
-                    name = (p.Kind == KindRaceSplit ? "Πέρασμα " + p.Index.ToString(CultureInfo.InvariantCulture) + "μ." : "Πέρασμα") +
-                        (p.Official ? " · από τον επίσημο χρόνο" : "");
+                    name = (p.Kind == KindRaceSplit ? SwimLang.T("Πέρασμα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T("Πέρασμα")) +
+                        (p.Official ? SwimLang.T(" · από τον επίσημο χρόνο") : "");
                     break;
-                case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? "Σήμα εκκίνησης (φως)" + (p.Index > 1 ? " · εναλλακτική " + (p.Index - 1) : "") : "Σήμα εκκίνησης"; break;
+                case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? SwimLang.T("Σήμα εκκίνησης (φως)") + (p.Index > 1 ? SwimLang.T(" · εναλλακτική ") + (p.Index - 1) : "") : SwimLang.T("Σήμα εκκίνησης"); break;
                 default: name = p.Type.ToString(); break;
             }
 
@@ -733,21 +733,21 @@ namespace Kinovea.ScreenManager
             long frames = (long)Math.Round((timestamp - p.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
             int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
             string title = string.Format(CultureInfo.InvariantCulture, "✨ {0}/{1}  {2}", index, Race.Proposals.Count, ProposalLabel(p));
-            string where = frames == 0 ? "στο καρέ της πρότασης" : string.Format(CultureInfo.InvariantCulture, "{0:+0;−0} καρέ από την πρόταση", frames);
+            string where = frames == 0 ? SwimLang.T("στο καρέ της πρότασης") : string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0:+0;−0} καρέ από την πρόταση"), frames);
             SwimMark pilotMark = PilotMarkOf(p);
             bool pilot = pilotMark != null;
             if (pilot)
             {
                 long away = (long)Math.Round((pilotMark.Timestamp - p.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
-                title += away == 0 ? " · ✈ μπήκε" : string.Format(CultureInfo.InvariantCulture, " · ✈ μπήκε στο {0:+0;−0} καρέ", away);
+                title += away == 0 ? SwimLang.T(" · ✈ μπήκε") : string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · ✈ μπήκε στο {0:+0;−0} καρέ"), away);
             }
-            string keys = Reviewing ? (pilot ? "Enter σωστό · ← → καρέ · Delete λάθος (σβήνεται) · Esc τέλος" : "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος") :
-                "«Έλεγχος» για να απαντήσεις";
+            string keys = Reviewing ? (pilot ? SwimLang.T("Enter σωστό · ← → καρέ · Delete λάθος (σβήνεται) · Esc τέλος") : SwimLang.T("Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος")) :
+                SwimLang.T("«Έλεγχος» για να απαντήσεις");
 
             // A doubtful proposal (less than half of such proposals within 0.2 s of the analysts) says so (since 2026-10-18).
             bool doubtful = p.Confidence < DoubtfulConfidence;
             if (doubtful)
-                title = "⚠ " + title + " · έλεγξε προσεκτικά";
+                title = "⚠ " + title + SwimLang.T(" · έλεγξε προσεκτικά");
 
             PaintProposalPrompt(g, title, where, keys, frames == 0, renderingSize, doubtful);
         }

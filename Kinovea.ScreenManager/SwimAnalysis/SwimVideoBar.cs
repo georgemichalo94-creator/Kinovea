@@ -32,12 +32,28 @@ namespace Kinovea.ScreenManager
         /// <summary>Edge of the checkpoints card: the color of the athlete in the velocity chart of the video.</summary>
         private static readonly Color colorSplits = Color.FromArgb(255, 184, 0);
 
-        private static readonly string[] raceTabs = { "ΕΚΚ.", "ΚΟΛ.", "ΣΤΡ.", "ΤΕΡ." };
-        private static readonly string[] raceTabTips = { "Εκκίνηση", "Κολύμβηση", "Στροφή", "Τερματισμός" };
-        private static readonly string[] techTabs = { "ΕΚΚΙΝ.", "ΣΤΡΟΦΗ", "ΕΡΓΑΛ." };
-        private static readonly string[] techTabTips = { "Φάσεις της εκκίνησης", "Φάσεις της στροφής", "Στιγμιότυπα και γωνίες" };
+        // The tabs of the bars in the language of the analysis.
+        private static string[] raceTabs
+        {
+            get { return new string[] { SwimLang.T("ΕΚΚ."), SwimLang.T("ΚΟΛ."), SwimLang.T("ΣΤΡ."), SwimLang.T("ΤΕΡ.") }; }
+        }
 
-        private const string StrokeTip = "Σε κάθε είσοδο χεριού. Ελεύθερο/ύπτιο: κάθε χέρι · πεταλούδα/πρόσθιο: κάθε κύκλος.";
+        private static string[] raceTabTips
+        {
+            get { return new string[] { SwimLang.T("Εκκίνηση"), SwimLang.T("Κολύμβηση"), SwimLang.T("Στροφή"), SwimLang.T("Τερματισμός") }; }
+        }
+
+        private static string[] techTabs
+        {
+            get { return new string[] { SwimLang.T("ΕΚΚΙΝ."), SwimLang.T("ΣΤΡΟΦΗ"), SwimLang.T("ΕΡΓΑΛ.") }; }
+        }
+
+        private static string[] techTabTips
+        {
+            get { return new string[] { SwimLang.T("Φάσεις της εκκίνησης"), SwimLang.T("Φάσεις της στροφής"), SwimLang.T("Στιγμιότυπα και γωνίες") }; }
+        }
+
+        private static string StrokeTip { get { return SwimLang.T("Σε κάθε είσοδο χεριού. Ελεύθερο/ύπτιο: κάθε χέρι · πεταλούδα/πρόσθιο: κάθε κύκλος."); } }
 
         private enum Look
         {
@@ -282,8 +298,8 @@ namespace Kinovea.ScreenManager
             RectangleF area = new RectangleF(pad, pad, Width - 2 * pad, Height - 2 * pad);
 
             RectangleF undo = new RectangleF(area.Left, area.Bottom - S(32), area.Width, S(32));
-            DrawButton(g, list, "undo", undo, "Αναίρεση", null, KeyOf(PlayerScreenCommands.SwimUndo), Look.Danger, false,
-                "Αναίρεση του τελευταίου σημαδιού.", () => Run(PlayerScreenCommands.SwimUndo));
+            DrawButton(g, list, "undo", undo, SwimLang.T("Αναίρεση"), null, KeyOf(PlayerScreenCommands.SwimUndo), Look.Danger, false,
+                SwimLang.T("Αναίρεση του τελευταίου σημαδιού."), () => Run(PlayerScreenCommands.SwimUndo));
 
             float top = PaintLive(g, area, race, tech) + S(8);
 
@@ -328,22 +344,22 @@ namespace Kinovea.ScreenManager
             {
                 SwimTechPhase phase = manager.CurrentTechPhase;
                 long? now = manager.CurrentVideoTimestamp;
-                caption = "ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ";
+                caption = SwimLang.T("ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ");
                 if (phase != null && now.HasValue)
                 {
                     double t = manager.Timing.Seconds(now.Value, phase.Origin);
                     clock = (t < 0 ? "−" : "") + Math.Abs(t).ToString("0.00", CultureInfo.InvariantCulture);
-                    caption = phase.Kind == SwimPhaseKind.Start ? "ΑΠΟ ΤΟ ΣΗΜΑ" : "ΑΠΟ ΤΗΝ ΕΠΑΦΗ";
+                    caption = phase.Kind == SwimPhaseKind.Start ? SwimLang.T("ΑΠΟ ΤΟ ΣΗΜΑ") : SwimLang.T("ΑΠΟ ΤΗΝ ΕΠΑΦΗ");
                     SwimTechPhase owner;
                     int? next = SwimTechCalculator.NextOffset(race, manager.Timing, manager.TechPhases, now.Value, out owner);
                     if (next.HasValue)
                     {
                         string text = (next.Value < 0 ? "−5" : (owner != null && owner.Kind == SwimPhaseKind.Turn ? "+" : "") + next.Value.ToString(CultureInfo.InvariantCulture)) + race.Unit;
-                        chips.Add(new SwimChip("T ΕΠΟΜΕΝΟ", text, SwimTheme.Accent));
+                        chips.Add(new SwimChip(SwimLang.T("T ΕΠΟΜΕΝΟ"), text, SwimTheme.Accent));
                     }
 
                     int kicks = phase.Kicks.Count(k => k <= t + 1e-6);
-                    chips.Add(new SwimChip("ΔΕΛΦΙΝΙΣΜΟΙ", kicks.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+                    chips.Add(new SwimChip(SwimLang.T("ΔΕΛΦΙΝΙΣΜΟΙ"), kicks.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
                 }
             }
             else
@@ -353,10 +369,10 @@ namespace Kinovea.ScreenManager
                     clock = now.Value >= 60 ? SwimReference.FormatTime(now.Value) : now.Value.ToString("0.00", CultureInfo.InvariantCulture);
 
                 warn = !race.StartTimestamp.HasValue;
-                caption = warn ? "ΧΩΡΙΣ ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ" : "ΧΡΟΝΟΣ ΑΓΩΝΑ";
+                caption = warn ? SwimLang.T("ΧΩΡΙΣ ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ") : SwimLang.T("ΧΡΟΝΟΣ ΑΓΩΝΑ");
                 int next = race.NextCheckpoint();
-                chips.Add(new SwimChip("ΕΠΟΜΕΝΟ", next > 0 ? next.ToString(CultureInfo.InvariantCulture) + race.Unit : "τέλος", SwimTheme.Amber));
-                chips.Add(new SwimChip("ΧΕΡΙΕΣ", SwimCalculator.PressesSinceLastSplit(manager.Computed).ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+                chips.Add(new SwimChip(SwimLang.T("ΕΠΟΜΕΝΟ"), next > 0 ? next.ToString(CultureInfo.InvariantCulture) + race.Unit : SwimLang.T("τέλος"), SwimTheme.Amber));
+                chips.Add(new SwimChip(SwimLang.T("ΧΕΡΙΕΣ"), SwimCalculator.PressesSinceLastSplit(manager.Computed).ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
             }
 
             float inner = S(10);
@@ -437,15 +453,15 @@ namespace Kinovea.ScreenManager
                 float sq = S(28);
                 bool picking = manager.PickTarget == SwimPickTarget.Skeleton;
                 RectangleF skel = new RectangleF(x0, ay, (width - sq - S(8)) / 2, S(26));
-                DrawButton(g, list, "skeleton", skel, picking ? "Κλικ…" : "Σκελετός", null, null, picking ? Look.Primary : Look.Normal, manager.SkeletonRunning,
-                    "Σκελετός του αθλητή: κλικ πάνω του σε ένα καθαρό καρέ. Το βίντεο διαβάζεται από εκεί, όσο φαίνεται,\n" +
-                    "και ο σκελετός σχεδιάζεται με τις γωνίες γονάτου, ισχίου και αγκώνα.", () => manager.BeginSkeleton());
+                DrawButton(g, list, "skeleton", skel, picking ? SwimLang.T("Κλικ…") : SwimLang.T("Σκελετός"), null, null, picking ? Look.Primary : Look.Normal, manager.SkeletonRunning,
+                    SwimLang.T("Σκελετός του αθλητή: κλικ πάνω του σε ένα καθαρό καρέ. Το βίντεο διαβάζεται από εκεί, όσο φαίνεται,\n") +
+                    SwimLang.T("και ο σκελετός σχεδιάζεται με τις γωνίες γονάτου, ισχίου και αγκώνα."), () => manager.BeginSkeleton());
                 RectangleF angles = new RectangleF(skel.Right + S(4), ay, skel.Width, S(26));
-                DrawButton(g, list, "skeleton-angles", angles, "Γωνίες", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
-                    "Οι γωνίες του σκελετού σε αυτό το καρέ μπαίνουν στην ανάλυση (γόνατο, ισχίο, αγκώνας, ώμος).", () => manager.AddSkeletonAngles());
+                DrawButton(g, list, "skeleton-angles", angles, SwimLang.T("Γωνίες"), null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
+                    SwimLang.T("Οι γωνίες του σκελετού σε αυτό το καρέ μπαίνουν στην ανάλυση (γόνατο, ισχίο, αγκώνας, ώμος)."), () => manager.AddSkeletonAngles());
                 RectangleF skeletonDelete = new RectangleF(angles.Right + S(4), ay, sq, S(26));
                 DrawButton(g, list, "skeleton-delete", skeletonDelete, "✕", null, null, Look.Normal, manager.SkeletonDescription.Length == 0,
-                    "Διαγραφή του σκελετού αυτού του σημείου του βίντεο", () => manager.DeleteSkeleton());
+                    SwimLang.T("Διαγραφή του σκελετού αυτού του σημείου του βίντεο"), () => manager.DeleteSkeleton());
 
                 // Automatic proposals: check them one by one (Enter, Delete, Esc on the video), or propose from the skeleton.
                 float py = ay + S(30);
@@ -456,27 +472,27 @@ namespace Kinovea.ScreenManager
                 if (manager.Reviewing)
                 {
                     float third = (width - 2 * S(4)) / 3;
-                    DrawButton(g, list, "proposal-right", new RectangleF(x0, py, third, S(26)), "✓ Σωστό", null, null, Look.Primary, false,
-                        "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται.",
+                    DrawButton(g, list, "proposal-right", new RectangleF(x0, py, third, S(26)), SwimLang.T("✓ Σωστό"), null, null, Look.Primary, false,
+                        SwimLang.T("Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται."),
                         () => manager.AcceptCurrentProposal());
-                    DrawButton(g, list, "proposal-wrong", new RectangleF(x0 + third + S(4), py, third, S(26)), "✕ Λάθος", null, null, Look.Normal, false,
-                        "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).", () => manager.RejectCurrentProposal());
-                    DrawButton(g, list, "proposal-end", new RectangleF(x0 + 2 * (third + S(4)), py, third, S(26)), "Τέλος", null, null, Look.Normal, false,
-                        "Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν.", () => manager.EndReview());
+                    DrawButton(g, list, "proposal-wrong", new RectangleF(x0 + third + S(4), py, third, S(26)), SwimLang.T("✕ Λάθος"), null, null, Look.Normal, false,
+                        SwimLang.T("Δεν υπάρχει τέτοιο γεγονός εδώ (Delete)."), () => manager.RejectCurrentProposal());
+                    DrawButton(g, list, "proposal-end", new RectangleF(x0 + 2 * (third + S(4)), py, third, S(26)), SwimLang.T("Τέλος"), null, null, Look.Normal, false,
+                        SwimLang.T("Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν."), () => manager.EndReview());
                 }
                 else if (pending > 0)
                 {
                     RectangleF review = new RectangleF(x0, py, width - sq - S(4), S(26));
-                    DrawButton(g, list, "proposal-review", review, "✨ Έλεγχος " + pending, null, null, Look.Primary, false,
-                        "Οι προτάσεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος.", () => manager.BeginReview());
+                    DrawButton(g, list, "proposal-review", review, SwimLang.T("✨ Έλεγχος ") + pending, null, null, Look.Primary, false,
+                        SwimLang.T("Οι προτάσεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος."), () => manager.BeginReview());
                     DrawButton(g, list, "proposal-delete", new RectangleF(review.Right + S(4), py, sq, S(26)), "✕", null, null, Look.Normal, false,
-                        "Διαγραφή των προτάσεων που περιμένουν", () => manager.DeleteProposals());
+                        SwimLang.T("Διαγραφή των προτάσεων που περιμένουν"), () => manager.DeleteProposals());
                 }
                 else
                 {
-                    DrawButton(g, list, "proposal-make", new RectangleF(x0, py, width, S(26)), "✨ Προτάσεις", null, null, Look.Normal,
+                    DrawButton(g, list, "proposal-make", new RectangleF(x0, py, width, S(26)), SwimLang.T("✨ Προτάσεις"), null, null, Look.Normal,
                         manager.SkeletonDescription.Length == 0 || manager.SkeletonRunning,
-                        "Προτάσεις από τον σκελετό: πρώτη κίνηση, χέρια, πόδια, είσοδος, δελφινισμοί, έξοδος, στροφή.", () => manager.ProposeHere());
+                        SwimLang.T("Προτάσεις από τον σκελετό: πρώτη κίνηση, χέρια, πόδια, είσοδος, δελφινισμοί, έξοδος, στροφή."), () => manager.ProposeHere());
                 }
 
                 return;
@@ -493,18 +509,18 @@ namespace Kinovea.ScreenManager
             RectangleF pick = new RectangleF(x0, ay, width - 3 * (small + S(4)), S(26));
             // The long text when the bar is wide enough for it.
             bool pickingStrokes = manager.PickingStrokes && !manager.PickingTrack;
-            string pickText = pickingStrokes ? "Κλικ στον αθλητή…" : "Επιλογή αθλητή";
+            string pickText = pickingStrokes ? SwimLang.T("Κλικ στον αθλητή…") : SwimLang.T("Επιλογή αθλητή");
             if (TextRenderer.MeasureText(g, pickText, SwimTheme.Ui(8.25f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPadding).Width > pick.Width - S(16))
-                pickText = pickingStrokes ? "Κλικ…" : "Αθλητής";
+                pickText = pickingStrokes ? SwimLang.T("Κλικ…") : SwimLang.T("Αθλητής");
             DrawButton(g, list, "auto-pick", pick, pickText, null, null, Look.Normal, false,
-                "Αυτόματες χεριές: κλικ στο κεφάλι και στα πόδια του αθλητή σε αυτό το καρέ.\nΟι χεριές μετριούνται σε κάθε πέρασμα μέχρι τον τοίχο.",
+                SwimLang.T("Αυτόματες χεριές: κλικ στο κεφάλι και στα πόδια του αθλητή σε αυτό το καρέ.\nΟι χεριές μετριούνται σε κάθε πέρασμα μέχρι τον τοίχο."),
                 () => manager.BeginAutoStrokes());
             RectangleF prev = new RectangleF(pick.Right + S(4), ay, small, S(26));
-            DrawButton(g, list, "auto-prev", prev, "◀", null, null, Look.Normal, false, "Προηγούμενη χεριά", () => manager.SeekStroke(-1));
+            DrawButton(g, list, "auto-prev", prev, "◀", null, null, Look.Normal, false, SwimLang.T("Προηγούμενη χεριά"), () => manager.SeekStroke(-1));
             RectangleF next = new RectangleF(prev.Right + S(4), ay, small, S(26));
-            DrawButton(g, list, "auto-next", next, "▶", null, null, Look.Normal, false, "Επόμενη χεριά", () => manager.SeekStroke(1));
+            DrawButton(g, list, "auto-next", next, "▶", null, null, Look.Normal, false, SwimLang.T("Επόμενη χεριά"), () => manager.SeekStroke(1));
             RectangleF delete = new RectangleF(next.Right + S(4), ay, small, S(26));
-            DrawButton(g, list, "auto-delete", delete, "✕", null, null, Look.Normal, false, "Διαγραφή της χεριάς σε αυτό το καρέ (C για να την ξαναβάλεις)",
+            DrawButton(g, list, "auto-delete", delete, "✕", null, null, Look.Normal, false, SwimLang.T("Διαγραφή της χεριάς σε αυτό το καρέ (C για να την ξαναβάλεις)"),
                 () => manager.DeleteStrokeHere());
         }
 
@@ -516,7 +532,7 @@ namespace Kinovea.ScreenManager
             if (tech)
             {
                 SwimTechPhase phase = manager.CurrentTechPhase;
-                value = phase != null ? phase.Title : (race.IsTraining ? "G: νέα εκκίνηση · W: νέα στροφή" : "εκτός εκκίνησης / στροφής");
+                value = phase != null ? phase.Title : (race.IsTraining ? SwimLang.T("G: νέα εκκίνηση · W: νέα στροφή") : SwimLang.T("εκτός εκκίνησης / στροφής"));
                 if (phase != null)
                 {
                     string key = phase.Kind == SwimPhaseKind.Start ? "t15" : "out15";
@@ -525,8 +541,8 @@ namespace Kinovea.ScreenManager
                         chips.Add(new SwimChip(phase.Kind == SwimPhaseKind.Start ? "15" + race.Unit : "→ +15" + race.Unit, v15.Value.ToString("0.00", CultureInfo.InvariantCulture), SwimTheme.Green));
                 }
 
-                chips.Add(new SwimChip("ΣΤΙΓΜΙΟΤΥΠΑ", race.Snapshots.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
-                chips.Add(new SwimChip("ΓΩΝΙΕΣ", race.Angles.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+                chips.Add(new SwimChip(SwimLang.T("ΣΤΙΓΜΙΟΤΥΠΑ"), race.Snapshots.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
+                chips.Add(new SwimChip(SwimLang.T("ΓΩΝΙΕΣ"), race.Angles.Count.ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
             }
             else
             {
@@ -537,7 +553,7 @@ namespace Kinovea.ScreenManager
                 {
                     SwimRow last = c.Rows.Where(r => r.Delta.HasValue && r.PassedAt(now.Value)).OrderBy(r => r.OnVideo).LastOrDefault();
                     if (last != null)
-                        chips.Add(new SwimChip("Δ " + last.D + race.Unit, SwimReference.FormatDelta(last.Delta.Value), last.Delta.Value > 0.0049 ? SwimTheme.Red : SwimTheme.Green));
+                        chips.Add(new SwimChip(SwimLang.T("Δ ") + last.D + race.Unit, SwimReference.FormatDelta(last.Delta.Value), last.Delta.Value > 0.0049 ? SwimTheme.Red : SwimTheme.Green));
                 }
 
                 if (now.HasValue)
@@ -547,12 +563,12 @@ namespace Kinovea.ScreenManager
                         .OrderBy(b => b.To)
                         .LastOrDefault();
                     if (block != null)
-                        chips.Add(new SwimChip("ΔΑΚ " + block.From + "-" + block.To, block.Dak.Value.ToString("0.00", CultureInfo.InvariantCulture), SwimTheme.Amber));
+                        chips.Add(new SwimChip(SwimLang.T("ΔΑΚ ") + block.From + "-" + block.To, block.Dak.Value.ToString("0.00", CultureInfo.InvariantCulture), SwimTheme.Amber));
                 }
 
                 string auto = AutoStrokesState(race);
                 if (auto != null)
-                    chips.Add(new SwimChip("ΑΥΤΟΜΑΤΕΣ ΧΕΡΙΕΣ", auto, SwimTheme.Accent));
+                    chips.Add(new SwimChip(SwimLang.T("ΑΥΤΟΜΑΤΕΣ ΧΕΡΙΕΣ"), auto, SwimTheme.Accent));
             }
 
             float inner = S(10);
@@ -561,7 +577,7 @@ namespace Kinovea.ScreenManager
             float height = chips.Count > 0 ? ChipRows(g, chips, area.Left + inner, area.Top + chipsTop, area.Right - S(8), chipHeight, false) - area.Top + S(8) : S(48);
             RectangleF card = new RectangleF(area.Left, area.Top, area.Width, height);
             DrawCard(g, card, SwimTheme.Amber);
-            Write(g, tech ? "ΦΑΣΗ ΤΕΧΝΙΚΗΣ ΑΝΑΛΥΣΗΣ" : "ΦΑΣΗ", SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
+            Write(g, tech ? SwimLang.T("ΦΑΣΗ ΤΕΧΝΙΚΗΣ ΑΝΑΛΥΣΗΣ") : SwimLang.T("ΦΑΣΗ"), SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
                 SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
             Write(g, value, SwimTheme.Display(13f), new RectangleF(card.Left + inner, card.Top + S(19), card.Width - inner - S(8), S(26)), SwimTheme.Accent,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
@@ -583,7 +599,7 @@ namespace Kinovea.ScreenManager
             List<SwimRow> rows = manager.Computed.Rows;
             DrawCard(g, card, colorSplits);
             float inner = S(10);
-            Write(g, "ΠΕΡΑΣΜΑΤΑ", SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
+            Write(g, SwimLang.T("ΠΕΡΑΣΜΑΤΑ"), SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
                 SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine);
 
             float rx = card.Left + S(7);
@@ -594,9 +610,9 @@ namespace Kinovea.ScreenManager
             float colS = rx + rw - S(5);
             RectangleF head = new RectangleF(rx, card.Top + S(21), rw, S(14));
             Font headFont = SwimTheme.Ui(6.5f, FontStyle.Bold);
-            CellRight(g, "ΧΡΟΝΟΣ", headFont, colT, head, SwimTheme.Faint);
+            CellRight(g, SwimLang.T("ΧΡΟΝΟΣ"), headFont, colT, head, SwimTheme.Faint);
             CellRight(g, "M/S", headFont, colV, head, SwimTheme.Faint);
-            CellRight(g, "ΧΕΡ.", headFont, colS, head, SwimTheme.Faint);
+            CellRight(g, SwimLang.T("ΧΕΡ."), headFont, colS, head, SwimTheme.Faint);
 
             float rowHeight = S(21);
             float rowsTop = card.Top + S(37);
@@ -647,10 +663,10 @@ namespace Kinovea.ScreenManager
                 if (row.Marked)
                 {
                     int distance = row.D;
-                    string tip = "Μετάβαση του βίντεο στο πέρασμα των " + distance.ToString(CultureInfo.InvariantCulture) + race.Unit + "." +
-                        (row.Official ? "\nΟ χρόνος είναι ο επίσημος των αποτελεσμάτων." : row.OfficialTime.HasValue ?
-                            "\n⚠ Ο επίσημος χρόνος είναι " + SwimReference.FormatTime(row.OfficialTime.Value) + ": το σημάδι απέχει από αυτόν." : "") +
-                        (warn ? "\n⚠ Ο χρόνος δεν είναι μεγαλύτερος από τον προηγούμενο." : "");
+                    string tip = SwimLang.T("Μετάβαση του βίντεο στο πέρασμα των ") + distance.ToString(CultureInfo.InvariantCulture) + race.Unit + "." +
+                        (row.Official ? SwimLang.T("\nΟ χρόνος είναι ο επίσημος των αποτελεσμάτων.") : row.OfficialTime.HasValue ?
+                            SwimLang.T("\n⚠ Ο επίσημος χρόνος είναι ") + SwimReference.FormatTime(row.OfficialTime.Value) + SwimLang.T(": το σημάδι απέχει από αυτόν.") : "") +
+                        (warn ? SwimLang.T("\n⚠ Ο χρόνος δεν είναι μεγαλύτερος από τον προηγούμενο.") : "");
                     list.Add(new Item { Id = id, Bounds = r, Tip = tip, Click = () => manager.Seek(distance) });
                 }
             }
@@ -689,9 +705,9 @@ namespace Kinovea.ScreenManager
         private float PaintActions(Graphics g, List<Item> list, RectangleF area, SwimRace race)
         {
             RectangleF close = new RectangleF(area.Left, area.Bottom - S(24), area.Width, S(24));
-            DrawButton(g, list, "close", close, "✕  Κλείσιμο ανάλυσης", null, null, Look.Quiet, false,
-                "Κρύβει τα κουμπιά και το παράθυρο της ανάλυσης (η ανάλυση είναι αποθηκευμένη).\n" +
-                "Εμφανίζονται ξανά με ένα πλήκτρο της ανάλυσης (π.χ. S) ή με το Ctrl+Shift+W.",
+            DrawButton(g, list, "close", close, SwimLang.T("✕  Κλείσιμο ανάλυσης"), null, null, Look.Quiet, false,
+                SwimLang.T("Κρύβει τα κουμπιά και το παράθυρο της ανάλυσης (η ανάλυση είναι αποθηκευμένη).\n") +
+                SwimLang.T("Εμφανίζονται ξανά με ένα πλήκτρο της ανάλυσης (π.χ. S) ή με το Ctrl+Shift+W."),
                 () => manager.CloseAnalysis());
 
             string sheet = !string.IsNullOrEmpty(race.SheetName) ? " · " + race.SheetName : "";
@@ -704,19 +720,19 @@ namespace Kinovea.ScreenManager
             bool configured = manager.Settings.IsConfigured;
             RectangleF sendRow = new RectangleF(area.Left, line.Top - S(3) - S(30), area.Width, S(30));
             RectangleF send = new RectangleF(sendRow.Left, sendRow.Top, (sendRow.Width - S(4)) * 0.62f, sendRow.Height);
-            DrawButton(g, list, "send", send, "Αποστολή τώρα", null, null, Look.Normal, !configured,
-                configured ? "Στέλνει την ανάλυση στο Google Sheet τώρα." : "Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα.",
+            DrawButton(g, list, "send", send, SwimLang.T("Αποστολή τώρα"), null, null, Look.Normal, !configured,
+                configured ? SwimLang.T("Στέλνει την ανάλυση στο Google Sheet τώρα.") : SwimLang.T("Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα."),
                 () => manager.SendByUser(false));
             RectangleF pdf = new RectangleF(send.Right + S(4), sendRow.Top, sendRow.Right - send.Right - S(4), sendRow.Height);
             DrawButton(g, list, "pdf", pdf, "PDF", null, null, Look.Normal, !configured,
-                configured ? "Το PDF του report: ανοίγει μόνο του όταν είναι έτοιμο (όπως το «PDF report» του πίνακα)." :
-                    "Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα.",
+                configured ? SwimLang.T("Το PDF του report: ανοίγει μόνο του όταν είναι έτοιμο (όπως το «PDF report» του πίνακα).") :
+                    SwimLang.T("Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα."),
                 () => manager.SendByUser(true));
 
             bool open = manager.PanelOpen;
             RectangleF panel = new RectangleF(area.Left, send.Top - S(6) - S(34), area.Width, S(34));
             // The key of the window only when the bar is wide enough for it next to the text.
-            string panelText = open ? "Κλείσιμο πίνακα" : "Πίνακας ανάλυσης";
+            string panelText = open ? SwimLang.T("Κλείσιμο πίνακα") : SwimLang.T("Πίνακας ανάλυσης");
             string panelKey = KeyOf(PlayerScreenCommands.SwimShowPanel);
             Font badgeFont = SwimTheme.Ui(7f, FontStyle.Bold);
             int needed = TextRenderer.MeasureText(g, panelText, SwimTheme.Ui(9f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPadding).Width +
@@ -724,8 +740,8 @@ namespace Kinovea.ScreenManager
             if (needed > panel.Width)
                 panelKey = null;
             DrawButton(g, list, "panel", panel, panelText, null, panelKey, Look.Primary, false,
-                (open ? "Κλείνει το παράθυρο της ανάλυσης· τα κουμπιά μένουν εδώ."
-                      : "Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.") +
+                (open ? SwimLang.T("Κλείνει το παράθυρο της ανάλυσης· τα κουμπιά μένουν εδώ.")
+                      : SwimLang.T("Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.")) +
                 (string.IsNullOrEmpty(KeyOf(PlayerScreenCommands.SwimShowPanel)) ? "" : " (" + KeyOf(PlayerScreenCommands.SwimShowPanel) + ")"),
                 () => manager.TogglePanel());
             if (race.IsTraining)
@@ -737,17 +753,17 @@ namespace Kinovea.ScreenManager
             RectangleF reel = new RectangleF(row.Left, row.Top, half, row.Height);
             RectangleF follow = new RectangleF(reel.Right + S(4), row.Top, row.Right - reel.Right - S(4), row.Height);
             bool reelOn = manager.Settings.ReelOverlay;
-            DrawButton(g, list, "reel", reel, reelOn ? "✓ Τεχνική" : "Τεχνική", null, null, reelOn ? Look.Primary : Look.Normal, false,
-                reelOn ? "Κλείνει την τεχνική ανάλυση στο βίντεο (ξανά ο πίνακας του αγώνα και το γράφημα ταχύτητας)."
-                       : "Τεχνική ανάλυση στο βίντεο, όπως στα reels: χρόνος, χεριές, συχνότητα, απόσταση ανά κύκλο, ταχύτητα,\n" +
-                         "φάση, γράφημα ανά κύκλο και σύνοψη μετά τον τερματισμό. Φαίνεται και στην εξαγωγή βίντεο.",
+            DrawButton(g, list, "reel", reel, reelOn ? SwimLang.T("✓ Τεχνική") : SwimLang.T("Τεχνική"), null, null, reelOn ? Look.Primary : Look.Normal, false,
+                reelOn ? SwimLang.T("Κλείνει την τεχνική ανάλυση στο βίντεο (ξανά ο πίνακας του αγώνα και το γράφημα ταχύτητας).")
+                       : SwimLang.T("Τεχνική ανάλυση στο βίντεο, όπως στα reels: χρόνος, χεριές, συχνότητα, απόσταση ανά κύκλο, ταχύτητα,\n") +
+                         SwimLang.T("φάση, γράφημα ανά κύκλο και σύνοψη μετά τον τερματισμό. Φαίνεται και στην εξαγωγή βίντεο."),
                 () => manager.SetReel(!manager.Settings.ReelOverlay));
             bool picking = manager.PickingTrack;
             string tracked = manager.TrackDescription;
-            DrawButton(g, list, "follow", follow, picking ? "Κλικ…" : "Ακολούθηση", null, null, picking ? Look.Primary : Look.Normal, !race.StartTimestamp.HasValue,
-                "Ακολούθηση αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι και μετά στα πόδια του.\n" +
-                "Η ετικέτα με το όνομα ακολουθεί τον αθλητή μέχρι τον τοίχο του μήκους (ένα μήκος κάθε φορά)." +
-                (tracked.Length > 0 ? "\nΑκολουθείται: " + tracked : ""),
+            DrawButton(g, list, "follow", follow, picking ? SwimLang.T("Κλικ…") : SwimLang.T("Ακολούθηση"), null, null, picking ? Look.Primary : Look.Normal, !race.StartTimestamp.HasValue,
+                SwimLang.T("Ακολούθηση αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι και μετά στα πόδια του.\n") +
+                SwimLang.T("Η ετικέτα με το όνομα ακολουθεί τον αθλητή μέχρι τον τοίχο του μήκους (ένα μήκος κάθε φορά).") +
+                (tracked.Length > 0 ? SwimLang.T("\nΑκολουθείται: ") + tracked : ""),
                 () => manager.BeginTrackSwimmer());
 
             // The check of the proposals of the race (whole race, auto pilot), also from here (since 2026-10-18).
@@ -759,21 +775,21 @@ namespace Kinovea.ScreenManager
             if (manager.Reviewing)
             {
                 float third = (check.Width - 2 * S(4)) / 3;
-                DrawButton(g, list, "race-right", new RectangleF(check.Left, check.Top, third, check.Height), "✓ Σωστό", null, null, Look.Primary, false,
-                    "Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται.",
+                DrawButton(g, list, "race-right", new RectangleF(check.Left, check.Top, third, check.Height), SwimLang.T("✓ Σωστό"), null, null, Look.Primary, false,
+                    SwimLang.T("Η πρόταση μπαίνει ως σημάδι στο καρέ που βλέπεις (Enter). Με τα βελάκια μετακινείς πρώτα το καρέ αν χρειάζεται."),
                     () => manager.AcceptCurrentProposal());
-                DrawButton(g, list, "race-wrong", new RectangleF(check.Left + third + S(4), check.Top, third, check.Height), "✕ Λάθος", null, null, Look.Normal,
-                    false, "Δεν υπάρχει τέτοιο γεγονός εδώ (Delete).", () => manager.RejectCurrentProposal());
+                DrawButton(g, list, "race-wrong", new RectangleF(check.Left + third + S(4), check.Top, third, check.Height), SwimLang.T("✕ Λάθος"), null, null, Look.Normal,
+                    false, SwimLang.T("Δεν υπάρχει τέτοιο γεγονός εδώ (Delete)."), () => manager.RejectCurrentProposal());
                 DrawButton(g, list, "race-end", new RectangleF(check.Left + 2 * (third + S(4)), check.Top, check.Right - check.Left - 2 * (third + S(4)), check.Height),
-                    "Τέλος", null, null, Look.Normal, false, "Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν.", () => manager.EndReview());
+                    SwimLang.T("Τέλος"), null, null, Look.Normal, false, SwimLang.T("Τέλος του ελέγχου (Esc): οι υπόλοιπες προτάσεις περιμένουν."), () => manager.EndReview());
             }
             else
             {
                 int doubtful = manager.PilotDoubtful;
-                DrawButton(g, list, "race-review", check, "✨ Έλεγχος " + pending.ToString(CultureInfo.InvariantCulture) +
+                DrawButton(g, list, "race-review", check, SwimLang.T("✨ Έλεγχος ") + pending.ToString(CultureInfo.InvariantCulture) +
                     (doubtful > 0 ? "  ·  ⚠ " + doubtful.ToString(CultureInfo.InvariantCulture) : ""), null, null, Look.Primary, false,
-                    "Οι προτάσεις μία μία στο βίντεο: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος. Από τις απαντήσεις σου μαθαίνει." +
-                    (doubtful > 0 ? "\nΠρώτα τα αβέβαια του αυτόματου πιλότου (⚠: κάτω από 50%)." : ""),
+                    SwimLang.T("Οι προτάσεις μία μία στο βίντεο: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος. Από τις απαντήσεις σου μαθαίνει.") +
+                    (doubtful > 0 ? SwimLang.T("\nΠρώτα τα αβέβαια του αυτόματου πιλότου (⚠: κάτω από 50%).") : ""),
                     () =>
                     {
                         if (manager.PilotDoubtful > 0)
@@ -813,61 +829,61 @@ namespace Kinovea.ScreenManager
             switch (tab)
             {
                 case 0:
-                    title = "ΕΚΚΙΝΗΣΗ";
-                    list.Add(B("start", PlayerScreenCommands.SwimStart, "Εκκίνηση", race.StartTimestamp.HasValue ? (race.PilotStart ? "✈?" : "✓") : null,
-                        "Στο καρέ του σήματος εκκίνησης (φως, καπνός, ήχος): εκεί γίνεται t = 0." +
-                        (race.PilotStart ? "\n✈ Την έβαλε ο αυτόματος πιλότος: έλεγξέ τη (Enter στον «Έλεγχο», ή G στο σωστό καρέ)." : "")));
+                    title = SwimLang.T("ΕΚΚΙΝΗΣΗ");
+                    list.Add(B("start", PlayerScreenCommands.SwimStart, SwimLang.T("Εκκίνηση"), race.StartTimestamp.HasValue ? (race.PilotStart ? "✈?" : "✓") : null,
+                        SwimLang.T("Στο καρέ του σήματος εκκίνησης (φως, καπνός, ήχος): εκεί γίνεται t = 0.") +
+                        (race.PilotStart ? SwimLang.T("\n✈ Την έβαλε ο αυτόματος πιλότος: έλεγξέ τη (Enter στον «Έλεγχο», ή G στο σωστό καρέ).") : "")));
                     list.Add(new Btn
                     {
                         Id = "start-light",
-                        Text = "💡 Εκκίνηση από το φως",
+                        Text = SwimLang.T("💡 Εκκίνηση από το φως"),
                         Dim = manager.StartLightRunning,
-                        Tip = "Αυτόματα: το καρέ που ανάβουν τα φώτα εκκίνησης, για έλεγχο (Enter σωστό, Delete λάθος).",
+                        Tip = SwimLang.T("Αυτόματα: το καρέ που ανάβουν τα φώτα εκκίνησης, για έλεγχο (Enter σωστό, Delete λάθος)."),
                         Action = () => manager.FindStartLight()
                     });
                     list.Add(PilotButton());
-                    list.Add(B("reaction", PlayerScreenCommands.SwimReaction, "Αντίδραση", Seconds(c.ReactionTime),
-                        "Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης)."));
-                    list.Add(B("block", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση", Seconds(c.BlockTime),
-                        "Τα πόδια φεύγουν από τον βατήρα: αντιστοιχεί στον επίσημο χρόνο αντίδρασης."));
-                    list.Add(B("entry", PlayerScreenCommands.SwimEntry, "Είσοδος χεριών", Seconds(c.EntryTime),
-                        "Τα χέρια μπαίνουν στο νερό."));
-                    list.Add(B("kick", PlayerScreenCommands.SwimKick, "Δελφινισμός", Count(c.StartKicks),
-                        "Κάθε υποβρύχιος δελφινισμός."));
-                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, "Έξοδος", Seconds(c.StartUnderwaterTime),
-                        "Το κεφάλι βγαίνει από το νερό."));
-                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, StrokeTip));
+                    list.Add(B("reaction", PlayerScreenCommands.SwimReaction, SwimLang.T("Αντίδραση"), Seconds(c.ReactionTime),
+                        SwimLang.T("Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης).")));
+                    list.Add(B("block", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"), Seconds(c.BlockTime),
+                        SwimLang.T("Τα πόδια φεύγουν από τον βατήρα: αντιστοιχεί στον επίσημο χρόνο αντίδρασης.")));
+                    list.Add(B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"), Seconds(c.EntryTime),
+                        SwimLang.T("Τα χέρια μπαίνουν στο νερό.")));
+                    list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), Count(c.StartKicks),
+                        SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
+                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), Seconds(c.StartUnderwaterTime),
+                        SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     break;
                 case 1:
-                    title = "ΚΟΛΥΜΒΗΣΗ";
-                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, StrokeTip));
+                    title = SwimLang.T("ΚΟΛΥΜΒΗΣΗ");
+                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     list.Add(new Btn
                     {
                         Id = "auto-race",
-                        Text = manager.PickingTrack ? "Κλικ κεφάλι, πόδια…" : "🤖 Όλος ο αγώνας",
+                        Text = manager.PickingTrack ? SwimLang.T("Κλικ κεφάλι, πόδια…") : SwimLang.T("🤖 Όλος ο αγώνας"),
                         Dim = manager.AutoStrokesRunning,
-                        Tip = "Αυτόματη ανάλυση όλου του αγώνα: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό.\n" +
-                            "Ακολουθείται σε όλα τα μήκη και προτείνονται τα περάσματα (15/25/35/45 και οι τοίχοι) για έλεγχο\n" +
-                            "(Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος).",
+                        Tip = SwimLang.T("Αυτόματη ανάλυση όλου του αγώνα: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό.\n") +
+                            SwimLang.T("Ακολουθείται σε όλα τα μήκη και προτείνονται τα περάσματα (15/25/35/45 και οι τοίχοι) για έλεγχο\n") +
+                            SwimLang.T("(Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος)."),
                         Action = () => manager.BeginAutoRace()
                     });
                     list.Add(PilotButton());
                     break;
                 case 2:
                     int wall = manager.CurrentTurnWall;
-                    title = wall > 0 ? "ΣΤΡΟΦΗ " + wall.ToString(CultureInfo.InvariantCulture) + race.Unit.ToUpperInvariant() : "ΣΤΡΟΦΗ";
+                    title = wall > 0 ? SwimLang.T("ΣΤΡΟΦΗ ") + wall.ToString(CultureInfo.InvariantCulture) + race.Unit.ToUpperInvariant() : SwimLang.T("ΣΤΡΟΦΗ");
                     SwimTurnComputed turn = c.Turns.FirstOrDefault(t => t.Wall == wall);
-                    list.Add(B("pushoff", PlayerScreenCommands.SwimFeetOff, "Αποκόλληση", turn != null ? Seconds(turn.TurnTime) : null,
-                        "Τα πόδια φεύγουν από τον τοίχο."));
-                    list.Add(B("kick", PlayerScreenCommands.SwimKick, "Δελφινισμός", turn != null ? Count(turn.Kicks) : null,
-                        "Κάθε υποβρύχιος δελφινισμός."));
-                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, "Έξοδος", turn != null ? Seconds(turn.UnderwaterTime) : null,
-                        "Το κεφάλι βγαίνει από το νερό."));
-                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, StrokeTip));
+                    list.Add(B("pushoff", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποκόλληση"), turn != null ? Seconds(turn.TurnTime) : null,
+                        SwimLang.T("Τα πόδια φεύγουν από τον τοίχο.")));
+                    list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), turn != null ? Count(turn.Kicks) : null,
+                        SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
+                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), turn != null ? Seconds(turn.UnderwaterTime) : null,
+                        SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     break;
                 default:
-                    title = "ΤΕΡΜΑΤΙΣΜΟΣ";
-                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, "Χεριά", null, "Οι χεριές μέχρι την τελευταία πριν τον τερματισμό."));
+                    title = SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ");
+                    list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, SwimLang.T("Οι χεριές μέχρι την τελευταία πριν τον τερματισμό.")));
                     break;
             }
 
@@ -882,13 +898,13 @@ namespace Kinovea.ScreenManager
             return new Btn
             {
                 Id = "auto-pilot",
-                Text = waiting.Length > 0 ? "✈ " + waiting : "✈ Αυτόματος πιλότος",
+                Text = waiting.Length > 0 ? "✈ " + waiting : SwimLang.T("✈ Αυτόματος πιλότος"),
                 Primary = waiting.Length > 0,
                 Dim = manager.AutoStrokesRunning || manager.StartLightRunning,
-                Tip = "Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα τα μήκη\n" +
-                    "(περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση, αθλητής).\n" +
-                    "Ό,τι έβαλε περιμένει στον «✨ Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n" +
-                    "μαθαίνει· ό,τι δεν ελέγξεις δεν διδάσκει.",
+                Tip = SwimLang.T("Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα τα μήκη\n") +
+                    SwimLang.T("(περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση, αθλητής).\n") +
+                    SwimLang.T("Ό,τι έβαλε περιμένει στον «✨ Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n") +
+                    SwimLang.T("μαθαίνει· ό,τι δεν ελέγξεις δεν διδάσκει."),
                 Action = () => manager.RunAutoPilot()
             };
         }
@@ -901,23 +917,23 @@ namespace Kinovea.ScreenManager
             Btn b = new Btn { Id = "split", Command = PlayerScreenCommands.SwimSplit, Primary = next >= 0, Dim = next < 0 };
             if (next < 0)
             {
-                b.Text = "Όλα τα περάσματα ✓";
-                b.Tip = "Όλα τα σημεία ελέγχου έχουν χρόνο. Για να ξαναμαρκάρεις ένα, διάγραψε τον χρόνο του στον πίνακα (επιλογή γραμμής + Delete).";
+                b.Text = SwimLang.T("Όλα τα περάσματα ✓");
+                b.Tip = SwimLang.T("Όλα τα σημεία ελέγχου έχουν χρόνο. Για να ξαναμαρκάρεις ένα, διάγραψε τον χρόνο του στον πίνακα (επιλογή γραμμής + Delete).");
             }
             else if (next >= race.Distance)
             {
-                b.Text = "Τερματισμός";
-                b.Tip = "Το χέρι ακουμπά τον τοίχο του τερματισμού (" + distance + ").";
+                b.Text = SwimLang.T("Τερματισμός");
+                b.Tip = SwimLang.T("Το χέρι ακουμπά τον τοίχο του τερματισμού (") + distance + ").";
             }
             else if (SwimCalculator.IsWall(next, manager.PoolLength))
             {
-                b.Text = "Επαφή " + distance;
-                b.Tip = "Επαφή με τον τοίχο των " + distance + ".";
+                b.Text = SwimLang.T("Επαφή ") + distance;
+                b.Tip = SwimLang.T("Επαφή με τον τοίχο των ") + distance + ".";
             }
             else
             {
-                b.Text = "Πέρασμα " + distance;
-                b.Tip = "Το κεφάλι περνά το σημείο των " + distance + ".";
+                b.Text = SwimLang.T("Πέρασμα ") + distance;
+                b.Tip = SwimLang.T("Το κεφάλι περνά το σημείο των ") + distance + ".";
             }
 
             return b;
@@ -930,34 +946,34 @@ namespace Kinovea.ScreenManager
             switch (tab)
             {
                 case 0:
-                    title = race.IsTraining ? "ΕΚΚΙΝΗΣΗ · G: ΝΕΑ ΠΡΟΣΠΑΘΕΙΑ" : "ΕΚΚΙΝΗΣΗ";
-                    list.Add(B("t-signal", PlayerScreenCommands.SwimStart, "Σήμα", null, race.IsTraining ? "Σήμα εκκίνησης: νέα προσπάθεια εκκίνησης." : "Σήμα εκκίνησης."));
-                    list.Add(B("t-reaction", PlayerScreenCommands.SwimReaction, "Αντίδραση", null, "Η πρώτη κίνηση μετά το σήμα."));
-                    list.Add(B("t-hands", PlayerScreenCommands.SwimHandsOff, "Χέρια", null, "Τα χέρια φεύγουν από τον βατήρα."));
-                    list.Add(B("t-backfoot", PlayerScreenCommands.SwimBackFoot, "Πίσω πόδι", null, "Το πίσω πόδι φεύγει από τον βατήρα."));
-                    list.Add(B("t-feetoff", PlayerScreenCommands.SwimFeetOff, "Αποδέσμευση", null, "Το μπροστινό πόδι φεύγει από τον βατήρα."));
-                    list.Add(B("t-entry", PlayerScreenCommands.SwimEntry, "Είσοδος", null, "Τα χέρια μπαίνουν στο νερό."));
-                    list.Add(B("t-kick", PlayerScreenCommands.SwimKick, "Δελφινισμός", null, "Κάθε υποβρύχιος δελφινισμός."));
-                    list.Add(B("t-breakout", PlayerScreenCommands.SwimBreakout, "Έξοδος", null, "Το κεφάλι βγαίνει από το νερό."));
-                    list.Add(B("t-split", PlayerScreenCommands.SwimTechSplit, "Κεφάλι 5 / 10 / 15", null, "Το κεφάλι περνά τα 5, 10 και 15 μέτρα."));
-                    list.Add(B("t-stroke", PlayerScreenCommands.SwimStroke, "Πρώτη χεριά", null, "Η πρώτη χεριά μετά την έξοδο."));
+                    title = race.IsTraining ? SwimLang.T("ΕΚΚΙΝΗΣΗ · G: ΝΕΑ ΠΡΟΣΠΑΘΕΙΑ") : SwimLang.T("ΕΚΚΙΝΗΣΗ");
+                    list.Add(B("t-signal", PlayerScreenCommands.SwimStart, SwimLang.T("Σήμα"), null, race.IsTraining ? SwimLang.T("Σήμα εκκίνησης: νέα προσπάθεια εκκίνησης.") : SwimLang.T("Σήμα εκκίνησης.")));
+                    list.Add(B("t-reaction", PlayerScreenCommands.SwimReaction, SwimLang.T("Αντίδραση"), null, SwimLang.T("Η πρώτη κίνηση μετά το σήμα.")));
+                    list.Add(B("t-hands", PlayerScreenCommands.SwimHandsOff, SwimLang.T("Χέρια"), null, SwimLang.T("Τα χέρια φεύγουν από τον βατήρα.")));
+                    list.Add(B("t-backfoot", PlayerScreenCommands.SwimBackFoot, SwimLang.T("Πίσω πόδι"), null, SwimLang.T("Το πίσω πόδι φεύγει από τον βατήρα.")));
+                    list.Add(B("t-feetoff", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"), null, SwimLang.T("Το μπροστινό πόδι φεύγει από τον βατήρα.")));
+                    list.Add(B("t-entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"), null, SwimLang.T("Τα χέρια μπαίνουν στο νερό.")));
+                    list.Add(B("t-kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), null, SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
+                    list.Add(B("t-breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), null, SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    list.Add(B("t-split", PlayerScreenCommands.SwimTechSplit, SwimLang.T("Κεφάλι 5 / 10 / 15"), null, SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 μέτρα.")));
+                    list.Add(B("t-stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Πρώτη χεριά"), null, SwimLang.T("Η πρώτη χεριά μετά την έξοδο.")));
                     break;
                 case 1:
-                    title = race.IsTraining ? "ΣΤΡΟΦΗ · W: ΝΕΑ ΣΤΡΟΦΗ" : "ΣΤΡΟΦΗ";
-                    list.Add(B("t-in5", PlayerScreenCommands.SwimTechSplit, "Κεφάλι −5", null, "Το κεφάλι 5 μέτρα πριν τον τοίχο."));
-                    list.Add(B("t-last", PlayerScreenCommands.SwimStroke, "Τελευταία χεριά", null, "Η τελευταία χεριά πριν τον τοίχο."));
-                    list.Add(B("t-rotation", PlayerScreenCommands.SwimRotation, "Περιστροφή", null, "Η αρχή της περιστροφής."));
-                    list.Add(B("t-wall", PlayerScreenCommands.SwimWallContact, "Επαφή", null, race.IsTraining ? "Επαφή με τον τοίχο: νέα στροφή." : "Επαφή με τον τοίχο."));
-                    list.Add(B("t-pushoff", PlayerScreenCommands.SwimFeetOff, "Αποκόλληση", null, "Τα πόδια φεύγουν από τον τοίχο."));
-                    list.Add(B("t-kick", PlayerScreenCommands.SwimKick, "Δελφινισμός", null, "Κάθε υποβρύχιος δελφινισμός."));
-                    list.Add(B("t-breakout", PlayerScreenCommands.SwimBreakout, "Έξοδος", null, "Το κεφάλι βγαίνει από το νερό."));
-                    list.Add(B("t-out", PlayerScreenCommands.SwimTechSplit, "Κεφάλι +5 / +10 / +15", null, "Το κεφάλι περνά τα 5, 10 και 15 μέτρα μετά τον τοίχο."));
-                    list.Add(B("t-first", PlayerScreenCommands.SwimStroke, "Πρώτη χεριά", null, "Η πρώτη χεριά μετά την έξοδο."));
+                    title = race.IsTraining ? SwimLang.T("ΣΤΡΟΦΗ · W: ΝΕΑ ΣΤΡΟΦΗ") : SwimLang.T("ΣΤΡΟΦΗ");
+                    list.Add(B("t-in5", PlayerScreenCommands.SwimTechSplit, SwimLang.T("Κεφάλι −5"), null, SwimLang.T("Το κεφάλι 5 μέτρα πριν τον τοίχο.")));
+                    list.Add(B("t-last", PlayerScreenCommands.SwimStroke, SwimLang.T("Τελευταία χεριά"), null, SwimLang.T("Η τελευταία χεριά πριν τον τοίχο.")));
+                    list.Add(B("t-rotation", PlayerScreenCommands.SwimRotation, SwimLang.T("Περιστροφή"), null, SwimLang.T("Η αρχή της περιστροφής.")));
+                    list.Add(B("t-wall", PlayerScreenCommands.SwimWallContact, SwimLang.T("Επαφή"), null, race.IsTraining ? SwimLang.T("Επαφή με τον τοίχο: νέα στροφή.") : SwimLang.T("Επαφή με τον τοίχο.")));
+                    list.Add(B("t-pushoff", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποκόλληση"), null, SwimLang.T("Τα πόδια φεύγουν από τον τοίχο.")));
+                    list.Add(B("t-kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), null, SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
+                    list.Add(B("t-breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), null, SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    list.Add(B("t-out", PlayerScreenCommands.SwimTechSplit, SwimLang.T("Κεφάλι +5 / +10 / +15"), null, SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 μέτρα μετά τον τοίχο.")));
+                    list.Add(B("t-first", PlayerScreenCommands.SwimStroke, SwimLang.T("Πρώτη χεριά"), null, SwimLang.T("Η πρώτη χεριά μετά την έξοδο.")));
                     break;
                 default:
-                    title = "ΣΤΙΓΜΙΟΤΥΠΑ & ΓΩΝΙΕΣ";
-                    list.Add(B("t-snapshot", PlayerScreenCommands.SwimSnapshot, "Στιγμιότυπο", Count(race.Snapshots.Count), "Στιγμιότυπο του καρέ για το report."));
-                    list.Add(B("t-angle", PlayerScreenCommands.SwimAngle, "Γωνία", Count(race.Angles.Count), "Μέτρηση γωνίας με κλικ στο βίντεο."));
+                    title = SwimLang.T("ΣΤΙΓΜΙΟΤΥΠΑ & ΓΩΝΙΕΣ");
+                    list.Add(B("t-snapshot", PlayerScreenCommands.SwimSnapshot, SwimLang.T("Στιγμιότυπο"), Count(race.Snapshots.Count), SwimLang.T("Στιγμιότυπο του καρέ για το report.")));
+                    list.Add(B("t-angle", PlayerScreenCommands.SwimAngle, SwimLang.T("Γωνία"), Count(race.Angles.Count), SwimLang.T("Μέτρηση γωνίας με κλικ στο βίντεο.")));
                     break;
             }
 
@@ -968,10 +984,10 @@ namespace Kinovea.ScreenManager
         {
             switch (phase)
             {
-                case SwimPhase.Start: return "Εκκίνηση";
-                case SwimPhase.Swim: return "Κολύμβηση";
-                case SwimPhase.Turn: return "Στροφή " + manager.CurrentTurnWall.ToString(CultureInfo.InvariantCulture) + race.Unit;
-                default: return "Τερματισμός";
+                case SwimPhase.Start: return SwimLang.T("Εκκίνηση");
+                case SwimPhase.Swim: return SwimLang.T("Κολύμβηση");
+                case SwimPhase.Turn: return SwimLang.T("Στροφή ") + manager.CurrentTurnWall.ToString(CultureInfo.InvariantCulture) + race.Unit;
+                default: return SwimLang.T("Τερματισμός");
             }
         }
 
@@ -980,14 +996,14 @@ namespace Kinovea.ScreenManager
             if (!manager.Settings.AutoStrokes || race.IsTraining)
                 return null;
             if (manager.AutoStrokesRunning)
-                return "ανάγνωση…";
+                return SwimLang.T("ανάγνωση…");
             if (manager.PickTarget == SwimPickTarget.StrokeHead && !manager.PickingTrack)
-                return "κλικ στο κεφάλι";
+                return SwimLang.T("κλικ στο κεφάλι");
             if (manager.PickTarget == SwimPickTarget.StrokeFeet && !manager.PickingTrack)
-                return "κλικ στα πόδια";
+                return SwimLang.T("κλικ στα πόδια");
 
             int wall = manager.StrokeSessionWall;
-            return wall > 0 ? "μέχρι " + wall.ToString(CultureInfo.InvariantCulture) + race.Unit : "μετά την έξοδο (B)";
+            return wall > 0 ? SwimLang.T("μέχρι ") + wall.ToString(CultureInfo.InvariantCulture) + race.Unit : SwimLang.T("μετά την έξοδο (B)");
         }
 
         private static string EventText(SwimRace race)
@@ -996,7 +1012,7 @@ namespace Kinovea.ScreenManager
             if (race.IsTraining)
                 return style + " · " + race.PoolLabel;
 
-            string lane = race.Lane > 0 ? " · Δ" + race.Lane.ToString(CultureInfo.InvariantCulture) : "";
+            string lane = race.Lane > 0 ? SwimLang.T(" · Δ") + race.Lane.ToString(CultureInfo.InvariantCulture) : "";
             return race.DistanceLabel + (race.IsYards ? "YD " : " ") + style + lane;
         }
 
@@ -1165,7 +1181,7 @@ namespace Kinovea.ScreenManager
                 Write(g, names[i], font, cell, color, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
 
                 int index = i;
-                string tip = tips[i] + (i == automatic ? " (η φάση του βίντεο)" : "");
+                string tip = tips[i] + (i == automatic ? SwimLang.T(" (η φάση του βίντεο)") : "");
                 list.Add(new Item { Id = id, Bounds = cell, Tip = tip, Click = () => ChooseTab(index, automatic) });
             }
         }

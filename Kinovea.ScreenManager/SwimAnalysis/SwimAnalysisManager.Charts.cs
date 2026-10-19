@@ -56,8 +56,8 @@ namespace Kinovea.ScreenManager
 
             chartsUploading.Add(race.Id);
             SyncState = SwimSyncState.Sending;
-            SyncMessage = string.Format("📊 Γραφήματα για το PDF: {0}…", images.Count);
-            Status(string.Format("📊 Τα γραφήματα του PDF ({0}) σχεδιάζονται με τα γραφικά του βίντεο και ανεβαίνουν…", images.Count), false);
+            SyncMessage = string.Format(SwimLang.T("📊 Γραφήματα για το PDF: {0}…"), images.Count);
+            Status(string.Format(SwimLang.T("📊 Τα γραφήματα του PDF ({0}) σχεδιάζονται με τα γραφικά του βίντεο και ανεβαίνουν…"), images.Count), false);
             UploadCharts(race, images, 0);
         }
 
