@@ -279,7 +279,9 @@ namespace Kinovea.ScreenManager
             for (int x = 1; x < width; x++)
                 if (smooth[x] > smooth[peak])
                     peak = x;
-            if (smooth[peak] <= 0)
+
+            // Nothing that moves (a grey level of difference, on average across the lane): no swimmer.
+            if (smooth[peak] < SwimmerMotion)
                 return double.NaN;
 
             double second = 0;
@@ -295,6 +297,9 @@ namespace Kinovea.ScreenManager
             clear = any ? smooth[peak] / Math.Max(1e-6, second) : 9.9;
             return peak;
         }
+
+        /// <summary>The least motion of a swimmer, mean grey difference across his lane (the frames 0.1 s apart).</summary>
+        private const double SwimmerMotion = 1.0;
 
         /// <summary>The middle of lane k at the column x.</summary>
         public double LaneMiddle(int k, double x)
@@ -365,7 +370,9 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The motion between frames a tenth of a second apart (24-bit BGR, working size): the grey difference after the
         /// camera's shift between them is taken out (the shift of least difference within 12 pixels across and 6 up and down),
-        /// the strongest of the consecutive pairs; zero at the borders the shift uncovers.
+        /// the least of the 3x3 pixels around (a camera that moved by part of a pixel does not light up every edge of the image:
+        /// lab: with it the start end was right in 73 of 75 phone races), the strongest of the consecutive pairs; zero at the
+        /// borders the shift uncovers.
         /// </summary>
         public static float[] Motion(IList<SwimStrokeImage> frames)
         {
@@ -388,8 +395,16 @@ namespace Kinovea.ScreenManager
                 {
                     for (int x = bx; x < w - bx; x++)
                     {
-                        // b(x, y) ~ a(x - dx, y - dy)
-                        float d = Math.Abs(b[y * w + x] - a[(y - dy) * w + (x - dx)]);
+                        // b(x, y) ~ a(x - dx, y - dy), give or take a pixel
+                        float v = b[y * w + x];
+                        float d = float.MaxValue;
+                        for (int j = -1; j <= 1; j++)
+                        {
+                            int row = (y - dy + j) * w + (x - dx);
+                            for (int k = -1; k <= 1; k++)
+                                d = Math.Min(d, Math.Abs(v - a[row + k]));
+                        }
+
                         if (d > result[y * w + x])
                             result[y * w + x] = d;
                     }

@@ -241,8 +241,18 @@ namespace Kinovea.ScreenManager
             int step = Math.Max(1, (int)Math.Round(realFps / 60.0));
             double xm = width / 2.0, ym = height / 2.0;
 
-            // A view of the whole pool from the stands (phones) with the lane of the race known: the swimmer of that lane.
-            AutoPickResult byLane = LanePick(at, width, height, sx, sy, worker);
+            // A view of the whole pool from the stands (phones) with the lane of the race known: the swimmer of that lane. Whatever
+            // goes wrong there, the swimmer the camera follows is looked for as before.
+            AutoPickResult byLane = null;
+            try
+            {
+                byLane = LanePick(at, width, height, sx, sy, worker);
+            }
+            catch (Exception e)
+            {
+                log.Error("The swimmer of the race's lane could not be found.", e);
+            }
+
             if (byLane != null || worker.CancellationPending)
                 return byLane;
 

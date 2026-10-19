@@ -36,6 +36,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Lanes confirmed kept per folder of videos.</summary>
         private const int LaneNumberingKept = 8;
 
+        /// <summary>The swimmer of a lane proposed when the analyst clicked another swimmer (for the numbering, once the reading starts).</summary>
+        private AutoPickResult lanePickClicked;
+
         private static readonly Regex LaneInName = new Regex(@"(?:^|[_\-\s.])L(\d{1,2})(?=$|[_\-\s.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>The lane of the race: the one of the race's data, else "L4" in the name of the video (..._F_L4.mp4); 0 if none.</summary>
@@ -97,8 +100,34 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The numbering that agrees with most lanes confirmed in this folder (ties: no offset first, then from the near wall); lane
-        /// 1 at the near wall when none was confirmed yet.
+        /// 1 at the near wall when none was confirmed yet. Sure (for the pilot): some lanes confirmed agree with it and no other
+        /// numbering that agrees with as many puts lane 'number' at another place (one confirmation of lane 4 at place 4 of 8 fits
+        /// "lane 1 at the far wall" and "near wall, one off" alike).
         /// </summary>
+        private LaneRule LaneRuleOf(int number, int lanes, out bool sure)
+        {
+            LaneRule best = LaneRuleOf();
+            sure = best.Seen > 0;
+            if (!sure)
+                return best;
+
+            List<int[]> seen = LaneObservations();
+            int place = LanePlace(best, number, lanes);
+            foreach (bool far in new[] { false, true })
+            {
+                for (int offset = -2; offset <= 2; offset++)
+                {
+                    LaneRule r = new LaneRule { FromFar = far, Offset = offset };
+                    int agree = seen.Count(o => LanePlace(r, o[0], o[2]) == o[1]);
+                    if (agree >= best.Seen && LanePlace(r, number, lanes) != place)
+                        sure = false;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>The numbering that agrees with most lanes confirmed in this folder.</summary>
         private LaneRule LaneRuleOf()
         {
             List<int[]> seen = LaneObservations();
@@ -220,6 +249,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private AutoPickResult LanePick(long at, int width, int height, double sx, double sy, BackgroundWorker worker)
         {
+            if (Race == null)
+                return null;
+
             int number = RaceLaneNumber();
             if (number <= 0 || !Race.StartTimestamp.HasValue)
                 return null;
@@ -237,7 +269,8 @@ namespace Kinovea.ScreenManager
                 return null;
             }
 
-            LaneRule rule = LaneRuleOf();
+            bool numberingSure;
+            LaneRule rule = LaneRuleOf(number, grid.Lanes, out numberingSure);
             int place = LanePlace(rule, number, grid.Lanes);
             if (place < 0 || place >= grid.Lanes)
             {
@@ -262,11 +295,11 @@ namespace Kinovea.ScreenManager
             double clear;
             double x = grid.SwimmerAlong(place, motion, body, out clear);
             log.DebugFormat("Swimmer of lane {0}: place {1} of {2} from the near wall ({3}), at {4:0} (clear {5:0.00}), direction {6}.", number, place,
-                grid.Lanes, rule.Seen > 0 ? "numbering seen " + rule.Seen + " times" : "numbering not confirmed", x, clear, direction);
+                grid.Lanes, rule.Seen > 0 ? "numbering seen " + rule.Seen + " times" + (numberingSure ? "" : ", not sure for this lane") : "numbering not confirmed", x, clear, direction);
             if (double.IsNaN(x) || direction == 0)
                 return null;
 
-            return LaneResult(grid, motion, number, place, x, direction, clear, pick[0].Key, sx, sy, rule.Seen > 0);
+            return LaneResult(grid, motion, number, place, x, direction, clear, pick[0].Key, sx, sy, numberingSure);
         }
 
         /// <summary>The proposal of the swimmer of lane 'place' of the grid, at x, swimming that way.</summary>
