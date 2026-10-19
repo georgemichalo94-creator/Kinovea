@@ -398,12 +398,12 @@ namespace Kinovea.ScreenManager
             // Live line: race time, next checkpoint, strokes, delta, ΔΑΚ, phase + undo.
             Panel live = new Panel { Dock = DockStyle.Top, Height = 58, Padding = new Padding(6, 4, 6, 4) };
             lblLive = new SwimLiveStrip { Dock = DockStyle.Fill };
-            // («Αναίρεση» drops official times being typed, it does not put them in first: CommitsTyping.)
+            // («Αναίρεση» with official times being typed drops them, and only them, as from the bar of the video: CommitsTyping.)
             btnUndo = new SwimNoFocusButton { Dock = DockStyle.Right, Width = 150, Font = buttonFont, Accent = SwimTheme.Red, CommitsTyping = false };
             btnUndo.Click += (s, e) =>
             {
-                DropTypedOfficial();
-                RunCommand(PlayerScreenCommands.SwimUndo);
+                if (!DropTypedOfficial())
+                    RunCommand(PlayerScreenCommands.SwimUndo);
             };
             toolTip.SetToolTip(btnUndo, "Αναίρεση του τελευταίου σημαδιού");
             RegisterCommandButton(PlayerScreenCommands.SwimUndo, btnUndo, "Αναίρεση");
@@ -2511,16 +2511,21 @@ namespace Kinovea.ScreenManager
             CommitOfficial();
         }
 
-        /// <summary>«Αναίρεση» while official times were being typed: what was typed goes (the box shows the race's own again).</summary>
-        private void DropTypedOfficial()
+        /// <summary>
+        /// «Αναίρεση» while official times were being typed: what was typed goes (the box shows the race's own again). False: nothing
+        /// was being typed.
+        /// </summary>
+        private bool DropTypedOfficial()
         {
             if (officialEditRace == null)
-                return;
+                return false;
             officialEditRace = null;
             officialError = null;
             RefreshManualFields();
             if (manager.Race != null)
                 RefreshOfficial(manager.Race, manager.Computed);
+            ShowStatus("Αναιρέθηκε ό,τι έγραφες στον επίσημο χρόνο (δεν μπήκε στην ανάλυση).", false);
+            return true;
         }
 
         /// <summary>

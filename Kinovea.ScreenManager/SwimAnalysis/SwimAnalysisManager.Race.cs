@@ -1447,23 +1447,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// After the official times changed (typed, taken away, undone): the analysis again; the final frame of the report taken again
-        /// (it shows the times), at the finish when it moved; the check shows its proposal where it is now; else the video stays where
-        /// it was.
+        /// (it shows the times; see RecaptureFinalFrame); the check shows its proposal where it is now when it moved; else the video
+        /// stays where it was.
         /// </summary>
         private void AfterOfficial(bool finishMoved, SwimProposal current, long? currentBefore)
         {
             Recompute();
-            SwimMark end = Race.GetSplit(Race.Distance);
             bool currentMoved = current != null && Race.Proposals.Contains(current) && currentBefore.HasValue && current.Timestamp != currentBefore.Value;
-            if (HasVideo && end != null && !Race.IsTraining && Race.StartTimestamp.HasValue)
-            {
-                // (At the finish: the final frame shows it with the final time; the video back where the analyst was.)
-                long back = player.CurrentTimestamp;
-                SeekNearest(end.Timestamp);
-                CaptureFinalFrame(end.Timestamp);
-                if (!currentMoved)
-                    SeekTo(back);
-            }
+            RecaptureFinalFrame(finishMoved, !currentMoved);
 
             // The check shows its proposal where it is now, when it moved.
             if (currentMoved && HasVideo)
@@ -1474,6 +1465,25 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
             if (form != null)
                 form.RefreshManualFields();
+        }
+
+        /// <summary>
+        /// The final frame of the report taken again (it shows the official times): at the finish, or at the frame the analyst chose
+        /// for it («📷 Από αυτό το καρέ») when the finish did not move. back: the video back where it was after it.
+        /// </summary>
+        private void RecaptureFinalFrame(bool finishMoved, bool back)
+        {
+            SwimMark end = Race.GetSplit(Race.Distance);
+            if (!HasVideo || end == null || Race.IsTraining || !Race.StartTimestamp.HasValue)
+                return;
+
+            bool chosen = !finishMoved && Race.FinalFrame != null && Race.FinalFrame.Chosen;
+            long at = chosen ? Race.FinalFrame.Timestamp : end.Timestamp;
+            long was = player.CurrentTimestamp;
+            SeekNearest(at);
+            CaptureFinalFrame(at, chosen);
+            if (back)
+                SeekTo(was);
         }
 
         /// <summary>A change of the official times on the undo stack (when it changed something or the times).</summary>
@@ -1493,7 +1503,14 @@ namespace Kinovea.ScreenManager
             if (!OfficialPlaceable())
                 return;
 
-            ApplyOfficial(new OfficialUndo());
+            // The finish moved with them: the final frame of the report there.
+            OfficialUndo again = new OfficialUndo();
+            ApplyOfficial(again);
+            if (again.Distances.Contains(Race.Distance))
+            {
+                Recompute();
+                RecaptureFinalFrame(true, true);
+            }
         }
 
         /// <summary>
@@ -1506,10 +1523,13 @@ namespace Kinovea.ScreenManager
                 SwimRace.OfficialProblem(Race.Official, Race.Distance, Race.Pool, Race.K, Race.Unit) == null;
         }
 
-        /// <summary>A reading of the video runs (the race, the start light, the skeleton, the one in the background).</summary>
+        /// <summary>
+        /// A reading of the video with its progress window runs (the race, the start light, the skeleton). Not the one in the
+        /// background: it reads a copy of the race, and the panel stays in use meanwhile.
+        /// </summary>
         public bool ReadingBusy
         {
-            get { return AutoStrokesRunning || StartLightRunning || SkeletonRunning || QuietReadingRunning; }
+            get { return AutoStrokesRunning || StartLightRunning || SkeletonRunning; }
         }
 
         /// <summary>The checkpoints at an official time now: proposals, the pilot's marks.</summary>
