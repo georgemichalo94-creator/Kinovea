@@ -1352,8 +1352,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void OfficialChanged(List<double> official)
         {
+            // (Times taken away: the official reaction time of the results goes with them; else it stays theirs.)
             if (Race != null)
-                OfficialChanged(official, Race.OfficialReaction);
+                OfficialChanged(official, official == null || official.Count == 0 ? null : Race.OfficialReaction);
         }
 
         /// <summary>

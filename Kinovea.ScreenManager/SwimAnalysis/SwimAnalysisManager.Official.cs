@@ -27,15 +27,24 @@ namespace Kinovea.ScreenManager
         private class OfficialQuery
         {
             public string Link = "";
+
+            /// <summary>The link is the one kept for the competition (another race of it), not typed for this race.</summary>
+            public bool LinkRemembered;
             public int Distance;
             public string Style = "";
             public bool Relay;
             public DateTime? Date;
+
+            /// <summary>The day of the video file: tried for the KOE live results when the race's date finds no competition.</summary>
+            public DateTime? VideoDate;
             public string Competition = "";
             public string Round = "";
             public int Lane;
             public string AthleteId = "";
             public string Athlete = "";
+
+            /// <summary>The nation of the race's athlete in the registry: "GRE" for ours, his own for an international one; "" unknown.</summary>
+            public string Nation = "";
             public string Gender = "";
             public int BirthYear;
             public double? Final;
@@ -47,12 +56,25 @@ namespace Kinovea.ScreenManager
         {
             public SwimKoeCompetition Competition;
             public List<SwimKoeCompetition> Competitions = new List<SwimKoeCompetition>();
+
+            /// <summary>The only KOE competition of the day, its name not the one typed: the analyst says whether it is it.</summary>
+            public bool AskCompetition;
             public SwimOfficialUnit Unit;
             public SwimOfficialEntry Entry;
             public string How = "";
 
-            /// <summary>The competition as the source names it (Microplus).</summary>
+            /// <summary>Found by the registry number or the name (not by the lane): the swimmer is the race's athlete.</summary>
+            public bool ByAthlete;
+
+            /// <summary>The race's athlete was given (number or name) and is not in the results: the lane only offers swimmers.</summary>
+            public bool AthleteNotFound;
+
+            /// <summary>The competition as the source names it (Microplus, World Aquatics, the KOE live results).</summary>
             public string Source = "";
+
+            /// <summary>Heats whose results could not be read; more heats than read: the lane alone does not decide then.</summary>
+            public int Missing;
+            public bool Truncated;
             public List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> Choices = new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
             public string Error;
         }
@@ -60,8 +82,9 @@ namespace Kinovea.ScreenManager
         private BackgroundWorker officialWorker;
 
         /// <summary>
-        /// The button "🔗 Επίσημα αποτελέσματα" of the race tab: the race found in the official results (the link typed, else the KOE
-        /// live results by the date and the name of the competition) and, once the analyst agrees, its official times in the analysis.
+        /// The button "🔗 Επίσημα αποτελέσματα" of the race tab: the race found in the official results (the link typed, else the one
+        /// kept for the same competition in the same days, else the KOE live results by the date and the name of the competition)
+        /// and, once the analyst agrees, its official times in the analysis.
         /// </summary>
         public void LinkOfficialResults(string link)
         {
@@ -73,25 +96,35 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // No link: the one used for another race of the same competition (as typed in the race details).
+            // No link: the one used for another race of the same competition in the same days (as typed in the race details).
             Race.ResultsLink = (link ?? "").Trim();
-            string competitionKey = SwimAthleteList.Normalize(Race.Competition ?? "");
-            string known;
-            if (Race.ResultsLink.Length == 0 && competitionKey.Length > 0 && Settings.ResultsLinks != null &&
-                Settings.ResultsLinks.TryGetValue(competitionKey, out known) && !string.IsNullOrWhiteSpace(known))
-                Race.ResultsLink = known;
+            bool remembered = false;
+            if (Race.ResultsLink.Length == 0)
+            {
+                string known = RememberedResultsLink(Race);
+                if (!string.IsNullOrEmpty(known))
+                {
+                    Race.ResultsLink = known;
+                    remembered = true;
+                }
+            }
+
+            SwimAthlete own = string.IsNullOrEmpty(Race.AthleteId) || Athletes == null ? null : Athletes.Find(Race.AthleteId);
             OfficialQuery q = new OfficialQuery
             {
                 Link = Race.ResultsLink,
+                LinkRemembered = remembered,
                 Distance = Race.Distance,
                 Style = Race.Style,
                 Relay = Race.Relay,
                 Date = ParseRaceDate(Race.Date),
+                VideoDate = VideoFileDate(),
                 Competition = Race.Competition ?? "",
                 Round = Race.Round ?? "",
-                Lane = Race.Lane,
+                Lane = RaceLaneNumber(),
                 AthleteId = (Race.AthleteId ?? "").Trim(),
                 Athlete = (Race.Athlete ?? "").Trim(),
+                Nation = own == null ? "" : AthleteNation(own),
                 Gender = SwimReference.NormalizeGender(Race.AthleteGender),
                 Final = Computed != null ? Computed.FinalTime : null,
                 Registry = Athletes
@@ -115,9 +148,35 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
-                OfferOfficial((OfficialFound)e.Result, q);
+                OfferOfficialWhenFree((OfficialFound)e.Result, q, raceId);
             };
             officialWorker.RunWorkerAsync();
+        }
+
+        /// <summary>
+        /// What was found offered now, or once the reading of the video and the auto pilot are over (the window of a reading lets the
+        /// answer come meanwhile, and the official times would move the marks it reads).
+        /// </summary>
+        private void OfferOfficialWhenFree(OfficialFound found, OfficialQuery q, string raceId)
+        {
+            if (!ReadingBusy && !PilotActive)
+            {
+                OfferOfficial(found, q);
+                return;
+            }
+
+            Status("🔗 Τα επίσημα αποτελέσματα βρέθηκαν· εμφανίζονται μόλις τελειώσει η ανάγνωση του βίντεο.", false);
+            Timer wait = new Timer { Interval = 700 };
+            wait.Tick += (s, e) =>
+            {
+                if (ReadingBusy || PilotActive)
+                    return;
+                wait.Stop();
+                wait.Dispose();
+                if (Race != null && Race.Id == raceId)
+                    OfferOfficial(found, q);
+            };
+            wait.Start();
         }
 
         /// <summary>The date of the race as typed ("2.5.2025", "02/05/2025").</summary>
@@ -128,6 +187,28 @@ namespace Kinovea.ScreenManager
             if (!string.IsNullOrWhiteSpace(text) && DateTime.TryParseExact(text.Trim(), formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out d))
                 return d;
             return null;
+        }
+
+        /// <summary>The day of the video file (its last change: a copy from the camera keeps it); null if unknown.</summary>
+        private DateTime? VideoFileDate()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(videoPath) || !System.IO.File.Exists(videoPath))
+                    return null;
+                DateTime d = System.IO.File.GetLastWriteTime(videoPath);
+                return d.Year >= 2000 ? d.Date : (DateTime?)null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The nation of an athlete of the registry: "GRE" for the federation's, his own for an international one.</summary>
+        private static string AthleteNation(SwimAthlete a)
+        {
+            return a.International ? (a.Nation ?? "").Trim().ToUpperInvariant() : "GRE";
         }
 
         /// <summary>The round of the race as typed: "heats", "semi", "final" ("" when not typed).</summary>
@@ -143,6 +224,78 @@ namespace Kinovea.ScreenManager
             if (s.Contains("ΠΡΟΚΡ") || s.Contains("HEAT") || s.Contains("ΣΕΙΡ"))
                 return "heats";
             return "";
+        }
+
+        /// <summary>The round of a unit as the race details write it ("" for none).</summary>
+        private static string RoundName(string round)
+        {
+            switch (round)
+            {
+                case "heats": return "Προκριματικός";
+                case "semi": return "Ημιτελικός";
+                case "final": case "timed": return "Τελικός";
+                default: return "";
+            }
+        }
+
+        /// <summary>The link of a competition of the KOE live results (its page of events).</summary>
+        private static string KoeLink(int code)
+        {
+            return SwimOfficialResults.KoeLive + "/#/athletic-sports-schedule/1/" + code.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The link kept for the competition of the race (its name as typed) from another race of it in the same days (four days
+        /// apart at most: another meet of the same name has its own link); null if none.
+        /// </summary>
+        private string RememberedResultsLink(SwimRace race)
+        {
+            string name = SwimAthleteList.Normalize(race.Competition ?? "");
+            DateTime? day = ParseRaceDate(race.Date);
+            if (name.Length == 0 || !day.HasValue || Settings == null || Settings.ResultsLinks == null)
+                return null;
+
+            string best = null;
+            double bestDays = double.MaxValue;
+            foreach (KeyValuePair<string, string> pair in Settings.ResultsLinks)
+            {
+                int bar = pair.Key.LastIndexOf('|');
+                DateTime kept;
+                if (bar <= 0 || pair.Key.Substring(0, bar) != name || string.IsNullOrWhiteSpace(pair.Value) ||
+                    !DateTime.TryParseExact(pair.Key.Substring(bar + 1), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out kept))
+                    continue;
+
+                double days = Math.Abs((kept - day.Value.Date).TotalDays);
+                if (days <= 4 && days < bestDays)
+                {
+                    best = pair.Value;
+                    bestDays = days;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>The link of a competition kept for its next races: by its name as typed and the day of the race.</summary>
+        private void RememberResultsLink(string competition, DateTime? day, string link)
+        {
+            string name = SwimAthleteList.Normalize(competition ?? "");
+            if (name.Length == 0 || !day.HasValue || string.IsNullOrWhiteSpace(link) || Settings == null)
+                return;
+
+            if (Settings.ResultsLinks == null)
+                Settings.ResultsLinks = new Dictionary<string, string>();
+            Settings.ResultsLinks[name + "|" + day.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)] = link.Trim();
+
+            // The last 300 kept (one per competition and day).
+            if (Settings.ResultsLinks.Count > 300)
+            {
+                foreach (string old in Settings.ResultsLinks.Keys.OrderBy(k => k.Substring(k.LastIndexOf('|') + 1), StringComparer.Ordinal)
+                    .Take(Settings.ResultsLinks.Count - 300).ToList())
+                    Settings.ResultsLinks.Remove(old);
+            }
+
+            Settings.Save();
         }
 
         /// <summary>Background: the competition, the units of the event, their results, the swimmer.</summary>
@@ -169,10 +322,10 @@ namespace Kinovea.ScreenManager
             int worldAquatics = SwimOfficialResults.WorldAquaticsCompetition(q.Link);
             if (units == null && worldAquatics > 0)
             {
-                found.Source = "World Aquatics";
+                found.Source = "World Aquatics (" + worldAquatics.ToString(CultureInfo.InvariantCulture) + ")";
                 units = new List<SwimOfficialUnit>();
                 foreach (SwimOfficialUnit ev in SwimOfficialResults.WorldAquaticsEvents(worldAquatics)
-                    .Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && (q.Gender.Length == 0 || u.Gender == q.Gender || u.Gender == "X")))
+                    .Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && GenderFits(u.Gender, q.Gender)))
                     units.AddRange(SwimOfficialResults.WorldAquaticsHeats(ev));
             }
 
@@ -199,36 +352,46 @@ namespace Kinovea.ScreenManager
 
             if (units == null && code == 0)
             {
-                // By the date (the season of a competition: the year it ends in; October to December belong to the next one) and the name.
-                if (!q.Date.HasValue)
+                // By the date (of the race, else of the video file: a date left as the day the analysis began finds nothing): the
+                // competitions of the KOE that day (a day before or after too).
+                if (!q.Date.HasValue && !q.VideoDate.HasValue)
                 {
                     found.Error = "γράψε την ημερομηνία του αγώνα (στοιχεία αγώνα) ή επικόλλησε τον σύνδεσμο της διοργάνωσης από το live.koe.org.gr";
                     return found;
                 }
 
-                DateTime day = q.Date.Value.Date;
-                List<SwimKoeCompetition> all = new List<SwimKoeCompetition>();
-                foreach (int season in new[] { day.Year, day.Year + 1 }.Distinct())
-                    all.AddRange(SwimOfficialResults.KoeCompetitions(season));
-                List<SwimKoeCompetition> on = all.Where(c => c.From.HasValue && c.From.Value.Date <= day.AddDays(1) &&
-                    (c.To ?? c.From).Value.Date >= day.AddDays(-1)).GroupBy(c => c.Code).Select(g => g.First()).ToList();
+                Dictionary<int, List<SwimKoeCompetition>> seasons = new Dictionary<int, List<SwimKoeCompetition>>();
+                List<SwimKoeCompetition> on = new List<SwimKoeCompetition>();
+                foreach (DateTime? d in new[] { q.Date, q.VideoDate })
+                {
+                    if (!d.HasValue)
+                        continue;
+                    on = KoeCompetitionsAround(d.Value.Date, seasons);
+                    if (on.Count > 0)
+                        break;
+                }
+
                 if (on.Count == 0)
                 {
-                    found.Error = string.Format(CultureInfo.InvariantCulture, "δεν βρέθηκε διοργάνωση της ΚΟΕ στις {0:d/M/yyyy}· επικόλλησε τον σύνδεσμό της", day);
+                    found.Error = string.Format(CultureInfo.InvariantCulture, "δεν βρέθηκε διοργάνωση της ΚΟΕ στις {0:d/M/yyyy}· επικόλλησε τον σύνδεσμό της",
+                        (q.Date ?? q.VideoDate).Value);
                     return found;
                 }
 
-                if (on.Count > 1 && !string.IsNullOrWhiteSpace(q.Competition))
+                // The name typed decides between them; the only one of the day, unlike the name typed, is asked about.
+                if (!string.IsNullOrWhiteSpace(q.Competition))
                 {
-                    on = on.OrderByDescending(c => Math.Max(NameLike(q.Competition, c.Name), NameLike(q.Competition, c.NameLatin))).ToList();
-                    double best = Math.Max(NameLike(q.Competition, on[0].Name), NameLike(q.Competition, on[0].NameLatin));
-                    double second = Math.Max(NameLike(q.Competition, on[1].Name), NameLike(q.Competition, on[1].NameLatin));
-                    if (best >= 0.75 && best - second >= 0.1)
+                    on = on.OrderByDescending(c => CompetitionLike(q.Competition, c)).ToList();
+                    double best = CompetitionLike(q.Competition, on[0]);
+                    double second = on.Count > 1 ? CompetitionLike(q.Competition, on[1]) : 0;
+                    if (on.Count > 1 && best >= 0.75 && best - second >= 0.1)
                         on = on.Take(1).ToList();
+                    else if (on.Count == 1 && best < 0.5)
+                        found.AskCompetition = true;
                 }
 
                 found.Competitions = on;
-                if (on.Count > 1)
+                if (on.Count > 1 || found.AskCompetition)
                     return found;
                 found.Competition = on[0];
                 code = on[0].Code;
@@ -236,17 +399,31 @@ namespace Kinovea.ScreenManager
 
             // The units of the event, then the round (when typed), the day of the race and the unit of the link.
             if (units == null)
+            {
                 units = SwimOfficialResults.KoeSchedule(code);
-            units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay).ToList();
-            if (q.Gender == "M" || q.Gender == "F")
-                units = units.Where(u => u.Gender == "" || u.Gender == q.Gender || u.Gender == "X").ToList();
+                if (found.Source.Length == 0)
+                    found.Source = found.Competition != null ? found.Competition.Name : "ΚΟΕ live (" + code.ToString(CultureInfo.InvariantCulture) + ")";
+            }
+
+            units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && GenderFits(u.Gender, q.Gender)).ToList();
             if (!string.IsNullOrEmpty(unitCode) && units.Any(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)))
                 units = units.Where(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)).ToList();
             string round = RaceRound(q.Round);
             if (round.Length > 0 && units.Any(u => u.Round == round || (round == "final" && u.Round == "timed")))
                 units = units.Where(u => u.Round == round || (round == "final" && u.Round == "timed")).ToList();
+
+            // The day of the race: a link kept from another race of the competition must have races that day (else it is another
+            // meet of the same name); a link typed for the race is taken even on another day (the date typed can be wrong: the
+            // analyst sees the date of the results before they go in).
             if (q.Date.HasValue && units.Any(u => u.Date.HasValue && u.Date.Value.Date == q.Date.Value.Date))
                 units = units.Where(u => !u.Date.HasValue || u.Date.Value.Date == q.Date.Value.Date).ToList();
+            else if (q.LinkRemembered && q.Date.HasValue && units.Any(u => u.Date.HasValue))
+            {
+                found.Error = string.Format(CultureInfo.InvariantCulture, "η διοργάνωση του συνδέσμου που κρατήθηκε για «{0}» δεν έχει αυτό το αγώνισμα " +
+                    "στις {1:d/M/yyyy}· επικόλλησε τον σύνδεσμο αυτής της διοργάνωσης", q.Competition, q.Date.Value);
+                return found;
+            }
+
             if (units.Count == 0)
             {
                 found.Error = "η διοργάνωση δεν έχει το αγώνισμα " + q.Distance.ToString(CultureInfo.InvariantCulture) + "μ. " + SwimPresets.StyleShort(q.Style) +
@@ -255,75 +432,163 @@ namespace Kinovea.ScreenManager
             }
 
             if (units.Count > 60)
-                units = units.Take(60).ToList();
-            foreach (SwimOfficialUnit u in units)
             {
-                if (u.Source == "microplus")
-                    SwimOfficialResults.MicroplusResults(u);
-                else if (u.Source == "koe")
-                    SwimOfficialResults.KoeResults(u);
+                found.Truncated = true;
+                units = units.Take(60).ToList();
             }
 
-            List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> entries = units
-                .SelectMany(u => u.Entries.Where(e => e.Time.HasValue).Select(e => new KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>(u, e))).ToList();
+            foreach (SwimOfficialUnit u in units)
+            {
+                bool read = true;
+                if (u.Source == "microplus")
+                    read = SwimOfficialResults.MicroplusResults(u);
+                else if (u.Source == "koe")
+                    read = SwimOfficialResults.KoeResults(u);
+                if (!read)
+                    found.Missing++;
+            }
+
+            List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> all = units
+                .SelectMany(u => u.Entries.Select(e => new KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>(u, e))).ToList();
             List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> chosen = null;
+            string family, given;
+            SwimNameMatch.Split(q.Athlete, out family, out given);
 
             // 1. The registry number (the KOE results carry the federation's number of the Greek athletes; an international athlete of
-            // the registry has "WA" and his World Aquatics code).
+            // the registry has "WA" and his World Aquatics code), with his family name when the race has his name (another
+            // federation's number can be the same) and his nation.
             if (q.AthleteId.Length > 0)
             {
-                chosen = entries.Where(x => x.Value.Code == q.AthleteId || (x.Value.IfId.Length > 0 && WorldAquaticsId(x.Value.IfId) == q.AthleteId)).ToList();
+                chosen = all.Where(x => (x.Value.Code == q.AthleteId || (x.Value.IfId.Length > 0 && WorldAquaticsId(x.Value.IfId) == q.AthleteId)) &&
+                    NationFits(q.Nation, x.Value.Nation) && (q.Athlete.Length == 0 || SameFamily(family, given, x.Value))).ToList();
                 found.How = "με τον αριθμό μητρώου";
             }
 
-            // 2. The name (Greek or Latin letters) and the year of birth.
+            // 2. The name (Greek or Latin letters, family name first or last), the year of birth and the nation.
             if ((chosen == null || chosen.Count == 0) && q.Athlete.Length > 0)
             {
-                string family, given;
-                SwimNameMatch.Split(q.Athlete, out family, out given);
-                chosen = entries.Where(x =>
-                    (q.BirthYear == 0 || x.Value.BirthYear == 0 || x.Value.BirthYear == q.BirthYear) &&
-                    Math.Max(SwimNameMatch.Similarity(family, given, x.Value.FamilyName, x.Value.GivenName),
-                             SwimNameMatch.Similarity(family, given, x.Value.FamilyNameLatin, x.Value.GivenNameLatin)) >= SwimNameMatch.SameName).ToList();
+                chosen = all.Where(x =>
+                    (q.BirthYear == 0 || x.Value.BirthYear == 0 || x.Value.BirthYear == q.BirthYear) && NationFits(q.Nation, x.Value.Nation) &&
+                    NameLike(family, given, x.Value) >= SwimNameMatch.SameName).ToList();
                 found.How = "με το όνομα";
             }
 
-            // 3. The lane, and the final time read (the closest within a second).
-            if ((chosen == null || chosen.Count == 0) && q.Lane > 0)
+            if (chosen != null && chosen.Count > 0)
             {
-                chosen = entries.Where(x => x.Value.Lane == q.Lane).ToList();
-                if (q.Final.HasValue && chosen.Count > 1)
+                // The swimmer of the race: his result, or his results to choose from (heats and final, the round not typed); none
+                // with a time (DSQ, DNS): said, nothing goes in.
+                found.ByAthlete = true;
+                List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> timed = chosen.Where(x => x.Value.Time.HasValue).ToList();
+                if (timed.Count == 0)
                 {
-                    List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> near = chosen
-                        .Where(x => Math.Abs(x.Value.Time.Value - q.Final.Value) <= 1.0)
-                        .OrderBy(x => Math.Abs(x.Value.Time.Value - q.Final.Value)).ToList();
-                    if (near.Count > 0)
-                        chosen = near.Count > 1 && Math.Abs(near[1].Value.Time.Value - q.Final.Value) - Math.Abs(near[0].Value.Time.Value - q.Final.Value) < 0.2
-                            ? near : near.Take(1).ToList();
+                    SwimOfficialEntry none = chosen[0].Value;
+                    found.Error = "ο αθλητής βρέθηκε (" + chosen[0].Key.Phase + ") χωρίς χρόνο" + (none.Status.Length > 0 ? ": " + none.Status : "");
+                    return found;
                 }
 
-                found.How = q.Final.HasValue ? "με τον διάδρομο και τον χρόνο που διαβάστηκε" : "με τον διάδρομο";
+                if (timed.Count > 1)
+                {
+                    found.Choices = timed;
+                    return found;
+                }
+
+                found.Unit = timed[0].Key;
+                found.Entry = timed[0].Value;
+                return found;
             }
 
-            if (chosen == null || chosen.Count == 0)
+            // 3. The lane (of the race, or "L4" in the name of the video): with the final time read, its swimmer within half a second
+            // of it when no other is within a second, all results read and the race's athlete not given; else its swimmers to
+            // choose from, the nearest to the time read first.
+            found.AthleteNotFound = q.AthleteId.Length > 0 || q.Athlete.Length > 0;
+            if (q.Lane <= 0)
             {
-                found.Error = q.AthleteId.Length > 0 || q.Athlete.Length > 0
-                    ? "ο αθλητής δεν βρέθηκε στο αγώνισμα (έλεγξε τη φάση, ή διάλεξε από τη λίστα με τον διάδρομο)"
+                found.Error = found.AthleteNotFound ? "ο αθλητής δεν βρέθηκε στο αγώνισμα (έλεγξε τη φάση και το όνομα, ή γράψε τον διάδρομο)"
                     : "διάλεξε πρώτα τον αθλητή ή γράψε τον διάδρομο";
-                found.Choices = q.Lane > 0 ? entries.Where(x => x.Value.Lane == q.Lane).ToList() : new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
                 return found;
             }
 
-            if (chosen.Count > 1)
+            List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> lane = all.Where(x => x.Value.Lane == q.Lane && x.Value.Time.HasValue).ToList();
+            if (lane.Count == 0)
             {
-                // Heats and final of the same swimmer: the round typed decides, else the analyst.
-                found.Choices = chosen;
+                found.Error = "κανείς με χρόνο στον διάδρομο " + q.Lane.ToString(CultureInfo.InvariantCulture) + " του αγωνίσματος" +
+                    (found.AthleteNotFound ? ", και ο αθλητής δεν βρέθηκε" : "");
                 return found;
             }
 
-            found.Unit = chosen[0].Key;
-            found.Entry = chosen[0].Value;
+            if (q.Final.HasValue)
+                lane = lane.OrderBy(x => Math.Abs(x.Value.Time.Value - q.Final.Value)).ToList();
+            found.How = q.Final.HasValue ? "με τον διάδρομο και τον χρόνο που διαβάστηκε" : "με τον διάδρομο";
+            bool sure = !found.AthleteNotFound && found.Missing == 0 && !found.Truncated && q.Final.HasValue &&
+                Math.Abs(lane[0].Value.Time.Value - q.Final.Value) <= 0.5 &&
+                (lane.Count == 1 || Math.Abs(lane[1].Value.Time.Value - q.Final.Value) > 1.0);
+            if (!sure)
+            {
+                found.Choices = lane;
+                return found;
+            }
+
+            found.Unit = lane[0].Key;
+            found.Entry = lane[0].Value;
             return found;
+        }
+
+        /// <summary>The competitions of the KOE live results a day before to a day after (seasons read once).</summary>
+        private static List<SwimKoeCompetition> KoeCompetitionsAround(DateTime day, Dictionary<int, List<SwimKoeCompetition>> seasons)
+        {
+            List<SwimKoeCompetition> all = new List<SwimKoeCompetition>();
+            foreach (int season in new[] { day.Year, day.Year + 1 })
+            {
+                List<SwimKoeCompetition> list;
+                if (!seasons.TryGetValue(season, out list))
+                {
+                    list = SwimOfficialResults.KoeCompetitions(season);
+                    seasons[season] = list;
+                }
+
+                all.AddRange(list);
+            }
+
+            return all.Where(c => c.From.HasValue && c.From.Value.Date <= day.AddDays(1) && (c.To ?? c.From).Value.Date >= day.AddDays(-1))
+                .GroupBy(c => c.Code).Select(g => g.First()).ToList();
+        }
+
+        /// <summary>How alike the name typed and a competition's names (Greek, Latin) are (0-1).</summary>
+        private static double CompetitionLike(string typed, SwimKoeCompetition c)
+        {
+            return Math.Max(NameLike(typed, c.Name), NameLike(typed, c.NameLatin));
+        }
+
+        /// <summary>The gender of an event fits the race's: the same, or either unknown, or a mixed event.</summary>
+        private static bool GenderFits(string unit, string race)
+        {
+            return string.IsNullOrEmpty(unit) || string.IsNullOrEmpty(race) || unit == "X" || unit == race;
+        }
+
+        /// <summary>The nation of a result fits the race's athlete: the same, or either unknown.</summary>
+        private static bool NationFits(string athlete, string entry)
+        {
+            return string.IsNullOrEmpty(athlete) || string.IsNullOrWhiteSpace(entry) || string.Equals(athlete.Trim(), entry.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>How alike the race's athlete (family and given name as typed, either order) and a result's swimmer are (0-1).</summary>
+        private static double NameLike(string family, string given, SwimOfficialEntry e)
+        {
+            return Math.Max(
+                Math.Max(SwimNameMatch.Similarity(family, given, e.FamilyName, e.GivenName), SwimNameMatch.Similarity(family, given, e.FamilyNameLatin, e.GivenNameLatin)),
+                Math.Max(SwimNameMatch.Similarity(given, family, e.FamilyName, e.GivenName), SwimNameMatch.Similarity(given, family, e.FamilyNameLatin, e.GivenNameLatin)));
+        }
+
+        /// <summary>The race's athlete has the family name of a result's swimmer (the athlete's number found there: the same person).</summary>
+        private static bool SameFamily(string family, string given, SwimOfficialEntry e)
+        {
+            foreach (string name in new[] { family, given })
+            {
+                if (SwimNameMatch.FamilySimilarity(name, e.FamilyName) >= 0.95 || SwimNameMatch.FamilySimilarity(name, e.FamilyNameLatin) >= 0.95)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>The registry's code of an international athlete from his World Aquatics code ("WA123456").</summary>
@@ -347,20 +612,37 @@ namespace Kinovea.ScreenManager
         private void OfferOfficial(OfficialFound found, OfficialQuery q)
         {
             string title = "🔗 Επίσημα αποτελέσματα";
+            if (found.AskCompetition && found.Competitions.Count == 1)
+            {
+                SwimKoeCompetition only = found.Competitions[0];
+                if (MessageBox.Show(DialogOwner, "Τη μέρα του αγώνα η ΚΟΕ έχει μία διοργάνωση, με άλλο όνομα από αυτό των στοιχείων του αγώνα:\n\n" +
+                    only + "\n\nΕίναι αυτή;", title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                {
+                    Status("🔗 Δεν μπήκαν επίσημοι χρόνοι: επικόλλησε τον σύνδεσμο της διοργάνωσης στα στοιχεία του αγώνα.", false);
+                    return;
+                }
+
+                LinkOfficialResults(KoeLink(only.Code));
+                return;
+            }
+
             if (found.Competitions.Count > 1)
             {
                 Status("🔗 Την ίδια μέρα έγιναν " + found.Competitions.Count.ToString(CultureInfo.InvariantCulture) + " διοργανώσεις: διάλεξε.", false);
                 int i = SwimChoiceDialog.Choose(DialogOwner, title, "Ποια διοργάνωση είναι;", found.Competitions.Select(c => c.ToString()).ToList());
                 if (i < 0)
                     return;
-                LinkOfficialResults(found.Competitions[i].Code.ToString(CultureInfo.InvariantCulture));
+                LinkOfficialResults(KoeLink(found.Competitions[i].Code));
                 return;
             }
 
             if (found.Entry == null && found.Choices.Count > 0)
             {
-                List<string> items = found.Choices.Select(x => OfficialLine(x.Key, x.Value)).ToList();
-                int i = SwimChoiceDialog.Choose(DialogOwner, title, (found.Error != null ? "Δεν βρέθηκε μόνο ένας: " : "") + "ποιος είναι ο αθλητής του βίντεο;", items);
+                List<string> items = found.Choices.Select(x => OfficialLine(x.Key, x.Value, q.Final)).ToList();
+                string question = found.AthleteNotFound
+                    ? "Ο αθλητής του αγώνα δεν βρέθηκε στα αποτελέσματα" + MissingNote(found) + ". Είναι κάποιος από αυτούς ο αθλητής του βίντεο;"
+                    : "Ποιος είναι ο αθλητής του βίντεο;" + MissingNote(found);
+                int i = SwimChoiceDialog.Choose(DialogOwner, title, question, items);
                 if (i < 0)
                 {
                     Status("🔗 Δεν μπήκαν επίσημοι χρόνοι.", false);
@@ -378,19 +660,33 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // The race's athlete stays his own when the swimmer was not found by him (the lane, the list) and the race has one.
             SwimOfficialEntry e = found.Entry;
             SwimAthlete athlete = RegistryAthlete(e, q.Registry);
+            bool keepAthlete = !found.ByAthlete && !string.IsNullOrWhiteSpace(Race.Athlete) && (athlete == null || athlete.Id != (Race.AthleteId ?? ""));
             List<double> times = e.OfficialTimes();
             StringBuilder b = new StringBuilder();
-            b.Append("Βρέθηκε ").Append(found.How).Append(":\n\n").Append(OfficialLine(found.Unit, e)).Append("\n\n");
+            b.Append("Βρέθηκε ").Append(found.How).Append(":\n\n");
+            b.Append(found.Source.Length > 0 ? found.Source : "Επίσημα αποτελέσματα");
+            if (found.Unit.Date.HasValue)
+                b.Append(" · ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture));
+            b.Append('\n').Append(OfficialLine(found.Unit, e, null)).Append("\n\n");
             b.Append("Επίσημοι χρόνοι: ").Append(SwimRace.FormatOfficial(times));
             if (e.Reaction.HasValue)
                 b.Append(" · αντίδραση ").Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
             b.Append('\n');
-            if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
+            if (keepAthlete)
+                b.Append("Ο αθλητής του αγώνα μένει ο ίδιος: ").Append(Race.Athlete).Append('\n');
+            else if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 b.Append("Αθλητής από το μητρώο: ").Append(athlete.Name).Append(" (").Append(athlete.Id).Append(")\n");
             if (Race.Lane == 0 || Race.Lane != e.Lane)
                 b.Append("Διάδρομος: ").Append(e.Lane.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            DateTime? raceDay = ParseRaceDate(Race.Date);
+            if (found.Unit.Date.HasValue && (!raceDay.HasValue || raceDay.Value.Date != found.Unit.Date.Value.Date))
+                b.Append("Ημερομηνία του αγώνα: ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture))
+                    .Append(raceDay.HasValue ? " (στα στοιχεία: " + raceDay.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture) + ")" : "").Append('\n');
+            if (found.Missing > 0)
+                b.Append("(Δεν διαβάστηκαν τα αποτελέσματα ").Append(found.Missing.ToString(CultureInfo.InvariantCulture)).Append(" σειρών.)\n");
             b.Append("\nΝα μπουν στην ανάλυση; (Ο τερματισμός και οι τοίχοι στους επίσημους χρόνους, όσα σημάδια δεν έχεις ελέγξει μετακινούνται.)");
             if (MessageBox.Show(DialogOwner, b.ToString(), title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             {
@@ -398,43 +694,63 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
+            if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 SetAthlete(athlete);
             if (e.Lane > 0)
                 Race.Lane = e.Lane;
             if (string.IsNullOrWhiteSpace(Race.Athlete))
                 Race.Athlete = e.Name.Length > 0 ? e.Name : e.NameLatin;
+
+            // The race's details from the results: the day, and the round and the competition when not typed.
+            if (found.Unit.Date.HasValue)
+                Race.Date = found.Unit.Date.Value.ToString("d.M.yyyy", CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(Race.Round))
+                Race.Round = RoundName(found.Unit.Round);
+            if (string.IsNullOrWhiteSpace(Race.Competition) && found.Competition != null)
+                Race.Competition = found.Competition.Name;
             OfficialChanged(times, e.Reaction);
 
-            // The link of the competition, for its next races.
-            string competition = SwimAthleteList.Normalize(Race.Competition ?? "");
-            if (competition.Length > 0 && !string.IsNullOrWhiteSpace(q.Link))
+            // The link of the competition, for its next races in the same days.
+            string link = !string.IsNullOrWhiteSpace(q.Link) ? q.Link.Trim() : found.Competition != null ? KoeLink(found.Competition.Code) : "";
+            if (link.Length > 0)
             {
-                if (Settings.ResultsLinks == null)
-                    Settings.ResultsLinks = new Dictionary<string, string>();
-                Settings.ResultsLinks[competition] = q.Link.Trim();
-                Settings.Save();
+                Race.ResultsLink = link;
+                RememberResultsLink(Race.Competition, found.Unit.Date ?? ParseRaceDate(Race.Date), link);
             }
+
             if (form != null)
                 form.RefreshAll();
 
-            // The registry learns from it: a Latin spelling of our athlete, an international athlete's unique code.
-            RememberOfficialAthlete(e, athlete);
+            // The registry learns from it (a sure match only): a Latin spelling of our athlete, an international athlete's code.
+            if (!keepAthlete)
+                RememberOfficialAthlete(e, athlete, found.ByAthlete);
         }
 
-        /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54".</summary>
-        private static string OfficialLine(SwimOfficialUnit u, SwimOfficialEntry e)
+        /// <summary>" (δεν διαβάστηκαν όλα τα αποτελέσματα)" when some heats were not read or left out.</summary>
+        private static string MissingNote(OfficialFound found)
+        {
+            return found.Missing > 0 || found.Truncated ? " (δεν διαβάστηκαν όλα τα αποτελέσματα)" : "";
+        }
+
+        /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54" (and its difference from the time read).</summary>
+        private static string OfficialLine(SwimOfficialUnit u, SwimOfficialEntry e, double? read)
         {
             string name = e.Name.Length > 0 ? e.Name : e.NameLatin;
             string about = string.Join(", ", new[] { e.Club, e.Nation, e.BirthYear > 0 ? e.BirthYear.ToString(CultureInfo.InvariantCulture) : "" }
                 .Where(x => !string.IsNullOrEmpty(x)).ToArray());
             int heat = e.Heat > 0 ? e.Heat : u.Heat;
-            return string.Format(CultureInfo.InvariantCulture, "{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}", u.Event, u.Phase,
+            string line = string.Format(CultureInfo.InvariantCulture, "{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}", u.Event, u.Phase,
                 heat > 0 ? " " + heat.ToString(CultureInfo.InvariantCulture) : "", e.Lane, name,
                 about.Length > 0 ? " (" + about + ")" : "", e.Time.HasValue ? SwimReference.FormatTime(e.Time.Value) : e.Status);
+            if (read.HasValue && e.Time.HasValue)
+                line += string.Format(CultureInfo.InvariantCulture, " (Δ {0:+0.00;-0.00} από τον χρόνο του βίντεο)", e.Time.Value - read.Value);
+            return line;
         }
 
-        /// <summary>The registry's athlete of a result: his number (the KOE results), else his name, gender and year of birth.</summary>
+        /// <summary>
+        /// The registry's athlete of a result: his number (the KOE results) with his family name and nation, else his name, gender,
+        /// year of birth and nation (one athlete only).
+        /// </summary>
         private static SwimAthlete RegistryAthlete(SwimOfficialEntry e, SwimAthleteList registry)
         {
             if (registry == null || e == null)
@@ -443,10 +759,11 @@ namespace Kinovea.ScreenManager
             // His code (the federation's number of a Greek athlete, the World Aquatics one of an international athlete) with his family
             // name (another spelling of the given name, "Giorgos" for "Georgios", stays his).
             SwimAthlete byCode = (e.Code.Length > 0 ? registry.Find(e.Code) : null) ?? (e.IfId.Length > 0 ? registry.Find(WorldAquaticsId(e.IfId)) : null);
-            if (byCode != null && (LikeAthlete(byCode, e, false) >= SwimNameMatch.SameName || LikeAthlete(byCode, e, true) >= FamilyByCode))
+            if (byCode != null && NationFits(AthleteNation(byCode), e.Nation) &&
+                (LikeAthlete(byCode, e, false) >= SwimNameMatch.SameName || LikeAthlete(byCode, e, true) >= FamilyByCode))
                 return byCode;
 
-            // Else his name or another spelling of it, his year of birth and gender, one athlete only.
+            // Else his name or another spelling of it, his year of birth, gender and nation, one athlete only.
             List<SwimAthlete> like = registry.Athletes.Where(a =>
             {
                 int born;
@@ -455,7 +772,7 @@ namespace Kinovea.ScreenManager
                 string gender = SwimReference.NormalizeGender(a.Gender);
                 if (e.Gender.Length > 0 && gender.Length > 0 && gender != e.Gender)
                     return false;
-                if (a.International && !string.IsNullOrEmpty(a.Nation) && e.Nation.Length > 0 && !a.Nation.Equals(e.Nation, StringComparison.OrdinalIgnoreCase))
+                if (!NationFits(AthleteNation(a), e.Nation))
                     return false;
                 return LikeAthlete(a, e, false) >= SwimNameMatch.SameName;
             }).Take(2).ToList();
@@ -484,18 +801,21 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The registry from the official results (since 2026-10-19): the Latin spelling of the name of an athlete of it that it does
-        /// not know yet kept (results abroad have no registry number), an international athlete not in it added with his unique code
-        /// (the analyst says whether he is one already there under another spelling).
+        /// not know yet kept (results abroad have no registry number) when the swimmer was found by him (his number or his name,
+        /// the same year of birth), an international athlete not in it added with his unique code (the analyst says whether he is
+        /// one already there under another spelling).
         /// </summary>
-        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete)
+        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete, bool byAthlete)
         {
             if (e == null || Settings == null || !Settings.IsConfigured)
                 return;
 
             if (athlete != null)
             {
+                int born;
+                bool otherYear = e.BirthYear > 0 && int.TryParse(athlete.BirthYear, NumberStyles.Integer, CultureInfo.InvariantCulture, out born) && born != e.BirthYear;
                 string latin = e.NameLatin;
-                if (latin.Length == 0 || KnownSpelling(athlete, latin))
+                if (!byAthlete || otherYear || latin.Length == 0 || KnownSpelling(athlete, latin))
                     return;
 
                 client.AddAlias(Settings.WebAppUrl, Settings.Token, athlete.Id, latin, result =>

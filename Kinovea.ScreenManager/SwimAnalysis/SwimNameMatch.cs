@@ -136,19 +136,99 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// How alike two persons' names are (0-1): the family names' keys (Jaro-Winkler), and the given names' stems when both have
-        /// one (a stem the start of the other counts as the same). Another given name (under GivenSame) halves it: the same family,
-        /// another person.
+        /// How alike two persons' names are (0-1): the family names (FamilySimilarity) and the given names (GivenSimilarity). A family
+        /// name alone (no given name on one side) never reaches SameName; another given name halves it: the same family, another
+        /// person. (Since 2026-10-19 the family names must be the same spelling, give or take one letter: GEORGIOU and GEORGIADOU,
+        /// IOANNOU and IOANNIDOU are other families.)
         /// </summary>
         public static double Similarity(string family1, string given1, string family2, string given2)
         {
-            double f = JaroWinkler(Key(family1), Key(family2));
-            string g1 = GivenKey(given1), g2 = GivenKey(given2);
-            if (g1.Length == 0 || g2.Length == 0)
-                return f;
+            double f = FamilySimilarity(family1, family2);
+            if (f <= 0)
+                return 0;
+            if (GivenKey(given1).Length == 0 || GivenKey(given2).Length == 0)
+                return 0.9 * f;
 
-            double g = g1.StartsWith(g2, StringComparison.Ordinal) || g2.StartsWith(g1, StringComparison.Ordinal) ? 1.0 : JaroWinkler(g1, g2);
+            double g = GivenSimilarity(given1, given2);
             return g >= GivenSame ? 0.65 * f + 0.35 * g : 0.5 * Math.Min(f, g);
+        }
+
+        /// <summary>
+        /// How alike two family names are (0-1): 1 for the same key (the usual spellings made one), 0.95 for one letter apart in names
+        /// of seven letters or more (another spelling of Η, B for V…), else 0.
+        /// </summary>
+        public static double FamilySimilarity(string a, string b)
+        {
+            string ka = Key(a).Replace(" ", ""), kb = Key(b).Replace(" ", "");
+            if (ka.Length == 0 || kb.Length == 0)
+                return 0;
+            if (ka == kb)
+                return 1;
+            return Math.Min(ka.Length, kb.Length) >= 7 && WithinOneEdit(ka, kb) ? 0.95 : 0;
+        }
+
+        /// <summary>
+        /// How alike two given names are (0-1): the same stem (GIORG for Georgios and Giorgos), one of the usual short forms (Kostas,
+        /// Konstantinos), a long stem the start of the other or one letter apart; else 0 (MARIA and MARINA, MARIOS and MARKOS, ANNA
+        /// and ANASTASIA are other names).
+        /// </summary>
+        public static double GivenSimilarity(string a, string b)
+        {
+            string ga = GivenKey(a), gb = GivenKey(b);
+            if (ga.Length == 0 || gb.Length == 0)
+                return 0;
+            if (ga == gb || ShortForm(ga) == ShortForm(gb))
+                return 1;
+            if (Math.Min(ga.Length, gb.Length) < 5)
+                return 0;
+            if (ga.StartsWith(gb, StringComparison.Ordinal) || gb.StartsWith(ga, StringComparison.Ordinal))
+                return 0.95;
+            return WithinOneEdit(ga, gb) ? 0.9 : 0;
+        }
+
+        /// <summary>The usual short forms of Greek given names, by stem (GivenKey): the stem of the full name for each.</summary>
+        private static readonly Dictionary<string, string> ShortForms = new Dictionary<string, string>
+        {
+            { "IOAN", "GIAN" }, { "KONSTADIN", "KOST" }, { "NIKOLA", "NIK" }, { "PANAGIOT", "PAN" }, { "ATANAS", "TAN" },
+            { "TANAS", "TAN" }, { "EVAGEL", "VAGEL" }, { "STILIAN", "STEL" }, { "EMANUIL", "MAN" }, { "MANOL", "MAN" },
+            { "SPIRIDON", "SPIR" }, { "HARALAB", "HAR" }, { "BAB", "HAR" }, { "EKATERIN", "KATERIN" }
+        };
+
+        private static string ShortForm(string stem)
+        {
+            string s;
+            return ShortForms.TryGetValue(stem, out s) ? s : stem;
+        }
+
+        /// <summary>The two strings are the same but for one letter changed, added or left out.</summary>
+        private static bool WithinOneEdit(string a, string b)
+        {
+            if (Math.Abs(a.Length - b.Length) > 1)
+                return false;
+            int i = 0, j = 0, edits = 0;
+            while (i < a.Length && j < b.Length)
+            {
+                if (a[i] == b[j])
+                {
+                    i++;
+                    j++;
+                    continue;
+                }
+
+                if (++edits > 1)
+                    return false;
+                if (a.Length > b.Length)
+                    i++;
+                else if (b.Length > a.Length)
+                    j++;
+                else
+                {
+                    i++;
+                    j++;
+                }
+            }
+
+            return edits + (a.Length - i) + (b.Length - j) <= 1;
         }
 
         /// <summary>The same person by the name (Similarity): the family names this alike and the given names GivenSame.</summary>

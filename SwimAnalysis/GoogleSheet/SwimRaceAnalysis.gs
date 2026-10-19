@@ -213,6 +213,8 @@ function swimHandle_(req) {
   } catch (err) {
     return swimJson_({ ok: false, error: String(err && err.message ? err.message : err), stack: String(err && err.stack ? err.stack : '') });
   } finally {
+    // Οι αλλαγές γράφονται πριν αφεθεί το κλείδωμα: το επόμενο αίτημα (π.χ. ένας ακόμη διεθνής αθλητής) τις βλέπει (2.7.6).
+    try { SpreadsheetApp.flush(); } catch (e) { /* τίποτα να γραφτεί */ }
     lock.releaseLock();
   }
 }
@@ -434,11 +436,19 @@ function swimAddAthlete_(req) {
   return { ok: true, id: id, created: true };
 }
 
-/** Ο επόμενος κωδικός διεθνούς αθλητή χωρίς κωδικό World Aquatics: X-ITA-0001, X-ITA-0002… */
+/**
+ * Ο επόμενος κωδικός διεθνούς αθλητή χωρίς κωδικό World Aquatics: X-ITA-0001, X-ITA-0002… Ο τελευταίος που δόθηκε κρατιέται στις
+ * ιδιότητες του script: ένας κωδικός δεν ξαναδίνεται ακόμη κι αν σβηστεί η γραμμή του (αγώνες μπορεί να τον έχουν ήδη).
+ */
 function swimNextIntlId_(rows, nation) {
   var max = 0, re = new RegExp('^X-' + nation + '-(\\d+)$');
   rows.forEach(function (r) { var m = re.exec(r.id); if (m) max = Math.max(max, Number(m[1])); });
-  return 'X-' + nation + '-' + ('000' + (max + 1)).slice(-4);
+  var props = PropertiesService.getScriptProperties();
+  var key = 'SWIM_INTL_LAST_' + nation;
+  var last = Number(props.getProperty(key) || 0);
+  var next = Math.max(max, isNaN(last) ? 0 : last) + 1;
+  props.setProperty(key, String(next));
+  return 'X-' + nation + '-' + ('000' + next).slice(-4);
 }
 
 /**

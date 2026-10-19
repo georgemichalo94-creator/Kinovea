@@ -1094,6 +1094,7 @@ namespace Kinovea.ScreenManager
             // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site,
             // a World Aquatics competition), or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
             tbResultsLink = new TextBox { Dock = DockStyle.Fill };
+            tbResultsLink.TextChanged += (s, e) => CommitRaceInfo(false);
             Button btnResults = new SwimNoFocusButton { Text = "🔗 Επίσημα αποτελέσματα", AutoSize = true, Height = 26 };
             btnResults.Click += (s, e) =>
             {
@@ -2351,6 +2352,8 @@ namespace Kinovea.ScreenManager
             r.Location = tbLocation.Text.Trim();
             r.Round = cmbRound.Text.Trim();
             r.Date = tbDate.Text.Trim();
+            if (tbResultsLink != null)
+                r.ResultsLink = tbResultsLink.Text.Trim();
             manager.RaceInfoChanged(structureChanged);
 
             // The previous races of the PB are those of the event.

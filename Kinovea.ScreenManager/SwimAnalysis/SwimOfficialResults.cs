@@ -671,7 +671,9 @@ namespace Kinovea.ScreenManager
         /// <summary>"M", "F", "X" of a category of Microplus ("WOMEN - GENERAL", "MEN - JUNIORS", its code "ASF").</summary>
         private static string CategoryGender(string name, string code)
         {
-            string s = (name ?? "").ToUpperInvariant();
+            string s = (name ?? "").Trim().ToUpperInvariant();
+            if (s == "M" || s == "W" || s == "F" || s == "X")
+                return s == "W" ? "F" : s;
             if (s.Contains("MIX"))
                 return "X";
             if (s.Contains("WOMEN") || s.Contains("GIRL") || s.Contains("FEMALE") || s.Contains("ΓΥΝΑΙΚ") || s.Contains("ΚΟΡΑΣ"))

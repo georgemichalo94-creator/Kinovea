@@ -44,6 +44,12 @@ assert.ok(r.ok && r.id === 'X-BEL-0001', JSON.stringify(r));
 r = call({ action: 'addAthlete', athlete: { name: 'EXAMPLE Bruno', nation: 'FRA', birthYear: '2001' } });
 assert.ok(r.ok && r.created && r.id === 'X-FRA-0004', JSON.stringify(r));
 
+// The last code of a nation is never given again, even when its row is deleted (races may have it already).
+const intl = G._ss.getSheetByName('Διεθνείς αθλητές');
+intl.deleteRows(intl.getLastRow(), 1);
+r = call({ action: 'addAthlete', athlete: { name: 'PLACEHOLDER Dino', nation: 'FRA', birthYear: '2004' } });
+assert.ok(r.ok && r.created && r.id === 'X-FRA-0005', JSON.stringify(r));
+
 // Refused: no nation, Greece (the registry), no name.
 assert.strictEqual(call({ action: 'addAthlete', athlete: { name: 'NOBODY', nation: '' } }).ok, false);
 assert.strictEqual(call({ action: 'addAthlete', athlete: { name: 'DOKIMI Alfa', nation: 'GRE' } }).ok, false);
