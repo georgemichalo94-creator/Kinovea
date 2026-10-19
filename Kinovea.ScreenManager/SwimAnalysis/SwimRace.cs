@@ -182,6 +182,13 @@ namespace Kinovea.ScreenManager
         public string EliteFileId = "";
         public string EliteLabel = "";
         public string EliteComment = "";
+
+        /// <summary>
+        /// A final frame the analyst chose («📷 Από αυτό το καρέ»), not the one of the finish: taken again there when the official
+        /// times change (since 2026-10-19).
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Chosen;
     }
 
     /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>

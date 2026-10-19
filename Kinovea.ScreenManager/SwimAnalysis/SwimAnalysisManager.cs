@@ -1992,6 +1992,9 @@ namespace Kinovea.ScreenManager
             Race = VideoFile.Races[VideoFile.Races.Count - 1];
             VideoFile.ActiveRaceId = Race.Id;
             ClearUndo();
+
+            // Its official times placed in it as it is now (as when it is selected).
+            ReapplyOfficial();
             Changed(false);
             if (form != null)
                 form.RefreshAll();

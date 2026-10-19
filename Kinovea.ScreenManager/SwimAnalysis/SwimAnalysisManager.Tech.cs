@@ -1147,7 +1147,7 @@ namespace Kinovea.ScreenManager
         /// Frame of the finish with the graphics of the video (final time, velocity chart) for the race report.
         /// Taken when the finish is marked, or from the panel at the current frame. Replaces the previous one.
         /// </summary>
-        public void CaptureFinalFrame(long timestamp)
+        public void CaptureFinalFrame(long timestamp, bool chosen = false)
         {
             if (!HasVideo || Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue)
                 return;
@@ -1156,7 +1156,7 @@ namespace Kinovea.ScreenManager
             if (image == null)
                 return;
 
-            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός" };
+            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός", Chosen = chosen };
             try
             {
                 frame.File = Path.GetFileName(SaveSnapshotImage(image, frame.Id));
@@ -1198,7 +1198,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            CaptureFinalFrame(player.CurrentTimestamp);
+            CaptureFinalFrame(player.CurrentTimestamp, true);
             Status("📷 Τελικό καρέ για το report: από αυτό το καρέ.", false);
         }
 
