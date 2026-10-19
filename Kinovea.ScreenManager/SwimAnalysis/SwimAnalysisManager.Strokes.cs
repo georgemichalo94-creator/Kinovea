@@ -499,7 +499,7 @@ namespace Kinovea.ScreenManager
             if (detection != null)
             {
                 detail = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Αυτόματη μέτρηση{0}{1}."),
-                    detection.Cycle > 0 ? SwimLang.T(" · κύκλος ") + detection.Cycle.ToString("0.00", CultureInfo.InvariantCulture).Replace('.', ',') + " s" : "",
+                    detection.Cycle > 0 ? SwimLang.T(" · κύκλος ") + SwimLang.Decimals(detection.Cycle.ToString("0.00", CultureInfo.InvariantCulture)) + " s" : "",
                     detection.Ropes ? "" : SwimLang.T(" · χωρίς σχοινιά διαδρομής"));
             }
             else if (found.HasValue)
@@ -553,7 +553,7 @@ namespace Kinovea.ScreenManager
 
         private static string FormatCount(double value)
         {
-            return value.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',');
+            return SwimLang.Decimals(value.ToString("0.##", CultureInfo.InvariantCulture));
         }
 
         /// <summary>

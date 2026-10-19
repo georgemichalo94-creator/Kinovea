@@ -89,6 +89,18 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>A number written with a point ("1.5") with the decimal separator of the language: "1,5" in Greek.</summary>
+        public static string Decimals(string invariant)
+        {
+            return english || invariant == null ? invariant : invariant.Replace('.', ',');
+        }
+
+        /// <summary>The question mark of the language: ";" in Greek, "?" in English.</summary>
+        public static string Question
+        {
+            get { return english ? "?" : ";"; }
+        }
+
         /// <summary>A place: "3η" (θέση) in Greek, "3rd" in English.</summary>
         public static string Ordinal(int n)
         {

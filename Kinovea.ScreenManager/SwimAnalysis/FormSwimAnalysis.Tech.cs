@@ -1172,7 +1172,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             string what = manager.Race.IsTraining ? SwimLang.T("όλα τα σημάδια της προσπάθειας") : SwimLang.T("τα σημάδια της τεχνικής ανάλυσης (5/10/15, χέρια, πίσω πόδι, περιστροφή)");
-            DialogResult answer = MessageBox.Show(this, SwimLang.T("Διαγραφή: ") + phase.Title + ", " + what + ";", SwimLang.T("Διαγραφή"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            DialogResult answer = MessageBox.Show(this, SwimLang.T("Διαγραφή: ") + phase.Title + ", " + what + SwimLang.Question, SwimLang.T("Διαγραφή"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (answer == DialogResult.Yes)
                 manager.DeletePhase(phase);
         }

@@ -142,7 +142,7 @@ namespace Kinovea.ScreenManager
 
         private static string Format(double? value)
         {
-            return value.HasValue ? value.Value.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',') : "";
+            return value.HasValue ? SwimLang.Decimals(value.Value.ToString("0.##", CultureInfo.InvariantCulture)) : "";
         }
     }
 }

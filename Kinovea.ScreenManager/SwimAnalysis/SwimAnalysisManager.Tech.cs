@@ -523,7 +523,7 @@ namespace Kinovea.ScreenManager
         {
             string[] what = { SwimLang.T("το ένα άκρο (π.χ. ο αστράγαλος)"), SwimLang.T("την κορυφή της γωνίας (π.χ. το γόνατο)"), SwimLang.T("το άλλο άκρο (π.χ. το ισχίο)") };
             int i = Math.Min(angleClicks.Count, 2);
-            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("📐 Γωνία «{0}» – κλικ {1}/3 στο {2}. Esc: ακύρωση."), AngleName, i + 1, what[i]);
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("📐 Γωνία «{0}» – κλικ {1}/3 στο {2}. Esc: ακύρωση."), SwimLang.Label(AngleName), i + 1, what[i]);
         }
 
         private void AngleClick(PointF point, long timestamp)

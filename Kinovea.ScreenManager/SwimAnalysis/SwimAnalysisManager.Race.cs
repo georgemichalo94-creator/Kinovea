@@ -1387,7 +1387,7 @@ namespace Kinovea.ScreenManager
             string warning = Race.Official == null ? null : SwimRace.OfficialWarning(Race.Official, Race.Distance, Race.K, Race.Unit);
             if (Race.Official == null)
                 Status(SwimLang.T("Οι επίσημοι χρόνοι αφαιρέθηκαν: η ανάλυση δείχνει ξανά τους χρόνους των σημαδιών") +
-                    (moved > 0 ? "· " + movedText + SwimLang.T(" γύρισαν εκεί που τα βρήκε η ανάγνωση.") : ".") + SwimLang.T(" «Αναίρεση»: πίσω."), false);
+                    (moved > 0 ? (SwimLang.English ? "; " : "· ") + movedText + SwimLang.T(" γύρισαν εκεί που τα βρήκε η ανάγνωση.") : ".") + SwimLang.T(" «Αναίρεση»: πίσω."), false);
             else if (!Race.StartTimestamp.HasValue)
                 Status(SwimLang.T("Οι επίσημοι χρόνοι κρατήθηκαν· μπαίνουν στα σημάδια όταν οριστεί η εκκίνηση."), false);
             else

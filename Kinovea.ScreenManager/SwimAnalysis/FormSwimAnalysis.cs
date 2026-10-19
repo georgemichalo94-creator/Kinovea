@@ -1122,7 +1122,8 @@ namespace Kinovea.ScreenManager
             AddRow(table, SwimLang.T("Πισίνα"), cmbPool);
             AddRow(table, SwimLang.T("Διοργάνωση"), tbCompetition);
             AddRow(table, SwimLang.T("Τόπος"), tbLocation);
-            AddRow(table, SwimLang.T("Φάση"), cmbRound);
+            // (Φάση: the round of the competition here, the phase of the technical analysis elsewhere.)
+            AddRow(table, SwimLang.English ? "Round" : "Φάση", cmbRound);
             AddRow(table, SwimLang.T("Ημερομηνία"), tbDate);
 
             // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site,
