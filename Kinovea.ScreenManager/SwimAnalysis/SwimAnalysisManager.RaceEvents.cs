@@ -243,6 +243,23 @@ namespace Kinovea.ScreenManager
                     MoveEventProposals(e.Item1, 0, marked.Timestamp, made);
             }
 
+            // The official reaction time of the results (since 2026-10-19): the release from the block at it, without cues (its answer
+            // teaches what the usual times gave, Read), and the entry from it; not where the analyst marked the release himself.
+            long? release = OfficialReleaseStamp();
+            if (release.HasValue && !Race.Marks.Any(m => m.Type == SwimMarkType.FeetOff && m.Pilot == null && m.Timestamp >= start && m.Timestamp <= to))
+            {
+                SwimProposal block = made.FirstOrDefault(x => x.Kind == KindRaceBlock);
+                if (block == null)
+                {
+                    block = new SwimProposal { Type = SwimMarkType.FeetOff, Kind = KindRaceBlock, Index = 0, Batch = batch };
+                    int at = made.FindIndex(x => x.Kind == KindRaceEntry);
+                    made.Insert(at >= 0 ? at : made.Count, block);
+                }
+
+                SetOfficialProposal(block, release.Value, SwimSplitDetector.OfficialConfidence, null);
+                MoveEventProposals(KindRaceBlock, 0, release.Value, made);
+            }
+
             return made;
         }
 

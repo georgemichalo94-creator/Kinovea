@@ -398,9 +398,7 @@ namespace Kinovea.ScreenManager
                 Race.Lane = e.Lane;
             if (string.IsNullOrWhiteSpace(Race.Athlete))
                 Race.Athlete = e.Name.Length > 0 ? e.Name : e.NameLatin;
-            if (e.Reaction.HasValue)
-                Race.OfficialReaction = e.Reaction;
-            OfficialChanged(times);
+            OfficialChanged(times, e.Reaction);
             if (form != null)
                 form.RefreshAll();
 
