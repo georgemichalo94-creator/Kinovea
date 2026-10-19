@@ -1031,6 +1031,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.AutoPick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.LanePick.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Official.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
@@ -1046,6 +1047,8 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimAthletes.cs" />
+    <Compile Include="SwimAnalysis\SwimNameMatch.cs" />
+    <Compile Include="SwimAnalysis\SwimOfficialResults.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimEventDetector.cs" />

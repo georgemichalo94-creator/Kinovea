@@ -90,6 +90,7 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbPool;
         private ComboBox cmbKind;
         private TextBox tbCompetition;
+        private TextBox tbResultsLink;
         private TextBox tbLocation;
         private ComboBox cmbRound;
         private TextBox tbDate;
@@ -1089,6 +1090,20 @@ namespace Kinovea.ScreenManager
             AddRow(table, "Τόπος", tbLocation);
             AddRow(table, "Φάση", cmbRound);
             AddRow(table, "Ημερομηνία", tbDate);
+
+            // The official results on the web (since 2026-10-19): the competition's link of the KOE live results, or none (the date).
+            tbResultsLink = new TextBox { Dock = DockStyle.Fill };
+            Button btnResults = new SwimNoFocusButton { Text = "🔗 Επίσημα αποτελέσματα", AutoSize = true, Height = 26 };
+            btnResults.Click += (s, e) => manager.LinkOfficialResults(tbResultsLink.Text);
+            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα της ΚΟΕ (live.koe.org.gr): τη διοργάνωση από τον σύνδεσμο που " +
+                "επικολλάς εδώ (ή, αν τον αφήσεις κενό, από την ημερομηνία και το όνομα της διοργάνωσης), το αγώνισμα από το στυλ και την " +
+                "απόσταση, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον τελικό " +
+                "χρόνο και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.";
+            toolTip.SetToolTip(tbResultsLink, resultsHelp);
+            toolTip.SetToolTip(btnResults, resultsHelp);
+            AddRow(table, "Αποτελέσματα (σύνδεσμος)", tbResultsLink);
+            AddRow(table, "", btnResults);
+
             AddRow(table, "Σημεία ελέγχου", tbCheckpoints);
             AddRow(table, "", btnDefaults);
 
@@ -1373,6 +1388,8 @@ namespace Kinovea.ScreenManager
                     tbLocation.Text = r.Location;
                     cmbRound.Text = r.Round;
                     tbDate.Text = r.Date;
+                    if (!tbResultsLink.Focused)
+                        tbResultsLink.Text = r.ResultsLink ?? "";
                     tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
                 }
 

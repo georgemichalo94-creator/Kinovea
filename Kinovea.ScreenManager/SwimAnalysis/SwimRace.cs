@@ -539,6 +539,17 @@ namespace Kinovea.ScreenManager
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public List<double> Official;
 
+        /// <summary>
+        /// The competition in the official results the race was found with (since 2026-10-19): the link of the KOE live results, or
+        /// the code of the competition there. Null: not linked.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string ResultsLink;
+
+        /// <summary>The official reaction time of the results (the release from the block, s), when they publish it.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? OfficialReaction;
+
         public Dictionary<int, SwimTurnManual> Turns = new Dictionary<int, SwimTurnManual>();
 
         /// <summary>Distances measured for the attempts of a training video, by attempt id.</summary>
