@@ -66,7 +66,10 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The numbering of a pool: lane n is at the place (n - 1 + Offset) from the near wall, or from the far wall.</summary>
+        /// <summary>
+        /// The numbering of a pool: lane n is at the place (n - 1 + Offset) from the near wall, or from the far wall; the offset -1,
+        /// 0 or +1 (lanes 1-8 or 0-9, and the outer lanes of the pool inside or outside its walls).
+        /// </summary>
         private struct LaneRule
         {
             public bool FromFar;
@@ -115,7 +118,7 @@ namespace Kinovea.ScreenManager
             int place = LanePlace(best, number, lanes);
             foreach (bool far in new[] { false, true })
             {
-                for (int offset = -2; offset <= 2; offset++)
+                for (int offset = -1; offset <= 1; offset++)
                 {
                     LaneRule r = new LaneRule { FromFar = far, Offset = offset };
                     int agree = seen.Count(o => LanePlace(r, o[0], o[2]) == o[1]);
@@ -135,7 +138,7 @@ namespace Kinovea.ScreenManager
             int bestRank = int.MaxValue;
             foreach (bool far in new[] { false, true })
             {
-                for (int offset = -2; offset <= 2; offset++)
+                for (int offset = -1; offset <= 1; offset++)
                 {
                     LaneRule r = new LaneRule { FromFar = far, Offset = offset };
                     r.Seen = seen.Count(o => LanePlace(r, o[0], o[2]) == o[1]);
