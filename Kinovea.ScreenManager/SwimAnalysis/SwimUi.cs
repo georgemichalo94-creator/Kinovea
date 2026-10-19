@@ -349,6 +349,12 @@ namespace Kinovea.ScreenManager
             {
                 pressed = true;
                 Invalidate();
+
+                // A button of the panel does not take the focus: what is being typed in the window (the official times) counts before
+                // it acts (since 2026-10-19).
+                FormSwimAnalysis form = GetStyle(ControlStyles.Selectable) ? null : FindForm() as FormSwimAnalysis;
+                if (form != null)
+                    form.CommitTyping();
             }
 
             base.OnMouseDown(e);

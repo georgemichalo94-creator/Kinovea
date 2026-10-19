@@ -604,7 +604,8 @@ namespace Kinovea.ScreenManager
             if (rows.Count == 0 || capacity == 0)
                 return;
 
-            int next = rows.FindIndex(r => !r.T.HasValue);
+            // (A checkpoint with an official time and no mark is still to mark: its time shows dimmed.)
+            int next = rows.FindIndex(r => !r.Marked);
             int first = 0;
             if (rows.Count > capacity)
             {
@@ -629,24 +630,26 @@ namespace Kinovea.ScreenManager
                 RectangleF r = new RectangleF(rx, rowsTop + (i - first) * rowHeight, rw, rowHeight - S(2));
                 if (i == next)
                     SwimTheme.FillRounded(g, SwimTheme.NextRow, r, 4);
-                else if (hoverId == id && row.T.HasValue)
+                else if (hoverId == id && row.Marked)
                     SwimTheme.FillRounded(g, SwimTheme.RaisedHover, r, 4);
 
-                Color distanceColor = i == next ? SwimTheme.Amber : (row.T.HasValue ? SwimTheme.Text : SwimTheme.Faint);
+                Color distanceColor = i == next ? SwimTheme.Amber : (row.Marked ? SwimTheme.Text : SwimTheme.Faint);
                 Write(g, row.D.ToString(CultureInfo.InvariantCulture) + race.Unit, cellFont, new RectangleF(colD, r.Top, rw * 0.3f, r.Height), distanceColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
                 CellRight(g, row.T.HasValue ? SwimReference.FormatTime(row.T.Value) : "–", timeFont, colT, r,
-                    warn ? SwimTheme.Red : (row.T.HasValue ? Color.White : SwimTheme.Faint));
+                    warn ? SwimTheme.Red : (row.Marked ? Color.White : row.T.HasValue ? SwimTheme.Dim : SwimTheme.Faint));
                 if (row.Vel.HasValue)
                     CellRight(g, row.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture), cellFont, colV, r, row.IsFree ? SwimTheme.Text : SwimTheme.Dim);
                 if (row.Strokes.HasValue)
                     CellRight(g, row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture) + (row.StrokesTyped ? " ✓" : ""), cellFont, colS, r,
                         row.StrokesTyped ? SwimTheme.Green : SwimTheme.Text);
 
-                if (row.T.HasValue)
+                if (row.Marked)
                 {
                     int distance = row.D;
                     string tip = "Μετάβαση του βίντεο στο πέρασμα των " + distance.ToString(CultureInfo.InvariantCulture) + race.Unit + "." +
+                        (row.Official ? "\nΟ χρόνος είναι ο επίσημος των αποτελεσμάτων." : row.OfficialTime.HasValue ?
+                            "\n⚠ Ο επίσημος χρόνος είναι " + SwimReference.FormatTime(row.OfficialTime.Value) + ": το σημάδι απέχει από αυτόν." : "") +
                         (warn ? "\n⚠ Ο χρόνος δεν είναι μεγαλύτερος από τον προηγούμενο." : "");
                     list.Add(new Item { Id = id, Bounds = r, Tip = tip, Click = () => manager.Seek(distance) });
                 }

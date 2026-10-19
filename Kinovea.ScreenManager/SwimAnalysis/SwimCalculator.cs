@@ -56,13 +56,23 @@ namespace Kinovea.ScreenManager
         public double? MarkT;
 
         /// <summary>
+        /// The analyst or the pilot marked it (T can be an official time without a mark: the checkpoint is still to mark, the
+        /// strokes are not counted from it).
+        /// </summary>
+        public bool Marked;
+
+        /// <summary>Half a frame of the video (s of the race): a time between two frames is passed on the frame nearest to it.</summary>
+        public double FrameSlack;
+
+        /// <summary>
         /// The checkpoint is passed at this race time of the video: its mark's frame (T without a mark), so that the graphics of the
-        /// frame of the mark show it when T is the official time a little after the frame.
+        /// frame of the mark show it when T is the official time a little after the frame. A mark between two frames (the pilot
+        /// keeps the time read, or the official one) is passed on the frame nearest to it, the one shown for it.
         /// </summary>
         public bool PassedAt(double t)
         {
             double? at = MarkT ?? T;
-            return at.HasValue && at.Value <= t + 1e-6;
+            return at.HasValue && at.Value <= t + FrameSlack + 1e-6;
         }
 
         /// <summary>Its time on the video (MarkT, else T; NaN: none), for the order of the checkpoints passed.</summary>
@@ -239,6 +249,12 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimCalculator
     {
+        /// <summary>
+        /// An official time stands for a mark this near to it at least (s), however fast the video (see Compute): the results have
+        /// hundredths, the touch on the pad is between two frames.
+        /// </summary>
+        public const double OfficialNear = 0.015;
+
         public static SwimComputed Compute(SwimRace race, SwimTiming timing, double strokeRounding)
         {
             SwimComputed result = new SwimComputed();
@@ -290,9 +306,11 @@ namespace Kinovea.ScreenManager
             // frame or the next one (the reading puts the walls there and the frames round it; the analyst's touch a frame off) or
             // where there is no mark; a mark farther (the start or the official time off) keeps its own time, the official one is
             // shown beside it.
+            // (At least 0.015 s: at 120 fps and more a frame and a half is less than the hundredth of the results and the touch.)
             Dictionary<int, double> official = race.OfficialTimes();
             double hsf = timing.HighSpeedFactor <= 0 ? 1.0 : timing.HighSpeedFactor;
-            double nearFrames = 1.5 * timing.FrameIntervalMilliseconds / hsf / 1000.0 + 1e-6;
+            double frame = timing.FrameIntervalMilliseconds / hsf / 1000.0;
+            double nearFrames = Math.Max(1.5 * frame, OfficialNear) + 1e-6;
             Dictionary<int, double> timeAt = new Dictionary<int, double>();
             for (int i = 0; i < race.Checkpoints.Count; i++)
             {
@@ -302,9 +320,11 @@ namespace Kinovea.ScreenManager
                 row.D = race.Checkpoints[i];
                 row.PrevD = i == 0 ? 0 : race.Checkpoints[i - 1];
                 row.Style = SwimPresets.StyleAt(race, row.D);
+                row.FrameSlack = frame > 0 ? frame / 2 : 0;
                 if (split != null)
                 {
                     row.T = timing.Seconds(split.Timestamp, origin);
+                    row.Marked = true;
                     timeAt[row.D] = row.T.Value;
                 }
 
@@ -686,11 +706,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static int PressesSinceLastSplit(SwimComputed computed)
         {
+            // From the last checkpoint marked (not one with an official time only: it is still to mark), at the frame of its mark.
             double lastSplit = 0;
             foreach (SwimRow row in computed.Rows)
             {
-                if (row.T.HasValue && row.T.Value > lastSplit)
-                    lastSplit = row.T.Value;
+                if (row.Marked && row.T.HasValue && row.OnVideo > lastSplit)
+                    lastSplit = row.OnVideo;
             }
 
             return computed.Strokes.Count(t => t > lastSplit);

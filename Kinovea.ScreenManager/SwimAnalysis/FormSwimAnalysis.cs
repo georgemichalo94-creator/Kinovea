@@ -159,6 +159,15 @@ namespace Kinovea.ScreenManager
         private Label lblFinalTime;
         private TextBox tbOfficial;
         private Label lblOfficial;
+
+        /// <summary>
+        /// The race whose official times are being typed and not put in yet (null: the box shows the race's own). Another race
+        /// selected meanwhile drops what was typed: it was not for it.
+        /// </summary>
+        private SwimRace officialEditRace;
+
+        /// <summary>Why the official times typed could not be put in (shown until they are corrected), null: none.</summary>
+        private string officialError;
         private Button btnFinalFrame;
         private Label lblFinalFrame;
         private TextBox tbFinishDist;
@@ -248,14 +257,16 @@ namespace Kinovea.ScreenManager
         protected override void OnDeactivate(EventArgs e)
         {
             // Checkpoints typed and not committed yet (the user goes back to the video to mark them),
-            // unless the list would drop a checkpoint that has a time (it may be half typed).
+            // unless the list would drop a checkpoint that has a time (it may be half typed). The official times too.
             CommitCheckpoints(true);
+            CommitOfficial();
             base.OnDeactivate(e);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             CommitCheckpoints(true);
+            CommitOfficial();
 
             // The window opens again where the analyst left it.
             if (WindowState == FormWindowState.Normal)
@@ -500,12 +511,22 @@ namespace Kinovea.ScreenManager
                 "από την αρχή μέχρι να ξεκινήσει η κάμερα να ακολουθεί τους αθλητές. Το προτείνει για έλεγχο: Enter σωστό,\n" +
                 "βελάκια και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια). Μαθαίνει από τις απαντήσεις σου.");
             Button autoRace = new SwimNoFocusButton { Text = "🤖 Όλος ο αγώνας", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
-            autoRace.Click += (s, e) => manager.BeginAutoRace();
+            autoRace.Click += (s, e) =>
+            {
+                if (OfficialTypedWrong())
+                    return;
+                manager.BeginAutoRace();
+            };
             toolTip.SetToolTip(autoRace, "Μετά την εκκίνηση: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό. Το Kinovea τον ακολουθεί\n" +
                 "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.");
             // The auto pilot (since 2026-10-18): the whole analysis without the analyst, then the PDF; its marks wait for the check.
             btnPilot = new SwimNoFocusButton { Text = "✈ Αυτόματος πιλότος", AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
-            btnPilot.Click += (s, e) => manager.RunAutoPilot();
+            btnPilot.Click += (s, e) =>
+            {
+                if (OfficialTypedWrong())
+                    return;
+                manager.RunAutoPilot();
+            };
             toolTip.SetToolTip(btnPilot, "Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση από το φως ή τον ήχο, ο αθλητής που ακολουθεί η κάμερα, όλα\n" +
                 "τα μήκη (περάσματα, τοίχοι, έξοδοι από το νερό, χεριές) και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρος (εκκίνηση,\n" +
                 "αθλητής). Ό,τι έβαλε περιμένει στον «Έλεγχο»: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος. Από τις απαντήσεις σου\n" +
@@ -877,6 +898,11 @@ namespace Kinovea.ScreenManager
                 "και τα 45 μ. πριν από αυτούς από αυτούς· η ανάλυση και το PDF δείχνουν τους επίσημους χρόνους.\n" +
                 "Γραμμένο μετά την ανάγνωση, μετακινεί τα σημάδια του πιλότου που δεν έχεις ελέγξει ακόμη.";
             tbOfficial = new TextBox { Width = 150, Margin = new Padding(3, 3, 2, 3) };
+            tbOfficial.TextChanged += (s, e) =>
+            {
+                if (!updating && officialEditRace == null)
+                    officialEditRace = manager.Race;
+            };
             tbOfficial.Leave += (s, e) => CommitOfficial();
             tbOfficial.KeyDown += (s, e) =>
             {
@@ -1487,10 +1513,15 @@ namespace Kinovea.ScreenManager
             try
             {
                 SetText(tbReaction, Format(r.Reaction));
-                // The official times: as typed while the analyst types them.
-                string official = SwimRace.FormatOfficial(r.Official);
-                if (!tbOfficial.Focused && tbOfficial.Text != official)
-                    tbOfficial.Text = official;
+                // The official times: as typed while the analyst types them for this race (and could not be put in), else the race's.
+                if (officialEditRace != r)
+                {
+                    officialEditRace = null;
+                    officialError = null;
+                    string official = SwimRace.FormatOfficial(r.Official);
+                    if (tbOfficial.Text != official)
+                        tbOfficial.Text = official;
+                }
                 SetText(tbEntryDistHands, Format(r.EntryDistHands));
                 SetText(tbEntryDistHips, Format(r.EntryDistHips));
                 SetText(tbEntryVelHands, Format(r.EntryVelHands));
@@ -1592,6 +1623,9 @@ namespace Kinovea.ScreenManager
                 gr.Tag = row.D;
                 gr.Cells["d"].Value = row.D + race.Unit + (row.Style != race.Style && race.Style == "im" ? " " + row.Style : "");
                 gr.Cells["t"].Value = Format(row.T);
+                gr.Cells["t"].ToolTipText = row.Official
+                    ? "Ο επίσημος χρόνος των αποτελεσμάτων" + (row.MarkT.HasValue ? " (το σημάδι στο " + FormatRaceTime(row.MarkT.Value) + ")." : " (δεν έχει μαρκαριστεί ακόμη).")
+                    : row.OfficialTime.HasValue ? "⚠ Ο επίσημος χρόνος είναι " + FormatRaceTime(row.OfficialTime.Value) + ": το σημάδι απέχει από αυτόν." : "";
                 gr.Cells["seg"].Value = Format(row.SegTime);
                 gr.Cells["vel"].Value = Format(row.Vel);
                 gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
@@ -2433,41 +2467,93 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void CommitOfficial()
         {
-            if (updating || manager.Race == null)
-                return;
-
+            // Only what was typed for this race (another one selected meanwhile: dropped, see RefreshManualFields).
             SwimRace r = manager.Race;
-            string error;
-            List<double> official = SwimRace.ParseOfficial(tbOfficial.Text, out error);
-            if (error == null)
-                error = SwimRace.OfficialProblem(official, r.Distance, r.Pool);
-            if (error != null)
+            if (updating || r == null || officialEditRace == null)
+                return;
+            if (officialEditRace != r)
             {
-                lblOfficial.Text = "⚠ " + error;
-                lblOfficial.ForeColor = colorWarn;
-                ShowStatus("Επίσημος χρόνος: " + error + ".", true);
+                officialEditRace = null;
+                RefreshManualFields();
                 return;
             }
 
-            if (SwimRace.FormatOfficial(official) == SwimRace.FormatOfficial(r.Official))
+            string error;
+            List<double> official = SwimRace.ParseOfficial(tbOfficial.Text, out error);
+            if (error == null)
+                error = SwimRace.OfficialProblem(official, r.Distance, r.Pool, r.K, r.Unit);
+            if (error != null)
+            {
+                // Shown until corrected (the typed text stays); the same again is not said again.
+                bool again = error == officialError;
+                officialError = error;
+                lblOfficial.Text = "⚠ " + error;
+                lblOfficial.ForeColor = colorWarn;
+                if (!again)
+                    ShowStatus("Επίσημος χρόνος: " + error + ".", true);
                 return;
+            }
+
+            officialEditRace = null;
+            officialError = null;
+            if (SwimRace.FormatOfficial(official) == SwimRace.FormatOfficial(r.Official))
+            {
+                RefreshManualFields();
+                RefreshOfficial(r, manager.Computed);
+                return;
+            }
 
             manager.OfficialChanged(official);
+        }
+
+        /// <summary>
+        /// What is being typed in the window counts before a button of the panel acts (they never take the focus, so the box does not
+        /// lose it): the official times.
+        /// </summary>
+        internal void CommitTyping()
+        {
+            if (tbCheckpoints != null && tbCheckpoints.Focused)
+                CommitCheckpoints(true);
+            CommitOfficial();
+        }
+
+        /// <summary>
+        /// Official times typed for this race that could not be put in: the reading waits for them to be corrected (it would place the
+        /// walls without them). Says so.
+        /// </summary>
+        private bool OfficialTypedWrong()
+        {
+            if (officialEditRace == null || officialEditRace != manager.Race || officialError == null)
+                return false;
+
+            tabs.SelectedTab = tabFinish;
+            tbOfficial.Focus();
+            ShowStatus("Διόρθωσε πρώτα τον επίσημο χρόνο (ή σβήσ' τον): " + officialError + ".", true);
+            return true;
         }
 
         /// <summary>What the official times give in the analysis: the final time and the splits typed, and a mark elsewhere.</summary>
         private void RefreshOfficial(SwimRace race, SwimComputed computed)
         {
+            if (race == null || computed == null)
+                return;
+
+            // Typed and not put in (it could not be read): the warning stays until it is corrected.
+            if (officialEditRace == race && officialError != null)
+            {
+                lblOfficial.Text = "⚠ " + officialError;
+                lblOfficial.ForeColor = colorWarn;
+                return;
+            }
+
             Dictionary<int, double> official = race.OfficialTimes();
             if (official.Count == 0)
             {
-                // A text that could not be read stays with its warning until it is corrected.
-                if (!lblOfficial.Text.StartsWith("⚠", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(tbOfficial.Text))
-                {
-                    lblOfficial.Text = "–";
-                    lblOfficial.ForeColor = colorValue;
-                }
-
+                // Kept but not fitting the race any more (its distance or pool changed): said, not hidden.
+                string problem = race.Official == null ? null : SwimRace.OfficialProblem(race.Official, race.Distance, race.Pool, race.K, race.Unit);
+                lblOfficial.Text = problem != null ? "⚠ δεν μπαίνουν στην ανάλυση: " + problem : race.Official != null && !race.StartTimestamp.HasValue ?
+                    "μπαίνουν όταν οριστεί η εκκίνηση" : "–";
+                lblOfficial.ForeColor = problem != null ? colorWarn : colorValue;
                 return;
             }
 
@@ -2476,9 +2562,17 @@ namespace Kinovea.ScreenManager
                 apart.Add(string.Format(CultureInfo.InvariantCulture, "{0}{1}: σημάδι {2} (Δ {3} s)", row.D, race.Unit,
                     FormatRaceTime(row.T.Value), SwimReference.FormatDelta(row.T.Value - row.OfficialTime.Value)));
 
-            int splits = official.Count - 1;
-            string text = "τελικός " + SwimReference.FormatTime(official.Values.Max()) +
-                (splits > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0} ενδιάμεσοι", splits) : "");
+            // How the times typed are read: each at its distance (the first ones, the final one).
+            List<string> at = official.Where(o => o.Key != race.Distance).OrderBy(o => o.Key)
+                .Select(o => o.Key.ToString(CultureInfo.InvariantCulture) + race.Unit + " " + SwimReference.FormatTime(o.Value)).ToList();
+            if (at.Count > 3)
+                at = new List<string> { at[0], at[1], "…" };
+            double final;
+            string text = (at.Count > 0 ? string.Join(" · ", at.ToArray()) + " · " : "") +
+                (official.TryGetValue(race.Distance, out final) ? "τελικός " + SwimReference.FormatTime(final) : "");
+            string warning = SwimRace.OfficialWarning(race.Official, race.Distance, race.K, race.Unit);
+            if (warning != null)
+                apart.Add(warning);
             lblOfficial.Text = apart.Count == 0 ? "✔ " + text + " στην ανάλυση" : text + " · ⚠ " + string.Join(" · ", apart.ToArray());
             lblOfficial.ForeColor = apart.Count == 0 ? colorOk : colorWarn;
         }
@@ -2979,12 +3073,9 @@ namespace Kinovea.ScreenManager
 
         private static string FormatRaceTime(double seconds)
         {
-            if (seconds < 60)
-                return seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s";
-
-            int minutes = (int)(seconds / 60);
-            double rest = seconds - minutes * 60;
-            return minutes.ToString(CultureInfo.InvariantCulture) + ":" + rest.ToString("00.00", CultureInfo.InvariantCulture);
+            // (As SwimReference.FormatTime, rounded to the hundredth first: 59.996 is 1:00.00, not 60.00 s.)
+            string time = SwimReference.FormatTime(seconds);
+            return time.IndexOf(':') >= 0 ? time : time + " s";
         }
 
         private static string FormatStrokes(double? value)

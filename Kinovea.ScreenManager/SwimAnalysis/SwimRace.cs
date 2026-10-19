@@ -99,6 +99,16 @@ namespace Kinovea.ScreenManager
         /// <summary>The underwater distance estimated with the breakout (null: none).</summary>
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public double? Underwater;
+
+        /// <summary>
+        /// A checkpoint at an official time of the results (since 2026-10-19: put there, or moved there). Read: the frame where the
+        /// reading itself put it, where it goes back when the official time is taken away (null: it goes with it).
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Official;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public long? Read;
     }
 
     public class SwimTurnManual
@@ -640,7 +650,7 @@ namespace Kinovea.ScreenManager
         {
             Dictionary<int, double> times = new Dictionary<int, double>();
             List<double> official = Official == null ? null : Official.ToList();
-            if (official == null || official.Count == 0 || OfficialProblem(official, Distance, Pool) != null)
+            if (official == null || official.Count == 0 || OfficialProblem(official, Distance, Pool, K, Unit) != null)
                 return times;
 
             int step = Distance / official.Count;
@@ -650,14 +660,25 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Why official times do not fit a race (null: they do): each one after the one before, and as many as the walls they fall
-        /// on (one: the final time; else every distance / count, a multiple of the pool).
+        /// Fastest average speed of a part of a race in official times (m/s): faster is a typo (the fastest 50 yd freestyle, start
+        /// and turn in it, is about 2.6 m/s). A split typed as the final time, or the times of each 50 instead of the cumulative
+        /// ones, give such a speed.
         /// </summary>
-        public static string OfficialProblem(List<double> official, int distance, int pool)
+        public const double OfficialFastest = 2.75;
+
+        /// <summary>Slowest average speed of a part of a race in official times that is not questioned (m/s; see OfficialWarning).</summary>
+        public const double OfficialSlowest = 0.5;
+
+        /// <summary>
+        /// Why official times do not fit a race (null: they do): each one after the one before, as many as the walls they fall on
+        /// (one: the final time; else every distance / count, a multiple of the pool), and no part faster than a swimmer can be
+        /// (OfficialFastest). metersPerUnit: 1, or 0.9144 for yards; unit: "μ." or "yd".
+        /// </summary>
+        public static string OfficialProblem(List<double> official, int distance, int pool, double metersPerUnit = 1.0, string unit = "μ.")
         {
             if (official == null || official.Count == 0)
                 return null;
-            if (official.Any(t => double.IsNaN(t) || t <= 0))
+            if (official.Any(t => double.IsNaN(t) || double.IsInfinity(t) || t <= 0))
                 return "οι χρόνοι πρέπει να είναι θετικοί";
             for (int i = 1; i < official.Count; i++)
             {
@@ -665,12 +686,63 @@ namespace Kinovea.ScreenManager
                     return "κάθε χρόνος πρέπει να είναι μετά τον προηγούμενο (οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα)";
             }
 
-            if (official.Count == 1)
-                return null;
-            if (distance <= 0 || pool <= 0 || distance % official.Count != 0 || (distance / official.Count) % pool != 0)
+            if (official.Count > 1 && (distance <= 0 || pool <= 0 || distance % official.Count != 0 || (distance / official.Count) % pool != 0))
                 return string.Format(CultureInfo.InvariantCulture, "{0} χρόνοι δεν μοιράζουν τα {1} σε τοίχους της πισίνας: γράψε τον τελικό, " +
                     "ή όλους τους ενδιάμεσους των 50 (ή των 100) και τον τελικό", official.Count, distance);
+
+            foreach (OfficialPart part in OfficialParts(official, distance, metersPerUnit))
+            {
+                if (part.Speed > OfficialFastest)
+                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πιο γρήγορο απ' ό,τι κολυμπά άνθρωπος: έλεγξε " +
+                        "ότι είναι ο τελικός χρόνος (όχι ενδιάμεσος) και οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα",
+                        SwimReference.FormatTime(part.Time), part.From, part.To, unit);
+            }
+
             return null;
+        }
+
+        /// <summary>
+        /// A part of the race slower than OfficialSlowest in official times that fit it (null: none, or they do not fit): shown, the
+        /// times stand.
+        /// </summary>
+        public static string OfficialWarning(List<double> official, int distance, double metersPerUnit = 1.0, string unit = "μ.")
+        {
+            if (official == null || official.Count == 0)
+                return null;
+
+            foreach (OfficialPart part in OfficialParts(official, distance, metersPerUnit))
+            {
+                if (part.Speed > 0 && part.Speed < OfficialSlowest)
+                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πολύ αργό: έλεγξέ το",
+                        SwimReference.FormatTime(part.Time), part.From, part.To, unit);
+            }
+
+            return null;
+        }
+
+        private struct OfficialPart
+        {
+            public int From;
+            public int To;
+            public double Time;
+            public double Speed;
+        }
+
+        /// <summary>The parts of the race between the official times (from the start to the first one, then from each to the next).</summary>
+        private static IEnumerable<OfficialPart> OfficialParts(List<double> official, int distance, double metersPerUnit)
+        {
+            if (distance <= 0 || official.Count == 0 || distance % official.Count != 0)
+                yield break;
+
+            int step = distance / official.Count;
+            double k = metersPerUnit > 0 ? metersPerUnit : 1.0;
+            for (int i = 0; i < official.Count; i++)
+            {
+                double time = official[i] - (i == 0 ? 0 : official[i - 1]);
+                if (time <= 0)
+                    continue;
+                yield return new OfficialPart { From = step * i, To = step * (i + 1), Time = time, Speed = step * k / time };
+            }
         }
 
         /// <summary>
@@ -715,8 +787,10 @@ namespace Kinovea.ScreenManager
                 s = s.Substring(colon + 1);
             }
 
+            // (Digits and a point only: not "Infinity" or "NaN", which the parsing of numbers takes.)
             double seconds;
-            if (s.Length == 0 || !double.TryParse(s, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out seconds))
+            if (s.Length == 0 || s.Any(c => c != '.' && (c < '0' || c > '9')) ||
+                !double.TryParse(s, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out seconds) || double.IsInfinity(seconds) || double.IsNaN(seconds))
                 return double.NaN;
             if (colon >= 0 && seconds >= 60)
                 return double.NaN;

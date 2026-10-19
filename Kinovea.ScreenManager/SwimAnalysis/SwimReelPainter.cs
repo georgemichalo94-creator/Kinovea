@@ -311,7 +311,7 @@ namespace Kinovea.ScreenManager
 
             // At the frame of the finish and after it the final time (the official one when typed), before it the time of the frame.
             double final = reel.FinalTime ?? reel.Finish ?? double.PositiveInfinity;
-            double clock = reel.Finish.HasValue && t >= reel.Finish.Value - 1e-6 ? final : Math.Min(Math.Max(0, t), final);
+            double clock = reel.Finish.HasValue && t >= reel.Finish.Value - reel.FrameSlack - 1e-6 ? final : Math.Min(Math.Max(0, t), final);
             Text(g, SwimReference.FormatTime(clock), F(36f, k, true), Color.White, r.Left + 12 * k, r.Top + 19 * k);
 
             // Strokes of the length, tempo and distance of the last cycle, speed.

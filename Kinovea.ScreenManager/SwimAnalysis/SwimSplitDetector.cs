@@ -303,6 +303,16 @@ namespace Kinovea.ScreenManager
             return last ? 0.3 : 0.5;
         }
 
+        /// <summary>
+        /// The checkpoint is the pace alone of a swimmer seen from far, with FarPaceConfidence (see CheckpointConfidence): shown as
+        /// doubtful after the reading (since 2026-10-19).
+        /// </summary>
+        public static bool FarPaceOnly(SwimSplitFound found, double fps, int pool, bool far)
+        {
+            return far && FarPaceDoubtful && CalibratedConfidence && found != null && pool == 50 && fps > 0 &&
+                found.Cues.Count > 0 && found.Cues.Keys.All(k => k == CuePace);
+        }
+
         /// <summary>The confidences shown as measured on the analysts' races (tests: the ones before 2026-10-18).</summary>
         internal static bool CalibratedConfidence = true;
 

@@ -409,6 +409,10 @@ namespace Kinovea.ScreenManager
             if (old.HasValue && old.Value != timestamp)
                 RecheckStartLessons();
 
+            // The official times are after the start (since 2026-10-19): the checkpoints at them not checked yet move with it.
+            if (old != timestamp && Race.Official != null)
+                ApplyOfficial(new OfficialUndo());
+
             // The start put with its key answers the proposal of the start light near it (the other candidates go).
             if (!resolvingProposal && Race.Proposals.Any(x => x.Kind == KindRaceStart))
             {
@@ -548,6 +552,10 @@ namespace Kinovea.ScreenManager
             {
                 string id = undoStack[undoStack.Count - 1];
                 undoStack.RemoveAt(undoStack.Count - 1);
+
+                // A change of the official times (since 2026-10-19): the times before it, the checkpoints it moved back.
+                if (UndoOfficial(id))
+                    return;
                 mark = Race.Marks.FirstOrDefault(m => m.Id == id);
             }
 
@@ -601,6 +609,7 @@ namespace Kinovea.ScreenManager
             StopPilot();
             undoStack.Clear();
             replacedBy.Clear();
+            officialUndo.Clear();
             ClearWaitingFrames();
             CancelQuietReading();
         }
@@ -1745,7 +1754,11 @@ namespace Kinovea.ScreenManager
             using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
                 g.DrawString(names.Length > 0 ? names + "  ·  " + ev : ev, caption, brushDim, new RectangleF(r.Left + 10, r.Top + 6, r.Width * 0.62f, 13), format);
 
-            string clock = SwimReference.FormatTime(finished ? last.T.Value : Math.Max(0, now));
+            // Before the frame of the finish the time of the frame, never past the final time (the official one can be a little before
+            // the frame of the touch).
+            SwimRow end = Computed.Rows.FirstOrDefault(row => row.D == Race.Distance && row.T.HasValue);
+            double running = end != null ? Math.Min(Math.Max(0, now), end.T.Value) : Math.Max(0, now);
+            string clock = SwimReference.FormatTime(finished ? last.T.Value : running);
             g.DrawString(clock, clockFont, brushText, r.Left + 8, r.Top + 18);
 
             if (last != null)
@@ -1991,6 +2004,10 @@ namespace Kinovea.ScreenManager
 
             if (structureChanged)
                 Race.RemoveOrphanSplits();
+
+            // The official times by distance follow the race (since 2026-10-19): the checkpoints at them not checked yet too.
+            if (structureChanged)
+                ApplyOfficial(new OfficialUndo());
 
             // The list of references depends on the event (style, distance, pool).
             EnsureReference();

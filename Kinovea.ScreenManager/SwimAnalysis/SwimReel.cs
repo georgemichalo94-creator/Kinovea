@@ -87,6 +87,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public double? FinalTime;
 
+        /// <summary>Half a frame (s): the finish between two frames (the pilot's, the official time) is on the frame nearest to it.</summary>
+        public double FrameSlack;
+
         /// <summary>
         /// Time of each wall of the race (the turns, not the finish): marked, or from the curve when a later checkpoint is
         /// marked, else NaN (not reached yet).
@@ -149,6 +152,7 @@ namespace Kinovea.ScreenManager
             {
                 reel.Finish = finish.OnVideo;
                 reel.FinalTime = finish.T.Value;
+                reel.FrameSlack = finish.FrameSlack;
             }
 
             double lastD = reel.knotD[reel.knotD.Count - 1];
