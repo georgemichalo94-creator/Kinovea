@@ -190,6 +190,7 @@ namespace Kinovea.ScreenManager
             o["app"] = SwimPayload.AppId;
             o["token"] = token;
             o["action"] = "saveReference";
+            o["lang"] = SwimLang.Code;
             o["reference"] = reference.ToJson();
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
         }

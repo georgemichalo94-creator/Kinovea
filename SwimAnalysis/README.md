@@ -935,7 +935,10 @@ Google Sheet, που βγάζει το report με τους τύπους του 
 - `SwimAnalysis/tests/`: έλεγχοι του backend (`node tests/test_analysis.js`, `node tests/test_e2e.js`, `node tests/test_references.js`,
   `node tests/test_v2.js` για πισίνες, ΔΑΚ, συγκρίσεις, επίπεδα, τεχνική ανάλυση και εικόνες, `node tests/test_library.js` για τη βιβλιοθήκη
   παλιών αναλύσεων, `node tests/test_pages.js` για τις σελίδες του PDF και το τελικό καρέ, `node tests/test_strokes.js` για τις
-  χεριές που επιβεβαιώνονται σε κάθε πέρασμα, με φανταστικούς αθλητές)
+  χεριές που επιβεβαιώνονται σε κάθε πέρασμα, `node tests/test_lang.js` για το report στα αγγλικά και το ίδιο ακριβώς στα ελληνικά,
+  με φανταστικούς αθλητές)
+- `Kinovea.ScreenManager/SwimAnalysis/SwimLang.cs`, `SwimLangEnglish.cs`, `SwimAnalysisManager.Lang.cs`: η γλώσσα (ΕΛ / EN) και τα
+  αγγλικά κάθε κειμένου του προγράμματος, με κλειδί το ελληνικό (ένα νέο κείμενο χρειάζεται και τα αγγλικά του)
 - `SwimAnalysis/tests/reel_preview/`: εικόνες της τεχνικής ανάλυσης (reel) με δύο φανταστικούς αγώνες και φανταστικό σκελετό, και έλεγχος
   των μοντέλων του σκελετού, από το πρόγραμμα του build (χειροκίνητο τρέξιμο του workflow με **reel_preview**)
 - `Kinovea.ScreenManager/SwimAnalysis/Models/`: τα μοντέλα του σκελετού (MediaPipe μέσω του OpenCV model zoo, Apache 2.0)
