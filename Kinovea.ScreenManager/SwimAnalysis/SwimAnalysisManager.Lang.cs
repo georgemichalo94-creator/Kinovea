@@ -59,6 +59,12 @@ namespace Kinovea.ScreenManager
 
             ReopenForm();
             UpdateBars();
+
+            // The final frame of the report has the graphics of the video: again in the new language, at the same frame (the other
+            // graphics of the PDF are drawn again before each PDF).
+            if (Race != null && Race.FinalFrame != null && HasVideo)
+                RecaptureFinalFrame(false, true);
+
             InvalidatePlayer();
             Status(SwimLang.English ? "Language: English (the panel, the graphics of the video, the PDF)." :
                 "Γλώσσα: Ελληνικά (το πάνελ, τα γραφικά του βίντεο, το PDF).", false);

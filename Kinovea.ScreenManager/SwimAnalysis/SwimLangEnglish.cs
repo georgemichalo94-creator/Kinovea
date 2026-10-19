@@ -889,7 +889,7 @@ namespace Kinovea.ScreenManager
             { "ΤΑΧΥΤΗΤΑ", "SPEED" },
             { "ΤΑΧΥΤΗΤΑ  M/S", "SPEED  M/S" },
             { "ΤΕΛΙΚΟΣ", "FINAL" },
-            { "ΤΕΡ.", "FINISH" },
+            { "ΤΕΡ.", "FIN." },
             { "ΤΕΡΜΑΤΙΣΜΟΣ", "FINISH" },
             { "ΤΕΡΜΑΤΙΣΜΟΣ · ", "FINISH · " },
             { "ΤΕΧΝΙΚΗ", "TECHNIQUE" },
