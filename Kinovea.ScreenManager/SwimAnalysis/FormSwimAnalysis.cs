@@ -1091,8 +1091,8 @@ namespace Kinovea.ScreenManager
             AddRow(table, "Φάση", cmbRound);
             AddRow(table, "Ημερομηνία", tbDate);
 
-            // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site),
-            // or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
+            // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site,
+            // a World Aquatics competition), or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
             tbResultsLink = new TextBox { Dock = DockStyle.Fill };
             Button btnResults = new SwimNoFocusButton { Text = "🔗 Επίσημα αποτελέσματα", AutoSize = true, Height = 26 };
             btnResults.Click += (s, e) =>
@@ -1101,8 +1101,9 @@ namespace Kinovea.ScreenManager
                 officialError = null;
                 manager.LinkOfficialResults(tbResultsLink.Text);
             };
-            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα: της ΚΟΕ (live.koe.org.gr) ή μιας σελίδας αποτελεσμάτων της " +
-                "Microplus (results.microplustimingservices.com). Τη διοργάνωση από τον σύνδεσμο που επικολλάς εδώ (ή, αν τον αφήσεις κενό, από " +
+            const string resultsHelp = "Βρίσκει τον αγώνα στα επίσημα αποτελέσματα: της ΚΟΕ (live.koe.org.gr), μιας σελίδας αποτελεσμάτων της " +
+                "Microplus (results.microplustimingservices.com) ή μιας διοργάνωσης της World Aquatics (worldaquatics.com/competitions/…). Τη " +
+                "διοργάνωση από τον σύνδεσμο που επικολλάς εδώ (ή, αν τον αφήσεις κενό, από " +
                 "την ημερομηνία και το όνομα της διοργάνωσης στα live της ΚΟΕ), το αγώνισμα από το στυλ και την απόσταση, τη φάση από τη φάση " +
                 "και την ημέρα, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον " +
                 "τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.";
