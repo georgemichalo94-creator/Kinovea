@@ -152,12 +152,12 @@ namespace Kinovea.ScreenManager
                 if (PickingStrokes && !PickingTrack)
                     CancelPick();
                 EndStrokeSession();
-                Status("Χεριές σε κάθε πέρασμα: κλειστό.", false);
+                Status(SwimLang.T("Χεριές σε κάθε πέρασμα: κλειστό."), false);
             }
             else
             {
-                Status("Χεριές σε κάθε πέρασμα: μετά την έξοδο από το νερό (B) κάνε κλικ στο κεφάλι και στα πόδια του αθλητή· " +
-                    "σε κάθε πέρασμα (S) θα δεις τις χεριές του τμήματος για επιβεβαίωση.", false);
+                Status(SwimLang.T("Χεριές σε κάθε πέρασμα: μετά την έξοδο από το νερό (B) κάνε κλικ στο κεφάλι και στα πόδια του αθλητή· ") +
+                    SwimLang.T("σε κάθε πέρασμα (S) θα δεις τις χεριές του τμήματος για επιβεβαίωση."), false);
             }
 
             if (form != null && !form.IsDisposed)
@@ -194,13 +194,13 @@ namespace Kinovea.ScreenManager
 
             if (!HasVideo || Race == null)
             {
-                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                Status(SwimLang.T("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής."), true);
                 return;
             }
 
             if (Race.IsTraining)
             {
-                Status("Οι χεριές σε κάθε πέρασμα είναι για την ανάλυση αγώνα (με σημεία ελέγχου).", true);
+                Status(SwimLang.T("Οι χεριές σε κάθε πέρασμα είναι για την ανάλυση αγώνα (με σημεία ελέγχου)."), true);
                 return;
             }
 
@@ -211,7 +211,7 @@ namespace Kinovea.ScreenManager
             pickForRace = false;
             pickForQuiet = false;
             SetPick(SwimPickTarget.StrokeHead);
-            Status("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος).", false);
+            Status(SwimLang.T("Χεριές: κάνε κλικ στο κεφάλι του αθλητή (Esc: χωρίς αυτόματη μέτρηση σε αυτό το μήκος)."), false);
             InvalidatePlayer();
         }
 
@@ -228,8 +228,8 @@ namespace Kinovea.ScreenManager
                 autoStrokeHead = point;
                 autoStrokeFrame = timestamp;
                 SetPick(SwimPickTarget.StrokeFeet);
-                Status(moved ? "Το καρέ άλλαξε: αυτό το κλικ είναι το κεφάλι. Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ." :
-                    (PickingTrack ? "Ακολούθηση" : "Χεριές") + ": τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ.", moved);
+                Status(moved ? SwimLang.T("Το καρέ άλλαξε: αυτό το κλικ είναι το κεφάλι. Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ.") :
+                    (PickingTrack ? SwimLang.T("Ακολούθηση") : SwimLang.T("Χεριές")) + SwimLang.T(": τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ."), moved);
                 InvalidatePlayer();
                 return;
             }
@@ -240,7 +240,7 @@ namespace Kinovea.ScreenManager
             if (Math.Abs(dx) < Math.Max(8, reference.Width * 0.02) || Math.Abs(dy) > 0.6 * Math.Abs(dx))
             {
                 SystemSounds.Exclamation.Play();
-                Status("Τα πόδια πρέπει να είναι πίσω από το κεφάλι, κατά μήκος της διαδρομής (αριστερά ή δεξιά). Κάνε ξανά κλικ στα πόδια.", true);
+                Status(SwimLang.T("Τα πόδια πρέπει να είναι πίσω από το κεφάλι, κατά μήκος της διαδρομής (αριστερά ή δεξιά). Κάνε ξανά κλικ στα πόδια."), true);
                 return;
             }
 
@@ -285,7 +285,7 @@ namespace Kinovea.ScreenManager
             RefreshTiming();
             if (!Timing.IsValid || Race == null)
             {
-                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η αυτόματη μέτρηση δεν μπορεί να γίνει.", true);
+                Status(SwimLang.T("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η αυτόματη μέτρηση δεν μπορεί να γίνει."), true);
                 return;
             }
 
@@ -296,7 +296,7 @@ namespace Kinovea.ScreenManager
             LastAutoCycle = 0;
 
             Status(string.Format(CultureInfo.InvariantCulture,
-                "Χεριές: ο αθλητής επιλέχθηκε. Σε κάθε πέρασμα μέχρι τον τοίχο των {0}{1} θα δεις τις χεριές του τμήματος.",
+                SwimLang.T("Χεριές: ο αθλητής επιλέχθηκε. Σε κάθε πέρασμα μέχρι τον τοίχο των {0}{1} θα δεις τις χεριές του τμήματος."),
                 s.Wall, UnitLabel), false);
             if (form != null && !form.IsDisposed)
                 form.RefreshAutoStrokes();
@@ -466,7 +466,7 @@ namespace Kinovea.ScreenManager
 
             if (Race.GetSplit(distance) == null)
             {
-                Status("Το σημείο δεν έχει ακόμη χρόνο: μάρκαρε πρώτα το πέρασμα.", true);
+                Status(SwimLang.T("Το σημείο δεν έχει ακόμη χρόνο: μάρκαρε πρώτα το πέρασμα."), true);
                 return;
             }
 
@@ -494,25 +494,25 @@ namespace Kinovea.ScreenManager
             }
 
             double? found = row.Strokes;
-            string title = string.Format(CultureInfo.InvariantCulture, "Χεριές {0}→{1}{2}", row.PrevD, row.D, UnitLabel);
+            string title = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Χεριές {0}→{1}{2}"), row.PrevD, row.D, UnitLabel);
             string detail;
             if (detection != null)
             {
-                detail = string.Format(CultureInfo.InvariantCulture, "Αυτόματη μέτρηση{0}{1}.",
-                    detection.Cycle > 0 ? " · κύκλος " + detection.Cycle.ToString("0.00", CultureInfo.InvariantCulture).Replace('.', ',') + " s" : "",
-                    detection.Ropes ? "" : " · χωρίς σχοινιά διαδρομής");
+                detail = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Αυτόματη μέτρηση{0}{1}."),
+                    detection.Cycle > 0 ? SwimLang.T(" · κύκλος ") + SwimLang.Decimals(detection.Cycle.ToString("0.00", CultureInfo.InvariantCulture)) + " s" : "",
+                    detection.Ropes ? "" : SwimLang.T(" · χωρίς σχοινιά διαδρομής"));
             }
             else if (found.HasValue)
             {
-                detail = "Από τα σημάδια χεριών του βίντεο: " + FormatCount(found.Value) + ".";
+                detail = SwimLang.T("Από τα σημάδια χεριών του βίντεο: ") + FormatCount(found.Value) + ".";
             }
             else
             {
-                detail = "Δεν υπάρχουν σημάδια χεριών σε αυτό το τμήμα.";
+                detail = SwimLang.T("Δεν υπάρχουν σημάδια χεριών σε αυτό το τμήμα.");
             }
 
             if (hadTyped)
-                detail += string.Format(CultureInfo.InvariantCulture, " Γραμμένο πριν: {0}.", FormatCount(previous));
+                detail += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Γραμμένο πριν: {0}."), FormatCount(previous));
 
             // A new count shows what was found; a correction from the panel starts from the number written before.
             double? shown = detection == null && hadTyped ? previous : found;
@@ -531,20 +531,20 @@ namespace Kinovea.ScreenManager
                 if (hadTyped)
                     Race.StrokeCounts[distance] = previous;
                 Changed(true);
-                Status(sequence ? "Σταμάτησε η μέτρηση των χεριών." : "Οι χεριές του τμήματος δεν άλλαξαν.", false);
+                Status(sequence ? SwimLang.T("Σταμάτησε η μέτρηση των χεριών.") : SwimLang.T("Οι χεριές του τμήματος δεν άλλαξαν."), false);
                 return false;
             }
 
             if (cleared)
             {
-                Status(string.Format(CultureInfo.InvariantCulture, "{0}: χωρίς γραμμένο αριθμό (μετράνε τα σημάδια χεριών).", title), false);
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: χωρίς γραμμένο αριθμό (μετράνε τα σημάδια χεριών)."), title), false);
             }
             else if (value.HasValue)
             {
                 Race.StrokeCounts[distance] = value.Value;
                 bool same = found.HasValue && Math.Abs(found.Value - value.Value) < 1e-6;
                 Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1}{2}", title, FormatCount(value.Value),
-                    same ? " ✓" : (found.HasValue ? " (διόρθωση από " + FormatCount(found.Value) + ")" : "")), false);
+                    same ? " ✓" : (found.HasValue ? SwimLang.T(" (διόρθωση από ") + FormatCount(found.Value) + ")" : "")), false);
             }
 
             Changed(true);
@@ -553,7 +553,7 @@ namespace Kinovea.ScreenManager
 
         private static string FormatCount(double value)
         {
-            return value.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',');
+            return SwimLang.Decimals(value.ToString("0.##", CultureInfo.InvariantCulture));
         }
 
         /// <summary>
@@ -599,12 +599,12 @@ namespace Kinovea.ScreenManager
                 log.Error("Reading of the video for the swimmer failed.", error);
                 if (s == strokeSession)
                 {
-                    Status("Η αυτόματη μέτρηση των χεριών απέτυχε: " + error.Message, true);
+                    Status(SwimLang.T("Η αυτόματη μέτρηση των χεριών απέτυχε: ") + error.Message, true);
                     EndStrokeSession();
                 }
                 else
                 {
-                    Status("Η ακολούθηση του αθλητή απέτυχε: " + error.Message, true);
+                    Status(SwimLang.T("Η ακολούθηση του αθλητή απέτυχε: ") + error.Message, true);
                 }
 
                 return false;
@@ -612,7 +612,7 @@ namespace Kinovea.ScreenManager
 
             if (cancelled)
             {
-                Status(s == strokeSession ? "Η ανάγνωση του βίντεο για τις χεριές ακυρώθηκε." : "Η ακολούθηση του αθλητή ακυρώθηκε.", false);
+                Status(s == strokeSession ? SwimLang.T("Η ανάγνωση του βίντεο για τις χεριές ακυρώθηκε.") : SwimLang.T("Η ακολούθηση του αθλητή ακυρώθηκε."), false);
                 return false;
             }
 
@@ -836,7 +836,7 @@ namespace Kinovea.ScreenManager
             if (target == null)
             {
                 SystemSounds.Beep.Play();
-                Status(direction > 0 ? "Δεν υπάρχει άλλη χεριά μετά από αυτό το καρέ." : "Δεν υπάρχει χεριά πριν από αυτό το καρέ.", true);
+                Status(direction > 0 ? SwimLang.T("Δεν υπάρχει άλλη χεριά μετά από αυτό το καρέ.") : SwimLang.T("Δεν υπάρχει χεριά πριν από αυτό το καρέ."), true);
                 return;
             }
 
@@ -859,7 +859,7 @@ namespace Kinovea.ScreenManager
             if (mark == null || Math.Abs(mark.Timestamp - now) > tolerance)
             {
                 SystemSounds.Beep.Play();
-                Status("Δεν υπάρχει χεριά σε αυτό το καρέ: πήγαινε σε μια χεριά με ◀ ▶.", true);
+                Status(SwimLang.T("Δεν υπάρχει χεριά σε αυτό το καρέ: πήγαινε σε μια χεριά με ◀ ▶."), true);
                 return;
             }
 
@@ -870,7 +870,7 @@ namespace Kinovea.ScreenManager
 
             Changed(true);
             InvalidatePlayer();
-            Status("Διαγράφηκε η χεριά αυτού του καρέ (C για να την ξαναβάλεις).", false);
+            Status(SwimLang.T("Διαγράφηκε η χεριά αυτού του καρέ (C για να την ξαναβάλεις)."), false);
         }
 
         /// <summary>Delete the strokes placed by the automatic detection in this race (the typed counts stay).</summary>
@@ -885,7 +885,7 @@ namespace Kinovea.ScreenManager
             {
                 Changed(true);
                 InvalidatePlayer();
-                Status(string.Format(CultureInfo.InvariantCulture, "Διαγράφηκαν {0} αυτόματες χεριές (οι αριθμοί που επιβεβαίωσες μένουν).", removed), false);
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Διαγράφηκαν {0} αυτόματες χεριές (οι αριθμοί που επιβεβαίωσες μένουν)."), removed), false);
             }
 
             return removed;
@@ -902,7 +902,7 @@ namespace Kinovea.ScreenManager
             string time = Race.StartTimestamp.HasValue && !Race.IsTraining
                 ? string.Format(CultureInfo.InvariantCulture, " · {0:0.00} s", Timing.Seconds(mark.Timestamp, Race.StartTimestamp.Value))
                 : "";
-            return string.Format(CultureInfo.InvariantCulture, "Χεριά {0}/{1}{2}{3}", index, strokes.Count, time, mark.Batch != null ? " · αυτόματη" : "");
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("Χεριά {0}/{1}{2}{3}"), index, strokes.Count, time, mark.Batch != null ? SwimLang.T(" · αυτόματη") : "");
         }
 
         /// <summary>
@@ -922,7 +922,7 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
-                DrawLabel(g, PickingTrack ? "Ακολούθηση: κλικ στο κεφάλι του αθλητή (Esc: ακύρωση)" : "Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)",
+                DrawLabel(g, PickingTrack ? SwimLang.T("Ακολούθηση: κλικ στο κεφάλι του αθλητή (Esc: ακύρωση)") : SwimLang.T("Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)"),
                     new Point(12, 12), Color.FromArgb(0, 220, 255));
                 return;
             }
@@ -934,10 +934,10 @@ namespace Kinovea.ScreenManager
                     Point p = transform.Transform(autoStrokeHead);
                     using (Pen pen = new Pen(Color.FromArgb(240, 0, 220, 255), 2f))
                         g.DrawEllipse(pen, p.X - 8, p.Y - 8, 16, 16);
-                    DrawLabel(g, "κεφάλι", new Point(p.X + 10, p.Y - 20), Color.FromArgb(0, 220, 255));
+                    DrawLabel(g, SwimLang.T("κεφάλι"), new Point(p.X + 10, p.Y - 20), Color.FromArgb(0, 220, 255));
                 }
 
-                DrawLabel(g, (PickingTrack ? "Ακολούθηση" : "Χεριές") + ": κλικ στα πόδια του αθλητή", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, (PickingTrack ? SwimLang.T("Ακολούθηση") : SwimLang.T("Χεριές")) + SwimLang.T(": κλικ στα πόδια του αθλητή"), new Point(12, 12), Color.FromArgb(0, 220, 255));
                 return;
             }
 

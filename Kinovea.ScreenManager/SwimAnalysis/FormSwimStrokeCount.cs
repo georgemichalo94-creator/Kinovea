@@ -29,7 +29,7 @@ namespace Kinovea.ScreenManager
         /// <param name="sequence">Several segments are asked one after the other: Esc stops the sequence.</param>
         public FormSwimStrokeCount(string title, string detail, double? count, bool sequence)
         {
-            Text = "Χεριές";
+            Text = SwimLang.T("Χεριές");
             Font = SwimTheme.Ui(9f, FontStyle.Regular);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -75,7 +75,7 @@ namespace Kinovea.ScreenManager
 
             Label lblHint = new Label
             {
-                Text = "Enter: σωστό · γράψε τον σωστό αριθμό αν είναι λάθος (π.χ. 7 ή 7,5) · κενό: χωρίς αριθμό",
+                Text = SwimLang.T("Enter: σωστό · γράψε τον σωστό αριθμό αν είναι λάθος (π.χ. 7 ή 7,5) · κενό: χωρίς αριθμό"),
                 Left = 14,
                 Top = 98,
                 Width = 372,
@@ -88,7 +88,7 @@ namespace Kinovea.ScreenManager
             Button ok = new SwimButton(true) { Text = "OK", Left = 232, Top = 136, Width = 72, Height = 28, Primary = true };
             Button cancel = new SwimButton(true)
             {
-                Text = sequence ? "Σταμάτημα" : "Άκυρο",
+                Text = sequence ? SwimLang.T("Σταμάτημα") : SwimLang.T("Άκυρο"),
                 DialogResult = DialogResult.Cancel,
                 Left = 310,
                 Top = 136,
@@ -129,7 +129,7 @@ namespace Kinovea.ScreenManager
             double value;
             if (!double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value) || value < 0 || value > 300)
             {
-                lblError.Text = "Γράψε τον αριθμό των χεριών, π.χ. 7 ή 7,5.";
+                lblError.Text = SwimLang.T("Γράψε τον αριθμό των χεριών, π.χ. 7 ή 7,5.");
                 box.Focus();
                 box.SelectAll();
                 return;
@@ -142,7 +142,7 @@ namespace Kinovea.ScreenManager
 
         private static string Format(double? value)
         {
-            return value.HasValue ? value.Value.ToString("0.##", CultureInfo.InvariantCulture).Replace('.', ',') : "";
+            return value.HasValue ? SwimLang.Decimals(value.Value.ToString("0.##", CultureInfo.InvariantCulture)) : "";
         }
     }
 }

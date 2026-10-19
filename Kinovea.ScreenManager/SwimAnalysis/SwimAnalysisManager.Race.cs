@@ -68,13 +68,13 @@ namespace Kinovea.ScreenManager
 
             if (Race.IsTraining)
             {
-                Status("Η αυτόματη εκκίνηση από το φως είναι για βίντεο αγώνα (κάμερα στην κερκίδα).", true);
+                Status(SwimLang.T("Η αυτόματη εκκίνηση από το φως είναι για βίντεο αγώνα (κάμερα στην κερκίδα)."), true);
                 return;
             }
 
             if (!Timing.IsValid)
             {
-                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η εκκίνηση δεν μπορεί να βρεθεί.", true);
+                Status(SwimLang.T("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: η εκκίνηση δεν μπορεί να βρεθεί."), true);
                 return;
             }
 
@@ -139,14 +139,14 @@ namespace Kinovea.ScreenManager
                 {
                     log.Error("Start light reading failed.", error);
                     startLightCancelled = true;
-                    Status("Η αυτόματη εκκίνηση απέτυχε: " + error.Message, true);
+                    Status(SwimLang.T("Η αυτόματη εκκίνηση απέτυχε: ") + error.Message, true);
                     return;
                 }
 
                 if (cancelled)
                 {
                     startLightCancelled = true;
-                    Status("Η αναζήτηση της εκκίνησης ακυρώθηκε.", false);
+                    Status(SwimLang.T("Η αναζήτηση της εκκίνησης ακυρώθηκε."), false);
                     return;
                 }
 
@@ -156,8 +156,8 @@ namespace Kinovea.ScreenManager
                 List<SwimStartCandidate> found = result.Candidates;
                 if (found.Count == 0 || stamps.Count == 0)
                 {
-                    Status("Δεν βρέθηκε σήμα εκκίνησης πριν από την κολύμβηση (δεν φαίνεται το φως, δεν ακούγεται το σήμα ή η κάμερα δεν ακολουθεί " +
-                        "τον αθλητή). Βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος.", true);
+                    Status(SwimLang.T("Δεν βρέθηκε σήμα εκκίνησης πριν από την κολύμβηση (δεν φαίνεται το φως, δεν ακούγεται το σήμα ή η κάμερα δεν ακολουθεί ") +
+                        SwimLang.T("τον αθλητή). Βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος."), true);
                     return;
                 }
 
@@ -548,7 +548,7 @@ namespace Kinovea.ScreenManager
 
             if (made.Count == 0)
             {
-                Status("Δεν βρέθηκε σήμα εκκίνησης.", true);
+                Status(SwimLang.T("Δεν βρέθηκε σήμα εκκίνησης."), true);
                 return;
             }
 
@@ -562,9 +562,9 @@ namespace Kinovea.ScreenManager
                 Answer(best, marked, true);
                 Changed(false);
                 long frames = (long)Math.Round((marked - best.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
-                string what = found[0].Source == "sound" ? "το σήμα που ακούγεται" : "το φωτεινό σήμα";
-                Status(frames == 0 ? "💡 Η εκκίνηση που έχεις βάλει είναι στο καρέ που βρέθηκε από " + what + ": κρατήθηκε για τη μάθηση." :
-                    string.Format(CultureInfo.InvariantCulture, "💡 Η εκκίνηση που έχεις βάλει είναι {0:+0;-0} καρέ από αυτήν που βρέθηκε από {1}: κρατήθηκε για τη μάθηση.",
+                string what = found[0].Source == "sound" ? SwimLang.T("το σήμα που ακούγεται") : SwimLang.T("το φωτεινό σήμα");
+                Status(frames == 0 ? SwimLang.T("💡 Η εκκίνηση που έχεις βάλει είναι στο καρέ που βρέθηκε από ") + what + SwimLang.T(": κρατήθηκε για τη μάθηση.") :
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("💡 Η εκκίνηση που έχεις βάλει είναι {0:+0;-0} καρέ από αυτήν που βρέθηκε από {1}: κρατήθηκε για τη μάθηση."),
                     frames, what), false);
                 return;
             }
@@ -573,21 +573,21 @@ namespace Kinovea.ScreenManager
             Changed(false);
             BeginReview(best);
             if (best.Cues.ContainsKey("dive"))
-                Status("⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. " +
-                    "Έλεγξέ τη στο καρέ του σήματος.", true);
+                Status(SwimLang.T("⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. ") +
+                    SwimLang.T("Έλεγξέ τη στο καρέ του σήματος."), true);
             else if (found[0].Source == "sound")
-                Status("🔊 Δεν φάνηκε το φως της εκκίνησης: η πρόταση είναι από το σήμα που ακούγεται (λίγο πριν ακουστεί, όσο αργεί ο ήχος να φτάσει " +
-                    "στην κάμερα). Έλεγξέ τη στο καρέ του φωτός.", false);
+                Status(SwimLang.T("🔊 Δεν φάνηκε το φως της εκκίνησης: η πρόταση είναι από το σήμα που ακούγεται (λίγο πριν ακουστεί, όσο αργεί ο ήχος να φτάσει ") +
+                    SwimLang.T("στην κάμερα). Έλεγξέ τη στο καρέ του φωτός."), false);
             else if (found[0].Source == "light+sound")
-                Status("💡🔊 Η εκκίνηση στο φως του σήματος, που ακούγεται αμέσως μετά. Έλεγξέ τη.", false);
+                Status(SwimLang.T("💡🔊 Η εκκίνηση στο φως του σήματος, που ακούγεται αμέσως μετά. Έλεγξέ τη."), false);
 
             // A start after which the video is too short for the race: surely not its start (the signal of the next race?).
             double left = Timing.Seconds(frameServer.VideoReader.WorkingZone.End, best.Timestamp);
             double need = MinRaceSeconds();
             if (Race.Distance > 0 && left < need)
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "⚠ Μετά την εκκίνηση που βρέθηκε μένουν μόνο {0:0} s βίντεο, ενώ τα {1} m θέλουν τουλάχιστον {2:0} s: μάλλον δεν είναι η εκκίνηση αυτού του αγώνα. " +
-                    "Δες τις άλλες προτάσεις (→) ή βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος.", Math.Max(0, left), Race.Distance, need), true);
+                    SwimLang.T("⚠ Μετά την εκκίνηση που βρέθηκε μένουν μόνο {0:0} s βίντεο, ενώ τα {1} m θέλουν τουλάχιστον {2:0} s: μάλλον δεν είναι η εκκίνηση αυτού του αγώνα. ") +
+                    SwimLang.T("Δες τις άλλες προτάσεις (→) ή βάλε την εκκίνηση με το κουμπί «Εκκίνηση» στο καρέ του σήματος."), Math.Max(0, left), Race.Distance, need), true);
         }
 
         /// <summary>The start proposal is accepted at this frame: it becomes the start of the race (and of the swimmers of the video).</summary>
@@ -609,14 +609,14 @@ namespace Kinovea.ScreenManager
 
             Answer(p, timestamp, true);
             Changed(false);
-            string done = "✓ " + ProposalLabel(p) + ": t = 0 σε αυτό το καρέ.";
+            string done = "✓ " + ProposalLabel(p) + SwimLang.T(": t = 0 σε αυτό το καρέ.");
 
             // The auto pilot waited for this check of the start: it goes on with the whole race.
             if (PilotActive && pilotStep == PilotStep.Start)
             {
                 pilotStep = PilotStep.None;
                 EndReview(false);
-                pilotStartNote = "την επιβεβαίωσες εσύ";
+                pilotStartNote = SwimLang.T("την επιβεβαίωσες εσύ");
                 PilotLater(PilotRace);
                 return;
             }
@@ -630,8 +630,8 @@ namespace Kinovea.ScreenManager
                 BeginAutoRace();
                 if (PickingTrack)
                 {
-                    Status(done + "  →  🤖 Όλος ο αγώνας: κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (σε ένα καρέ μετά την έξοδο από το νερό· " +
-                        "Esc: όχι τώρα).", false);
+                    Status(done + SwimLang.T("  →  🤖 Όλος ο αγώνας: κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (σε ένα καρέ μετά την έξοδο από το νερό· ") +
+                        SwimLang.T("Esc: όχι τώρα)."), false);
                     return;
                 }
             }
@@ -1009,7 +1009,7 @@ namespace Kinovea.ScreenManager
                 Race.UnderwaterDist = distance;
             else
                 Race.GetTurn(wall, true).UnderwaterDist = distance;
-            return string.Format(CultureInfo.InvariantCulture, " · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)",
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)"),
                 distance, Race.Unit, next[0].Item1);
         }
 
@@ -1079,7 +1079,7 @@ namespace Kinovea.ScreenManager
 
             if (!PoolHasMarks)
             {
-                Status("Αυτόματα περάσματα: μόνο σε πισίνα 50 ή 25 (σημάδια των σχοινιών).", true);
+                Status(SwimLang.T("Αυτόματα περάσματα: μόνο σε πισίνα 50 ή 25 (σημάδια των σχοινιών)."), true);
                 return null;
             }
 
@@ -1383,17 +1383,17 @@ namespace Kinovea.ScreenManager
             PushOfficialUndo(undo);
             AfterOfficial(undo.Distances.Contains(Race.Distance), current, currentBefore);
 
-            string movedText = moved == 1 ? "1 σημάδι που δεν είχες ελέγξει" : moved.ToString(CultureInfo.InvariantCulture) + " σημάδια που δεν είχες ελέγξει";
+            string movedText = moved == 1 ? SwimLang.T("1 σημάδι που δεν είχες ελέγξει") : moved.ToString(CultureInfo.InvariantCulture) + SwimLang.T(" σημάδια που δεν είχες ελέγξει");
             string warning = Race.Official == null ? null : SwimRace.OfficialWarning(Race.Official, Race.Distance, Race.K, Race.Unit);
             if (Race.Official == null)
-                Status("Οι επίσημοι χρόνοι αφαιρέθηκαν: η ανάλυση δείχνει ξανά τους χρόνους των σημαδιών" +
-                    (moved > 0 ? "· " + movedText + " γύρισαν εκεί που τα βρήκε η ανάγνωση." : ".") + " «Αναίρεση»: πίσω.", false);
+                Status(SwimLang.T("Οι επίσημοι χρόνοι αφαιρέθηκαν: η ανάλυση δείχνει ξανά τους χρόνους των σημαδιών") +
+                    (moved > 0 ? (SwimLang.English ? "; " : "· ") + movedText + SwimLang.T(" γύρισαν εκεί που τα βρήκε η ανάγνωση.") : ".") + SwimLang.T(" «Αναίρεση»: πίσω."), false);
             else if (!Race.StartTimestamp.HasValue)
-                Status("Οι επίσημοι χρόνοι κρατήθηκαν· μπαίνουν στα σημάδια όταν οριστεί η εκκίνηση.", false);
+                Status(SwimLang.T("Οι επίσημοι χρόνοι κρατήθηκαν· μπαίνουν στα σημάδια όταν οριστεί η εκκίνηση."), false);
             else
                 Status((moved > 0
-                    ? "Οι επίσημοι χρόνοι μπήκαν στην ανάλυση· " + movedText + " πήγαν σε αυτούς («Αναίρεση»: πίσω)."
-                    : "Οι επίσημοι χρόνοι μπήκαν στην ανάλυση. Τα σημάδια που έχεις ελέγξει μένουν όπου είναι (η διαφορά φαίνεται στο «Τερματισμός»).") +
+                    ? SwimLang.T("Οι επίσημοι χρόνοι μπήκαν στην ανάλυση· ") + movedText + SwimLang.T(" πήγαν σε αυτούς («Αναίρεση»: πίσω).")
+                    : SwimLang.T("Οι επίσημοι χρόνοι μπήκαν στην ανάλυση. Τα σημάδια που έχεις ελέγξει μένουν όπου είναι (η διαφορά φαίνεται στο «Τερματισμός»).")) +
                     (warning != null ? " ⚠ " + warning + "." : ""), warning != null);
         }
 
@@ -1430,7 +1430,7 @@ namespace Kinovea.ScreenManager
             if (Race.Official == null || OfficialPlaceable())
                 ApplyOfficial(again);
             AfterOfficial(undo.Distances.Contains(Race.Distance) || again.Distances.Contains(Race.Distance), current, currentBefore);
-            Status("Αναιρέθηκε η αλλαγή των επίσημων χρόνων" + (Race.Official == null ? ": χωρίς επίσημους χρόνους." : ": " + SwimRace.FormatOfficial(Race.Official) + "."), false);
+            Status(SwimLang.T("Αναιρέθηκε η αλλαγή των επίσημων χρόνων") + (Race.Official == null ? SwimLang.T(": χωρίς επίσημους χρόνους.") : ": " + SwimRace.FormatOfficial(Race.Official) + "."), false);
             return true;
         }
 
@@ -2086,13 +2086,13 @@ namespace Kinovea.ScreenManager
             int learned = learnedFromMarks;
             learnedFromMarks = 0;
             string strokesText = strokes > 0
-                ? string.Format(CultureInfo.InvariantCulture, " {0} αυτόματες χεριές (διόρθωση: διπλό κλικ στις χεριές του τμήματος).", strokes)
+                ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" {0} αυτόματες χεριές (διόρθωση: διπλό κλικ στις χεριές του τμήματος)."), strokes)
                 : "";
             if (made.Count == 0)
             {
                 Status((learned > 0 ?
-                    string.Format(CultureInfo.InvariantCulture, "🤖 Τα περάσματα είχαν ήδη χρόνους: {0} από αυτά κρατήθηκαν για τη μάθηση (δεν χρειάζεται έλεγχος).", learned) :
-                    "Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).") + strokesText, false);
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Τα περάσματα είχαν ήδη χρόνους: {0} από αυτά κρατήθηκαν για τη μάθηση (δεν χρειάζεται έλεγχος)."), learned) :
+                    SwimLang.T("Αυτόματα περάσματα: δεν βρέθηκαν σημάδια των σχοινιών (κόκκινοι φελλοί στα 15/25/35 και τα τελευταία 5μ.).")) + strokesText, false);
                 Changed(false);
                 RefreshProposalsUi();
                 return;
@@ -2110,10 +2110,10 @@ namespace Kinovea.ScreenManager
             Changed(false);
             BeginReview(made.OrderBy(p => p.Timestamp).First());
             int paceOnly = made.Count(IsDoubtfulPace);
-            string notes = (paceOnly > 0 ? " ⚠ " + PaceOnlyText(paceOnly) + ": έλεγξέ " + (paceOnly == 1 ? "το" : "τα") + " προσεκτικά." : "") +
+            string notes = (paceOnly > 0 ? " ⚠ " + PaceOnlyText(paceOnly) + SwimLang.T(": έλεγξέ ") + (paceOnly == 1 ? SwimLang.T("το") : SwimLang.T("τα")) + SwimLang.T(" προσεκτικά.") : "") +
                 OfficialNote(made);
             if (lengths > 1 || strokes > 0 || notes.Length > 0)
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 {0} μήκη, {1} προτάσεις.{2}{3} ", lengths, made.Count, strokesText, notes) + LastStatus,
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 {0} μήκη, {1} προτάσεις.{2}{3} "), lengths, made.Count, strokesText, notes) + LastStatus,
                     paceOnly > 0);
         }
 
@@ -2129,8 +2129,8 @@ namespace Kinovea.ScreenManager
         /// <summary>"3 περάσματα βγήκαν μόνο από τον ρυθμό του αθλητή (η γραμμή τους δεν φάνηκε στο βίντεο)".</summary>
         private static string PaceOnlyText(int count)
         {
-            return (count == 1 ? "1 πέρασμα βγήκε" : count.ToString(CultureInfo.InvariantCulture) + " περάσματα βγήκαν") +
-                " μόνο από τον ρυθμό του αθλητή (η γραμμή " + (count == 1 ? "του" : "τους") + " δεν φάνηκε στο βίντεο)";
+            return (count == 1 ? SwimLang.T("1 πέρασμα βγήκε") : count.ToString(CultureInfo.InvariantCulture) + SwimLang.T(" περάσματα βγήκαν")) +
+                SwimLang.T(" μόνο από τον ρυθμό του αθλητή (η γραμμή ") + (count == 1 ? SwimLang.T("του") : SwimLang.T("τους")) + SwimLang.T(" δεν φάνηκε στο βίντεο)");
         }
 
         /// <summary>" Από τους επίσημους χρόνους: ο τερματισμός, οι τοίχοι των 50, 100μ. και τα 45 μ. πριν από αυτούς." ("" for none).</summary>
@@ -2145,11 +2145,11 @@ namespace Kinovea.ScreenManager
             List<int> turns = walls.Where(d => d != Race.Distance).ToList();
             List<string> parts = new List<string>();
             if (finish)
-                parts.Add("ο τερματισμός");
+                parts.Add(SwimLang.T("ο τερματισμός"));
             if (turns.Count > 0)
-                parts.Add((turns.Count == 1 ? "ο τοίχος των " : "οι τοίχοι των ") + string.Join(", ", turns.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToArray()) + Race.Unit);
+                parts.Add((turns.Count == 1 ? SwimLang.T("ο τοίχος των ") : SwimLang.T("οι τοίχοι των ")) + string.Join(", ", turns.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToArray()) + Race.Unit);
             bool last = made.Any(p => p.Kind == KindRaceSplit && p.Official && !official.ContainsKey(p.Index));
-            return " Από τους επίσημους χρόνους: " + string.Join(" και ", parts.ToArray()) + (last ? " (και τα τελευταία 5" + Race.Unit + " πριν από αυτούς)." : ".");
+            return SwimLang.T(" Από τους επίσημους χρόνους: ") + string.Join(SwimLang.T(" και "), parts.ToArray()) + (last ? SwimLang.T(" (και τα τελευταία 5") + Race.Unit + SwimLang.T(" πριν από αυτούς).") : ".");
         }
 
         #region Whole race
@@ -2176,8 +2176,8 @@ namespace Kinovea.ScreenManager
                 StopPilot();
                 if (armed)
                 {
-                    Status("🤖 Όλος ο αγώνας: ο αυτόματος πιλότος σταμάτησε, η ανάγνωση είναι δική σου. Κλικ στο κεφάλι του αθλητή και μετά στα " +
-                        "πόδια του, σε ένα καρέ μετά την έξοδο από το νερό (Esc: ακύρωση).", false);
+                    Status(SwimLang.T("🤖 Όλος ο αγώνας: ο αυτόματος πιλότος σταμάτησε, η ανάγνωση είναι δική σου. Κλικ στο κεφάλι του αθλητή και μετά στα ") +
+                        SwimLang.T("πόδια του, σε ένα καρέ μετά την έξοδο από το νερό (Esc: ακύρωση)."), false);
                     return;
                 }
             }
@@ -2190,7 +2190,7 @@ namespace Kinovea.ScreenManager
         {
             if (!PoolHasMarks && Race != null)
             {
-                Status("Αυτόματη ανάλυση αγώνα: πισίνα 50 ή 25.", true);
+                Status(SwimLang.T("Αυτόματη ανάλυση αγώνα: πισίνα 50 ή 25."), true);
                 return;
             }
 
@@ -2203,8 +2203,8 @@ namespace Kinovea.ScreenManager
             if (PickingTrack)
             {
                 pickForRace = true;
-                Status("🤖 Αυτόματη ανάλυση αγώνα: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του. " +
-                    "Το Kinovea τον ακολουθεί σε όλα τα μήκη (Esc: ακύρωση).", false);
+                Status(SwimLang.T("🤖 Αυτόματη ανάλυση αγώνα: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του. ") +
+                    SwimLang.T("Το Kinovea τον ακολουθεί σε όλα τα μήκη (Esc: ακύρωση)."), false);
 
                 // A new reading of the race (not the next lengths after a lost swimmer, nor from a later length): the swimmer the
                 // camera follows is proposed, Enter takes him.
@@ -2231,9 +2231,9 @@ namespace Kinovea.ScreenManager
                 pilotStep = PilotStep.Reading;
 
                 // (The question of the swimmer or its countdown stayed on the status line during the reading until 2.7.1.)
-                Status(pilotWasLost ? string.Format(CultureInfo.InvariantCulture, "✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα μετά τον τοίχο των " +
-                    "{0}{1}… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", pilotLostWall, Race.Unit) :
-                    "✈ Ο αυτόματος πιλότος διαβάζει τον αγώνα… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", false);
+                Status(pilotWasLost ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("✈ Ο αυτόματος πιλότος συνεχίζει να διαβάζει τον αγώνα μετά τον τοίχο των ") +
+                    SwimLang.T("{0}{1}… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)"), pilotLostWall, Race.Unit) :
+                    SwimLang.T("✈ Ο αυτόματος πιλότος διαβάζει τον αγώνα… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)"), false);
                 RefreshPilotUi();
             }
 
@@ -2246,8 +2246,8 @@ namespace Kinovea.ScreenManager
             }
 
             if (proposed != null && !pilot)
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Ο αγώνας διαβάζεται τρεις φορές, από {0} στα {1} s μετά την εκκίνηση· " +
-                    "κρατιέται η ανάγνωση που συμφωνεί με τις άλλες δύο… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)", PickWho(proposed),
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Ο αγώνας διαβάζεται τρεις φορές, από {0} στα {1} s μετά την εκκίνηση· ") +
+                    SwimLang.T("κρατιέται η ανάγνωση που συμφωνεί με τις άλλες δύο… (Cancel: σταμάτημα· ό,τι βρεθεί μένει)"), PickWho(proposed),
                     string.Join(", ", ProposedReadings.Select(t => t.ToString("0", CultureInfo.InvariantCulture)))), false);
 
             List<LengthRead> lengths = new List<LengthRead>();
@@ -2293,7 +2293,7 @@ namespace Kinovea.ScreenManager
                     log.Error("Automatic race analysis failed.", error);
                     if (pilot)
                         StopPilot();
-                    Status("Η αυτόματη ανάλυση του αγώνα απέτυχε: " + error.Message, true);
+                    Status(SwimLang.T("Η αυτόματη ανάλυση του αγώνα απέτυχε: ") + error.Message, true);
                     return;
                 }
 
@@ -2327,12 +2327,12 @@ namespace Kinovea.ScreenManager
 
                 // (The auto pilot says it itself after the reading: the swimmer lost, or the report.)
                 if (!pilot && cancelled)
-                    Status(string.Format(CultureInfo.InvariantCulture, "Η ανάγνωση σταμάτησε μετά από {0}: προτείνονται όσα βρέθηκαν.",
-                        CountOf(lengths.Count, "μήκος", "μήκη")), true);
+                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Η ανάγνωση σταμάτησε μετά από {0}: προτείνονται όσα βρέθηκαν."),
+                        CountOf(lengths.Count, SwimLang.T("μήκος"), SwimLang.T("μήκη"))), true);
                 else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
-                        "🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» " +
-                        "σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί.", resumeWall - Race.Pool, Race.Unit), true);
+                        SwimLang.T("🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» ") +
+                        SwimLang.T("σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."), resumeWall - Race.Pool, Race.Unit), true);
             }
             finally
             {
@@ -3076,7 +3076,7 @@ namespace Kinovea.ScreenManager
             string done;
             if (existing != null && SameFrame(existing.Timestamp, timestamp))
             {
-                done = "✓ " + ProposalLabel(p) + ": υπήρχε ήδη σε αυτό το καρέ.";
+                done = "✓ " + ProposalLabel(p) + SwimLang.T(": υπήρχε ήδη σε αυτό το καρέ.");
             }
             else
             {
@@ -3093,7 +3093,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
-                done = string.Format(CultureInfo.InvariantCulture, "✓ Πέρασμα {0}{1}: {2:0.00} s", distance, Race.Unit, t);
+                done = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Πέρασμα {0}{1}: {2:0.00} s"), distance, Race.Unit, t);
                 if (distance == Race.Distance)
                     CaptureFinalFrame(timestamp);
             }

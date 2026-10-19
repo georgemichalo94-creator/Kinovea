@@ -97,19 +97,19 @@ namespace Kinovea.ScreenManager
                 if (Race == null || Race.IsTraining)
                     return "";
                 if (Settings == null || !Settings.LearnFromMarks)
-                    return "κλειστή";
+                    return SwimLang.T("κλειστή");
                 if (quietJob != null)
-                    return string.Format(CultureInfo.InvariantCulture, "🎓 διαβάζει τον αγώνα στο παρασκήνιο (μήκος {0})…", quietJob.Lengths.Count + 1);
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("🎓 διαβάζει τον αγώνα στο παρασκήνιο (μήκος {0})…"), quietJob.Lengths.Count + 1);
 
                 int taught = Race.Marks.Count(m => m.Taught != null);
-                string marks = taught == 1 ? "1 σημάδι σου έγινε μάθηση" : taught + " σημάδια σου έγιναν μάθηση";
+                string marks = taught == 1 ? SwimLang.T("1 σημάδι σου έγινε μάθηση") : taught + SwimLang.T(" σημάδια σου έγιναν μάθηση");
                 if (Race.QuietRead)
                 {
                     int waiting = Race.QuietProposals.Count(p => MarkOfQuietEvent(p) == null);
-                    return string.Format(CultureInfo.InvariantCulture, "🎓 ο αγώνας διαβάστηκε · {0} · {1} σημεία περιμένουν τα πατήματά σου", marks, waiting);
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("🎓 ο αγώνας διαβάστηκε · {0} · {1} σημεία περιμένουν τα πατήματά σου"), marks, waiting);
                 }
 
-                return taught > 0 ? "🎓 " + marks + " · κλικ στον αθλητή για τα περάσματα και τις εξόδους" : "κλικ στον αθλητή: μαθαίνει και από τα περάσματα, τους τοίχους, τις εξόδους";
+                return taught > 0 ? "🎓 " + marks + SwimLang.T(" · κλικ στον αθλητή για τα περάσματα και τις εξόδους") : SwimLang.T("κλικ στον αθλητή: μαθαίνει και από τα περάσματα, τους τοίχους, τις εξόδους");
             }
         }
 
@@ -149,20 +149,20 @@ namespace Kinovea.ScreenManager
         {
             if (Race != null && Race.QuietRead && quietJob == null && !Race.IsTraining)
             {
-                Status("🎓 Ο αγώνας έχει ήδη διαβαστεί για τη μάθηση: κάθε πέρασμα, τοίχος και έξοδος που μαρκάρεις τη διδάσκει.", false);
+                Status(SwimLang.T("🎓 Ο αγώνας έχει ήδη διαβαστεί για τη μάθηση: κάθε πέρασμα, τοίχος και έξοδος που μαρκάρεις τη διδάσκει."), false);
                 return;
             }
 
             if (!CanReadQuietly())
             {
                 if (Settings != null && !Settings.LearnFromMarks)
-                    Status("Η μάθηση από τα πατήματα είναι κλειστή (καρτέλα 1 · Εκκίνηση).", true);
+                    Status(SwimLang.T("Η μάθηση από τα πατήματα είναι κλειστή (καρτέλα 1 · Εκκίνηση)."), true);
                 else if (quietJob != null)
-                    Status("🎓 Ο αγώνας διαβάζεται ήδη στο παρασκήνιο.", false);
+                    Status(SwimLang.T("🎓 Ο αγώνας διαβάζεται ήδη στο παρασκήνιο."), false);
                 else if (Race != null && !Race.IsTraining && Race.StartTimestamp.HasValue && PoolHasMarks)
-                    Status("Ο αγώνας έχει προτάσεις του «🤖 Όλος ο αγώνας»: οι απαντήσεις σου σε αυτές είναι η μάθηση.", false);
+                    Status(SwimLang.T("Ο αγώνας έχει προτάσεις του «🤖 Όλος ο αγώνας»: οι απαντήσεις σου σε αυτές είναι η μάθηση."), false);
                 else
-                    Status("Μάθηση από τα πατήματα: πρώτα το σήμα εκκίνησης (G), σε πισίνα 50 ή 25 με σημάδια στα σχοινιά.", true);
+                    Status(SwimLang.T("Μάθηση από τα πατήματα: πρώτα το σήμα εκκίνησης (G), σε πισίνα 50 ή 25 με σημάδια στα σχοινιά."), true);
                 return;
             }
 
@@ -171,8 +171,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             pickForQuiet = true;
-            Status("🎓 Για να μαθαίνει από τα πατήματά σου: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά " +
-                "στα πόδια του (μία φορά σε αυτόν τον αγώνα). Ο αγώνας διαβάζεται στο παρασκήνιο, εσύ συνεχίζεις. Esc: όχι τώρα.", false);
+            Status(SwimLang.T("🎓 Για να μαθαίνει από τα πατήματά σου: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά ") +
+                SwimLang.T("στα πόδια του (μία φορά σε αυτόν τον αγώνα). Ο αγώνας διαβάζεται στο παρασκήνιο, εσύ συνεχίζεις. Esc: όχι τώρα."), false);
         }
 
         /// <summary>The race read in the background from the swimmer clicked, on a second reader of the video file.</summary>
@@ -185,7 +185,7 @@ namespace Kinovea.ScreenManager
             VideoReader reader = OpenSecondReader();
             if (reader == null)
             {
-                Status("🎓 Το βίντεο δεν άνοιξε δεύτερη φορά για την ανάγνωση στο παρασκήνιο: η μάθηση γίνεται μόνο από την εκκίνηση και τις αποκολλήσεις.", true);
+                Status(SwimLang.T("🎓 Το βίντεο δεν άνοιξε δεύτερη φορά για την ανάγνωση στο παρασκήνιο: η μάθηση γίνεται μόνο από την εκκίνηση και τις αποκολλήσεις."), true);
                 return;
             }
 
@@ -239,7 +239,7 @@ namespace Kinovea.ScreenManager
 
             quietJob = job;
             worker.RunWorkerAsync();
-            Status("🎓 Ο αγώνας διαβάζεται στο παρασκήνιο: συνέχισε την ανάλυση. Κάθε πέρασμα, τοίχος και έξοδος που μαρκάρεις θα διδάσκει το πρόγραμμα.", false);
+            Status(SwimLang.T("🎓 Ο αγώνας διαβάζεται στο παρασκήνιο: συνέχισε την ανάλυση. Κάθε πέρασμα, τοίχος και έξοδος που μαρκάρεις θα διδάσκει το πρόγραμμα."), false);
             if (form != null && !form.IsDisposed)
                 form.RefreshQuiet();
         }
@@ -358,7 +358,7 @@ namespace Kinovea.ScreenManager
                 if (e.Error != null)
                 {
                     log.Error("The reading of the race in the background failed.", e.Error);
-                    Status("🎓 Η ανάγνωση του αγώνα στο παρασκήνιο σταμάτησε (" + e.Error.Message + "): η μάθηση γίνεται από την εκκίνηση και τις αποκολλήσεις.", false);
+                    Status(SwimLang.T("🎓 Η ανάγνωση του αγώνα στο παρασκήνιο σταμάτησε (") + e.Error.Message + SwimLang.T("): η μάθηση γίνεται από την εκκίνηση και τις αποκολλήσεις."), false);
                     return;
                 }
 
@@ -368,8 +368,8 @@ namespace Kinovea.ScreenManager
 
                 if (job.Lengths.Count == 0)
                 {
-                    Status("🎓 Στο παρασκήνιο δεν βρέθηκε ο αθλητής από το κλικ (σημάδια σχοινιών): η μάθηση γίνεται από την εκκίνηση και τις αποκολλήσεις. " +
-                        "Ξανά με «🎓 Κλικ στον αθλητή» σε ένα καθαρό καρέ.", false);
+                    Status(SwimLang.T("🎓 Στο παρασκήνιο δεν βρέθηκε ο αθλητής από το κλικ (σημάδια σχοινιών): η μάθηση γίνεται από την εκκίνηση και τις αποκολλήσεις. ") +
+                        SwimLang.T("Ξανά με «🎓 Κλικ στον αθλητή» σε ένα καθαρό καρέ."), false);
                     return;
                 }
 
@@ -403,9 +403,9 @@ namespace Kinovea.ScreenManager
                 MarkDirty();
                 int waiting = made.Count(p => MarkOfQuietEvent(p) == null);
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "🎓 Ο αγώνας διαβάστηκε στο παρασκήνιο ({0} μήκη): {1} σημεία που είχες ήδη μαρκάρει έγιναν μάθηση, {2} περιμένουν τα επόμενα πατήματά σου.{3}",
+                    SwimLang.T("🎓 Ο αγώνας διαβάστηκε στο παρασκήνιο ({0} μήκη): {1} σημεία που είχες ήδη μαρκάρει έγιναν μάθηση, {2} περιμένουν τα επόμενα πατήματά σου.{3}"),
                     job.Lengths.Count, taught, waiting, Race.QuietRead ? "" : string.Format(CultureInfo.InvariantCulture,
-                        " Διαβάστηκε μέχρι τα {0}{1}: για τα υπόλοιπα, «🎓 Κλικ στον αθλητή» σε ένα καρέ μετά.", lastWall, Race.Unit)), false);
+                        SwimLang.T(" Διαβάστηκε μέχρι τα {0}{1}: για τα υπόλοιπα, «🎓 Κλικ στον αθλητή» σε ένα καρέ μετά."), lastWall, Race.Unit)), false);
                 RefreshProposalsUi();
                 if (form != null && !form.IsDisposed)
                     form.RefreshQuiet();

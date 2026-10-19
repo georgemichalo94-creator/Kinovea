@@ -19,7 +19,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimSkeletonPainter
     {
-        /// <summary>Angles of the skeleton: name and the three joints (end, vertex, end) on the left side.</summary>
+        /// <summary>Angles of the skeleton: name (kept in Greek, shown with SwimLang.Label) and the three joints (end, vertex, end) on the left side.</summary>
         public static readonly KeyValuePair<string, int[]>[] Angles =
         {
             new KeyValuePair<string, int[]>("Γόνατο", new[] { SwimJoints.LeftHip, SwimJoints.LeftKnee, SwimJoints.LeftAnkle }),

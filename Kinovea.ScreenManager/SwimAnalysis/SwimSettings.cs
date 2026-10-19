@@ -129,6 +129,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public Dictionary<string, string> ResultsLinks = new Dictionary<string, string>();
 
+        /// <summary>
+        /// The language of the analysis (since 2.7.7): "el" or "en", for the panel, the graphics of the video and the PDF (the button
+        /// ΕΛ / EN of the panel).
+        /// </summary>
+        public string Language = "el";
+
         [JsonIgnore]
         public bool IsConfigured
         {

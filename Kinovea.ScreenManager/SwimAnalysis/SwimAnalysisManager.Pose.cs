@@ -99,13 +99,13 @@ namespace Kinovea.ScreenManager
 
             if (!HasVideo || Race == null)
             {
-                Status("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής.", true);
+                Status(SwimLang.T("Άνοιξε πρώτα ένα βίντεο σε οθόνη αναπαραγωγής."), true);
                 return;
             }
 
             if (!SwimPoseNet.Available)
             {
-                Status("Λείπουν τα αρχεία του σκελετού (φάκελος SwimAnalysis\\Models δίπλα στο Kinovea.exe).", true);
+                Status(SwimLang.T("Λείπουν τα αρχεία του σκελετού (φάκελος SwimAnalysis\\Models δίπλα στο Kinovea.exe)."), true);
                 return;
             }
 
@@ -116,8 +116,8 @@ namespace Kinovea.ScreenManager
             pickForRace = false;
             pickForQuiet = false;
             SetPick(SwimPickTarget.Skeleton);
-            Status("Σκελετός: σε ένα καρέ όπου φαίνεται καθαρά ο αθλητής, κλικ πάνω του (π.χ. στη μέση του σώματος). " +
-                "Το βίντεο διαβάζεται από εκεί και μετά, όσο φαίνεται ο αθλητής (Esc: ακύρωση).", false);
+            Status(SwimLang.T("Σκελετός: σε ένα καρέ όπου φαίνεται καθαρά ο αθλητής, κλικ πάνω του (π.χ. στη μέση του σώματος). ") +
+                SwimLang.T("Το βίντεο διαβάζεται από εκεί και μετά, όσο φαίνεται ο αθλητής (Esc: ακύρωση)."), false);
             InvalidatePlayer();
             if (form != null && !form.IsDisposed)
                 form.RefreshSkeleton();
@@ -136,14 +136,14 @@ namespace Kinovea.ScreenManager
             RefreshTiming();
             if (!Timing.IsValid || Race == null)
             {
-                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: ο σκελετός δεν μπορεί να βρεθεί.", true);
+                Status(SwimLang.T("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: ο σκελετός δεν μπορεί να βρεθεί."), true);
                 return;
             }
 
             long end = Math.Min(frameServer.VideoReader.WorkingZone.End, from + RealSpan(SkeletonMaxSeconds));
             if (end <= from)
             {
-                Status("Δεν υπάρχει βίντεο μετά από αυτό το καρέ.", true);
+                Status(SwimLang.T("Δεν υπάρχει βίντεο μετά από αυτό το καρέ."), true);
                 return;
             }
 
@@ -194,7 +194,7 @@ namespace Kinovea.ScreenManager
                 if (error != null)
                 {
                     log.Error("Skeleton reading failed.", error);
-                    Status("Ο σκελετός δεν βρέθηκε: " + error.Message, true);
+                    Status(SwimLang.T("Ο σκελετός δεν βρέθηκε: ") + error.Message, true);
                     return;
                 }
 
@@ -202,8 +202,8 @@ namespace Kinovea.ScreenManager
                 SwimSkeleton kept = TrimSkeleton(skeleton);
                 if (kept == null || kept.Found < 5)
                 {
-                    Status(cancelled ? "Η ανάγνωση για τον σκελετό ακυρώθηκε." :
-                        "Ο αθλητής δεν βρέθηκε. Κλικ πάνω στο σώμα του σε ένα καρέ όπου φαίνεται ολόκληρος και καθαρά.", !cancelled);
+                    Status(cancelled ? SwimLang.T("Η ανάγνωση για τον σκελετό ακυρώθηκε.") :
+                        SwimLang.T("Ο αθλητής δεν βρέθηκε. Κλικ πάνω στο σώμα του σε ένα καρέ όπου φαίνεται ολόκληρος και καθαρά."), !cancelled);
                     return;
                 }
 
@@ -211,8 +211,8 @@ namespace Kinovea.ScreenManager
                 Changed(false);
                 long origin = Race.StartTimestamp ?? frameServer.Metadata.TimeOrigin;
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "Σκελετός: βρέθηκε σε {0} από {1} καρέ ({2:0.00}–{3:0.00} s){4}. «📐 Γωνίες σκελετού» βάζει τις γωνίες του καρέ στην ανάλυση.",
-                    kept.Found, kept.Count, Timing.Seconds(kept.Start, origin), Timing.Seconds(kept.End, origin), cancelled ? ", ανάγνωση σταμάτησε" : ""), false);
+                    SwimLang.T("Σκελετός: βρέθηκε σε {0} από {1} καρέ ({2:0.00}–{3:0.00} s){4}. «📐 Γωνίες σκελετού» βάζει τις γωνίες του καρέ στην ανάλυση."),
+                    kept.Found, kept.Count, Timing.Seconds(kept.Start, origin), Timing.Seconds(kept.End, origin), cancelled ? SwimLang.T(", ανάγνωση σταμάτησε") : ""), false);
 
                 // The image of the start (block and swimmer) for the proposals, then the proposals of this part.
                 lastRegion = capture.Moved && capture.Frames != null && capture.Frames.Count >= 10 ? capture.Frames : null;
@@ -498,12 +498,12 @@ namespace Kinovea.ScreenManager
             if (here != null)
             {
                 Race.Skeletons.Remove(here);
-                Status("Διαγράφηκε ο σκελετός αυτού του σημείου του βίντεο.", false);
+                Status(SwimLang.T("Διαγράφηκε ο σκελετός αυτού του σημείου του βίντεο."), false);
             }
             else
             {
                 Race.Skeletons.Clear();
-                Status("Διαγράφηκαν όλοι οι σκελετοί του βίντεο.", false);
+                Status(SwimLang.T("Διαγράφηκαν όλοι οι σκελετοί του βίντεο."), false);
             }
 
             Changed(false);
@@ -521,7 +521,7 @@ namespace Kinovea.ScreenManager
             float[] visibility = new float[SwimJoints.Count];
             if (s == null || !s.TryGet(now.Value, 2, points, visibility))
             {
-                Status("Δεν υπάρχει σκελετός σε αυτό το καρέ: πρώτα «🦴 Σκελετός» και κλικ στον αθλητή.", true);
+                Status(SwimLang.T("Δεν υπάρχει σκελετός σε αυτό το καρέ: πρώτα «🦴 Σκελετός» και κλικ στον αθλητή."), true);
                 return;
             }
 
@@ -540,17 +540,17 @@ namespace Kinovea.ScreenManager
                     continue;
 
                 Race.Angles.Add(angle);
-                added.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0}°", a.Key, deg.Value));
+                added.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0}°", SwimLang.Label(a.Key), deg.Value));
             }
 
             if (added.Count == 0)
             {
-                Status("Οι αρθρώσεις δεν φαίνονται καθαρά σε αυτό το καρέ: δοκίμασε ένα κοντινό καρέ.", true);
+                Status(SwimLang.T("Οι αρθρώσεις δεν φαίνονται καθαρά σε αυτό το καρέ: δοκίμασε ένα κοντινό καρέ."), true);
                 return;
             }
 
             SwimTechPhase phase = SwimTechCalculator.PhaseAt(TechPhases, now.Value);
-            Status("📐 Από τον σκελετό: " + string.Join(", ", added) + (phase != null ? " (" + phase.Title + ")" : "") + ". Διαγράφονται και μετονομάζονται όπως οι άλλες γωνίες.", false);
+            Status(SwimLang.T("📐 Από τον σκελετό: ") + string.Join(", ", added) + (phase != null ? " (" + phase.Title + ")" : "") + SwimLang.T(". Διαγράφονται και μετονομάζονται όπως οι άλλες γωνίες."), false);
             Changed(true);
         }
 
@@ -567,7 +567,7 @@ namespace Kinovea.ScreenManager
         private void DrawSkeletonPrompt(Graphics g)
         {
             if (PickTarget == SwimPickTarget.Skeleton)
-                DrawLabel(g, "Σκελετός: κλικ πάνω στον αθλητή (Esc: ακύρωση)", new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, SwimLang.T("Σκελετός: κλικ πάνω στον αθλητή (Esc: ακύρωση)"), new Point(12, 12), Color.FromArgb(0, 220, 255));
         }
         #endregion
     }

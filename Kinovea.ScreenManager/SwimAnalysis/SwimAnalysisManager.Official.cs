@@ -92,7 +92,7 @@ namespace Kinovea.ScreenManager
                 return;
             if (officialWorker != null && officialWorker.IsBusy)
             {
-                Status("Η αναζήτηση στα επίσημα αποτελέσματα τρέχει ήδη.", false);
+                Status(SwimLang.T("Η αναζήτηση στα επίσημα αποτελέσματα τρέχει ήδη."), false);
                 return;
             }
 
@@ -133,7 +133,7 @@ namespace Kinovea.ScreenManager
             if (int.TryParse(Race.AthleteBirthYear, NumberStyles.Integer, CultureInfo.InvariantCulture, out born))
                 q.BirthYear = born;
 
-            Status("🔗 Αναζήτηση του αγώνα στα επίσημα αποτελέσματα…", false);
+            Status(SwimLang.T("🔗 Αναζήτηση του αγώνα στα επίσημα αποτελέσματα…"), false);
             string raceId = Race.Id;
             officialWorker = new BackgroundWorker();
             officialWorker.DoWork += (s, e) => e.Result = FindOfficial(q);
@@ -144,7 +144,7 @@ namespace Kinovea.ScreenManager
                 if (e.Error != null)
                 {
                     log.Error("The official results could not be read.", e.Error);
-                    Status("🔗 Τα επίσημα αποτελέσματα δεν διαβάστηκαν: " + e.Error.Message, true);
+                    Status(SwimLang.T("🔗 Τα επίσημα αποτελέσματα δεν διαβάστηκαν: ") + e.Error.Message, true);
                     return;
                 }
 
@@ -165,7 +165,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            Status("🔗 Τα επίσημα αποτελέσματα βρέθηκαν· εμφανίζονται μόλις τελειώσει η ανάγνωση του βίντεο.", false);
+            Status(SwimLang.T("🔗 Τα επίσημα αποτελέσματα βρέθηκαν· εμφανίζονται μόλις τελειώσει η ανάγνωση του βίντεο."), false);
             Timer wait = new Timer { Interval = 700 };
             wait.Tick += (s, e) =>
             {
@@ -310,7 +310,7 @@ namespace Kinovea.ScreenManager
                 SwimMicroplusCompetition mp = SwimOfficialResults.MicroplusCompetition(q.Link);
                 if (mp == null)
                 {
-                    found.Error = "η σελίδα της Microplus δεν διαβάστηκε (έλεγξε τον σύνδεσμο και τη σύνδεση στο διαδίκτυο)";
+                    found.Error = SwimLang.T("η σελίδα της Microplus δεν διαβάστηκε (έλεγξε τον σύνδεσμο και τη σύνδεση στο διαδίκτυο)");
                     return found;
                 }
 
@@ -340,13 +340,13 @@ namespace Kinovea.ScreenManager
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !Regex.IsMatch(q.Link.Trim(), @"^\d+$"))
             {
-                found.Error = "ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr), σελίδα αποτελεσμάτων της Microplus ή " +
-                    "διοργάνωση της World Aquatics (worldaquatics.com/competitions/…)· άφησέ τον κενό για αναζήτηση με την ημερομηνία";
+                found.Error = SwimLang.T("ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr), σελίδα αποτελεσμάτων της Microplus ή ") +
+                    SwimLang.T("διοργάνωση της World Aquatics (worldaquatics.com/competitions/…)· άφησέ τον κενό για αναζήτηση με την ημερομηνία");
                 return found;
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !int.TryParse(q.Link.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out code))
             {
-                found.Error = "ο κωδικός της διοργάνωσης δεν διαβάζεται";
+                found.Error = SwimLang.T("ο κωδικός της διοργάνωσης δεν διαβάζεται");
                 return found;
             }
 
@@ -356,7 +356,7 @@ namespace Kinovea.ScreenManager
                 // competitions of the KOE that day (a day before or after too).
                 if (!q.Date.HasValue && !q.VideoDate.HasValue)
                 {
-                    found.Error = "γράψε την ημερομηνία του αγώνα (στοιχεία αγώνα) ή επικόλλησε τον σύνδεσμο της διοργάνωσης από το live.koe.org.gr";
+                    found.Error = SwimLang.T("γράψε την ημερομηνία του αγώνα (στοιχεία αγώνα) ή επικόλλησε τον σύνδεσμο της διοργάνωσης από το live.koe.org.gr");
                     return found;
                 }
 
@@ -373,7 +373,7 @@ namespace Kinovea.ScreenManager
 
                 if (on.Count == 0)
                 {
-                    found.Error = string.Format(CultureInfo.InvariantCulture, "δεν βρέθηκε διοργάνωση της ΚΟΕ στις {0:d/M/yyyy}· επικόλλησε τον σύνδεσμό της",
+                    found.Error = string.Format(CultureInfo.InvariantCulture, SwimLang.T("δεν βρέθηκε διοργάνωση της ΚΟΕ στις {0:d/M/yyyy}· επικόλλησε τον σύνδεσμό της"),
                         (q.Date ?? q.VideoDate).Value);
                     return found;
                 }
@@ -402,7 +402,7 @@ namespace Kinovea.ScreenManager
             {
                 units = SwimOfficialResults.KoeSchedule(code);
                 if (found.Source.Length == 0)
-                    found.Source = found.Competition != null ? found.Competition.Name : "ΚΟΕ live (" + code.ToString(CultureInfo.InvariantCulture) + ")";
+                    found.Source = found.Competition != null ? found.Competition.Name : SwimLang.T("ΚΟΕ live (") + code.ToString(CultureInfo.InvariantCulture) + ")";
             }
 
             units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && GenderFits(u.Gender, q.Gender)).ToList();
@@ -419,15 +419,15 @@ namespace Kinovea.ScreenManager
                 units = units.Where(u => !u.Date.HasValue || u.Date.Value.Date == q.Date.Value.Date).ToList();
             else if (q.LinkRemembered && q.Date.HasValue && units.Any(u => u.Date.HasValue))
             {
-                found.Error = string.Format(CultureInfo.InvariantCulture, "η διοργάνωση του συνδέσμου που κρατήθηκε για «{0}» δεν έχει αυτό το αγώνισμα " +
-                    "στις {1:d/M/yyyy}· επικόλλησε τον σύνδεσμο αυτής της διοργάνωσης", q.Competition, q.Date.Value);
+                found.Error = string.Format(CultureInfo.InvariantCulture, SwimLang.T("η διοργάνωση του συνδέσμου που κρατήθηκε για «{0}» δεν έχει αυτό το αγώνισμα ") +
+                    SwimLang.T("στις {1:d/M/yyyy}· επικόλλησε τον σύνδεσμο αυτής της διοργάνωσης"), q.Competition, q.Date.Value);
                 return found;
             }
 
             if (units.Count == 0)
             {
-                found.Error = "η διοργάνωση δεν έχει το αγώνισμα " + q.Distance.ToString(CultureInfo.InvariantCulture) + "μ. " + SwimPresets.StyleShort(q.Style) +
-                    (q.Gender.Length > 0 ? " (" + (q.Gender == "F" ? "γυναικών" : "ανδρών") + ")" : "");
+                found.Error = SwimLang.T("η διοργάνωση δεν έχει το αγώνισμα ") + q.Distance.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ. ") + SwimPresets.StyleShort(q.Style) +
+                    (q.Gender.Length > 0 ? " (" + (q.Gender == "F" ? SwimLang.T("γυναικών") : SwimLang.T("ανδρών")) + ")" : "");
                 return found;
             }
 
@@ -461,7 +461,7 @@ namespace Kinovea.ScreenManager
             {
                 chosen = all.Where(x => (x.Value.Code == q.AthleteId || (x.Value.IfId.Length > 0 && WorldAquaticsId(x.Value.IfId) == q.AthleteId)) &&
                     NationFits(q.Nation, x.Value.Nation) && (q.Athlete.Length == 0 || SameFamily(family, given, x.Value))).ToList();
-                found.How = "με τον αριθμό μητρώου";
+                found.How = SwimLang.T("με τον αριθμό μητρώου");
             }
 
             // 2. The name (Greek or Latin letters, family name first or last), the year of birth and the nation.
@@ -470,7 +470,7 @@ namespace Kinovea.ScreenManager
                 chosen = all.Where(x =>
                     (q.BirthYear == 0 || x.Value.BirthYear == 0 || x.Value.BirthYear == q.BirthYear) && NationFits(q.Nation, x.Value.Nation) &&
                     NameLike(family, given, x.Value) >= SwimNameMatch.SameName).ToList();
-                found.How = "με το όνομα";
+                found.How = SwimLang.T("με το όνομα");
             }
 
             if (chosen != null && chosen.Count > 0)
@@ -482,7 +482,7 @@ namespace Kinovea.ScreenManager
                 if (timed.Count == 0)
                 {
                     SwimOfficialEntry none = chosen[0].Value;
-                    found.Error = "ο αθλητής βρέθηκε (" + chosen[0].Key.Phase + ") χωρίς χρόνο" + (none.Status.Length > 0 ? ": " + none.Status : "");
+                    found.Error = SwimLang.T("ο αθλητής βρέθηκε (") + chosen[0].Key.Phase + SwimLang.T(") χωρίς χρόνο") + (none.Status.Length > 0 ? ": " + none.Status : "");
                     return found;
                 }
 
@@ -503,22 +503,22 @@ namespace Kinovea.ScreenManager
             found.AthleteNotFound = q.AthleteId.Length > 0 || q.Athlete.Length > 0;
             if (q.Lane <= 0)
             {
-                found.Error = found.AthleteNotFound ? "ο αθλητής δεν βρέθηκε στο αγώνισμα (έλεγξε τη φάση και το όνομα, ή γράψε τον διάδρομο)"
-                    : "διάλεξε πρώτα τον αθλητή ή γράψε τον διάδρομο";
+                found.Error = found.AthleteNotFound ? SwimLang.T("ο αθλητής δεν βρέθηκε στο αγώνισμα (έλεγξε τη φάση και το όνομα, ή γράψε τον διάδρομο)")
+                    : SwimLang.T("διάλεξε πρώτα τον αθλητή ή γράψε τον διάδρομο");
                 return found;
             }
 
             List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> lane = all.Where(x => x.Value.Lane == q.Lane && x.Value.Time.HasValue).ToList();
             if (lane.Count == 0)
             {
-                found.Error = "κανείς με χρόνο στον διάδρομο " + q.Lane.ToString(CultureInfo.InvariantCulture) + " του αγωνίσματος" +
-                    (found.AthleteNotFound ? ", και ο αθλητής δεν βρέθηκε" : "");
+                found.Error = SwimLang.T("κανείς με χρόνο στον διάδρομο ") + q.Lane.ToString(CultureInfo.InvariantCulture) + SwimLang.T(" του αγωνίσματος") +
+                    (found.AthleteNotFound ? SwimLang.T(", και ο αθλητής δεν βρέθηκε") : "");
                 return found;
             }
 
             if (q.Final.HasValue)
                 lane = lane.OrderBy(x => Math.Abs(x.Value.Time.Value - q.Final.Value)).ToList();
-            found.How = q.Final.HasValue ? "με τον διάδρομο και τον χρόνο που διαβάστηκε" : "με τον διάδρομο";
+            found.How = q.Final.HasValue ? SwimLang.T("με τον διάδρομο και τον χρόνο που διαβάστηκε") : SwimLang.T("με τον διάδρομο");
             bool sure = !found.AthleteNotFound && found.Missing == 0 && !found.Truncated && q.Final.HasValue &&
                 Math.Abs(lane[0].Value.Time.Value - q.Final.Value) <= 0.5 &&
                 (lane.Count == 1 || Math.Abs(lane[1].Value.Time.Value - q.Final.Value) > 1.0);
@@ -611,14 +611,14 @@ namespace Kinovea.ScreenManager
         /// <summary>UI thread: what was found shown, the analyst agrees (or chooses), then it goes in the analysis.</summary>
         private void OfferOfficial(OfficialFound found, OfficialQuery q)
         {
-            string title = "🔗 Επίσημα αποτελέσματα";
+            string title = SwimLang.T("🔗 Επίσημα αποτελέσματα");
             if (found.AskCompetition && found.Competitions.Count == 1)
             {
                 SwimKoeCompetition only = found.Competitions[0];
-                if (MessageBox.Show(DialogOwner, "Τη μέρα του αγώνα η ΚΟΕ έχει μία διοργάνωση, με άλλο όνομα από αυτό των στοιχείων του αγώνα:\n\n" +
-                    only + "\n\nΕίναι αυτή;", title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                if (MessageBox.Show(DialogOwner, SwimLang.T("Τη μέρα του αγώνα η ΚΟΕ έχει μία διοργάνωση, με άλλο όνομα από αυτό των στοιχείων του αγώνα:\n\n") +
+                    only + SwimLang.T("\n\nΕίναι αυτή;"), title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 {
-                    Status("🔗 Δεν μπήκαν επίσημοι χρόνοι: επικόλλησε τον σύνδεσμο της διοργάνωσης στα στοιχεία του αγώνα.", false);
+                    Status(SwimLang.T("🔗 Δεν μπήκαν επίσημοι χρόνοι: επικόλλησε τον σύνδεσμο της διοργάνωσης στα στοιχεία του αγώνα."), false);
                     return;
                 }
 
@@ -628,8 +628,8 @@ namespace Kinovea.ScreenManager
 
             if (found.Competitions.Count > 1)
             {
-                Status("🔗 Την ίδια μέρα έγιναν " + found.Competitions.Count.ToString(CultureInfo.InvariantCulture) + " διοργανώσεις: διάλεξε.", false);
-                int i = SwimChoiceDialog.Choose(DialogOwner, title, "Ποια διοργάνωση είναι;", found.Competitions.Select(c => c.ToString()).ToList());
+                Status(SwimLang.T("🔗 Την ίδια μέρα έγιναν ") + found.Competitions.Count.ToString(CultureInfo.InvariantCulture) + SwimLang.T(" διοργανώσεις: διάλεξε."), false);
+                int i = SwimChoiceDialog.Choose(DialogOwner, title, SwimLang.T("Ποια διοργάνωση είναι;"), found.Competitions.Select(c => c.ToString()).ToList());
                 if (i < 0)
                     return;
                 LinkOfficialResults(KoeLink(found.Competitions[i].Code));
@@ -640,23 +640,23 @@ namespace Kinovea.ScreenManager
             {
                 List<string> items = found.Choices.Select(x => OfficialLine(x.Key, x.Value, q.Final)).ToList();
                 string question = found.AthleteNotFound
-                    ? "Ο αθλητής του αγώνα δεν βρέθηκε στα αποτελέσματα" + MissingNote(found) + ". Είναι κάποιος από αυτούς ο αθλητής του βίντεο;"
-                    : "Ποιος είναι ο αθλητής του βίντεο;" + MissingNote(found);
+                    ? SwimLang.T("Ο αθλητής του αγώνα δεν βρέθηκε στα αποτελέσματα") + MissingNote(found) + SwimLang.T(". Είναι κάποιος από αυτούς ο αθλητής του βίντεο;")
+                    : SwimLang.T("Ποιος είναι ο αθλητής του βίντεο;") + MissingNote(found);
                 int i = SwimChoiceDialog.Choose(DialogOwner, title, question, items);
                 if (i < 0)
                 {
-                    Status("🔗 Δεν μπήκαν επίσημοι χρόνοι.", false);
+                    Status(SwimLang.T("🔗 Δεν μπήκαν επίσημοι χρόνοι."), false);
                     return;
                 }
 
                 found.Unit = found.Choices[i].Key;
                 found.Entry = found.Choices[i].Value;
-                found.How = "από τη λίστα";
+                found.How = SwimLang.T("από τη λίστα");
             }
 
             if (found.Entry == null)
             {
-                Status("🔗 " + (found.Error ?? "δεν βρέθηκε ο αγώνας") + ".", true);
+                Status("🔗 " + (found.Error ?? SwimLang.T("δεν βρέθηκε ο αγώνας")) + ".", true);
                 return;
             }
 
@@ -666,31 +666,31 @@ namespace Kinovea.ScreenManager
             bool keepAthlete = !found.ByAthlete && !string.IsNullOrWhiteSpace(Race.Athlete) && (athlete == null || athlete.Id != (Race.AthleteId ?? ""));
             List<double> times = e.OfficialTimes();
             StringBuilder b = new StringBuilder();
-            b.Append("Βρέθηκε ").Append(found.How).Append(":\n\n");
-            b.Append(found.Source.Length > 0 ? found.Source : "Επίσημα αποτελέσματα");
+            b.Append(SwimLang.T("Βρέθηκε ")).Append(found.How).Append(":\n\n");
+            b.Append(found.Source.Length > 0 ? found.Source : SwimLang.T("Επίσημα αποτελέσματα"));
             if (found.Unit.Date.HasValue)
                 b.Append(" · ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture));
             b.Append('\n').Append(OfficialLine(found.Unit, e, null)).Append("\n\n");
-            b.Append("Επίσημοι χρόνοι: ").Append(SwimRace.FormatOfficial(times));
+            b.Append(SwimLang.T("Επίσημοι χρόνοι: ")).Append(SwimRace.FormatOfficial(times));
             if (e.Reaction.HasValue)
-                b.Append(" · αντίδραση ").Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
+                b.Append(SwimLang.T(" · αντίδραση ")).Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
             b.Append('\n');
             if (keepAthlete)
-                b.Append("Ο αθλητής του αγώνα μένει ο ίδιος: ").Append(Race.Athlete).Append('\n');
+                b.Append(SwimLang.T("Ο αθλητής του αγώνα μένει ο ίδιος: ")).Append(Race.Athlete).Append('\n');
             else if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
-                b.Append("Αθλητής από το μητρώο: ").Append(athlete.Name).Append(" (").Append(athlete.Id).Append(")\n");
+                b.Append(SwimLang.T("Αθλητής από το μητρώο: ")).Append(athlete.Name).Append(" (").Append(athlete.Id).Append(")\n");
             if (Race.Lane == 0 || Race.Lane != e.Lane)
-                b.Append("Διάδρομος: ").Append(e.Lane.ToString(CultureInfo.InvariantCulture)).Append('\n');
+                b.Append(SwimLang.T("Διάδρομος: ")).Append(e.Lane.ToString(CultureInfo.InvariantCulture)).Append('\n');
             DateTime? raceDay = ParseRaceDate(Race.Date);
             if (found.Unit.Date.HasValue && (!raceDay.HasValue || raceDay.Value.Date != found.Unit.Date.Value.Date))
-                b.Append("Ημερομηνία του αγώνα: ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture))
-                    .Append(raceDay.HasValue ? " (στα στοιχεία: " + raceDay.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture) + ")" : "").Append('\n');
+                b.Append(SwimLang.T("Ημερομηνία του αγώνα: ")).Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture))
+                    .Append(raceDay.HasValue ? SwimLang.T(" (στα στοιχεία: ") + raceDay.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture) + ")" : "").Append('\n');
             if (found.Missing > 0)
-                b.Append("(Δεν διαβάστηκαν τα αποτελέσματα ").Append(found.Missing.ToString(CultureInfo.InvariantCulture)).Append(" σειρών.)\n");
-            b.Append("\nΝα μπουν στην ανάλυση; (Ο τερματισμός και οι τοίχοι στους επίσημους χρόνους, όσα σημάδια δεν έχεις ελέγξει μετακινούνται.)");
+                b.Append(SwimLang.T("(Δεν διαβάστηκαν τα αποτελέσματα ")).Append(found.Missing.ToString(CultureInfo.InvariantCulture)).Append(SwimLang.T(" σειρών.)\n"));
+            b.Append(SwimLang.T("\nΝα μπουν στην ανάλυση; (Ο τερματισμός και οι τοίχοι στους επίσημους χρόνους, όσα σημάδια δεν έχεις ελέγξει μετακινούνται.)"));
             if (MessageBox.Show(DialogOwner, b.ToString(), title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             {
-                Status("🔗 Δεν μπήκαν επίσημοι χρόνοι.", false);
+                Status(SwimLang.T("🔗 Δεν μπήκαν επίσημοι χρόνοι."), false);
                 return;
             }
 
@@ -750,7 +750,7 @@ namespace Kinovea.ScreenManager
         /// <summary>" (δεν διαβάστηκαν όλα τα αποτελέσματα)" when some heats were not read or left out.</summary>
         private static string MissingNote(OfficialFound found)
         {
-            return found.Missing > 0 || found.Truncated ? " (δεν διαβάστηκαν όλα τα αποτελέσματα)" : "";
+            return found.Missing > 0 || found.Truncated ? SwimLang.T(" (δεν διαβάστηκαν όλα τα αποτελέσματα)") : "";
         }
 
         /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54" (and its difference from the time read).</summary>
@@ -760,11 +760,11 @@ namespace Kinovea.ScreenManager
             string about = string.Join(", ", new[] { e.Club, e.Nation, e.BirthYear > 0 ? e.BirthYear.ToString(CultureInfo.InvariantCulture) : "" }
                 .Where(x => !string.IsNullOrEmpty(x)).ToArray());
             int heat = e.Heat > 0 ? e.Heat : u.Heat;
-            string line = string.Format(CultureInfo.InvariantCulture, "{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}", u.Event, u.Phase,
+            string line = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}"), u.Event, u.Phase,
                 heat > 0 ? " " + heat.ToString(CultureInfo.InvariantCulture) : "", e.Lane, name,
                 about.Length > 0 ? " (" + about + ")" : "", e.Time.HasValue ? SwimReference.FormatTime(e.Time.Value) : e.Status);
             if (read.HasValue && e.Time.HasValue)
-                line += string.Format(CultureInfo.InvariantCulture, " (Δ {0:+0.00;-0.00} από τον χρόνο του βίντεο)", e.Time.Value - read.Value);
+                line += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" (Δ {0:+0.00;-0.00} από τον χρόνο του βίντεο)"), e.Time.Value - read.Value);
             return line;
         }
 
@@ -887,7 +887,7 @@ namespace Kinovea.ScreenManager
                 a["aliases"] = new JArray(e.Name);
 
             string raceId = Race.Id;
-            Status("Καταχώρηση του διεθνούς αθλητή…", false);
+            Status(SwimLang.T("Καταχώρηση του διεθνούς αθλητή…"), false);
             client.AddAthlete(Settings.WebAppUrl, Settings.Token, a, force, result =>
             {
                 if (Race == null || Race.Id != raceId)
@@ -897,12 +897,12 @@ namespace Kinovea.ScreenManager
                 if (!result.Ok && duplicates != null && duplicates.Count > 0)
                 {
                     List<string> items = duplicates.Select(d => string.Format(CultureInfo.InvariantCulture, "{0} ({1}, {2}) · {3}", (string)d["name"], (string)d["nation"],
-                        string.IsNullOrEmpty((string)d["birthYear"]) ? "έτος γέννησης άγνωστο" : (string)d["birthYear"], (string)d["id"])).ToList();
-                    items.Add("Άλλος αθλητής: νέος κωδικός");
-                    int i = SwimChoiceDialog.Choose(DialogOwner, "Διεθνής αθλητής", "Ο αθλητής των αποτελεσμάτων μοιάζει με κάποιον που υπάρχει ήδη στους διεθνείς. Είναι ο ίδιος;", items);
+                        string.IsNullOrEmpty((string)d["birthYear"]) ? SwimLang.T("έτος γέννησης άγνωστο") : (string)d["birthYear"], (string)d["id"])).ToList();
+                    items.Add(SwimLang.T("Άλλος αθλητής: νέος κωδικός"));
+                    int i = SwimChoiceDialog.Choose(DialogOwner, SwimLang.T("Διεθνής αθλητής"), SwimLang.T("Ο αθλητής των αποτελεσμάτων μοιάζει με κάποιον που υπάρχει ήδη στους διεθνείς. Είναι ο ίδιος;"), items);
                     if (i < 0)
                     {
-                        Status("Ο διεθνής αθλητής δεν καταχωρήθηκε (ο αγώνας κράτησε το όνομα των αποτελεσμάτων).", false);
+                        Status(SwimLang.T("Ο διεθνής αθλητής δεν καταχωρήθηκε (ο αγώνας κράτησε το όνομα των αποτελεσμάτων)."), false);
                         return;
                     }
 
@@ -918,7 +918,7 @@ namespace Kinovea.ScreenManager
 
                 if (!result.Ok || result.Raw == null || string.IsNullOrEmpty(result.Raw.Value<string>("id")))
                 {
-                    Status("Ο διεθνής αθλητής δεν καταχωρήθηκε: " + (result.Error ?? "χωρίς απάντηση") + " (χρειάζεται το script 2.7.6 στο Google Sheet).", true);
+                    Status(SwimLang.T("Ο διεθνής αθλητής δεν καταχωρήθηκε: ") + (result.Error ?? SwimLang.T("χωρίς απάντηση")) + SwimLang.T(" (χρειάζεται το script 2.7.6 στο Google Sheet)."), true);
                     return;
                 }
 
@@ -949,8 +949,8 @@ namespace Kinovea.ScreenManager
             }
 
             SetAthlete(athlete);
-            Status(string.Format(CultureInfo.InvariantCulture, "Διεθνής αθλητής: {0} ({1}) {2}.", athlete.Name, id,
-                created ? "καταχωρήθηκε στο φύλλο «Διεθνείς αθλητές»" : "υπήρχε ήδη"), false);
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Διεθνής αθλητής: {0} ({1}) {2}."), athlete.Name, id,
+                created ? SwimLang.T("καταχωρήθηκε στο φύλλο «Διεθνείς αθλητές»") : SwimLang.T("υπήρχε ήδη")), false);
         }
     }
 
@@ -975,8 +975,8 @@ namespace Kinovea.ScreenManager
                 if (list.Items.Count > 0)
                     list.SelectedIndex = 0;
                 FlowLayoutPanel buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
-                Button ok = new Button { Text = "Επιλογή", DialogResult = DialogResult.OK, AutoSize = true };
-                Button cancel = new Button { Text = "Άκυρο", DialogResult = DialogResult.Cancel, AutoSize = true };
+                Button ok = new Button { Text = SwimLang.T("Επιλογή"), DialogResult = DialogResult.OK, AutoSize = true };
+                Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, AutoSize = true };
                 buttons.Controls.Add(cancel);
                 buttons.Controls.Add(ok);
                 f.Controls.Add(list);

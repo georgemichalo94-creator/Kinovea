@@ -87,7 +87,18 @@ namespace Kinovea.ScreenManager
         public string Short = "";
         public List<SwimFinalist> Swimmers = new List<SwimFinalist>();
 
+        /// <summary>"OG2024 · 100m bk Men" in the language of the analysis.</summary>
         public string Label
+        {
+            get
+            {
+                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} · {1}μ. {2} {3}"), Short, Distance, SwimPresets.StyleShort(Style),
+                    SwimLang.Label(Gender == "F" ? "Γυναικών" : "Ανδρών"));
+            }
+        }
+
+        /// <summary>"OG2024 · 100μ. bk Ανδρών", as the sheet gets it.</summary>
+        public string LabelGreek
         {
             get
             {
@@ -236,7 +247,7 @@ namespace Kinovea.ScreenManager
             }
             catch (Exception e)
             {
-                error = "λάθος τιμή στο αρχείο (" + e.Message + ")";
+                error = SwimLang.T("λάθος τιμή στο αρχείο (") + e.Message + ")";
                 return null;
             }
         }
@@ -251,13 +262,13 @@ namespace Kinovea.ScreenManager
             }
             catch (Exception e)
             {
-                error = "δεν είναι αρχείο JSON (" + e.Message + ")";
+                error = SwimLang.T("δεν είναι αρχείο JSON (") + e.Message + ")";
                 return null;
             }
 
             if ((string)o["format"] != Format)
             {
-                error = "δεν είναι αρχείο τελικών (format " + Format + ")";
+                error = SwimLang.T("δεν είναι αρχείο τελικών (format ") + Format + ")";
                 return null;
             }
 
@@ -266,7 +277,7 @@ namespace Kinovea.ScreenManager
             JArray list = o["finals"] as JArray;
             if (list == null)
             {
-                error = "δεν έχει τελικούς";
+                error = SwimLang.T("δεν έχει τελικούς");
                 return null;
             }
 
@@ -344,7 +355,7 @@ namespace Kinovea.ScreenManager
 
             if (finals.Finals.Count == 0)
             {
-                error = "δεν έχει τελικούς με κολυμβητές";
+                error = SwimLang.T("δεν έχει τελικούς με κολυμβητές");
                 return null;
             }
 
@@ -627,7 +638,7 @@ namespace Kinovea.ScreenManager
             if (rows.Count < 2)
                 return null;
 
-            rows.Add(new SwimFinalsBoardRow { Name = string.IsNullOrWhiteSpace(athlete) ? "ΑΘΛΗΤΗΣ" : athlete.Trim(), Time = athleteTime, IsAthlete = true });
+            rows.Add(new SwimFinalsBoardRow { Name = string.IsNullOrWhiteSpace(athlete) ? SwimLang.T("ΑΘΛΗΤΗΣ") : athlete.Trim(), Time = athleteTime, IsAthlete = true });
             rows = rows.OrderBy(r => r.Time).ThenBy(r => r.IsAthlete ? 1 : 0).ToList();
 
             // The gap to the first line; the athlete in front of the whole final: his lead on its winner (negative).

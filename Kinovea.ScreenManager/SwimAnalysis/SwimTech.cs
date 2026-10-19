@@ -32,7 +32,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Training: number of the attempt of this kind (1, 2, …). Race: 0.</summary>
         public int Attempt;
+
+        /// <summary>The title in the language of the analysis ("Turn 50m").</summary>
         public string Title;
+
+        /// <summary>The title in Greek ("Στροφή 50μ."), as the sheet gets it.</summary>
+        public string TitleGreek;
         public bool Flip;
 
         /// <summary>Video timestamp of t = 0 of the phase.</summary>
@@ -93,7 +98,15 @@ namespace Kinovea.ScreenManager
     public class SwimTechMetric
     {
         public string Key;
-        public string Label;
+
+        /// <summary>The label in Greek (the key of its English).</summary>
+        public string LabelGreek;
+
+        /// <summary>The label in the language of the analysis.</summary>
+        public string Label
+        {
+            get { return SwimLang.T(LabelGreek); }
+        }
 
         /// <summary>s, d (distance), v (m/s), n (count), r (kicks/s).</summary>
         public string Unit;
@@ -102,7 +115,7 @@ namespace Kinovea.ScreenManager
         public SwimTechMetric(string key, string label, string unit, SwimPhaseKind? kind)
         {
             Key = key;
-            Label = label;
+            LabelGreek = label;
             Unit = unit;
             Kind = kind;
         }
@@ -247,7 +260,8 @@ namespace Kinovea.ScreenManager
             start.Id = "start";
             start.Kind = SwimPhaseKind.Start;
             start.Wall = 0;
-            start.Title = "Εκκίνηση";
+            start.TitleGreek = "Εκκίνηση";
+            start.Title = SwimLang.Label(start.TitleGreek);
             start.Origin = origin;
             phases.Add(start);
 
@@ -272,7 +286,8 @@ namespace Kinovea.ScreenManager
                 phase.Id = "turn-" + wall.ToString(CultureInfo.InvariantCulture);
                 phase.Kind = SwimPhaseKind.Turn;
                 phase.Wall = wall;
-                phase.Title = "Στροφή " + wall.ToString(CultureInfo.InvariantCulture) + race.Unit;
+                phase.TitleGreek = "Στροφή " + wall.ToString(CultureInfo.InvariantCulture) + (race.IsYards ? "yd" : "μ.");
+                phase.Title = SwimLang.Label(phase.TitleGreek);
                 phase.Flip = turn != null && turn.Flip;
                 phase.Origin = tw.Value;
                 phases.Add(phase);
@@ -368,7 +383,8 @@ namespace Kinovea.ScreenManager
                 phase.Id = o.Id;
                 phase.Kind = o.Type == SwimMarkType.Signal ? SwimPhaseKind.Start : SwimPhaseKind.Turn;
                 phase.Attempt = phase.Kind == SwimPhaseKind.Start ? ++starts : ++turns;
-                phase.Title = (phase.Kind == SwimPhaseKind.Start ? "Εκκίνηση " : "Στροφή ") + phase.Attempt.ToString(CultureInfo.InvariantCulture);
+                phase.TitleGreek = (phase.Kind == SwimPhaseKind.Start ? "Εκκίνηση " : "Στροφή ") + phase.Attempt.ToString(CultureInfo.InvariantCulture);
+                phase.Title = SwimLang.Label(phase.TitleGreek);
                 phase.Flip = phase.Kind == SwimPhaseKind.Turn && (race.Style == "fs" || race.Style == "bk");
                 phase.Origin = o.Timestamp;
                 phases.Add(phase);

@@ -189,6 +189,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public bool Chosen;
+
+        /// <summary>The language of the graphics of the final frame: "en", or none for Greek (since 2.7.7).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string Lang;
     }
 
     /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>
@@ -625,7 +629,7 @@ namespace Kinovea.ScreenManager
         [JsonIgnore]
         public string Unit
         {
-            get { return IsYards ? "yd" : "μ."; }
+            get { return IsYards ? "yd" : SwimLang.T("μ."); }
         }
 
         [JsonIgnore]
@@ -637,7 +641,7 @@ namespace Kinovea.ScreenManager
         [JsonIgnore]
         public string PoolLabel
         {
-            get { return Pool.ToString(CultureInfo.InvariantCulture) + (IsYards ? "yd" : "μ."); }
+            get { return Pool.ToString(CultureInfo.InvariantCulture) + (IsYards ? "yd" : SwimLang.T("μ.")); }
         }
 
         [JsonIgnore]
@@ -645,11 +649,11 @@ namespace Kinovea.ScreenManager
         {
             get
             {
-                string name = string.IsNullOrWhiteSpace(Athlete) ? "(χωρίς όνομα)" : Athlete.Trim();
+                string name = string.IsNullOrWhiteSpace(Athlete) ? SwimLang.T("(χωρίς όνομα)") : Athlete.Trim();
                 if (IsTraining)
-                    return string.Format("{0} – τεχνική {1} ({2})", name, SwimPresets.StyleShort(Style), PoolLabel);
+                    return string.Format(SwimLang.T("{0} – τεχνική {1} ({2})"), name, SwimPresets.StyleShort(Style), PoolLabel);
 
-                string lane = Lane > 0 ? " · Δ" + Lane.ToString(CultureInfo.InvariantCulture) : "";
+                string lane = Lane > 0 ? SwimLang.T(" · Δ") + Lane.ToString(CultureInfo.InvariantCulture) : "";
                 return string.Format("{0} – {1}{2} {3}{4}", name, DistanceLabel, IsYards ? "yd" : "", SwimPresets.StyleShort(Style), lane);
             }
         }
@@ -695,31 +699,32 @@ namespace Kinovea.ScreenManager
         /// (one: the final time; else every distance / count, a multiple of the pool), and no part faster than a swimmer can be
         /// (OfficialFastest). metersPerUnit: 1, or 0.9144 for yards; unit: "μ." or "yd".
         /// </summary>
-        public static string OfficialProblem(List<double> official, int distance, int pool, double metersPerUnit = 1.0, string unit = "μ.")
+        public static string OfficialProblem(List<double> official, int distance, int pool, double metersPerUnit = 1.0, string unit = null)
         {
             if (official == null || official.Count == 0)
                 return null;
+            unit = unit ?? SwimLang.T("μ.");
             if (official.Any(t => double.IsNaN(t) || double.IsInfinity(t) || t <= 0))
-                return "οι χρόνοι πρέπει να είναι θετικοί";
+                return SwimLang.T("οι χρόνοι πρέπει να είναι θετικοί");
             for (int i = 1; i < official.Count; i++)
             {
                 if (official[i] <= official[i - 1])
-                    return "κάθε χρόνος πρέπει να είναι μετά τον προηγούμενο (οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα)";
+                    return SwimLang.T("κάθε χρόνος πρέπει να είναι μετά τον προηγούμενο (οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα)");
             }
 
             if (official.Count > 1 && (distance <= 0 || pool <= 0 || distance % official.Count != 0 || (distance / official.Count) % pool != 0))
-                return string.Format(CultureInfo.InvariantCulture, "{0} χρόνοι δεν μοιράζουν τα {1} σε τοίχους της πισίνας: γράψε τον τελικό, " +
-                    "ή όλους τους ενδιάμεσους των 50 (ή των 100) και τον τελικό", official.Count, distance);
+                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} χρόνοι δεν μοιράζουν τα {1} σε τοίχους της πισίνας: γράψε τον τελικό, ") +
+                    SwimLang.T("ή όλους τους ενδιάμεσους των 50 (ή των 100) και τον τελικό"), official.Count, distance);
 
             foreach (OfficialPart part in OfficialParts(official, distance, metersPerUnit))
             {
                 if (part.Speed > OfficialFastest)
-                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πιο γρήγορο απ' ό,τι κολυμπά άνθρωπος: έλεγξε " +
-                        "ότι είναι ο τελικός χρόνος (όχι ενδιάμεσος) και οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα",
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} για τα {1}-{2}{3} είναι πιο γρήγορο απ' ό,τι κολυμπά άνθρωπος: έλεγξε ") +
+                        SwimLang.T("ότι είναι ο τελικός χρόνος (όχι ενδιάμεσος) και οι ενδιάμεσοι αθροιστικά, όπως στα αποτελέσματα"),
                         SwimReference.FormatTime(part.Time), part.From, part.To, unit);
                 if (part.Speed < OfficialSlowestError)
-                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πολύ αργό για χρόνος αγώνα: έλεγξε τα λεπτά " +
-                        "και τα δευτερόλεπτα (π.χ. 1:01.23)", SwimReference.FormatTime(part.Time), part.From, part.To, unit);
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} για τα {1}-{2}{3} είναι πολύ αργό για χρόνος αγώνα: έλεγξε τα λεπτά ") +
+                        SwimLang.T("και τα δευτερόλεπτα (π.χ. 1:01.23)"), SwimReference.FormatTime(part.Time), part.From, part.To, unit);
             }
 
             return null;
@@ -729,15 +734,16 @@ namespace Kinovea.ScreenManager
         /// A part of the race slower than OfficialSlowest in official times that fit it (null: none, or they do not fit): shown, the
         /// times stand.
         /// </summary>
-        public static string OfficialWarning(List<double> official, int distance, double metersPerUnit = 1.0, string unit = "μ.")
+        public static string OfficialWarning(List<double> official, int distance, double metersPerUnit = 1.0, string unit = null)
         {
             if (official == null || official.Count == 0)
                 return null;
+            unit = unit ?? SwimLang.T("μ.");
 
             foreach (OfficialPart part in OfficialParts(official, distance, metersPerUnit))
             {
                 if (part.Speed > 0 && part.Speed < OfficialSlowest)
-                    return string.Format(CultureInfo.InvariantCulture, "{0} για τα {1}-{2}{3} είναι πολύ αργό: έλεγξέ το",
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} για τα {1}-{2}{3} είναι πολύ αργό: έλεγξέ το"),
                         SwimReference.FormatTime(part.Time), part.From, part.To, unit);
             }
 
@@ -785,7 +791,7 @@ namespace Kinovea.ScreenManager
                 double t = ParseRaceTime(token);
                 if (double.IsNaN(t))
                 {
-                    error = "δεν διαβάζεται το «" + token + "» (γράψε π.χ. 1:01.23)";
+                    error = SwimLang.T("δεν διαβάζεται το «") + token + SwimLang.T("» (γράψε π.χ. 1:01.23)");
                     return null;
                 }
 

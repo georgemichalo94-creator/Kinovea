@@ -102,13 +102,13 @@ namespace Kinovea.ScreenManager
                 switch (pilotStep)
                 {
                     case PilotStep.Start:
-                        return "έλεγξε την εκκίνηση";
+                        return SwimLang.T("έλεγξε την εκκίνηση");
                     case PilotStep.Swimmer:
-                        return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, "συνεχίζει σε {0} s", pilotCountdown) : "δείξε τον αθλητή";
+                        return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("συνεχίζει σε {0} s"), pilotCountdown) : SwimLang.T("δείξε τον αθλητή");
                     case PilotStep.Lost:
-                        return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, "συνεχίζει σε {0} s", pilotCountdown) : "δείξε ξανά τον αθλητή";
+                        return pilotCountdown > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("συνεχίζει σε {0} s"), pilotCountdown) : SwimLang.T("δείξε ξανά τον αθλητή");
                     default:
-                        return "αναλύει…";
+                        return SwimLang.T("αναλύει…");
                 }
             }
         }
@@ -133,19 +133,19 @@ namespace Kinovea.ScreenManager
 
             if (Race == null || !HasVideo)
             {
-                Status("Άνοιξε πρώτα ένα βίντεο αγώνα σε οθόνη αναπαραγωγής.", true);
+                Status(SwimLang.T("Άνοιξε πρώτα ένα βίντεο αγώνα σε οθόνη αναπαραγωγής."), true);
                 return;
             }
 
             if (Race.IsTraining)
             {
-                Status("Ο αυτόματος πιλότος είναι για βίντεο αγώνα (το «Είδος βίντεο» στα Στοιχεία).", true);
+                Status(SwimLang.T("Ο αυτόματος πιλότος είναι για βίντεο αγώνα (το «Είδος βίντεο» στα Στοιχεία)."), true);
                 return;
             }
 
             if (!PoolHasMarks)
             {
-                Status("✈ Αυτόματος πιλότος: πισίνα 50 ή 25 (με τα σημάδια των σχοινιών).", true);
+                Status(SwimLang.T("✈ Αυτόματος πιλότος: πισίνα 50 ή 25 (με τα σημάδια των σχοινιών)."), true);
                 return;
             }
 
@@ -162,7 +162,7 @@ namespace Kinovea.ScreenManager
             RefreshTiming();
             if (!Timing.IsValid)
             {
-                Status("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: ο αυτόματος πιλότος δεν μπορεί να ξεκινήσει.", true);
+                Status(SwimLang.T("Δεν είναι γνωστός ο ρυθμός καρέ του βίντεο: ο αυτόματος πιλότος δεν μπορεί να ξεκινήσει."), true);
                 return;
             }
 
@@ -175,12 +175,12 @@ namespace Kinovea.ScreenManager
             pilotSwimmerAuto = false;
             pilotRefound.Clear();
             pilotRefoundPending = -1;
-            pilotStartNote = Race.StartTimestamp.HasValue ? "ήταν ήδη βαλμένη" : null;
+            pilotStartNote = Race.StartTimestamp.HasValue ? SwimLang.T("ήταν ήδη βαλμένη") : null;
             RefreshPilotUi();
 
             if (!Race.StartTimestamp.HasValue)
             {
-                Status("✈ Αυτόματος πιλότος: βρίσκει την εκκίνηση…", false);
+                Status(SwimLang.T("✈ Αυτόματος πιλότος: βρίσκει την εκκίνηση…"), false);
                 FindStartLight();
                 if (!PilotActive)
                     return;
@@ -188,7 +188,7 @@ namespace Kinovea.ScreenManager
                 if (startLightCancelled)
                 {
                     StopPilot();
-                    Status("✈ Ο αυτόματος πιλότος σταμάτησε: η αναζήτηση της εκκίνησης δεν ολοκληρώθηκε.", true);
+                    Status(SwimLang.T("✈ Ο αυτόματος πιλότος σταμάτησε: η αναζήτηση της εκκίνησης δεν ολοκληρώθηκε."), true);
                     return;
                 }
 
@@ -198,8 +198,8 @@ namespace Kinovea.ScreenManager
                     if (best == null)
                     {
                         StopPilot();
-                        Status("✈ Ο πιλότος σταμάτησε: δεν βρέθηκε το σήμα εκκίνησης (δεν φαίνεται φως ούτε ακούγεται το σήμα). Βάλε την εκκίνηση " +
-                            "με το κουμπί «Εκκίνηση» στο καρέ του σήματος και πάτα ξανά «✈ Αυτόματος πιλότος».", true);
+                        Status(SwimLang.T("✈ Ο πιλότος σταμάτησε: δεν βρέθηκε το σήμα εκκίνησης (δεν φαίνεται φως ούτε ακούγεται το σήμα). Βάλε την εκκίνηση ") +
+                            SwimLang.T("με το κουμπί «Εκκίνηση» στο καρέ του σήματος και πάτα ξανά «✈ Αυτόματος πιλότος»."), true);
                         return;
                     }
 
@@ -231,8 +231,8 @@ namespace Kinovea.ScreenManager
                     if (start == null)
                     {
                         StopPilot();
-                        Status("✈ Ο πιλότος σταμάτησε: βάλε την εκκίνηση με το κουμπί «Εκκίνηση» (G) στο καρέ του σήματος και πάτα ξανά " +
-                            "«✈ Αυτόματος πιλότος».", true);
+                        Status(SwimLang.T("✈ Ο πιλότος σταμάτησε: βάλε την εκκίνηση με το κουμπί «Εκκίνηση» (G) στο καρέ του σήματος και πάτα ξανά ") +
+                            SwimLang.T("«✈ Αυτόματος πιλότος»."), true);
                         return;
                     }
 
@@ -305,9 +305,9 @@ namespace Kinovea.ScreenManager
         /// <summary>"από το φως του σήματος (95%)".</summary>
         private static string StartNote(SwimProposal p)
         {
-            string from = p.Cues.ContainsKey("dive") ? "λίγο πριν τη βουτιά (δεν φάνηκε φως ούτε ακούστηκε σήμα)" :
-                p.Cues.ContainsKey("light") ? (p.Cues.ContainsKey("sound") ? "από το φως και τον ήχο του σήματος" : "από το φως του σήματος") :
-                p.Cues.ContainsKey("sound") ? "από τον ήχο του σήματος" : "από το βίντεο";
+            string from = p.Cues.ContainsKey("dive") ? SwimLang.T("λίγο πριν τη βουτιά (δεν φάνηκε φως ούτε ακούστηκε σήμα)") :
+                p.Cues.ContainsKey("light") ? (p.Cues.ContainsKey("sound") ? SwimLang.T("από το φως και τον ήχο του σήματος") : SwimLang.T("από το φως του σήματος")) :
+                p.Cues.ContainsKey("sound") ? SwimLang.T("από τον ήχο του σήματος") : SwimLang.T("από το βίντεο");
             return string.Format(CultureInfo.InvariantCulture, "{0} ({1:0}%)", from, 100 * p.Confidence);
         }
 
@@ -353,7 +353,7 @@ namespace Kinovea.ScreenManager
             {
                 CancelPick();
                 StopPilot();
-                Status("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+                Status(SwimLang.T("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο»."), false);
                 return;
             }
 
@@ -478,7 +478,7 @@ namespace Kinovea.ScreenManager
             // The head was clicked: the feet now.
             if ((pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost) && PickTarget == SwimPickTarget.StrokeFeet)
             {
-                Status("✈ Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ: μετά ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", false);
+                Status(SwimLang.T("✈ Τώρα κλικ στα πόδια του αθλητή, στο ίδιο καρέ: μετά ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα)."), false);
                 RefreshPilotUi();
                 return;
             }
@@ -487,37 +487,37 @@ namespace Kinovea.ScreenManager
             {
                 case PilotStep.Start:
                     SwimProposal s = CurrentProposal;
-                    Status("✈ Η εκκίνηση που βρέθηκε δεν είναι σίγουρη" +
+                    Status(SwimLang.T("✈ Η εκκίνηση που βρέθηκε δεν είναι σίγουρη") +
                         (s != null && s.Kind == KindRaceStart ? string.Format(CultureInfo.InvariantCulture, " ({0:0}%)", 100 * s.Confidence) : "") +
-                        ": δες την στο βίντεο. Enter αν είναι σωστή (←/→ και Enter: διόρθωση · Delete: η επόμενη υποψήφια) και ο πιλότος " +
-                        "συνεχίζει μόνος του ως το PDF · Esc: σταμάτημα.", true);
+                        SwimLang.T(": δες την στο βίντεο. Enter αν είναι σωστή (←/→ και Enter: διόρθωση · Delete: η επόμενη υποψήφια) και ο πιλότος ") +
+                        SwimLang.T("συνεχίζει μόνος του ως το PDF · Esc: σταμάτημα."), true);
                     break;
                 case PilotStep.Swimmer:
                     if (autoPick != null && pilotCountdown > 0)
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Σε {0} s ο πιλότος συνεχίζει με {1} (σημειωμένος στο βίντεο) · Enter: τώρα · " +
-                            "↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.", pilotCountdown, PickWho(autoPick)), false);
+                            SwimLang.T("✈ Σε {0} s ο πιλότος συνεχίζει με {1} (σημειωμένος στο βίντεο) · Enter: τώρα · ") +
+                            SwimLang.T("↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα."), pilotCountdown, PickWho(autoPick)), false);
                     else if (autoPick != null)
-                        Status("✈ Ο πιλότος περιμένει: είναι αυτός ο αθλητής (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · " +
-                            "ή κλικ στο κεφάλι και μετά στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF.", true);
+                        Status(SwimLang.T("✈ Ο πιλότος περιμένει: είναι αυτός ο αθλητής (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · ") +
+                            SwimLang.T("ή κλικ στο κεφάλι και μετά στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF."), true);
                     else
-                        Status("✈ Ο πιλότος περιμένει τον αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και μετά " +
-                            "στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF.", true);
+                        Status(SwimLang.T("✈ Ο πιλότος περιμένει τον αθλητή: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και μετά ") +
+                            SwimLang.T("στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF."), true);
                     break;
                 case PilotStep.Lost:
                     if (autoPick != null && pilotCountdown > 0)
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε {2} s ο πιλότος συνεχίζει με {3} " +
-                            "(σημειωμένος στο βίντεο) · Enter: τώρα · ↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα.",
+                            SwimLang.T("✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε {2} s ο πιλότος συνεχίζει με {3} ") +
+                            SwimLang.T("(σημειωμένος στο βίντεο) · Enter: τώρα · ↑/↓: άλλη διαδρομή · κλικ στο κεφάλι και στα πόδια: άλλος αθλητής · Esc: σταμάτημα."),
                             pilotLostWall, Race.Unit, pilotCountdown, PickWho(autoPick)), false);
                     else if (autoPick != null)
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: είναι αυτός (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · " +
-                            "ή κλικ στο κεφάλι και μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit), true);
+                            SwimLang.T("✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: είναι αυτός (σημειωμένος στο βίντεο); Enter: ναι · ↑/↓: άλλη διαδρομή · ") +
+                            SwimLang.T("ή κλικ στο κεφάλι και μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα)."), pilotLostWall, Race.Unit), true);
                     else
                         Status(string.Format(CultureInfo.InvariantCulture,
-                            "✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και " +
-                            "μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit), true);
+                            SwimLang.T("✈ Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε: σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του και ") +
+                            SwimLang.T("μετά στα πόδια του · ο πιλότος συνεχίζει μόνος του ως το PDF (Esc: σταμάτημα)."), pilotLostWall, Race.Unit), true);
                     break;
             }
 
@@ -791,8 +791,8 @@ namespace Kinovea.ScreenManager
             {
                 StopPilot();
                 Status(string.Format(CultureInfo.InvariantCulture,
-                    "✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0}: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο».",
-                    CountOf(read, "μήκος", "μήκη")), true);
+                    SwimLang.T("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση) μετά από {0}: όσα βρέθηκαν μπήκαν και περιμένουν τον «Έλεγχο»."),
+                    CountOf(read, SwimLang.T("μήκος"), SwimLang.T("μήκη"))), true);
                 return;
             }
 
@@ -816,15 +816,15 @@ namespace Kinovea.ScreenManager
                     RefreshPilotUi();
                     PilotPrompt();
                     MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
-                        "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε. Ο πιλότος τον βρήκε μόνος του, αλλά από εκεί δεν διαβάστηκε κανένα μήκος.\n\n" +
-                        "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ο πιλότος συνεχίζει μόνος " +
-                        "του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", refound, Race.Unit),
-                        "✈ Ο αυτόματος πιλότος χρειάζεται εσένα", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        SwimLang.T("Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε. Ο πιλότος τον βρήκε μόνος του, αλλά από εκεί δεν διαβάστηκε κανένα μήκος.\n\n") +
+                        SwimLang.T("Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ο πιλότος συνεχίζει μόνος ") +
+                        SwimLang.T("του ως τον τερματισμό και το PDF (Esc: σταμάτημα)."), refound, Race.Unit),
+                        SwimLang.T("✈ Ο αυτόματος πιλότος χρειάζεται εσένα"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                Status("✈ Από αυτό το κλικ δεν διαβάστηκε κανένα μήκος: κλικ ξανά στο κεφάλι και μετά στα πόδια του αθλητή, σε ένα καρέ μετά " +
-                    "την έξοδο από το νερό (Esc: σταμάτημα· ό,τι μπήκε μένει).", true);
+                Status(SwimLang.T("✈ Από αυτό το κλικ δεν διαβάστηκε κανένα μήκος: κλικ ξανά στο κεφάλι και μετά στα πόδια του αθλητή, σε ένα καρέ μετά ") +
+                    SwimLang.T("την έξοδο από το νερό (Esc: σταμάτημα· ό,τι μπήκε μένει)."), true);
                 RefreshPilotUi();
                 return;
             }
@@ -861,7 +861,7 @@ namespace Kinovea.ScreenManager
                 {
                     CancelPick();
                     StopPilot();
-                    Status("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο».", false);
+                    Status(SwimLang.T("✈ Ο αυτόματος πιλότος σταμάτησε (ακύρωση). Ό,τι έβαλε μένει και περιμένει τον «Έλεγχο»."), false);
                     return;
                 }
 
@@ -880,12 +880,12 @@ namespace Kinovea.ScreenManager
 
                 PilotPrompt();
                 MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
-                    "Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}" +
-                    "ο πιλότος συνεχίζει μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα).", pilotLostWall, Race.Unit,
-                    autoPick != null ? "Ο πιλότος σημείωσε " + PickWho(autoPick) + ": Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα " +
-                        "καρέ μετά την έξοδο από το νερό κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: " :
-                        "Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: "),
-                    "✈ Ο αυτόματος πιλότος χρειάζεται εσένα", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    SwimLang.T("Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}") +
+                    SwimLang.T("ο πιλότος συνεχίζει μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα)."), pilotLostWall, Race.Unit,
+                    autoPick != null ? SwimLang.T("Ο πιλότος σημείωσε ") + PickWho(autoPick) + SwimLang.T(": Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα ") +
+                        SwimLang.T("καρέ μετά την έξοδο από το νερό κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ") :
+                        SwimLang.T("Σε ένα καρέ μετά την έξοδο από το νερό κάνε κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ")),
+                    SwimLang.T("✈ Ο αυτόματος πιλότος χρειάζεται εσένα"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -904,7 +904,7 @@ namespace Kinovea.ScreenManager
             int waiting = Race.Proposals.Count(p => !p.Pilot);
             int strokes = AutoStrokeCount;
             SwimMark finish = Race.GetSplit(Race.Distance);
-            string title = "✈ Αυτόματος πιλότος";
+            string title = SwimLang.T("✈ Αυτόματος πιλότος");
 
             // The video at the start, to watch the race with its graphics.
             if (Race.StartTimestamp.HasValue)
@@ -912,9 +912,9 @@ namespace Kinovea.ScreenManager
 
             if (raceSplits == 0)
             {
-                string why = "✈ Ο αυτόματος πιλότος δεν μπόρεσε να διαβάσει τον αγώνα: δεν βρέθηκαν τα σημάδια των σχοινιών στη διαδρομή του " +
-                    "αθλητή (π.χ. πλάνο χωρίς σχοινιά, ή ο αθλητής δεν ακολουθήθηκε). Δοκίμασε «🤖 Όλος ο αγώνας» με κλικ στον αθλητή σε άλλο " +
-                    "καρέ, ή την ανάλυση με το χέρι.";
+                string why = SwimLang.T("✈ Ο αυτόματος πιλότος δεν μπόρεσε να διαβάσει τον αγώνα: δεν βρέθηκαν τα σημάδια των σχοινιών στη διαδρομή του ") +
+                    SwimLang.T("αθλητή (π.χ. πλάνο χωρίς σχοινιά, ή ο αθλητής δεν ακολουθήθηκε). Δοκίμασε «🤖 Όλος ο αγώνας» με κλικ στον αθλητή σε άλλο ") +
+                    SwimLang.T("καρέ, ή την ανάλυση με το χέρι.");
                 Status(why, true);
                 MessageBox.Show(DialogOwner, why, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -926,55 +926,55 @@ namespace Kinovea.ScreenManager
                 PilotPdf();
 
             StringBuilder b = new StringBuilder();
-            b.Append("Ο αγώνας αναλύθηκε από τον αυτόματο πιλότο.\n\n");
+            b.Append(SwimLang.T("Ο αγώνας αναλύθηκε από τον αυτόματο πιλότο.\n\n"));
             if (!string.IsNullOrEmpty(pilotStartNote))
-                b.Append("• Εκκίνηση: ").Append(pilotStartNote).Append(".\n");
-            b.Append(pilotSwimmerAuto ? "• Αθλητής: αυτός που ακολουθεί η κάμερα, χωρίς ερώτηση (δες ότι είναι ο σωστός).\n" :
-                "• Αθλητής: αυτός που επέλεξες.\n");
+                b.Append(SwimLang.T("• Εκκίνηση: ")).Append(pilotStartNote).Append(".\n");
+            b.Append(pilotSwimmerAuto ? SwimLang.T("• Αθλητής: αυτός που ακολουθεί η κάμερα, χωρίς ερώτηση (δες ότι είναι ο σωστός).\n") :
+                SwimLang.T("• Αθλητής: αυτός που επέλεξες.\n"));
             foreach (int wall in pilotRefound)
-                b.AppendFormat(CultureInfo.InvariantCulture, "• Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε και ο πιλότος τον βρήκε ξανά μόνος του " +
-                    "(δες ότι είναι ο ίδιος από εκεί και μετά).\n", wall, Race.Unit);
-            b.Append("• Μπήκαν ").Append(CountOf(splits, "πέρασμα ή τοίχος", "περάσματα και τοίχοι")).Append(", ")
-                .Append(CountOf(breakouts, "έξοδος από το νερό", "έξοδοι από το νερό")).Append(" και ").Append(CountOf(strokes, "χεριά", "χεριές")).Append(".\n");
+                b.AppendFormat(CultureInfo.InvariantCulture, SwimLang.T("• Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε και ο πιλότος τον βρήκε ξανά μόνος του ") +
+                    SwimLang.T("(δες ότι είναι ο ίδιος από εκεί και μετά).\n"), wall, Race.Unit);
+            b.Append(SwimLang.T("• Μπήκαν ")).Append(CountOf(splits, SwimLang.T("πέρασμα ή τοίχος"), SwimLang.T("περάσματα και τοίχοι"))).Append(", ")
+                .Append(CountOf(breakouts, SwimLang.T("έξοδος από το νερό"), SwimLang.T("έξοδοι από το νερό"))).Append(SwimLang.T(" και ")).Append(CountOf(strokes, SwimLang.T("χεριά"), SwimLang.T("χεριές"))).Append(".\n");
             if (raceSplits - splits == 1)
-                b.Append("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n");
+                b.Append(SwimLang.T("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n"));
             else if (raceSplits > splits)
-                b.AppendFormat(CultureInfo.InvariantCulture, "• {0} περάσματα και τοίχοι ήταν ήδη δικά σου: έμειναν όπως ήταν.\n", raceSplits - splits);
+                b.AppendFormat(CultureInfo.InvariantCulture, SwimLang.T("• {0} περάσματα και τοίχοι ήταν ήδη δικά σου: έμειναν όπως ήταν.\n"), raceSplits - splits);
             // The final time of the analysis: the official one when it stands at the finish (since 2026-10-19).
             Recompute();
             SwimRow finalRow = Computed == null ? null : Computed.Rows.FirstOrDefault(r => r.D == Race.Distance && r.T.HasValue);
             if (finish != null && Race.StartTimestamp.HasValue)
-                b.Append("• Τερματισμός: ").Append(SwimReference.FormatTime(finalRow != null && finalRow.Marked ? finalRow.T.Value :
-                    Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(finalRow != null && finalRow.Official ? " (επίσημος χρόνος)" : "").Append(".\n");
+                b.Append(SwimLang.T("• Τερματισμός: ")).Append(SwimReference.FormatTime(finalRow != null && finalRow.Marked ? finalRow.T.Value :
+                    Timing.Seconds(finish.Timestamp, Race.StartTimestamp.Value))).Append(finalRow != null && finalRow.Official ? SwimLang.T(" (επίσημος χρόνος)") : "").Append(".\n");
             else
-                b.Append("• ⚠ Δεν βρέθηκε ο τερματισμός: μάρκαρέ τον στο καρέ της επαφής και πάτα «PDF».\n");
+                b.Append(SwimLang.T("• ⚠ Δεν βρέθηκε ο τερματισμός: μάρκαρέ τον στο καρέ της επαφής και πάτα «PDF».\n"));
             string official = OfficialNote(put);
             if (official.Length > 0)
                 b.Append("•").Append(official).Append('\n');
             int paceOnly = put.Count(IsDoubtfulPace);
             if (doubtful > 0)
-                b.Append("• ⚠ ").Append(CountOf(doubtful, "αβέβαιο", "αβέβαια")).Append(" (κάτω από 50%, πορτοκαλί στον έλεγχο): δες ")
-                    .Append(doubtful == 1 ? "αυτό" : "αυτά").Append(" πρώτα.\n");
+                b.Append("• ⚠ ").Append(CountOf(doubtful, SwimLang.T("αβέβαιο"), SwimLang.T("αβέβαια"))).Append(SwimLang.T(" (κάτω από 50%, πορτοκαλί στον έλεγχο): δες "))
+                    .Append(doubtful == 1 ? SwimLang.T("αυτό") : SwimLang.T("αυτά")).Append(SwimLang.T(" πρώτα.\n"));
             if (paceOnly > 0)
-                b.Append("• ⚠ ").Append(doubtful > paceOnly ? "Από αυτά, " : "").Append(PaceOnlyText(paceOnly)).Append(".\n");
+                b.Append("• ⚠ ").Append(doubtful > paceOnly ? SwimLang.T("Από αυτά, ") : "").Append(PaceOnlyText(paceOnly)).Append(".\n");
             if (waiting > 0)
                 b.AppendFormat(CultureInfo.InvariantCulture,
-                    "• {0} τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση " +
-                    "από τους τοίχους) προτείνονται στους συνήθεις χρόνους και μπαίνουν στην ανάλυση μόνο αν τα επιβεβαιώσεις.\n",
-                    waiting == 1 ? "1 σημείο περιμένει" : CountOf(waiting, "σημείο", "σημεία") + " περιμένουν");
+                    SwimLang.T("• {0} τον έλεγχό σου: όσα η κάμερα δεν δείχνει καθαρά (πρώτη κίνηση, αποδέσμευση, είσοδος, αποκόλληση ") +
+                    SwimLang.T("από τους τοίχους) προτείνονται στους συνήθεις χρόνους και μπαίνουν στην ανάλυση μόνο αν τα επιβεβαιώσεις.\n"),
+                    waiting == 1 ? SwimLang.T("1 σημείο περιμένει") : CountOf(waiting, SwimLang.T("σημείο"), SwimLang.T("σημεία")) + SwimLang.T(" περιμένουν"));
             if (pdf)
-                b.Append("• PDF: ετοιμάζεται και ανοίγει μόνο του.\n");
+                b.Append(SwimLang.T("• PDF: ετοιμάζεται και ανοίγει μόνο του.\n"));
             else if (finish != null)
-                b.Append("• PDF: δεν έχει ρυθμιστεί η σύνδεση με το KOE App (καρτέλα «Σύνδεση»)· μετά πάτα «PDF».\n");
-            b.Append("\nΌ,τι έβαλε ο πιλότος δεν διδάσκει το πρόγραμμα μέχρι να το ελέγξεις: στον «Έλεγχο» Enter = σωστό, ←/→ και Enter = " +
-                "διόρθωση, Delete = λάθος. Από αυτές τις απαντήσεις μαθαίνει.\n\n");
-            b.Append(doubtful > 0 ? "Να ξεκινήσει τώρα ο έλεγχος, από τα αβέβαια;" : "Να ξεκινήσει τώρα ο έλεγχος;");
+                b.Append(SwimLang.T("• PDF: δεν έχει ρυθμιστεί η σύνδεση με το KOE App (καρτέλα «Σύνδεση»)· μετά πάτα «PDF».\n"));
+            b.Append(SwimLang.T("\nΌ,τι έβαλε ο πιλότος δεν διδάσκει το πρόγραμμα μέχρι να το ελέγξεις: στον «Έλεγχο» Enter = σωστό, ←/→ και Enter = ") +
+                SwimLang.T("διόρθωση, Delete = λάθος. Από αυτές τις απαντήσεις μαθαίνει.\n\n"));
+            b.Append(doubtful > 0 ? SwimLang.T("Να ξεκινήσει τώρα ο έλεγχος, από τα αβέβαια;") : SwimLang.T("Να ξεκινήσει τώρα ο έλεγχος;"));
 
-            Status(string.Format(CultureInfo.InvariantCulture, "✈ Ο πιλότος τελείωσε: {0}, {1}, {2}{3}{4} · «✨ Έλεγχος» " +
-                "για να τα δεις (μαθαίνει από τις απαντήσεις σου).", CountOf(splits, "πέρασμα ή τοίχος", "περάσματα και τοίχοι"),
-                CountOf(breakouts, "έξοδος", "έξοδοι"), CountOf(strokes, "χεριά", "χεριές"),
-                doubtful > 0 ? " · ⚠ " + CountOf(doubtful, "αβέβαιο", "αβέβαια") : "",
-                pdf ? " · το PDF ανοίγει μόλις είναι έτοιμο" : ""), doubtful > 0 || finish == null);
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("✈ Ο πιλότος τελείωσε: {0}, {1}, {2}{3}{4} · «✨ Έλεγχος» ") +
+                SwimLang.T("για να τα δεις (μαθαίνει από τις απαντήσεις σου)."), CountOf(splits, SwimLang.T("πέρασμα ή τοίχος"), SwimLang.T("περάσματα και τοίχοι")),
+                CountOf(breakouts, SwimLang.T("έξοδος"), SwimLang.T("έξοδοι")), CountOf(strokes, SwimLang.T("χεριά"), SwimLang.T("χεριές")),
+                doubtful > 0 ? " · ⚠ " + CountOf(doubtful, SwimLang.T("αβέβαιο"), SwimLang.T("αβέβαια")) : "",
+                pdf ? SwimLang.T(" · το PDF ανοίγει μόλις είναι έτοιμο") : ""), doubtful > 0 || finish == null);
             RefreshProposalsUi();
             InvalidatePlayer();
 

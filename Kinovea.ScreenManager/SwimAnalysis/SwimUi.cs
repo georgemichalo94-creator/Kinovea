@@ -835,7 +835,7 @@ namespace Kinovea.ScreenManager
     internal class SwimLiveStrip : Control
     {
         private string clock = "–";
-        private string clockCaption = "ΧΡΟΝΟΣ";
+        private string clockCaption = SwimLang.T("ΧΡΟΝΟΣ");
         private List<SwimChip> chips = new List<SwimChip>();
         private string signature = "";
 

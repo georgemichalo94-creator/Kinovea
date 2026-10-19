@@ -74,7 +74,7 @@ namespace Kinovea.ScreenManager
                 if (final.HasValue)
                     text += " (" + FormatTime(final.Value) + ")";
                 if (Local)
-                    text += " · μόνο σε αυτόν τον υπολογιστή";
+                    text += SwimLang.T(" · μόνο σε αυτόν τον υπολογιστή");
                 return text;
             }
         }
@@ -194,7 +194,7 @@ namespace Kinovea.ScreenManager
             string place = string.Join(" ", new string[] { race.Competition, race.Round }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToArray());
             if (place.Length > 0)
                 parts.Add(place);
-            return parts.Count > 0 ? string.Join(" – ", parts.ToArray()) : "Αναφορά";
+            return parts.Count > 0 ? string.Join(" – ", parts.ToArray()) : SwimLang.T("Αναφορά");
         }
 
         public JObject ToJson()

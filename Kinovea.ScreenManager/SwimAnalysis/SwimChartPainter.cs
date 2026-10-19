@@ -227,7 +227,7 @@ namespace Kinovea.ScreenManager
             catch (Exception)
             {
                 // A chart that cannot be drawn says so on its card: the report goes on.
-                Empty(g, area, "Το γράφημα δεν σχεδιάστηκε");
+                Empty(g, area, SwimLang.T("Το γράφημα δεν σχεδιάστηκε"));
             }
         }
 
@@ -338,7 +338,7 @@ namespace Kinovea.ScreenManager
             List<SwimChartSeries> series = c.Series.Where(s => s.Values.Count == n).ToList();
             if (n == 0 || series.Count == 0 || !series.Any(s => s.Values.Any(v => v.HasValue)))
             {
-                Empty(g, area, "Δεν υπάρχουν ακόμη τιμές");
+                Empty(g, area, SwimLang.T("Δεν υπάρχουν ακόμη τιμές"));
                 return;
             }
 
@@ -388,7 +388,7 @@ namespace Kinovea.ScreenManager
             float plotBottom = area.Bottom - lines * labels.Font.GetHeight(g) - 6;
             if (plotBottom - plotTop < 30)
             {
-                Empty(g, area, "Δεν χωράει το γράφημα");
+                Empty(g, area, SwimLang.T("Δεν χωράει το γράφημα"));
                 return;
             }
 
@@ -914,7 +914,7 @@ namespace Kinovea.ScreenManager
             double total = parts.Sum(i => s.Values[i].Value);
             if (parts.Count == 0 || total <= 0)
             {
-                Empty(g, area, "Δεν υπάρχουν ακόμη τιμές");
+                Empty(g, area, SwimLang.T("Δεν υπάρχουν ακόμη τιμές"));
                 return;
             }
 
@@ -952,10 +952,10 @@ namespace Kinovea.ScreenManager
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
             {
                 SizeF ts = g.MeasureString(totalText, big);
-                SizeF cs = g.MeasureString("ΣΥΝΟΛΟ", caption);
+                SizeF cs = g.MeasureString(SwimLang.T("ΣΥΝΟΛΟ"), caption);
                 float cx = ring.Left + ring.Width / 2, cy = ring.Top + ring.Height / 2;
                 g.DrawString(totalText, big, text, cx - ts.Width / 2, cy - (ts.Height + cs.Height) / 2);
-                g.DrawString("ΣΥΝΟΛΟ", caption, dim, cx - cs.Width / 2, cy - (ts.Height + cs.Height) / 2 + ts.Height - 2);
+                g.DrawString(SwimLang.T("ΣΥΝΟΛΟ"), caption, dim, cx - cs.Width / 2, cy - (ts.Height + cs.Height) / 2 + ts.Height - 2);
             }
 
             // The parts: name, value and share.

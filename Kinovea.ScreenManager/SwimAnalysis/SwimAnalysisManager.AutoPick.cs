@@ -200,14 +200,14 @@ namespace Kinovea.ScreenManager
             if (found == null)
             {
                 if (reason == "static")
-                    Status("🤖 Αυτόματη ανάλυση αγώνα: η κάμερα δεν κινείται, οπότε δεν ακολουθεί κάποιον αθλητή. Σε ένα καρέ μετά την έξοδο από το νερό, " +
-                        "κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+                    Status(SwimLang.T("🤖 Αυτόματη ανάλυση αγώνα: η κάμερα δεν κινείται, οπότε δεν ακολουθεί κάποιον αθλητή. Σε ένα καρέ μετά την έξοδο από το νερό, ") +
+                        SwimLang.T("κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
                 else if (reason == "ropes")
-                    Status("🤖 Αυτόματη ανάλυση αγώνα: δεν βρέθηκαν τα σχοινιά της διαδρομής στη μέση της εικόνας. Σε ένα καρέ μετά την έξοδο από το νερό, " +
-                        "κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+                    Status(SwimLang.T("🤖 Αυτόματη ανάλυση αγώνα: δεν βρέθηκαν τα σχοινιά της διαδρομής στη μέση της εικόνας. Σε ένα καρέ μετά την έξοδο από το νερό, ") +
+                        SwimLang.T("κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
                 else if (reason == "unsure")
-                    Status("🤖 Αυτόματη ανάλυση αγώνα: η διαδρομή στη μέση της εικόνας δεν είναι σίγουρη (π.χ. πλάνο όλης της πισίνας ή πολλά νερά). " +
-                        "Σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+                    Status(SwimLang.T("🤖 Αυτόματη ανάλυση αγώνα: η διαδρομή στη μέση της εικόνας δεν είναι σίγουρη (π.χ. πλάνο όλης της πισίνας ή πολλά νερά). ") +
+                        SwimLang.T("Σε ένα καρέ μετά την έξοδο από το νερό, κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
                 return;
             }
 
@@ -215,13 +215,13 @@ namespace Kinovea.ScreenManager
             SeekTo(found.Frame);
             InvalidatePlayer();
             if (found.LaneNumber > 0)
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Ο αθλητής του διαδρόμου {0} σημειώθηκε στο βίντεο ({1}ος από την κοντινή πλευρά της πισίνας{2}): " +
-                    "Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: " +
-                    "κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση).", found.LaneNumber, found.LanePlace + 1,
-                    found.LaneLearned ? "" : " · με το Enter το πρόγραμμα μαθαίνει την αρίθμηση αυτής της πισίνας"), false);
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Ο αθλητής του διαδρόμου {0} σημειώθηκε στο βίντεο ({1}ος από την κοντινή πλευρά της πισίνας{2}): ") +
+                    SwimLang.T("Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: ") +
+                    SwimLang.T("κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."), found.LaneNumber, found.LanePlace + 1,
+                    found.LaneLearned ? "" : SwimLang.T(" · με το Enter το πρόγραμμα μαθαίνει την αρίθμηση αυτής της πισίνας")), false);
             else
-                Status("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · " +
-                    "↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση).", false);
+                Status(SwimLang.T("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ") +
+                    SwimLang.T("↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."), false);
         }
 
         /// <summary>
@@ -364,9 +364,9 @@ namespace Kinovea.ScreenManager
                 autoPick = moved;
                 SeekTo(p.Frame);
                 InvalidatePlayer();
-                Status(string.Format(CultureInfo.InvariantCulture, "🤖 Η πρόταση άλλαξε διαδρομή ({0}η από την κοντινή πλευρά): Enter και η ανάγνωση όλου του αγώνα " +
-                    "ξεκινά με αυτόν τον αθλητή (και το πρόγραμμα μαθαίνει ότι εδώ είναι ο διάδρομος {1}) · ↑/↓ για άλλη διαδρομή · " +
-                    "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", moved.LanePlace + 1, moved.LaneNumber), false);
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Η πρόταση άλλαξε διαδρομή ({0}η από την κοντινή πλευρά): Enter και η ανάγνωση όλου του αγώνα ") +
+                    SwimLang.T("ξεκινά με αυτόν τον αθλητή (και το πρόγραμμα μαθαίνει ότι εδώ είναι ο διάδρομος {1}) · ↑/↓ για άλλη διαδρομή · ") +
+                    SwimLang.T("ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), moved.LanePlace + 1, moved.LaneNumber), false);
                 if (PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost))
                 {
                     StopPilotCountdown();
@@ -398,8 +398,8 @@ namespace Kinovea.ScreenManager
             autoPick = new AutoPickResult { Head = head, Feet = feet, Frame = p.Frame, LaneWidth = p.LaneWidth };
             SeekTo(p.Frame);
             InvalidatePlayer();
-            Status("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · " +
-                "ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση).", false);
+            Status(SwimLang.T("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · ") +
+                SwimLang.T("ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
 
             // The auto pilot does not take a swimmer the analyst is choosing: it waits for his Enter.
             if (PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost))
@@ -451,7 +451,7 @@ namespace Kinovea.ScreenManager
             if (!SameFrame(p.Frame, timestamp))
             {
                 DrawLabel(g, string.Format(CultureInfo.InvariantCulture,
-                    "🤖 Όλος ο αγώνας: Enter = " + PickWhoNominative(p) + " (σημειωμένος στο καρέ των {0:0.00} s) · ↑/↓ άλλη διαδρομή · ή κλικ στο κεφάλι άλλου αθλητή (Esc: ακύρωση)",
+                    SwimLang.T("🤖 Όλος ο αγώνας: Enter = ") + PickWhoNominative(p) + SwimLang.T(" (σημειωμένος στο καρέ των {0:0.00} s) · ↑/↓ άλλη διαδρομή · ή κλικ στο κεφάλι άλλου αθλητή (Esc: ακύρωση)"),
                     Timing.Seconds(p.Frame, Race.StartTimestamp.Value)), new Point(12, 12), amber);
                 return;
             }
@@ -483,8 +483,8 @@ namespace Kinovea.ScreenManager
 
             float top = Math.Min(Math.Min(band[0].Y, band[1].Y), Math.Min(band[2].Y, band[3].Y));
             float left = Math.Min(Math.Min(band[0].X, band[1].X), Math.Min(band[2].X, band[3].X));
-            DrawLabel(g, "🤖 Enter: αυτός ο αθλητής · ↑/↓: άλλη διαδρομή · ή κλικ σε άλλον", new Point((int)left, (int)Math.Max(4, top - 26)), amber);
-            DrawLabel(g, "🤖 Όλος ο αγώνας: Enter = " + PickWhoNominative(p) + " · ↑/↓ άλλη διαδρομή · κλικ στο κεφάλι για άλλον (Esc: ακύρωση)", new Point(12, 12), amber);
+            DrawLabel(g, SwimLang.T("🤖 Enter: αυτός ο αθλητής · ↑/↓: άλλη διαδρομή · ή κλικ σε άλλον"), new Point((int)left, (int)Math.Max(4, top - 26)), amber);
+            DrawLabel(g, SwimLang.T("🤖 Όλος ο αγώνας: Enter = ") + PickWhoNominative(p) + SwimLang.T(" · ↑/↓ άλλη διαδρομή · κλικ στο κεφάλι για άλλον (Esc: ακύρωση)"), new Point(12, 12), amber);
         }
     }
 }
