@@ -1336,6 +1336,9 @@ namespace Kinovea.ScreenManager
             public double? Reaction;
             public readonly List<Action> Back = new List<Action>();
 
+            /// <summary>The race's details as they were before the results of the web filled them (athlete, lane, day…); null: none.</summary>
+            public Action Details;
+
             /// <summary>The checkpoints it moved (their push off follows them back).</summary>
             public readonly HashSet<int> Distances = new HashSet<int>();
         }
@@ -1361,14 +1364,19 @@ namespace Kinovea.ScreenManager
         /// The official times and the official reaction time (of the results on the web, since 2026-10-19; null: none): see
         /// OfficialChanged; the release from the block waiting for the check goes to the reaction time.
         /// </summary>
-        public void OfficialChanged(List<double> official, double? reaction)
+        public void OfficialChanged(List<double> official, double? reaction, Action detailsBack = null)
         {
             if (Race == null)
                 return;
 
             SwimProposal current = CurrentProposal;
             long? currentBefore = current != null ? (long?)current.Timestamp : null;
-            OfficialUndo undo = new OfficialUndo { Official = Race.Official == null ? null : new List<double>(Race.Official), Reaction = Race.OfficialReaction };
+            OfficialUndo undo = new OfficialUndo
+            {
+                Official = Race.Official == null ? null : new List<double>(Race.Official),
+                Reaction = Race.OfficialReaction,
+                Details = detailsBack
+            };
             Race.Official = official == null || official.Count == 0 ? null : new List<double>(official);
             Race.OfficialReaction = reaction.HasValue && reaction.Value > 0 ? reaction : null;
             int moved = ApplyOfficial(undo);
@@ -1405,6 +1413,16 @@ namespace Kinovea.ScreenManager
                 undo.Back[i]();
             foreach (int distance in undo.Distances)
                 FollowWall(distance);
+
+            // The race's details the results filled back as they were (athlete, lane, day, round, competition, link).
+            if (undo.Details != null)
+            {
+                undo.Details();
+                EnsureReference();
+                RefreshPbCandidates();
+                if (form != null)
+                    form.RefreshAll();
+            }
 
             // The times restored placed again in the race as it is now (a reading since, a start moved since); none: what a reading put
             // at the times since goes back to its own.

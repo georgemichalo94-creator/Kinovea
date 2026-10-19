@@ -694,6 +694,27 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // The race's details as they are: «Αναίρεση» of the change puts them back with the times.
+            SwimRace race = Race;
+            string oldAthlete = race.Athlete, oldId = race.AthleteId, oldGender = race.AthleteGender, oldBorn = race.AthleteBirthYear,
+                oldCategory = race.AthleteCategory, oldClub = race.AthleteClub, oldDate = race.Date, oldRound = race.Round,
+                oldCompetition = race.Competition, oldLink = race.ResultsLink;
+            int oldLane = race.Lane;
+            Action detailsBack = () =>
+            {
+                race.Athlete = oldAthlete;
+                race.AthleteId = oldId;
+                race.AthleteGender = oldGender;
+                race.AthleteBirthYear = oldBorn;
+                race.AthleteCategory = oldCategory;
+                race.AthleteClub = oldClub;
+                race.Lane = oldLane;
+                race.Date = oldDate;
+                race.Round = oldRound;
+                race.Competition = oldCompetition;
+                race.ResultsLink = oldLink;
+            };
+
             if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 SetAthlete(athlete);
             if (e.Lane > 0)
@@ -708,7 +729,7 @@ namespace Kinovea.ScreenManager
                 Race.Round = RoundName(found.Unit.Round);
             if (string.IsNullOrWhiteSpace(Race.Competition) && found.Competition != null)
                 Race.Competition = found.Competition.Name;
-            OfficialChanged(times, e.Reaction);
+            OfficialChanged(times, e.Reaction, detailsBack);
 
             // The link of the competition, for its next races in the same days.
             string link = !string.IsNullOrWhiteSpace(q.Link) ? q.Link.Trim() : found.Competition != null ? KoeLink(found.Competition.Code) : "";
