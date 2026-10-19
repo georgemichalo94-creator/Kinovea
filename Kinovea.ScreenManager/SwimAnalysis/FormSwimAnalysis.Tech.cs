@@ -1186,7 +1186,10 @@ namespace Kinovea.ScreenManager
             if (snap == null)
                 return;
 
-            snap.Stage = SwimLang.Greek(cmbStage.Text.Trim(), stagesStart.Concat(stagesTurn));
+            // The stage as picked or typed; unchanged (a comment typed), the value kept stays as it is (in Greek).
+            string stageShown = cmbStage.Text.Trim();
+            if (stageShown != (SwimLang.Label(snap.Stage) ?? "").Trim())
+                snap.Stage = SwimLang.Greek(stageShown, stagesStart.Concat(stagesTurn));
             snap.Comment = tbComment.Text;
             manager.SnapshotChanged(snap);
         }
@@ -1246,7 +1249,8 @@ namespace Kinovea.ScreenManager
 
             SwimAngle angle = gridAngles.Rows[e.RowIndex].Tag as SwimAngle;
             string name = Convert.ToString(gridAngles.Rows[e.RowIndex].Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture);
-            if (angle != null && !string.IsNullOrWhiteSpace(name))
+            // Only a name changed by the analyst (leaving the cell unchanged keeps the name as it is kept, in Greek).
+            if (angle != null && !string.IsNullOrWhiteSpace(name) && name.Trim() != (SwimLang.Label(angle.Name) ?? "").Trim())
                 BeginInvoke((Action)(() => manager.RenameAngle(angle, SwimLang.Greek(name.Trim(), angleNames))));
         }
 

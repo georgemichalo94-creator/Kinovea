@@ -27,10 +27,11 @@ namespace Kinovea.ScreenManager
             if (SwimLang.English == english)
                 return;
 
-            // A reading or the auto pilot shows its own questions and texts on the way: the language changes after them.
-            if (ReadingBusy || PilotActive)
+            // A reading or the auto pilot shows its own questions and texts on the way, and the charts of a PDF going up are drawn in
+            // the language of the PDF: the switch again after them.
+            if (ReadingBusy || PilotActive || chartsUploading.Count > 0 || reportGraphicsUploading)
             {
-                Status(SwimLang.T("Η γλώσσα αλλάζει όταν τελειώσει η ανάγνωση του βίντεο."), true);
+                Status(SwimLang.T("Η γλώσσα αλλάζει όταν τελειώσει η ανάγνωση, ο αυτόματος πιλότος ή η αποστολή του PDF: πάτησε ξανά τότε."), true);
                 if (form != null && !form.IsDisposed)
                     form.RefreshLanguageSwitch();
                 return;
@@ -45,9 +46,7 @@ namespace Kinovea.ScreenManager
             Settings.Language = SwimLang.Code;
             Settings.Save();
 
-            // The texts kept by the manager, in the new language.
-            ReferencesMessage = ReferencesSummary();
-            AthletesMessage = AthletesSummary();
+            // The texts kept by the manager, in the new language (the messages of the references and the athletes at their next refresh).
             if (SyncState == SwimSyncState.Idle)
                 SyncMessage = SwimLang.T("Έτοιμο");
             else if (SyncState == SwimSyncState.NotConfigured)
@@ -78,6 +77,7 @@ namespace Kinovea.ScreenManager
 
             FormSwimAnalysis old = form;
             int page = old.PageIndex;
+            System.Windows.Forms.FormWindowState state = old.WindowState;
             reopeningForm = true;
             try
             {
@@ -91,7 +91,11 @@ namespace Kinovea.ScreenManager
             form = null;
             EnsureForm(true);
             if (form != null)
+            {
                 form.PageIndex = page;
+                if (state == System.Windows.Forms.FormWindowState.Maximized)
+                    form.WindowState = state;
+            }
         }
 
         /// <summary>
@@ -111,8 +115,9 @@ namespace Kinovea.ScreenManager
                     Thread.CurrentThread.CurrentUICulture = PreferencesManager.GeneralPreferences.GetSupportedCulture();
                 }
 
-                // The menus again, also the one of the swim analysis.
-                NotificationCenter.RaiseTriggerPreferencesUpdated(true);
+                // The menus again, also the one of the swim analysis (in this window only: another Kinovea window keeps its own
+                // analysis and its own language until it starts again).
+                NotificationCenter.RaiseTriggerPreferencesUpdated(false);
             }
             catch (Exception e)
             {

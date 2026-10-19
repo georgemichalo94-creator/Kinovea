@@ -1156,7 +1156,7 @@ namespace Kinovea.ScreenManager
             if (image == null)
                 return;
 
-            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός", Chosen = chosen };
+            SwimSnapshot frame = new SwimSnapshot { Id = "final", Timestamp = timestamp, Stage = "Τερματισμός", Chosen = chosen, Lang = SwimLang.English ? "en" : null };
             try
             {
                 frame.File = Path.GetFileName(SaveSnapshotImage(image, frame.Id));
@@ -1262,17 +1262,24 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
+                bool pdf = pdfAfterFinalFrame == race.Id;
+                if (pdf)
+                    pdfAfterFinalFrame = null;
                 if (result.Ok && !string.IsNullOrEmpty(result.FileId))
                 {
                     frame.FileId = result.FileId;
                     MarkDirty();
-                    if (race == Race)
+                    if (race == Race && pdf)
+                        SendByUser(true);
+                    else if (race == Race)
                         Changed(true);
                     else
                         SendRace(race, false);
                 }
                 else
                 {
+                    if (pdf && race == Race)
+                        SendByUser(true);
                     uploadFailed.Add(key);
                     Status(SwimLang.T("Το τελικό καρέ κρατήθηκε στον υπολογιστή και θα ανέβει με την επόμενη Αποστολή: ") + result.Error, true);
                 }

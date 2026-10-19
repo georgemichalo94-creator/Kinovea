@@ -184,11 +184,18 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return chartsBackend; }
+            get { return languageBackend; }
         }
         private bool backendWarned;
         private bool typedStrokesWarned;
         private bool chartsWarned;
+        private bool languageWarned;
+
+        /// <summary>The race whose PDF waits for its final frame, drawn again in the language of the analysis.</summary>
+        private string pdfAfterFinalFrame;
+
+        /// <summary>Oldest Apps Script that makes the report and the PDF in English (the switch ΕΛ / EN).</summary>
+        private static readonly Version languageBackend = new Version(2, 7, 7);
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -2540,6 +2547,18 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void SendByUser(bool pdf)
         {
+            // A final frame drawn in the other language (an analysis made before the switch of the language): drawn again in this
+            // one at the same frame, the PDF after its upload.
+            if (pdf && pdfAfterFinalFrame == null && Race != null && !Race.IsTraining && Race.FinalFrame != null && HasVideo &&
+                Settings.IsConfigured && !ReadingBusy && (Race.FinalFrame.Lang ?? "el") != SwimLang.Code)
+            {
+                pdfAfterFinalFrame = Race.Id;
+                RecaptureFinalFrame(false, true);
+                if (FinalFrameUploading)
+                    return;
+                pdfAfterFinalFrame = null;
+            }
+
             if (!(pdf && UploadReportGraphics(() => SendNow(true, true))))
                 SendNow(pdf, pdf);
             RetryFailedUploads();
@@ -2623,6 +2642,13 @@ namespace Kinovea.ScreenManager
                     SwimLang.T("Η Εφαρμογή Ιστού του Google τρέχει το Apps Script {0}: τα γραφήματα του PDF βγαίνουν άδεια. Βάλε την έκδοση {1} και κάνε ") +
                     SwimLang.T("«Ανάπτυξη → Διαχείριση αναπτύξεων → ✏️ → Έκδοση: Νέα έκδοση → Ανάπτυξη» (δες τον οδηγό)."),
                     version, chartsBackend.ToString(3)), true);
+            }
+            else if (!languageWarned && SwimLang.English && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < languageBackend)
+            {
+                languageWarned = true;
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    SwimLang.T("Η Εφαρμογή Ιστού τρέχει το Apps Script {0}: το report και το PDF βγαίνουν στα ελληνικά. Για τα αγγλικά βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                    version, languageBackend.ToString(3)), true);
             }
             else if (!typedStrokesWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < typedStrokesBackend &&
                 Race != null && Race.StrokeCounts != null && Race.StrokeCounts.Count > 0)

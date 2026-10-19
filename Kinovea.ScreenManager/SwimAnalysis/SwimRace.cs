@@ -189,6 +189,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public bool Chosen;
+
+        /// <summary>The language of the graphics of the final frame: "en", or none for Greek (since 2.7.7).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string Lang;
     }
 
     /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>
