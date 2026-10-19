@@ -228,7 +228,8 @@ namespace Kinovea.ScreenManager
             if (pick == null)
                 return null;
 
-            SwimPoolGrid grid = SwimPoolGrid.Find(pick[0].Value, width / 2.0);
+            IList<int> laneCounts = Race.Pool >= 50 ? SwimPoolGrid.LongCourseLanes : SwimPoolGrid.ShortCourseLanes;
+            SwimPoolGrid grid = SwimPoolGrid.Find(pick[0].Value, width / 2.0, laneCounts);
             if (grid == null || !grid.Sure)
             {
                 log.DebugFormat("Swimmer of lane {0}: not a view of the whole pool{1}.", number, grid == null ? "" : string.Format(CultureInfo.InvariantCulture,
@@ -249,7 +250,13 @@ namespace Kinovea.ScreenManager
             if (dive == null)
                 return null;
 
-            int direction = grid.StartDirection(SwimPoolGrid.Motion(dive.Select(d => d.Value).ToList()));
+            // The way of the first length from the frames of the dive (their own walls and water: the camera may have turned since),
+            // turned at every wall before 'at' (the swimmer found again after a turn).
+            SwimPoolGrid atStart = SwimPoolGrid.Find(dive[0].Value, width / 2.0, laneCounts);
+            int direction = atStart == null ? 0 : atStart.StartDirection(SwimPoolGrid.Motion(dive.Select(d => d.Value).ToList()));
+            int length = NextWallDistance(at) / Math.Max(1, Race.Pool) - 1;
+            if (length % 2 == 1)
+                direction = -direction;
             float[] motion = SwimPoolGrid.Motion(pick.Select(d => d.Value).ToList());
             double body = AutoPickLength * grid.LaneWidth(place, width / 2.0);
             double clear;

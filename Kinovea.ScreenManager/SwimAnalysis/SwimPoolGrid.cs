@@ -111,12 +111,21 @@ namespace Kinovea.ScreenManager
             return -1;
         }
 
+        /// <summary>The lanes a 50 m pool has between its walls (lab: 8 in all 51 views of the national pool; 6 to 10 left free, 7 or
+        /// 9 came out on 4 of them, with the far lanes wrong).</summary>
+        public static readonly int[] LongCourseLanes = { 8, 10 };
+
+        /// <summary>The lanes of a 25 m pool.</summary>
+        public static readonly int[] ShortCourseLanes = { 6, 8, 10 };
+
         /// <summary>
-        /// The pool of the image (24-bit BGR, working size), the grid fitted at the column x (where the swimmer is looked for).
-        /// Null when the water or one of the walls is not found.
+        /// The pool of the image (24-bit BGR, working size), the grid fitted at the column x (where the swimmer is looked for) with
+        /// one of these numbers of lanes (LongCourseLanes when null). Null when the water or one of the walls is not found.
         /// </summary>
-        public static SwimPoolGrid Find(SwimStrokeImage image, double x)
+        public static SwimPoolGrid Find(SwimStrokeImage image, double x, IList<int> laneCounts = null)
         {
+            if (laneCounts == null || laneCounts.Count == 0)
+                laneCounts = LongCourseLanes;
             int w = image.Width, h = image.Height;
             SwimPoolGrid g = new SwimPoolGrid(w, h);
             bool[] water;
@@ -176,8 +185,10 @@ namespace Kinovea.ScreenManager
                 profile[i] = LineScore(evidence, around, w, h, g, y0 + i);
 
             double best = double.NegativeInfinity;
-            for (int n = 6; n <= 10; n++)
+            foreach (int n in laneCounts)
             {
+                if (n < 2)
+                    continue;
                 for (int ci = 0; ci <= 150; ci++)
                 {
                     double c = ci * 0.02;
