@@ -690,8 +690,22 @@ namespace Kinovea.ScreenManager
                 ? d : (DateTime?)null;
         }
 
-        /// <summary>A GET of a page (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>
+        /// <summary>The GETs of the sources (the tests give their samples instead).</summary>
+        internal static Func<string, JObject> Fetch = FetchJson;
+        internal static Func<string, string> FetchPage = FetchText;
+
+        private static JObject GetJson(string url)
+        {
+            return Fetch(url);
+        }
+
         private static string GetText(string url)
+        {
+            return FetchPage(url);
+        }
+
+        /// <summary>A GET of a page (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>
+        private static string FetchText(string url)
         {
             try
             {
@@ -716,7 +730,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>A GET of JSON (null when it fails; the reason in the log). TLS 1.2, 20 s.</summary>
-        private static JObject GetJson(string url)
+        private static JObject FetchJson(string url)
         {
             try
             {
