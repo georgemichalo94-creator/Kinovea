@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using Newtonsoft.Json.Linq;
 
 namespace Kinovea.ScreenManager
 {
@@ -402,6 +403,9 @@ namespace Kinovea.ScreenManager
             OfficialChanged(times);
             if (form != null)
                 form.RefreshAll();
+
+            // The registry learns from it: a Latin spelling of our athlete, an international athlete's unique code.
+            RememberOfficialAthlete(e, athlete);
         }
 
         /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54".</summary>
@@ -422,16 +426,13 @@ namespace Kinovea.ScreenManager
             if (registry == null || e == null)
                 return null;
 
+            // His code (the federation's number of a Greek athlete, the World Aquatics one of an international athlete) with his family
+            // name (another spelling of the given name, "Giorgos" for "Georgios", stays his).
             SwimAthlete byCode = (e.Code.Length > 0 ? registry.Find(e.Code) : null) ?? (e.IfId.Length > 0 ? registry.Find(WorldAquaticsId(e.IfId)) : null);
-            if (byCode != null)
-            {
-                string f, g;
-                SwimNameMatch.Split(byCode.Name, out f, out g);
-                if (SwimNameMatch.Similarity(f, g, e.FamilyName, e.GivenName) >= SwimNameMatch.SameName ||
-                    SwimNameMatch.Similarity(f, g, e.FamilyNameLatin, e.GivenNameLatin) >= SwimNameMatch.SameName)
-                    return byCode;
-            }
+            if (byCode != null && (LikeAthlete(byCode, e, false) >= SwimNameMatch.SameName || LikeAthlete(byCode, e, true) >= FamilyByCode))
+                return byCode;
 
+            // Else his name or another spelling of it, his year of birth and gender, one athlete only.
             List<SwimAthlete> like = registry.Athletes.Where(a =>
             {
                 int born;
@@ -440,12 +441,161 @@ namespace Kinovea.ScreenManager
                 string gender = SwimReference.NormalizeGender(a.Gender);
                 if (e.Gender.Length > 0 && gender.Length > 0 && gender != e.Gender)
                     return false;
-                string f, g;
-                SwimNameMatch.Split(a.Name, out f, out g);
-                return SwimNameMatch.Similarity(f, g, e.FamilyName, e.GivenName) >= SwimNameMatch.SameName ||
-                    SwimNameMatch.Similarity(f, g, e.FamilyNameLatin, e.GivenNameLatin) >= SwimNameMatch.SameName;
+                if (a.International && !string.IsNullOrEmpty(a.Nation) && e.Nation.Length > 0 && !a.Nation.Equals(e.Nation, StringComparison.OrdinalIgnoreCase))
+                    return false;
+                return LikeAthlete(a, e, false) >= SwimNameMatch.SameName;
             }).Take(2).ToList();
             return like.Count == 1 ? like[0] : null;
+        }
+
+        /// <summary>The family name alike this much with the code of the athlete: the same athlete.</summary>
+        private const double FamilyByCode = 0.85;
+
+        /// <summary>How alike an athlete of the registry (his name and its other spellings) and the athlete of a result are (0-1).</summary>
+        private static double LikeAthlete(SwimAthlete a, SwimOfficialEntry e, bool familyOnly)
+        {
+            double best = 0;
+            foreach (string name in new[] { a.Name }.Concat(a.Aliases ?? new List<string>()))
+            {
+                string f, g;
+                SwimNameMatch.Split(name, out f, out g);
+                if (familyOnly)
+                    g = "";
+                best = Math.Max(best, Math.Max(SwimNameMatch.Similarity(f, g, e.FamilyName, e.GivenName),
+                    SwimNameMatch.Similarity(f, g, e.FamilyNameLatin, e.GivenNameLatin)));
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// The registry from the official results (since 2026-10-19): the Latin spelling of the name of an athlete of it that it does
+        /// not know yet kept (results abroad have no registry number), an international athlete not in it added with his unique code
+        /// (the analyst says whether he is one already there under another spelling).
+        /// </summary>
+        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete)
+        {
+            if (e == null || Settings == null || !Settings.IsConfigured)
+                return;
+
+            if (athlete != null)
+            {
+                string latin = e.NameLatin;
+                if (latin.Length == 0 || KnownSpelling(athlete, latin))
+                    return;
+
+                client.AddAlias(Settings.WebAppUrl, Settings.Token, athlete.Id, latin, result =>
+                {
+                    if (!result.Ok)
+                        return;
+                    if (athlete.Aliases == null)
+                        athlete.Aliases = new List<string>();
+                    athlete.Aliases.Add(latin);
+                    Athletes.Save();
+                });
+                return;
+            }
+
+            // A Greek athlete not found in the registry stays as he was typed (the registry is the federation's).
+            string nation = (e.Nation ?? "").Trim().ToUpperInvariant();
+            if (nation.Length == 3 && nation != "GRE")
+                AddInternationalAthlete(e, false);
+        }
+
+        /// <summary>The spelling is the athlete's name or one of its other spellings (letter for letter in Latin, in any order).</summary>
+        private static bool KnownSpelling(SwimAthlete a, string name)
+        {
+            string key = SortedKey(name);
+            return SortedKey(a.Name) == key || (a.Aliases != null && a.Aliases.Any(x => SortedKey(x) == key));
+        }
+
+        private static string SortedKey(string name)
+        {
+            return string.Join(" ", SwimNameMatch.Key(name).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).OrderBy(w => w, StringComparer.Ordinal).ToArray());
+        }
+
+        /// <summary>
+        /// An international athlete of a result in the sheet "Διεθνείς αθλητές": his unique code back (WA and his World Aquatics code,
+        /// else X-ΧΩΡΑ-αύξων) as the athlete of the race. One who may be there already (same name and country, a year of birth
+        /// unknown): the analyst chooses (force: a new one).
+        /// </summary>
+        private void AddInternationalAthlete(SwimOfficialEntry e, bool force)
+        {
+            JObject a = new JObject();
+            a["name"] = e.NameLatin.Length > 0 ? e.NameLatin : e.Name;
+            a["nation"] = e.Nation.Trim().ToUpperInvariant();
+            a["gender"] = e.Gender == "F" ? "Γυναικών" : e.Gender == "M" ? "Ανδρών" : "";
+            a["birthYear"] = e.BirthYear > 0 ? e.BirthYear.ToString(CultureInfo.InvariantCulture) : "";
+            a["club"] = e.Club;
+            a["waId"] = e.IfId;
+            if (e.Name.Length > 0 && e.NameLatin.Length > 0)
+                a["aliases"] = new JArray(e.Name);
+
+            string raceId = Race.Id;
+            Status("Καταχώρηση του διεθνούς αθλητή…", false);
+            client.AddAthlete(Settings.WebAppUrl, Settings.Token, a, force, result =>
+            {
+                if (Race == null || Race.Id != raceId)
+                    return;
+
+                JArray duplicates = result.Raw == null ? null : result.Raw["duplicates"] as JArray;
+                if (!result.Ok && duplicates != null && duplicates.Count > 0)
+                {
+                    List<string> items = duplicates.Select(d => string.Format(CultureInfo.InvariantCulture, "{0} ({1}, {2}) · {3}", (string)d["name"], (string)d["nation"],
+                        string.IsNullOrEmpty((string)d["birthYear"]) ? "έτος γέννησης άγνωστο" : (string)d["birthYear"], (string)d["id"])).ToList();
+                    items.Add("Άλλος αθλητής: νέος κωδικός");
+                    int i = SwimChoiceDialog.Choose(DialogOwner, "Διεθνής αθλητής", "Ο αθλητής των αποτελεσμάτων μοιάζει με κάποιον που υπάρχει ήδη στους διεθνείς. Είναι ο ίδιος;", items);
+                    if (i < 0)
+                    {
+                        Status("Ο διεθνής αθλητής δεν καταχωρήθηκε (ο αγώνας κράτησε το όνομα των αποτελεσμάτων).", false);
+                        return;
+                    }
+
+                    if (i == items.Count - 1)
+                    {
+                        AddInternationalAthlete(e, true);
+                        return;
+                    }
+
+                    UseInternationalAthlete((string)duplicates[i]["id"], a, e, false);
+                    return;
+                }
+
+                if (!result.Ok || result.Raw == null || string.IsNullOrEmpty(result.Raw.Value<string>("id")))
+                {
+                    Status("Ο διεθνής αθλητής δεν καταχωρήθηκε: " + (result.Error ?? "χωρίς απάντηση") + " (χρειάζεται το script 2.7.6 στο Google Sheet).", true);
+                    return;
+                }
+
+                UseInternationalAthlete(result.Raw.Value<string>("id"), a, e, result.Raw.Value<bool?>("created") ?? false);
+            });
+        }
+
+        /// <summary>The international athlete of this code as the athlete of the race (in the local copy of the registry too).</summary>
+        private void UseInternationalAthlete(string id, JObject a, SwimOfficialEntry e, bool created)
+        {
+            SwimAthlete athlete = Athletes.Find(id);
+            if (athlete == null)
+            {
+                athlete = new SwimAthlete
+                {
+                    Id = id,
+                    Name = (string)a["name"],
+                    Gender = (string)a["gender"],
+                    BirthYear = (string)a["birthYear"],
+                    Club = (string)a["club"],
+                    International = true,
+                    Nation = (string)a["nation"],
+                    WaId = e.IfId.Length > 0 ? e.IfId : null
+                };
+                Athletes.Athletes.Add(athlete);
+                Athletes.BuildIndex();
+                Athletes.Save();
+            }
+
+            SetAthlete(athlete);
+            Status(string.Format(CultureInfo.InvariantCulture, "Διεθνής αθλητής: {0} ({1}) {2}.", athlete.Name, id,
+                created ? "καταχωρήθηκε στο φύλλο «Διεθνείς αθλητές»" : "υπήρχε ήδη"), false);
         }
     }
 

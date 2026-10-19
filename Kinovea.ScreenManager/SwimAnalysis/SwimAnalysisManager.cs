@@ -2101,6 +2101,12 @@ namespace Kinovea.ScreenManager
                             a.BirthYear = o.Value<string>("birthYear") ?? "";
                             a.Category = o.Value<string>("category") ?? "";
                             a.Club = o.Value<string>("club") ?? "";
+                            a.International = o.Value<bool?>("intl") ?? false;
+                            a.Nation = o.Value<string>("nation");
+                            a.WaId = o.Value<string>("waId");
+                            JArray aliases = o["aliases"] as JArray;
+                            if (aliases != null && aliases.Count > 0)
+                                a.Aliases = aliases.Select(x => (string)x).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
                             list.Athletes.Add(a);
                         }
                     }
