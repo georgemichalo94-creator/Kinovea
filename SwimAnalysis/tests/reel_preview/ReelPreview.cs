@@ -259,6 +259,7 @@ public static class ReelPreview
             frames.Add(new Frame { Name = "bk-26.5-small", Race = back, Time = 26.5, Width = 640, Height = 360, Final = final });
             RenderReport(folder, names, back, computed[back], final, timing);
             RenderOverlay(folder, names, back);
+            RenderBars(folder, names);
         }
         catch (Exception e)
         {
@@ -957,6 +958,75 @@ public static class ReelPreview
         }
 
         File.AppendAllText(Path.Combine(folder, "overlay.txt"), info.ToString(), Encoding.UTF8);
+    }
+
+    /// <summary>
+    /// The bars beside the video (2.9.0), left and right, for the race of the report, with the graphics of the video on and off (the
+    /// button «Γραφικά στο βίντεο»), and the keys of the analysis (V for the graphics).
+    /// </summary>
+    private static void RenderBars(string folder, List<string> names)
+    {
+        StringBuilder info = new StringBuilder();
+        try
+        {
+            SwimAnalysisManager manager = SwimAnalysisManager.Instance;
+            Type type = typeof(SwimAnalysisManager);
+            Type barType = type.Assembly.GetType("Kinovea.ScreenManager.SwimVideoBar");
+            System.Reflection.MethodInfo setGraphics = type.GetMethod("SetGraphics");
+            foreach (Kinovea.Services.HotkeyCommand c in Kinovea.Services.HotkeySettingsManager.LoadHotkeys("PlayerScreen"))
+            {
+                if (c != null && c.Name.StartsWith("Swim", StringComparison.Ordinal))
+                    info.AppendLine("hotkey " + c.Name + " = " + c.KeyData);
+            }
+
+            if (barType == null || setGraphics == null || manager.Settings == null)
+            {
+                info.AppendLine("bars: SwimVideoBar or SetGraphics not found");
+            }
+            else
+            {
+                bool before = manager.Settings.VideoGraphics;
+                foreach (bool on in new[] { true, false })
+                {
+                    setGraphics.Invoke(manager, new object[] { on });
+                    info.AppendLine("graphics " + on + ": settings " + manager.Settings.VideoGraphics);
+                    using (System.Windows.Forms.Form host = new System.Windows.Forms.Form())
+                    {
+                        host.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                        host.ShowInTaskbar = false;
+                        host.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
+                        host.Location = new Point(-4000, -4000);
+                        host.Size = new Size(520, 760);
+                        host.BackColor = Color.Black;
+                        System.Windows.Forms.Control left = (System.Windows.Forms.Control)Activator.CreateInstance(barType, new object[] { manager, true });
+                        System.Windows.Forms.Control right = (System.Windows.Forms.Control)Activator.CreateInstance(barType, new object[] { manager, false });
+                        left.Bounds = new Rectangle(0, 0, 250, 760);
+                        right.Bounds = new Rectangle(260, 0, 250, 760);
+                        host.Controls.Add(left);
+                        host.Controls.Add(right);
+                        host.Show();
+                        System.Windows.Forms.Application.DoEvents();
+                        string name = on ? "bars-graphics-on" : "bars-graphics-off";
+                        using (Bitmap image = new Bitmap(520, 760))
+                        {
+                            host.DrawToBitmap(image, new Rectangle(0, 0, 520, 760));
+                            SaveJpeg(image, Path.Combine(folder, name + ".jpg"), 85);
+                        }
+
+                        names.Add(name);
+                        host.Close();
+                    }
+                }
+
+                setGraphics.Invoke(manager, new object[] { before });
+            }
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("bars: " + (e.InnerException ?? e));
+        }
+
+        File.AppendAllText(Path.Combine(folder, "bars.txt"), info.ToString(), Encoding.UTF8);
     }
 
     /// <summary>
