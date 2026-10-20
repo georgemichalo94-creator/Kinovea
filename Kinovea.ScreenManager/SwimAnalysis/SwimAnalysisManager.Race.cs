@@ -221,7 +221,7 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// No start found, or none after which the video is long enough for the race (an outdoor pool: no light seen, the signal not
         /// heard over the wind, a sound of the race or of the next one taken for it): the starts seen from the swimmers leaving the
-        /// blocks together (SwimStartLight.LineStarts, since 2.7.8) come first, the first in time that leaves the video for the race
+        /// blocks together (SwimStartLight.LineStarts, since 2.8.0) come first, the first in time that leaves the video for the race
         /// (lab 2026-10-19: the 8 videos of an outdoor meet with the start known from the analyst's stopwatch: 4 starts found 2-68 s
         /// off before, 0.01-0.31 s with it; the 102 other verified starts unchanged). They are proposals to check: the pilot asks.
         /// </summary>
@@ -807,12 +807,17 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// A length done: the band of each frame goes (about 30 MB a length: a 1500 m keeps only what the proposals, the strokes and
-        /// the place of the swimmer need).
+        /// the place of the swimmer need; since 2.8.0 also the camera's displacement at the swimmer and where his head is, for the
+        /// ghost and the line of a reference).
         /// </summary>
         private static void ReleaseFrames(LengthRead l)
         {
-            l.Session.Detector.Release();
             SwimStrokeResult r = l.Result;
+            r.KeepPathShifts();
+            if (double.IsNaN(r.HeadLead) && l.Session.Detector != null)
+                r.HeadLead = SwimSplitDetector.HeadLead(r, l.Session.Detector.Direction, l.Session.Fps);
+
+            l.Session.Detector.Release();
             r.Motion.Clear();
             r.Motion.TrimExcess();
             r.Shifts.Clear();

@@ -244,6 +244,19 @@ namespace Kinovea.ScreenManager
             if (!CompareShown || g == null || toView == null || reference.Width <= 0 || reference.Height <= 0)
                 return;
 
+            // Whatever goes wrong here leaves the rest of the drawing of the frame (the board, the chart, the angles) as it is.
+            try
+            {
+                DrawCompareAt(g, timestamp, frame, reference, toView, view, textScale);
+            }
+            catch (Exception e)
+            {
+                log.Debug("No comparison on this frame: " + e.Message);
+            }
+        }
+
+        private void DrawCompareAt(Graphics g, long timestamp, Bitmap frame, Size reference, Func<PointF, PointF> toView, Size view, float textScale)
+        {
             SwimCompare.Placement p = ComparePlacement(timestamp);
             if (p == null)
                 return;
@@ -318,27 +331,29 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private RectangleF DrawGhost(Graphics g, SwimCompare.Placement p, Bitmap frame, Size reference, Func<PointF, PointF> toView)
         {
-            if (frame == null || frame.Width < 8 || frame.Height < 8)
-                return RectangleF.Empty;
-
-            // The image of the video in the proportions of the reference image (else its pixels are not where the analysis is).
-            double aspectFrame = frame.Width / (double)frame.Height, aspectReference = reference.Width / (double)reference.Height;
-            if (Math.Abs(aspectFrame - aspectReference) > 0.02 * aspectReference)
-                return RectangleF.Empty;
-
             float alpha = p.Finished ? (float)Math.Max(0, 1 - p.FinishedFor / 1.0) : 1f;
-            if (alpha <= 0.02f)
+            if (frame == null || alpha <= 0.02f)
                 return RectangleF.Empty;
-
-            float w = Math.Max(24f, Math.Min(0.5f * reference.Width, 1.45f * p.Body));
-            float h = Math.Max(16f, Math.Min(0.45f * reference.Height, 2.0f * p.HalfHeight));
-            float fx = frame.Width / (float)reference.Width, fy = frame.Height / (float)reference.Height;
-            RectangleF source = new RectangleF((p.SwimmerX - w / 2) * fx, (p.SwimmerY - h / 2) * fy, w * fx, h * fy);
 
             Bitmap patch = null;
+            InterpolationMode mode = g.InterpolationMode;
+            PixelOffsetMode offset = g.PixelOffsetMode;
             try
             {
-                patch = GhostPatch(frame, source, alpha);
+                // The image of the video in the proportions of the reference image (else its pixels are not where the analysis is).
+                int fw = frame.Width, fh = frame.Height;
+                if (fw < 8 || fh < 8)
+                    return RectangleF.Empty;
+                double aspectFrame = fw / (double)fh, aspectReference = reference.Width / (double)reference.Height;
+                if (Math.Abs(aspectFrame - aspectReference) > 0.02 * aspectReference)
+                    return RectangleF.Empty;
+
+                float w = Math.Max(24f, Math.Min(0.5f * reference.Width, 1.45f * p.Body));
+                float h = Math.Max(16f, Math.Min(0.45f * reference.Height, 2.0f * p.HalfHeight));
+                float fx = fw / (float)reference.Width, fy = fh / (float)reference.Height;
+                RectangleF source = new RectangleF((p.SwimmerX - w / 2) * fx, (p.SwimmerY - h / 2) * fy, w * fx, h * fy);
+
+                patch = GhostPatch(frame, source, alpha, p.Body * fx);
                 if (patch == null)
                     return RectangleF.Empty;
                 if (p.Mirror)
@@ -349,13 +364,9 @@ namespace Kinovea.ScreenManager
                 if (dest.Width < 2 || dest.Height < 2)
                     return RectangleF.Empty;
 
-                InterpolationMode mode = g.InterpolationMode;
-                PixelOffsetMode offset = g.PixelOffsetMode;
                 g.InterpolationMode = InterpolationMode.Bilinear;
                 g.PixelOffsetMode = PixelOffsetMode.Half;
                 g.DrawImage(patch, dest);
-                g.InterpolationMode = mode;
-                g.PixelOffsetMode = offset;
                 return dest;
             }
             catch (Exception e)
@@ -366,13 +377,18 @@ namespace Kinovea.ScreenManager
             }
             finally
             {
+                g.InterpolationMode = mode;
+                g.PixelOffsetMode = offset;
                 if (patch != null)
                     patch.Dispose();
             }
         }
 
-        /// <summary>The ghost's image: a part of the frame (frame pixels) with its transparency and its tint.</summary>
-        private static Bitmap GhostPatch(Bitmap frame, RectangleF source, float alpha)
+        /// <summary>
+        /// The ghost's image: a part of the frame (frame pixels) with its transparency and its tint. body: the swimmer's length in frame
+        /// pixels. Null if the part is not in the frame.
+        /// </summary>
+        private static Bitmap GhostPatch(Bitmap frame, RectangleF source, float alpha, float body)
         {
             int pw = Math.Max(2, (int)Math.Round(source.Width)), ph = Math.Max(2, (int)Math.Round(source.Height));
             RectangleF inside = RectangleF.Intersect(source, new RectangleF(0, 0, frame.Width, frame.Height));
@@ -380,29 +396,37 @@ namespace Kinovea.ScreenManager
                 return null;
 
             Bitmap patch = new Bitmap(pw, ph, PixelFormat.Format32bppArgb);
-            using (Graphics pg = Graphics.FromImage(patch))
-            {
-                pg.Clear(Color.Transparent);
-                pg.InterpolationMode = InterpolationMode.Bilinear;
-                pg.PixelOffsetMode = PixelOffsetMode.Half;
-                pg.DrawImage(frame, new RectangleF(inside.X - source.X, inside.Y - source.Y, inside.Width, inside.Height), inside, GraphicsUnit.Pixel);
-            }
-
-            BitmapData data = patch.LockBits(new Rectangle(0, 0, pw, ph), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
             try
             {
-                int stride = data.Stride;
-                byte[] px = new byte[stride * ph];
-                Marshal.Copy(data.Scan0, px, 0, px.Length);
-                SwimCompare.GhostAlpha(px, stride, pw, ph, alpha, colorCompare);
-                Marshal.Copy(px, 0, data.Scan0, px.Length);
-            }
-            finally
-            {
-                patch.UnlockBits(data);
-            }
+                using (Graphics pg = Graphics.FromImage(patch))
+                {
+                    pg.Clear(Color.Transparent);
+                    pg.InterpolationMode = InterpolationMode.Bilinear;
+                    pg.PixelOffsetMode = PixelOffsetMode.Half;
+                    pg.DrawImage(frame, new RectangleF(inside.X - source.X, inside.Y - source.Y, inside.Width, inside.Height), inside, GraphicsUnit.Pixel);
+                }
 
-            return patch;
+                BitmapData data = patch.LockBits(new Rectangle(0, 0, pw, ph), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+                try
+                {
+                    int stride = data.Stride;
+                    byte[] px = new byte[stride * ph];
+                    Marshal.Copy(data.Scan0, px, 0, px.Length);
+                    SwimCompare.GhostAlpha(px, stride, pw, ph, alpha, colorCompare, body);
+                    Marshal.Copy(px, 0, data.Scan0, px.Length);
+                }
+                finally
+                {
+                    patch.UnlockBits(data);
+                }
+
+                return patch;
+            }
+            catch
+            {
+                patch.Dispose();
+                throw;
+            }
         }
 
         /// <summary>The line across the lane at the head of the reference, a little past the ropes; returns its top end (drawing).</summary>

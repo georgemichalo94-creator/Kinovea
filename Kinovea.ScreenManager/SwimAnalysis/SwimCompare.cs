@@ -20,8 +20,14 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimCompare
     {
-        /// <summary>The swimmer's body centre (the place followed) is this share of his length behind the head.</summary>
-        public const double HeadLead = 0.5;
+        /// <summary>
+        /// The head (the front of the moving swimmer) is this share of his length ahead of the place followed, when the part does not say
+        /// (the place followed is near the shoulders: the motion is strongest there; the reading measures it, SwimTrack.Lead).
+        /// </summary>
+        public const double DefaultLead = 0.1;
+
+        /// <summary>The lead of a part is taken up to this share of the swimmer's length.</summary>
+        public const double MaxLead = 0.6;
 
         /// <summary>A place of the pool is found past the ends of the frames of a length up to this share of the pool.</summary>
         public const double ExtendShare = 0.25;
@@ -260,17 +266,22 @@ namespace Kinovea.ScreenManager
             if (double.IsNaN(u))
                 return p;
 
-            // u: the image of the body of the swimmer when his head was at the reference's place, so the water of that place (the head of
-            // the reference) is half a body ahead of it; the body of a reference swimming the other way is half a body on the other side.
-            float lead = (float)(HeadLead * body);
-            float centre = (float)(u + track.Pan[now]);
-            float head = centre + p.Direction * lead;
-            p.X = p.Mirror ? head + p.Direction * lead : centre;
-            p.Y = p.SwimmerY + slope * (p.X - p.SwimmerX);
-            float headY = p.SwimmerY + slope * (head - p.SwimmerX);
+            // u: the place followed of the swimmer when his head was at the reference's place (moved to this frame with the camera), so
+            // the head of the reference (its line) is the lead of the part ahead of it; its body (the ghost) half a body behind its head,
+            // on the other side when it swims the other way. The swimmer's own body (the source of the ghost) the same way from his head.
+            float lead = track.Lead > 0 ? Math.Min(track.Lead, (float)(MaxLead * body)) : (float)(DefaultLead * body);
+            float half = 0.5f * body;
+            float x0 = track.X[now], y0 = track.Y[now];
+            float head = (float)(u + track.Pan[now]) + p.Direction * lead;
+            float selfHead = x0 + p.Direction * lead;
+            p.X = p.Mirror ? head + p.Direction * half : head - p.Direction * half;
+            p.Y = y0 + slope * (p.X - x0);
+            p.SwimmerX = selfHead - p.Direction * half;
+            p.SwimmerY = y0 + slope * (p.SwimmerX - x0);
+            float headY = y0 + slope * (head - x0);
             p.LineA = new PointF(head, headY - halfHeight);
             p.LineB = new PointF(head, headY + halfHeight);
-            p.Side = Math.Abs(head - (p.SwimmerX + p.Direction * lead)) < 0.5f ? 0 : Math.Sign(head - (p.SwimmerX + p.Direction * lead));
+            p.Side = Math.Abs(head - selfHead) < 0.5f ? 0 : Math.Sign(head - selfHead);
             p.Inside = inside;
             p.Located = true;
             return p;
@@ -329,23 +340,70 @@ namespace Kinovea.ScreenManager
             };
         }
 
-        /// <summary>
-        /// The transparency of the ghost (BGRA pixels, alpha 0 outside the frame): the colour of the water from the border of the part;
-        /// what differs from it (the swimmer, the splash) is seen, the water barely; all fading towards the edges; tinted.
-        /// </summary>
-        public static void GhostAlpha(byte[] px, int stride, int pw, int ph, float alpha, Color tint)
+        /// <summary>How the ghost looks (the lab tries others).</summary>
+        public sealed class GhostLook
         {
-            // The water: the median colour of the pixels of the border.
-            List<int> rs = new List<int>(), gs = new List<int>(), bs = new List<int>();
-            for (int y = 0; y < ph; y++)
+            /// <summary>Opacity of what differs from the water (the swimmer, the splash) and of the water itself.</summary>
+            public float Strength = 0.92f, Floor = 0.05f;
+
+            /// <summary>Difference from the water (|ΔR| + |ΔG| + |ΔB|) where the swimmer starts to show, and over which he shows fully.</summary>
+            public float From = 20f, Span = 60f;
+
+            /// <summary>Share of white and of the tint in the colour of the ghost (the rest: the swimmer's own colour).</summary>
+            public float White = 0.32f, Tint = 0.18f;
+
+            /// <summary>Opacity of a soft light of the length of the body under it (0: none).</summary>
+            public float Glow = 0.28f;
+
+            public static readonly GhostLook Default = new GhostLook();
+        }
+
+        /// <summary>
+        /// The transparency of the ghost (BGRA pixels, alpha 0 outside the frame): the water is the most common colour of the middle of
+        /// the lane (the ropes at its edges left out); what differs from it (the swimmer, the splash) is seen, lightened and tinted, the
+        /// water barely, over a soft light of the length of the body; all fading towards the edges. body: the swimmer's length in
+        /// pixels of the part (0: the part is 1.45 bodies long).
+        /// </summary>
+        public static void GhostAlpha(byte[] px, int stride, int pw, int ph, float alpha, Color tint, float body = 0, GhostLook look = null)
+        {
+            look = look ?? GhostLook.Default;
+
+            // The water: the most common colour (steps of 24) of the middle rows, the median of its pixels.
+            const int step = 24, bins = 256 / step + 1;
+            int[] counts = new int[bins * bins * bins];
+            int y0 = (int)Math.Floor(0.2 * ph), y1 = Math.Max(y0 + 1, (int)Math.Ceiling(0.8 * ph));
+            for (int y = y0; y < Math.Min(ph, y1); y++)
             {
-                bool rowEdge = y == 0 || y == ph - 1;
                 for (int x = 0; x < pw; x++)
                 {
-                    if (!rowEdge && x != 0 && x != pw - 1)
-                        continue;
                     int i = y * stride + x * 4;
-                    if (px[i + 3] == 0)
+                    if (px[i + 3] != 0)
+                        counts[(px[i + 2] / step * bins + px[i + 1] / step) * bins + px[i] / step]++;
+                }
+            }
+
+            int best = 0;
+            for (int k = 1; k < counts.Length; k++)
+            {
+                if (counts[k] > counts[best])
+                    best = k;
+            }
+
+            if (counts[best] == 0)
+            {
+                for (int y = 0; y < ph; y++)
+                    for (int x = 0; x < pw; x++)
+                        px[y * stride + x * 4 + 3] = 0;
+                return;
+            }
+
+            List<int> rs = new List<int>(), gs = new List<int>(), bs = new List<int>();
+            for (int y = y0; y < Math.Min(ph, y1); y++)
+            {
+                for (int x = 0; x < pw; x++)
+                {
+                    int i = y * stride + x * 4;
+                    if (px[i + 3] == 0 || (px[i + 2] / step * bins + px[i + 1] / step) * bins + px[i] / step != best)
                         continue;
                     bs.Add(px[i]);
                     gs.Add(px[i + 1]);
@@ -354,27 +412,80 @@ namespace Kinovea.ScreenManager
             }
 
             int wr = Median(rs), wg = Median(gs), wb = Median(bs);
-            const float share = 0.36f, strength = 0.82f;
+
+            // The difference from the water, a little smoothed (3 × 3) so that the ripples do not flicker.
+            float[] diff = new float[pw * ph];
+            for (int y = 0; y < ph; y++)
+            {
+                for (int x = 0; x < pw; x++)
+                {
+                    int i = y * stride + x * 4;
+                    diff[y * pw + x] = px[i + 3] == 0 ? -1f : Math.Abs(px[i + 2] - wr) + Math.Abs(px[i + 1] - wg) + Math.Abs(px[i] - wb);
+                }
+            }
+
+            float[] smooth = new float[pw * ph];
+            for (int y = 0; y < ph; y++)
+            {
+                for (int x = 0; x < pw; x++)
+                {
+                    float sum = 0;
+                    int n = 0;
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        int yy = y + dy;
+                        if (yy < 0 || yy >= ph)
+                            continue;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int xx = x + dx;
+                            if (xx < 0 || xx >= pw || diff[yy * pw + xx] < 0)
+                                continue;
+                            sum += diff[yy * pw + xx];
+                            n++;
+                        }
+                    }
+
+                    smooth[y * pw + x] = n > 0 ? sum / n : 0;
+                }
+            }
+
+            float bodyLength = body > 0 ? body : pw / 1.45f;
+            float glowR = Math.Min(255f, 0.6f * tint.R + 0.4f * 255), glowG = Math.Min(255f, 0.6f * tint.G + 0.4f * 255), glowB = Math.Min(255f, 0.6f * tint.B + 0.4f * 255);
+            float keep = Math.Max(0f, 1f - look.White - look.Tint);
             float cx = pw / 2f, cy = ph / 2f;
             for (int y = 0; y < ph; y++)
             {
                 float fy = 1f - SmoothStep(0.5f, 1f, Math.Abs(y + 0.5f - cy) / cy);
+                float ey = Math.Abs(y + 0.5f - cy) / Math.Max(1f, 0.30f * ph);
                 for (int x = 0; x < pw; x++)
                 {
                     int i = y * stride + x * 4;
                     if (px[i + 3] == 0)
                         continue;
 
-                    int b = px[i], g = px[i + 1], r = px[i + 2];
                     float fx = 1f - SmoothStep(0.62f, 1f, Math.Abs(x + 0.5f - cx) / cx);
-                    float diff = Math.Abs(r - wr) + Math.Abs(g - wg) + Math.Abs(b - wb);
-                    float s = Math.Max(0f, Math.Min(1f, (diff - 24f) / 90f));
-                    float a = alpha * strength * fx * fy * (0.16f + 0.84f * s);
+                    float s = Math.Max(0f, Math.Min(1f, (smooth[y * pw + x] - look.From) / Math.Max(1f, look.Span)));
+                    float a = alpha * look.Strength * fx * fy * (look.Floor + (1 - look.Floor) * s);
+                    float b = px[i] * keep + 255 * look.White + tint.B * look.Tint;
+                    float g = px[i + 1] * keep + 255 * look.White + tint.G * look.Tint;
+                    float r = px[i + 2] * keep + 255 * look.White + tint.R * look.Tint;
 
-                    px[i] = (byte)Math.Round(b * (1 - share) + tint.B * share);
-                    px[i + 1] = (byte)Math.Round(g * (1 - share) + tint.G * share);
-                    px[i + 2] = (byte)Math.Round(r * (1 - share) + tint.R * share);
-                    px[i + 3] = (byte)Math.Round(Math.Max(0f, Math.Min(1f, a)) * 255);
+                    // The soft light of the body, under the swimmer.
+                    float ex = Math.Abs(x + 0.5f - cx) / Math.Max(1f, 0.5f * bodyLength);
+                    float glow = look.Glow <= 0 ? 0 : alpha * look.Glow * fx * fy * (1f - SmoothStep(0.55f, 1f, (float)Math.Sqrt(ex * ex + ey * ey)));
+                    float total = glow + a * (1 - glow);
+                    if (total > 1e-4f)
+                    {
+                        b = (glowB * glow + b * a * (1 - glow)) / total;
+                        g = (glowG * glow + g * a * (1 - glow)) / total;
+                        r = (glowR * glow + r * a * (1 - glow)) / total;
+                    }
+
+                    px[i] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, b)));
+                    px[i + 1] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, g)));
+                    px[i + 2] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, r)));
+                    px[i + 3] = (byte)Math.Round(Math.Max(0f, Math.Min(1f, total)) * 255);
                 }
             }
         }

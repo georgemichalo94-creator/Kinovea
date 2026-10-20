@@ -184,7 +184,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return languageBackend; }
+            get { return quickLookBackend; }
         }
         private bool backendWarned;
         private bool typedStrokesWarned;
@@ -196,6 +196,13 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Oldest Apps Script that makes the report and the PDF in English (the switch ΕΛ / EN).</summary>
         private static readonly Version languageBackend = new Version(2, 7, 7);
+
+        /// <summary>
+        /// Oldest Apps Script with the first page "At a glance" of the PDF and the times of the analyses of the sheet (other races to
+        /// compare with on the video).
+        /// </summary>
+        private static readonly Version quickLookBackend = new Version(2, 8, 0);
+        private bool quickLookWarned;
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -1623,8 +1630,9 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
         /// passed at the current frame are shown, so it plays "live" during the playback.
+        /// report: an image of the report (the Δ and the reference's name on the board whatever is chosen for the video, as before 2.8.0).
         /// </summary>
-        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false)
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false)
         {
             if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
                 return;
@@ -1680,7 +1688,7 @@ namespace Kinovea.ScreenManager
             {
                 Rectangle board = new Rectangle(x, top, width, boardHeight);
                 DrawCard(g, board, SwimTheme.Accent);
-                DrawBoard(g, board, now, last, all || Settings.CompareDelta, all || Settings.CompareDelta || CompareShown);
+                DrawBoard(g, board, now, last, all || report || Settings.CompareDelta, all || report || Settings.CompareDelta || CompareShown);
                 top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
             }
 
@@ -2465,7 +2473,8 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return false;
 
-            if (Race.Reference != null && Race.Reference.Matches(Race) && Race.Reference.GenderMatches(Race.AthleteGender))
+            // A race chosen to compare with (another swimmer of the video, an analysis of the Google Sheet) stays, of either gender.
+            if (Race.Reference != null && Race.Reference.Matches(Race) && (Race.Reference.IsRace || Race.Reference.GenderMatches(Race.AthleteGender)))
                 return false;
 
             SwimReference remembered = null;
@@ -2698,6 +2707,19 @@ namespace Kinovea.ScreenManager
                             Status(string.Format(CultureInfo.InvariantCulture,
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: τα γραφήματα βγαίνουν άδεια. Βάλε την έκδοση {1} και κάνε «Διαχείριση αναπτύξεων → Νέα έκδοση» (δες τον οδηγό)."),
                                 version, chartsBackend.ToString(3)), true);
+                        }
+                        else if (!quickLookWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < quickLookBackend)
+                        {
+                            // Since 2.8.0 the PDF starts with a page to read at a glance (Apps Script 2.8.0).
+                            quickLookWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς την πρώτη σελίδα «Με μια ματιά». Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, quickLookBackend.ToString(3)), true);
+                        }
+                        else if (e.Result.PdfQuick == false)
+                        {
+                            // The Apps Script could not make the first page this time (the copy of the sheet): the whole report as before.
+                            Status(SwimLang.T("Το PDF βγήκε χωρίς την πρώτη σελίδα «Με μια ματιά» αυτή τη φορά: η πλήρης αναφορά όπως πριν. Ξαναδοκίμασε το PDF αργότερα."), true);
                         }
                     }
 

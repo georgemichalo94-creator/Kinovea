@@ -1085,7 +1085,8 @@ namespace Kinovea.ScreenManager
         /// drawn on the image as they are drawn on a screen of the reference width.
         /// allRace: the race board and chart of the final frame (even if hidden on the screen), without the values of the start or turn.
         /// reel: the technical view instead of the board and the chart when it is on the screen (the video exports, not the report).
-        /// compare: the ghost and the line of the reference when chosen (the video exports, not the report), frame: the image of the video.
+        /// compare: the ghost and the line of the reference when chosen (the video exports, not the report), frame: the image of the video;
+        /// without it (the report), the Δ and the reference's name on the board whatever is chosen for the video.
         /// </summary>
         private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth, bool reel = false,
             bool compare = false, Bitmap frame = null)
@@ -1139,7 +1140,7 @@ namespace Kinovea.ScreenManager
                             if (!allRace && (Race.IsTraining || TechnicalView))
                                 DrawTechOverlay(g, timestamp, logical);
                             if (!Race.IsTraining)
-                                DrawRaceOverlay(g, timestamp, logical, allRace);
+                                DrawRaceOverlay(g, timestamp, logical, allRace, !compare);
                         }
                     }
                 }

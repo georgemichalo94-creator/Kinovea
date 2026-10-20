@@ -1462,6 +1462,30 @@ namespace Kinovea.ScreenManager
             return head;
         }
 
+        /// <summary>
+        /// How far the head (the front of the moving swimmer, as the checkpoints are read) is ahead of his place in the path (working
+        /// px along the swim, since 2.8.0): the median of the frames where it is seen; NaN without the motion of the frames or too few.
+        /// </summary>
+        public static double HeadLead(SwimStrokeResult result, int direction, double fps)
+        {
+            if (result == null || result.Path == null || result.Lanes == null || result.Motion == null || direction == 0 || fps <= 0)
+                return double.NaN;
+
+            int T = Math.Min(result.Path.Length, Math.Min(result.Lanes.Count, result.Motion.Count));
+            if (T < 10)
+                return double.NaN;
+
+            double[] head = Heads(result, T, direction, fps);
+            List<double> leads = new List<double>();
+            for (int t = 0; t < T; t++)
+            {
+                if (!double.IsNaN(head[t]))
+                    leads.Add(Math.Max(0, (head[t] - result.Path[t]) * direction));
+            }
+
+            return leads.Count < 10 ? double.NaN : SwimLearningMedian(leads);
+        }
+
         private static double SwimLearningMedian(List<double> values)
         {
             if (values == null || values.Count == 0)

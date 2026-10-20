@@ -281,11 +281,19 @@ const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
 assert.strictEqual(vNew, '2.8.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
-// 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο).
-const withoutTimes = list => list.map(r => r && Array.isArray(r.analyses) ? Object.assign({}, r, { analyses: r.analyses.map(a => {
-  assert.ok(Array.isArray(a.times) && a.times.length > 0, 'times of an analysis');
-  const c = Object.assign({}, a); delete c.times; return c;
-}) }) : r);
+// 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
+// όχι: χωρίς copyTo).
+const withoutTimes = list => list.map(r => {
+  if (r && r.pdf && 'quick' in r.pdf) {
+    assert.strictEqual(r.pdf.quick, false, 'no first page without copyTo');
+    r = Object.assign({}, r, { pdf: Object.assign({}, r.pdf) });
+    delete r.pdf.quick;
+  }
+  return r && Array.isArray(r.analyses) ? Object.assign({}, r, { analyses: r.analyses.map(a => {
+    assert.ok(Array.isArray(a.times) && a.times.length > 0, 'times of an analysis');
+    const c = Object.assign({}, a); delete c.times; return c;
+  }) }) : r;
+});
 let diff = firstDiff(norm(outOld.responses, vOld), norm(withoutTimes(outNew.responses), vNew));
 assert.strictEqual(diff, null, 'responses differ in Greek: ' + diff);
 diff = firstDiff(norm(stateOf(OLD), vOld), norm(stateOf(NEW), vNew));

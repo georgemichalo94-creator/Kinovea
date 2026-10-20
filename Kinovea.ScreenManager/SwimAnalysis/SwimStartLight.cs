@@ -131,7 +131,7 @@ namespace Kinovea.ScreenManager
         private int frames;
 
         /// <summary>
-        /// The motion of the swimmers at the blocks (since 2.7.8): cells of LineCell px at 960 wide, the mean change of the brightness
+        /// The motion of the swimmers at the blocks (since 2.8.0): cells of LineCell px at 960 wide, the mean change of the brightness
         /// of each cell from the frame before, each frame (zeros for the first).
         /// </summary>
         private readonly int lineCell;

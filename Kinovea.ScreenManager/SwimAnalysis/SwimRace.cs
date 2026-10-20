@@ -250,6 +250,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Since 2.8.0: the length of the swimmer clicked for the reading (head to feet, reference image pixels), 0: unknown.</summary>
         public int Body;
 
+        /// <summary>
+        /// Since 2.8.0: how far his head (the front of the moving swimmer, where the checkpoints are read) is ahead of the place
+        /// followed, along the swim (reference image pixels, the median of the part), 0: unknown.
+        /// </summary>
+        public int Lead;
+
         /// <summary>The camera's displacement is known for every point (a part read since 2.8.0).</summary>
         [JsonIgnore]
         public bool HasPan
@@ -309,7 +315,7 @@ namespace Kinovea.ScreenManager
             if (last - first + 1 < 2)
                 return null;
 
-            SwimTrack part = new SwimTrack { Start = Start + (long)Math.Round(first * Step), Step = Step, Body = Body };
+            SwimTrack part = new SwimTrack { Start = Start + (long)Math.Round(first * Step), Step = Step, Body = Body, Lead = Lead };
             part.X.AddRange(X.GetRange(first, last - first + 1));
             part.Y.AddRange(Y.GetRange(first, last - first + 1));
             part.Top.AddRange(Top.GetRange(first, last - first + 1));

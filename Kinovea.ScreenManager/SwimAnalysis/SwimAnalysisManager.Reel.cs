@@ -255,8 +255,9 @@ namespace Kinovea.ScreenManager
             };
 
             // Since 2.8.0 also the camera's displacement along the lane at the swimmer (where the swimmer of the frame before is in
-            // this frame, minus where he was), added up, and the slope of the lane: the place of the pool where a reference is.
-            bool shifts = result.Shifts != null && result.Shifts.Count >= n;
+            // this frame, minus where he was), added up, and the slope of the lane: the place of the pool where a reference is. A race
+            // reading keeps the displacement when the frames of a length go (PathShifts).
+            bool shifts = result.HasPathShifts(n);
             double pan = 0;
             for (int i = 0; i < n; i++)
             {
@@ -268,13 +269,7 @@ namespace Kinovea.ScreenManager
                 track.Top.Add((int)Math.Round(Math.Min(y1, y2) * sy));
                 track.Bottom.Add((int)Math.Round(Math.Max(y1, y2) * sy));
                 if (shifts && i > 0)
-                {
-                    double[] shift = result.Shifts[i];
-                    int at = shift != null && shift.Length > 0 ? Math.Max(0, Math.Min(shift.Length - 1, result.Path[i - 1])) : -1;
-                    double move = at >= 0 ? shift[at] : 0;
-                    if (!double.IsNaN(move) && !double.IsInfinity(move))
-                        pan += move * sx;
-                }
+                    pan += result.PathShift(i) * sx;
 
                 track.Pan.Add((int)Math.Round(pan));
                 double slope = 0.5 * (lane.A1 + lane.A2) * sy / sx;
@@ -283,6 +278,13 @@ namespace Kinovea.ScreenManager
 
             if (!shifts)
                 track.Pan.Clear();
+
+            // Where the head is ahead of the place followed (the line of a reference is at its head): kept by a race reading, else from
+            // the motion of the frames.
+            double lead = result.HeadLead;
+            if (double.IsNaN(lead) && s.Detector != null)
+                lead = SwimSplitDetector.HeadLead(result, s.Detector.Direction, s.Fps);
+            track.Lead = double.IsNaN(lead) || lead < 0 ? 0 : Math.Max(1, (int)Math.Round(lead * sx));
 
             // Not into the length of a part followed before (a reading can go past an unmarked wall).
             SwimReel reel = Reel;

@@ -113,6 +113,59 @@ namespace Kinovea.ScreenManager
         /// what stays at the same place of the image all along the reading.
         /// </summary>
         public bool Still;
+
+        /// <summary>
+        /// Since 2.8.0: the camera's displacement along the band at the swimmer from the previous frame (working x; Shifts at his place
+        /// in the frame before), kept when the frames of a length of a race reading are let go with Shifts: what the ghost and the line
+        /// of a reference need. Null until kept.
+        /// </summary>
+        public double[] PathShifts;
+
+        /// <summary>
+        /// Since 2.8.0: how far the head (the front of the moving swimmer, where the checkpoints are read) is ahead of his place in the
+        /// path (working px along the swim, median of the frames), NaN if not known.
+        /// </summary>
+        public double HeadLead = double.NaN;
+
+        /// <summary>The displacement at the swimmer is known for each of the first n frames (Shifts, or kept in PathShifts).</summary>
+        public bool HasPathShifts(int n)
+        {
+            return (Shifts != null && Shifts.Count >= n) || (PathShifts != null && PathShifts.Length >= n);
+        }
+
+        /// <summary>The camera's displacement at the swimmer from frame i − 1 to frame i (working x, 0 if not known).</summary>
+        public double PathShift(int i)
+        {
+            double move = double.NaN;
+            if (i <= 0)
+                return 0;
+
+            if (Shifts != null && i < Shifts.Count && Path != null && i - 1 < Path.Length)
+            {
+                double[] shift = Shifts[i];
+                if (shift != null && shift.Length > 0)
+                    move = shift[Math.Max(0, Math.Min(shift.Length - 1, Path[i - 1]))];
+            }
+            else if (PathShifts != null && i < PathShifts.Length)
+            {
+                move = PathShifts[i];
+            }
+
+            return double.IsNaN(move) || double.IsInfinity(move) ? 0 : move;
+        }
+
+        /// <summary>Keeps the displacement at the swimmer of each frame (PathShifts) before Shifts go.</summary>
+        public void KeepPathShifts()
+        {
+            if (Path == null || Shifts == null || Shifts.Count == 0)
+                return;
+
+            int n = Math.Min(Path.Length, Shifts.Count);
+            double[] kept = new double[n];
+            for (int i = 1; i < n; i++)
+                kept[i] = PathShift(i);
+            PathShifts = kept;
+        }
     }
 
     /// <summary>

@@ -251,7 +251,7 @@ function makeContext(opts) {
   };
   let uuidSeq = 0;
   const drive = makeDrive();
-  const sleeps = [], exports = [];
+  const sleeps = [], exports = [], cacheStore = {}, cacheLog = [];
   // Εξαγωγή PDF όπως του Google Sheets: πλάτος = στήλες + 1 px η καθεμία, fit to width, ο αριθμός σελίδας κρατά
   // pdfFooter ίντσες, οι γραμμές δεν κόβονται. Επιστρέφει PDF με το πλήθος των σελίδων.
   const pdf = { footer: opts.pdfFooter === undefined ? 0.2 : opts.pdfFooter };
@@ -261,6 +261,8 @@ function makeContext(opts) {
     let sheet = null;
     Object.keys(all).forEach(id => { const s = all[id].getSheets().find(x => x.getSheetId() === gid); if (s) sheet = s; });
     if (!sheet) throw new Error('export: no sheet ' + gid);
+    // opts.failExport: η εξαγωγή των φύλλων με τέτοιο όνομα αποτυγχάνει (π.χ. του αντιγράφου της πρώτης σελίδας).
+    if (opts.failExport && opts.failExport.test(sheet.getName())) throw new Error('export failed: ' + sheet.getName());
     const r1 = +(q('r1') || 0), c1 = +(q('c1') || 0);
     const r2 = q('r2') !== null ? +q('r2') : sheet.getLastRow(), c2 = q('c2') !== null ? +q('c2') : sheet.getLastColumn();
     let width = 0;
@@ -313,6 +315,11 @@ function makeContext(opts) {
     Logger: { log: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    // opts.cache: η προσωρινή μνήμη του script (CacheService), με τις κλήσεις της· χωρίς αυτό δεν υπάρχει (όπως πριν).
+    CacheService: opts.cache ? { getScriptCache: () => ({
+      get: k => { cacheLog.push(['get', k]); return Object.prototype.hasOwnProperty.call(cacheStore, k) ? cacheStore[k] : null; },
+      put: (k, v, t) => { if (typeof v !== 'string') throw new Error('cache: not a string'); if (v.length > 100000) throw new Error('cache: too big');
+        cacheLog.push(['put', k, t]); cacheStore[k] = v; } }) } : undefined,
     ContentService: { createTextOutput: t => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
@@ -331,7 +338,7 @@ function makeContext(opts) {
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
-  ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf;
+  ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf; ctx._cache = { store: cacheStore, log: cacheLog };
   return ctx;
 }
 module.exports = { makeContext };

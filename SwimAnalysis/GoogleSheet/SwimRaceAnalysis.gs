@@ -4315,9 +4315,13 @@ function swimAnalysesFor_(query) {
 /** Πόσες αναλύσεις άλλων αθλητών επιστρέφονται για σύγκριση (οι καλύτεροι χρόνοι). */
 var SWIM_EVENT_ANALYSES = 40;
 
+/** Πόσες αναλύσεις του αγωνίσματος κρατιούνται στην προσωρινή μνήμη (πριν βγουν του ίδιου αθλητή) και για πόσο (s). */
+var SWIM_EVENT_CACHE = 60, SWIM_EVENT_CACHE_TIME = 3600;
+
 /**
  * Αναλύσεις άλλων αθλητών στο ίδιο αγώνισμα, πισίνα και φύλο (όταν είναι γνωστό), για σύγκριση στο βίντεο (2.8.0): οι
- * καλύτεροι χρόνοι, με τους χρόνους στα σημεία ελέγχου. Τα JSON διαβάζονται όλα μαζί (μία ανάγνωση της στήλης).
+ * καλύτεροι χρόνοι, με τους χρόνους στα σημεία ελέγχου. Διαβάζονται μόνο τα JSON των καλύτερων και μένουν στην προσωρινή
+ * μνήμη του script για μία ώρα (μέχρι να μπει νέα ανάλυση): το Kinovea τις ζητά σε κάθε φόρτωση αγώνα.
  */
 function swimEventAnalyses_(query) {
   var q = query || {};
@@ -4329,31 +4333,54 @@ function swimEventAnalyses_(query) {
   var athlete = swimNormText_(q.athlete);
   var gender = swimGenderCode_(q.gender);
   var eventLabel = swimIndexEventLabel_(want);
+  var key = ['swimEvent', SWIM_VERSION, SWIM_LANG_, eventLabel, want.distance, gender || '-', last].join('|');
+  var cache = null, list = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  if (cache) {
+    try { var hit = cache.get(key); if (hit) list = JSON.parse(hit); } catch (e2) { list = null; }
+  }
+  if (!list) {
+    list = swimEventCandidates_(index, last, want, gender, eventLabel);
+    if (cache) {
+      try { cache.put(key, JSON.stringify(list), SWIM_EVENT_CACHE_TIME); } catch (e3) { /* χωρίς προσωρινή μνήμη */ }
+    }
+  }
+  var out = [];
+  for (var k = 0; k < list.length && out.length < SWIM_EVENT_ANALYSES; k++) {
+    var c = list[k];
+    if (c.id === String(q.raceId || '')) continue;
+    // Όχι ο ίδιος αθλητής (αυτές οι αναλύσεις είναι στη λίστα του PB).
+    if ((athleteId && c.athleteId === athleteId) || (athlete && c.athleteKey === athlete)) continue;
+    out.push({ id: c.id, athlete: c.athlete, gender: c.gender, label: c.label, finalTime: c.finalTime, date: c.date, round: c.round,
+      competition: c.competition, times: c.times });
+  }
+  return out;
+}
+
+/** Οι καλύτερες αναλύσεις του αγωνίσματος (ως SWIM_EVENT_CACHE) με τους χρόνους τους: το JSON μόνο τους διαβάζεται. */
+function swimEventCandidates_(index, last, want, gender, eventLabel) {
   var data = index.getRange(2, 1, last - 1, SWIM_IDX.sheetId).getValues();
   var match = [];
   data.forEach(function (row, i) {
     var id = String(row[SWIM_IDX.id]);
-    if (!id || id === String(q.raceId || '')) return;
+    if (!id) return;
     if (String(row[4]) !== eventLabel || swimDistanceValue_(row[5]).distance !== want.distance) return;
-    // Όχι ο ίδιος αθλητής (αυτές οι αναλύσεις είναι στη λίστα του PB).
-    if ((athleteId && String(row[3]).trim() === athleteId) || (athlete && swimNormText_(row[2]) === athlete)) return;
     var ft = swimNum_(row[9]);
     if (!(ft > 0)) return;
-    match.push({ i: i, id: id, ft: ft });
+    match.push({ i: i, id: id, ft: ft, athleteId: String(row[3]).trim(), athleteKey: swimNormText_(row[2]) });
   });
-  if (!match.length) return [];
   match.sort(function (a, b) { return a.ft - b.ft; });
-  var json = index.getRange(2, SWIM_IDX.json + 1, last - 1, 1).getValues();
   var out = [];
-  for (var k = 0; k < match.length && out.length < SWIM_EVENT_ANALYSES; k++) {
-    var r;
-    try { r = swimNormalizeRace_(JSON.parse(String(json[match[k].i][0]))); } catch (e) { continue; }
+  for (var k = 0; k < match.length && out.length < SWIM_EVENT_CACHE; k++) {
+    var m = match[k], r;
+    try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(m.i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { continue; }
     if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) continue;
     if (gender && swimGenderCode_(r.gender) && swimGenderCode_(r.gender) !== gender) continue;
     var times = swimCheckpointTimes_(r);
     if (!times.length) continue;
-    out.push({ id: match[k].id, athlete: r.athlete, gender: r.gender, label: swimRaceLabel_(r, { summary: { finalTime: match[k].ft } }), finalTime: match[k].ft,
-      date: r.date, round: r.round, competition: r.competition, times: times });
+    out.push({ id: m.id, athleteId: m.athleteId, athleteKey: m.athleteKey, athlete: r.athlete, gender: r.gender,
+      label: swimRaceLabel_(r, { summary: { finalTime: m.ft } }), finalTime: m.ft, date: r.date, round: r.round, competition: r.competition,
+      times: times });
   }
   return out;
 }
@@ -4585,26 +4612,32 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
   if (!sheet) throw new Error(swimT_('Δεν βρέθηκε το φύλλο για PDF.'));
   SpreadsheetApp.flush();
   swimPrepareCharts_(sheet, fresh);
-  var target = sheet, print = area, copy = null;
-  if (quick && area && area.rows > 0 && quick.cols === area.cols) {
-    // Χωρίς την πρώτη σελίδα αν το αντίγραφο δεν έγινε: το PDF όπως πριν.
-    try { copy = swimQuickLookSheet_(ss, sheet, quick); } catch (e) { copy = null; }
-    if (copy) {
-      target = copy.sheet;
-      print = { rows: area.rows + copy.rows, cols: area.cols };
-    }
-  }
   // Το Google δεν σχεδιάζει πάντα στο PDF τα γραφήματα ενός φύλλου που δεν είναι ανοιχτό: κάθε γράφημα μπαίνει ως εικόνα
   // στη θέση του για την εξαγωγή, και μετά επιστρέφει.
-  var swapped = [];
-  var blob;
-  try {
-    swapped = swimChartsAsImages_(target, print);
-    blob = swimPdfFetch_(swimPdfUrl_(ss, target, print));
-  } finally {
-    if (copy) {
-      try { ss.deleteSheet(copy.sheet); } catch (e2) { /* σβήνεται την επόμενη φορά */ }
-    } else {
+  var blob = null, withQuick = false;
+  if (quick && area && area.rows > 0 && quick.cols === area.cols) {
+    // Η πρώτη σελίδα «Με μια ματιά» σε ένα αντίγραφο του φύλλου· ό,τι κι αν αποτύχει εκεί, το PDF όπως πριν (χωρίς αυτήν).
+    var copy = null;
+    try {
+      copy = swimQuickLookSheet_(ss, sheet, quick);
+      var print = { rows: area.rows + copy.rows, cols: area.cols };
+      swimChartsAsImages_(copy.sheet, print);
+      blob = swimPdfFetch_(swimPdfUrl_(ss, copy.sheet, print));
+      withQuick = true;
+    } catch (e) {
+      blob = null;
+    } finally {
+      if (copy) {
+        try { ss.deleteSheet(copy.sheet); } catch (e2) { /* σβήνεται την επόμενη φορά */ }
+      }
+    }
+  }
+  if (!blob) {
+    var swapped = [];
+    try {
+      swapped = swimChartsAsImages_(sheet, area);
+      blob = swimPdfFetch_(swimPdfUrl_(ss, sheet, area));
+    } finally {
       swimRestoreCharts_(sheet, swapped);
     }
   }
@@ -4613,7 +4646,10 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
   var old = folder.getFilesByName(fileName);
   while (old.hasNext()) old.next().setTrashed(true);
   var file = folder.createFile(blob.setName(fileName));
-  return { url: file.getUrl(), name: fileName, id: file.getId() };
+  var result = { url: file.getUrl(), name: fileName, id: file.getId() };
+  // Για το Kinovea: η πρώτη σελίδα έγινε ή όχι (ζητήθηκε αλλά δεν έγινε: false).
+  if (quick) result.quick = withQuick;
+  return result;
 }
 
 /**
@@ -5364,8 +5400,9 @@ function swimRenderQuickLook_(sheet, q) {
 function swimQuickLookSheet_(ss, sheet, q) {
   var now = Date.now();
   ss.getSheets().forEach(function (s) {
-    var name = s.getName();
-    if (name.indexOf(SWIM_QUICK_PREFIX) === 0 && now - Number(name.substring(SWIM_QUICK_PREFIX.length)) > 10 * 60 * 1000) {
+    // Μόνο τα αντίγραφα που ξέμειναν (όνομα: το πρόθεμα και η ώρα τους), όχι άλλα φύλλα με όμοιο όνομα.
+    var name = s.getName(), stamp = name.substring(SWIM_QUICK_PREFIX.length);
+    if (name.indexOf(SWIM_QUICK_PREFIX) === 0 && /^\d+$/.test(stamp) && now - Number(stamp) > 10 * 60 * 1000) {
       try { ss.deleteSheet(s); } catch (e) { /* σε χρήση */ }
     }
   });

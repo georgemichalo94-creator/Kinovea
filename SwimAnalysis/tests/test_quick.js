@@ -71,6 +71,7 @@ function lastExport(G, report) {
   const r = call({ action: 'pdf', race: race100(env) });
   assert.ok(r.ok && r.pdf && r.pdf.url && r.pdf.name === r.sheetName + '.pdf', JSON.stringify(r).slice(0, 300));
   assert.strictEqual(r.quick, undefined, 'the first page is not sent back');
+  assert.strictEqual(r.pdf.quick, true, 'the PDF says that it starts with the first page');
   assert.ok(G._exports.length > before);
   const q = lastExport(G, r);
   assert.ok(/^_swim_pdf_\d+$/.test(q.exp.name), q.exp.name);
@@ -140,6 +141,41 @@ function lastExport(G, report) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// 1β) Οι αναλύσεις άλλων αθλητών στην προσωρινή μνήμη του script: μία ανάγνωση ανά αγώνισμα, φύλο και πλήθος αναλύσεων
+// ---------------------------------------------------------------------------------------------
+{
+  const env = setup({ cache: true });
+  const { G, call } = env;
+  const mk = (id, athlete, athleteId, k) => Object.assign({}, race100(env), { id, athlete, athleteId: athleteId, compare: {}, finalFrame: null,
+    checkpoints: cps100.map((d, i) => ({ d, t: +(t100[i] * k).toFixed(2) })) });
+  assert.ok(call({ action: 'update', race: mk('c-alice', 'QUICK Alice', '920001', 1) }).ok);
+  assert.ok(call({ action: 'update', race: mk('c-beth', 'OTHER Beth', '920002', 0.99) }).ok);
+  const ask = (athleteId, athlete) => call({ action: 'analyses', query: { athleteId, athlete, style: 'fly', distance: 100, pool: 50, poolUnit: 'm',
+    raceId: 'none', others: true, gender: 'Γυναικών' } });
+  const reads = () => G._cache.log.filter(x => x[0] === 'put').length;
+  const a1 = ask('920001', 'QUICK Alice');
+  assert.deepStrictEqual(a1.others.map(o => o.id), ['c-beth']);
+  assert.strictEqual(reads(), 1, 'the list is made once');
+  const a2 = ask('920001', 'QUICK Alice');
+  assert.deepStrictEqual(a2.others, a1.others, 'the same list from the cache');
+  assert.strictEqual(reads(), 1, 'from the cache');
+  // Ο άλλος αθλητής από την ίδια μνήμη: οι αναλύσεις της πρώτης, όχι οι δικές του.
+  const b = ask('920002', 'OTHER Beth');
+  assert.deepStrictEqual(b.others.map(o => o.id), ['c-alice']);
+  assert.strictEqual(reads(), 1, 'one list for every athlete of the event');
+  assert.strictEqual(b.others[0].times.length, 10);
+  // Νέα ανάλυση στο αγώνισμα: νέα λίστα, μαζί της.
+  assert.ok(call({ action: 'update', race: mk('c-cleo', 'THIRD Cleo', '920003', 0.97) }).ok);
+  const a3 = ask('920001', 'QUICK Alice');
+  assert.deepStrictEqual(a3.others.map(o => o.id), ['c-cleo', 'c-beth'], 'fastest first');
+  assert.strictEqual(reads(), 2, 'a new list after a new analysis');
+  // Η μνήμη κρατά μόνο ό,τι επιστρέφεται (και τα κλειδιά του αθλητή για να βγαίνουν οι δικές του).
+  const stored = JSON.parse(Object.values(G._cache.store)[1] || Object.values(G._cache.store)[0]);
+  assert.ok(Array.isArray(stored) && stored.every(x => x.id && x.times && 'athleteId' in x), JSON.stringify(stored).slice(0, 200));
+  console.log('test_quick (2b): the other swimmers of the event from the script cache');
+}
+
+// ---------------------------------------------------------------------------------------------
 // 2) Όλα τα αγωνίσματα: η πρώτη σελίδα χωρά πάντα σε μία σελίδα (με λιγότερα όπου χρειάζεται)
 // ---------------------------------------------------------------------------------------------
 {
@@ -202,7 +238,24 @@ function lastExport(G, report) {
   const exp2 = env2.G._exports[env2.G._exports.length - 1];
   assert.strictEqual(exp2.name, r2.sheetName, 'copy without images: the PDF as before');
   assert.ok(!env2.reports.getSheets().some(s => /^_swim_pdf_\d+$/.test(s.getName())), 'the copy is removed');
-  console.log('test_quick (4): without copyTo, or a copy without the images, the PDF as before');
+  assert.strictEqual(r.pdf.quick, false);
+  assert.strictEqual(r2.pdf.quick, false);
+  // Η εξαγωγή του αντιγράφου αποτυγχάνει: το PDF όπως πριν, από το ίδιο το φύλλο (και το αντίγραφο σβήνεται).
+  const env3 = setup({ failExport: /^_swim_pdf_\d+$/ });
+  const r3 = env3.call({ action: 'pdf', race: race100(env3) });
+  assert.ok(r3.ok && r3.pdf && r3.pdf.quick === false, JSON.stringify(r3).slice(0, 300));
+  const exp3 = env3.G._exports[env3.G._exports.length - 1];
+  assert.strictEqual(exp3.name, r3.sheetName, 'failed export of the copy: the PDF as before');
+  assert.strictEqual(exp3.r2, r3.print.rows);
+  assert.ok(!env3.reports.getSheets().some(s => /^_swim_pdf_\d+$/.test(s.getName())), 'the copy is removed');
+  // Ό,τι μπήκε προσωρινά για το PDF στο φύλλο του αγώνα (εικόνες των γραφημάτων) έφυγε.
+  const sheet3 = env3.reports.getSheetByName(r3.sheetName);
+  assert.ok(!sheet3._images.some(im => im.blob && im.blob._name === 'chart.png'), 'no chart images left in the race sheet');
+  // Ένα άλλο φύλλο με όνομα που αρχίζει όπως τα αντίγραφα δεν σβήνεται.
+  const keep = env3.reports.insertSheet('_swim_pdf_0x1');
+  env3.call({ action: 'pdf', race: race100(env3) });
+  assert.ok(env3.reports.getSheets().indexOf(keep) >= 0, 'another sheet with the same start of name stays');
+  console.log('test_quick (4): without copyTo, a copy without the images, or a failed export of the copy: the PDF as before');
 }
 
 // ---------------------------------------------------------------------------------------------
