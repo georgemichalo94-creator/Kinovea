@@ -764,12 +764,15 @@ namespace Kinovea.ScreenManager
             SizeF s1 = g.MeasureString(title, big), s2 = g.MeasureString(where + "   " + keys, small);
             float w = Math.Max(s1.Width, s2.Width) + 24, h = s1.Height + s2.Height + 14;
             float x = Math.Max(8, (renderingSize.Width - w) / 2), y = 10;
+            // HUD (2.9.0): a glass panel, its brackets and the line under it cyan at the proposal, amber away from it or doubtful.
             RectangleF box = new RectangleF(x, y, w, h);
-            SwimTheme.FillRounded(g, Color.FromArgb(215, 7, 12, 19), box, 8);
-            using (Pen accent = new Pen(Color.FromArgb(230, atProposal ? SwimTheme.Accent : SwimTheme.Amber), 2f))
-                g.DrawLine(accent, box.Left + 8, box.Bottom - 2, box.Right - 8, box.Bottom - 2);
-            using (SolidBrush white = new SolidBrush(Color.White))
-            using (SolidBrush dim = new SolidBrush(Color.FromArgb(230, 190, 205, 220)))
+            Color accent = atProposal && !doubtful ? SwimTheme.Accent : SwimTheme.Amber;
+            using (SolidBrush under = new SolidBrush(Color.FromArgb(70, 2, 12, 20)))
+                g.FillRectangle(under, box);
+            SwimTheme.HudPanel(g, box, accent);
+            SwimTheme.GlowLine(g, atProposal ? SwimTheme.Accent : SwimTheme.Amber, 1.6f, new PointF(box.Left + 10, box.Bottom - 3), new PointF(box.Right - 10, box.Bottom - 3));
+            using (SolidBrush white = new SolidBrush(SwimTheme.Text))
+            using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             {
                 g.DrawString(title, big, doubtful ? amber : white, x + 12, y + 5);

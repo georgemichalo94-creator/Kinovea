@@ -923,7 +923,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 DrawLabel(g, PickingTrack ? SwimLang.T("Ακολούθηση: κλικ στο κεφάλι του αθλητή (Esc: ακύρωση)") : SwimLang.T("Χεριές: κλικ στο κεφάλι του αθλητή (Esc: χωρίς)"),
-                    new Point(12, 12), Color.FromArgb(0, 220, 255));
+                    new Point(12, 12), SwimTheme.Accent);
                 return;
             }
 
@@ -932,12 +932,12 @@ namespace Kinovea.ScreenManager
                 if (SameFrame(autoStrokeFrame, timestamp))
                 {
                     Point p = transform.Transform(autoStrokeHead);
-                    using (Pen pen = new Pen(Color.FromArgb(240, 0, 220, 255), 2f))
+                    using (Pen pen = new Pen(Color.FromArgb(240, SwimTheme.Accent), 2f))
                         g.DrawEllipse(pen, p.X - 8, p.Y - 8, 16, 16);
-                    DrawLabel(g, SwimLang.T("κεφάλι"), new Point(p.X + 10, p.Y - 20), Color.FromArgb(0, 220, 255));
+                    DrawLabel(g, SwimLang.T("κεφάλι"), new Point(p.X + 10, p.Y - 20), SwimTheme.Accent);
                 }
 
-                DrawLabel(g, (PickingTrack ? SwimLang.T("Ακολούθηση") : SwimLang.T("Χεριές")) + SwimLang.T(": κλικ στα πόδια του αθλητή"), new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, (PickingTrack ? SwimLang.T("Ακολούθηση") : SwimLang.T("Χεριές")) + SwimLang.T(": κλικ στα πόδια του αθλητή"), new Point(12, 12), SwimTheme.Accent);
                 return;
             }
 
@@ -949,7 +949,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             DrawLabel(g, StrokeDescription(mark, SortedStrokes()), new Point(12, renderingSize.Height - 28),
-                mark.Batch != null ? Color.FromArgb(255, 214, 0) : Color.White);
+                mark.Batch != null ? SwimTheme.Amber : SwimTheme.Text);
         }
         #endregion
         #endregion

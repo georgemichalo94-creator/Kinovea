@@ -258,6 +258,7 @@ public static class ReelPreview
             frames.Add(new Frame { Name = "bk-26.5-portrait", Race = back, Time = 26.5, Width = 405, Height = 720, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-small", Race = back, Time = 26.5, Width = 640, Height = 360, Final = final });
             RenderReport(folder, names, back, computed[back], final, timing);
+            RenderOverlay(folder, names, back);
         }
         catch (Exception e)
         {
@@ -286,6 +287,15 @@ public static class ReelPreview
         catch (Exception e)
         {
             errors.AppendLine("skeleton: " + e);
+        }
+
+        try
+        {
+            RenderPanel(folder, names);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("panel: " + e);
         }
 
         try
@@ -857,6 +867,144 @@ public static class ReelPreview
         SwimSkeleton s = StartSkeleton();
         b.AppendLine("fictional skeleton: " + s.Count + " frames, found " + s.Found);
         return b.ToString();
+    }
+
+    /// <summary>
+    /// The graphics of the race on the video (2.9.0, the HUD): the race board, the velocity chart, the Δ and the board of the final,
+    /// drawn by the swim analysis of the program as on a screen of 1280 × 720 (the race of the panel set as for the report), the swimmer
+    /// where his track is; once with a swimmer under the race board (the panels fade over him, he stays in front).
+    /// </summary>
+    private static void RenderOverlay(string folder, List<string> names, SwimRace race)
+    {
+        StringBuilder info = new StringBuilder();
+        System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+        System.Reflection.BindingFlags statics = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+        Type type = typeof(SwimAnalysisManager);
+        SwimAnalysisManager manager = SwimAnalysisManager.Instance;
+        System.Reflection.MethodInfo draw = type.GetMethod("DrawRaceOverlay", flags);
+        Type hud = type.Assembly.GetType("Kinovea.ScreenManager.SwimHud");
+        System.Reflection.MethodInfo box = hud != null ? hud.GetMethod("SwimmerBox", statics) : null;
+        if (draw == null || box == null)
+        {
+            File.AppendAllText(Path.Combine(folder, "overlay.txt"), "overlay: DrawRaceOverlay or SwimHud.SwimmerBox not found\n", Encoding.UTF8);
+            return;
+        }
+
+        string[] items = { "overlay-31.0", "overlay-31.0-under", "overlay-56.5-finish" };
+        double[] times = { 31.0, 31.0, 56.5 };
+        foreach (int i in new[] { 0, 1, 2 })
+        {
+            try
+            {
+                using (Bitmap image = new Bitmap(1280, 720, PixelFormat.Format24bppRgb))
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    long ts = Ts(times[i]);
+                    float sx = 1280f / ReferenceWidth, sy = 720f / ReferenceHeight;
+                    DrawPool(g, 1280, 720, race, ts, sx, sy);
+                    Func<PointF, PointF> toView = p => new PointF(p.X * sx, p.Y * sy);
+                    RectangleF swimmer = (RectangleF)box.Invoke(null, new object[] { race, ts, toView });
+                    if (i == 1)
+                    {
+                        // A swimmer under the race board (at the top on the right).
+                        swimmer = new RectangleF(900, 70, 250, 80);
+                        using (SolidBrush splash = new SolidBrush(Color.FromArgb(150, 240, 248, 255)))
+                            g.FillEllipse(splash, 920, 85, 210, 50);
+                        using (SolidBrush body = new SolidBrush(Color.FromArgb(230, 20, 26, 34)))
+                            g.FillEllipse(body, 950, 100, 150, 18);
+                        using (SolidBrush cap = new SolidBrush(Color.FromArgb(255, 240, 200, 20)))
+                            g.FillEllipse(cap, 1080, 99, 20, 20);
+                    }
+
+                    draw.Invoke(manager, new object[] { g, ts, new Size(1280, 720), false, false, swimmer });
+                    info.AppendLine(string.Format(ci, "{0}: swimmer {1:0},{2:0} {3:0}x{4:0}", items[i], swimmer.X, swimmer.Y, swimmer.Width, swimmer.Height));
+                    SaveJpeg(image, Path.Combine(folder, items[i] + ".jpg"), 80);
+                }
+
+                names.Add(items[i]);
+            }
+            catch (Exception e)
+            {
+                info.AppendLine(items[i] + ": " + (e.InnerException ?? e));
+            }
+        }
+
+        // The box of a proposal (cyan at the proposal, amber away from it or doubtful).
+        try
+        {
+            using (Bitmap image = new Bitmap(960, 200, PixelFormat.Format24bppRgb))
+            using (Graphics g = Graphics.FromImage(image))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                using (LinearGradientBrush water = new LinearGradientBrush(new Rectangle(0, 0, 960, 200), Color.FromArgb(28, 112, 158), Color.FromArgb(8, 52, 88), LinearGradientMode.Vertical))
+                    g.FillRectangle(water, 0, 0, 960, 200);
+                SwimAnalysisManager.PaintProposalPrompt(g, "✨ 2/9  Είσοδος στο νερό", "στο καρέ της πρότασης", "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος", true, new Size(960, 90));
+                GraphicsState state = g.Save();
+                g.TranslateTransform(0, 100);
+                SwimAnalysisManager.PaintProposalPrompt(g, "⚠ ✨ 3/9  Έξοδος · έλεγξε προσεκτικά", "+4 καρέ από την πρόταση", "Enter σωστό · ← → καρέ · Delete λάθος · Esc τέλος", false, new Size(960, 90), true);
+                g.Restore(state);
+                SaveJpeg(image, Path.Combine(folder, "overlay-proposal.jpg"), 80);
+            }
+
+            names.Add("overlay-proposal");
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("proposal: " + (e.InnerException ?? e));
+        }
+
+        File.AppendAllText(Path.Combine(folder, "overlay.txt"), info.ToString(), Encoding.UTF8);
+    }
+
+    /// <summary>
+    /// The panel of the analysis (2.9.0, the HUD) as the program builds it, off the screen, each of its pages (without a video: the
+    /// pages as they open).
+    /// </summary>
+    private static void RenderPanel(string folder, List<string> names)
+    {
+        StringBuilder info = new StringBuilder();
+        try
+        {
+            using (FormSwimAnalysis form = new FormSwimAnalysis(SwimAnalysisManager.Instance))
+            {
+                form.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+                form.ShowInTaskbar = false;
+                form.Location = new Point(-4000, -4000);
+                form.Size = new Size(1180, 960);
+                form.Show();
+                System.Windows.Forms.Application.DoEvents();
+                int shown = -1;
+                for (int i = 0; i < 10; i++)
+                {
+                    form.PageIndex = i;
+                    if (form.PageIndex == shown)
+                        continue;
+                    shown = form.PageIndex;
+                    form.PerformLayout();
+                    System.Windows.Forms.Application.DoEvents();
+                    string name = "panel-" + shown.ToString(ci);
+                    using (Bitmap image = new Bitmap(form.Width, form.Height))
+                    {
+                        form.DrawToBitmap(image, new Rectangle(0, 0, form.Width, form.Height));
+                        SaveJpeg(image, Path.Combine(folder, name + ".jpg"), 80);
+                    }
+
+                    names.Add(name);
+                    info.AppendLine(name + ": " + form.Width + "x" + form.Height);
+                }
+
+                form.Close();
+            }
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("panel: " + (e.InnerException ?? e));
+        }
+
+        File.AppendAllText(Path.Combine(folder, "panel.txt"), info.ToString(), Encoding.UTF8);
     }
 
     /// <summary>

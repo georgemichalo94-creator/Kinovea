@@ -135,8 +135,8 @@ namespace Kinovea.ScreenManager
             Font font = SwimTheme.Display(9.5f * scale);
             SizeF size = g.MeasureString(text, font);
             RectangleF box = new RectangleF(centre.X - size.Width / 2 - 3 * scale, centre.Y - size.Height / 2, size.Width + 6 * scale, size.Height);
-            SwimTheme.FillRounded(g, Color.FromArgb(205, 7, 12, 19), box, 4 * scale);
-            using (SolidBrush brush = new SolidBrush(Color.White))
+            SwimTheme.HudChip(g, box, SwimTheme.Accent, 1f, 4 * scale, 205);
+            using (SolidBrush brush = new SolidBrush(SwimTheme.Text))
                 g.DrawString(text, font, brush, box.X + 3 * scale, box.Y);
         }
     }

@@ -1437,13 +1437,13 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Overlay
-        private static readonly Pen penLine = new Pen(Color.FromArgb(200, 255, 214, 0), 1.0f);
-        private static readonly Pen penMajor = new Pen(Color.FromArgb(230, 255, 160, 0), 2.0f);
-        private static readonly Pen penRope = new Pen(Color.FromArgb(160, 255, 214, 0), 1.0f) { DashStyle = DashStyle.Dash };
-        private static readonly Pen penMeasure = new Pen(Color.FromArgb(240, 0, 220, 255), 2.0f);
-        private static readonly SolidBrush brushPoint = new SolidBrush(Color.FromArgb(240, 255, 214, 0));
-        private static readonly SolidBrush brushMeasure = new SolidBrush(Color.FromArgb(240, 0, 220, 255));
-        private static readonly SolidBrush brushLabelBack = new SolidBrush(Color.FromArgb(170, 0, 0, 0));
+        // HUD (2.9.0): the lines of the pool amber, the measures cyan, the labels on glass chips.
+        private static readonly Pen penLine = new Pen(Color.FromArgb(200, 255, 206, 110), 1.0f);
+        private static readonly Pen penMajor = new Pen(Color.FromArgb(230, 255, 182, 72), 2.0f);
+        private static readonly Pen penRope = new Pen(Color.FromArgb(160, 255, 206, 110), 1.0f) { DashStyle = DashStyle.Dash };
+        private static readonly Pen penMeasure = new Pen(Color.FromArgb(240, 56, 225, 255), 2.0f);
+        private static readonly SolidBrush brushPoint = new SolidBrush(Color.FromArgb(240, 255, 206, 110));
+        private static readonly SolidBrush brushMeasure = new SolidBrush(Color.FromArgb(240, 56, 225, 255));
         private static readonly Font fontLabel = new Font("Segoe UI", 8.5f, FontStyle.Bold);
 
         /// <summary>
@@ -1518,7 +1518,7 @@ namespace Kinovea.ScreenManager
                 else
                 {
                     if (Race != null && (Race.IsTraining || TechnicalView))
-                        DrawTechOverlay(g, timestamp, renderingSize);
+                        DrawTechOverlay(g, timestamp, renderingSize, SwimmerOnScreen(timestamp, transform));
                     if (Race != null && !Race.IsTraining)
                         DrawRaceOverlay(g, timestamp, renderingSize, false, false, SwimmerOnScreen(timestamp, transform));
                 }
@@ -1580,7 +1580,7 @@ namespace Kinovea.ScreenManager
                 {
                     PointF label;
                     if (c.TryImage(x, width, out label))
-                        DrawLabel(g, string.Format(CultureInfo.InvariantCulture, "{0:0.##} {1}", x, UnitShort), transform.Transform(label), Color.FromArgb(255, 230, 120));
+                        DrawLabel(g, string.Format(CultureInfo.InvariantCulture, "{0:0.##} {1}", x, UnitShort), transform.Transform(label), Color.FromArgb(255, 214, 140));
                 }
             }
 
@@ -1599,7 +1599,7 @@ namespace Kinovea.ScreenManager
                 DrawPoolSegment(g, transform, m.Calibration, penMeasure, m.PoolX, 0, m.PoolX, m.Calibration.LaneWidth);
 
             g.FillEllipse(brushMeasure, p.X - 5, p.Y - 5, 10, 10);
-            DrawLabel(g, m.Label, new Point(p.X + 10, p.Y + 6), Color.FromArgb(160, 240, 255));
+            DrawLabel(g, m.Label, new Point(p.X + 10, p.Y + 6), SwimTheme.AccentLight);
         }
 
         private static void DrawPoolSegment(Graphics g, ImageTransform transform, SwimCalibration c, Pen pen, double x1, double y1, double x2, double y2)
@@ -1611,11 +1611,12 @@ namespace Kinovea.ScreenManager
             g.DrawLine(pen, transform.Transform(a), transform.Transform(b));
         }
 
+        /// <summary>A label on the video (prompts, the meters of the pool, measures): a glass chip of the HUD, its border in its color.</summary>
         private static void DrawLabel(Graphics g, string text, Point location, Color color)
         {
             SizeF size = g.MeasureString(text, fontLabel);
-            Rectangle back = new Rectangle(location.X - 2, location.Y - 1, (int)size.Width + 4, (int)size.Height + 2);
-            g.FillRectangle(brushLabelBack, back);
+            RectangleF back = new RectangleF(location.X - 3, location.Y - 2, size.Width + 6, size.Height + 4);
+            SwimTheme.HudChip(g, back, color, 1f, 3f, 200);
             using (SolidBrush brush = new SolidBrush(color))
                 g.DrawString(text, fontLabel, brush, location);
         }
@@ -1640,8 +1641,8 @@ namespace Kinovea.ScreenManager
         private static readonly Pen penChartWall = new Pen(Color.FromArgb(110, 56, 225, 255), 1f) { DashStyle = DashStyle.Dot };
         private static readonly SolidBrush brushText = new SolidBrush(Color.White);
         private static readonly SolidBrush brushDim = new SolidBrush(Color.FromArgb(230, 124, 200, 214));
-        private static readonly SolidBrush brushFaster = new SolidBrush(Color.FromArgb(230, 22, 150, 100));
-        private static readonly SolidBrush brushSlower = new SolidBrush(Color.FromArgb(230, 196, 52, 60));
+        private static readonly SolidBrush brushFaster = new SolidBrush(Color.FromArgb(230, 22, 170, 112));
+        private static readonly SolidBrush brushSlower = new SolidBrush(Color.FromArgb(230, 210, 60, 66));
         private static readonly SolidBrush brushAthlete = new SolidBrush(colorAthlete);
         private static readonly SolidBrush brushReference = new SolidBrush(colorReference);
 
@@ -1737,22 +1738,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private RectangleF SwimmerOnScreen(long timestamp, ImageTransform transform)
         {
-            if (Race == null || Race.IsTraining || transform == null)
-                return RectangleF.Empty;
-
-            SwimTrack track = Race.TrackAt(timestamp);
-            float x, y, top, bottom;
-            if (track == null || !track.TryGet(timestamp, 2, out x, out y, out top, out bottom))
-                return RectangleF.Empty;
-
-            float lane = Math.Abs(bottom - top);
-            if (lane < 4)
-                lane = 40;
-            float body = track.Body > 0 ? track.Body / 1000f * lane : 2.4f * lane;
-            float half = Math.Max(body, lane) * 0.75f + Math.Abs(track.Lead / 1000f * lane);
-            RectangleF image = new RectangleF(x - half, Math.Min(top, bottom) - 0.6f * lane, 2 * half, 1.8f * lane);
-            PointF a = transform.Transform(new PointF(image.Left, image.Top)), b = transform.Transform(new PointF(image.Right, image.Bottom));
-            return RectangleF.FromLTRB(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+            return transform == null ? RectangleF.Empty : SwimHud.SwimmerBox(Race, timestamp, p => transform.Transform(p));
         }
 
         /// <summary>
@@ -1761,53 +1747,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static float SwimmerFade(Rectangle panel, RectangleF swimmer)
         {
-            if (swimmer.IsEmpty || swimmer.Width <= 0 || swimmer.Height <= 0)
-                return 1f;
-
-            float dx = Math.Max(0, Math.Max(panel.Left - swimmer.Right, swimmer.Left - panel.Right));
-            float dy = Math.Max(0, Math.Max(panel.Top - swimmer.Bottom, swimmer.Top - panel.Bottom));
-            float d = (float)Math.Sqrt(dx * dx + dy * dy);
-            return 0.2f + 0.8f * Math.Max(0f, Math.Min(1f, d / 48f));
+            return SwimHud.Fade(panel, swimmer);
         }
 
-        private Bitmap hudLayer;
-
         /// <summary>
-        /// Draws graphics as they are (alpha 1), or through a layer the size of their place drawn see-through (alpha less than 1: the
-        /// swimmer under them).
+        /// Draws graphics as they are (alpha 1), or through a see-through layer (alpha less than 1: the swimmer under them).
         /// </summary>
-        private void HudLayer(Graphics g, Rectangle place, float alpha, Action<Graphics> draw)
+        private static void HudLayer(Graphics g, Rectangle place, float alpha, Action<Graphics> draw)
         {
-            if (alpha >= 0.99f || place.Width <= 0 || place.Height <= 0)
-            {
-                draw(g);
-                return;
-            }
-
-            const int m = 8;
-            int w = place.Width + 2 * m, h = place.Height + 2 * m;
-            if (hudLayer == null || hudLayer.Width < w || hudLayer.Height < h)
-            {
-                if (hudLayer != null)
-                    hudLayer.Dispose();
-                hudLayer = new Bitmap(Math.Max(w, 64), Math.Max(h, 64), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-            }
-
-            using (Graphics layer = Graphics.FromImage(hudLayer))
-            {
-                layer.Clear(Color.Transparent);
-                layer.SmoothingMode = SmoothingMode.AntiAlias;
-                layer.TextRenderingHint = TextRenderingHint.AntiAlias;
-                layer.TranslateTransform(m - place.X, m - place.Y);
-                draw(layer);
-            }
-
-            using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
-            {
-                System.Drawing.Imaging.ColorMatrix matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = alpha };
-                attributes.SetColorMatrix(matrix);
-                g.DrawImage(hudLayer, new Rectangle(place.X - m, place.Y - m, w, h), 0, 0, w, h, GraphicsUnit.Pixel, attributes);
-            }
+            SwimHud.Layer(g, place, alpha, draw);
         }
 
         /// <summary>

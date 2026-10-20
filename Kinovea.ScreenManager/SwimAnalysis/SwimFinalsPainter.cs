@@ -305,11 +305,11 @@ namespace Kinovea.ScreenManager
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
             using (SolidBrush finalist = new SolidBrush(Color.FromArgb(200, Finalist)))
-            using (Pen line = new Pen(SwimTheme.Border, 2f))
             using (Pen tick = new Pen(Color.FromArgb(120, SwimTheme.Dim), 1f))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
-                g.DrawString(title ?? "", titleFont, accent, new RectangleF(r.Left + 8, r.Top + 6, r.Width - 16, 18), noWrap);
+                // HUD (2.9.0): the title in spaced capitals (cut when too long).
+                SwimTheme.CapsIn(g, SwimLang.Upper(title ?? ""), titleFont, SwimTheme.AccentLight, new RectangleF(r.Left + 8, r.Top + 5, r.Width - 16, 18), StringAlignment.Near, 0.1f);
                 string legend = SwimLang.T("● τελικός (μεγάλος: ο νικητής)   ● ") + (string.IsNullOrWhiteSpace(athlete) ? SwimLang.T("αθλητής") : athlete.Trim());
                 g.DrawString(legend, small, dim, new RectangleF(r.Left + 8, r.Top + 20, r.Width - 16, 14), noWrap);
                 if (metrics == null || metrics.Count == 0)
@@ -327,7 +327,12 @@ namespace Kinovea.ScreenManager
                         group = m.Group;
                         using (SolidBrush band = new SolidBrush(SwimTheme.Surface))
                             g.FillRectangle(band, r.Left + 4, y + 2, r.Width - 8, GroupHeight - 4);
-                        g.DrawString(SwimLang.Label(group).ToUpperInvariant(), groupFont, text, r.Left + 10, y + 5);
+                        using (SolidBrush glow = new SolidBrush(Color.FromArgb(70, SwimTheme.Accent)))
+                            g.FillRectangle(glow, r.Left + 4, y + 2, 4, GroupHeight - 4);
+                        using (SolidBrush edge = new SolidBrush(SwimTheme.Accent))
+                            g.FillRectangle(edge, r.Left + 4, y + 2, 2, GroupHeight - 4);
+                        SwimTheme.CapsIn(g, SwimLang.Upper(SwimLang.Label(group)), groupFont, SwimTheme.Text, new RectangleF(r.Left + 12, y + 2, r.Width - 20, GroupHeight - 4),
+                            StringAlignment.Near, 0.1f);
                         y += GroupHeight;
                     }
 
@@ -351,7 +356,7 @@ namespace Kinovea.ScreenManager
                         lo -= pad;
                         hi += pad;
                         Func<double, float> X = v => stripLeft + (float)((v - lo) / (hi - lo) * (stripRight - stripLeft));
-                        g.DrawLine(line, stripLeft, cy, stripRight, cy);
+                        SwimTheme.GlowLine(g, SwimTheme.Border, 2f, new PointF(stripLeft, cy), new PointF(stripRight, cy));
                         g.DrawString(m.Format(all.Min()), small, dim, stripLeft - 2, cy + 3);
                         string hiText = m.Format(all.Max());
                         SizeF his = g.MeasureString(hiText, small);
@@ -365,7 +370,10 @@ namespace Kinovea.ScreenManager
                             float d = i == 0 ? 10 : 7;
                             g.FillEllipse(finalist, x - d / 2, cy - d / 2, d, d);
                             if (i == 0)
-                                g.DrawEllipse(Pens.White, x - d / 2, cy - d / 2, d, d);
+                            {
+                                using (Pen ring = new Pen(SwimTheme.AccentPale, 1.2f))
+                                    g.DrawEllipse(ring, x - d / 2, cy - d / 2, d, d);
+                            }
                         }
 
                         if (m.Mean.HasValue)
@@ -373,9 +381,13 @@ namespace Kinovea.ScreenManager
 
                         if (m.Athlete.HasValue)
                         {
+                            // The athlete amber, glowing.
                             float x = X(m.Athlete.Value);
+                            using (SolidBrush halo = new SolidBrush(Color.FromArgb(70, SwimTheme.Amber)))
+                                g.FillEllipse(halo, x - 10f, cy - 10f, 20, 20);
                             g.FillEllipse(amber, x - 6.5f, cy - 6.5f, 13, 13);
-                            g.DrawEllipse(Pens.Black, x - 6.5f, cy - 6.5f, 13, 13);
+                            using (Pen ring = new Pen(SwimTheme.Back, 1.5f))
+                                g.DrawEllipse(ring, x - 6.5f, cy - 6.5f, 13, 13);
                         }
                     }
 
