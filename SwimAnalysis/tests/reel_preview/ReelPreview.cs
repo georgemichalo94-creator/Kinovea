@@ -1391,16 +1391,18 @@ public static class ReelPreview
             foreach (HudShot shot in new[]
             {
                 new HudShot { Name = "1920 alone", Time = 18.00 }, new HudShot { Name = "1920 added", Kind = 1, Time = 17.00 },
+                new HudShot { Name = "1920 under", Kind = 4, Time = 18.00 }, new HudShot { Name = "1920 dashboard", Time = 60.50 },
                 new HudShot { Name = "1280 alone", Time = 18.00, Width = 1280, Height = 720 }
             })
             {
-                SwimRace r = shot.Kind == 1 ? added : race;
+                SwimRace r = shot.Kind == 1 ? added : (shot.Kind == 4 ? under : race);
                 System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
                 using (Bitmap first = DrawHud(r, computed[r], reels[r], timing, shot, final, tech, false))
                 {
                 }
 
                 double firstMs = watch.Elapsed.TotalMilliseconds;
+                SwimHudPainter.Timings = new Dictionary<string, double>();
                 watch.Restart();
                 double t0 = shot.Time;
                 for (int i = 0; i < 40; i++)
@@ -1411,7 +1413,9 @@ public static class ReelPreview
                     }
                 }
 
-                info.AppendLine(string.Format(ci, "time {0}: first {1:0.0} ms, then {2:0.0} ms per frame", shot.Name, firstMs, watch.Elapsed.TotalMilliseconds / 40));
+                info.AppendLine(string.Format(ci, "time {0}: first {1:0.0} ms, then {2:0.0} ms per frame ({3})", shot.Name, firstMs, watch.Elapsed.TotalMilliseconds / 40,
+                    string.Join(", ", SwimHudPainter.Timings.Select(p => p.Key + " " + (p.Value / 40).ToString("0.0", ci)).ToArray())));
+                SwimHudPainter.Timings = null;
             }
         }
         catch (Exception e)

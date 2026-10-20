@@ -100,6 +100,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Seconds of the call-outs, of the final time before «Η ανάλυση με μια ματιά», of the board of the final.</summary>
         private const double CalloutSeconds = 2.0;
         private const double CalloutMin = 1.2;
+
+        /// <summary>How far around the swimmer the panels are see-through (design units).</summary>
+        private const float HoleReach = 70f;
         private const double FinishSeconds = 5.0;
         private const double BoardSeconds = 4.5;
         private const double FinishBoardSeconds = 10.0;
@@ -119,7 +122,8 @@ namespace Kinovea.ScreenManager
             L.K = Math.Min(size.Width / DesignW, size.Height / DesignH);
             L.W = size.Width / L.K;
             L.H = size.Height / L.K;
-            L.Left = new RectangleF(36, 76, 524, L.H - 180);
+            // Its contents are laid out on 900 units (taller images: the space below stays free for the video).
+            L.Left = new RectangleF(36, 76, 524, Math.Min(L.H - 180, 900));
             float right = L.W - 408;
             float avail = L.H - 196;
             float splits = (float)Math.Round(avail * 0.634);
@@ -299,11 +303,20 @@ namespace Kinovea.ScreenManager
                 float em = font.SizeInPoints * g.DpiY / 72f;
                 Color tone = glow ?? C;
                 g.TranslateTransform(x, y);
-                using (Pen wide = new Pen(SwimTheme.Fade(Color.FromArgb(34, tone), strength), Math.Max(2f, em * 0.20f)) { LineJoin = LineJoin.Round })
-                using (Pen near = new Pen(SwimTheme.Fade(Color.FromArgb(70, tone), strength), Math.Max(1f, em * 0.08f)) { LineJoin = LineJoin.Round })
+                if (em > 44)
                 {
-                    g.DrawPath(wide, shape.Path);
-                    g.DrawPath(near, shape.Path);
+                    // Big figures: one soft pen (the outline of big text is long to stroke twice every frame).
+                    using (Pen soft = new Pen(SwimTheme.Fade(Color.FromArgb(48, tone), strength), em * 0.13f) { LineJoin = LineJoin.Round })
+                        g.DrawPath(soft, shape.Path);
+                }
+                else
+                {
+                    using (Pen wide = new Pen(SwimTheme.Fade(Color.FromArgb(34, tone), strength), Math.Max(2f, em * 0.20f)) { LineJoin = LineJoin.Round })
+                    using (Pen near = new Pen(SwimTheme.Fade(Color.FromArgb(70, tone), strength), Math.Max(1f, em * 0.08f)) { LineJoin = LineJoin.Round })
+                    {
+                        g.DrawPath(wide, shape.Path);
+                        g.DrawPath(near, shape.Path);
+                    }
                 }
 
                 g.TranslateTransform(-x, -y);
@@ -326,11 +339,7 @@ namespace Kinovea.ScreenManager
             using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2),
                 A(Color.FromArgb(158, 4, 30, 48), alpha), A(Color.FromArgb(179, 2, 16, 28), alpha), LinearGradientMode.Vertical))
                 g.FillRectangle(back, r);
-            using (Pen scan = new Pen(A(Color.FromArgb(9, 143, 243, 255), alpha), 1f))
-            {
-                for (float y = r.Top + 3; y < r.Bottom - 1; y += 4)
-                    g.DrawLine(scan, r.Left + 1, y, r.Right - 1, y);
-            }
+            ScanLines(g, RectangleF.Inflate(r, -1, -1), A(Color.FromArgb(9, 143, 243, 255), alpha));
 
             using (Pen glow = new Pen(A(Color.FromArgb(22, 56, 225, 255), alpha), 8f))
                 g.DrawRectangle(glow, r.X + 4, r.Y + 4, r.Width - 8, r.Height - 8);
@@ -344,6 +353,44 @@ namespace Kinovea.ScreenManager
             if (!string.IsNullOrEmpty(sub))
                 Caps(g, sub, Mono(11), A(Color.FromArgb(140, 143, 243, 255), alpha), r.Right - 18, r.Top + 14, 0.12f, 1);
         }
+
+        /// <summary>The see-through scan lines of the panels: every 4 pixels of the image, from a small texture kept.</summary>
+        private static void ScanLines(Graphics g, RectangleF r, Color color)
+        {
+            if (color.A == 0 || r.Width <= 0 || r.Height <= 0)
+                return;
+
+            if (scanTextures == null)
+                scanTextures = new Dictionary<int, Bitmap>();
+            Bitmap texture;
+            if (!scanTextures.TryGetValue(color.ToArgb(), out texture))
+            {
+                if (scanTextures.Count > 64)
+                {
+                    foreach (Bitmap old in scanTextures.Values)
+                        old.Dispose();
+                    scanTextures.Clear();
+                }
+
+                texture = new Bitmap(4, 4, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                for (int x = 0; x < 4; x++)
+                    texture.SetPixel(x, 3, color);
+                scanTextures[color.ToArgb()] = texture;
+            }
+
+            // One texel per pixel of the image, whatever the scale of the drawing.
+            float k;
+            using (Matrix m = g.Transform)
+                k = Math.Max(0.05f, (float)Math.Sqrt(m.Elements[0] * m.Elements[0] + m.Elements[1] * m.Elements[1]));
+            using (TextureBrush brush = new TextureBrush(texture, WrapMode.Tile))
+            {
+                brush.ScaleTransform(1 / k, 1 / k);
+                g.FillRectangle(brush, r);
+            }
+        }
+
+        [ThreadStatic]
+        private static Dictionary<int, Bitmap> scanTextures;
 
         /// <summary>Glowing corner brackets of length l around a rectangle.</summary>
         private static void Corners(Graphics g, RectangleF r, float l, float width, float alpha = 1f)
@@ -426,6 +473,9 @@ namespace Kinovea.ScreenManager
         {
             public double T;
             public bool Started, Finished;
+
+            /// <summary>Before the entry into the water (on the block, in the air): no distance, speed or underwater yet.</summary>
+            public bool Early;
             public double Final;
             public double D;
             public string Unit;
@@ -445,7 +495,8 @@ namespace Kinovea.ScreenManager
             st.Started = reel != null && !double.IsNaN(st.T) && st.T >= 0;
             st.Finished = reel != null && reel.Finish.HasValue && st.T >= reel.Finish.Value - reel.FrameSlack - 1e-6;
             st.Final = reel != null ? (reel.FinalTime ?? reel.Finish ?? double.NaN) : double.NaN;
-            st.D = st.Started && reel.HasModel ? reel.DistanceAt(st.T) : 0;
+            st.Early = st.Started && !st.Finished && (reel.Entry.HasValue ? st.T < reel.Entry.Value : st.T < 1.0);
+            st.D = st.Started && !st.Early && reel.HasModel ? reel.DistanceAt(st.T) : 0;
             if (st.Finished)
                 st.D = s.Race.Distance;
             double t = double.IsNaN(st.T) ? double.NegativeInfinity : st.T;
@@ -548,6 +599,18 @@ namespace Kinovea.ScreenManager
             return SwimReference.FormatTime(t);
         }
 
+        /// <summary>Strokes in capitals: "9 ΧΕΡΙΕΣ", "9,5 ΧΕΡΙΕΣ", "1 ΧΕΡΙΑ".</summary>
+        private static string StrokesCaps(string number)
+        {
+            return number == "1" ? SwimLang.T("1 ΧΕΡΙΑ") : string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} ΧΕΡΙΕΣ"), number);
+        }
+
+        /// <summary>Strokes at the end of a line of the log: " · 9 χεριές", " · 1 χεριά".</summary>
+        private static string StrokesLog(string number)
+        {
+            return number == "1" ? SwimLang.T(" · 1 χεριά") : string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} χεριές"), number);
+        }
+
         /// <summary>The event in capitals: "100Μ. ΕΛΕΥΘΕΡΟ", "4x100Μ. ΜΙΚΤΗ", "200YD ΥΠΤΙΟ".</summary>
         private static string EventText(SwimRace race)
         {
@@ -585,17 +648,20 @@ namespace Kinovea.ScreenManager
                 float dash = s.Summary && st.Finished ? Ease(dashAt / 0.6) : 0f;
                 if (dash < 0.999f)
                 {
-                    DrawFrame(g, s, L);
-                    DrawVideoLayer(g, s, st, L);
-                    Fade(g, L, L.Left, layer => DrawLeft(layer, s, st, L));
-                    Fade(g, L, L.Splits, layer => DrawSplits(layer, s, st, L));
-                    if (!DrawFinalsBoard(g, s, st, L))
-                        Fade(g, L, L.Log, layer => DrawLog(layer, s, st, L));
-                    DrawBottom(g, s, st, L);
+                    Timed("frame", () => DrawFrame(g, s, L));
+                    Timed("video", () => DrawVideoLayer(g, s, st, L));
+                    Timed("left", () => Fade(g, L, L.Left, layer => DrawLeft(layer, s, st, L)));
+                    Timed("splits", () => Fade(g, L, L.Splits, layer => DrawSplits(layer, s, st, L)));
+                    Timed("log", () =>
+                    {
+                        if (!DrawFinalsBoard(g, s, st, L))
+                            Fade(g, L, L.Log, layer => DrawLog(layer, s, st, L));
+                    });
+                    Timed("bottom", () => DrawBottom(g, s, st, L));
                 }
 
                 if (dash > 0.001f)
-                    DrawDashboard(g, s, st, L, dash, dashAt);
+                    Timed("dashboard", () => DrawDashboard(g, s, st, L, dash, dashAt));
             }
             finally
             {
@@ -603,10 +669,28 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>A part of the HUD as it is, or see-through when the swimmer is under it (he stays in front).</summary>
+        /// <summary>For the CI preview: the milliseconds of each part of the HUD are added up here when it is not null.</summary>
+        public static Dictionary<string, double> Timings;
+
+        private static void Timed(string name, Action draw)
+        {
+            if (Timings == null)
+            {
+                draw();
+                return;
+            }
+
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            draw();
+            double ms;
+            Timings.TryGetValue(name, out ms);
+            Timings[name] = ms + watch.Elapsed.TotalMilliseconds;
+        }
+
+        /// <summary>A part of the HUD as it is, with a soft see-through hole where the swimmer passes under it (he stays in front).</summary>
         private static void Fade(Graphics g, Layout L, RectangleF place, Action<Graphics> draw)
         {
-            SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer, 40f), layer =>
+            SwimHud.LayerAround(g, place, L.Swimmer, HoleReach, layer =>
             {
                 if (!ReferenceEquals(layer, g))
                     layer.TextRenderingHint = TextRenderingHint.AntiAlias;
@@ -636,12 +720,16 @@ namespace Kinovea.ScreenManager
             if (x1 - x0 > 100)
             {
                 using (Pen tick = new Pen(Color.FromArgb(115, 56, 225, 255), 1f))
+                using (GraphicsPath ticks = new GraphicsPath())
                 {
                     for (int i = 0; i <= 100; i++)
                     {
                         float x = x0 + i * (x1 - x0) / 100f;
-                        g.DrawLine(tick, x, 66, x, i % 10 == 0 ? 74 : 70);
+                        ticks.StartFigure();
+                        ticks.AddLine(x, 66, x, i % 10 == 0 ? 74 : 70);
                     }
+
+                    g.DrawPath(tick, ticks);
                 }
             }
 
@@ -711,7 +799,7 @@ namespace Kinovea.ScreenManager
             while (clockFont.Size > 20 && Width(g, clock, clockFont) > 340)
                 clockFont = SwimTheme.DisplayLight(clockFont.Size - 4);
             Color clockColor = !st.Started ? Color.FromArgb(255, 217, 160) : Color.White;
-            Glow(g, clock, clockFont, clockColor, x + 8, y + 232, -1, st.Finished ? 1.3f : 1f, !st.Started ? Amb : C);
+            Glow(g, clock, clockFont, clockColor, x + 8, y + 244, -1, st.Finished ? 1.3f : 1f, !st.Started ? Amb : C);
 
             Caps(g, SwimLang.T("ΦΑΣΗ"), Ui(13), Lbl, x + 352, y + 226, 0.2f);
             Glow(g, st.Phase, Ui(18, true), C2, x + 350, y + 246, -1, 0.5f);
@@ -726,7 +814,7 @@ namespace Kinovea.ScreenManager
             SwimReel reel = s.Reel;
             string next = st.Next != null ? Units(s.Race, st.Next.D) : "—";
             // Between the checkpoints the distance is from the curve through them (≈).
-            string dist = st.Started ? (st.Finished ? "" : "≈") + st.D.ToString("0.0", CultureInfo.InvariantCulture) : "—";
+            string dist = st.Started && !st.Early ? (st.Finished ? "" : "≈") + st.D.ToString("0.0", CultureInfo.InvariantCulture) : "—";
             string strokes = st.Started && reel != null ? reel.StrokesInLength(Math.Min(st.T, reel.Finish ?? double.MaxValue)).ToString(CultureInfo.InvariantCulture) : "—";
             string[] names = { SwimLang.T("ΕΠΟΜΕΝΟ"), SwimLang.T("ΑΠΟΣΤΑΣΗ"), SwimLang.T("ΧΕΡΙΕΣ ΜΗΚΟΥΣ") };
             string[] values = { next, dist, strokes };
@@ -885,7 +973,7 @@ namespace Kinovea.ScreenManager
                 speed = s.Computed.AvgVel;
                 rate = s.Computed.AvgSr;
             }
-            else if (st.Started && reel != null && reel.HasModel)
+            else if (st.Started && !st.Early && reel != null && reel.HasModel)
             {
                 speed = Math.Max(0, reel.SpeedAt(t));
                 SwimReelCycle cycle = reel.LastCycle(t);
@@ -919,7 +1007,7 @@ namespace Kinovea.ScreenManager
             value = "—";
             sub = "";
             SwimReel reel = s.Reel;
-            if (!st.Started || reel == null)
+            if (!st.Started || st.Early || reel == null)
                 return;
 
             double t = Math.Min(st.T, reel.Finish ?? double.MaxValue);
@@ -978,12 +1066,16 @@ namespace Kinovea.ScreenManager
             using (Pen ring = new Pen(Color.FromArgb(46, 56, 225, 255), 1f))
                 g.DrawEllipse(ring, cx - 80, cy - 80, 160, 160);
             using (Pen tick = new Pen(Color.FromArgb(115, 143, 243, 255), 1f))
+            using (GraphicsPath ticks = new GraphicsPath())
             {
                 for (int i = 0; i < 48; i++)
                 {
                     float a = -135 + i * (270f / 47);
-                    g.DrawLine(tick, Polar(cx, cy, i % 4 == 0 ? 70 : 73, a), Polar(cx, cy, 77, a));
+                    ticks.StartFigure();
+                    ticks.AddLine(Polar(cx, cy, i % 4 == 0 ? 70 : 73, a), Polar(cx, cy, 77, a));
                 }
+
+                g.DrawPath(tick, ticks);
             }
 
             using (Pen track = new Pen(Color.FromArgb(41, 56, 225, 255), 9f))
@@ -1180,14 +1272,13 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < last.Count; i++)
             {
                 double age = double.IsInfinity(last[i].Key) || double.IsNaN(t) ? 99 : t - last[i].Key;
-                string text = last[i].Value;
-                int n = (int)Math.Round(Clamp(age / 0.3, 0, 1) * text.Length);
-                string typed = text.Substring(0, Math.Max(1, Math.Min(text.Length, n)));
+                // Whole from its frame (the analyst stops there): it slides in and is white for a moment.
+                float slide = (1 - EaseOut(age / 0.25)) * 14;
                 bool newest = i == last.Count - 1;
                 Color color = age < 1.2 ? Color.White : Color.FromArgb(204, 201, 251, 255);
                 if (!newest)
                     color = Color.FromArgb((int)(color.A * 0.62f), color);
-                TextIn(g, typed, f, color, new RectangleF(r.Left + 18, r.Top + 44 + i * 29, r.Width - 30, 24));
+                TextIn(g, last[i].Value, f, color, new RectangleF(r.Left + 18 + slide, r.Top + 44 + i * 29, r.Width - 30 - slide, 24));
             }
         }
 
@@ -1236,12 +1327,12 @@ namespace Kinovea.ScreenManager
                 string text;
                 if (row.D >= s.Race.Distance)
                     text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ  {0}"), time) +
-                        (total > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} χεριές"), total) : "");
+                        (total > 0 ? StrokesLog(total.ToString(CultureInfo.InvariantCulture)) : "");
                 else if (row.D % Math.Max(1, s.Race.Pool) == 0)
                     text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στροφή {0}  {1}"), Units(s.Race, row.D), time);
                 else
                     text = Units(s.Race, row.D) + "  " + time + (row.Strokes.HasValue && row.Strokes.Value > 0
-                        ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} χεριές"), SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture))) : "");
+                        ? StrokesLog(SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture))) : "");
                 add(row.OnVideo, text);
             }
 
@@ -1274,7 +1365,7 @@ namespace Kinovea.ScreenManager
 
             int height = SwimFinalsPainter.BoardHeight(rows.Count, scale);
             Rectangle place = Rectangle.Round(new RectangleF(area.Left, area.Top, Math.Min(area.Width, 260 * scale), height));
-            SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer, 40f), layer =>
+            SwimHud.LayerAround(g, place, L.Swimmer, HoleReach, layer =>
                 SwimFinalsPainter.PaintBoard(layer, place, SwimFinalsPainter.BoardTitle(s.Final, row.D, finish), SwimFinalsPainter.BoardSubtitle(s.Final), rows, scale));
             return true;
         }
@@ -1296,7 +1387,7 @@ namespace Kinovea.ScreenManager
                 double t = double.IsNaN(st.T) ? double.NegativeInfinity : st.T;
                 List<SwimDeltaPoint> points = st.Rows.Where(r => r.Delta.HasValue && r.PassedAt(t)).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
                 Rectangle place = Rectangle.Round(chart);
-                SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer, 40f), layer =>
+                SwimHud.LayerAround(g, place, L.Swimmer, HoleReach, layer =>
                     SwimFinalsPainter.PaintDelta(layer, place, points, s.Race.Distance, s.Race.Pool, s.Computed.Reference.Name, true, 1.25f));
             }
 
@@ -1475,8 +1566,14 @@ namespace Kinovea.ScreenManager
             if (st.Started && st.T < 1.6)
             {
                 float a = Window(st.T, -0.08, 1.6, 0.08, 0.5);
-                PointF at = located ? new PointF(swimmer.X + 104, swimmer.Y + 40) : new PointF(L.CenterX - 60, L.H * 0.45f + 60);
-                Caps(g, SwimLang.T("ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ"), Ui(12), A(Amb, a), at.X, at.Y, 0.2f);
+                PointF at = located ? new PointF(swimmer.X + 110, swimmer.Y + 56) : new PointF(L.CenterX - 60, L.H * 0.45f + 60);
+                Font sf = Ui(12, true);
+                RectangleF chip = new RectangleF(at.X - 12, at.Y - 9, Math.Max(150, ShapeOf(g, SwimLang.T("ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ"), sf, 0.2f).Width + 24), 78);
+                using (SolidBrush back = new SolidBrush(A((int)(190 * a), Color.FromArgb(3, 22, 36))))
+                    g.FillRectangle(back, chip);
+                using (SolidBrush edge = new SolidBrush(A(Amb, a)))
+                    g.FillRectangle(edge, chip.Left, chip.Top, 3, chip.Height);
+                Caps(g, SwimLang.T("ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ"), sf, A(Amb, a), at.X, at.Y, 0.2f);
                 Glow(g, "0.00", Thin(40), A(Color.White, a), at.X - 4, at.Y + 16, -1, a, Amb);
             }
 
@@ -1706,7 +1803,7 @@ namespace Kinovea.ScreenManager
                 {
                     sub.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}ο {1}"), row.D / Math.Max(1, s.Race.Pool), Units(s.Race, s.Race.Pool)));
                     if (lengthStrokes > 0)
-                        sub.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} ΧΕΡΙΕΣ"), lengthStrokes));
+                        sub.Add(StrokesCaps(lengthStrokes.ToString(CultureInfo.InvariantCulture)));
                     lengthStrokes = 0;
                 }
                 else
@@ -1714,7 +1811,7 @@ namespace Kinovea.ScreenManager
                     if (v.HasValue)
                         sub.Add(v.Value.ToString("0.00", CultureInfo.InvariantCulture) + (s.Race.IsYards ? " yd/s" : " m/s"));
                     if (row.Strokes.HasValue && row.Strokes.Value > 0)
-                        sub.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} ΧΕΡΙΕΣ"), SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture))));
+                        sub.Add(StrokesCaps(SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture))));
                 }
 
                 if (s.DeltaInfo && row.Delta.HasValue && s.Computed.Reference != null)
@@ -1737,9 +1834,25 @@ namespace Kinovea.ScreenManager
             // From the frame of the touch (the analyst stops there): without «Η ανάλυση με μια ματιά» it leaves after a few seconds
             // (the clock of the panel keeps the final time). See-through over the swimmer.
             double p0 = Math.Max(0, st.T - s.Reel.Finish.Value);
-            float cx = L.CenterX, cy = 470 * L.H / DesignH;
+            float cx = L.CenterX;
+
+            // In the middle of the video, else above the swimmer (below him when there is no room above): he stays in front.
+            Func<float, RectangleF> block = y => new RectangleF(cx - 420, y - 10, 840, 280);
+            float top = 330 * L.H / DesignH;
+            if (!L.Swimmer.IsEmpty && block(top).IntersectsWith(RectangleF.Inflate(L.Swimmer, 0, 16)))
+            {
+                float above = L.Swimmer.Top - 16 - 270, below = L.Swimmer.Bottom + 26;
+                if (above >= L.Video.Top + 10)
+                    top = above;
+                else if (below + 270 <= L.Video.Bottom)
+                    top = below;
+                else
+                    top = L.Video.Top + 10;
+            }
+
+            float cy = top + 140;
             float a = s.Summary ? 1f : Clamp((FinishSeconds + 3 - p0) / 0.6, 0, 1);
-            a *= SwimHud.Fade(new RectangleF(cx - 420, 330 * L.H / DesignH - 10, 840, 280), L.Swimmer, 40f);
+            a *= SwimHud.Fade(block(top), L.Swimmer, 40f);
             if (a <= 0.01f)
                 return;
 
@@ -1772,10 +1885,9 @@ namespace Kinovea.ScreenManager
             // The final time, scaling in.
             float scale = 1.18f + (1 - 1.18f) * EaseOut(p0 / 0.5);
             GraphicsState state = g.Save();
-            g.TranslateTransform(cx, 330 * L.H / DesignH + 110);
+            g.TranslateTransform(cx, top + 110);
             g.ScaleTransform(scale, scale);
-            g.TranslateTransform(-cx, -(330 * L.H / DesignH + 110));
-            float top = 330 * L.H / DesignH;
+            g.TranslateTransform(-cx, -(top + 110));
             using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(cx - 420, top - 10, 840, 280), Color.Transparent, Color.Transparent, LinearGradientMode.Horizontal))
             {
                 ColorBlend blend = new ColorBlend(4)
@@ -1794,7 +1906,7 @@ namespace Kinovea.ScreenManager
             if (s.Race.Lane > 0)
                 sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));
             if (strokes > 0)
-                sub.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} ΧΕΡΙΕΣ"), strokes));
+                sub.Add(StrokesCaps(strokes.ToString(CultureInfo.InvariantCulture)));
             if (s.DeltaInfo && s.Computed.Reference != null)
             {
                 SwimRow finish = st.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.Delta.HasValue);
@@ -1870,9 +1982,15 @@ namespace Kinovea.ScreenManager
             using (Pen ring = new Pen(A(Color.FromArgb(41, 56, 225, 255), a), 1f))
                 g.DrawEllipse(ring, cx - 190, cy - 190, 380, 380);
             using (Pen tick = new Pen(A(Color.FromArgb(115, 143, 243, 255), a), 1f))
+            using (GraphicsPath ticks = new GraphicsPath())
             {
                 for (int i = 0; i < 90; i++)
-                    g.DrawLine(tick, Polar(cx, cy, i % 5 == 0 ? 196 : 200, i * 4), Polar(cx, cy, 206, i * 4));
+                {
+                    ticks.StartFigure();
+                    ticks.AddLine(Polar(cx, cy, i % 5 == 0 ? 196 : 200, i * 4), Polar(cx, cy, 206, i * 4));
+                }
+
+                g.DrawPath(tick, ticks);
             }
 
             using (Pen track = new Pen(A(Color.FromArgb(33, 56, 225, 255), a), 16f))

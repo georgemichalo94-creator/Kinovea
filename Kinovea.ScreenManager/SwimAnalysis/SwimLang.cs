@@ -107,6 +107,9 @@ namespace Kinovea.ScreenManager
                     case 'Ό': c[i] = 'Ο'; break;
                     case 'Ύ': c[i] = 'Υ'; break;
                     case 'Ώ': c[i] = 'Ω'; break;
+
+                    // The final sigma is not made upper case by every version of the .NET Framework (2.9.1).
+                    case 'ς': c[i] = 'Σ'; break;
                 }
             }
 
