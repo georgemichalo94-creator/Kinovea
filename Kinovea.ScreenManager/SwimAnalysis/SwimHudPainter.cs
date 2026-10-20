@@ -737,9 +737,12 @@ namespace Kinovea.ScreenManager
             using (SolidBrush dot = new SolidBrush(A((int)(255 * pulse), C)))
                 g.FillEllipse(dot, 39, 35, 9, 9);
             Caps(g, SwimLang.T("ΑΝΑΛΥΣΗ ΣΕ ΕΞΕΛΙΞΗ"), Ui(13), Lbl, 58, 33, 0.2f);
-            string frame = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΚΑΡΕ {0:000000} · {1:0.##} FPS · {2}×{3} · {4:0.00} s"),
-                Math.Max(0, s.FrameNumber), s.Fps, s.VideoSize.Width, s.VideoSize.Height, s.VideoSeconds);
-            Caps(g, frame, Mono(13), Color.FromArgb(178, 143, 243, 255), x0, 34, 0.14f);
+            if (s.Fps > 0)
+            {
+                string frame = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΚΑΡΕ {0:000000} · {1:0.##} FPS · {2}×{3} · {4:0.00} s"),
+                    Math.Max(0, s.FrameNumber), s.Fps, s.VideoSize.Width, s.VideoSize.Height, s.VideoSeconds);
+                Caps(g, frame, Mono(13), Color.FromArgb(178, 143, 243, 255), x0, 34, 0.14f);
+            }
             Caps(g, SwimLang.T("Κ.Ο.Ε. · ΑΝΑΛΥΣΗ ΑΓΩΝΩΝ · KINOVEA SWIM"), Ui(13), Lbl, L.W - 40, 33, 0.2f, 1);
         }
         #endregion
@@ -2156,6 +2159,26 @@ namespace Kinovea.ScreenManager
             // The final time as it is (the ring is the animation).
             Glow(g, SwimReference.FormatTime(total), Thin(92), A(Color.White, a), cx, cy - 64, 0, a);
             Caps(g, EventText(s.Race), Ui(13), A(C2, a), cx, cy + 46, 0.3f, -1);
+
+            // The boards added: the Δ with the reference at the finish, the place among the swimmers of the final.
+            List<string> versus = new List<string>();
+            if (s.DeltaInfo && s.Computed.Reference != null)
+            {
+                SwimRow finish = st.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.Delta.HasValue);
+                if (finish != null)
+                    versus.Add("Δ " + SwimReference.FormatDelta(finish.Delta.Value));
+            }
+
+            if (s.Final != null && !double.IsNaN(total))
+            {
+                List<SwimFinalsBoardRow> board = SwimFinalsCompare.Board(s.Final, s.Race.Distance, total, s.BoardName);
+                SwimFinalsBoardRow me = board != null ? board.FirstOrDefault(r => r.IsAthlete) : null;
+                if (me != null)
+                    versus.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} ΣΤΟΝ ΤΕΛΙΚΟ"), SwimLang.Upper(SwimLang.Ordinal(me.Place))));
+            }
+
+            if (versus.Count > 0)
+                Caps(g, string.Join(" · ", versus), Ui(13, true), A(Amb, a), cx, cy + 74, 0.22f, -1);
 
             // The parts below the ring.
             prev = 0;

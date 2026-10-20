@@ -1362,6 +1362,7 @@ public static class ReelPreview
             new HudShot { Name = "hud-21-add-turn", Kind = 1, Time = 27.00 },
             new HudShot { Name = "hud-22-add-finish", Kind = 1, Time = 55.00 },
             new HudShot { Name = "hud-23-add-dash", Kind = 1, Time = 64.00 },
+            new HudShot { Name = "hud-24-add-dash-still", Kind = 1, Time = 66.50 },
             new HudShot { Name = "hud-30-tech", Kind = 2, Time = 6.20 },
             new HudShot { Name = "hud-31-label", Kind = 3, Time = 18.00 },
             new HudShot { Name = "hud-32-under", Kind = 4, Time = 18.00 },

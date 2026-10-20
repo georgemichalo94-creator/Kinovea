@@ -245,6 +245,7 @@ namespace Kinovea.ScreenManager
             { "{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}", "{0} · {1}{2} · lane {3} · {4}{5} · {6}" },
             { "{0} · {1}μ. {2} {3}", "{0} · {1}m {2} {3}" },
             { "{0} ΣΗΜΕΙΑ", "{0} POINTS" },
+            { "{0} ΣΤΟΝ ΤΕΛΙΚΟ", "{0} IN THE FINAL" },
             { "{0} ΧΕΡΙΕΣ", "{0} STROKES" },
             { "{0} αυτόματες χεριές στο βίντεο", "{0} automatic strokes on the video" },
             { "{0} βαθμονομήσεις σε άλλα καρέ. Με κινούμενη κάμερα χρειάζεται βαθμονόμηση σε κάθε καρέ μέτρησης.", "{0} calibrations on other frames. With a moving camera each measuring frame needs a calibration." },
