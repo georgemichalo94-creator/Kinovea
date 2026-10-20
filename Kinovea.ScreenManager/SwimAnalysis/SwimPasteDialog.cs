@@ -35,6 +35,9 @@ namespace Kinovea.ScreenManager
         public SwimPasteRecord Chosen { get; private set; }
         public bool ChosenByName { get; private set; }
 
+        /// <summary>The event in the title of the text (since 2.8.2; null: none): its distance is the one read.</summary>
+        public SwimEventInfo Event { get; private set; }
+
         public SwimPasteDialog(string intro, string initial, int distance, string athlete, int lane)
         {
             this.distance = distance;
@@ -147,7 +150,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The text read again: the swimmers in the list, the race's one chosen when found.</summary>
         private void Read()
         {
-            result = SwimResultsPaste.Parse(text.Text, distance, athlete, lane);
+            Event = SwimResultsPaste.EventFromText(text.Text);
+            if (Event != null && !Event.HasEvent)
+                Event = null;
+            result = SwimResultsPaste.Parse(text.Text, Distance, athlete, lane);
             filling = true;
             who.Items.Clear();
             bool ask = result.Best < 0 && result.Records.Count > 1;
@@ -173,6 +179,27 @@ namespace Kinovea.ScreenManager
             return i >= 0 && i < result.Records.Count ? result.Records[i] : null;
         }
 
+        /// <summary>The distance of the times: the title's event, else the race's.</summary>
+        private int Distance
+        {
+            get { return Event != null ? Event.Distance : distance; }
+        }
+
+        /// <summary>"Αγώνισμα: 100μ. Ύπτιο · Ημιτελικός · Ανδρών" of the title's event ("" without one).</summary>
+        private string EventLine()
+        {
+            if (Event == null)
+                return "";
+            List<string> parts = new List<string>();
+            parts.Add((Event.Relay ? "4x" + (Event.Distance / 4).ToString(CultureInfo.InvariantCulture) : Event.Distance.ToString(CultureInfo.InvariantCulture)) +
+                SwimLang.T("μ. ") + SwimPresets.StyleName(Event.Style));
+            if (Event.Round.Length > 0)
+                parts.Add(Event.Round == "semi" ? SwimLang.T("Ημιτελικός") : Event.Round == "final" ? SwimLang.T("Τελικός") : SwimLang.T("Προκριματικός"));
+            if (Event.Gender == "M" || Event.Gender == "F")
+                parts.Add(SwimLang.T(Event.Gender == "F" ? "Γυναικών" : "Ανδρών"));
+            return SwimLang.T("Αγώνισμα από τον τίτλο: ") + string.Join(" · ", parts.ToArray());
+        }
+
         private void ShowRecord(SwimPasteRecord r, bool byName)
         {
             Chosen = r;
@@ -194,6 +221,7 @@ namespace Kinovea.ScreenManager
             }
 
             List<string> lines = new List<string>();
+            lines.Add(EventLine());
             string about = string.Join(" · ", new[] { r.Name, r.Nation, r.BirthYear > 0 ? r.BirthYear.ToString(CultureInfo.InvariantCulture) : "", r.Club }
                 .Where(x => !string.IsNullOrEmpty(x)).ToArray());
             lines.Add(about);
@@ -216,7 +244,7 @@ namespace Kinovea.ScreenManager
                 lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Βρέθηκαν {0} χρόνοι που μπορεί να είναι ο τελικός ({1}): σβήσε από το κείμενο όποιον δεν είναι ο χρόνος του αγώνα (π.χ. χρόνο συμμετοχής)."),
                     r.TimeChoices.Count, string.Join(", ", r.TimeChoices.Select(SwimResultsPaste.FormatTime).ToArray())));
             else
-                lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Δεν βρέθηκε τελικός χρόνος για τα {0}μ."), distance) +
+                lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Δεν βρέθηκε τελικός χρόνος για τα {0}μ."), Distance) +
                     (r.Status.Length > 0 ? " (" + r.Status + ")" : ""));
 
             // Another swimmer than the race's athlete (a row of the wrong line, the only one pasted).
