@@ -60,7 +60,9 @@ namespace Kinovea.ScreenManager
             public readonly RectangleF Header, Chart;
             public readonly float BadgeX, BadgeY, BadgeW;
 
-            /// <summary>Where the swimmer is on the drawing (2.9.0: the cards fade over him); empty when not known.</summary>
+            /// <summary>
+            /// Where the swimmer is on the drawing (2.9.0: the cards faded over him); empty: nothing fades (2.9.4: the boards stay whole).
+            /// </summary>
             public RectangleF Swimmer;
 
             public Layout(Size size)
@@ -100,8 +102,10 @@ namespace Kinovea.ScreenManager
             return reel != null && size.Width >= 320 && size.Height >= 180;
         }
 
-        /// <summary>Seconds the board of the final stays after a checkpoint, and after the touch before the summary card.</summary>
-        public const double BoardSeconds = 4.5;
+        /// <summary>
+        /// Seconds the board of the final at the finish stays before the summary card (2.9.4: the board of each checkpoint stays until
+        /// the next one, the one of the finish when there is no summary card).
+        /// </summary>
         public const double FinishBoardSeconds = 5.0;
 
         public static void Paint(Graphics g, Size size, SwimReelScene s)
@@ -109,9 +113,9 @@ namespace Kinovea.ScreenManager
             if (s == null || s.Race == null || s.Computed == null || !CanPaint(size, s.Reel))
                 return;
 
+            // (2.9.4) The boards stay whole over the swimmer (the analyst's choice: they go with the boxes «Στο βίντεο» or V; the HUD
+            // keeps the swimmer in front): Layout.Swimmer stays empty, so nothing fades.
             Layout layout = new Layout(size);
-            if (s.FromImage != null && !s.SummaryOnly)
-                layout.Swimmer = SwimHud.SwimmerBox(s.Race, s.Timestamp, s.FromImage);
             if (s.SummaryOnly)
             {
                 if (s.Reel.Finish.HasValue)
@@ -303,7 +307,7 @@ namespace Kinovea.ScreenManager
         #region Header
         private static void DrawHeader(Graphics g, SwimReelScene s, Layout L)
         {
-            // The header and the phase under it fade over the swimmer (2.9.0).
+            // The header and the phase under it (2.9.0: they faded over the swimmer; 2.9.4: whole, Layout.Swimmer empty).
             RectangleF r = L.Header;
             RectangleF place = RectangleF.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 34 * L.K);
             SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer), layer => DrawHeaderOn(layer, s, L));
@@ -360,11 +364,11 @@ namespace Kinovea.ScreenManager
             string[] values =
             {
                 (t >= 0 ? reel.StrokesInLength(t) : 0).ToString(CultureInfo.InvariantCulture),
-                cycle != null ? cycle.Tempo.ToString("0.00", CultureInfo.InvariantCulture) : "–",
+                cycle != null && cycle.Tempo > 0 ? (60.0 / cycle.Tempo).ToString("0.0", CultureInfo.InvariantCulture) : "–",
                 cycle != null && reel.HasModel ? "≈" + cycle.Dps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
                 swimming ? reel.SpeedAt(t).ToString("0.00", CultureInfo.InvariantCulture) : "–"
             };
-            string[] units = { "", SwimLang.T("s/κύκλο"), "m", "m/s" };
+            string[] units = { "", SwimLang.T("κ/λ"), "m", "m/s" };
             Color[] colors = { SwimTheme.Text, SwimTheme.Accent, SwimTheme.Amber, SwimTheme.Green };
 
             float gap = 8 * k;
@@ -408,7 +412,7 @@ namespace Kinovea.ScreenManager
             if (!s.Reel.HasModel)
                 return;
 
-            // The chart fades over the swimmer (2.9.0).
+            // (2.9.0: it faded over the swimmer; 2.9.4: whole, Layout.Swimmer empty.)
             SwimHud.Layer(g, L.Chart, SwimHud.Fade(L.Chart, L.Swimmer), layer => DrawChartOn(layer, s, L));
         }
 
@@ -565,9 +569,9 @@ namespace Kinovea.ScreenManager
         #region Badges
         private static void DrawBadges(Graphics g, SwimReelScene s, Layout L)
         {
-            const double life = 2.6;
+            // (2.9.4) The last two events stay whole until the next ones (before: 2.6 s each, fading in and out).
             double t = s.Time;
-            List<SwimReelBadge> shown = s.Reel.Badges.Where(b => b.Time <= t + 1e-6 && t < b.Time + life).ToList();
+            List<SwimReelBadge> shown = s.Reel.Badges.Where(b => b.Time <= t + 1e-6).ToList();
             if (shown.Count > 2)
                 shown = shown.Skip(shown.Count - 2).ToList();
 
@@ -576,20 +580,12 @@ namespace Kinovea.ScreenManager
             for (int i = shown.Count - 1; i >= 0; i--)
             {
                 SwimReelBadge b = shown[i];
-                double age = t - b.Time;
-                float fadeIn = (float)Math.Min(1, age / 0.16);
-                float fadeOut = (float)Math.Min(1, (life - age) / 0.24);
-                float a = Math.Max(0, Math.Min(fadeIn, fadeOut));
-                if (a <= 0.01f)
-                    continue;
-
-                RectangleF r = new RectangleF(L.BadgeX + (1 - fadeIn) * 26 * k, y, L.BadgeW, 76 * k);
+                float a = 1f;
+                RectangleF r = new RectangleF(L.BadgeX, y, L.BadgeW, 76 * k);
                 if (r.Bottom > L.H - L.M)
                     break;
 
-                // HUD (2.9.0): a glass card with brackets in its tone, the title in spaced capitals, the value glowing; it fades over the
-                // swimmer.
-                a *= SwimHud.Fade(r, L.Swimmer);
+                // HUD (2.9.0): a glass card with brackets in its tone, the title in spaced capitals, the value glowing.
                 Color tone = Tone(b.Tone);
                 Card(g, r, tone, k, a);
                 Caps(g, SwimLang.Upper(b.Title), F(8.5f, k, false, FontStyle.Bold), Fade(tone, a), r.Left + 15 * k, r.Top + 7 * k);
@@ -717,7 +713,7 @@ namespace Kinovea.ScreenManager
                 new[] { "BREAKOUT", hasBreakout ? (reel.BreakoutMeasured.Contains(0) ? "" : "≈") + bd.ToString("0.0", CultureInfo.InvariantCulture) + " " + unit : "–", under },
                 new[] { SwimLang.T("ΧΡΟΝΟΣ ΑΝΑ ΤΜΗΜΑ"), string.Join(" / ", reel.Parts.Select(p => p.Time.HasValue ? SwimReference.FormatTime(p.Time.Value) : "–")), partsLabel + " " + unit },
                 new[] { SwimLang.T("ΧΕΡΙΕΣ"), string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), SwimLang.T("σημάδια χεριών ανά τμήμα") },
-                new[] { SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), joined(p => p.Tempo, "0.00"), SwimLang.T("δευτερόλεπτα ανά κύκλο") },
+                new[] { SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), joined(p => p.Tempo.HasValue && p.Tempo.Value > 0 ? (double?)(60.0 / p.Tempo.Value) : null, "0.0"), SwimLang.T("κύκλοι ανά λεπτό") },
                 new[] { SwimLang.T("ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ"), "≈" + joined(p => p.Dps, "0.00"), SwimLang.T("μέτρα ανά κύκλο") },
                 new[] { SwimLang.T("ΤΑΧΥΤΗΤΑ"), joined(p => p.Speed, "0.00"), SwimLang.T("m/s ανά τμήμα") }
             };
@@ -758,12 +754,12 @@ namespace Kinovea.ScreenManager
             {
                 if (perCycle)
                 {
-                    bars.AddRange(lengths[l].Select(cy => new KeyValuePair<double, double>(cy.Dps, cy.Tempo)));
+                    bars.AddRange(lengths[l].Select(cy => new KeyValuePair<double, double>(cy.Dps, 60.0 / cy.Tempo)));
                     lapOfBar.AddRange(lengths[l].Select(cy => l));
                 }
                 else
                 {
-                    bars.Add(new KeyValuePair<double, double>(lengths[l].Average(cy => cy.Dps), lengths[l].Average(cy => cy.Tempo)));
+                    bars.Add(new KeyValuePair<double, double>(lengths[l].Average(cy => cy.Dps), 60.0 / lengths[l].Average(cy => cy.Tempo)));
                     lapOfBar.Add(l);
                 }
             }
@@ -774,9 +770,9 @@ namespace Kinovea.ScreenManager
                 float space = perCycle ? 0.6f : 0f;
                 float bw = inner / (bars.Count + space * (lengths.Count - 1));
                 bool labels = bw >= 24 * k;
-                string barsTitle = !perCycle ? SwimLang.T("ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)")
-                    : labels ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)")
-                    : SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (s)");
+                string barsTitle = !perCycle ? SwimLang.T("ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (κ/λ)")
+                    : labels ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (κ/λ)")
+                    : SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (κ/λ)");
                 Text(g, barsTitle, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.AccentLight, a), x0, by0 - 8 * k, StringAlignment.Near, StringAlignment.Far);
                 double median = bars.Select(v => v.Key).OrderBy(v => v).ElementAt(bars.Count / 2);
                 double dpsTop = DpsScale(bars.Select(v => v.Key));
@@ -801,7 +797,7 @@ namespace Kinovea.ScreenManager
                     if (labels)
                     {
                         Text(g, bars[i].Key.ToString("0.00", CultureInfo.InvariantCulture), valueFont, Fade(SwimTheme.Text, a), r.Left + r.Width / 2, r.Top - 2 * k, StringAlignment.Center, StringAlignment.Far);
-                        Text(g, bars[i].Value.ToString("0.00", CultureInfo.InvariantCulture), tempoFont, Fade(SwimTheme.Dim, a), r.Left + r.Width / 2, by1 + 3 * k, StringAlignment.Center);
+                        Text(g, bars[i].Value.ToString("0.0", CultureInfo.InvariantCulture), tempoFont, Fade(SwimTheme.Dim, a), r.Left + r.Width / 2, by1 + 3 * k, StringAlignment.Center);
                     }
 
                     x += bw;
@@ -811,9 +807,10 @@ namespace Kinovea.ScreenManager
                     if (!labels && lastOfLength)
                     {
                         List<SwimReelCycle> length = lengths[lapOfBar[i]];
-                        string caption = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΜΗΚΟΣ {0} · {1:0.00} s"), lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                        double rate = 60.0 / length.Average(cy => cy.Tempo);
+                        string caption = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΜΗΚΟΣ {0} · {1:0.0} κ/λ"), lapOfBar[i] + 1, rate);
                         if (Width(g, caption, tempoFont) > x - groupLeft - 4 * k)
-                            caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.00} s", lapOfBar[i] + 1, length.Average(cy => cy.Tempo));
+                            caption = string.Format(CultureInfo.InvariantCulture, "{0} · {1:0.0}", lapOfBar[i] + 1, rate);
                         TextIn(g, caption, tempoFont, Fade(SwimTheme.Dim, a), new RectangleF(groupLeft, by1 + 2 * k, x - groupLeft, 14 * k), StringAlignment.Center);
                     }
                 }
@@ -894,9 +891,8 @@ namespace Kinovea.ScreenManager
             if (row == null)
                 return RectangleF.Empty;
 
+            // (2.9.4) Whole until the next checkpoint (the summary card takes its place after the finish when it is shown).
             bool finish = row.D >= s.Race.Distance;
-            if (t - row.OnVideo > (finish ? FinishBoardSeconds : BoardSeconds))
-                return RectangleF.Empty;
 
             List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(s.Final, row.D, row.T.Value, s.BoardName);
             if (rows == null)

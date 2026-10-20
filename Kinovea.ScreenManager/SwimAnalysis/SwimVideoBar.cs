@@ -681,6 +681,7 @@ namespace Kinovea.ScreenManager
                 {
                     int distance = row.D;
                     string tip = SwimLang.T("Μετάβαση του βίντεο στο πέρασμα των ") + distance.ToString(CultureInfo.InvariantCulture) + race.Unit + "." +
+                        (row.HeadVel.HasValue ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("\nΤαχύτητα του κεφαλιού ≈{0:0.00} m/s (στον τοίχο μετράει το άγγιγμα, όχι το κεφάλι)."), row.HeadVel.Value) : "") +
                         (row.Official ? SwimLang.T("\nΟ χρόνος είναι ο επίσημος των αποτελεσμάτων.") : row.OfficialTime.HasValue ?
                             SwimLang.T("\n⚠ Ο επίσημος χρόνος είναι ") + SwimReference.FormatTime(row.OfficialTime.Value) + SwimLang.T(": το σημάδι απέχει από αυτόν.") : "") +
                         (warn ? SwimLang.T("\n⚠ Ο χρόνος δεν είναι μεγαλύτερος από τον προηγούμενο.") : "");

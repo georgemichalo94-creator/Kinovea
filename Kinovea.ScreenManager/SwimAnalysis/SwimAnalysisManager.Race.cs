@@ -100,6 +100,9 @@ namespace Kinovea.ScreenManager
             double soundFrom = from / Math.Max(1e-9, tsPerSecond);
             double soundSeconds = (end - from) / Math.Max(1e-9, tsPerSecond) + 1;
 
+            // (2.9.3) The start systems the analyst has confirmed (the tones of the signals of the starts he kept).
+            List<SwimStartTone> known = Learning.StartTones(KindRaceStart);
+
             StartFound result = null;
             Exception error = null;
             bool cancelled = false;
@@ -114,7 +117,7 @@ namespace Kinovea.ScreenManager
                 worker.DoWork += (o, e) =>
                 {
                     e.Result = ReadStart(detector, stamps, from, end, width, height, (BackgroundWorker)o, sound ? ffmpeg : null, path, soundFrom,
-                        soundSeconds, tsPerSecond);
+                        soundSeconds, tsPerSecond, known);
                 };
                 worker.RunWorkerCompleted += (o, e) =>
                 {
@@ -192,6 +195,26 @@ namespace Kinovea.ScreenManager
             return Race == null ? 15.0 : MinRaceSeconds(Race.Distance, Race.Pool, Race.Relay, Race.IsYards);
         }
 
+        /// <summary>The measures of a start proposal with the tones of its signal heard (2.9.3, SwimLearning.StartTones).</summary>
+        internal const string ToneLow = "toneLow", ToneHigh = "toneHigh", ToneSeconds = "toneSeconds", TonePurity = "tonePurity";
+
+        /// <summary>"715 Hz" (a single tone) or "890/1015 Hz" (two tones).</summary>
+        private static string ToneText(SwimStartCandidate c)
+        {
+            return new SwimStartTone { Low = c.ToneLow, High = c.ToneHigh }.ToString();
+        }
+
+        /// <summary>The starts that leave the video for the race (MinRaceSeconds); null: all (the distance not known).</summary>
+        private Func<SwimStartCandidate, bool> StartFits(List<long> stamps)
+        {
+            if (Race == null || Race.Distance <= 0 || stamps.Count == 0)
+                return null;
+
+            long end = frameServer.VideoReader.WorkingZone.End;
+            double need = MinRaceSeconds();
+            return c => c.Frame >= 0 && c.Frame < stamps.Count && Timing.Seconds(end, stamps[c.Frame]) >= need;
+        }
+
         /// <summary>
         /// The starts after which the video is too short for the race (the signal of the next race near the end, sounds of the stands
         /// in the race) after the others, which keep their order; as found when all are so, or the distance is not known.
@@ -264,7 +287,7 @@ namespace Kinovea.ScreenManager
         /// null, not read), then the starts from the lights and the signal heard.
         /// </summary>
         private StartFound ReadStart(SwimStartLight detector, List<long> stamps, long from, long end, int width, int height, BackgroundWorker worker,
-            string ffmpeg, string path, double soundFrom, double soundSeconds, double tsPerSecond)
+            string ffmpeg, string path, double soundFrom, double soundSeconds, double tsPerSecond, List<SwimStartTone> known)
         {
             StartFound result = new StartFound();
             using (CancellationTokenSource stop = new CancellationTokenSource())
@@ -291,7 +314,7 @@ namespace Kinovea.ScreenManager
                     {
                         if (heard == null || !heard.IsCompleted || heard.IsFaulted || heard.IsCanceled)
                             return false;
-                        lastToCheck = SwimStartSound.LastToCheck(heard.Result);
+                        lastToCheck = SwimStartSound.LastToCheck(heard.Result, known);
                         lastKnown = true;
                     }
 
@@ -333,7 +356,7 @@ namespace Kinovea.ScreenManager
             {
                 Func<double, double> frameAt = seconds => FrameAt(stamps, from + seconds * tsPerSecond);
                 Func<int, int, double, SwimStartCandidate> fullSize = (lo, hi, expected) => TinyFlashAt(stamps, lo, hi, expected, width, detector.FramesPerSecond);
-                found = SwimStartSound.Choose(found, result.Beeps, detector, frameAt, fullSize, SwimStartSound.Delay);
+                found = SwimStartSound.Choose(found, result.Beeps, detector, frameAt, fullSize, SwimStartSound.Delay, known);
             }
 
             result.Candidates = found;
@@ -538,7 +561,9 @@ namespace Kinovea.ScreenManager
         {
             string video = SwimLearning.VideoCode(videoPath);
             SwimLearning l = Learning;
-            double confidence0 = SwimStartLight.Confidence(found);
+            Func<SwimStartCandidate, bool> fits = StartFits(stamps);
+            double confidence0 = SwimStartLight.Confidence(found, realFps, fits);
+            bool ambiguous = SwimStartSound.Ambiguous(found, realFps, fits);
             Race.Proposals.RemoveAll(p => p.Kind == KindRaceStart);
             string batch = Guid.NewGuid().ToString("N");
             List<SwimProposal> made = new List<SwimProposal>();
@@ -591,6 +616,19 @@ namespace Kinovea.ScreenManager
                     p.Measures["beep"] = Math.Round((StampAt(stamps, c.Beep) - stamps[c.Frame]) / Math.Max(1e-9, frameServer.VideoReader.Info.AverageTimeStampsPerSeconds), 3);
                     p.Measures["beepScore"] = Math.Round(c.BeepScore, 1);
                 }
+
+                // (2.9.3) The tones of the signal heard: the start kept teaches the start system of the pool (SwimLearning.StartTones).
+                if (!double.IsNaN(c.ToneLow) && !double.IsNaN(c.ToneHigh))
+                {
+                    p.Measures[ToneLow] = Math.Round(c.ToneLow, 1);
+                    p.Measures[ToneHigh] = Math.Round(c.ToneHigh, 1);
+                    if (!double.IsNaN(c.ToneSeconds))
+                        p.Measures[ToneSeconds] = Math.Round(c.ToneSeconds, 3);
+                    if (!double.IsNaN(c.TonePurity))
+                        p.Measures[TonePurity] = Math.Round(c.TonePurity, 3);
+                    if (c.KnownTone)
+                        p.Measures["knownTone"] = 1;
+                }
                 made.Add(p);
             }
 
@@ -626,6 +664,12 @@ namespace Kinovea.ScreenManager
             else if (best.Cues.ContainsKey("dive"))
                 Status(SwimLang.T("⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. ") +
                     SwimLang.T("Έλεγξέ τη στο καρέ του σήματος."), true);
+            else if (ambiguous)
+                Status(SwimLang.T("⚠🔊 Ακούστηκαν δύο σήματα σχεδόν το ίδιο καθαρά: η εκκίνηση μπορεί να είναι στο άλλο. Έλεγξέ τη ") +
+                    SwimLang.T("(→: η επόμενη πρόταση)."), true);
+            else if (found[0].KnownTone)
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🔊 Η εκκίνηση στο σήμα της πισίνας ({0}), το ίδιο με τις εκκινήσεις που έχεις κρατήσει. Έλεγξέ τη."),
+                    ToneText(found[0])), false);
             else if (found[0].Source == "sound")
                 Status(SwimLang.T("🔊 Δεν φάνηκε το φως της εκκίνησης: η πρόταση είναι από το σήμα που ακούγεται (λίγο πριν ακουστεί, όσο αργεί ο ήχος να φτάσει ") +
                     SwimLang.T("στην κάμερα). Έλεγξέ τη στο καρέ του φωτός."), false);

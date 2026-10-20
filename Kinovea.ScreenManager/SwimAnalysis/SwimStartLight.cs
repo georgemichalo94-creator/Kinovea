@@ -51,6 +51,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The signal heard is a single tone (2.8.3), not the two tones of the usual start systems.</summary>
         public bool SingleTone;
+
+        /// <summary>The tones of the signal heard (Hz; the same for a single tone), NaN: none heard.</summary>
+        public double ToneLow = double.NaN, ToneHigh = double.NaN;
+
+        /// <summary>How long the single tone lasted (s) and its share of the sound (NaN: two tones or none).</summary>
+        public double ToneSeconds = double.NaN, TonePurity = double.NaN;
+
+        /// <summary>
+        /// The signal heard is the one of a start system the analyst has confirmed (2.9.3: the same tones as the starts he kept,
+        /// SwimStartSound.Known): it is the start, before the other sounds.
+        /// </summary>
+        public bool KnownTone;
     }
 
     /// <summary>
@@ -1574,8 +1586,14 @@ namespace Kinovea.ScreenManager
             return !DiveCheck || found[0].Source == "light" || found[0].Source == "weak light" || n - found[0].Follow >= (int)Math.Round(20 * fps);
         }
 
-        /// <summary>Confidence shown with the proposal (0–1): a clear flash of several lights, far ahead of the next candidate.</summary>
-        public static double Confidence(List<SwimStartCandidate> candidates)
+        /// <summary>
+        /// Confidence shown with the proposal (0–1): a clear flash of several lights, far ahead of the next candidate; the signal heard
+        /// (2.9.3: that of a start system the analyst has confirmed 0.9 or more, another signal heard nearly as clear at most
+        /// SwimStartSound.AmbiguousConfidence: the auto pilot asks).
+        /// </summary>
+        /// <param name="fps">Frames per second of the frames read (for SwimStartSound.Ambiguous; 0: any other frame).</param>
+        /// <param name="fits">The starts that leave the video for the race (null: all).</param>
+        public static double Confidence(List<SwimStartCandidate> candidates, double fps = 0, Func<SwimStartCandidate, bool> fits = null)
         {
             if (candidates == null || candidates.Count == 0)
                 return 0;
@@ -1587,10 +1605,16 @@ namespace Kinovea.ScreenManager
                 return 0.4;
             if (best.Source == "weak light")
                 return 0.55;
-            if (best.Source == "light+sound")
-                return best.Follow >= 0 || best.Dive >= 0 ? 0.95 : 0.9;
-            if (best.Source == "sound")
-                return best.Follow >= 0 || best.Dive >= 0 ? 0.8 : 0.7;
+            if (best.Source == "light+sound" || best.Source == "sound")
+            {
+                // (2.9.3) The signal of a start system the analyst has confirmed: sure; another signal heard nearly as clear: to check.
+                double heard = best.Source == "light+sound" ? (best.Follow >= 0 || best.Dive >= 0 ? 0.95 : 0.9) : (best.Follow >= 0 || best.Dive >= 0 ? 0.8 : 0.7);
+                if (best.KnownTone)
+                    heard = Math.Max(heard, 0.9);
+                if (SwimStartSound.Ambiguous(candidates, fps, fits))
+                    heard = Math.Min(heard, SwimStartSound.AmbiguousConfidence);
+                return heard;
+            }
 
             double c = best.Flash >= 200 ? 0.9 : best.Flash >= 80 ? 0.8 : best.Flash >= 30 ? 0.65 : 0.45;
             if (best.Lights >= 2)

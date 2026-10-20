@@ -219,6 +219,53 @@ namespace Kinovea.ScreenManager
             Records.Clear();
         }
 
+        /// <summary>
+        /// The start systems the analyst has confirmed (2.9.3): the tones of the signals heard at the starts he kept at them (kind:
+        /// the starts' proposals; their measures "toneLow"/"toneHigh", and for a single tone "toneSeconds"/"tonePurity"), the latest
+        /// Window of them; a single tone only a pure and long one (as SwimStartSound.Known looks for). Tones within
+        /// SwimStartSound.KnownTolerance of each other are one start system (their median).
+        /// </summary>
+        public List<SwimStartTone> StartTones(string kind)
+        {
+            List<double[]> tones = new List<double[]>();
+            foreach (SwimLearningRecord r in Records)
+            {
+                double low, high, seconds, purity;
+                if (r.Kind != kind || !r.Right || r.Measures == null || !r.Measures.TryGetValue("toneLow", out low) || !r.Measures.TryGetValue("toneHigh", out high) ||
+                    low <= 0 || high <= 0)
+                    continue;
+
+                if (Math.Abs(high - low) < 1 && (!r.Measures.TryGetValue("toneSeconds", out seconds) || !r.Measures.TryGetValue("tonePurity", out purity) ||
+                    seconds < SwimStartSound.KnownMinSeconds || purity < SwimStartSound.KnownPurity))
+                    continue;
+
+                tones.Add(new[] { low, high });
+            }
+
+            tones = tones.Skip(Math.Max(0, tones.Count - Window)).ToList();
+            List<List<double[]>> groups = new List<List<double[]>>();
+            foreach (double[] t in tones)
+            {
+                bool single = Math.Abs(t[1] - t[0]) < 1;
+                List<double[]> group = groups.FirstOrDefault(g => (Math.Abs(g[0][1] - g[0][0]) < 1) == single &&
+                    Math.Abs(t[0] - g[0][0]) <= SwimStartSound.KnownTolerance * g[0][0] && Math.Abs(t[1] - g[0][1]) <= SwimStartSound.KnownTolerance * g[0][1]);
+                if (group == null)
+                    groups.Add(new List<double[]> { t });
+                else
+                    group.Add(t);
+            }
+
+            return groups.Select(g => new SwimStartTone { Low = MedianOf(g.Select(x => x[0])), High = MedianOf(g.Select(x => x[1])), Count = g.Count }).ToList();
+        }
+
+        private static double MedianOf(IEnumerable<double> values)
+        {
+            List<double> v = values.OrderBy(x => x).ToList();
+            if (v.Count == 0)
+                return double.NaN;
+            return v.Count % 2 == 1 ? v[v.Count / 2] : 0.5 * (v[v.Count / 2 - 1] + v[v.Count / 2]);
+        }
+
         /// <summary>The answer about one event of a race goes (its mark was undone or deleted).</summary>
         public void Forget(string key)
         {

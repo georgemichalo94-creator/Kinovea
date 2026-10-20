@@ -67,7 +67,11 @@ namespace Kinovea.ScreenManager
     {
         private readonly List<double> knotT = new List<double>();
         private readonly List<double> knotD = new List<double>();
-        private double[] slopes = new double[0];
+
+        // Derivative of the curve at the beginning and at the end of each interval between two knots (2.9.4: they differ at a wall,
+        // where the curve is broken: the turn).
+        private double[] slopeFrom = new double[0];
+        private double[] slopeTo = new double[0];
 
         // The first checkpoint after the last one with a time: the swimmer is not shown beyond it before it is marked.
         private double nextCheckpoint;
@@ -146,7 +150,7 @@ namespace Kinovea.ScreenManager
                 reel.knotD.Add(row.D);
             }
 
-            reel.slopes = PchipSlopes(reel.knotT, reel.knotD);
+            reel.BuildSlopes();
             SwimRow finish = computed.Rows.FirstOrDefault(r => r.D == race.Distance && r.T.HasValue);
             if (finish != null)
             {
@@ -376,6 +380,9 @@ namespace Kinovea.ScreenManager
                     tone = row.D % 25 == 0 ? SwimReelTone.Amber : SwimReelTone.Accent;
                 }
 
+                // (2.9.4) At a wall and at the finish: the speed of the last metres, conventional and of the head (≈).
+                if ((wall || row.D == Distance) && row.Vel.HasValue && row.HeadVel.HasValue)
+                    detail += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0:0.00} · κεφ. ≈{1:0.00} m/s"), row.Vel.Value, row.HeadVel.Value);
                 Badges.Add(new SwimReelBadge { Time = row.OnVideo, Title = title, Value = SwimReference.FormatTime(row.T.Value), Detail = detail, Tone = tone });
             }
 
@@ -501,7 +508,42 @@ namespace Kinovea.ScreenManager
             double h10 = s * (1 - s) * (1 - s);
             double h01 = s * s * (3 - 2 * s);
             double h11 = s * s * (s - 1);
-            return h00 * knotD[k] + h10 * h * slopes[k] + h01 * knotD[k + 1] + h11 * h * slopes[k + 1];
+            return h00 * knotD[k] + h10 * h * slopeFrom[k] + h01 * knotD[k + 1] + h11 * h * slopeTo[k];
+        }
+
+        /// <summary>
+        /// The curve through the checkpoints, one length at a time (2.9.4): broken at each wall marked, so that the turn does not
+        /// smooth the speed on both sides of it (before: through the wall, the push-off after it raised the speed of the last metres
+        /// before it and the slow turn lowered the start of the next length: 1.81 → 1.62 → 1.83 m/s within 45–50 m of a 100 m
+        /// backstroke whose 45–50 m was 1.68 m/s and 50–65 m 2.15 m/s). Each length: the monotone cubic of its checkpoints (as
+        /// scipy's PCHIP), its ends from its own segments only.
+        /// </summary>
+        private void BuildSlopes()
+        {
+            int n = knotT.Count;
+            slopeFrom = new double[Math.Max(0, n - 1)];
+            slopeTo = new double[Math.Max(0, n - 1)];
+            if (n < 2)
+                return;
+
+            int first = 0;
+            for (int i = 1; i < n; i++)
+            {
+                bool wall = knotD[i] < Distance && Math.Abs(knotD[i] / Pool - Math.Round(knotD[i] / Pool)) < 1e-9;
+                if (!wall && i < n - 1)
+                    continue;
+
+                // The knots first..i are one length (or what is marked of it).
+                List<double> x = knotT.GetRange(first, i - first + 1), y = knotD.GetRange(first, i - first + 1);
+                double[] m = PchipSlopes(x, y);
+                for (int k = first; k < i; k++)
+                {
+                    slopeFrom[k] = m[k - first];
+                    slopeTo[k] = m[k - first + 1];
+                }
+
+                first = i;
+            }
         }
 
         /// <summary>Speed (m/s) at a time after the start, from the curve through the checkpoints.</summary>

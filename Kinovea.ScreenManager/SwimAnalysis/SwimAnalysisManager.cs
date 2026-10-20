@@ -184,7 +184,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return quickLookBackend; }
+            get { return headSpeedBackend; }
         }
         private bool backendWarned;
         private bool typedStrokesWarned;
@@ -203,6 +203,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static readonly Version quickLookBackend = new Version(2, 8, 0);
         private bool quickLookWarned;
+
+        /// <summary>
+        /// Oldest Apps Script with the head's velocity (≈) of the segments at the walls in the report and the PDF (2.9.4: the tables
+        /// of the turns and of the finish, the first page). Older ones make the same report without it (the test of the connection
+        /// says so).
+        /// </summary>
+        private static readonly Version headSpeedBackend = new Version(2, 9, 4);
 
         /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
         private readonly HashSet<string> quickLookFailed = new HashSet<string>();
@@ -1753,12 +1760,12 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// How much a panel shows (2.9.0): 1 away from the swimmer, down to 0.25 over him (from 48 px away), so that he stays in front;
-        /// 1 when his place is not known.
+        /// How much a panel of the boards shows: whole (2.9.4: the boards the analyst chose stay whole and lit until he takes them
+        /// away with the boxes «Στο βίντεο» or V; the HUD keeps the swimmer in front). Before: down to 0.25 over the swimmer (2.9.0).
         /// </summary>
         private static float SwimmerFade(Rectangle panel, RectangleF swimmer)
         {
-            return SwimHud.Fade(panel, swimmer);
+            return 1f;
         }
 
         /// <summary>
@@ -1770,8 +1777,8 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The swimmers of the final at the last checkpoint passed and the athlete among them, for a few seconds after it (longer
-        /// after the finish), on the other side of the video than the race board.
+        /// The swimmers of the final at the last checkpoint passed and the athlete among them, on the other side of the video than the
+        /// race board: until the next checkpoint (2.9.4; before: 4.5 s after it, 10 s after the finish).
         /// </summary>
         private void DrawFinalsBoard(Graphics g, double now, Size size, string corner, int margin, RectangleF swimmer = default(RectangleF))
         {
@@ -1789,9 +1796,6 @@ namespace Kinovea.ScreenManager
                 return;
 
             bool finish = row.D >= Race.Distance;
-            if (now - row.T.Value > (finish ? 10.0 : 4.5))
-                return;
-
             List<SwimFinalsBoardRow> rows = SwimFinalsCompare.Board(final, row.D, row.T.Value, BoardName(Race.Athlete));
             if (rows == null)
                 return;
