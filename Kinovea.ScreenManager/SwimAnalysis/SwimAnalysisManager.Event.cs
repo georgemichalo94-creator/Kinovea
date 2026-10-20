@@ -18,10 +18,16 @@ namespace Kinovea.ScreenManager
     public partial class SwimAnalysisManager
     {
         /// <summary>
+        /// The change of the event the analyst refused ("race|results' event|race's event"): not asked again for the same race and
+        /// the same events (the link and then the title of the pasted results of the same event).
+        /// </summary>
+        private string declinedEvent;
+
+        /// <summary>
         /// The event into the race's details: the distance, the style and the round as the results say (the analyst is asked first
         /// when the race has marks already and the distance, the style or the pool change: its checkpoints become those of the
-        /// event); the gender, the competition and the city only when not typed (or one or two letters). What changed is said in
-        /// the status. 'from': where it was read ("τον σύνδεσμο"). False when nothing changed.
+        /// event; a change refused is not asked again); the gender, the competition and the city only when not typed (or one or two
+        /// letters). What changed is said in the status. 'from': where it was read ("τον σύνδεσμο"). False when nothing changed.
         /// </summary>
         private bool ApplyEvent(SwimEventInfo ev, string from)
         {
@@ -37,10 +43,18 @@ namespace Kinovea.ScreenManager
                 string evText = EventText(distanceChange ? ev.Distance : r.Distance, distanceChange ? ev.Relay : r.Relay,
                     styleChange ? ev.Style : r.Style, poolChange ? 25 : r.Pool);
                 string raceText = EventText(r.Distance, r.Relay, r.Style, r.Pool);
-                string question = string.Format(CultureInfo.InvariantCulture,
-                    SwimLang.T("Τα αποτελέσματα είναι για {0}· ο αγώνας είναι {1} και έχει ήδη σημάδια.\n\nΝα γίνει ο αγώνας {0}; (Τα σημεία ελέγχου γίνονται τα προεπιλεγμένα του αγωνίσματος.)"),
-                    evText, raceText);
-                if (MessageBox.Show(DialogOwner, question, SwimLang.T("Στοιχεία αγώνα"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                string key = (r.Id ?? "") + "|" + evText + "|" + raceText;
+                bool yes = false;
+                if (key != declinedEvent)
+                {
+                    string question = string.Format(CultureInfo.InvariantCulture,
+                        SwimLang.T("Τα αποτελέσματα είναι για {0}· ο αγώνας είναι {1} και έχει ήδη σημάδια.\n\nΝα γίνει ο αγώνας {0}; (Τα σημεία ελέγχου γίνονται τα προεπιλεγμένα του αγωνίσματος.)"),
+                        evText, raceText);
+                    yes = MessageBox.Show(DialogOwner, question, SwimLang.T("Στοιχεία αγώνα"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+                    declinedEvent = yes ? null : key;
+                }
+
+                if (!yes)
                     styleChange = poolChange = distanceChange = false;
             }
 

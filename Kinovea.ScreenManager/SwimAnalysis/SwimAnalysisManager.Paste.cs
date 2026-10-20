@@ -41,8 +41,10 @@ namespace Kinovea.ScreenManager
             // The paste replaces results found on the web and waiting for the end of the reading.
             CancelPendingOffer();
 
-            // A link that names the event: the race's details from it (since 2.8.2; already done when it came through 🔗).
-            ApplyEvent(SwimResultsPaste.EventFromLink(Race.ResultsLink), SwimLang.T("τον σύνδεσμο"));
+            // A link that names the event: the race's details from it (since 2.8.2). Only from the button: the window that opens by
+            // itself comes from 🔗, which did it already (the analyst is not asked twice).
+            if (intro == null)
+                ApplyEvent(SwimResultsPaste.EventFromLink(Race.ResultsLink), SwimLang.T("τον σύνδεσμο"));
 
             string clip = "";
             try
