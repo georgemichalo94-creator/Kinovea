@@ -4334,16 +4334,12 @@ function swimEventAnalyses_(query) {
   var gender = swimGenderCode_(q.gender);
   var eventLabel = swimIndexEventLabel_(want);
   var key = ['swimEvent', SWIM_VERSION, SWIM_LANG_, eventLabel, want.distance, gender || '-', last].join('|');
-  var cache = null, list = null;
+  var cache = null;
   try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
-  if (cache) {
-    try { var hit = cache.get(key); if (hit) list = JSON.parse(hit); } catch (e2) { list = null; }
-  }
-  if (!list) {
+  var list = cache ? swimCacheGet_(cache, key) : null;
+  if (!Array.isArray(list)) {
     list = swimEventCandidates_(index, last, want, gender, eventLabel);
-    if (cache) {
-      try { cache.put(key, JSON.stringify(list), SWIM_EVENT_CACHE_TIME); } catch (e3) { /* χωρίς προσωρινή μνήμη */ }
-    }
+    if (cache) swimCachePut_(cache, key, list, SWIM_EVENT_CACHE_TIME);
   }
   var out = [];
   for (var k = 0; k < list.length && out.length < SWIM_EVENT_ANALYSES; k++) {
@@ -4355,6 +4351,40 @@ function swimEventAnalyses_(query) {
       competition: c.competition, times: c.times });
   }
   return out;
+}
+
+/** Μέγεθος ενός κομματιού της προσωρινής μνήμης (χαρακτήρες: ως 2 bytes ο καθένας, κάτω από τα 100 KB μιας τιμής). */
+var SWIM_CACHE_PART = 45000;
+
+/**
+ * Μια τιμή της προσωρινής μνήμης σε κομμάτια (ένας αγώνας 1500μ. έχει 150 χρόνους: 60 αναλύσεις δεν χωρούν σε μία τιμή):
+ * στο κλειδί το πλήθος των κομματιών, στα κλειδιά «κλειδί|i» τα κομμάτια. Αν κάτι λείπει, null (ξαναδιαβάζεται).
+ */
+function swimCacheGet_(cache, key) {
+  try {
+    var n = Number(cache.get(key));
+    if (!(n >= 1 && n <= 40)) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '|' + i);
+    var parts = cache.getAll(keys), text = '';
+    for (var j = 0; j < n; j++) {
+      if (typeof parts[keys[j]] !== 'string') return null;
+      text += parts[keys[j]];
+    }
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
+function swimCachePut_(cache, key, value, seconds) {
+  try {
+    var text = JSON.stringify(value), n = Math.max(1, Math.ceil(text.length / SWIM_CACHE_PART)), parts = {};
+    if (n > 40) return;
+    for (var i = 0; i < n; i++) parts[key + '|' + i] = text.substring(i * SWIM_CACHE_PART, (i + 1) * SWIM_CACHE_PART);
+    cache.putAll(parts, seconds);
+    cache.put(key, String(n), seconds);
+  } catch (e) { /* χωρίς προσωρινή μνήμη: διαβάζεται ξανά την επόμενη φορά */ }
 }
 
 /** Οι καλύτερες αναλύσεις του αγωνίσματος (ως SWIM_EVENT_CACHE) με τους χρόνους τους: το JSON μόνο τους διαβάζεται. */

@@ -170,9 +170,25 @@ function lastExport(G, report) {
   assert.deepStrictEqual(a3.others.map(o => o.id), ['c-cleo', 'c-beth'], 'fastest first');
   assert.strictEqual(reads(), 2, 'a new list after a new analysis');
   // Η μνήμη κρατά μόνο ό,τι επιστρέφεται (και τα κλειδιά του αθλητή για να βγαίνουν οι δικές του).
-  const stored = JSON.parse(Object.values(G._cache.store)[1] || Object.values(G._cache.store)[0]);
-  assert.ok(Array.isArray(stored) && stored.every(x => x.id && x.times && 'athleteId' in x), JSON.stringify(stored).slice(0, 200));
-  console.log('test_quick (2b): the other swimmers of the event from the script cache');
+  const lastKey = G._cache.log.filter(x => x[0] === 'put').pop()[1];
+  const stored = G.swimCacheGet_(G.CacheService.getScriptCache(), lastKey);
+  assert.ok(Array.isArray(stored) && stored.length === 3 && stored.every(x => x.id && x.times && 'athleteId' in x), JSON.stringify(stored).slice(0, 200));
+  // Σε κομμάτια όταν δεν χωρά σε μία τιμή (π.χ. 1500μ.: 150 χρόνοι η καθεμία): ίδια λίστα πίσω.
+  G.SWIM_CACHE_PART = 700;
+  const before = G._cache.log.length;
+  G.swimCachePut_(G.CacheService.getScriptCache(), 'swimEvent|test', stored, 60);
+  const parts = Number(G._cache.store['swimEvent|test']);
+  assert.ok(parts > 1 && G._cache.log.slice(before).some(x => x[0] === 'putAll' && x[1] === parts), 'parts ' + parts);
+  assert.deepStrictEqual(G.swimCacheGet_(G.CacheService.getScriptCache(), 'swimEvent|test'), stored);
+  // Ένα κομμάτι που χάθηκε (η μνήμη το έσβησε): null, η λίστα ξαναγίνεται.
+  delete G._cache.store['swimEvent|test|1'];
+  assert.strictEqual(G.swimCacheGet_(G.CacheService.getScriptCache(), 'swimEvent|test'), null);
+  // Πολύ μεγάλη για τη μνήμη (πάνω από 40 κομμάτια): δεν μπαίνει, χωρίς σφάλμα.
+  G.SWIM_CACHE_PART = 10;
+  G.swimCachePut_(G.CacheService.getScriptCache(), 'swimEvent|huge', stored, 60);
+  assert.strictEqual(G._cache.store['swimEvent|huge'], undefined);
+  G.SWIM_CACHE_PART = 45000;
+  console.log('test_quick (2b): the other swimmers of the event from the script cache (in parts when long)');
 }
 
 // ---------------------------------------------------------------------------------------------

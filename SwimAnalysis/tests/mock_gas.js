@@ -316,10 +316,21 @@ function makeContext(opts) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     // opts.cache: η προσωρινή μνήμη του script (CacheService), με τις κλήσεις της· χωρίς αυτό δεν υπάρχει (όπως πριν).
-    CacheService: opts.cache ? { getScriptCache: () => ({
-      get: k => { cacheLog.push(['get', k]); return Object.prototype.hasOwnProperty.call(cacheStore, k) ? cacheStore[k] : null; },
-      put: (k, v, t) => { if (typeof v !== 'string') throw new Error('cache: not a string'); if (v.length > 100000) throw new Error('cache: too big');
-        cacheLog.push(['put', k, t]); cacheStore[k] = v; } }) } : undefined,
+    CacheService: opts.cache ? { getScriptCache: () => {
+      // Όπως το Apps Script: κλειδί ως 250 χαρακτήρες, τιμή ως 100 KB (UTF-8).
+      const check = (k, v) => {
+        if (typeof k !== 'string' || k.length > 250) throw new Error('cache: key');
+        if (typeof v !== 'string') throw new Error('cache: not a string');
+        if (Buffer.byteLength(v, 'utf8') > 100 * 1024) throw new Error('cache: too big');
+      };
+      const has = k => Object.prototype.hasOwnProperty.call(cacheStore, k);
+      return {
+        get: k => { cacheLog.push(['get', k]); return has(k) ? cacheStore[k] : null; },
+        getAll: ks => { cacheLog.push(['getAll', ks.length]); const o = {}; ks.forEach(k => { if (has(k)) o[k] = cacheStore[k]; }); return o; },
+        put: (k, v, t) => { check(k, v); cacheLog.push(['put', k, t]); cacheStore[k] = v; },
+        putAll: (o, t) => { Object.keys(o).forEach(k => check(k, o[k])); cacheLog.push(['putAll', Object.keys(o).length, t]);
+          Object.keys(o).forEach(k => { cacheStore[k] = o[k]; }); } };
+    } } : undefined,
     ContentService: { createTextOutput: t => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
     Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
