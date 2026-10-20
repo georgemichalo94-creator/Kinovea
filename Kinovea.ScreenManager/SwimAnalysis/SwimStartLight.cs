@@ -48,6 +48,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>How clear the signal heard is (SwimBeep.Score, dB).</summary>
         public double BeepScore;
+
+        /// <summary>The signal heard is a single tone (2.8.3), not the two tones of the usual start systems.</summary>
+        public bool SingleTone;
     }
 
     /// <summary>
