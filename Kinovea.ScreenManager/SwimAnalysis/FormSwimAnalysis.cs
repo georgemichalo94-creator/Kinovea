@@ -134,6 +134,7 @@ namespace Kinovea.ScreenManager
         private Label lblPb;
         private Button btnSaveReference;
         private CheckBox chkSpeedChart;
+        private CheckBox chkGraphics;
         private CheckBox chkSplitBoard;
         private CheckBox chkOverlayExports;
         private CheckBox chkVideoBars;
@@ -376,7 +377,7 @@ namespace Kinovea.ScreenManager
 
             // Brand line: wordmark and the switch between the race analysis and the technical analysis.
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(8, 6, 8, 4) };
-            lblWordmark = new Label { Text = "SWIM ANALYTICS", AutoSize = true, Font = SwimTheme.Display(13.5f), ForeColor = SwimTheme.Text, Location = new Point(8, 9) };
+            lblWordmark = new Label { Text = "SWIM ANALYTICS", AutoSize = true, Font = SwimTheme.DisplayLight(14f), ForeColor = SwimTheme.AccentPale, Location = new Point(8, 10) };
             lblBrandSub = new Label { Text = SwimLang.T("Κ.Ο.Ε. · KINOVEA"), AutoSize = true, Font = SwimTheme.Ui(7f, FontStyle.Bold), ForeColor = SwimTheme.Accent, Location = new Point(170, 16) };
             modeSwitch = new SwimSegmented("RACE ANALYSIS", SwimLang.T("ΤΕΧΝΙΚΗ ΑΝΑΛΥΣΗ")) { Size = new Size(300, 28), Location = new Point(360, 7), Anchor = AnchorStyles.Top | AnchorStyles.Right };
             modeSwitch.SelectedIndexChanged += (s, e) => SetTechnicalView(modeSwitch.SelectedIndex == 1, true);
@@ -402,6 +403,10 @@ namespace Kinovea.ScreenManager
             };
             brand.Paint += (s, e) =>
             {
+                // HUD (2.9.0): a glowing line under the wordmark.
+                using (System.Drawing.Drawing2D.LinearGradientBrush glow = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    new Rectangle(0, 0, Math.Max(1, brand.Width), 6), Color.FromArgb(70, SwimTheme.Accent), Color.FromArgb(0, SwimTheme.Accent), System.Drawing.Drawing2D.LinearGradientMode.Horizontal))
+                    e.Graphics.FillRectangle(glow, 0, brand.Height - 5, brand.Width, 5);
                 using (System.Drawing.Drawing2D.LinearGradientBrush line = new System.Drawing.Drawing2D.LinearGradientBrush(
                     new Rectangle(0, 0, Math.Max(1, brand.Width), 2), SwimTheme.Accent, SwimTheme.Back, System.Drawing.Drawing2D.LinearGradientMode.Horizontal))
                     e.Graphics.FillRectangle(line, 0, brand.Height - 2, brand.Width, 2);
@@ -703,6 +708,15 @@ namespace Kinovea.ScreenManager
 
             FlowLayoutPanel overlay = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0), Padding = new Padding(0, 0, 0, 4) };
             chkSpeedChart = new CheckBox { Text = SwimLang.T("Γράφημα ταχύτητας"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            // All the graphics of the analysis on the video on and off at once (2.9.0, key V, button of the bar).
+            chkGraphics = new CheckBox { Text = SwimLang.T("Γραφικά (V)"), AutoSize = true, Margin = new Padding(6, 5, 3, 3), Font = valueFont };
+            chkGraphics.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetGraphics(chkGraphics.Checked);
+            };
+            toolTip.SetToolTip(chkGraphics, SwimLang.T("Όλα τα γραφικά της ανάλυσης στο βίντεο μαζί (πίνακες, γραφήματα, σύγκριση, τεχνική): ναι ή όχι.\n") +
+                SwimLang.T("Και με το πλήκτρο V ή το κουμπί «Γραφικά στο βίντεο» δίπλα στο βίντεο. Όχι: ούτε στις εξαγωγές του βίντεο."));
             chkSplitBoard = new CheckBox { Text = SwimLang.T("Χρόνος, πέρασμα, Δ"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
             cmbCorner = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112, Margin = new Padding(3, 3, 3, 3) };
             cmbCorner.Items.AddRange(new object[] { SwimLang.T("Πάνω δεξιά"), SwimLang.T("Πάνω αριστερά"), SwimLang.T("Κάτω δεξιά"), SwimLang.T("Κάτω αριστερά") });
@@ -727,6 +741,7 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Συνεχής γραμμή: καθαρή κολύμβηση · διάστικτη: εκκίνηση, στροφές και τελευταία 5μ. (συμβατική ταχύτητα)."));
             toolTip.SetToolTip(chkSplitBoard, SwimLang.T("Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο."));
             overlay.Controls.Add(Caption(SwimLang.T("Στο βίντεο:")));
+            overlay.Controls.Add(chkGraphics);
             overlay.Controls.Add(chkSpeedChart);
             overlay.Controls.Add(chkSplitBoard);
             AddFinalsOverlayOptions(overlay);
@@ -1471,6 +1486,7 @@ namespace Kinovea.ScreenManager
                 tbToken.Text = settings.Token;
                 cmbRounding.SelectedIndex = settings.StrokeRounding >= 1 ? 1 : (settings.StrokeRounding > 0 ? 0 : 2);
                 chkAutoSend.Checked = settings.AutoSend;
+                chkGraphics.Checked = settings.VideoGraphics;
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
                 LoadFinalsOverlayOptions(settings);
@@ -3106,6 +3122,14 @@ namespace Kinovea.ScreenManager
                 bool was = updating;
                 updating = true;
                 chkReel.Checked = manager.Settings.ReelOverlay;
+                updating = was;
+            }
+
+            if (manager.Settings != null && chkGraphics != null && chkGraphics.Checked != manager.Settings.VideoGraphics)
+            {
+                bool was = updating;
+                updating = true;
+                chkGraphics.Checked = manager.Settings.VideoGraphics;
                 updating = was;
             }
 

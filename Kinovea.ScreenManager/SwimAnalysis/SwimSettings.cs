@@ -66,6 +66,13 @@ namespace Kinovea.ScreenManager
         public string OverlayCorner = "TopRight";
 
         /// <summary>
+        /// Since 2.9.0: the graphics of the analysis on the video (race board, charts, the board of the final, the comparison, the
+        /// technical view). The key V and the button «Γραφικά» of the bar put them on and off; off, also off in the exports of the
+        /// video (not in the images of the report).
+        /// </summary>
+        public bool VideoGraphics = true;
+
+        /// <summary>
         /// The graphics of the video (race board, velocity chart, values of the start or turn) also in the Kinovea exports
         /// (video, image, clipboard) and in the snapshots of the report, with the proportions they have on the screen.
         /// </summary>

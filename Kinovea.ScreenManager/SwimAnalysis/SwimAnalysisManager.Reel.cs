@@ -72,6 +72,20 @@ namespace Kinovea.ScreenManager
                 form.RefreshReel();
         }
 
+        /// <summary>The graphics of the analysis on the video on or off (key V, the button «Γραφικά» of the bar; since 2.9.0).</summary>
+        public void SetGraphics(bool on)
+        {
+            if (Settings == null)
+                return;
+
+            Settings.VideoGraphics = on;
+            Settings.Save();
+            Status(on ? SwimLang.T("Γραφικά στο βίντεο: ναι (V: όχι).") : SwimLang.T("Γραφικά στο βίντεο: όχι, ούτε στις εξαγωγές του βίντεο (V: ναι)."), false);
+            InvalidatePlayer();
+            if (form != null && !form.IsDisposed)
+                form.RefreshReel();
+        }
+
         public void SetReelSummary(bool on)
         {
             Settings.ReelSummary = on;

@@ -26,9 +26,10 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimFinalsPainter
     {
-        private static readonly Color Faster = Color.FromArgb(255, 32, 168, 110);
-        private static readonly Color Slower = Color.FromArgb(255, 214, 64, 64);
-        private static readonly Color Finalist = Color.FromArgb(255, 0, 200, 255);
+        // HUD (2.9.0): the colors of the HUD (faster green, slower red, the finalists cyan).
+        private static readonly Color Faster = Color.FromArgb(255, 22, 170, 112);
+        private static readonly Color Slower = Color.FromArgb(255, 210, 60, 66);
+        private static readonly Color Finalist = SwimTheme.Accent;
 
         /// <summary>The colours of a Δ: faster (green) and slower (red) than the reference.</summary>
         public static Color FasterColor
@@ -55,19 +56,10 @@ namespace Kinovea.ScreenManager
                 SwimLang.Label(final.Gender == "F" ? "Γυναικών" : "Ανδρών"));
         }
 
-        /// <summary>Translucent dark card with an accent on the left edge (the style of the race board of the video).</summary>
+        /// <summary>A glass panel of the HUD (2.9.0) with corner brackets in the accent (the style of the race board of the video).</summary>
         public static void Card(Graphics g, Rectangle r, Color accent)
         {
-            using (GraphicsPath path = SwimTheme.Rounded(r, 7))
-            using (LinearGradientBrush back = new LinearGradientBrush(r, Color.FromArgb(232, 9, 14, 22), Color.FromArgb(205, 18, 30, 45), LinearGradientMode.Horizontal))
-            using (Pen border = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
-            {
-                g.FillPath(back, path);
-                g.DrawPath(border, path);
-            }
-
-            using (SolidBrush a = new SolidBrush(accent))
-                g.FillRectangle(a, r.Left + 1, r.Top + 7, 3, r.Height - 14);
+            SwimTheme.HudPanel(g, r, accent);
         }
 
         #region Board of a checkpoint (video)
@@ -98,7 +90,11 @@ namespace Kinovea.ScreenManager
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
-                g.DrawString(title ?? "", caption, amber, new RectangleF(left, r.Top + 5 * scale, right - left, 12 * scale), noWrap);
+                string heading = SwimLang.Upper(title ?? "");
+                if (SwimTheme.TrackedWidth(g, heading, caption, 0.12f) <= right - left)
+                    SwimTheme.Tracked(g, heading, caption, amber, left + 1, r.Top + 6 * scale, 0.12f);
+                else
+                    g.DrawString(heading, caption, amber, new RectangleF(left, r.Top + 5 * scale, right - left, 12 * scale), noWrap);
                 g.DrawString(subtitle ?? "", sub, dim, new RectangleF(left, r.Top + 17 * scale, right - left, 12 * scale), noWrap);
 
                 float top = r.Top + 34 * scale;
@@ -109,15 +105,24 @@ namespace Kinovea.ScreenManager
                     SwimFinalsBoardRow row = rows[i];
                     RectangleF line = new RectangleF(r.Left + 5 * scale, top + i * rowH, r.Width - 10 * scale, rowH - 1);
                     if (row.IsAthlete)
-                        SwimTheme.FillRounded(g, Color.FromArgb(150, 120, 84, 0), line, 3 * scale);
+                    {
+                        // HUD: the athlete's line amber with a glowing edge.
+                        SwimTheme.FillRounded(g, Color.FromArgb(120, 120, 84, 10), line, 3 * scale);
+                        SwimTheme.DrawRounded(g, Color.FromArgb(150, SwimTheme.Amber), line, 3 * scale);
+                    }
                     else if (i % 2 == 1)
-                        SwimTheme.FillRounded(g, Color.FromArgb(40, 255, 255, 255), line, 3 * scale);
+                    {
+                        SwimTheme.FillRounded(g, Color.FromArgb(26, 143, 243, 255), line, 3 * scale);
+                    }
 
-                    // Place in a small circle.
+                    // Place in a small mark.
                     float d = Math.Min(rowH - 3, 12 * scale);
                     RectangleF circle = new RectangleF(left, line.Top + (rowH - 1 - d) / 2, d, d);
-                    using (SolidBrush disk = new SolidBrush(row.IsAthlete ? SwimTheme.Amber : Color.FromArgb(200, 39, 57, 79)))
+                    using (SolidBrush disk = new SolidBrush(row.IsAthlete ? SwimTheme.Amber : Color.FromArgb(200, 8, 50, 70)))
                         g.FillEllipse(disk, circle);
+                    if (!row.IsAthlete)
+                        using (Pen ring = new Pen(Color.FromArgb(150, SwimTheme.Accent), 1f))
+                            g.DrawEllipse(ring, circle);
                     string p = row.Place.ToString(CultureInfo.InvariantCulture);
                     SizeF ps = g.MeasureString(p, place);
                     g.DrawString(p, place, row.IsAthlete ? Brushes.Black : text, circle.Left + (d - ps.Width) / 2 + 0.5f, circle.Top + (d - ps.Height) / 2);
@@ -168,8 +173,9 @@ namespace Kinovea.ScreenManager
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
                 string head = SwimLang.T("Δ ΑΠΟ ΤΗΝ ΑΝΑΦΟΡΑ (s)");
-                g.DrawString(head, caption, dim, left, r.Top + 5 * scale);
-                SizeF hs = g.MeasureString(head, caption);
+                using (SolidBrush light = new SolidBrush(card ? SwimTheme.AccentLight : SwimTheme.Dim))
+                    SwimTheme.Tracked(g, head, caption, light, left + 1, r.Top + 6 * scale, 0.1f);
+                SizeF hs = new SizeF(SwimTheme.TrackedWidth(g, head, caption, 0.1f) + 2 * scale, caption.GetHeight(g));
                 if (!string.IsNullOrEmpty(reference))
                     g.DrawString("vs " + reference, small, accent, new RectangleF(left + hs.Width + 6 * scale, r.Top + 5.5f * scale, Math.Max(10, r.Right - 8 * scale - left - hs.Width - 6 * scale), 12 * scale), noWrap);
 
@@ -187,9 +193,9 @@ namespace Kinovea.ScreenManager
                 Func<double, float> Y = v => zero - (float)(Math.Max(-top, Math.Min(top, v)) / top * plot.Height / 2);
 
                 // Axis: zero, ± the scale, the walls and the distances.
-                using (Pen grid = new Pen(Color.FromArgb(38, 255, 255, 255), 1f))
-                using (Pen axis = new Pen(Color.FromArgb(120, 255, 255, 255), 1f))
-                using (Pen wall = new Pen(Color.FromArgb(90, 0, 200, 255), 1f) { DashStyle = DashStyle.Dot })
+                using (Pen grid = new Pen(Color.FromArgb(34, 56, 225, 255), 1f))
+                using (Pen axis = new Pen(Color.FromArgb(140, 143, 243, 255), 1f))
+                using (Pen wall = new Pen(Color.FromArgb(110, 56, 225, 255), 1f) { DashStyle = DashStyle.Dot })
                 {
                     g.DrawLine(grid, plot.Left, plot.Top, plot.Right, plot.Top);
                     g.DrawLine(grid, plot.Left, plot.Bottom, plot.Right, plot.Bottom);
@@ -235,6 +241,9 @@ namespace Kinovea.ScreenManager
                     Color c = p.Delta <= 0 ? Faster : Slower;
                     using (SolidBrush b = new SolidBrush(last ? c : Color.FromArgb(190, c)))
                         g.FillRectangle(b, bar);
+                    if (last)
+                        using (Pen glow = new Pen(Color.FromArgb(80, c), 3f))
+                            g.DrawRectangle(glow, bar.X, bar.Y, bar.Width, bar.Height);
                 }
 
                 // The value of the last checkpoint passed.

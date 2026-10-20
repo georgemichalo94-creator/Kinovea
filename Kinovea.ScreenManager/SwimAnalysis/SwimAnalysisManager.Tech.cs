@@ -1059,7 +1059,7 @@ namespace Kinovea.ScreenManager
         {
             // As on the screen: only for the video of the analysis, while the analysis is on the screen (window or bars).
             if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || !Active ||
-                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports)
+                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports || !Settings.VideoGraphics)
                 return;
 
             // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).

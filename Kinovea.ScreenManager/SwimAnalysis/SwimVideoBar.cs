@@ -166,6 +166,7 @@ namespace Kinovea.ScreenManager
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
             b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind).Append('|');
             b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription).Append('|');
+            b.Append(manager.Settings.VideoGraphics).Append('|');
             b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription).Append('|');
             b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
             b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "").Append('|');
@@ -387,10 +388,14 @@ namespace Kinovea.ScreenManager
             Size es = TextRenderer.MeasureText(g, ev, captionFont, Size.Empty, TextFormatFlags.NoPadding);
             float evLeft = card.Right - S(8) - es.Width;
             Write(g, ev, captionFont, new RectangleF(evLeft, card.Top + S(7), es.Width + 2, es.Height + 2), SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine);
-            Write(g, caption, captionFont, new RectangleF(card.Left + inner, card.Top + S(7), Math.Max(10, evLeft - card.Left - inner - S(6)), es.Height + 2),
-                warn ? SwimTheme.Warn : SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
-            Write(g, clock, SwimTheme.Display(22f), new RectangleF(card.Left + S(8), card.Top + S(18), card.Width - S(14), S(36)), Color.White,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+            Caption(g, caption, new RectangleF(card.Left + inner, card.Top + S(6), Math.Max(10, evLeft - card.Left - inner - S(6)), es.Height + 3),
+                warn ? SwimTheme.Warn : SwimTheme.AccentLight);
+
+            // The clock in thin glowing figures (HUD, 2.9.0).
+            Font clockFont = SwimTheme.DisplayLight(23f);
+            SizeF clockSize = g.MeasureString(clock, clockFont);
+            float clockTop = card.Top + S(18) + (S(36) - clockSize.Height) / 2;
+            SwimTheme.GlowText(g, clock, clockFont, Color.White, SwimTheme.Accent, new PointF(card.Left + S(5), clockTop), 1f);
             if (chips.Count > 0)
                 ChipRows(g, chips, card.Left + inner, card.Top + chipsTop, card.Right - S(8), chipHeight, true);
 
@@ -424,8 +429,7 @@ namespace Kinovea.ScreenManager
             float height = header + rowCount * bh + (rowCount - 1) * spacing + autoHeight + S(8);
             RectangleF card = new RectangleF(space.Left, space.Top, space.Width, Math.Min(space.Height, height));
             DrawCard(g, card, SwimTheme.Accent);
-            Write(g, title, SwimTheme.Ui(7f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(8), card.Width - inner - S(8), S(14)),
-                SwimTheme.Accent, TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            Caption(g, title, new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(15)), SwimTheme.AccentLight);
 
             float x0 = card.Left + inner;
             float width = card.Right - S(8) - x0;
@@ -577,8 +581,8 @@ namespace Kinovea.ScreenManager
             float height = chips.Count > 0 ? ChipRows(g, chips, area.Left + inner, area.Top + chipsTop, area.Right - S(8), chipHeight, false) - area.Top + S(8) : S(48);
             RectangleF card = new RectangleF(area.Left, area.Top, area.Width, height);
             DrawCard(g, card, SwimTheme.Amber);
-            Write(g, tech ? SwimLang.T("ΦΑΣΗ ΤΕΧΝΙΚΗΣ ΑΝΑΛΥΣΗΣ") : SwimLang.T("ΦΑΣΗ"), SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
-                SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+            Caption(g, tech ? SwimLang.T("ΦΑΣΗ ΤΕΧΝΙΚΗΣ ΑΝΑΛΥΣΗΣ") : SwimLang.T("ΦΑΣΗ"), new RectangleF(card.Left + inner, card.Top + S(6), card.Width - inner - S(8), S(14)),
+                SwimTheme.AccentLight);
             Write(g, value, SwimTheme.Display(13f), new RectangleF(card.Left + inner, card.Top + S(19), card.Width - inner - S(8), S(26)), SwimTheme.Accent,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
             if (chips.Count > 0)
@@ -599,8 +603,7 @@ namespace Kinovea.ScreenManager
             List<SwimRow> rows = manager.Computed.Rows;
             DrawCard(g, card, colorSplits);
             float inner = S(10);
-            Write(g, SwimLang.T("ΠΕΡΑΣΜΑΤΑ"), SwimTheme.Ui(6.75f, FontStyle.Bold), new RectangleF(card.Left + inner, card.Top + S(7), card.Width - inner - S(8), S(13)),
-                SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.SingleLine);
+            Caption(g, SwimLang.T("ΠΕΡΑΣΜΑΤΑ"), new RectangleF(card.Left + inner, card.Top + S(6), card.Width - inner - S(8), S(14)), SwimTheme.AccentLight);
 
             float rx = card.Left + S(7);
             float rw = card.Right - S(5) - rx;
@@ -645,9 +648,23 @@ namespace Kinovea.ScreenManager
                 string id = "row" + row.D.ToString(CultureInfo.InvariantCulture);
                 RectangleF r = new RectangleF(rx, rowsTop + (i - first) * rowHeight, rw, rowHeight - S(2));
                 if (i == next)
-                    SwimTheme.FillRounded(g, SwimTheme.NextRow, r, 4);
+                {
+                    // HUD (2.9.0): the next checkpoint amber, with a glowing bar on its left.
+                    SwimTheme.FillRounded(g, SwimTheme.NextRow, r, 3);
+                    using (SolidBrush glow = new SolidBrush(Color.FromArgb(70, SwimTheme.Amber)))
+                        g.FillRectangle(glow, r.Left, r.Top + S(2), S(4), r.Height - S(4));
+                    using (SolidBrush bar = new SolidBrush(SwimTheme.Amber))
+                        g.FillRectangle(bar, r.Left + S(1), r.Top + S(3), S(2), r.Height - S(6));
+                }
                 else if (hoverId == id && row.Marked)
-                    SwimTheme.FillRounded(g, SwimTheme.RaisedHover, r, 4);
+                {
+                    SwimTheme.FillRounded(g, SwimTheme.RaisedHover, r, 3);
+                }
+                else
+                {
+                    using (Pen line = new Pen(Color.FromArgb(40, SwimTheme.Accent), 1f))
+                        g.DrawLine(line, r.Left + S(4), r.Bottom + S(1), r.Right - S(4), r.Bottom + S(1));
+                }
 
                 Color distanceColor = i == next ? SwimTheme.Amber : (row.Marked ? SwimTheme.Text : SwimTheme.Faint);
                 Write(g, row.D.ToString(CultureInfo.InvariantCulture) + race.Unit, cellFont, new RectangleF(colD, r.Top, rw * 0.3f, r.Height), distanceColor,
@@ -744,11 +761,20 @@ namespace Kinovea.ScreenManager
                       : SwimLang.T("Ανοίγει το παράθυρο της ανάλυσης: στοιχεία αγώνα, πίνακας περασμάτων, σύγκριση, report και σύνδεση.")) +
                 (string.IsNullOrEmpty(KeyOf(PlayerScreenCommands.SwimShowPanel)) ? "" : " (" + KeyOf(PlayerScreenCommands.SwimShowPanel) + ")"),
                 () => manager.TogglePanel());
+
+            // The graphics of the analysis on the video on and off (2.9.0, key V): the swimmer and the image alone.
+            bool graphicsOn = manager.Settings.VideoGraphics;
+            RectangleF graphics = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
+            DrawButton(g, list, "graphics", graphics, graphicsOn ? SwimLang.T("◉ Γραφικά στο βίντεο") : SwimLang.T("○ Γραφικά στο βίντεο"), null,
+                KeyOf(PlayerScreenCommands.SwimGraphics), graphicsOn ? Look.Normal : Look.Quiet, false,
+                graphicsOn ? SwimLang.T("Κρύβει τα γραφικά της ανάλυσης από το βίντεο (πίνακες, γραφήματα, σύγκριση, τεχνική), και από τις εξαγωγές του βίντεο.")
+                           : SwimLang.T("Ξαναδείχνει τα γραφικά της ανάλυσης στο βίντεο."),
+                () => manager.SetGraphics(!manager.Settings.VideoGraphics));
             if (race.IsTraining)
-                return panel.Top;
+                return graphics.Top;
 
             // Technical view on the video (as the swimming reels) and the swimmer that its label follows.
-            RectangleF row = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
+            RectangleF row = new RectangleF(area.Left, graphics.Top - S(6) - S(28), area.Width, S(28));
             float half = (row.Width - S(4)) / 2;
             RectangleF reel = new RectangleF(row.Left, row.Top, half, row.Height);
             RectangleF follow = new RectangleF(reel.Right + S(4), row.Top, row.Right - reel.Right - S(4), row.Height);
@@ -1074,22 +1100,19 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Drawing
-        /// <summary>Translucent dark card with a colored left edge, as the graphics on the video.</summary>
+        /// <summary>A glass panel of the HUD (2.9.0) with glowing corner brackets in the accent, as the graphics on the video.</summary>
         private static void DrawCard(Graphics g, RectangleF r, Color accent)
         {
             if (r.Width < 8 || r.Height < 8)
                 return;
 
-            using (GraphicsPath path = SwimTheme.Rounded(r, 7))
-            using (LinearGradientBrush back = new LinearGradientBrush(r, Color.FromArgb(232, 9, 14, 22), Color.FromArgb(205, 18, 30, 45), LinearGradientMode.Horizontal))
-            using (Pen border = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
-            {
-                g.FillPath(back, path);
-                g.DrawPath(border, path);
-            }
+            SwimTheme.HudPanel(g, new RectangleF(r.X + 1, r.Y + 1, r.Width - 2, r.Height - 2), accent);
+        }
 
-            using (SolidBrush a = new SolidBrush(accent))
-                g.FillRectangle(a, r.Left + 1, r.Top + 7, 3, Math.Max(2, r.Height - 14));
+        /// <summary>The caption of a card in spaced capitals (HUD).</summary>
+        private void Caption(Graphics g, string text, RectangleF r, Color color)
+        {
+            SwimTheme.TrackedText(g, SwimLang.Upper(text), SwimTheme.Ui(6.75f, FontStyle.Bold), color, Rectangle.Round(r), 0.16f);
         }
 
         /// <summary>Button as those of the window: rounded, key in a badge, the value already measured before the key.</summary>
@@ -1101,6 +1124,7 @@ namespace Kinovea.ScreenManager
 
             if (look != Look.Quiet || hover)
             {
+                // HUD (2.9.0): cut corners and a thin line in the accent, glowing on the main and the hovered buttons.
                 Color fill = look == Look.Primary ? SwimTheme.AccentDark : SwimTheme.Raised;
                 if (pressed)
                     fill = SwimTheme.Pressed;
@@ -1109,13 +1133,21 @@ namespace Kinovea.ScreenManager
                 else if (dim)
                     fill = SwimTheme.Mix(fill, SwimTheme.Back, 0.6);
 
-                Color border = hover ? SwimTheme.Mix(SwimTheme.Border, accent, 0.6) : SwimTheme.Border;
-                SwimTheme.FillRounded(g, fill, r, 5);
-                SwimTheme.DrawRounded(g, border, r, 5);
+                Color border = hover ? SwimTheme.Mix(SwimTheme.Border, accent, 0.8) :
+                    (look == Look.Primary || look == Look.Danger) && !dim ? SwimTheme.Mix(SwimTheme.Border, accent, 0.5) : SwimTheme.Border;
+                SwimTheme.FillRounded(g, fill, r, 6);
+                if (!dim && (hover || look == Look.Primary))
+                {
+                    using (GraphicsPath glowPath = SwimTheme.Rounded(r, 6))
+                    using (Pen glow = new Pen(Color.FromArgb(hover ? 70 : 42, accent), 3f))
+                        g.DrawPath(glow, glowPath);
+                }
+
+                SwimTheme.DrawRounded(g, border, r, 6);
                 if (look == Look.Primary || look == Look.Danger)
                 {
                     using (SolidBrush b = new SolidBrush(dim ? SwimTheme.Mix(accent, SwimTheme.Back, 0.5) : accent))
-                        g.FillRectangle(b, r.Left + 2, r.Top + 5, 3, Math.Max(4, r.Height - 10));
+                        g.FillRectangle(b, r.Left + 3, r.Top + 7, 2, Math.Max(4, r.Height - 14));
                 }
             }
 
@@ -1164,8 +1196,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Tabs of the phases. The tab of the phase of the video is in the accent color when another one is shown.</summary>
         private void DrawTabs(Graphics g, List<Item> list, RectangleF r, string[] names, string[] tips, int selected, int automatic)
         {
-            SwimTheme.FillRounded(g, SwimTheme.Input, r, 6);
-            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 6);
+            // HUD (2.9.0): a dark strip, the shown phase bright with a glowing line under it.
+            SwimTheme.FillRounded(g, SwimTheme.Input, r, 4);
+            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 4);
             float w = r.Width / names.Length;
             Font font = SwimTheme.Ui(7.5f, FontStyle.Bold);
             for (int i = 0; i < names.Length; i++)
@@ -1173,9 +1206,19 @@ namespace Kinovea.ScreenManager
                 string id = "tab" + i.ToString(CultureInfo.InvariantCulture);
                 RectangleF cell = new RectangleF(r.Left + i * w + 2, r.Top + 2, w - 4, r.Height - 4);
                 if (i == selected)
-                    SwimTheme.FillRounded(g, SwimTheme.AccentDark, cell, 4);
+                {
+                    using (LinearGradientBrush under = new LinearGradientBrush(new RectangleF(cell.X, cell.Y - 1, cell.Width, cell.Height + 2),
+                        Color.FromArgb(10, SwimTheme.Accent), Color.FromArgb(70, SwimTheme.Accent), LinearGradientMode.Vertical))
+                        g.FillRectangle(under, cell);
+                    using (SolidBrush glow = new SolidBrush(Color.FromArgb(80, SwimTheme.Accent)))
+                        g.FillRectangle(glow, cell.Left + 3, cell.Bottom - 4, cell.Width - 6, 4);
+                    using (SolidBrush line = new SolidBrush(SwimTheme.Accent))
+                        g.FillRectangle(line, cell.Left + 5, cell.Bottom - 2, cell.Width - 10, 2);
+                }
                 else if (hoverId == id)
-                    SwimTheme.FillRounded(g, SwimTheme.RaisedHover, cell, 4);
+                {
+                    SwimTheme.FillRounded(g, SwimTheme.RaisedHover, cell, 3);
+                }
 
                 Color color = i == selected ? Color.White : (i == automatic ? SwimTheme.Accent : SwimTheme.Dim);
                 Write(g, names[i], font, cell, color, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
@@ -1207,8 +1250,10 @@ namespace Kinovea.ScreenManager
 
                 if (draw)
                 {
+                    // HUD (2.9.0): an outlined chip, its caption spaced.
                     RectangleF box = new RectangleF(x, y, w, height);
                     SwimTheme.FillRounded(g, SwimTheme.Raised, box, 4);
+                    SwimTheme.DrawRounded(g, SwimTheme.Mix(SwimTheme.Border, chip.Color, 0.25), box, 4);
                     Write(g, chip.Caption, captionFont, new RectangleF(x + S(6), y + S(3), w - S(9), cs.Height + 2), SwimTheme.Dim,
                         TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
                     Write(g, chip.Value, valueFont, new RectangleF(x + S(6), y + S(3) + cs.Height, w - S(9), height - S(5) - cs.Height), chip.Color,
