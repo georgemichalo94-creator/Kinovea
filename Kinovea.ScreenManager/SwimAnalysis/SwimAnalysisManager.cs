@@ -1510,6 +1510,12 @@ namespace Kinovea.ScreenManager
                 {
                     // Off: nothing of the graphics.
                 }
+                else if (HudReady(renderingSize))
+                {
+                    // The HUD of the race (2.9.1, as the demo): it replaces the boards, the chart and the technical view; the boards
+                    // chosen in «Στο βίντεο» are added to it.
+                    DrawHud(g, timestamp, renderingSize, p => transform.Transform(p));
+                }
                 else if (ReelReady(renderingSize))
                 {
                     // The technical view replaces the race board, the velocity chart and the values of the start or turn.

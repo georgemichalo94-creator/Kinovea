@@ -1127,7 +1127,15 @@ namespace Kinovea.ScreenManager
                         float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
                         Size logical = new Size((int)Math.Round(size.Width / scale), (int)Math.Round(size.Height / scale));
                         g.ScaleTransform(scale, scale);
-                        if (reel && !allRace && ReelReady(logical))
+                        if (reel && !allRace && HudReady(logical))
+                        {
+                            // The HUD as on the screen (2.9.1). Video image (reference pixels) → logical units of the exported image.
+                            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                            float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
+                            float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
+                            DrawHud(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
+                        }
+                        else if (reel && !allRace && ReelReady(logical))
                         {
                             // Video image (reference pixels) → logical units of the exported image.
                             Size reference = frameServer.VideoReader.Info.ReferenceSize;
@@ -1908,11 +1916,28 @@ namespace Kinovea.ScreenManager
         /// <param name="swimmer">Where the swimmer is on the drawing (2.9.0: the card fades over him); empty: not known.</param>
         private void DrawTechOverlay(Graphics g, long timestamp, Size size, RectangleF swimmer = default(RectangleF))
         {
-            SwimTechPhase phase = SwimTechCalculator.PhaseAt(TechPhases, timestamp);
+            SwimTechPhase phase;
+            double now;
+            List<KeyValuePair<string, string>> items = TechValuesAt(timestamp, out phase, out now);
             if (phase == null || size.Width < 300 || size.Height < 200)
                 return;
 
+            DrawTechCard(g, size, swimmer, phase, now, items);
+        }
+
+        /// <summary>
+        /// The values of the start or turn passed at a frame, in the order they happen (2.9.1: also for the HUD), the phase and its
+        /// clock (s from its origin). Null outside a phase.
+        /// </summary>
+        private List<KeyValuePair<string, string>> TechValuesAt(long timestamp, out SwimTechPhase phase, out double clock)
+        {
+            phase = SwimTechCalculator.PhaseAt(TechPhases, timestamp);
+            clock = 0;
+            if (phase == null)
+                return null;
+
             double now = Timing.Seconds(timestamp, phase.Origin);
+            clock = now;
             List<KeyValuePair<string, string>> items = new List<KeyValuePair<string, string>>();
             Action<string, double?> add = (label, t) =>
             {
@@ -1949,6 +1974,11 @@ namespace Kinovea.ScreenManager
             if (kicks > 0)
                 items.Add(new KeyValuePair<string, string>(SwimLang.T("ΔΕΛΦΙΝΙΣΜΟΙ"), kicks.ToString(CultureInfo.InvariantCulture)));
 
+            return items;
+        }
+
+        private void DrawTechCard(Graphics g, Size size, RectangleF swimmer, SwimTechPhase phase, double now, List<KeyValuePair<string, string>> items)
+        {
             // Card at the bottom left of the video (HUD, 2.9.0: glass with amber brackets, the title in spaced capitals, thin glowing
             // values; it fades over the swimmer).
             Font title = SwimTheme.Ui(8.25f, FontStyle.Bold);

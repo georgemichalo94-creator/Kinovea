@@ -124,6 +124,12 @@ namespace Kinovea.ScreenManager
             return Get(LightFamily, size, FontStyle.Regular);
         }
 
+        /// <summary>The lines of the log of the HUD (2.9.1), as on a console: Consolas.</summary>
+        public static Font Mono(float size)
+        {
+            return Get("Consolas", size, FontStyle.Regular);
+        }
+
         public static Font Ui(float size, FontStyle style)
         {
             return Get("Segoe UI", size, style);
