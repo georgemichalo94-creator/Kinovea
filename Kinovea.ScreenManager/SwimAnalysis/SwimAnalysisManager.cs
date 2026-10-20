@@ -203,6 +203,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static readonly Version quickLookBackend = new Version(2, 8, 0);
         private bool quickLookWarned;
+
+        /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
+        private readonly HashSet<string> quickLookFailed = new HashSet<string>();
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -2716,10 +2719,10 @@ namespace Kinovea.ScreenManager
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς την πρώτη σελίδα «Με μια ματιά». Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
                                 version, quickLookBackend.ToString(3)), true);
                         }
-                        else if (e.Result.PdfQuick == false)
+                        else if (e.Result.PdfQuick == false && quickLookFailed.Add(race.Id ?? ""))
                         {
-                            // The Apps Script could not make the first page this time (the copy of the sheet): the whole report as before.
-                            Status(SwimLang.T("Το PDF βγήκε χωρίς την πρώτη σελίδα «Με μια ματιά» αυτή τη φορά: η πλήρης αναφορά όπως πριν. Ξαναδοκίμασε το PDF αργότερα."), true);
+                            // The Apps Script could not make the first page (the copy of the sheet): the whole report as before. Said once a race.
+                            Status(SwimLang.T("Το PDF βγήκε χωρίς την πρώτη σελίδα «Με μια ματιά»: η πλήρης αναφορά όπως πριν."), true);
                         }
                     }
 

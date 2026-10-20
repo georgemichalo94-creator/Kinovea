@@ -4315,8 +4315,20 @@ function swimAnalysesFor_(query) {
 /** Πόσες αναλύσεις άλλων αθλητών επιστρέφονται για σύγκριση (οι καλύτεροι χρόνοι). */
 var SWIM_EVENT_ANALYSES = 40;
 
-/** Πόσες αναλύσεις του αγωνίσματος κρατιούνται στην προσωρινή μνήμη (πριν βγουν του ίδιου αθλητή) και για πόσο (s). */
-var SWIM_EVENT_CACHE = 60, SWIM_EVENT_CACHE_TIME = 3600;
+/**
+ * Πόσες αναλύσεις του αγωνίσματος κρατιούνται στην προσωρινή μνήμη (πριν βγουν του ίδιου αθλητή), για πόσο (s), και πόσα JSON
+ * διαβάζονται το πολύ για να βρεθούν (το ευρετήριο δεν έχει φύλο ούτε πισίνα: τα άλλα ανοίγουν και αφήνονται).
+ */
+var SWIM_EVENT_CACHE = 60, SWIM_EVENT_CACHE_TIME = 3600, SWIM_EVENT_READS = 120;
+
+/** Η στιγμή της τελευταίας αποθήκευσης ανάλυσης στο ευρετήριο (αλλάζει το κλειδί της προσωρινής μνήμης). */
+function swimIndexStamp_() {
+  try { return PropertiesService.getScriptProperties().getProperty('swimIndexStamp') || '0'; } catch (e) { return '0'; }
+}
+
+function swimTouchIndexStamp_() {
+  try { PropertiesService.getScriptProperties().setProperty('swimIndexStamp', String(Date.now())); } catch (e) { /* χωρίς σήμανση */ }
+}
 
 /**
  * Αναλύσεις άλλων αθλητών στο ίδιο αγώνισμα, πισίνα και φύλο (όταν είναι γνωστό), για σύγκριση στο βίντεο (2.8.0): οι
@@ -4333,7 +4345,9 @@ function swimEventAnalyses_(query) {
   var athlete = swimNormText_(q.athlete);
   var gender = swimGenderCode_(q.gender);
   var eventLabel = swimIndexEventLabel_(want);
-  var key = ['swimEvent', SWIM_VERSION, SWIM_LANG_, eventLabel, want.distance, gender || '-', last].join('|');
+  // Το κλειδί: το αγώνισμα με την πισίνα του, το φύλο, το πλήθος των αναλύσεων και η τελευταία αποθήκευση ανάλυσης.
+  var key = ['swimEvent', SWIM_VERSION, SWIM_LANG_, eventLabel, want.distance, want.pool, want.poolUnit || 'm', gender || '-', last,
+    swimIndexStamp_()].join('|');
   var cache = null;
   try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
   var list = cache ? swimCacheGet_(cache, key) : null;
@@ -4401,7 +4415,7 @@ function swimEventCandidates_(index, last, want, gender, eventLabel) {
   });
   match.sort(function (a, b) { return a.ft - b.ft; });
   var out = [];
-  for (var k = 0; k < match.length && out.length < SWIM_EVENT_CACHE; k++) {
+  for (var k = 0; k < match.length && k < SWIM_EVENT_READS && out.length < SWIM_EVENT_CACHE; k++) {
     var m = match[k], r;
     try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(m.i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { continue; }
     if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) continue;
@@ -4572,6 +4586,7 @@ function swimSaveIndexEntry_(index, entry, race, sheet, signature, finalTime) {
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'), race.video, String(sheet.getSheetId()), signature, raw];
   var r = entry ? entry.row : index.getLastRow() + 1;
   index.getRange(r, 1, 1, rowValues.length).setValues([rowValues]);
+  swimTouchIndexStamp_();
 }
 
 /**

@@ -729,6 +729,9 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Frame of the wall from the pace of the length (also after the frames read; NaN: no pace).</summary>
             public double PaceWall = double.NaN;
+
+            /// <summary>The swimmer clicked: his length in widths of his lane there (the same in every length), NaN if not known.</summary>
+            public double BodyLanes = double.NaN;
         }
 
         /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
@@ -2352,7 +2355,7 @@ namespace Kinovea.ScreenManager
                 int strokes = 0;
                 foreach (LengthRead l in lengths)
                 {
-                    StoreTrack(l.Session, l.Result, l.ClickIndex);
+                    StoreTrack(l.Session, l.Result, l.ClickIndex, l.BodyLanes);
                     made.AddRange(SplitProposals(l, batch));
                     SwimProposal breakout = BreakoutProposal(l, batch);
                     if (breakout != null)
@@ -2895,6 +2898,24 @@ namespace Kinovea.ScreenManager
         private bool ReadRace(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker, SwimStrokeLane? clickLane = null,
             int clickVirtual = 0)
         {
+            try
+            {
+                return ReadRaceLengths(head, feet, from, lengths, worker, clickLane, clickVirtual);
+            }
+            finally
+            {
+                // The frames of the lengths go when the reading ends (each one also when the next length starts).
+                foreach (LengthRead read in lengths)
+                {
+                    if (read != null && read.Result != null && read.Session != null)
+                        ReleaseFrames(read);
+                }
+            }
+        }
+
+        private bool ReadRaceLengths(PointF head, PointF feet, long from, List<LengthRead> lengths, BackgroundWorker worker, SwimStrokeLane? clickLane,
+            int clickVirtual)
+        {
             long lapStart = LapStartTimestamp(from);
             int wall = NextWallDistance(from);
 
@@ -2944,6 +2965,11 @@ namespace Kinovea.ScreenManager
             long clickTimestamp = from;
             while (wall <= Race.Distance)
             {
+                // The frames of the length before go now: its wall, the place of the swimmer there and his speed under the water
+                // after the turn (the red marks of the ropes, the camera's displacement) were taken from them.
+                if (lengths.Count > 0 && lengths[lengths.Count - 1] != null && lengths[lengths.Count - 1].Session != null)
+                    ReleaseFrames(lengths[lengths.Count - 1]);
+
                 // The first length of the race from the start signal (its 15 m and its breakout also when the click comes after
                 // them), else from the click.
                 StrokeSession s = null;
@@ -3046,8 +3072,22 @@ namespace Kinovea.ScreenManager
 
                 if (lengths.Count == 0)
                     l.ClickIndex = Math.Max(0, s.Timestamps.FindIndex(t => t >= clickTimestamp));
+
+                // The size of the swimmer clicked and the width of his lane there (the swimmer's size in widths of his lane, the
+                // same in every length: the ghost of a comparison has it).
+                if (double.IsNaN(clickLength) && lengths.Count == 0 && result.Lanes.Count > 0)
+                {
+                    double sx0 = (double)s.Width / reference.Width, sy0 = (double)s.Height / reference.Height;
+                    double hx0 = head.X * sx0, hy0 = head.Y * sy0, fx0 = feet.X * sx0, fy0 = feet.Y * sy0;
+                    double cx0 = 0.5 * (hx0 + fx0);
+                    int clickIndex = Math.Max(0, Math.Min(result.Lanes.Count - 1, s.Timestamps.FindIndex(t => t >= clickTimestamp)));
+                    SwimStrokeLane lane0 = result.Lanes[clickIndex];
+                    clickLength = Math.Sqrt((hx0 - fx0) * (hx0 - fx0) + (hy0 - fy0) * (hy0 - fy0));
+                    clickLaneWidth = Math.Max(5, Math.Abs(lane0.Y2(cx0) - lane0.Y1(cx0)));
+                }
+
+                l.BodyLanes = double.IsNaN(clickLength) || double.IsNaN(clickLaneWidth) ? double.NaN : clickLength / clickLaneWidth;
                 ReadLengthStrokes(l);
-                ReleaseFrames(l);
                 lengths.Add(l);
                 if (wall >= Race.Distance || worker.CancellationPending)
                     break;

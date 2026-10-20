@@ -385,16 +385,18 @@ namespace Kinovea.ScreenManager
         public static void GhostAlpha(byte[] px, int stride, int pw, int ph, float alpha, Color tint, float body = 0, GhostLook look = null)
         {
             look = look ?? GhostLook.Default;
+            if (pw <= 0 || ph <= 0)
+                return;
 
-            // The water: the most common colour (steps of 24) of the middle rows, the median of its pixels.
+            // The water: the most common colour (steps of 24) of the middle rows, the median of each channel of its pixels.
             const int step = 24, bins = 256 / step + 1;
             int[] counts = new int[bins * bins * bins];
-            int y0 = (int)Math.Floor(0.2 * ph), y1 = Math.Max(y0 + 1, (int)Math.Ceiling(0.8 * ph));
-            for (int y = y0; y < Math.Min(ph, y1); y++)
+            int y0 = (int)Math.Floor(0.2 * ph), y1 = Math.Min(ph, Math.Max(y0 + 1, (int)Math.Ceiling(0.8 * ph)));
+            for (int y = y0; y < y1; y++)
             {
-                for (int x = 0; x < pw; x++)
+                int i = y * stride;
+                for (int x = 0; x < pw; x++, i += 4)
                 {
-                    int i = y * stride + x * 4;
                     if (px[i + 3] != 0)
                         counts[(px[i + 2] / step * bins + px[i + 1] / step) * bins + px[i] / step]++;
                 }
@@ -415,105 +417,132 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            List<int> rs = new List<int>(), gs = new List<int>(), bs = new List<int>();
-            for (int y = y0; y < Math.Min(ph, y1); y++)
+            int[] hr = new int[256], hg = new int[256], hb = new int[256];
+            for (int y = y0; y < y1; y++)
             {
-                for (int x = 0; x < pw; x++)
+                int i = y * stride;
+                for (int x = 0; x < pw; x++, i += 4)
                 {
-                    int i = y * stride + x * 4;
                     if (px[i + 3] == 0 || (px[i + 2] / step * bins + px[i + 1] / step) * bins + px[i] / step != best)
                         continue;
-                    bs.Add(px[i]);
-                    gs.Add(px[i + 1]);
-                    rs.Add(px[i + 2]);
+                    hb[px[i]]++;
+                    hg[px[i + 1]]++;
+                    hr[px[i + 2]]++;
                 }
             }
 
-            int wr = Median(rs), wg = Median(gs), wb = Median(bs);
+            int wr = HistogramMedian(hr, counts[best]), wg = HistogramMedian(hg, counts[best]), wb = HistogramMedian(hb, counts[best]);
 
-            // The difference from the water, a little smoothed (3 × 3) so that the ripples do not flicker.
-            float[] diff = new float[pw * ph];
+            // The difference from the water (-1 outside the frame), a little smoothed (3 x 3, rows then columns) so that the ripples
+            // do not flicker.
+            int[] diff = new int[pw * ph];
             for (int y = 0; y < ph; y++)
             {
-                for (int x = 0; x < pw; x++)
-                {
-                    int i = y * stride + x * 4;
-                    diff[y * pw + x] = px[i + 3] == 0 ? -1f : Math.Abs(px[i + 2] - wr) + Math.Abs(px[i + 1] - wg) + Math.Abs(px[i] - wb);
-                }
+                int i = y * stride, o = y * pw;
+                for (int x = 0; x < pw; x++, i += 4, o++)
+                    diff[o] = px[i + 3] == 0 ? -1 : Math.Abs(px[i + 2] - wr) + Math.Abs(px[i + 1] - wg) + Math.Abs(px[i] - wb);
             }
 
-            float[] smooth = new float[pw * ph];
+            int[] rowSum = new int[pw * ph], rowCount = new int[pw * ph];
             for (int y = 0; y < ph; y++)
             {
+                int o = y * pw;
                 for (int x = 0; x < pw; x++)
                 {
-                    float sum = 0;
-                    int n = 0;
-                    for (int dy = -1; dy <= 1; dy++)
+                    int sum = 0, n = 0;
+                    for (int dx = -1; dx <= 1; dx++)
                     {
-                        int yy = y + dy;
-                        if (yy < 0 || yy >= ph)
+                        int xx = x + dx;
+                        if (xx < 0 || xx >= pw)
                             continue;
-                        for (int dx = -1; dx <= 1; dx++)
-                        {
-                            int xx = x + dx;
-                            if (xx < 0 || xx >= pw || diff[yy * pw + xx] < 0)
-                                continue;
-                            sum += diff[yy * pw + xx];
-                            n++;
-                        }
+                        int d = diff[o + xx];
+                        if (d < 0)
+                            continue;
+                        sum += d;
+                        n++;
                     }
 
-                    smooth[y * pw + x] = n > 0 ? sum / n : 0;
+                    rowSum[o + x] = sum;
+                    rowCount[o + x] = n;
                 }
             }
 
             float bodyLength = body > 0 ? body : pw / 1.45f;
+            float cx = pw / 2f, cy = ph / 2f;
+            float[] fxs = new float[pw], ex2 = new float[pw];
+            for (int x = 0; x < pw; x++)
+            {
+                fxs[x] = 1f - SmoothStep(0.62f, 1f, Math.Abs(x + 0.5f - cx) / cx);
+                float ex = Math.Abs(x + 0.5f - cx) / Math.Max(1f, 0.5f * bodyLength);
+                ex2[x] = ex * ex;
+            }
+
             float glowR = Math.Min(255f, 0.6f * tint.R + 0.4f * 255), glowG = Math.Min(255f, 0.6f * tint.G + 0.4f * 255), glowB = Math.Min(255f, 0.6f * tint.B + 0.4f * 255);
             float keep = Math.Max(0f, 1f - look.White - look.Tint);
-            float cx = pw / 2f, cy = ph / 2f;
+            float addR = 255 * look.White + tint.R * look.Tint, addG = 255 * look.White + tint.G * look.Tint, addB = 255 * look.White + tint.B * look.Tint;
+            float span = Math.Max(1f, look.Span);
             for (int y = 0; y < ph; y++)
             {
                 float fy = 1f - SmoothStep(0.5f, 1f, Math.Abs(y + 0.5f - cy) / cy);
                 float ey = Math.Abs(y + 0.5f - cy) / Math.Max(1f, 0.30f * ph);
-                for (int x = 0; x < pw; x++)
+                float ey2 = ey * ey;
+                int i = y * stride, o = y * pw;
+                for (int x = 0; x < pw; x++, i += 4, o++)
                 {
-                    int i = y * stride + x * 4;
                     if (px[i + 3] == 0)
                         continue;
 
-                    float fx = 1f - SmoothStep(0.62f, 1f, Math.Abs(x + 0.5f - cx) / cx);
-                    float s = Math.Max(0f, Math.Min(1f, (smooth[y * pw + x] - look.From) / Math.Max(1f, look.Span)));
-                    float a = alpha * look.Strength * fx * fy * (look.Floor + (1 - look.Floor) * s);
-                    float b = px[i] * keep + 255 * look.White + tint.B * look.Tint;
-                    float g = px[i + 1] * keep + 255 * look.White + tint.G * look.Tint;
-                    float r = px[i + 2] * keep + 255 * look.White + tint.R * look.Tint;
-
-                    // The soft light of the body, under the swimmer.
-                    float ex = Math.Abs(x + 0.5f - cx) / Math.Max(1f, 0.5f * bodyLength);
-                    float glow = look.Glow <= 0 ? 0 : alpha * look.Glow * fx * fy * (1f - SmoothStep(0.55f, 1f, (float)Math.Sqrt(ex * ex + ey * ey)));
-                    float total = glow + a * (1 - glow);
-                    if (total > 1e-4f)
+                    int sum = rowSum[o], n = rowCount[o];
+                    if (y > 0)
                     {
-                        b = (glowB * glow + b * a * (1 - glow)) / total;
-                        g = (glowG * glow + g * a * (1 - glow)) / total;
-                        r = (glowR * glow + r * a * (1 - glow)) / total;
+                        sum += rowSum[o - pw];
+                        n += rowCount[o - pw];
                     }
 
-                    px[i] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, b)));
-                    px[i + 1] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, g)));
-                    px[i + 2] = (byte)Math.Round(Math.Max(0f, Math.Min(255f, r)));
-                    px[i + 3] = (byte)Math.Round(Math.Max(0f, Math.Min(1f, total)) * 255);
+                    if (y < ph - 1)
+                    {
+                        sum += rowSum[o + pw];
+                        n += rowCount[o + pw];
+                    }
+
+                    float smooth = n > 0 ? sum / (float)n : 0f;
+                    float f = fxs[x] * fy;
+                    float s = Math.Max(0f, Math.Min(1f, (smooth - look.From) / span));
+                    float a = alpha * look.Strength * f * (look.Floor + (1 - look.Floor) * s);
+                    float b = px[i] * keep + addB, g = px[i + 1] * keep + addG, r = px[i + 2] * keep + addR;
+
+                    // The soft light of the body, under the swimmer.
+                    float r2 = ex2[x] + ey2;
+                    float glow = look.Glow <= 0 || r2 >= 1f ? 0f : alpha * look.Glow * f * (1f - SmoothStep(0.55f, 1f, (float)Math.Sqrt(r2)));
+                    float total = glow + a * (1 - glow);
+                    if (total > 1e-4f && glow > 0)
+                    {
+                        float wa = a * (1 - glow);
+                        b = (glowB * glow + b * wa) / total;
+                        g = (glowG * glow + g * wa) / total;
+                        r = (glowR * glow + r * wa) / total;
+                    }
+
+                    px[i] = (byte)(b <= 0 ? 0 : (b >= 255 ? 255 : (int)(b + 0.5f)));
+                    px[i + 1] = (byte)(g <= 0 ? 0 : (g >= 255 ? 255 : (int)(g + 0.5f)));
+                    px[i + 2] = (byte)(r <= 0 ? 0 : (r >= 255 ? 255 : (int)(r + 0.5f)));
+                    px[i + 3] = (byte)(total <= 0 ? 0 : (total >= 1 ? 255 : (int)(total * 255 + 0.5f)));
                 }
             }
         }
 
-        private static int Median(List<int> values)
+        /// <summary>The median of the values counted in a histogram of 256 (count: how many values).</summary>
+        private static int HistogramMedian(int[] histogram, int count)
         {
-            if (values.Count == 0)
-                return 0;
-            values.Sort();
-            return values[values.Count / 2];
+            int half = (count + 1) / 2, seen = 0;
+            for (int v = 0; v < histogram.Length; v++)
+            {
+                seen += histogram[v];
+                if (seen >= half)
+                    return v;
+            }
+
+            return histogram.Length - 1;
         }
 
         private static float SmoothStep(float edge0, float edge1, float x)

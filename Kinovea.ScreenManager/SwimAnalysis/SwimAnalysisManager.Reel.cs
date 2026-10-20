@@ -232,9 +232,10 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The place of the swimmer of a reading (automatic strokes or follow) in reference image pixels. It replaces what the
         /// parts kept before have in its time, and stops where a part of a later length begins. bodyIndex: the frame of the reading
-        /// where the swimmer's head and feet were given (the click).
+        /// where the swimmer's head and feet were given (the click); bodyLanes: the swimmer's length in widths of his lane when known
+        /// (the race reading: from the click, for every length).
         /// </summary>
-        private void StoreTrack(StrokeSession s, SwimStrokeResult result, int bodyIndex = 0)
+        private void StoreTrack(StrokeSession s, SwimStrokeResult result, int bodyIndex = 0, double bodyLanes = double.NaN)
         {
             if (Race == null || result == null || result.Path == null || result.Lanes == null)
                 return;
@@ -256,7 +257,8 @@ namespace Kinovea.ScreenManager
             {
                 Start = s.Timestamps[0],
                 Step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1),
-                Body = double.IsNaN(body) || body <= 0 || double.IsNaN(laneThere) || laneThere < 5 ? 0 : (int)Math.Round(1000 * body / laneThere)
+                Body = !double.IsNaN(bodyLanes) && bodyLanes > 0 ? (int)Math.Round(1000 * bodyLanes)
+                    : (double.IsNaN(body) || body <= 0 || double.IsNaN(laneThere) || laneThere < 5 ? 0 : (int)Math.Round(1000 * body / laneThere))
             };
 
             // Since 2.8.0 also the camera's displacement along the lane at the swimmer (where the swimmer of the frame before is in

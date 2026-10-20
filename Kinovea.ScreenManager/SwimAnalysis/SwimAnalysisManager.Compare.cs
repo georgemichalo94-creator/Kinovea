@@ -353,7 +353,9 @@ namespace Kinovea.ScreenManager
                 float fx = fw / (float)reference.Width, fy = fh / (float)reference.Height;
                 RectangleF source = new RectangleF((p.SwimmerX - w / 2) * fx, (p.SwimmerY - h / 2) * fy, w * fx, h * fy);
 
-                patch = GhostPatch(frame, source, alpha, p.Body * fx);
+                // The ghost is made at most GhostWidth pixels wide (drawn larger): every frame while the video plays.
+                float shrink = Math.Min(1f, GhostWidth / Math.Max(1f, source.Width));
+                patch = GhostPatch(frame, source, alpha, p.Body * fx * shrink, shrink);
                 if (patch == null)
                     return RectangleF.Empty;
                 if (p.Mirror)
@@ -384,13 +386,16 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>Largest width of the ghost's image (pixels).</summary>
+        private const float GhostWidth = 360f;
+
         /// <summary>
-        /// The ghost's image: a part of the frame (frame pixels) with its transparency and its tint. body: the swimmer's length in frame
-        /// pixels. Null if the part is not in the frame.
+        /// The ghost's image: a part of the frame (frame pixels) with its transparency and its tint, at 'scale' of its size. body: the
+        /// swimmer's length in pixels of the image. Null if the part is not in the frame.
         /// </summary>
-        private static Bitmap GhostPatch(Bitmap frame, RectangleF source, float alpha, float body)
+        private static Bitmap GhostPatch(Bitmap frame, RectangleF source, float alpha, float body, float scale = 1f)
         {
-            int pw = Math.Max(2, (int)Math.Round(source.Width)), ph = Math.Max(2, (int)Math.Round(source.Height));
+            int pw = Math.Max(2, (int)Math.Round(source.Width * scale)), ph = Math.Max(2, (int)Math.Round(source.Height * scale));
             RectangleF inside = RectangleF.Intersect(source, new RectangleF(0, 0, frame.Width, frame.Height));
             if (inside.Width < 2 || inside.Height < 2)
                 return null;
@@ -403,7 +408,8 @@ namespace Kinovea.ScreenManager
                     pg.Clear(Color.Transparent);
                     pg.InterpolationMode = InterpolationMode.Bilinear;
                     pg.PixelOffsetMode = PixelOffsetMode.Half;
-                    pg.DrawImage(frame, new RectangleF(inside.X - source.X, inside.Y - source.Y, inside.Width, inside.Height), inside, GraphicsUnit.Pixel);
+                    float kx = pw / source.Width, ky = ph / source.Height;
+                    pg.DrawImage(frame, new RectangleF((inside.X - source.X) * kx, (inside.Y - source.Y) * ky, inside.Width * kx, inside.Height * ky), inside, GraphicsUnit.Pixel);
                 }
 
                 BitmapData data = patch.LockBits(new Rectangle(0, 0, pw, ph), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);

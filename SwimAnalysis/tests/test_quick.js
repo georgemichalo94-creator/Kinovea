@@ -169,10 +169,21 @@ function lastExport(G, report) {
   const a3 = ask('920001', 'QUICK Alice');
   assert.deepStrictEqual(a3.others.map(o => o.id), ['c-cleo', 'c-beth'], 'fastest first');
   assert.strictEqual(reads(), 2, 'a new list after a new analysis');
+  // Άλλη πισίνα (25μ.): όχι οι αναλύσεις των 50μ. της μνήμης.
+  const pool25 = call({ action: 'analyses', query: { athleteId: '920001', athlete: 'QUICK Alice', style: 'fly', distance: 100, pool: 25, poolUnit: 'm',
+    raceId: 'none', others: true, gender: 'Γυναικών' } });
+  assert.deepStrictEqual(pool25.others, [], 'another pool: ' + JSON.stringify(pool25.others).slice(0, 100));
+  // Μια ανάλυση που ξαναστάλθηκε με άλλους χρόνους: η μνήμη ξαναγίνεται (όχι οι παλιοί χρόνοι).
+  assert.ok(call({ action: 'update', race: mk('c-beth', 'OTHER Beth', '920002', 0.96) }).ok);
+  const a4 = ask('920001', 'QUICK Alice');
+  const beth = a4.others.find(o => o.id === 'c-beth');
+  assert.ok(beth && Math.abs(beth.times[9].t - +(t100[9] * 0.96).toFixed(2)) < 1e-9, JSON.stringify(beth && beth.times[9]));
+  assert.deepStrictEqual(a4.others.map(o => o.id), ['c-beth', 'c-cleo'], 'the new times order them');
   // Η μνήμη κρατά μόνο ό,τι επιστρέφεται (και τα κλειδιά του αθλητή για να βγαίνουν οι δικές του).
   const lastKey = G._cache.log.filter(x => x[0] === 'put').pop()[1];
   const stored = G.swimCacheGet_(G.CacheService.getScriptCache(), lastKey);
   assert.ok(Array.isArray(stored) && stored.length === 3 && stored.every(x => x.id && x.times && 'athleteId' in x), JSON.stringify(stored).slice(0, 200));
+  assert.ok(/\|fly\|100\|50\|m\|/.test(lastKey.replace(/\|[^|]*Πεταλούδα[^|]*\|/, '|fly|')) || /\|100\|50\|m\|/.test(lastKey), 'pool in the key: ' + lastKey);
   // Σε κομμάτια όταν δεν χωρά σε μία τιμή (π.χ. 1500μ.: 150 χρόνοι η καθεμία): ίδια λίστα πίσω.
   G.SWIM_CACHE_PART = 700;
   const before = G._cache.log.length;
