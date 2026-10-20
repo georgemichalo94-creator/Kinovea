@@ -85,6 +85,9 @@ namespace Kinovea.ScreenManager
 
         private BackgroundWorker officialWorker;
 
+        /// <summary>Results found while the video is read, waiting to be offered (one at a time: the last found).</summary>
+        private Timer officialWait;
+
         /// <summary>
         /// The button "🔗 Επίσημα αποτελέσματα" of the race tab: the race found in the official results (the link typed, else the one
         /// kept for the same competition in the same days, else the KOE live results by the date and the name of the competition)
@@ -177,17 +180,31 @@ namespace Kinovea.ScreenManager
             }
 
             Status(SwimLang.T("🔗 Τα επίσημα αποτελέσματα βρέθηκαν· εμφανίζονται μόλις τελειώσει η ανάγνωση του βίντεο."), false);
+            CancelPendingOffer();
             Timer wait = new Timer { Interval = 700 };
+            officialWait = wait;
             wait.Tick += (s, e) =>
             {
                 if (ReadingBusy || PilotActive)
                     return;
                 wait.Stop();
                 wait.Dispose();
+                if (officialWait == wait)
+                    officialWait = null;
                 if (Race != null && Race.Id == raceId)
                     OfferOfficial(found, q);
             };
             wait.Start();
+        }
+
+        /// <summary>Results waiting for the end of the reading forgotten (others found, or pasted).</summary>
+        private void CancelPendingOffer()
+        {
+            if (officialWait == null)
+                return;
+            officialWait.Stop();
+            officialWait.Dispose();
+            officialWait = null;
         }
 
         /// <summary>The date of the race as typed ("2.5.2025", "02/05/2025").</summary>
@@ -441,9 +458,9 @@ namespace Kinovea.ScreenManager
             {
                 found.Error = SwimLang.T("η διοργάνωση δεν έχει το αγώνισμα ") + q.Distance.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ. ") + SwimPresets.StyleShort(q.Style) +
                     (q.Gender.Length > 0 ? " (" + (q.Gender == "F" ? SwimLang.T("γυναικών") : SwimLang.T("ανδρών")) + ")" : "");
-                // A results site of the web whose results of the event are not published (World Aquatics: an event without its
-                // name and results) can still be pasted from the page that shows them.
-                found.Locked = worldAquatics > 0 || found.Source.Length > 0 && code == 0;
+                // A competition of World Aquatics whose events are not published with their names and results (the national
+                // meets it lists) can still be pasted from the page that shows them.
+                found.Locked = worldAquatics > 0;
                 return found;
             }
 
@@ -762,7 +779,7 @@ namespace Kinovea.ScreenManager
 
             // The registry learns from it (a sure match only): a Latin spelling of our athlete, an international athlete's code.
             if (!keepAthlete)
-                RememberOfficialAthlete(e, athlete, found.ByAthlete);
+                RememberOfficialAthlete(e, athlete, found.ByAthlete, found.Unit.Source == "paste");
         }
 
         /// <summary>" (δεν διαβάστηκαν όλα τα αποτελέσματα)" when some heats were not read or left out.</summary>
@@ -850,9 +867,14 @@ namespace Kinovea.ScreenManager
         /// the same year of birth), an international athlete not in it added with his unique code (the analyst says whether he is
         /// one already there under another spelling).
         /// </summary>
-        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete, bool byAthlete)
+        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete, bool byAthlete, bool pasted)
         {
             if (e == null || Settings == null || !Settings.IsConfigured)
+                return;
+
+            // Pasted results (since 2.8.1): no spelling learned (the text can be shortened, "M. ROSSI"), and an international athlete
+            // only with his whole name (a family and a given name, not an initial).
+            if (pasted && (athlete != null || !WholeName(e.FamilyNameLatin, e.GivenNameLatin)))
                 return;
 
             if (athlete != null)
@@ -879,6 +901,17 @@ namespace Kinovea.ScreenManager
             string nation = (e.Nation ?? "").Trim().ToUpperInvariant();
             if (nation.Length == 3 && nation != "GRE")
                 AddInternationalAthlete(e, false);
+        }
+
+        /// <summary>A family and a given name of two letters or more each, no initial ("M.", "M").</summary>
+        private static bool WholeName(string family, string given)
+        {
+            Func<string, bool> whole = n =>
+            {
+                string letters = new string((n ?? "").Where(char.IsLetter).ToArray());
+                return letters.Length >= 2 && !(n ?? "").Trim().EndsWith(".", StringComparison.Ordinal);
+            };
+            return whole(family) && whole(given);
         }
 
         /// <summary>The spelling is the athlete's name or one of its other spellings (letter for letter in Latin, in any order).</summary>

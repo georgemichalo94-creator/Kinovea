@@ -27,6 +27,7 @@ namespace Kinovea.ScreenManager
         private readonly int distance;
         private readonly string athlete;
         private readonly int lane;
+        private readonly Timer readTimer;
         private SwimPasteResult result;
         private bool filling;
 
@@ -62,6 +63,7 @@ namespace Kinovea.ScreenManager
             {
                 Dock = DockStyle.Fill,
                 Multiline = true,
+                MaxLength = 0,
                 ScrollBars = ScrollBars.Both,
                 WordWrap = false,
                 AcceptsReturn = true,
@@ -93,7 +95,18 @@ namespace Kinovea.ScreenManager
             Controls.Add(buttons);
             CancelButton = cancel;
 
-            text.TextChanged += (s, e) => Read();
+            // Read again a moment after the typing stops (a whole page pasted is read once).
+            readTimer = new Timer { Interval = 250 };
+            readTimer.Tick += (s, e) =>
+            {
+                readTimer.Stop();
+                Read();
+            };
+            text.TextChanged += (s, e) =>
+            {
+                readTimer.Stop();
+                readTimer.Start();
+            };
             who.SelectedIndexChanged += (s, e) =>
             {
                 if (!filling)
@@ -101,14 +114,27 @@ namespace Kinovea.ScreenManager
             };
             ok.Click += (s, e) =>
             {
+                if (readTimer.Enabled)
+                {
+                    readTimer.Stop();
+                    Read();
+                }
+
                 if (Chosen == null || !Chosen.Time.HasValue)
                     DialogResult = DialogResult.None;
             };
 
             if (!string.IsNullOrEmpty(initial))
                 text.Text = initial;
-            else
-                Read();
+            readTimer.Stop();
+            Read();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                readTimer.Dispose();
+            base.Dispose(disposing);
         }
 
         protected override void OnShown(EventArgs e)
@@ -150,7 +176,7 @@ namespace Kinovea.ScreenManager
         private void ShowRecord(SwimPasteRecord r, bool byName)
         {
             Chosen = r;
-            ChosenByName = r != null && (byName || (athlete.Length > 0 && SwimResultsPaste.NameScore(athlete, r) >= SwimNameMatch.SameName - 0.03));
+            ChosenByName = r != null && (byName || (athlete.Trim().Length > 0 && SwimResultsPaste.NameScore(athlete, r) >= SwimNameMatch.SameName));
             ok.Enabled = r != null && r.Time.HasValue;
             preview.ForeColor = ok.Enabled ? SystemColors.ControlText : Color.FromArgb(170, 70, 30);
 
@@ -186,9 +212,16 @@ namespace Kinovea.ScreenManager
                 if (r.SplitsMissing)
                     lines.Add(SwimLang.T("Δεν βρέθηκαν όλοι οι ενδιάμεσοι των 50μ.: μπαίνει μόνο ο τελικός χρόνος (άνοιξε τους ενδιάμεσους στη σελίδα και αντίγραψέ τους μαζί, αν θέλεις και αυτούς)."));
             }
+            else if (r.TimeChoices.Count > 1)
+                lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Βρέθηκαν {0} χρόνοι που μπορεί να είναι ο τελικός ({1}): σβήσε από το κείμενο όποιον δεν είναι ο χρόνος του αγώνα (π.χ. χρόνο συμμετοχής)."),
+                    r.TimeChoices.Count, string.Join(", ", r.TimeChoices.Select(SwimResultsPaste.FormatTime).ToArray())));
             else
                 lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Δεν βρέθηκε τελικός χρόνος για τα {0}μ."), distance) +
                     (r.Status.Length > 0 ? " (" + r.Status + ")" : ""));
+
+            // Another swimmer than the race's athlete (a row of the wrong line, the only one pasted).
+            if (athlete.Trim().Length > 0 && SwimResultsPaste.NameScore(athlete, r) < SwimResultsPaste.OtherName)
+                lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Δεν μοιάζει με τον αθλητή του αγώνα («{0}»): έλεγξε ότι είναι η σωστή γραμμή."), athlete.Trim()));
 
             if (result.Best >= 0 && result.Records.Count > 1)
                 lines.Add(result.Why == "name" ? SwimLang.T("(βρέθηκε από το όνομα του αθλητή του αγώνα)") :

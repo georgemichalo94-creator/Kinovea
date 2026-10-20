@@ -406,7 +406,10 @@ namespace Kinovea.ScreenManager
 
         private static string Str(JToken t)
         {
-            return t == null || t.Type == JTokenType.Null ? "" : ((string)t ?? "").Trim();
+            // An object or a list where a value was expected (another shape of the answer): no value, not an error.
+            if (t == null || t.Type == JTokenType.Null || t.Type == JTokenType.Object || t.Type == JTokenType.Array)
+                return "";
+            return ((string)t ?? "").Trim();
         }
 
         private static int Int(JToken t)
@@ -737,8 +740,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The athlete's code of the World Aquatics results ("GmsId", the code of the registry's international athletes "WA…"): from one
-        /// of his last individual results (its competition by the day and the name, its event, his row by his person's id); at most
-        /// three competitions tried. "" when not found (the athlete is then registered without it).
+        /// of his individual results (its competition by the day and the name, its event, his row by his person's id); the
+        /// competitions of World Aquatics first (World Championships, World Cup, Olympic Games: only their events have names and the
+        /// code in the results), the last first; at most four competitions tried. "" when not found (the athlete is then registered
+        /// without it).
         /// </summary>
         public static string WorldAquaticsGmsId(SwimWaAthlete a)
         {
@@ -752,14 +757,15 @@ namespace Kinovea.ScreenManager
 
             List<JToken> individual = list.Where(r => Str(r["SportCode"]) == "SW" && Date(r["Date"]).HasValue &&
                 Str(r["DisciplineName"]).IndexOf("RELAY", StringComparison.OrdinalIgnoreCase) < 0)
-                .OrderByDescending(r => Date(r["Date"]).Value).ToList();
+                .OrderByDescending(r => WorldAquaticsHosted(Str(r["CompetitionType"])))
+                .ThenByDescending(r => Date(r["Date"]).Value).ToList();
             HashSet<string> tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (JToken r in individual)
             {
                 string competition = Str(r["CompetitionName"]);
                 if (competition.Length == 0 || !tried.Add(competition))
                     continue;
-                if (tried.Count > 3)
+                if (tried.Count > 4)
                     break;
 
                 DateTime day = Date(r["Date"]).Value.Date;
@@ -795,6 +801,12 @@ namespace Kinovea.ScreenManager
             }
 
             return "";
+        }
+
+        /// <summary>A competition of World Aquatics by its type ("World Championships", "Swimming World Cup", "Olympic Games").</summary>
+        private static bool WorldAquaticsHosted(string type)
+        {
+            return type.IndexOf("World", StringComparison.OrdinalIgnoreCase) >= 0 || type.IndexOf("Olympic", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>"M", "F", "X" of a category of Microplus ("WOMEN - GENERAL", "MEN - JUNIORS", its code "ASF").</summary>

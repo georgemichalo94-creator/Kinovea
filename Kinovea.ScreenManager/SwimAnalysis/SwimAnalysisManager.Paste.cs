@@ -38,6 +38,9 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            // The paste replaces results found on the web and waiting for the end of the reading.
+            CancelPendingOffer();
+
             string clip = "";
             try
             {
@@ -66,11 +69,16 @@ namespace Kinovea.ScreenManager
                 byName = dialog.ChosenByName;
             }
 
+            OfficialQuery q = NewOfficialQuery(Race.ResultsLink, false);
+
+            // Found by the race's athlete's name: him (another country is another swimmer of the same name); an initial for his given
+            // name ("M. ROSSI") made his given name.
+            if (byName && q.Nation.Length > 0 && chosen.Nation.Length > 0 && !string.Equals(q.Nation, chosen.Nation, StringComparison.OrdinalIgnoreCase))
+                byName = false;
             if (byName)
                 CompleteInitial(chosen, Race.Athlete);
 
-            OfficialQuery q = NewOfficialQuery(Race.ResultsLink, false);
-            SwimOfficialEntry e = PasteEntry(chosen, q.Gender);
+            SwimOfficialEntry e = PasteEntry(chosen, q.Gender, byName);
             SwimOfficialUnit unit = new SwimOfficialUnit
             {
                 Source = "paste",
@@ -90,7 +98,7 @@ namespace Kinovea.ScreenManager
                 Unit = unit,
                 Entry = e,
                 How = SwimLang.T("από την επικόλληση"),
-                ByAthlete = byName || string.IsNullOrWhiteSpace(Race.Athlete)
+                ByAthlete = byName
             };
 
             OfferOfficialWhenFree(found, q, Race.Id);
@@ -113,13 +121,12 @@ namespace Kinovea.ScreenManager
             if (letters.Length == 0 || letters.Length > 3 || !r.GivenName.Contains(".") || string.IsNullOrWhiteSpace(athlete))
                 return;
 
-            string a1, a2;
-            SwimNameMatch.Split(athlete, out a1, out a2);
-            foreach (string[] pair in new[] { new[] { a1, a2 }, new[] { a2, a1 } })
+            foreach (string[] pair in SwimResultsPaste.NameSplits(athlete))
             {
+                // (The given name in the letters of the pasted row: a Greek name for a Greek row, a Latin one for a Latin row.)
                 string given = SwimNameMatch.Latin(pair[1]);
-                if (pair[1].Length > 1 && given.Length > 0 && SwimNameMatch.FamilySimilarity(pair[0], r.FamilyName) >= 0.95 &&
-                    given[0] == SwimNameMatch.Latin(letters.Substring(0, 1))[0])
+                if (pair[1].Length > 1 && given.Length > 0 && SwimNameMatch.HasGreek(pair[1]) == SwimNameMatch.HasGreek(r.FamilyName) &&
+                    SwimNameMatch.FamilySimilarity(pair[0], r.FamilyName) >= 0.95 && given[0] == SwimNameMatch.Latin(letters.Substring(0, 1))[0])
                 {
                     r.GivenName = pair[1];
                     return;
@@ -127,12 +134,16 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The pasted swimmer as a result of the web: his names (Greek or Latin letters), country, year, club, times, lane.</summary>
-        private SwimOfficialEntry PasteEntry(SwimPasteRecord r, string gender)
+        /// <summary>
+        /// The pasted swimmer as a result of the web: his names (Greek or Latin letters), country, year, club, times, lane; found by the
+        /// race's athlete's name, the athlete's registry code (the registry's athlete is him, whatever the spelling pasted).
+        /// </summary>
+        private SwimOfficialEntry PasteEntry(SwimPasteRecord r, string gender, bool byName)
         {
             SwimOfficialEntry e = new SwimOfficialEntry
             {
                 Heat = 0,
+                Code = byName ? (Race.AthleteId ?? "").Trim() : "",
                 Lane = r.Lane >= 0 ? r.Lane : RaceLaneNumber() > 0 ? RaceLaneNumber() : -1,
                 Nation = r.Nation,
                 Club = r.Club,
@@ -257,12 +268,16 @@ namespace Kinovea.ScreenManager
 
                 if (Settings == null || !Settings.IsConfigured)
                 {
-                    // No sheet: the race takes his name, gender and year (the registry when the connection is there).
+                    // No sheet: the race takes his name, gender and year (the registry when the connection is there); the details of
+                    // the athlete before him go.
                     Race.Athlete = entry.NameLatin;
-                    Race.AthleteGender = a.Gender == "F" ? "Γυναικών" : a.Gender == "M" ? "Ανδρών" : Race.AthleteGender;
-                    if (a.BirthYear > 0)
-                        Race.AthleteBirthYear = a.BirthYear.ToString(CultureInfo.InvariantCulture);
+                    Race.AthleteId = "";
+                    Race.AthleteCategory = "";
+                    Race.AthleteClub = "";
+                    Race.AthleteGender = a.Gender == "F" ? "Γυναικών" : a.Gender == "M" ? "Ανδρών" : "";
+                    Race.AthleteBirthYear = a.BirthYear > 0 ? a.BirthYear.ToString(CultureInfo.InvariantCulture) : "";
                     Changed(false);
+                    ScheduleSend();
                     if (form != null)
                         form.RefreshAll();
                     Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🌐 Αθλητής: {0} ({1}). Χωρίς σύνδεση με το Google Sheet δεν καταχωρήθηκε στους διεθνείς αθλητές."), entry.NameLatin, a.Nation), true);
