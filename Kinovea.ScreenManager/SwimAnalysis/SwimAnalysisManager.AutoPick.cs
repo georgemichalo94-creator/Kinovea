@@ -447,7 +447,7 @@ namespace Kinovea.ScreenManager
             if (p == null || Race == null || !Race.StartTimestamp.HasValue)
                 return;
 
-            Color amber = Color.FromArgb(255, 255, 184, 0);
+            Color amber = SwimTheme.Amber;
             if (!SameFrame(p.Frame, timestamp))
             {
                 DrawLabel(g, string.Format(CultureInfo.InvariantCulture,

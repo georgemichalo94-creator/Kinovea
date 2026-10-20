@@ -283,12 +283,19 @@ namespace Kinovea.ScreenManager
                 }
 
                 // Once the signal is heard, the frames are read until 8 s after the last clear one (its race, for the checks).
+                double lastToCheck = double.NaN;
+                bool lastKnown = false;
                 Func<long, bool> enough = ts =>
                 {
-                    if (heard == null || !heard.IsCompleted || heard.IsFaulted || heard.IsCanceled)
-                        return false;
-                    List<SwimBeep> clear = heard.Result.Where(b => b.Score >= SwimStartSound.MinScore).ToList();
-                    return clear.Count > 0 && ts > from + (clear.Max(b => b.Onset) + 8) * tsPerSecond;
+                    if (!lastKnown)
+                    {
+                        if (heard == null || !heard.IsCompleted || heard.IsFaulted || heard.IsCanceled)
+                            return false;
+                        lastToCheck = SwimStartSound.LastToCheck(heard.Result);
+                        lastKnown = true;
+                    }
+
+                    return !double.IsNaN(lastToCheck) && ts > from + (lastToCheck + 8) * tsPerSecond;
                 };
 
                 result.Completed = ReadStartLightFrames(detector, stamps, from, end, width, height, worker, enough);

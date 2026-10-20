@@ -24,7 +24,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public partial class SwimAnalysisManager
     {
-        private static readonly Color colorCompare = Color.FromArgb(255, 0, 200, 255);
+        private static readonly Color colorCompare = SwimTheme.Accent;
         private SwimCompare.Curve compareCurve;
         private string compareCurveKey = "";
 
@@ -499,18 +499,12 @@ namespace Kinovea.ScreenManager
                 x = Math.Max(left, Math.Min(right - w, x));
                 y = Math.Max(top, Math.Min(bottom - h, y));
 
+                // HUD (2.9.0): a glass chip with a cyan border.
                 RectangleF r = new RectangleF(x, y, w, h);
-                using (GraphicsPath path = SwimTheme.Rounded(r, 4))
-                using (SolidBrush back = new SolidBrush(Color.FromArgb(218, 9, 14, 22)))
-                using (Pen border = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
-                {
-                    g.FillPath(back, path);
-                    g.DrawPath(border, path);
-                }
-
+                SwimTheme.HudChip(g, r, colorCompare, 1f, 4f, 218);
                 using (SolidBrush accent = new SolidBrush(colorCompare))
-                    g.FillRectangle(accent, r.Left + 1.5f, r.Top + 3, 2.5f, r.Height - 6);
-                using (SolidBrush white = new SolidBrush(Color.White))
+                    g.FillRectangle(accent, r.Left + 2f, r.Top + 4, 2f, r.Height - 8);
+                using (SolidBrush white = new SolidBrush(SwimTheme.Text))
                 {
                     g.DrawString(text, font, white, r.Left + 6, r.Top + (h - ns.Height) / 2);
                     if (!gs.IsEmpty)

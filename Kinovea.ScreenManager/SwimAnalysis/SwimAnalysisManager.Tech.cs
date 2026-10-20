@@ -1059,7 +1059,7 @@ namespace Kinovea.ScreenManager
         {
             // As on the screen: only for the video of the analysis, while the analysis is on the screen (window or bars).
             if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || !Active ||
-                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports)
+                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports || !Settings.VideoGraphics)
                 return;
 
             // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).
@@ -1140,7 +1140,20 @@ namespace Kinovea.ScreenManager
                             if (!allRace && (Race.IsTraining || TechnicalView))
                                 DrawTechOverlay(g, timestamp, logical);
                             if (!Race.IsTraining)
-                                DrawRaceOverlay(g, timestamp, logical, allRace, !compare);
+                            {
+                                // The swimmer in front of the graphics in the exported video too (2.9.0); the image of the report keeps
+                                // its board as it is.
+                                RectangleF swimmer = RectangleF.Empty;
+                                if (!allRace)
+                                {
+                                    Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                                    float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
+                                    float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
+                                    swimmer = SwimHud.SwimmerBox(Race, timestamp, p => new PointF(p.X * sx, p.Y * sy));
+                                }
+
+                                DrawRaceOverlay(g, timestamp, logical, allRace, !compare, swimmer);
+                            }
                         }
                     }
                 }
@@ -1814,8 +1827,8 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Overlay of the technical analysis
-        private static readonly Pen penAngle = new Pen(Color.FromArgb(240, 0, 200, 255), 2.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        private static readonly Pen penAngleArc = new Pen(Color.FromArgb(230, 255, 176, 0), 2f);
+        private static readonly Pen penAngle = new Pen(Color.FromArgb(240, 56, 225, 255), 2.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        private static readonly Pen penAngleArc = new Pen(Color.FromArgb(230, 255, 190, 92), 2f);
         private static readonly SolidBrush brushAnglePoint = new SolidBrush(Color.FromArgb(250, 255, 255, 255));
 
         /// <summary>
@@ -1878,7 +1891,7 @@ namespace Kinovea.ScreenManager
             Font font = SwimTheme.Display(10f * scale);
             SizeF size = g.MeasureString(text, font);
             RectangleF box = new RectangleF(label.X - size.Width / 2 - 4, label.Y - size.Height / 2 - 1, size.Width + 8, size.Height + 2);
-            SwimTheme.FillRounded(g, Color.FromArgb(215, 7, 12, 19), box, 4 * scale);
+            SwimTheme.HudChip(g, box, SwimTheme.Amber, 1f, 4 * scale, 215);
             using (SolidBrush brush = new SolidBrush(SwimTheme.Amber))
                 g.DrawString(text, font, brush, box.X + 4, box.Y + 1);
             if (!string.IsNullOrWhiteSpace(a.Name))
@@ -1892,7 +1905,8 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Values of the start or turn at the current frame, in the order they happen, up to the current time.
         /// </summary>
-        private void DrawTechOverlay(Graphics g, long timestamp, Size size)
+        /// <param name="swimmer">Where the swimmer is on the drawing (2.9.0: the card fades over him); empty: not known.</param>
+        private void DrawTechOverlay(Graphics g, long timestamp, Size size, RectangleF swimmer = default(RectangleF))
         {
             SwimTechPhase phase = SwimTechCalculator.PhaseAt(TechPhases, timestamp);
             if (phase == null || size.Width < 300 || size.Height < 200)
@@ -1935,37 +1949,39 @@ namespace Kinovea.ScreenManager
             if (kicks > 0)
                 items.Add(new KeyValuePair<string, string>(SwimLang.T("ΔΕΛΦΙΝΙΣΜΟΙ"), kicks.ToString(CultureInfo.InvariantCulture)));
 
-            // Card at the bottom left of the video.
-            Font title = SwimTheme.Display(11f);
+            // Card at the bottom left of the video (HUD, 2.9.0: glass with amber brackets, the title in spaced capitals, thin glowing
+            // values; it fades over the swimmer).
+            Font title = SwimTheme.Ui(8.25f, FontStyle.Bold);
+            Font clockFont = SwimTheme.DisplayLight(14f);
             Font caption = SwimTheme.Ui(6.5f, FontStyle.Bold);
-            Font value = SwimTheme.Display(12f);
+            Font value = SwimTheme.DisplayLight(13f);
             int cellW = 74, cellH = 36, cols = Math.Max(1, Math.Min(items.Count, Math.Max(3, (int)(size.Width * 0.62) / cellW)));
             int rows = items.Count == 0 ? 0 : (items.Count + cols - 1) / cols;
             int width = Math.Max(200, cols * cellW + 16);
             int height = 34 + rows * cellH + 8;
             Rectangle card = new Rectangle(10, size.Height - height - 10, width, height);
-            using (GraphicsPath path = SwimTheme.Rounded(card, 6))
-            using (SolidBrush back = new SolidBrush(Color.FromArgb(215, 11, 17, 26)))
-                g.FillPath(back, path);
-            using (SolidBrush accent = new SolidBrush(SwimTheme.Amber))
-                g.FillRectangle(accent, card.Left, card.Top + 6, 3, card.Height - 12);
-
             string clock = (now < 0 ? "−" : "") + Math.Abs(now).ToString("0.00", CultureInfo.InvariantCulture) + " s";
-            using (SolidBrush text = new SolidBrush(SwimTheme.Text))
-            using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
-            using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
+            HudLayer(g, card, SwimmerFade(card, swimmer), layer =>
             {
-                g.DrawString(phase.Title.ToUpperInvariant(), title, amber, card.Left + 10, card.Top + 7);
-                SizeF cs = g.MeasureString(clock, title);
-                g.DrawString(clock, title, text, card.Right - cs.Width - 8, card.Top + 7);
-                for (int i = 0; i < items.Count; i++)
+                SwimTheme.HudPanel(layer, card, SwimTheme.Amber);
+                SizeF cs = layer.MeasureString(clock, clockFont);
+                SwimTheme.GlowText(layer, clock, clockFont, SwimTheme.AccentPale, SwimTheme.Accent, new PointF(card.Right - cs.Width - 6, card.Top + 5), 0.8f);
+                SwimTheme.CapsIn(layer, SwimLang.Upper(phase.Title), title, SwimTheme.Amber,
+                    new RectangleF(card.Left + 10, card.Top + 6, Math.Max(10, card.Width - cs.Width - 26), 20), StringAlignment.Near, 0.14f);
+                using (Pen line = new Pen(Color.FromArgb(60, SwimTheme.Accent), 1f))
+                    layer.DrawLine(line, card.Left + 10, card.Top + 29, card.Right - 10, card.Top + 29);
+
+                using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
                 {
-                    int cx = card.Left + 10 + (i % cols) * cellW;
-                    int cy = card.Top + 32 + (i / cols) * cellH;
-                    g.DrawString(items[i].Key, caption, dim, cx, cy);
-                    g.DrawString(items[i].Value, value, text, cx, cy + 11);
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        int cx = card.Left + 10 + (i % cols) * cellW;
+                        int cy = card.Top + 32 + (i / cols) * cellH;
+                        layer.DrawString(items[i].Key, caption, dim, cx, cy);
+                        SwimTheme.GlowText(layer, items[i].Value, value, SwimTheme.Text, SwimTheme.Accent, new PointF(cx - 1, cy + 11), 0.6f);
+                    }
                 }
-            }
+            });
         }
         #endregion
     }

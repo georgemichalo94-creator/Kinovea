@@ -16,34 +16,38 @@ using System.Windows.Forms;
 namespace Kinovea.ScreenManager
 {
     /// <summary>
-    /// Colors and fonts of the swim analysis panel and of the video overlay: dark "broadcast" style,
-    /// cyan accent for the race, amber for the ΔΑΚ and the highlights.
+    /// Colors and fonts of the swim analysis panel and of the video overlay. Since 2.9.0 a holographic "HUD" style: deep navy glass,
+    /// thin cyan lines with a glow, corner brackets, cut corners and spaced capitals; the swimmer amber, the reference cyan, the
+    /// ΔΑΚ amber, faster green, slower red (as before).
     /// </summary>
     internal static class SwimTheme
     {
-        public static readonly Color Back = Color.FromArgb(11, 17, 26);
-        public static readonly Color Surface = Color.FromArgb(17, 26, 38);
-        public static readonly Color Raised = Color.FromArgb(25, 37, 53);
-        public static readonly Color RaisedHover = Color.FromArgb(33, 49, 69);
-        public static readonly Color Pressed = Color.FromArgb(14, 22, 33);
-        public static readonly Color Border = Color.FromArgb(39, 57, 79);
-        public static readonly Color Input = Color.FromArgb(7, 12, 19);
-        public static readonly Color Text = Color.FromArgb(230, 237, 243);
-        public static readonly Color Dim = Color.FromArgb(140, 160, 182);
-        public static readonly Color Faint = Color.FromArgb(86, 105, 127);
-        public static readonly Color Accent = Color.FromArgb(0, 200, 255);
-        public static readonly Color AccentDark = Color.FromArgb(0, 86, 122);
-        public static readonly Color Amber = Color.FromArgb(255, 176, 0);
-        public static readonly Color AmberDark = Color.FromArgb(74, 52, 6);
-        public static readonly Color Green = Color.FromArgb(61, 220, 151);
-        public static readonly Color Red = Color.FromArgb(255, 99, 99);
-        public static readonly Color Warn = Color.FromArgb(255, 180, 40);
-        public static readonly Color GridLine = Color.FromArgb(30, 44, 61);
-        public static readonly Color RowAlt = Color.FromArgb(14, 22, 33);
-        public static readonly Color NextRow = Color.FromArgb(52, 44, 12);
-        public static readonly Color PhaseCell = Color.FromArgb(58, 38, 18);
+        public static readonly Color Back = Color.FromArgb(3, 14, 23);
+        public static readonly Color Surface = Color.FromArgb(5, 22, 34);
+        public static readonly Color Raised = Color.FromArgb(8, 32, 47);
+        public static readonly Color RaisedHover = Color.FromArgb(12, 47, 66);
+        public static readonly Color Pressed = Color.FromArgb(4, 17, 27);
+        public static readonly Color Border = Color.FromArgb(19, 74, 92);
+        public static readonly Color Input = Color.FromArgb(2, 10, 17);
+        public static readonly Color Text = Color.FromArgb(234, 252, 255);
+        public static readonly Color Dim = Color.FromArgb(124, 200, 214);
+        public static readonly Color Faint = Color.FromArgb(62, 112, 128);
+        public static readonly Color Accent = Color.FromArgb(56, 225, 255);
+        public static readonly Color AccentLight = Color.FromArgb(143, 243, 255);
+        public static readonly Color AccentPale = Color.FromArgb(201, 251, 255);
+        public static readonly Color AccentDark = Color.FromArgb(8, 76, 99);
+        public static readonly Color Amber = Color.FromArgb(255, 190, 92);
+        public static readonly Color AmberDark = Color.FromArgb(70, 48, 16);
+        public static readonly Color Green = Color.FromArgb(61, 235, 160);
+        public static readonly Color Red = Color.FromArgb(255, 104, 104);
+        public static readonly Color Warn = Color.FromArgb(255, 186, 60);
+        public static readonly Color GridLine = Color.FromArgb(14, 50, 64);
+        public static readonly Color RowAlt = Color.FromArgb(4, 19, 30);
+        public static readonly Color NextRow = Color.FromArgb(58, 46, 18);
+        public static readonly Color PhaseCell = Color.FromArgb(58, 40, 20);
 
         private static string displayFamily;
+        private static string lightFamily;
         private static readonly Dictionary<string, Font> fonts = new Dictionary<string, Font>();
 
         /// <summary>Bahnschrift (Windows 10 and later) for the numbers and the titles, Segoe UI otherwise.</summary>
@@ -83,6 +87,43 @@ namespace Kinovea.ScreenManager
             return Get(DisplayFamily, size, FontStyle.Regular);
         }
 
+        /// <summary>Thin figures of the big values of the HUD (2.9.0): Bahnschrift Light, else Segoe UI Light.</summary>
+        public static string LightFamily
+        {
+            get
+            {
+                if (lightFamily == null)
+                {
+                    lightFamily = DisplayFamily;
+                    foreach (string name in new string[] { "Bahnschrift Light", "Bahnschrift SemiLight", "Segoe UI Light" })
+                    {
+                        try
+                        {
+                            using (FontFamily family = new FontFamily(name))
+                            {
+                                if (!family.IsStyleAvailable(FontStyle.Regular))
+                                    continue;
+
+                                lightFamily = name;
+                                break;
+                            }
+                        }
+                        catch (ArgumentException)
+                        {
+                            // Not installed.
+                        }
+                    }
+                }
+
+                return lightFamily;
+            }
+        }
+
+        public static Font DisplayLight(float size)
+        {
+            return Get(LightFamily, size, FontStyle.Regular);
+        }
+
         public static Font Ui(float size, FontStyle style)
         {
             return Get("Segoe UI", size, style);
@@ -110,21 +151,25 @@ namespace Kinovea.ScreenManager
             return font;
         }
 
+        /// <summary>
+        /// The shape of the cards, buttons and chips. Since 2.9.0 (HUD) the top left and bottom right corners are cut, by about the
+        /// radius asked (at most a third of the width, less than half the height); 2 px or less: a rectangle.
+        /// </summary>
         public static GraphicsPath Rounded(RectangleF r, float radius)
         {
             GraphicsPath path = new GraphicsPath();
-            float d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
-            if (d <= 0.5f)
+            float c = Math.Min(radius * 1.15f, Math.Min(r.Width / 3f, r.Height / 2.2f));
+            if (c <= 2f)
             {
                 path.AddRectangle(r);
                 return path;
             }
 
-            path.AddArc(r.X, r.Y, d, d, 180, 90);
-            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
+            path.AddPolygon(new[]
+            {
+                new PointF(r.Left + c, r.Top), new PointF(r.Right, r.Top), new PointF(r.Right, r.Bottom - c),
+                new PointF(r.Right - c, r.Bottom), new PointF(r.Left, r.Bottom), new PointF(r.Left, r.Top + c)
+            });
             return path;
         }
 
@@ -150,6 +195,223 @@ namespace Kinovea.ScreenManager
                 (int)Math.Round(a.G + (b.G - a.G) * t),
                 (int)Math.Round(a.B + (b.B - a.B) * t));
         }
+
+        #region HUD (2.9.0)
+        /// <summary>The color with its alpha times 'alpha' (0–1).</summary>
+        public static Color Fade(Color c, float alpha)
+        {
+            return Color.FromArgb(Math.Max(0, Math.Min(255, (int)Math.Round(c.A * Math.Max(0f, Math.Min(1f, alpha))))), c.R, c.G, c.B);
+        }
+
+        /// <summary>
+        /// A glass panel of the HUD: deep navy and see-through (the video under it), a thin cyan border, faint scan lines and glowing
+        /// corner brackets in the accent. alpha: 1 as designed, less when the swimmer is under it (he stays in front).
+        /// </summary>
+        public static void HudPanel(Graphics g, RectangleF r, Color accent, float alpha = 1f, bool scanLines = true)
+        {
+            if (r.Width < 6 || r.Height < 6 || alpha <= 0.01f)
+                return;
+
+            SmoothingMode mode = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.None;
+            using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(r.X, r.Y - 1, r.Width, r.Height + 2),
+                Fade(Color.FromArgb(158, 4, 30, 48), alpha), Fade(Color.FromArgb(184, 2, 16, 28), alpha), LinearGradientMode.Vertical))
+                g.FillRectangle(back, r);
+
+            if (scanLines)
+            {
+                using (Pen scan = new Pen(Fade(Color.FromArgb(11, 143, 243, 255), alpha), 1f))
+                {
+                    for (float y = r.Top + 2; y < r.Bottom - 1; y += 4)
+                        g.DrawLine(scan, r.Left + 1, y, r.Right - 1, y);
+                }
+            }
+
+            using (Pen border = new Pen(Fade(Color.FromArgb(72, 56, 225, 255), alpha), 1f))
+                g.DrawRectangle(border, r.X, r.Y, r.Width, r.Height);
+
+            g.SmoothingMode = mode;
+            Brackets(g, r, accent, alpha);
+        }
+
+        /// <summary>The corner brackets of a panel of the HUD, glowing, in a color.</summary>
+        public static void Brackets(Graphics g, RectangleF r, Color color, float alpha = 1f)
+        {
+            float l = Math.Max(6f, Math.Min(22f, Math.Min(r.Width, r.Height) / 5f));
+            using (Pen glow = new Pen(Fade(Color.FromArgb(70, color), alpha), 4.5f))
+            using (Pen pen = new Pen(Fade(Color.FromArgb(240, color), alpha), 1.7f))
+            {
+                foreach (Pen p in new[] { glow, pen })
+                {
+                    g.DrawLines(p, new[] { new PointF(r.Left, r.Top + l), new PointF(r.Left, r.Top), new PointF(r.Left + l, r.Top) });
+                    g.DrawLines(p, new[] { new PointF(r.Right - l, r.Top), new PointF(r.Right, r.Top), new PointF(r.Right, r.Top + l) });
+                    g.DrawLines(p, new[] { new PointF(r.Left, r.Bottom - l), new PointF(r.Left, r.Bottom), new PointF(r.Left + l, r.Bottom) });
+                    g.DrawLines(p, new[] { new PointF(r.Right - l, r.Bottom), new PointF(r.Right, r.Bottom), new PointF(r.Right, r.Bottom - l) });
+                }
+            }
+        }
+
+        /// <summary>A line with a soft glow under it (the lines of the charts of the HUD).</summary>
+        public static void GlowLine(Graphics g, Color color, float width, PointF a, PointF b, float alpha = 1f)
+        {
+            using (Pen glow = new Pen(Fade(Color.FromArgb(55, color), alpha), width * 3.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (Pen pen = new Pen(Fade(color, alpha), width) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                g.DrawLine(glow, a, b);
+                g.DrawLine(pen, a, b);
+            }
+        }
+
+        /// <summary>
+        /// Text with a glow (the big values of the HUD), placed as DrawString places it at a point. strength: of the glow (0: none).
+        /// </summary>
+        public static void GlowText(Graphics g, string text, Font font, Color color, Color glow, PointF at, float strength = 1f)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            SmoothingMode mode = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float em = font.SizeInPoints * g.DpiY / 72f;
+            using (GraphicsPath path = new GraphicsPath())
+            using (StringFormat format = new StringFormat(StringFormat.GenericDefault))
+            {
+                path.AddString(text, font.FontFamily, (int)font.Style, em, at, format);
+                if (strength > 0.01f)
+                {
+                    using (Pen wide = new Pen(Fade(Color.FromArgb(34, glow), strength), Math.Max(2f, em * 0.20f)) { LineJoin = LineJoin.Round })
+                    using (Pen near = new Pen(Fade(Color.FromArgb(70, glow), strength), Math.Max(1f, em * 0.08f)) { LineJoin = LineJoin.Round })
+                    {
+                        g.DrawPath(wide, path);
+                        g.DrawPath(near, path);
+                    }
+                }
+
+                using (SolidBrush brush = new SolidBrush(color))
+                    g.FillPath(brush, path);
+            }
+
+            g.SmoothingMode = mode;
+        }
+
+        /// <summary>
+        /// Spaced capitals (the labels of the HUD) from a point, 'tracking' of the size of the font between the letters. Returns the
+        /// right end of the text.
+        /// </summary>
+        public static float Tracked(Graphics g, string text, Font font, Brush brush, float x, float y, float tracking = 0.14f)
+        {
+            if (string.IsNullOrEmpty(text))
+                return x;
+
+            float em = font.SizeInPoints * g.DpiY / 72f;
+            float cx = x;
+            using (StringFormat format = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.MeasureTrailingSpaces })
+            {
+                foreach (char ch in text)
+                {
+                    string s = ch.ToString();
+                    g.DrawString(s, font, brush, cx, y, format);
+                    cx += g.MeasureString(s, font, PointF.Empty, format).Width + tracking * em;
+                }
+            }
+
+            return cx - tracking * em;
+        }
+
+        /// <summary>Width of spaced capitals (see Tracked).</summary>
+        public static float TrackedWidth(Graphics g, string text, Font font, float tracking = 0.14f)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+
+            float em = font.SizeInPoints * g.DpiY / 72f;
+            float w = 0;
+            using (StringFormat format = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.MeasureTrailingSpaces })
+            {
+                foreach (char ch in text)
+                    w += g.MeasureString(ch.ToString(), font, PointF.Empty, format).Width + tracking * em;
+            }
+
+            return w - tracking * em;
+        }
+
+        /// <summary>
+        /// Spaced capitals with the text of the controls (TextRenderer, sharp on an opaque background) in a box, from its left (or its
+        /// right), vertically centred; cut with "…" when they do not fit. Returns the width drawn.
+        /// </summary>
+        public static int TrackedText(Graphics g, string text, Font font, Color color, Rectangle box, float tracking = 0.12f, bool right = false)
+        {
+            if (string.IsNullOrEmpty(text) || box.Width < 2 || box.Height < 2)
+                return 0;
+
+            int space = Math.Max(1, (int)Math.Round(font.SizeInPoints * g.DpiY / 72f * tracking));
+            TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+            List<int> widths = text.Select(ch => TextRenderer.MeasureText(g, ch.ToString(), font, Size.Empty, flags).Width).ToList();
+            int total = widths.Sum() + space * (text.Length - 1);
+            if (total > box.Width)
+            {
+                // Too long: as one string, cut.
+                TextRenderer.DrawText(g, text, font, box, color, flags | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
+                    (right ? TextFormatFlags.Right : TextFormatFlags.Left));
+                return box.Width;
+            }
+
+            int height = TextRenderer.MeasureText(g, text, font, Size.Empty, flags).Height;
+            int x = right ? box.Right - total : box.Left;
+            int y = box.Top + (box.Height - height) / 2;
+            for (int i = 0; i < text.Length; i++)
+            {
+                TextRenderer.DrawText(g, text[i].ToString(), font, new Point(x, y), color, flags);
+                x += widths[i] + space;
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// A small glass chip of the HUD (labels, pills, the values of a panel): see-through navy, a thin border in the accent, cut
+        /// corners; alpha as HudPanel.
+        /// </summary>
+        public static void HudChip(Graphics g, RectangleF r, Color accent, float alpha = 1f, float cut = 4f, int fill = 205)
+        {
+            if (r.Width < 2 || r.Height < 2 || alpha <= 0.01f)
+                return;
+
+            using (GraphicsPath path = Rounded(r, cut))
+            using (SolidBrush back = new SolidBrush(Fade(Color.FromArgb(fill, 3, 18, 30), alpha)))
+            using (Pen border = new Pen(Fade(Color.FromArgb(150, accent), alpha), 1f))
+            {
+                g.FillPath(back, path);
+                g.DrawPath(border, path);
+            }
+        }
+
+        /// <summary>
+        /// Spaced capitals (see Tracked) in a box, vertically centred, from its left, its centre or its right, when they fit; else the
+        /// text as one string cut with "…" (Graphics: the video and the images).
+        /// </summary>
+        public static void CapsIn(Graphics g, string text, Font font, Color color, RectangleF box, StringAlignment horizontal = StringAlignment.Near,
+            float tracking = 0.12f)
+        {
+            if (string.IsNullOrEmpty(text) || box.Width < 4)
+                return;
+
+            using (SolidBrush brush = new SolidBrush(color))
+            {
+                float w = TrackedWidth(g, text, font, tracking);
+                if (w <= box.Width)
+                {
+                    float h = font.GetHeight(g);
+                    float x = horizontal == StringAlignment.Far ? box.Right - w : (horizontal == StringAlignment.Center ? box.Left + (box.Width - w) / 2 : box.Left);
+                    Tracked(g, text, font, brush, x, box.Top + (box.Height - h) / 2, tracking);
+                    return;
+                }
+
+                using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Alignment = horizontal, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter })
+                    g.DrawString(text, font, brush, box, format);
+            }
+        }
+        #endregion
 
         /// <summary>Opaque background behind a control (the first ancestor with a solid color).</summary>
         public static Color BackOf(Control c)
@@ -255,6 +517,154 @@ namespace Kinovea.ScreenManager
             catch (Exception)
             {
                 // Older Windows: the standard title bar stays.
+            }
+        }
+    }
+
+    /// <summary>
+    /// The swimmer in front of the graphics of the video (2.9.0): where he is on the drawing and how much a panel shows over him; a
+    /// see-through layer for the panels over him, at the resolution of the drawing.
+    /// </summary>
+    internal static class SwimHud
+    {
+        /// <summary>
+        /// Where the swimmer is at a frame, from the part of the race followed there («Ακολούθηση αθλητή», the auto pilot): his body, the
+        /// water of his arms and the length ahead of his head. toView: reference image pixels → the drawing. Empty when not known.
+        /// </summary>
+        public static RectangleF SwimmerBox(SwimRace race, long timestamp, Func<PointF, PointF> toView)
+        {
+            if (race == null || race.IsTraining || toView == null)
+                return RectangleF.Empty;
+
+            SwimTrack track = race.TrackAt(timestamp);
+            float x, y, top, bottom;
+            if (track == null || !track.TryGet(timestamp, 2, out x, out y, out top, out bottom))
+                return RectangleF.Empty;
+
+            float lane = Math.Abs(bottom - top);
+            if (lane < 4)
+                lane = 40;
+            float body = track.Body > 0 ? track.Body / 1000f * lane : 2.4f * lane;
+            float half = Math.Max(body, lane) * 0.75f + Math.Abs(track.Lead / 1000f * lane);
+            RectangleF image = new RectangleF(x - half, Math.Min(top, bottom) - 0.6f * lane, 2 * half, 1.8f * lane);
+            PointF a = toView(new PointF(image.Left, image.Top)), b = toView(new PointF(image.Right, image.Bottom));
+            return RectangleF.FromLTRB(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+        }
+
+        /// <summary>
+        /// How much a panel shows: 1 away from the swimmer, down to 0.25 over him (from 'reach' away, drawing units), so that he stays
+        /// in front; 1 when his place is not known.
+        /// </summary>
+        public static float Fade(RectangleF panel, RectangleF swimmer, float reach = 48f)
+        {
+            if (swimmer.IsEmpty || swimmer.Width <= 0 || swimmer.Height <= 0 || panel.Width <= 0 || panel.Height <= 0)
+                return 1f;
+
+            float dx = Math.Max(0, Math.Max(panel.Left - swimmer.Right, swimmer.Left - panel.Right));
+            float dy = Math.Max(0, Math.Max(panel.Top - swimmer.Bottom, swimmer.Top - panel.Bottom));
+            float d = (float)Math.Sqrt(dx * dx + dy * dy);
+            return 0.25f + 0.75f * Math.Max(0f, Math.Min(1f, d / Math.Max(1f, reach)));
+        }
+
+        [ThreadStatic]
+        private static Bitmap layer;
+
+        [ThreadStatic]
+        private static int depth;
+
+        /// <summary>
+        /// Draws graphics as they are (alpha 1), or through a see-through layer (alpha less than 1: the swimmer under them). The layer
+        /// has the pixels of the drawing (an export drawn at a scale stays sharp). place: where the graphics are, in the units of g.
+        /// </summary>
+        public static void Layer(Graphics g, RectangleF place, float alpha, Action<Graphics> draw)
+        {
+            if (alpha >= 0.99f || place.Width <= 0 || place.Height <= 0)
+            {
+                draw(g);
+                return;
+            }
+
+            if (alpha <= 0.01f)
+                return;
+
+            const float margin = 8f;
+            PointF[] corners = { new PointF(place.Left - margin, place.Top - margin), new PointF(place.Right + margin, place.Bottom + margin) };
+            using (Matrix transform = g.Transform)
+            {
+                transform.TransformPoints(corners);
+                Rectangle device = Rectangle.FromLTRB(
+                    (int)Math.Floor(Math.Min(corners[0].X, corners[1].X)), (int)Math.Floor(Math.Min(corners[0].Y, corners[1].Y)),
+                    (int)Math.Ceiling(Math.Max(corners[0].X, corners[1].X)), (int)Math.Ceiling(Math.Max(corners[0].Y, corners[1].Y)));
+                if (device.Width <= 0 || device.Height <= 0 || device.Width > 8192 || device.Height > 8192)
+                {
+                    draw(g);
+                    return;
+                }
+
+                // One bitmap kept for the layers (a layer in a layer has its own).
+                bool shared = depth == 0;
+                Bitmap target;
+                if (shared)
+                {
+                    if (layer == null || layer.Width < device.Width || layer.Height < device.Height)
+                    {
+                        if (layer != null)
+                            layer.Dispose();
+                        layer = new Bitmap(Math.Max(device.Width, 64), Math.Max(device.Height, 64), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                    }
+
+                    target = layer;
+                }
+                else
+                {
+                    target = new Bitmap(device.Width, device.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                }
+
+                depth++;
+                try
+                {
+                    using (Graphics lg = Graphics.FromImage(target))
+                    {
+                        lg.CompositingMode = CompositingMode.SourceCopy;
+                        using (SolidBrush clear = new SolidBrush(Color.Transparent))
+                            lg.FillRectangle(clear, 0, 0, device.Width, device.Height);
+                        lg.CompositingMode = CompositingMode.SourceOver;
+                        lg.SetClip(new Rectangle(0, 0, device.Width, device.Height));
+                        lg.SmoothingMode = SmoothingMode.AntiAlias;
+                        lg.TextRenderingHint = TextRenderingHint.AntiAlias;
+                        lg.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                        using (Matrix local = transform.Clone())
+                        {
+                            local.Translate(-device.X, -device.Y, MatrixOrder.Append);
+                            lg.Transform = local;
+                        }
+
+                        draw(lg);
+                    }
+
+                    GraphicsState state = g.Save();
+                    try
+                    {
+                        g.ResetTransform();
+                        g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                        g.PixelOffsetMode = PixelOffsetMode.Half;
+                        using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
+                        {
+                            attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = alpha });
+                            g.DrawImage(target, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel, attributes);
+                        }
+                    }
+                    finally
+                    {
+                        g.Restore(state);
+                    }
+                }
+                finally
+                {
+                    depth--;
+                    if (!shared)
+                        target.Dispose();
+                }
             }
         }
     }
@@ -396,16 +806,25 @@ namespace Kinovea.ScreenManager
             else if (hover && Enabled)
                 fill = primary ? SwimTheme.Mix(SwimTheme.AccentDark, accent, 0.25) : SwimTheme.RaisedHover;
 
-            Color border = highlighted ? SwimTheme.Amber : (hover && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.5) : SwimTheme.Border);
-            RectangleF r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            SwimTheme.FillRounded(g, fill, r, 5);
-            SwimTheme.DrawRounded(g, border, r, 5);
+            // HUD (2.9.0): cut corners, a thin line in the accent that glows on the main and the hovered buttons.
+            Color border = highlighted ? SwimTheme.Amber : (hover && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.75) :
+                primary && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.55) : SwimTheme.Border);
+            RectangleF r = new RectangleF(1.5f, 1.5f, Width - 3.5f, Height - 3.5f);
+            SwimTheme.FillRounded(g, fill, r, 6);
+            if (Enabled && (highlighted || primary || hover))
+            {
+                using (GraphicsPath glowPath = SwimTheme.Rounded(r, 6))
+                using (Pen glow = new Pen(Color.FromArgb(hover || highlighted ? 70 : 45, highlighted ? SwimTheme.Amber : accent), 3f))
+                    g.DrawPath(glow, glowPath);
+            }
+
+            SwimTheme.DrawRounded(g, border, r, 6);
 
             // Accent on the left edge: the command buttons look like the buttons of a timing console.
             if (highlighted || primary)
             {
                 using (SolidBrush b = new SolidBrush(highlighted ? SwimTheme.Amber : accent))
-                    g.FillRectangle(b, 2, 5, 3, Math.Max(4, Height - 10));
+                    g.FillRectangle(b, 3, 7, 2, Math.Max(4, Height - 14));
             }
 
             Color text = Enabled ? (highlighted ? SwimTheme.Amber : ForeColor) : SwimTheme.Faint;
@@ -542,13 +961,23 @@ namespace Kinovea.ScreenManager
                     if (i == hover && !active)
                         SwimTheme.FillRounded(g, SwimTheme.Surface, new RectangleF(r.X, r.Y + 3, r.Width, r.Height - 6), 4);
 
+                    // HUD (2.9.0): the active tab bright with a glowing line under it.
+                    if (active)
+                    {
+                        using (LinearGradientBrush under = new LinearGradientBrush(new Rectangle(r.X, 0, Math.Max(1, r.Width), Height),
+                            Color.FromArgb(0, SwimTheme.Accent), Color.FromArgb(46, SwimTheme.Accent), LinearGradientMode.Vertical))
+                            g.FillRectangle(under, r.X + 2, 2, r.Width - 4, Height - 3);
+                    }
+
                     Font font = SwimTheme.Ui(8.5f, active ? FontStyle.Bold : FontStyle.Regular);
-                    TextRenderer.DrawText(g, page.Text, font, r, active ? SwimTheme.Text : SwimTheme.Dim,
+                    TextRenderer.DrawText(g, page.Text, font, r, active ? Color.White : SwimTheme.Dim,
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
                     if (active)
                     {
+                        using (SolidBrush glow = new SolidBrush(Color.FromArgb(70, SwimTheme.Accent)))
+                            g.FillRectangle(glow, r.X + 4, Height - 5, r.Width - 8, 5);
                         using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
-                            g.FillRectangle(accent, r.X + 6, Height - 3, r.Width - 12, 3);
+                            g.FillRectangle(accent, r.X + 6, Height - 3, r.Width - 12, 2);
                     }
                 }
             }
@@ -668,22 +1097,27 @@ namespace Kinovea.ScreenManager
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.BackOf(this));
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            // HUD (2.9.0): cut corners, the chosen option lit with a glowing line under it.
             RectangleF outer = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            SwimTheme.FillRounded(g, SwimTheme.Input, outer, Height / 2f);
-            SwimTheme.DrawRounded(g, SwimTheme.Border, outer, Height / 2f);
+            SwimTheme.FillRounded(g, SwimTheme.Input, outer, 5);
+            SwimTheme.DrawRounded(g, SwimTheme.Border, outer, 5);
             for (int i = 0; i < items.Count; i++)
             {
                 Rectangle r = Segment(i);
                 bool active = i == selectedIndex;
                 if (active && r.Width > 0 && r.Height > 0)
                 {
-                    using (LinearGradientBrush brush = new LinearGradientBrush(r, SwimTheme.AccentDark, SwimTheme.Mix(SwimTheme.AccentDark, SwimTheme.Accent, 0.45), LinearGradientMode.Horizontal))
-                    using (GraphicsPath path = SwimTheme.Rounded(r, r.Height / 2f))
+                    using (LinearGradientBrush brush = new LinearGradientBrush(r, SwimTheme.AccentDark, SwimTheme.Mix(SwimTheme.AccentDark, SwimTheme.Accent, 0.35), LinearGradientMode.Vertical))
+                    using (GraphicsPath path = SwimTheme.Rounded(r, 4))
                         g.FillPath(brush, path);
+                    using (SolidBrush glow = new SolidBrush(Color.FromArgb(80, SwimTheme.Accent)))
+                        g.FillRectangle(glow, r.Left + 4, r.Bottom - 4, r.Width - 8, 4);
+                    using (SolidBrush line = new SolidBrush(SwimTheme.Accent))
+                        g.FillRectangle(line, r.Left + 6, r.Bottom - 2, r.Width - 12, 1.5f);
                 }
                 else if (i == hover)
                 {
-                    SwimTheme.FillRounded(g, SwimTheme.Raised, r, r.Height / 2f);
+                    SwimTheme.FillRounded(g, SwimTheme.Raised, r, 4);
                 }
 
                 TextRenderer.DrawText(g, items[i], Font, r, active ? Color.White : SwimTheme.Dim,
@@ -753,12 +1187,15 @@ namespace Kinovea.ScreenManager
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.BackOf(this));
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            RectangleF r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            SwimTheme.FillRounded(g, SwimTheme.Surface, r, 6);
-            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 6);
+
+            // HUD (2.9.0): a glass card with glowing corner brackets and the title in spaced capitals.
+            RectangleF r = new RectangleF(1.5f, 1.5f, Width - 3.5f, Height - 3.5f);
+            SwimTheme.FillRounded(g, SwimTheme.Surface, r, 2);
+            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 2);
+            SwimTheme.Brackets(g, r, SwimTheme.Accent, 0.8f);
             using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
-                g.FillRectangle(accent, 8, 9, 3, 11);
-            TextRenderer.DrawText(g, title.ToUpperInvariant(), SwimTheme.Ui(7.5f, FontStyle.Bold), new Point(15, 7), SwimTheme.Dim, TextFormatFlags.NoPadding);
+                g.FillRectangle(accent, 9, 10, 2, 9);
+            SwimTheme.TrackedText(g, SwimLang.Upper(title), SwimTheme.Ui(7.5f, FontStyle.Bold), SwimTheme.AccentLight, new Rectangle(15, 6, Width - 22, 16), 0.12f);
         }
     }
 
@@ -799,12 +1236,14 @@ namespace Kinovea.ScreenManager
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.BackOf(this));
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            // HUD (2.9.0): glass, corner brackets, the caption in spaced capitals, thin figures.
             RectangleF r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-            SwimTheme.FillRounded(g, accent ? SwimTheme.AmberDark : SwimTheme.Surface, r, 6);
-            SwimTheme.DrawRounded(g, accent ? SwimTheme.Mix(SwimTheme.AmberDark, SwimTheme.Amber, 0.6) : SwimTheme.Border, r, 6);
-            TextRenderer.DrawText(g, caption.ToUpperInvariant(), SwimTheme.Ui(6.75f, FontStyle.Bold), new Rectangle(8, 5, Width - 12, 14),
-                accent ? SwimTheme.Amber : SwimTheme.Dim, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, value, SwimTheme.Display(15f), new Rectangle(6, 17, Width - 10, 26),
+            SwimTheme.FillRounded(g, accent ? Color.FromArgb(40, 30, 12) : SwimTheme.Surface, r, 5);
+            SwimTheme.DrawRounded(g, accent ? SwimTheme.Mix(SwimTheme.AmberDark, SwimTheme.Amber, 0.6) : SwimTheme.Border, r, 5);
+            SwimTheme.Brackets(g, new RectangleF(1, 1, Width - 3, Height - 3), accent ? SwimTheme.Amber : SwimTheme.Accent, 0.55f);
+            SwimTheme.TrackedText(g, SwimLang.Upper(caption), SwimTheme.Ui(6.75f, FontStyle.Bold), accent ? SwimTheme.Amber : SwimTheme.AccentLight,
+                new Rectangle(8, 4, Width - 12, 14), 0.1f);
+            TextRenderer.DrawText(g, value, SwimTheme.DisplayLight(16f), new Rectangle(6, 17, Width - 10, 26),
                 accent ? SwimTheme.Amber : color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             if (sub.Length > 0)
                 TextRenderer.DrawText(g, sub, SwimTheme.Ui(6.75f, FontStyle.Regular), new Rectangle(8, Height - 16, Width - 12, 13),
@@ -863,19 +1302,19 @@ namespace Kinovea.ScreenManager
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.BackOf(this));
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            // HUD (2.9.0): glass with glowing corner brackets, the clock in thin figures.
             RectangleF r = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
             using (LinearGradientBrush back = new LinearGradientBrush(new Rectangle(0, 0, Math.Max(1, Width), Math.Max(1, Height)), SwimTheme.Surface, SwimTheme.Back, LinearGradientMode.Horizontal))
-            using (GraphicsPath path = SwimTheme.Rounded(r, 6))
+            using (GraphicsPath path = SwimTheme.Rounded(r, 5))
                 g.FillPath(back, path);
-            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 6);
-            using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
-                g.FillRectangle(accent, 1, 6, 3, Height - 12);
+            SwimTheme.DrawRounded(g, SwimTheme.Border, r, 5);
+            SwimTheme.Brackets(g, new RectangleF(1, 1, Width - 3, Height - 3), SwimTheme.Accent, 0.8f);
 
             // Clock.
-            Font clockFont = SwimTheme.Display(19f);
-            TextRenderer.DrawText(g, clockCaption, SwimTheme.Ui(6.5f, FontStyle.Bold), new Point(12, 5), SwimTheme.Dim, TextFormatFlags.NoPadding);
+            Font clockFont = SwimTheme.DisplayLight(20f);
+            SwimTheme.TrackedText(g, SwimLang.Upper(clockCaption), SwimTheme.Ui(6.5f, FontStyle.Bold), SwimTheme.AccentLight, new Rectangle(12, 3, 120, 13), 0.12f);
             Size cs = TextRenderer.MeasureText(g, clock, clockFont);
-            TextRenderer.DrawText(g, clock, clockFont, new Rectangle(8, 14, cs.Width + 4, Height - 16), SwimTheme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+            TextRenderer.DrawText(g, clock, clockFont, new Rectangle(8, 14, cs.Width + 4, Height - 16), SwimTheme.AccentPale, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
 
             int x = 14 + Math.Max(cs.Width, 96);
             Font capFont = SwimTheme.Ui(6.5f, FontStyle.Bold);
@@ -889,7 +1328,8 @@ namespace Kinovea.ScreenManager
                     break;
 
                 RectangleF box = new RectangleF(x, 6, w, Height - 12);
-                SwimTheme.FillRounded(g, SwimTheme.Raised, box, 4);
+                SwimTheme.FillRounded(g, SwimTheme.Input, box, 4);
+                SwimTheme.DrawRounded(g, SwimTheme.Mix(SwimTheme.Border, chip.Color, 0.3), box, 4);
                 TextRenderer.DrawText(g, chip.Caption ?? "", capFont, new Point(x + 6, 9), SwimTheme.Dim, TextFormatFlags.NoPadding);
                 TextRenderer.DrawText(g, chip.Value ?? "", valFont, new Rectangle(x + 2, 19, w - 4, Height - 26), chip.Color,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);

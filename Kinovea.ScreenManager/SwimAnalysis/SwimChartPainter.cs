@@ -147,23 +147,24 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
-    /// The charts of the PDF report with the graphics of the video: a dark card with the cyan accent, the title in capitals, the race
-    /// in amber with its values written on it, the reference (elite) in cyan, the PB grey and dashed, a grid that prints well.
-    /// The image is twice the size of the chart on the sheet, so that it is as sharp as the text of the PDF.
+    /// The charts of the PDF report with the graphics of the video (2.9.0: the HUD): a deep navy card with glowing cyan corner brackets,
+    /// the title in spaced capitals, the race in amber with a glow and its values written on it, the reference (elite) in cyan, the PB
+    /// grey and dashed, a grid that prints well. The image is twice the size of the chart on the sheet, so that it is as sharp as the
+    /// text of the PDF.
     /// </summary>
     public static class SwimChartPainter
     {
         /// <summary>Changes when the drawing changes: the charts already on the Drive are drawn again.</summary>
-        public const string Version = "1";
+        public const string Version = "2";
 
         /// <summary>Pixels of the image per pixel of the sheet.</summary>
         public const float Scale = 2f;
 
-        private static readonly Color CardTop = Color.FromArgb(14, 21, 32);
-        private static readonly Color CardBottom = Color.FromArgb(21, 32, 47);
-        private static readonly Color CardBorder = Color.FromArgb(48, 68, 92);
-        private static readonly Color Grid = Color.FromArgb(40, 57, 78);
-        private static readonly Color ZeroLine = Color.FromArgb(120, 140, 160);
+        private static readonly Color CardTop = Color.FromArgb(5, 28, 44);
+        private static readonly Color CardBottom = Color.FromArgb(2, 14, 24);
+        private static readonly Color CardBorder = Color.FromArgb(26, 98, 120);
+        private static readonly Color Grid = Color.FromArgb(20, 66, 84);
+        private static readonly Color ZeroLine = Color.FromArgb(96, 176, 196);
         private static readonly Color PbGrey = Color.FromArgb(140, 160, 182);
         private const float Margin = 16;
 
@@ -207,8 +208,7 @@ namespace Kinovea.ScreenManager
                 g.DrawPath(border, path);
             }
 
-            using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
-                g.FillRectangle(accent, 1.5f, 14, 3, H - 28);
+            SwimTheme.Brackets(g, new RectangleF(1.5f, 1.5f, W - 3, H - 3), SwimTheme.Accent);
 
             float top = DrawTitle(g, chart, W);
             RectangleF area = new RectangleF(Margin, top, W - 2 * Margin, H - top - 10);
@@ -239,25 +239,40 @@ namespace Kinovea.ScreenManager
             if (unit.Length > 0)
                 main = main.Substring(0, main.Length - unit.Length - 3);
 
-            Font font = SwimTheme.Ui(12f, FontStyle.Bold);
+            Font font = SwimTheme.Ui(11.5f, FontStyle.Bold);
             Font unitFont = SwimTheme.Ui(10f, FontStyle.Regular);
-            string title = SwimAthleteList.Normalize(main);
-            using (SolidBrush text = new SolidBrush(SwimTheme.Text))
+            string title = SwimLang.Upper(SwimAthleteList.Normalize(main));
+            using (SolidBrush text = new SolidBrush(SwimTheme.AccentLight))
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
             using (StringFormat noWrap = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
             {
+                // HUD (2.9.0): the title in spaced capitals when it fits, else as before (cut with "…").
                 float y = 11;
                 SizeF ts = g.MeasureString(title, font);
                 float unitWidth = unit.Length > 0 ? g.MeasureString(unit, unitFont).Width + 8 : 0;
                 float max = W - 2 * Margin - unitWidth;
-                g.DrawString(title, font, text, new RectangleF(Margin, y, Math.Max(20, max), ts.Height + 1), noWrap);
+                float tracked = SwimTheme.TrackedWidth(g, title, font, 0.1f);
+                float titleWidth;
+                if (tracked <= max)
+                {
+                    SwimTheme.Tracked(g, title, font, text, Margin + 2, y + 1.5f, 0.1f);
+                    titleWidth = tracked + 4;
+                }
+                else
+                {
+                    g.DrawString(title, font, text, new RectangleF(Margin, y, Math.Max(20, max), ts.Height + 1), noWrap);
+                    titleWidth = Math.Min(ts.Width, max);
+                }
+
                 if (unit.Length > 0)
                 {
-                    float x = Margin + Math.Min(ts.Width, max) + 4;
+                    float x = Margin + titleWidth + 4;
                     g.DrawString(unit, unitFont, dim, x, y + (ts.Height - unitFont.GetHeight(g)) / 2 + 1);
                 }
 
-                return y + ts.Height + 6;
+                using (Pen line = new Pen(Color.FromArgb(70, SwimTheme.Accent), 1f))
+                    g.DrawLine(line, Margin, y + ts.Height + 2, W - Margin, y + ts.Height + 2);
+                return y + ts.Height + 8;
             }
         }
 
@@ -818,6 +833,9 @@ namespace Kinovea.ScreenManager
             float width = race ? 2.8f : 2.1f;
             if (points.Count > 1)
             {
+                // HUD (2.9.0): the lines glow (the race more).
+                using (Pen glow = new Pen(Color.FromArgb(race ? 70 : 38, color), width * 3.2f) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawLines(glow, points.ToArray());
                 using (Pen pen = LinePen(s, color, width))
                 {
                     pen.LineJoin = LineJoin.Round;
@@ -894,7 +912,7 @@ namespace Kinovea.ScreenManager
             if (taken.Any(t => t.IntersectsWith(test)))
                 return false;
             taken.Add(r);
-            SwimTheme.FillRounded(g, Color.FromArgb(232, 9, 14, 22), r, 4);
+            SwimTheme.FillRounded(g, Color.FromArgb(236, 3, 18, 30), r, 4);
             using (Pen edge = new Pen(Color.FromArgb(110, color), 0.8f))
             using (GraphicsPath path = SwimTheme.Rounded(r, 4))
                 g.DrawPath(edge, path);

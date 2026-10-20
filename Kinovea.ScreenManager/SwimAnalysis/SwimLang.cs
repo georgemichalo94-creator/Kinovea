@@ -89,6 +89,30 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>Capitals as Greek writes them (2.9.0, the labels of the HUD): without the accent (tonos) of the vowels.</summary>
+        public static string Upper(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            char[] c = text.ToUpperInvariant().ToCharArray();
+            for (int i = 0; i < c.Length; i++)
+            {
+                switch (c[i])
+                {
+                    case 'Ά': c[i] = 'Α'; break;
+                    case 'Έ': c[i] = 'Ε'; break;
+                    case 'Ή': c[i] = 'Η'; break;
+                    case 'Ί': c[i] = 'Ι'; break;
+                    case 'Ό': c[i] = 'Ο'; break;
+                    case 'Ύ': c[i] = 'Υ'; break;
+                    case 'Ώ': c[i] = 'Ω'; break;
+                }
+            }
+
+            return new string(c);
+        }
+
         /// <summary>A number written with a point ("1.5") with the decimal separator of the language: "1,5" in Greek.</summary>
         public static string Decimals(string invariant)
         {

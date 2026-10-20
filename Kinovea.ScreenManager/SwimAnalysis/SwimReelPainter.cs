@@ -51,7 +51,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimReelPainter
     {
-        private static readonly Color athlete = Color.FromArgb(255, 255, 184, 0);
+        private static readonly Color athlete = SwimTheme.Amber;
 
         /// <summary>Places of the parts, from the size of the image.</summary>
         private sealed class Layout
@@ -59,6 +59,9 @@ namespace Kinovea.ScreenManager
             public readonly float W, H, K, M;
             public readonly RectangleF Header, Chart;
             public readonly float BadgeX, BadgeY, BadgeW;
+
+            /// <summary>Where the swimmer is on the drawing (2.9.0: the cards fade over him); empty when not known.</summary>
+            public RectangleF Swimmer;
 
             public Layout(Size size)
             {
@@ -107,6 +110,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             Layout layout = new Layout(size);
+            if (s.FromImage != null && !s.SummaryOnly)
+                layout.Swimmer = SwimHud.SwimmerBox(s.Race, s.Timestamp, s.FromImage);
             if (s.SummaryOnly)
             {
                 if (s.Reel.Finish.HasValue)
@@ -203,33 +208,58 @@ namespace Kinovea.ScreenManager
             return Color.FromArgb(Math.Max(0, Math.Min(255, (int)Math.Round(c.A * a))), c.R, c.G, c.B);
         }
 
-        /// <summary>Translucent dark card with a hairline border and an accent on the left edge.</summary>
+        /// <summary>A glass panel of the HUD (2.9.0): see-through navy, a thin cyan border, scan lines, corner brackets in the accent.</summary>
         private static void Card(Graphics g, RectangleF r, Color accent, float k, float alpha = 1f)
         {
             if (r.Width < 2 || r.Height < 2)
                 return;
 
-            int a0 = (int)Math.Round(232 * alpha), a1 = (int)Math.Round(205 * alpha);
-            using (GraphicsPath path = SwimTheme.Rounded(r, 9 * k))
-            using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(r.X - 1, r.Y, r.Width + 2, r.Height),
-                Color.FromArgb(a0, 9, 14, 22), Color.FromArgb(a1, 18, 30, 45), LinearGradientMode.Horizontal))
-            using (Pen border = new Pen(Color.FromArgb((int)Math.Round(80 * alpha), 255, 255, 255), Math.Max(1f, k)))
-            {
-                g.FillPath(back, path);
-                g.DrawPath(border, path);
-            }
-
-            using (SolidBrush brush = new SolidBrush(Fade(accent, alpha)))
-                g.FillRectangle(brush, r.Left + 1.5f * k, r.Top + 9 * k, 3.2f * k, Math.Max(2, r.Height - 18 * k));
+            SwimTheme.HudPanel(g, r, accent, alpha);
         }
 
-        private static void Pill(Graphics g, RectangleF r, Color fill, Color border, float width)
+        /// <summary>The Δ of a checkpoint: green (faster) or red (slower), its edge glowing.</summary>
+        private static void DeltaPill(Graphics g, RectangleF r, bool faster, float k)
         {
-            float radius = r.Height / 2;
-            SwimTheme.FillRounded(g, fill, r, radius);
-            using (GraphicsPath path = SwimTheme.Rounded(r, radius))
-            using (Pen pen = new Pen(border, width))
-                g.DrawPath(pen, path);
+            Color tone = faster ? SwimTheme.Green : SwimTheme.Red;
+            using (GraphicsPath path = SwimTheme.Rounded(r, 5 * k))
+            using (SolidBrush fill = new SolidBrush(faster ? SwimFinalsPainter.FasterColor : SwimFinalsPainter.SlowerColor))
+            using (Pen glow = new Pen(Color.FromArgb(70, tone), Math.Max(2f, 3f * k)))
+            using (Pen edge = new Pen(tone, Math.Max(1f, k)))
+            {
+                g.FillPath(fill, path);
+                g.DrawPath(glow, path);
+                g.DrawPath(edge, path);
+            }
+        }
+
+        /// <summary>The thin figures of the big values of the HUD (2.9.0).</summary>
+        private static Font FL(float pt, float k)
+        {
+            float size = (float)(Math.Round(pt * k * 4) / 4);
+            return SwimTheme.DisplayLight(Math.Max(4f, size));
+        }
+
+        /// <summary>A value of the HUD: glowing figures from a point (their right end at x when far).</summary>
+        private static void Glow(Graphics g, string text, Font font, Color color, float x, float y, bool far = false, float strength = 1f, Color? glow = null)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            if (far)
+                x -= g.MeasureString(text, font).Width;
+            SwimTheme.GlowText(g, text, font, color, glow ?? SwimTheme.Accent, new PointF(x, y), strength);
+        }
+
+        /// <summary>Spaced capitals of the HUD from a point (their right end at x when far); returns their width.</summary>
+        private static float Caps(Graphics g, string text, Font font, Color color, float x, float y, bool far = false, float tracking = 0.12f)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+
+            float w = SwimTheme.TrackedWidth(g, text, font, tracking);
+            using (SolidBrush brush = new SolidBrush(color))
+                SwimTheme.Tracked(g, text, font, brush, far ? x - w : x, y, tracking);
+            return w;
         }
 
         /// <summary>Top of the scale of the distance per cycle: 2.4 m, more for the long cycles of freestyle and backstroke.</summary>
@@ -273,13 +303,21 @@ namespace Kinovea.ScreenManager
         #region Header
         private static void DrawHeader(Graphics g, SwimReelScene s, Layout L)
         {
+            // The header and the phase under it fade over the swimmer (2.9.0).
+            RectangleF r = L.Header;
+            RectangleF place = RectangleF.FromLTRB(r.Left, r.Top, r.Right, r.Bottom + 34 * L.K);
+            SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer), layer => DrawHeaderOn(layer, s, L));
+        }
+
+        private static void DrawHeaderOn(Graphics g, SwimReelScene s, Layout L)
+        {
             float k = L.K;
             double t = s.Time;
             SwimReel reel = s.Reel;
             RectangleF r = L.Header;
             Card(g, r, SwimTheme.Accent, k);
 
-            // Last checkpoint passed on the right, name and event on the left.
+            // Last checkpoint passed on the right, name and event on the left (HUD: spaced capitals, thin glowing figures).
             Font caption = F(9f, k, false, FontStyle.Bold);
             SwimRow last = s.Computed.Rows.Where(row => row.PassedAt(t)).OrderBy(row => row.OnVideo).LastOrDefault();
             float titleRight = r.Right - 14 * k;
@@ -287,9 +325,9 @@ namespace Kinovea.ScreenManager
             {
                 bool finished = last.D >= s.Race.Distance;
                 string label = finished ? SwimLang.T("ΤΕΛΙΚΟΣ") : last.D.ToString(CultureInfo.InvariantCulture) + " " + UnitCaps(s.Race);
-                Text(g, label, caption, SwimTheme.Dim, r.Right - 14 * k, r.Top + 9 * k, StringAlignment.Far);
-                Text(g, SwimReference.FormatTime(last.T.Value), F(19f, k, true), SwimTheme.Text, r.Right - 12 * k, r.Top + 25 * k, StringAlignment.Far);
-                titleRight -= Width(g, label, caption) + 14 * k;
+                float labelWidth = Caps(g, SwimLang.Upper(label), caption, SwimTheme.AccentLight, r.Right - 14 * k, r.Top + 9 * k, true);
+                Glow(g, SwimReference.FormatTime(last.T.Value), FL(19f, k), SwimTheme.Text, r.Right - 12 * k, r.Top + 25 * k, true, 0.8f);
+                titleRight -= labelWidth + 14 * k;
 
                 // The Δ with the reference at that checkpoint, under its time.
                 if (s.Delta && last.Delta.HasValue && s.Computed.Reference != null)
@@ -298,7 +336,7 @@ namespace Kinovea.ScreenManager
                     Font deltaFont = F(10f, k, true);
                     float dw = Width(g, delta, deltaFont) + 14 * k;
                     RectangleF deltaPill = new RectangleF(r.Right - 12 * k - dw, r.Top + 54 * k, dw, 20 * k);
-                    SwimTheme.FillRounded(g, last.Delta.Value <= 0 ? SwimFinalsPainter.FasterColor : SwimFinalsPainter.SlowerColor, deltaPill, 5 * k);
+                    DeltaPill(g, deltaPill, last.Delta.Value <= 0, k);
                     Text(g, delta, deltaFont, Color.White, deltaPill.Left + dw / 2, deltaPill.Top + deltaPill.Height / 2, StringAlignment.Center, StringAlignment.Center);
                     Font vsFont = F(7.5f, k, false, FontStyle.Bold);
                     float vsLeft = r.Left + Math.Min(r.Width * 0.52f, 280 * k);
@@ -307,12 +345,13 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            TextIn(g, Title(s.Race, true), caption, SwimTheme.Dim, new RectangleF(r.Left + 16 * k, r.Top + 6 * k, Math.Max(10, titleRight - r.Left - 16 * k), 18 * k));
+            SwimTheme.CapsIn(g, Title(s.Race, true), caption, SwimTheme.AccentLight,
+                new RectangleF(r.Left + 16 * k, r.Top + 6 * k, Math.Max(10, titleRight - r.Left - 16 * k), 18 * k));
 
             // At the frame of the finish and after it the final time (the official one when typed), before it the time of the frame.
             double final = reel.FinalTime ?? reel.Finish ?? double.PositiveInfinity;
             double clock = reel.Finish.HasValue && t >= reel.Finish.Value - reel.FrameSlack - 1e-6 ? final : Math.Min(Math.Max(0, t), final);
-            Text(g, SwimReference.FormatTime(clock), F(36f, k, true), Color.White, r.Left + 12 * k, r.Top + 19 * k);
+            Glow(g, SwimReference.FormatTime(clock), FL(36f, k), SwimTheme.Text, r.Left + 12 * k, r.Top + 18 * k);
 
             // Strokes of the length, tempo and distance of the last cycle, speed.
             SwimReelCycle cycle = t >= 0 ? reel.LastCycle(t) : null;
@@ -332,14 +371,14 @@ namespace Kinovea.ScreenManager
             float cw = (r.Width - 32 * k - 3 * gap) / 4;
             float cy = r.Top + 80 * k, ch = 42 * k;
             Font chipCaption = F(7.25f, k, false, FontStyle.Bold);
-            Font chipValue = F(14f, k, true);
+            Font chipValue = FL(15f, k);
             Font chipUnit = F(7.25f, k);
             for (int i = 0; i < 4; i++)
             {
                 RectangleF chip = new RectangleF(r.Left + 16 * k + i * (cw + gap), cy, cw, ch);
-                SwimTheme.FillRounded(g, Color.FromArgb(235, SwimTheme.Raised), chip, 6 * k);
+                SwimTheme.HudChip(g, chip, i == 0 ? SwimTheme.Accent : colors[i], 1f, 5 * k, 150);
                 TextIn(g, captions[i], chipCaption, SwimTheme.Dim, new RectangleF(chip.Left + 8 * k, chip.Top + 3 * k, chip.Width - 10 * k, 14 * k));
-                Text(g, values[i], chipValue, colors[i], chip.Left + 7 * k, chip.Top + 15 * k);
+                Glow(g, values[i], chipValue, colors[i], chip.Left + 6 * k, chip.Top + 14 * k, false, 0.6f, i == 0 ? SwimTheme.Accent : colors[i]);
                 if (units[i].Length > 0 && values[i] != "–")
                 {
                     float vw = Width(g, values[i], chipValue);
@@ -350,33 +389,41 @@ namespace Kinovea.ScreenManager
 
             // Phase of the race under the card.
             string phase = reel.PhaseAt(t);
-            string phaseText = SwimLang.T(phase);
-            Font phaseFont = F(9.5f, k, false, FontStyle.Bold);
-            RectangleF pill = new RectangleF(r.Left, r.Bottom + 8 * k, Width(g, phaseText, phaseFont) + 34 * k, 24 * k);
-            Pill(g, pill, Color.FromArgb(220, 9, 14, 22), Color.FromArgb(70, 255, 255, 255), Math.Max(1f, k));
+            string phaseText = SwimLang.Upper(SwimLang.T(phase));
+            Font phaseFont = F(9f, k, false, FontStyle.Bold);
             Color dot = phase == "ΥΠΟΒΡΥΧΙΑ" ? SwimTheme.Green : (phase == "ΤΕΡΜΑΤΙΣΜΟΣ" || phase == "ΣΤΡΟΦΗ" ? SwimTheme.Amber : SwimTheme.Accent);
+            RectangleF pill = new RectangleF(r.Left, r.Bottom + 8 * k, SwimTheme.TrackedWidth(g, phaseText, phaseFont, 0.12f) + 36 * k, 24 * k);
+            SwimTheme.HudChip(g, pill, dot, 1f, 7 * k, 215);
+            using (SolidBrush halo = new SolidBrush(Color.FromArgb(70, dot)))
+                g.FillEllipse(halo, pill.Left + 8 * k, pill.Top + 6 * k, 12 * k, 12 * k);
             using (SolidBrush brush = new SolidBrush(dot))
                 g.FillEllipse(brush, pill.Left + 10 * k, pill.Top + 8 * k, 8 * k, 8 * k);
-            Text(g, phaseText, phaseFont, SwimTheme.Text, pill.Left + 23 * k, pill.Top + pill.Height / 2, StringAlignment.Near, StringAlignment.Center);
+            Caps(g, phaseText, phaseFont, SwimTheme.Text, pill.Left + 25 * k, pill.Top + (pill.Height - phaseFont.GetHeight(g)) / 2);
         }
         #endregion
 
         #region Chart of the cycles
         private static void DrawChart(Graphics g, SwimReelScene s, Layout L)
         {
+            if (!s.Reel.HasModel)
+                return;
+
+            // The chart fades over the swimmer (2.9.0).
+            SwimHud.Layer(g, L.Chart, SwimHud.Fade(L.Chart, L.Swimmer), layer => DrawChartOn(layer, s, L));
+        }
+
+        private static void DrawChartOn(Graphics g, SwimReelScene s, Layout L)
+        {
             float k = L.K;
             double t = s.Time;
             SwimReel reel = s.Reel;
             RectangleF r = L.Chart;
-            if (!reel.HasModel)
-                return;
-
             Card(g, r, athlete, k);
 
             int laps = Math.Max(1, (int)Math.Ceiling(s.Race.Distance / (double)reel.Pool - 1e-9));
             int lap = t >= 0 ? reel.LapAt(t) : 0;
-            Text(g, laps > 1 ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  ΜΗΚΟΣ ") + (lap + 1).ToString(CultureInfo.InvariantCulture) : SwimLang.T("ΑΝΑ ΚΥΚΛΟ"),
-                F(8.25f, k, false, FontStyle.Bold), SwimTheme.Dim, r.Left + 16 * k, r.Top + 8 * k);
+            Caps(g, SwimLang.Upper(laps > 1 ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  ΜΗΚΟΣ ") + (lap + 1).ToString(CultureInfo.InvariantCulture) : SwimLang.T("ΑΝΑ ΚΥΚΛΟ")),
+                F(8.25f, k, false, FontStyle.Bold), SwimTheme.AccentLight, r.Left + 16 * k, r.Top + 8 * k);
 
             // Legend.
             Font legend = F(7.25f, k);
@@ -414,7 +461,7 @@ namespace Kinovea.ScreenManager
             float topH = plot.Height * 0.58f;
             Func<double, float> Y = v => plot.Top + (float)((vmax - Math.Max(vmin, Math.Min(vmax, v))) / (vmax - vmin) * topH);
             Font axis = F(6.75f, k);
-            using (Pen grid = new Pen(Color.FromArgb(24, 255, 255, 255), Math.Max(1f, 0.8f * k)))
+            using (Pen grid = new Pen(Color.FromArgb(38, SwimTheme.Accent), Math.Max(1f, 0.8f * k)))
             {
                 foreach (double v in new[] { vmin, 0.5 * (vmin + vmax), vmax })
                     g.DrawLine(grid, plot.Left, Y(v), plot.Right, Y(v));
@@ -453,32 +500,46 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // Cycles of the length up to now: distance as bars, speed as a line.
+            // Cycles of the length up to now: distance as bars (a bright top edge), speed as a glowing line.
             List<SwimReelCycle> cycles = reel.Cycles.Where(c => c.Lap == lap && c.Time <= t + 1e-6).ToList();
             float barH = plot.Height - topH - 6 * k;
             double dpsTop = DpsScale(reel.Cycles.Select(c => c.Dps));
-            using (SolidBrush bar = new SolidBrush(Color.FromArgb(150, SwimTheme.Amber)))
+            using (LinearGradientBrush bar = new LinearGradientBrush(new RectangleF(plot.Left, plot.Bottom - barH - 1, Math.Max(1, plot.Width), barH + 2),
+                Color.FromArgb(175, SwimTheme.Amber), Color.FromArgb(60, SwimTheme.Amber), LinearGradientMode.Vertical))
+            using (Pen top = new Pen(SwimTheme.Amber, Math.Max(1f, 1.4f * k)))
             {
                 foreach (SwimReelCycle c in cycles)
                 {
                     float xa = X(reel.DistanceAt(c.Start)) + 1.5f * k, xb = X(reel.DistanceAt(c.Time)) - 1.5f * k;
                     float h = (float)(Math.Max(0, Math.Min(dpsTop, c.Dps)) / dpsTop * barH);
                     if (xb > xa)
+                    {
                         g.FillRectangle(bar, xa, plot.Bottom - h, xb - xa, h);
+                        g.DrawLine(top, xa, plot.Bottom - h, xb, plot.Bottom - h);
+                    }
                 }
             }
 
             List<PointF> points = cycles.Select(c => new PointF(X(reel.DistanceAt(c.Time)), Y(c.Speed))).ToList();
             if (points.Count >= 2)
             {
-                using (Pen line = new Pen(SwimTheme.Accent, Math.Max(1.5f, 2.2f * k)) { LineJoin = LineJoin.Round })
+                float width = Math.Max(1.5f, 2.2f * k);
+                using (Pen glow = new Pen(Color.FromArgb(60, SwimTheme.Accent), width * 3.2f) { LineJoin = LineJoin.Round })
+                using (Pen line = new Pen(SwimTheme.Accent, width) { LineJoin = LineJoin.Round })
+                {
+                    g.DrawLines(glow, points.ToArray());
                     g.DrawLines(line, points.ToArray());
+                }
             }
 
-            using (SolidBrush dot = new SolidBrush(SwimTheme.Accent))
+            using (SolidBrush halo = new SolidBrush(Color.FromArgb(70, SwimTheme.Accent)))
+            using (SolidBrush dot = new SolidBrush(SwimTheme.AccentPale))
             {
                 foreach (PointF p in points)
-                    g.FillEllipse(dot, p.X - 3 * k, p.Y - 3 * k, 6 * k, 6 * k);
+                {
+                    g.FillEllipse(halo, p.X - 5 * k, p.Y - 5 * k, 10 * k, 10 * k);
+                    g.FillEllipse(dot, p.X - 2.5f * k, p.Y - 2.5f * k, 5 * k, 5 * k);
+                }
             }
 
             // Where the swimmer is.
@@ -495,9 +556,8 @@ namespace Kinovea.ScreenManager
             float w = Width(g, label, tagFont) + 12 * k;
             float cx = Math.Max(plot.Left + w / 2, Math.Min(plot.Right - w / 2, xs));
             RectangleF tag = new RectangleF(cx - w / 2, plot.Bottom - 18 * k, w, 16 * k);
-            using (Pen pen = new Pen(Color.FromArgb(230, 255, 255, 255), Math.Max(1f, 1.4f * k)))
-                g.DrawLine(pen, xs, plot.Top, xs, tag.Top);
-            Pill(g, tag, Color.FromArgb(250, 9, 14, 22), Color.FromArgb(170, 255, 255, 255), Math.Max(1f, 0.8f * k));
+            SwimTheme.GlowLine(g, SwimTheme.AccentPale, Math.Max(1f, 1.3f * k), new PointF(xs, plot.Top), new PointF(xs, tag.Top));
+            SwimTheme.HudChip(g, tag, SwimTheme.AccentPale, 1f, 4 * k, 235);
             Text(g, label, tagFont, Color.White, tag.Left + tag.Width / 2, tag.Top + tag.Height / 2, StringAlignment.Center, StringAlignment.Center);
         }
         #endregion
@@ -527,10 +587,13 @@ namespace Kinovea.ScreenManager
                 if (r.Bottom > L.H - L.M)
                     break;
 
+                // HUD (2.9.0): a glass card with brackets in its tone, the title in spaced capitals, the value glowing; it fades over the
+                // swimmer.
+                a *= SwimHud.Fade(r, L.Swimmer);
                 Color tone = Tone(b.Tone);
                 Card(g, r, tone, k, a);
-                Text(g, b.Title, F(8.5f, k, false, FontStyle.Bold), Fade(tone, a), r.Left + 15 * k, r.Top + 7 * k);
-                Text(g, b.Value, F(21f, k, true), Fade(Color.White, a), r.Left + 13 * k, r.Top + 20 * k);
+                Caps(g, SwimLang.Upper(b.Title), F(8.5f, k, false, FontStyle.Bold), Fade(tone, a), r.Left + 15 * k, r.Top + 7 * k);
+                Glow(g, b.Value, FL(22f, k), Fade(SwimTheme.Text, a), r.Left + 12 * k, r.Top + 19 * k, false, a, tone);
                 TextIn(g, b.Detail, F(8f, k), Fade(SwimTheme.Dim, a), new RectangleF(r.Left + 15 * k, r.Bottom - 22 * k, r.Width - 26 * k, 16 * k));
                 y += r.Height + 8 * k;
             }
@@ -574,10 +637,17 @@ namespace Kinovea.ScreenManager
             float lane = Math.Abs(pb.Y - pt.Y);
             float rx = Math.Max(20 * k, 0.95f * lane), ry = Math.Max(8 * k, 0.32f * lane);
 
-            using (Pen glow = new Pen(Color.FromArgb((int)(50 * a), SwimTheme.Accent), 6 * k))
-                g.DrawEllipse(glow, c.X - rx, c.Y - ry, 2 * rx, 2 * ry);
-            using (Pen ring = new Pen(Color.FromArgb((int)(215 * a), SwimTheme.Accent), Math.Max(1.2f, 2f * k)))
-                g.DrawEllipse(ring, c.X - rx, c.Y - ry, 2 * rx, 2 * ry);
+            // HUD (2.9.0): a lock-on of four arcs around the swimmer (he stays clear inside it).
+            RectangleF ring = new RectangleF(c.X - rx, c.Y - ry, 2 * rx, 2 * ry);
+            using (Pen glow = new Pen(Color.FromArgb((int)(60 * a), SwimTheme.Accent), 6 * k) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            using (Pen arc = new Pen(Color.FromArgb((int)(230 * a), SwimTheme.Accent), Math.Max(1.2f, 2f * k)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                foreach (float start in new[] { 15f, 105f, 195f, 285f })
+                {
+                    g.DrawArc(glow, ring, start, 60);
+                    g.DrawArc(arc, ring, start, 60);
+                }
+            }
 
             string surname = string.IsNullOrWhiteSpace(s.Race.Athlete) ? SwimLang.T("ΑΘΛΗΤΗΣ") : SwimAthleteList.Normalize(s.Race.Athlete).Split(' ')[0];
             string text = s.Race.Lane > 0 ? surname + " · " + s.Race.Lane.ToString(CultureInfo.InvariantCulture) : surname;
@@ -589,7 +659,7 @@ namespace Kinovea.ScreenManager
 
             using (Pen stem = new Pen(Color.FromArgb((int)(180 * a), SwimTheme.Accent), Math.Max(1f, 1.4f * k)))
                 g.DrawLine(stem, c.X, pill.Bottom, c.X, c.Y - ry);
-            Pill(g, pill, Color.FromArgb((int)(225 * a), 9, 14, 22), Color.FromArgb((int)(255 * a), SwimTheme.Accent), Math.Max(1.2f, 1.6f * k));
+            SwimTheme.HudChip(g, pill, SwimTheme.Accent, a, 6 * k, 225);
             Text(g, text, font, Fade(Color.White, a), pill.Left + w / 2, pill.Top + h / 2, StringAlignment.Center, StringAlignment.Center);
         }
         #endregion
@@ -611,7 +681,7 @@ namespace Kinovea.ScreenManager
             }
             else
             {
-                using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(195 * a), 5, 8, 13)))
+                using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(200 * a), 2, 12, 20)))
                     g.FillRectangle(dim, 0, 0, L.W, L.H);
             }
 
@@ -621,8 +691,8 @@ namespace Kinovea.ScreenManager
 
             float x0 = card.Left + 30 * k;
             float inner = card.Width - 60 * k;
-            TextIn(g, Title(s.Race, false), F(11f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Top + 14 * k, inner, 24 * k));
-            Text(g, SwimReference.FormatTime(reel.FinalTime ?? reel.Finish.Value), F(54f, k, true), Fade(SwimTheme.Amber, a), x0 - 4 * k, card.Top + 36 * k);
+            SwimTheme.CapsIn(g, Title(s.Race, false), F(11f, k, false, FontStyle.Bold), Fade(SwimTheme.AccentLight, a), new RectangleF(x0, card.Top + 14 * k, inner, 24 * k));
+            Glow(g, SwimReference.FormatTime(reel.FinalTime ?? reel.Finish.Value), FL(54f, k), Fade(SwimTheme.Amber, a), x0 - 4 * k, card.Top + 34 * k, false, a, SwimTheme.Amber);
             DrawResultRibbon(g, s, L, card, a);
 
             // Values of the race.
@@ -660,19 +730,20 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < tiles.Count; i++)
             {
                 RectangleF r = new RectangleF(x0 + (i % 4) * (tw + gap), ty + (i / 4) * (th + gap), tw, th);
-                SwimTheme.FillRounded(g, Color.FromArgb((int)(240 * a), SwimTheme.Raised), r, 8 * k);
-                TextIn(g, tiles[i][0], tileCaption, Fade(SwimTheme.Dim, a), new RectangleF(r.Left + 12 * k, r.Top + 4 * k, r.Width - 18 * k, 18 * k));
+                SwimTheme.HudChip(g, r, SwimTheme.Accent, a, 8 * k, 190);
+                SwimTheme.CapsIn(g, tiles[i][0], tileCaption, Fade(SwimTheme.AccentLight, a), new RectangleF(r.Left + 12 * k, r.Top + 4 * k, r.Width - 18 * k, 18 * k),
+                    StringAlignment.Near, 0.08f);
 
-                // The value in the width of the tile (four parts of a long race take more room).
-                float size = 20f;
-                Font value = F(size, k, true);
+                // The value in the width of the tile (four parts of a long race take more room), thin and glowing.
+                float size = 21f;
+                Font value = FL(size, k);
                 while (size > 10f && Width(g, tiles[i][1], value) > r.Width - 22 * k)
                 {
                     size -= 1.5f;
-                    value = F(size, k, true);
+                    value = FL(size, k);
                 }
 
-                Text(g, tiles[i][1], value, Fade(Color.White, a), r.Left + 10 * k, r.Top + th / 2, StringAlignment.Near, StringAlignment.Center);
+                Glow(g, tiles[i][1], value, Fade(SwimTheme.Text, a), r.Left + 10 * k, r.Top + th / 2 - value.GetHeight(g) / 2, false, 0.6f * a);
                 TextIn(g, tiles[i][2], tileDetail, Fade(SwimTheme.Dim, a), new RectangleF(r.Left + 12 * k, r.Bottom - 20 * k, r.Width - 18 * k, 16 * k));
             }
 
@@ -706,7 +777,7 @@ namespace Kinovea.ScreenManager
                 string barsTitle = !perCycle ? SwimLang.T("ΑΝΑ ΜΗΚΟΣ  ·  μέση απόσταση ανά κύκλο (m) και, κάτω, συχνότητα (s)")
                     : labels ? SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση (m) και, κάτω, συχνότητα (s)")
                     : SwimLang.T("ΑΝΑ ΚΥΚΛΟ  ·  απόσταση ανά κύκλο και, κάτω, μέση συχνότητα κάθε μήκους (s)");
-                Text(g, barsTitle, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), x0, by0 - 8 * k, StringAlignment.Near, StringAlignment.Far);
+                Text(g, barsTitle, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.AccentLight, a), x0, by0 - 8 * k, StringAlignment.Near, StringAlignment.Far);
                 double median = bars.Select(v => v.Key).OrderBy(v => v).ElementAt(bars.Count / 2);
                 double dpsTop = DpsScale(bars.Select(v => v.Key));
                 float maxH = by1 - by0 - 20 * k;
@@ -795,16 +866,17 @@ namespace Kinovea.ScreenManager
 
             float right = card.Right - 30 * k;
             float left = card.Left + card.Width * 0.42f;
-            TextIn(g, caption, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.Dim, a), new RectangleF(left, card.Top + 46 * k, right - left, 18 * k), StringAlignment.Far);
-            Font font = F(19f, k, true);
-            float size = 19f;
+            SwimTheme.CapsIn(g, caption, F(8.5f, k, false, FontStyle.Bold), Fade(SwimTheme.AccentLight, a), new RectangleF(left, card.Top + 46 * k, right - left, 18 * k),
+                StringAlignment.Far, 0.08f);
+            Font font = FL(21f, k);
+            float size = 21f;
             while (size > 11f && Width(g, value, font) > right - left)
             {
                 size -= 1.5f;
-                font = F(size, k, true);
+                font = FL(size, k);
             }
 
-            Text(g, value, font, Fade(color, a), right, card.Top + 66 * k, StringAlignment.Far);
+            Glow(g, value, font, Fade(color, a), right, card.Top + 64 * k, true, a, color);
         }
 
         /// <summary>
@@ -846,7 +918,8 @@ namespace Kinovea.ScreenManager
             int width = (int)Math.Round(Math.Min(260 * scale, L.W - 2 * L.M));
             int height = SwimFinalsPainter.BoardHeight(rows.Count, scale);
             Rectangle r0 = new Rectangle((int)Math.Round(L.M), (int)Math.Round(L.H - L.M - height), width, height);
-            SwimFinalsPainter.PaintBoard(g, r0, SwimFinalsPainter.BoardTitle(s.Final, row.D, finish), SwimFinalsPainter.BoardSubtitle(s.Final), rows, scale);
+            SwimHud.Layer(g, r0, SwimHud.Fade(r0, L.Swimmer), layer => SwimFinalsPainter.PaintBoard(layer, r0, SwimFinalsPainter.BoardTitle(s.Final, row.D, finish),
+                SwimFinalsPainter.BoardSubtitle(s.Final), rows, scale));
             return r0;
         }
 
@@ -870,7 +943,9 @@ namespace Kinovea.ScreenManager
             if (card.Top < L.Header.Bottom + 42 * k)
                 return;
 
-            SwimFinalsPainter.PaintDelta(g, Rectangle.Round(card), points, s.Race.Distance, s.Reel.Pool, ReferenceShort(s.Computed.Reference), true, 1.15f * k);
+            Rectangle place = Rectangle.Round(card);
+            SwimHud.Layer(g, place, SwimHud.Fade(place, L.Swimmer), layer =>
+                SwimFinalsPainter.PaintDelta(layer, place, points, s.Race.Distance, s.Reel.Pool, ReferenceShort(s.Computed.Reference), true, 1.15f * k));
         }
 
         /// <summary>A short name of the reference: "CECCON · ΠΑΡΙΣΙ 2024 (1ος)" for a swimmer of a final, else its name.</summary>

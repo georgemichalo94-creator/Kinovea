@@ -567,7 +567,7 @@ namespace Kinovea.ScreenManager
         private void DrawSkeletonPrompt(Graphics g)
         {
             if (PickTarget == SwimPickTarget.Skeleton)
-                DrawLabel(g, SwimLang.T("Σκελετός: κλικ πάνω στον αθλητή (Esc: ακύρωση)"), new Point(12, 12), Color.FromArgb(0, 220, 255));
+                DrawLabel(g, SwimLang.T("Σκελετός: κλικ πάνω στον αθλητή (Esc: ακύρωση)"), new Point(12, 12), SwimTheme.Accent);
         }
         #endregion
     }

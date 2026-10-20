@@ -36,7 +36,7 @@ if ($Mode -eq 'render') {
         foreach ($name in @('Kinovea.Services.dll', 'Newtonsoft.Json.dll', 'OpenCvSharp.dll')) {
             if (Test-Path (Join-Path $binFull $name)) { $refs += (Join-Path $binFull $name) }
         }
-        $refs += @('System.Drawing', 'System.Core')
+        $refs += @('System.Drawing', 'System.Core', 'System.Windows.Forms')
         Add-Type -Path (Join-Path $here 'ReelPreview.cs') -ReferencedAssemblies $refs -OutputAssembly $dll -OutputType Library
         $asm = [System.Reflection.Assembly]::LoadFrom($dll)
         # The charts of the PDF report first (they do not need the races).

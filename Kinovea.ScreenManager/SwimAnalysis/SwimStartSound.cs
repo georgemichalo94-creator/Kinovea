@@ -35,11 +35,23 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The two tones started together (else one after the other).</summary>
         public bool Together;
+
+        /// <summary>One tone only (since 2.8.3: the start systems that sound a single tone, e.g. 719 Hz for 0.4 s): Low = High.</summary>
+        public bool Single;
+
+        /// <summary>How long the tone lasted (s), for a single tone.</summary>
+        public double Duration;
+
+        /// <summary>Share of the sound (300–4000 Hz) in the tone while it lasts, for a single tone (a start signal: most of it).</summary>
+        public double Purity;
     }
 
     /// <summary>
     /// Start signal from the sound of the video: the start systems sound two tones together, the higher one 8/7 of the lower one
-    /// (about 890 and 1015 Hz, 900–920 and 1030–1045 Hz in other pools), for a few tenths of a second.
+    /// (about 890 and 1015 Hz, 900–920 and 1030–1045 Hz in other pools), for a few tenths of a second. Other start systems sound
+    /// one tone (since 2.8.3: 719 Hz for 0.40–0.46 s in the outdoor pool of the Multinations meets, where the two tones were never
+    /// heard): a tone of 520–1550 Hz that comes on sharply, stands well above the neighbouring frequencies and lasts 0.18–1 s
+    /// (a whistle is higher, a voice moves, a horn or a splash is not one frequency); it counts a little less than two tones.
     ///
     /// The sound (16 kHz, mono) in frames of 64 ms every 5 ms:
     /// 1. for each lower tone of 860–950 Hz and its higher tone, each is "on" when it is 6 dB above the usual level of the
@@ -68,8 +80,13 @@ namespace Kinovea.ScreenManager
         private const int Hop = 80;
         private const double Bin = (double)Rate / N;
         private const double Ratio = 8.0 / 7.0;
-        private const int FirstBin = 48;
-        private const int LastBin = 80;
+        private const int FirstBin = 32;
+        private const int LastBin = 103;
+
+        /// <summary>The single tones looked for (Hz) and how they are told from the other sounds.</summary>
+        private const double SingleFrom = 520, SingleTo = 1550;
+        private const double SingleAbove = 10, SingleRise = 10, SingleMinSeconds = 0.18, SingleMaxSeconds = 1.0, SingleWeight = 0.8;
+
         private static readonly int Sustain = (int)(0.10 * Rate / Hop);
         private static readonly int Lead = (int)(0.25 * Rate / Hop);
         private static readonly int Sequence = (int)(0.35 * Rate / Hop);
@@ -187,6 +204,51 @@ namespace Kinovea.ScreenManager
         /// <summary>Weight of a signal heard while the camera already follows a race (its score is multiplied by it).</summary>
         public const double InRaceWeight = 0.3;
 
+        /// <summary>
+        /// Single tones (2.8.3): weaker ones than this are not a start, and the clearest SingleCandidates of them (not heard in a
+        /// race) are looked at (the start signal was among the 3 clearest in all the recordings of the Multinations meets).
+        /// </summary>
+        public const double SingleMinScore = 5;
+        public const int SingleCandidates = 8;
+
+        /// <summary>
+        /// A single tone goes before a clearer signal heard first ("take your marks" is no dive after it) only when it is at least
+        /// this share as clear (a single tone just after a clear start signal of two tones is the noise of the race).
+        /// </summary>
+        public const double SinglePromote = 0.8;
+
+        /// <summary>
+        /// The camera starts to move after a single tone (the camera of the stands starts to follow the swimmers): the motion of the
+        /// 3 s after it at least this many times the motion of the 1.5 s before it (at least 1) and more than 4 (96 % of the start
+        /// signals of the Multinations meets, 26–39 % of the other single tones).
+        /// </summary>
+        public const double CameraStartsRatio = 2.5;
+
+        /// <summary>
+        /// The time of the last signal heard that the start is looked for at (s of the sound; NaN: no clear signal of two tones, the
+        /// frames are read to the end): the frames are read until 8 s after it, for the checks of the race after each signal. The
+        /// clear signals of two tones; a single tone (2.8.3) only when it is as clear as the clearest of them (else it is looked at
+        /// only in the frames read for them).
+        /// </summary>
+        public static double LastToCheck(List<SwimBeep> beeps)
+        {
+            if (beeps == null)
+                return double.NaN;
+
+            List<SwimBeep> two = beeps.Where(b => !b.Single && b.Score >= MinScore).ToList();
+            if (two.Count == 0)
+                return double.NaN;
+
+            double clearest = two.Max(b => b.Score), last = two.Max(b => b.Onset);
+            foreach (SwimBeep b in beeps.Where(x => x.Single && x.Score >= SingleMinScore).OrderByDescending(x => x.Score).Take(SingleCandidates))
+            {
+                if (b.Score >= clearest)
+                    last = Math.Max(last, b.Onset);
+            }
+
+            return last;
+        }
+
         /// <summary>A light at this frame against the light expected from the signal heard: 1 there, 0.3 at 0.3 s and further.</summary>
         public static double Nearness(double frame, double expected, double fps)
         {
@@ -201,7 +263,10 @@ namespace Kinovea.ScreenManager
         /// and with the race after it (the swimmers start to move, or the camera starts to follow within 3 s: ×1.3). Order: the
         /// first of them when the race follows it; else a start light of several lights checked with the dive (in a recording with
         /// little sound, a music or a voice can be clearer than the signal), then the first signal; the other signals; the other
-        /// lights.
+        /// lights. Single tones (2.8.3) apart from the signals of two tones: many sounds of a recording are one tone (a voice, music,
+        /// the stands), so of the clearest of them (SingleCandidates, not heard in a race) only those with the race just after them
+        /// count (the swimmers start to move 0.10–0.55 s after the start they give, or the camera starts to follow within 3 s);
+        /// they are ranked with the signals of two tones by the same rule (their score is lower: 0.8 × the share of the sound).
         /// </summary>
         /// <param name="found">The starts from the lights (SwimStartLight.Find).</param>
         /// <param name="frameAt">Frame (fraction) of a time of the sound (s), NaN outside the frames read.</param>
@@ -220,58 +285,39 @@ namespace Kinovea.ScreenManager
             List<int> follows = detector.FollowFrames();
             List<SwimStartCandidate> heard = new List<SwimStartCandidate>();
 
+            Func<double, bool> inFrames = f => !double.IsNaN(f) && f >= 1 && f <= last;
+
             // A signal heard while the camera already follows a race (sounds of the stands in the middle of a race) counts little.
-            var weighted = beeps.Select(x =>
+            var weighted = beeps.Where(x => !x.Single).Select(x =>
             {
                 double f = frameAt(x.Onset);
-                return new { Beep = x, Frame = f, Score = x.Score * (!double.IsNaN(f) && f >= 1 && f <= last && detector.InRace(f) ? InRaceWeight : 1.0) };
+                return new { Beep = x, Frame = f, Score = x.Score * (inFrames(f) && detector.InRace(f) ? InRaceWeight : 1.0) };
             }).ToList();
-            double clearest = weighted.Max(x => x.Score);
+            double clearest = weighted.Count > 0 ? weighted.Max(x => x.Score) : 0;
             foreach (var w in weighted.Where(x => x.Beep.Score >= MinScore && x.Score >= 0.7 * clearest).OrderByDescending(x => x.Score).Take(3))
             {
-                SwimBeep b = w.Beep;
-                double frame = w.Frame;
-                if (double.IsNaN(frame) || frame < 1 || frame > last)
+                if (!inFrames(w.Frame))
                     continue;
 
-                // The light 0.05–0.25 s before the signal heard, the nearest to the usual delay first.
-                int lo = (int)Math.Ceiling(frame - 0.25 * fps), hi = (int)Math.Floor(frame - 0.05 * fps);
-                double expected = frame - delay * fps;
-                SwimStartCandidate light = found.Where(c => c.Source != "dive" && c.Lights > 0 && c.Frame >= lo && c.Frame <= hi)
-                    .OrderByDescending(c => c.Flash * Nearness(c.Frame, expected, fps)).FirstOrDefault();
-                SwimStartCandidate c0;
-                if (light != null)
-                {
-                    c0 = new SwimStartCandidate
-                    {
-                        Frame = light.Frame, Flash = light.Flash, Strength = light.Strength, Lights = light.Lights, Follow = light.Follow,
-                        Places = light.Places, Source = "light+sound", Dive = light.Dive
-                    };
-                }
-                else
-                {
-                    // At full size the tiny flashes are many (glints, highlights on people near the camera): only 0.07–0.15 s
-                    // before the signal (the light of the start heard from the stands in all the pools seen).
-                    c0 = detector.FlashBefore(lo, hi, expected);
-                    if (c0 == null && fullSize != null)
-                        c0 = fullSize((int)Math.Ceiling(frame - 0.15 * fps), (int)Math.Floor(frame - 0.07 * fps), expected);
-                    if (c0 != null)
-                        c0.Source = "light+sound";
-                }
+                SwimStartCandidate c0 = StartOfSignal(w.Frame, w.Score, found, detector, fullSize, delay, follows);
+                if (heard.All(h => h.Frame != c0.Frame))
+                    heard.Add(c0);
+            }
 
-                if (c0 == null)
-                {
-                    c0 = new SwimStartCandidate
-                    {
-                        Frame = Math.Max(0, Math.Min(last, (int)Math.Round(frame - delay * fps))), Flash = 0, Lights = 0, Source = "sound"
-                    };
-                }
+            // Single tones (2.8.3): only with the race just after them (the swimmers start to move 0.10–0.55 s after the start they
+            // give, the camera starts to follow within 3 s, or the camera of the stands starts to move), never heard in a race.
+            var singles = beeps.Where(x => x.Single && x.Score >= SingleMinScore)
+                .Select(x => new { Beep = x, Frame = frameAt(x.Onset) })
+                .Where(x => inFrames(x.Frame) && !detector.InRace(x.Frame))
+                .OrderByDescending(x => x.Beep.Score).Take(SingleCandidates).ToList();
+            foreach (var w in singles)
+            {
+                int at = Math.Max(0, Math.Min(last, (int)Math.Round(w.Frame - delay * fps)));
+                if (detector.DiveAfterFrame(at) < 0 && !follows.Any(f => f >= at + 0.2 * fps && f <= at + 3.0 * fps) && !CameraStarts(detector, w.Frame))
+                    continue;
 
-                c0.Beep = frame;
-                c0.BeepScore = w.Score;
-                c0.Strength = w.Score;
-                c0.Dive = detector.DiveAfterFrame(c0.Frame);
-                c0.Follow = follows.Where(f => f >= c0.Frame + 0.2 * fps && f <= c0.Frame + 3.0 * fps).DefaultIfEmpty(-1).First();
+                SwimStartCandidate c0 = StartOfSignal(w.Frame, w.Beep.Score, found, detector, fullSize, delay, follows);
+                c0.SingleTone = true;
                 if (heard.All(h => h.Frame != c0.Frame))
                     heard.Add(c0);
             }
@@ -287,14 +333,16 @@ namespace Kinovea.ScreenManager
                 .Select(x => x.c)
                 .ToList();
 
-            // A light found at the frame of a light heard is the same light.
-            List<SwimStartCandidate> lights = found.Where(c => heard.All(h => h.Frame != c.Frame)).ToList();
+            // A light found at the frame of a light heard is the same light (a single tone does not take its place: in the list
+            // once, where it comes first).
+            List<SwimStartCandidate> lights = found.Where(c => heard.All(h => h.SingleTone || h.Frame != c.Frame)).ToList();
             List<SwimStartCandidate> result = new List<SwimStartCandidate>();
             SwimStartCandidate best = heard[0];
             if (!race(best))
                 result.AddRange(lights.Where(c => c.Source == "light" && c.Lights >= 2));
             result.AddRange(heard);
             result.AddRange(lights.Where(c => !result.Contains(c)));
+            result = result.Where((c, i) => result.FindIndex(x => x.Frame == c.Frame) == i).ToList();
             result = AfterMarks(result, detector, fps);
 
             if (Trace != null)
@@ -307,12 +355,78 @@ namespace Kinovea.ScreenManager
             return result;
         }
 
+        /// <summary>The camera starts to move after this frame (fraction): see CameraStartsRatio.</summary>
+        private static bool CameraStarts(SwimStartLight detector, double frame)
+        {
+            double fps = detector.FramesPerSecond;
+            double before = detector.MotionBefore(frame), after = detector.MotionBefore(frame + 3.2 * fps, 3.0, 0.2);
+            return !double.IsNaN(before) && !double.IsNaN(after) && after > 4 && after >= CameraStartsRatio * Math.Max(1.0, before);
+        }
+
+        /// <summary>
+        /// The start of a signal heard at this frame (fraction): the light 0.05–0.25 s before it, the nearest to the usual delay
+        /// (a light found, else a small flash there, else a tiny flash in the frames at full size 0.07–0.15 s before it), else the
+        /// signal less the usual delay; with the dive and the camera following after it.
+        /// </summary>
+        private static SwimStartCandidate StartOfSignal(double frame, double score, List<SwimStartCandidate> found, SwimStartLight detector,
+            Func<int, int, double, SwimStartCandidate> fullSize, double delay, List<int> follows)
+        {
+            double fps = detector.FramesPerSecond;
+            int last = detector.Count - 1;
+
+            // The light 0.05–0.25 s before the signal heard, the nearest to the usual delay first.
+            int lo = (int)Math.Ceiling(frame - 0.25 * fps), hi = (int)Math.Floor(frame - 0.05 * fps);
+            double expected = frame - delay * fps;
+            SwimStartCandidate light = found.Where(c => c.Source != "dive" && c.Lights > 0 && c.Frame >= lo && c.Frame <= hi)
+                .OrderByDescending(c => c.Flash * Nearness(c.Frame, expected, fps)).FirstOrDefault();
+            SwimStartCandidate c0;
+            if (light != null)
+            {
+                c0 = new SwimStartCandidate
+                {
+                    Frame = light.Frame, Flash = light.Flash, Strength = light.Strength, Lights = light.Lights, Follow = light.Follow,
+                    Places = light.Places, Source = "light+sound", Dive = light.Dive
+                };
+            }
+            else
+            {
+                // At full size the tiny flashes are many (glints, highlights on people near the camera): only 0.07–0.15 s
+                // before the signal (the light of the start heard from the stands in all the pools seen).
+                c0 = detector.FlashBefore(lo, hi, expected);
+                if (c0 == null && fullSize != null)
+                    c0 = fullSize((int)Math.Ceiling(frame - 0.15 * fps), (int)Math.Floor(frame - 0.07 * fps), expected);
+                if (c0 != null)
+                    c0.Source = "light+sound";
+            }
+
+            if (c0 == null)
+            {
+                c0 = new SwimStartCandidate
+                {
+                    Frame = Math.Max(0, Math.Min(last, (int)Math.Round(frame - delay * fps))), Flash = 0, Lights = 0, Source = "sound"
+                };
+            }
+
+            c0.Beep = frame;
+            c0.BeepScore = score;
+            c0.Strength = score;
+            c0.Dive = detector.DiveAfterFrame(c0.Frame);
+            c0.Follow = follows.Where(f => f >= c0.Frame + 0.2 * fps && f <= c0.Frame + 3.0 * fps).DefaultIfEmpty(-1).First();
+            return c0;
+        }
+
         /// <summary>
         /// "Take your marks": the starter's command through the speakers can be heard more clearly than the signal (an outdoor pool,
         /// the wind), 1.4-2.4 s before the start. The swimmers do not move just after it (after a start they move 0.22-0.53 s after
         /// the signal in the test videos). When the start proposed has no dive 0.10-0.55 s after it but a light or a signal 0.5-3 s
         /// later has its dive just after it, that one is the start: it goes first, the command second.
         /// </summary>
+        /// <summary>A single tone goes before the first start only when it is as clear (SinglePromote) as the signal heard there.</summary>
+        private static bool AsClear(SwimStartCandidate c, SwimStartCandidate first)
+        {
+            return !c.SingleTone || first.BeepScore <= 0 || c.BeepScore >= SinglePromote * first.BeepScore;
+        }
+
         internal static List<SwimStartCandidate> AfterMarks(List<SwimStartCandidate> result, SwimStartLight detector, double fps)
         {
             if (result == null || result.Count < 2 || detector == null || result[0].Dive >= 0 || result[0].Source == "dive")
@@ -326,7 +440,7 @@ namespace Kinovea.ScreenManager
             if (first.Follow < 0)
             {
                 SwimStartCandidate seen = result.Skip(1).Where(c => (c.Dive >= 0 || c.Follow >= 0) && c.Frame > first.Frame
-                    && c.Frame <= first.Frame + 15 * fps).FirstOrDefault();
+                    && c.Frame <= first.Frame + 15 * fps && AsClear(c, first)).FirstOrDefault();
                 if (seen != null)
                 {
                     if (Trace != null)
@@ -344,7 +458,7 @@ namespace Kinovea.ScreenManager
 
             int lo = dive - (int)Math.Round(0.55 * fps), hi = dive - (int)Math.Round(0.10 * fps);
             SwimStartCandidate start = result.Skip(1).Where(c => c.Source != "dive" && c.Dive >= 0 && c.Frame > first.Frame + 0.5 * fps
-                && c.Frame >= lo && c.Frame <= hi).FirstOrDefault();
+                && c.Frame >= lo && c.Frame <= hi && AsClear(c, first)).FirstOrDefault();
             if (start == null)
                 return result;
 
@@ -418,7 +532,8 @@ namespace Kinovea.ScreenManager
                 double onset = Onset(samples, s.Time(e.Frame), e.Low, e.High);
                 result.Add(new SwimBeep
                 {
-                    Onset = onset, Score = score, Rise = e.Rise, Quiet = quiet, Low = e.Low, High = e.High, Together = e.Together
+                    Onset = onset, Score = score, Rise = e.Rise, Quiet = quiet, Low = e.Low, High = e.High, Together = e.Together,
+                    Single = e.Single, Duration = e.Duration, Purity = e.Purity
                 });
             }
 
@@ -427,7 +542,9 @@ namespace Kinovea.ScreenManager
             {
                 foreach (SwimBeep x in result.Take(5))
                     Trace(string.Format(CultureInfo.InvariantCulture, "beep {0:0.000} s score {1:0.0} rise {2:0.0} quiet {3:+0.0;-0.0} tones {4:0}/{5:0} {6}",
-                        x.Onset, x.Score, x.Rise, x.Quiet, x.Low, x.High, x.Together ? "together" : "one after the other"));
+                        x.Onset, x.Score, x.Rise, x.Quiet, x.Low, x.High,
+                        x.Single ? string.Format(CultureInfo.InvariantCulture, "one tone {0:0.00} s, {1:0%} of the sound", x.Duration, x.Purity)
+                        : x.Together ? "together" : "one after the other"));
             }
 
             return result;
@@ -502,6 +619,9 @@ namespace Kinovea.ScreenManager
             public double Score;
             public double Low, High;
             public bool Together;
+            public bool Single;
+            public double Duration;
+            public double Purity;
         }
 
         /// <summary>The two tones on together or one after the other, for each lower tone of 860–950 Hz; one event per 0.25 s.</summary>
@@ -605,7 +725,16 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // One event per 0.25 s: the clearest, from the first onset of them.
+            // One event per 0.25 s: the clearest, from the first onset of them. The single tones (2.8.3) apart: the two tones of a
+            // signal are each a tone too, and a sound at the onset of a single tone can look like two tones for a moment.
+            List<Event> result = OnePerQuarter(s, all, true);
+            result.AddRange(SingleTones(s));
+            return result;
+        }
+
+        /// <summary>One event per 0.25 s: the clearest, from the first onset of them (else at its own onset).</summary>
+        private static List<Event> OnePerQuarter(Spectrum s, List<Event> all, bool fromFirst)
+        {
             List<Event> result = new List<Event>();
             foreach (Event e in all.OrderBy(x => x.Frame))
             {
@@ -616,7 +745,8 @@ namespace Kinovea.ScreenManager
                     {
                         int first = Math.Min(last.Frame, e.Frame);
                         result[result.Count - 1] = e;
-                        e.Frame = first;
+                        if (fromFirst)
+                            e.Frame = first;
                     }
                 }
                 else
@@ -626,6 +756,129 @@ namespace Kinovea.ScreenManager
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// One tone (since 2.8.3), for each bin of 520–1550 Hz: on when it is 10 dB above the usual level of the neighbouring
+        /// frequencies and 10 dB above its own level of the half second before; it comes on and stays (most of 0.1 s) and lasts
+        /// 0.18–1 s (gaps up to 50 ms). Score: its median rise over 0.1 s (at most 35 dB) × 0.8, × 0.8 more when it lasts less than
+        /// 0.25 s or more than 0.75 s, × its share of the sound while it lasts (Purity: the start signal is most of the sound, 70–95 %
+        /// in the recordings of the Multinations meets; a voice, music or the stands are many frequencies). One per 0.25 s (a tone is
+        /// heard in the frequencies next to it and in its harmonics too): the clearest.
+        /// </summary>
+        private static List<Event> SingleTones(Spectrum s)
+        {
+            int T = s.Frames;
+            List<Event> result = new List<Event>();
+            int gap = (int)(0.05 * Rate / Hop), longest = (int)(SingleMaxSeconds * Rate / Hop);
+            for (int b = (int)Math.Ceiling(SingleFrom / Bin); b <= (int)Math.Floor(SingleTo / Bin); b++)
+            {
+                double[] energy = new double[T];
+                bool any = false;
+                for (int t = 0; t < T; t++)
+                {
+                    energy[t] = ToneEnergy(s, t, b);
+                    if (s.Valid[t] && 10 * Math.Log10(energy[t] / (3 * s.Background[t])) > SingleAbove)
+                        any = true;
+                }
+
+                // Most frequencies never stand out: the levels before are only needed where one does.
+                if (!any)
+                    continue;
+
+                double[] before = Before(energy, s.Valid);
+                bool[] on = new bool[T];
+                double[] rise = new double[T];
+                for (int t = 0; t < T; t++)
+                {
+                    double c = 10 * Math.Log10(energy[t] / (3 * s.Background[t]));
+                    double r = double.IsNaN(before[t]) ? double.NaN : 10 * Math.Log10(energy[t] / before[t]);
+                    rise[t] = r;
+                    on[t] = !double.IsNaN(r) && c > SingleAbove && r > SingleRise;
+                }
+
+                foreach (int t0 in Sustained(on))
+                {
+                    // How long it lasts: on, with gaps of at most 50 ms (above the neighbours, not necessarily still rising).
+                    int last = t0, t = t0;
+                    while (t < T && t - t0 <= longest + gap)
+                    {
+                        double c = 10 * Math.Log10(energy[t] / (3 * s.Background[t]));
+                        if (c > SingleAbove - 3)
+                            last = t;
+                        else if (t - last > gap)
+                            break;
+                        t++;
+                    }
+
+                    double seconds = (last - t0 + 1) * (double)Hop / Rate;
+                    if (seconds < SingleMinSeconds || seconds > SingleMaxSeconds)
+                        continue;
+
+                    double r0 = MedianRise(rise, t0);
+                    if (double.IsNaN(r0))
+                        continue;
+
+                    int peak;
+                    double f = SinglePeak(s, t0, last + 1, b, out peak);
+                    if (f < SingleFrom || f > SingleTo)
+                        continue;
+
+                    double purity = Purity(s, t0, last + 1, peak);
+                    double score = r0 * SingleWeight * (seconds >= 0.25 && seconds <= 0.75 ? 1.0 : 0.8) * purity;
+                    result.Add(new Event
+                    {
+                        Frame = t0, Bin = peak, Rise = r0, Score = score, Low = f, High = f, Together = true, Single = true, Duration = seconds,
+                        Purity = purity
+                    });
+                }
+            }
+
+            return OnePerQuarter(s, result, false);
+        }
+
+        /// <summary>
+        /// Exact frequency of a single tone: the strongest bin of the mean power of its frames within 3 bins of the bin where it was
+        /// heard (peak), and the parabola of the log power there.
+        /// </summary>
+        private static double SinglePeak(Spectrum s, int from, int to, int bin, out int peak)
+        {
+            to = Math.Min(s.Frames, Math.Max(from + 1, to));
+            double[] mean = new double[LastBin - FirstBin + 1];
+            for (int t = from; t < to; t++)
+            {
+                for (int k = 0; k < mean.Length; k++)
+                    mean[k] += s.Tones[t][k];
+            }
+
+            int lo = Math.Max(FirstBin + 1, bin - 3), hi = Math.Min(LastBin - 1, bin + 3);
+            peak = lo;
+            for (int k = lo + 1; k <= hi; k++)
+            {
+                if (mean[k - FirstBin] > mean[peak - FirstBin])
+                    peak = k;
+            }
+
+            double l0 = Math.Log(mean[peak - 1 - FirstBin] + 1e-30), l1 = Math.Log(mean[peak - FirstBin] + 1e-30), l2 = Math.Log(mean[peak + 1 - FirstBin] + 1e-30);
+            double den = l0 - 2 * l1 + l2;
+            double off = den < 0 ? Math.Max(-0.5, Math.Min(0.5, 0.5 * (l0 - l2) / den)) : 0;
+            return (peak + off) * Bin;
+        }
+
+        /// <summary>Share of the power of 312–3984 Hz (the level of the frames) in a tone (its bin and the two next to it) over these frames.</summary>
+        private static double Purity(Spectrum s, int from, int to, int peak)
+        {
+            double tone = 0, total = 0;
+            for (int t = from; t < Math.Min(s.Frames, to); t++)
+            {
+                if (!s.Valid[t])
+                    continue;
+
+                tone += s.Power(t, peak - 1) + s.Power(t, peak) + s.Power(t, peak + 1);
+                total += Math.Pow(10, s.Level[t] / 10);
+            }
+
+            return total > 0 ? Math.Min(1, tone / total) : 0;
         }
 
         /// <summary>A tone near this bin: its power and the stronger neighbour.</summary>
