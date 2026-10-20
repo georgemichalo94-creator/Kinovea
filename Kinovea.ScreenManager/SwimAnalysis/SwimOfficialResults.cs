@@ -135,6 +135,38 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>An athlete of the World Aquatics database (its public search of athletes, since 2.8.1).</summary>
+    public class SwimWaAthlete
+    {
+        /// <summary>The id of his page (worldaquatics.com/athletes/&lt;Id&gt;) and the person's id in the results ("PersonId").</summary>
+        public string Id = "";
+        public string PersonId = "";
+        public string FirstName = "";
+        public string LastName = "";
+
+        /// <summary>The country (IOC code), "M" or "F", the year of birth (0: unknown).</summary>
+        public string Nation = "";
+        public string Gender = "";
+        public int BirthYear;
+
+        public string FullName
+        {
+            get { return (FirstName + " " + LastName).Trim(); }
+        }
+
+        public override string ToString()
+        {
+            List<string> parts = new List<string> { FullName };
+            if (Nation.Length > 0)
+                parts.Add(Nation);
+            if (BirthYear > 0)
+                parts.Add(BirthYear.ToString(CultureInfo.InvariantCulture));
+            if (Gender.Length > 0)
+                parts.Add(Gender == "F" ? SwimLang.T("Γυναικών") : SwimLang.T("Ανδρών"));
+            return string.Join(" · ", parts.ToArray());
+        }
+    }
+
     /// <summary>
     /// The official results of the competitions on the web (since 2026-10-19): the KOE live results (live.koe.org.gr, the
     /// competitions of the federation and the international ones of the Greek athletes), the Microplus results sites and World
@@ -374,7 +406,10 @@ namespace Kinovea.ScreenManager
 
         private static string Str(JToken t)
         {
-            return t == null || t.Type == JTokenType.Null ? "" : ((string)t ?? "").Trim();
+            // An object or a list where a value was expected (another shape of the answer): no value, not an error.
+            if (t == null || t.Type == JTokenType.Null || t.Type == JTokenType.Object || t.Type == JTokenType.Array)
+                return "";
+            return ((string)t ?? "").Trim();
         }
 
         private static int Int(JToken t)
@@ -666,6 +701,112 @@ namespace Kinovea.ScreenManager
             }
 
             return heats;
+        }
+
+        /// <summary>
+        /// The swimmers of World Aquatics with this name (its public search of athletes: a part of the name, either order; since 2.8.1).
+        /// Empty when none or it could not be read.
+        /// </summary>
+        public static List<SwimWaAthlete> WorldAquaticsAthletes(string name)
+        {
+            List<SwimWaAthlete> athletes = new List<SwimWaAthlete>();
+            if (string.IsNullOrWhiteSpace(name))
+                return athletes;
+
+            JObject o = GetJson(WorldAquaticsApi + "athletes?name=" + Uri.EscapeDataString(name.Trim()) + "&discipline=SW&pageSize=40");
+            JArray list = o == null ? null : o["content"] as JArray;
+            foreach (JToken a in list ?? new JArray())
+            {
+                JArray disciplines = a["disciplines"] as JArray;
+                if (disciplines != null && disciplines.Count > 0 && !disciplines.Any(d => Str(d) == "SW"))
+                    continue;
+                DateTime? born = Date(a["dateOfBirth"]);
+                SwimWaAthlete w = new SwimWaAthlete
+                {
+                    Id = Str(a["id"]),
+                    PersonId = Str(a["providerId"]),
+                    FirstName = Str(a["firstName"]),
+                    LastName = Str(a["lastName"]),
+                    Nation = Str(a["nationality"]),
+                    Gender = Gender(Str(a["gender"])),
+                    BirthYear = born.HasValue ? born.Value.Year : 0
+                };
+                if (w.Id.Length > 0 && (w.FirstName.Length > 0 || w.LastName.Length > 0))
+                    athletes.Add(w);
+            }
+
+            return athletes;
+        }
+
+        /// <summary>
+        /// The athlete's code of the World Aquatics results ("GmsId", the code of the registry's international athletes "WA…"): from one
+        /// of his individual results (its competition by the day and the name, its event, his row by his person's id); the
+        /// competitions of World Aquatics first (World Championships, World Cup, Olympic Games: only their events have names and the
+        /// code in the results), the last first; at most four competitions tried. "" when not found (the athlete is then registered
+        /// without it).
+        /// </summary>
+        public static string WorldAquaticsGmsId(SwimWaAthlete a)
+        {
+            if (a == null || a.Id.Length == 0 || a.PersonId.Length == 0)
+                return "";
+
+            JObject o = GetJson(WorldAquaticsApi + "athletes/" + Uri.EscapeDataString(a.Id) + "/results");
+            JArray list = o == null ? null : o["Results"] as JArray;
+            if (list == null)
+                return "";
+
+            List<JToken> individual = list.Where(r => Str(r["SportCode"]) == "SW" && Date(r["Date"]).HasValue &&
+                Str(r["DisciplineName"]).IndexOf("RELAY", StringComparison.OrdinalIgnoreCase) < 0)
+                .OrderByDescending(r => WorldAquaticsHosted(Str(r["CompetitionType"])))
+                .ThenByDescending(r => Date(r["Date"]).Value).ToList();
+            HashSet<string> tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JToken r in individual)
+            {
+                string competition = Str(r["CompetitionName"]);
+                if (competition.Length == 0 || !tried.Add(competition))
+                    continue;
+                if (tried.Count > 4)
+                    break;
+
+                DateTime day = Date(r["Date"]).Value.Date;
+                string window = "&venueDateFrom=" + Uri.EscapeDataString(day.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "T00:00:00+00:00") +
+                    "&venueDateTo=" + Uri.EscapeDataString(day.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "T23:59:00+00:00");
+                JObject found = GetJson(WorldAquaticsApi + "competitions?pageSize=100&disciplines=SW" + window);
+                JArray competitions = found == null ? null : found["content"] as JArray;
+                JToken c = competitions == null ? null : competitions.FirstOrDefault(x =>
+                    string.Equals(Str(x["name"]), competition, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Str(x["officialName"]), competition, StringComparison.OrdinalIgnoreCase));
+                if (c == null)
+                    continue;
+
+                JObject events = GetJson(WorldAquaticsApi + "competitions/" + Str(c["id"]) + "/events");
+                JArray sports = events == null ? null : events["Sports"] as JArray;
+                JToken swimming = sports == null ? null : sports.FirstOrDefault(s => Str(s["Code"]) == "SW");
+                JArray disciplines = swimming == null ? null : swimming["DisciplineList"] as JArray;
+                JToken d = disciplines == null ? null : disciplines.FirstOrDefault(x =>
+                    string.Equals(Str(x["DisciplineName"]), Str(r["DisciplineName"]), StringComparison.OrdinalIgnoreCase));
+                if (d == null)
+                    continue;
+
+                JObject ev = GetJson(WorldAquaticsApi + "events/" + Uri.EscapeDataString(Str(d["Id"])));
+                JArray heats = ev == null ? null : ev["Heats"] as JArray;
+                foreach (JToken h in heats ?? new JArray())
+                {
+                    foreach (JToken x in (h["Results"] as JArray) ?? new JArray())
+                    {
+                        if (string.Equals(Str(x["PersonId"]), a.PersonId, StringComparison.OrdinalIgnoreCase) && Str(x["GmsId"]).Length > 0)
+                            return Str(x["GmsId"]);
+                    }
+                }
+            }
+
+            return "";
+        }
+
+        /// <summary>A competition of World Aquatics by its type ("World Championships", "Swimming World Cup", "Olympic Games").</summary>
+        private static bool WorldAquaticsHosted(string type)
+        {
+            return type.IndexOf("World", StringComparison.OrdinalIgnoreCase) >= 0 || type.IndexOf("Olympic", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>"M", "F", "X" of a category of Microplus ("WOMEN - GENERAL", "MEN - JUNIORS", its code "ASF").</summary>

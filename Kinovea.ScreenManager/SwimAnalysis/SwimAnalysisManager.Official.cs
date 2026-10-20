@@ -77,9 +77,16 @@ namespace Kinovea.ScreenManager
             public bool Truncated;
             public List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> Choices = new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
             public string Error;
+
+            /// <summary>The results of the link cannot be read by the program (another site, a page that does not open, no results of the event
+            /// published): the analyst pastes them (since 2.8.1).</summary>
+            public bool Locked;
         }
 
         private BackgroundWorker officialWorker;
+
+        /// <summary>Results found while the video is read, waiting to be offered (one at a time: the last found).</summary>
+        private Timer officialWait;
 
         /// <summary>
         /// The button "🔗 Επίσημα αποτελέσματα" of the race tab: the race found in the official results (the link typed, else the one
@@ -109,29 +116,7 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            SwimAthlete own = string.IsNullOrEmpty(Race.AthleteId) || Athletes == null ? null : Athletes.Find(Race.AthleteId);
-            OfficialQuery q = new OfficialQuery
-            {
-                Link = Race.ResultsLink,
-                LinkRemembered = remembered,
-                Distance = Race.Distance,
-                Style = Race.Style,
-                Relay = Race.Relay,
-                Date = ParseRaceDate(Race.Date),
-                VideoDate = VideoFileDate(),
-                Competition = Race.Competition ?? "",
-                Round = Race.Round ?? "",
-                Lane = RaceLaneNumber(),
-                AthleteId = (Race.AthleteId ?? "").Trim(),
-                Athlete = (Race.Athlete ?? "").Trim(),
-                Nation = own == null ? "" : AthleteNation(own),
-                Gender = SwimReference.NormalizeGender(Race.AthleteGender),
-                Final = Computed != null ? Computed.FinalTime : null,
-                Registry = Athletes
-            };
-            int born;
-            if (int.TryParse(Race.AthleteBirthYear, NumberStyles.Integer, CultureInfo.InvariantCulture, out born))
-                q.BirthYear = born;
+            OfficialQuery q = NewOfficialQuery(Race.ResultsLink, remembered);
 
             Status(SwimLang.T("🔗 Αναζήτηση του αγώνα στα επίσημα αποτελέσματα…"), false);
             string raceId = Race.Id;
@@ -153,6 +138,35 @@ namespace Kinovea.ScreenManager
             officialWorker.RunWorkerAsync();
         }
 
+        /// <summary>What the race needs from the official results, from its details (a copy for the background).</summary>
+        private OfficialQuery NewOfficialQuery(string link, bool remembered)
+        {
+            SwimAthlete own = string.IsNullOrEmpty(Race.AthleteId) || Athletes == null ? null : Athletes.Find(Race.AthleteId);
+            OfficialQuery q = new OfficialQuery
+            {
+                Link = (link ?? "").Trim(),
+                LinkRemembered = remembered,
+                Distance = Race.Distance,
+                Style = Race.Style,
+                Relay = Race.Relay,
+                Date = ParseRaceDate(Race.Date),
+                VideoDate = VideoFileDate(),
+                Competition = Race.Competition ?? "",
+                Round = Race.Round ?? "",
+                Lane = RaceLaneNumber(),
+                AthleteId = (Race.AthleteId ?? "").Trim(),
+                Athlete = (Race.Athlete ?? "").Trim(),
+                Nation = own == null ? "" : AthleteNation(own),
+                Gender = SwimReference.NormalizeGender(Race.AthleteGender),
+                Final = Computed != null ? Computed.FinalTime : null,
+                Registry = Athletes
+            };
+            int born;
+            if (int.TryParse(Race.AthleteBirthYear, NumberStyles.Integer, CultureInfo.InvariantCulture, out born))
+                q.BirthYear = born;
+            return q;
+        }
+
         /// <summary>
         /// What was found offered now, or once the reading of the video and the auto pilot are over (the window of a reading lets the
         /// answer come meanwhile, and the official times would move the marks it reads).
@@ -166,17 +180,31 @@ namespace Kinovea.ScreenManager
             }
 
             Status(SwimLang.T("🔗 Τα επίσημα αποτελέσματα βρέθηκαν· εμφανίζονται μόλις τελειώσει η ανάγνωση του βίντεο."), false);
+            CancelPendingOffer();
             Timer wait = new Timer { Interval = 700 };
+            officialWait = wait;
             wait.Tick += (s, e) =>
             {
                 if (ReadingBusy || PilotActive)
                     return;
                 wait.Stop();
                 wait.Dispose();
+                if (officialWait == wait)
+                    officialWait = null;
                 if (Race != null && Race.Id == raceId)
                     OfferOfficial(found, q);
             };
             wait.Start();
+        }
+
+        /// <summary>Results waiting for the end of the reading forgotten (others found, or pasted).</summary>
+        private void CancelPendingOffer()
+        {
+            if (officialWait == null)
+                return;
+            officialWait.Stop();
+            officialWait.Dispose();
+            officialWait = null;
         }
 
         /// <summary>The date of the race as typed ("2.5.2025", "02/05/2025").</summary>
@@ -311,6 +339,7 @@ namespace Kinovea.ScreenManager
                 if (mp == null)
                 {
                     found.Error = SwimLang.T("η σελίδα της Microplus δεν διαβάστηκε (έλεγξε τον σύνδεσμο και τη σύνδεση στο διαδίκτυο)");
+                    found.Locked = true;
                     return found;
                 }
 
@@ -342,6 +371,7 @@ namespace Kinovea.ScreenManager
             {
                 found.Error = SwimLang.T("ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr), σελίδα αποτελεσμάτων της Microplus ή ") +
                     SwimLang.T("διοργάνωση της World Aquatics (worldaquatics.com/competitions/…)· άφησέ τον κενό για αναζήτηση με την ημερομηνία");
+                found.Locked = true;
                 return found;
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !int.TryParse(q.Link.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out code))
@@ -428,6 +458,9 @@ namespace Kinovea.ScreenManager
             {
                 found.Error = SwimLang.T("η διοργάνωση δεν έχει το αγώνισμα ") + q.Distance.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ. ") + SwimPresets.StyleShort(q.Style) +
                     (q.Gender.Length > 0 ? " (" + (q.Gender == "F" ? SwimLang.T("γυναικών") : SwimLang.T("ανδρών")) + ")" : "");
+                // A competition of World Aquatics whose events are not published with their names and results (the national
+                // meets it lists) can still be pasted from the page that shows them.
+                found.Locked = worldAquatics > 0;
                 return found;
             }
 
@@ -657,6 +690,8 @@ namespace Kinovea.ScreenManager
             if (found.Entry == null)
             {
                 Status("🔗 " + (found.Error ?? SwimLang.T("δεν βρέθηκε ο αγώνας")) + ".", true);
+                if (found.Locked)
+                    PasteOfficialResults(SwimLang.T("Τα αποτελέσματα αυτής της σελίδας δεν διαβάζονται αυτόματα: ") + (found.Error ?? "") + ".");
                 return;
             }
 
@@ -679,7 +714,7 @@ namespace Kinovea.ScreenManager
                 b.Append(SwimLang.T("Ο αθλητής του αγώνα μένει ο ίδιος: ")).Append(Race.Athlete).Append('\n');
             else if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 b.Append(SwimLang.T("Αθλητής από το μητρώο: ")).Append(athlete.Name).Append(" (").Append(athlete.Id).Append(")\n");
-            if (Race.Lane == 0 || Race.Lane != e.Lane)
+            if (e.Lane > 0 && (Race.Lane == 0 || Race.Lane != e.Lane))
                 b.Append(SwimLang.T("Διάδρομος: ")).Append(e.Lane.ToString(CultureInfo.InvariantCulture)).Append('\n');
             DateTime? raceDay = ParseRaceDate(Race.Date);
             if (found.Unit.Date.HasValue && (!raceDay.HasValue || raceDay.Value.Date != found.Unit.Date.Value.Date))
@@ -744,7 +779,7 @@ namespace Kinovea.ScreenManager
 
             // The registry learns from it (a sure match only): a Latin spelling of our athlete, an international athlete's code.
             if (!keepAthlete)
-                RememberOfficialAthlete(e, athlete, found.ByAthlete);
+                RememberOfficialAthlete(e, athlete, found.ByAthlete, found.Unit.Source == "paste");
         }
 
         /// <summary>" (δεν διαβάστηκαν όλα τα αποτελέσματα)" when some heats were not read or left out.</summary>
@@ -760,9 +795,15 @@ namespace Kinovea.ScreenManager
             string about = string.Join(", ", new[] { e.Club, e.Nation, e.BirthYear > 0 ? e.BirthYear.ToString(CultureInfo.InvariantCulture) : "" }
                 .Where(x => !string.IsNullOrEmpty(x)).ToArray());
             int heat = e.Heat > 0 ? e.Heat : u.Heat;
-            string line = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} · {1}{2} · διάδρομος {3} · {4}{5} · {6}"), u.Event, u.Phase,
-                heat > 0 ? " " + heat.ToString(CultureInfo.InvariantCulture) : "", e.Lane, name,
-                about.Length > 0 ? " (" + about + ")" : "", e.Time.HasValue ? SwimReference.FormatTime(e.Time.Value) : e.Status);
+
+            // What is not known is left out (since 2.8.1: a pasted row without its phase or lane).
+            string phase = ((u.Phase ?? "") + (heat > 0 ? " " + heat.ToString(CultureInfo.InvariantCulture) : "")).Trim();
+            string[] parts =
+            {
+                u.Event ?? "", phase, e.Lane >= 0 ? SwimLang.T("διάδρομος ") + e.Lane.ToString(CultureInfo.InvariantCulture) : "",
+                name + (about.Length > 0 ? " (" + about + ")" : ""), e.Time.HasValue ? SwimReference.FormatTime(e.Time.Value) : (e.Status ?? "")
+            };
+            string line = string.Join(" · ", parts.Where(x => x.Length > 0).ToArray());
             if (read.HasValue && e.Time.HasValue)
                 line += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" (Δ {0:+0.00;-0.00} από τον χρόνο του βίντεο)"), e.Time.Value - read.Value);
             return line;
@@ -826,9 +867,14 @@ namespace Kinovea.ScreenManager
         /// the same year of birth), an international athlete not in it added with his unique code (the analyst says whether he is
         /// one already there under another spelling).
         /// </summary>
-        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete, bool byAthlete)
+        private void RememberOfficialAthlete(SwimOfficialEntry e, SwimAthlete athlete, bool byAthlete, bool pasted)
         {
             if (e == null || Settings == null || !Settings.IsConfigured)
+                return;
+
+            // Pasted results (since 2.8.1): no spelling learned (the text can be shortened, "M. ROSSI"), and an international athlete
+            // only with his whole name (a family and a given name, not an initial).
+            if (pasted && (athlete != null || !WholeName(e.FamilyNameLatin, e.GivenNameLatin)))
                 return;
 
             if (athlete != null)
@@ -855,6 +901,17 @@ namespace Kinovea.ScreenManager
             string nation = (e.Nation ?? "").Trim().ToUpperInvariant();
             if (nation.Length == 3 && nation != "GRE")
                 AddInternationalAthlete(e, false);
+        }
+
+        /// <summary>A family and a given name of two letters or more each, no initial ("M.", "M").</summary>
+        private static bool WholeName(string family, string given)
+        {
+            Func<string, bool> whole = n =>
+            {
+                string letters = new string((n ?? "").Where(char.IsLetter).ToArray());
+                return letters.Length >= 2 && !(n ?? "").Trim().EndsWith(".", StringComparison.Ordinal);
+            };
+            return whole(family) && whole(given);
         }
 
         /// <summary>The spelling is the athlete's name or one of its other spellings (letter for letter in Latin, in any order).</summary>
