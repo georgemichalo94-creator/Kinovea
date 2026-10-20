@@ -552,7 +552,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// How much a panel shows: 1 away from the swimmer, down to 0.2 over him (from 'reach' away, drawing units), so that he stays
+        /// How much a panel shows: 1 away from the swimmer, down to 0.25 over him (from 'reach' away, drawing units), so that he stays
         /// in front; 1 when his place is not known.
         /// </summary>
         public static float Fade(RectangleF panel, RectangleF swimmer, float reach = 48f)
@@ -563,7 +563,7 @@ namespace Kinovea.ScreenManager
             float dx = Math.Max(0, Math.Max(panel.Left - swimmer.Right, swimmer.Left - panel.Right));
             float dy = Math.Max(0, Math.Max(panel.Top - swimmer.Bottom, swimmer.Top - panel.Bottom));
             float d = (float)Math.Sqrt(dx * dx + dy * dy);
-            return 0.2f + 0.8f * Math.Max(0f, Math.Min(1f, d / Math.Max(1f, reach)));
+            return 0.25f + 0.75f * Math.Max(0f, Math.Min(1f, d / Math.Max(1f, reach)));
         }
 
         [ThreadStatic]

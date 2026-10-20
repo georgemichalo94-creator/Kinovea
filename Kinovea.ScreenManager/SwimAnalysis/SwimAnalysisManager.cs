@@ -1703,32 +1703,37 @@ namespace Kinovea.ScreenManager
             List<SwimRow> done = Computed.Rows.Where(r => r.PassedAt(now)).ToList();
             SwimRow last = done.OrderBy(r => r.T.Value).LastOrDefault();
 
-            Rectangle group = new Rectangle(x, y, width, height);
-            HudLayer(g, group, SwimmerFade(group, swimmer), layer =>
+            // Each card fades by itself where the swimmer is under it (the others stay as they are).
+            int top = y;
+            if (boardHeight > 0)
             {
-                int top = y;
-                if (boardHeight > 0)
+                Rectangle board = new Rectangle(x, top, width, boardHeight);
+                HudLayer(g, board, SwimmerFade(board, swimmer), layer =>
                 {
-                    Rectangle board = new Rectangle(x, top, width, boardHeight);
                     DrawCard(layer, board, SwimTheme.Accent);
                     DrawBoard(layer, board, now, last, all || report || Settings.CompareDelta, all || report || Settings.CompareDelta || CompareShown);
-                    top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
-                }
+                });
+                top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
+            }
 
-                if (chartHeight > 0)
+            if (chartHeight > 0)
+            {
+                Rectangle chart = new Rectangle(x, top, width, chartHeight);
+                HudLayer(g, chart, SwimmerFade(chart, swimmer), layer =>
                 {
-                    Rectangle chart = new Rectangle(x, top, width, chartHeight);
                     DrawCard(layer, chart, colorAthlete);
                     DrawSpeedChart(layer, chart, done, last);
-                    top += chartHeight + gapDelta;
-                }
+                });
+                top += chartHeight + gapDelta;
+            }
 
-                if (deltaHeight > 0)
-                {
-                    List<SwimDeltaPoint> points = done.Where(r => r.Delta.HasValue).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
-                    SwimFinalsPainter.PaintDelta(layer, new Rectangle(x, top, width, deltaHeight), points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1f);
-                }
-            });
+            if (deltaHeight > 0)
+            {
+                List<SwimDeltaPoint> points = done.Where(r => r.Delta.HasValue).Select(r => new SwimDeltaPoint { D = r.D, Delta = r.Delta.Value }).ToList();
+                Rectangle delta = new Rectangle(x, top, width, deltaHeight);
+                HudLayer(g, delta, SwimmerFade(delta, swimmer), layer =>
+                    SwimFinalsPainter.PaintDelta(layer, delta, points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1f));
+            }
         }
 
         /// <summary>
@@ -1742,7 +1747,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// How much a panel shows (2.9.0): 1 away from the swimmer, down to 0.2 over him (from 48 px away), so that he stays in front;
+        /// How much a panel shows (2.9.0): 1 away from the swimmer, down to 0.25 over him (from 48 px away), so that he stays in front;
         /// 1 when his place is not known.
         /// </summary>
         private static float SwimmerFade(Rectangle panel, RectangleF swimmer)
