@@ -47,6 +47,53 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
+    /// A start signal the analyst has confirmed (2.9.3): the tones of the start system of a pool (Low = High for a single tone),
+    /// learned from the starts he kept (SwimLearning.StartTones). A signal heard with the same tones is that start system.
+    /// </summary>
+    public sealed class SwimStartTone
+    {
+        /// <summary>The tones (Hz); Low = High: a single tone.</summary>
+        public double Low, High;
+
+        /// <summary>Starts kept with these tones.</summary>
+        public int Count;
+
+        public bool Single
+        {
+            get { return Math.Abs(High - Low) < 1; }
+        }
+
+        public override string ToString()
+        {
+            return Single ? string.Format(CultureInfo.InvariantCulture, "{0:0} Hz", Low) : string.Format(CultureInfo.InvariantCulture, "{0:0}/{1:0} Hz", Low, High);
+        }
+
+        /// <summary>
+        /// "715" (a single tone) or "890/1015" (two tones), several separated by ';' (the lab gives the learned tones so).
+        /// </summary>
+        public static List<SwimStartTone> Parse(string text)
+        {
+            List<SwimStartTone> result = new List<SwimStartTone>();
+            if (string.IsNullOrWhiteSpace(text))
+                return result;
+
+            foreach (string part in text.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] tones = part.Split('/');
+                double low, high;
+                if (!double.TryParse(tones[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out low) || low <= 0)
+                    continue;
+                high = low;
+                if (tones.Length > 1 && (!double.TryParse(tones[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out high) || high <= 0))
+                    continue;
+                result.Add(new SwimStartTone { Low = low, High = high, Count = 1 });
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
     /// Start signal from the sound of the video: the start systems sound two tones together, the higher one 8/7 of the lower one
     /// (about 890 and 1015 Hz, 900–920 and 1030–1045 Hz in other pools), for a few tenths of a second. Other start systems sound
     /// one tone (since 2.8.3: 719 Hz for 0.40–0.46 s in the outdoor pool of the Multinations meets, where the two tones were never
@@ -225,12 +272,84 @@ namespace Kinovea.ScreenManager
         public const double CameraStartsRatio = 2.5;
 
         /// <summary>
+        /// A signal heard is the one of a start system the analyst has confirmed (2.9.3, Known) when its tones are within this share
+        /// of the tones learned (the single tone of the Multinations pool: 713–715 Hz in its 50 recordings; the two tones of a
+        /// system within 1 %), and, for a single tone, it is pure (at least KnownPurity of the sound: 44 of its 50 start signals,
+        /// none of the tones like it heard elsewhere before or after a start) and lasts like a start signal (KnownMinSeconds; the
+        /// whistles and the beeps of the clocks are shorter).
+        /// </summary>
+        public const double KnownTolerance = 0.01;
+        public const double KnownPurity = 0.6;
+        public const double KnownMinSeconds = 0.3;
+
+        /// <summary>
+        /// Two signals heard nearly as clear (2.9.3): another one at least this share of the first by the rule that ranks them (Rank),
+        /// away from it and leaving the video for the race, makes the start proposed one to check (its confidence below the one the
+        /// auto pilot takes without asking). Lab (2026-10-20, the starts known): the Multinations recordings from the stands 6 of
+        /// their 8 wrong starts so (and 8 of the 42 right ones), the other 94 recordings 3 of their right starts.
+        /// </summary>
+        public const double AmbiguousShare = 0.75;
+
+        /// <summary>Confidence of a start proposed when another signal heard is nearly as clear (Ambiguous): the pilot asks.</summary>
+        public const double AmbiguousConfidence = 0.55;
+
+        /// <summary>The signal heard has the tones of a start system the analyst has confirmed (known: the learned ones, null: none).</summary>
+        public static bool Known(SwimBeep b, IList<SwimStartTone> known)
+        {
+            if (b == null || known == null || known.Count == 0)
+                return false;
+
+            foreach (SwimStartTone k in known)
+            {
+                if (k == null || k.Single != b.Single)
+                    continue;
+                if (Math.Abs(b.Low - k.Low) > KnownTolerance * k.Low || Math.Abs(b.High - k.High) > KnownTolerance * k.High)
+                    continue;
+                if (b.Single && (b.Purity < KnownPurity || b.Duration < KnownMinSeconds))
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// How a start heard ranks (Choose): how clear its signal is, more with a light just before it (×1.2) and with the race after
+        /// it (the dive or the camera following: ×1.3).
+        /// </summary>
+        public static double Rank(SwimStartCandidate c)
+        {
+            if (c == null)
+                return 0;
+
+            return c.BeepScore * (c.Source == "light+sound" ? 1.2 : 1.0) * (c.Follow >= 0 || c.Dive >= 0 ? 1.3 : 1.0);
+        }
+
+        /// <summary>
+        /// Another start heard is nearly as clear as the first one (AmbiguousShare of its Rank), at least 0.3 s away from it and
+        /// leaving the video for the race (fits; null: all do). When the first one has the tones of a start system confirmed, only
+        /// another one with them counts (the other sounds are not that start system).
+        /// </summary>
+        public static bool Ambiguous(List<SwimStartCandidate> candidates, double fps, Func<SwimStartCandidate, bool> fits = null)
+        {
+            if (candidates == null || candidates.Count < 2 || double.IsNaN(candidates[0].Beep))
+                return false;
+
+            SwimStartCandidate best = candidates[0];
+            double rank = Rank(best);
+            int apart = Math.Max(1, (int)Math.Round(0.3 * fps));
+            return rank > 0 && candidates.Skip(1).Any(c => !double.IsNaN(c.Beep) && Math.Abs(c.Frame - best.Frame) >= apart && (fits == null || fits(c))
+                && (!best.KnownTone || c.KnownTone) && Rank(c) >= AmbiguousShare * rank);
+        }
+
+        /// <summary>
         /// The time of the last signal heard that the start is looked for at (s of the sound; NaN: no clear signal of two tones, the
         /// frames are read to the end): the frames are read until 8 s after it, for the checks of the race after each signal. The
         /// clear signals of two tones; a single tone (2.8.3) only when it is as clear as the clearest of them (else it is looked at
-        /// only in the frames read for them).
+        /// only in the frames read for them); the signals with the tones of a start system the analyst has confirmed (2.9.3, known:
+        /// the learned ones).
         /// </summary>
-        public static double LastToCheck(List<SwimBeep> beeps)
+        public static double LastToCheck(List<SwimBeep> beeps, IList<SwimStartTone> known = null)
         {
             if (beeps == null)
                 return double.NaN;
@@ -246,6 +365,9 @@ namespace Kinovea.ScreenManager
                     last = Math.Max(last, b.Onset);
             }
 
+            // (2.9.3) And the signals of a start system the analyst has confirmed, wherever they are.
+            foreach (SwimBeep b in beeps.Where(x => x.Score >= (x.Single ? SingleMinScore : MinScore) && Known(x, known)))
+                last = Math.Max(last, b.Onset);
             return last;
         }
 
@@ -267,14 +389,20 @@ namespace Kinovea.ScreenManager
         /// the stands), so of the clearest of them (SingleCandidates, not heard in a race) only those with the race just after them
         /// count (the swimmers start to move 0.10–0.55 s after the start they give, or the camera starts to follow within 3 s);
         /// they are ranked with the signals of two tones by the same rule (their score is lower: 0.8 × the share of the sound).
+        /// The signals with the tones of a start system the analyst has confirmed (2.9.3, known) are the start system of the pool:
+        /// looked at wherever they are (not heard in a race), a single tone of it without the race signs too (the camera of the stands
+        /// does not move and does not see the dive), and they come first (the other sounds of the recording, "take your marks" or
+        /// lights, after them). Lab (2026-10-20, the 50 Multinations recordings with the tone of its pool learned): 47 starts right
+        /// instead of 42, the 94 others unchanged.
         /// </summary>
         /// <param name="found">The starts from the lights (SwimStartLight.Find).</param>
         /// <param name="frameAt">Frame (fraction) of a time of the sound (s), NaN outside the frames read.</param>
         /// <param name="fullSize">A tiny flash in the frames at full size between two frames, the nearer to the frame expected
         /// (third) the better (null: not looked for).</param>
         /// <param name="delay">Delay from the light to the onset of the signal heard (s).</param>
+        /// <param name="known">The start systems the analyst has confirmed (SwimLearning.StartTones; null: none).</param>
         public static List<SwimStartCandidate> Choose(List<SwimStartCandidate> found, List<SwimBeep> beeps, SwimStartLight detector,
-            Func<double, double> frameAt, Func<int, int, double, SwimStartCandidate> fullSize, double delay)
+            Func<double, double> frameAt, Func<int, int, double, SwimStartCandidate> fullSize, double delay, IList<SwimStartTone> known = null)
         {
             found = found ?? new List<SwimStartCandidate>();
             if (beeps == null || beeps.Count == 0 || detector == null || frameAt == null)
@@ -294,32 +422,38 @@ namespace Kinovea.ScreenManager
                 return new { Beep = x, Frame = f, Score = x.Score * (inFrames(f) && detector.InRace(f) ? InRaceWeight : 1.0) };
             }).ToList();
             double clearest = weighted.Count > 0 ? weighted.Max(x => x.Score) : 0;
-            foreach (var w in weighted.Where(x => x.Beep.Score >= MinScore && x.Score >= 0.7 * clearest).OrderByDescending(x => x.Score).Take(3))
+
+            // (2.9.3) The signals of a start system the analyst has confirmed are looked at too, wherever they are (not in a race).
+            var twoTones = weighted.Where(x => x.Beep.Score >= MinScore && x.Score >= 0.7 * clearest).OrderByDescending(x => x.Score).Take(3)
+                .Concat(weighted.Where(x => x.Beep.Score >= MinScore && Known(x.Beep, known) && inFrames(x.Frame) && !detector.InRace(x.Frame)))
+                .Distinct().ToList();
+            foreach (var w in twoTones)
             {
                 if (!inFrames(w.Frame))
                     continue;
 
                 SwimStartCandidate c0 = StartOfSignal(w.Frame, w.Score, found, detector, fullSize, delay, follows);
-                if (heard.All(h => h.Frame != c0.Frame))
-                    heard.Add(c0);
+                AddHeard(heard, c0, w.Beep, known);
             }
 
             // Single tones (2.8.3): only with the race just after them (the swimmers start to move 0.10–0.55 s after the start they
-            // give, the camera starts to follow within 3 s, or the camera of the stands starts to move), never heard in a race.
+            // give, the camera starts to follow within 3 s, or the camera of the stands starts to move), never heard in a race. The
+            // single tone of a start system the analyst has confirmed (2.9.3) without them too, and wherever it is in the clearest.
             var singles = beeps.Where(x => x.Single && x.Score >= SingleMinScore)
                 .Select(x => new { Beep = x, Frame = frameAt(x.Onset) })
                 .Where(x => inFrames(x.Frame) && !detector.InRace(x.Frame))
-                .OrderByDescending(x => x.Beep.Score).Take(SingleCandidates).ToList();
+                .OrderByDescending(x => x.Beep.Score).ToList();
+            singles = singles.Take(SingleCandidates).Concat(singles.Skip(SingleCandidates).Where(x => Known(x.Beep, known))).ToList();
             foreach (var w in singles)
             {
                 int at = Math.Max(0, Math.Min(last, (int)Math.Round(w.Frame - delay * fps)));
-                if (detector.DiveAfterFrame(at) < 0 && !follows.Any(f => f >= at + 0.2 * fps && f <= at + 3.0 * fps) && !CameraStarts(detector, w.Frame))
+                if (!Known(w.Beep, known) && detector.DiveAfterFrame(at) < 0 && !follows.Any(f => f >= at + 0.2 * fps && f <= at + 3.0 * fps) &&
+                    !CameraStarts(detector, w.Frame))
                     continue;
 
                 SwimStartCandidate c0 = StartOfSignal(w.Frame, w.Beep.Score, found, detector, fullSize, delay, follows);
                 c0.SingleTone = true;
-                if (heard.All(h => h.Frame != c0.Frame))
-                    heard.Add(c0);
+                AddHeard(heard, c0, w.Beep, known);
             }
 
             if (heard.Count == 0)
@@ -328,7 +462,8 @@ namespace Kinovea.ScreenManager
             Func<SwimStartCandidate, bool> race = c => c.Follow >= 0 || c.Dive >= 0;
             heard = heard
                 .Select((c, i) => new { c, i })
-                .OrderByDescending(x => x.c.BeepScore * (x.c.Source == "light+sound" ? 1.2 : 1.0) * (race(x.c) ? 1.3 : 1.0))
+                .OrderByDescending(x => x.c.KnownTone)
+                .ThenByDescending(x => Rank(x.c))
                 .ThenBy(x => x.i)
                 .Select(x => x.c)
                 .ToList();
@@ -338,7 +473,7 @@ namespace Kinovea.ScreenManager
             List<SwimStartCandidate> lights = found.Where(c => heard.All(h => h.SingleTone || h.Frame != c.Frame)).ToList();
             List<SwimStartCandidate> result = new List<SwimStartCandidate>();
             SwimStartCandidate best = heard[0];
-            if (!race(best))
+            if (!race(best) && !best.KnownTone)
                 result.AddRange(lights.Where(c => c.Source == "light" && c.Lights >= 2));
             result.AddRange(heard);
             result.AddRange(lights.Where(c => !result.Contains(c)));
@@ -348,11 +483,39 @@ namespace Kinovea.ScreenManager
             if (Trace != null)
             {
                 foreach (SwimStartCandidate c in result.Take(4))
-                    Trace(string.Format(CultureInfo.InvariantCulture, "start {0} frame {1} beep {2:0.0} score {3:0.0} dive {4} follow {5}",
-                        c.Source, c.Frame, c.Beep, c.BeepScore, c.Dive, c.Follow));
+                    Trace(string.Format(CultureInfo.InvariantCulture, "start {0} frame {1} beep {2:0.0} score {3:0.0} dive {4} follow {5}{6}",
+                        c.Source, c.Frame, c.Beep, c.BeepScore, c.Dive, c.Follow, c.KnownTone ? " (start system confirmed)" : ""));
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// A start heard, with the tones of its signal (and whether they are those of a start system confirmed), in the list once
+        /// (one at the same frame already there: it keeps its place, known when either is).
+        /// </summary>
+        private static void AddHeard(List<SwimStartCandidate> heard, SwimStartCandidate c0, SwimBeep beep, IList<SwimStartTone> known)
+        {
+            c0.ToneLow = beep.Low;
+            c0.ToneHigh = beep.High;
+            c0.ToneSeconds = beep.Single ? beep.Duration : double.NaN;
+            c0.TonePurity = beep.Single ? beep.Purity : double.NaN;
+            c0.KnownTone = Known(beep, known);
+            SwimStartCandidate same = heard.FirstOrDefault(h => h.Frame == c0.Frame);
+            if (same == null)
+            {
+                heard.Add(c0);
+                return;
+            }
+
+            if (c0.KnownTone && !same.KnownTone)
+            {
+                same.KnownTone = true;
+                same.ToneLow = c0.ToneLow;
+                same.ToneHigh = c0.ToneHigh;
+                same.ToneSeconds = c0.ToneSeconds;
+                same.TonePurity = c0.TonePurity;
+            }
         }
 
         /// <summary>The camera starts to move after this frame (fraction): see CameraStartsRatio.</summary>
@@ -429,7 +592,8 @@ namespace Kinovea.ScreenManager
 
         internal static List<SwimStartCandidate> AfterMarks(List<SwimStartCandidate> result, SwimStartLight detector, double fps)
         {
-            if (result == null || result.Count < 2 || detector == null || result[0].Dive >= 0 || result[0].Source == "dive")
+            // (A signal of a start system the analyst has confirmed is not the command: 2.9.3.)
+            if (result == null || result.Count < 2 || detector == null || result[0].Dive >= 0 || result[0].Source == "dive" || result[0].KnownTone)
                 return result;
 
             SwimStartCandidate first = result[0];

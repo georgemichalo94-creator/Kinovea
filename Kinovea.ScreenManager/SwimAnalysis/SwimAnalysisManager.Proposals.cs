@@ -624,9 +624,30 @@ namespace Kinovea.ScreenManager
                 RefreshProposalsUi();
         }
 
+        /// <summary>A start kept this near (s) the one proposed from a signal heard is that signal (its tones are learned, 2.9.3).</summary>
+        private const double StartToneError = 0.2;
+
         /// <summary>Values of the image at the frame kept (the entry: level of the hands under the block, in body sizes).</summary>
         private Dictionary<string, double> MeasuresAt(SwimProposal p, long timestamp)
         {
+            // (2.9.3) A start kept at its signal heard (within StartToneError): the tones of that signal, the start system of the pool
+            // (SwimLearning.StartTones). Kept elsewhere (the start was another signal, or none heard): nothing.
+            if (p.Kind == KindRaceStart)
+            {
+                if (p.Measures == null || !p.Measures.ContainsKey(ToneLow) || !p.Measures.ContainsKey(ToneHigh) ||
+                    Math.Abs(Timing.Seconds(timestamp, p.Timestamp)) > StartToneError)
+                    return null;
+
+                Dictionary<string, double> tones = new Dictionary<string, double>();
+                foreach (string key in new[] { ToneLow, ToneHigh, ToneSeconds, TonePurity })
+                {
+                    if (p.Measures.ContainsKey(key))
+                        tones[key] = p.Measures[key];
+                }
+
+                return tones;
+            }
+
             if (p.Kind != SwimEventDetector.StartEntry || p.Measures == null || !p.Measures.ContainsKey("block") || !p.Measures.ContainsKey("L"))
                 return null;
 
