@@ -1068,8 +1068,9 @@ namespace Kinovea.ScreenManager
             TableLayoutPanel table = NewTable();
 
             // Athlete from the registry of the main Google Sheet (KOE App).
-            TableLayoutPanel searchRow = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0) };
+            TableLayoutPanel searchRow = new TableLayoutPanel { ColumnCount = 3, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0) };
             searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             searchRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tbAthleteSearch = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 4, 0) };
             Button btnReloadAthletes = new SwimNoFocusButton { Text = "↻", Width = 30, Height = 24, Margin = new Padding(0) };
@@ -1078,6 +1079,15 @@ namespace Kinovea.ScreenManager
             toolTip.SetToolTip(tbAthleteSearch, SwimLang.T("Γράψε μέρος του ονόματος, το μητρώο ή το σωματείο. Enter: επιλογή του πρώτου."));
             searchRow.Controls.Add(tbAthleteSearch, 0, 0);
             searchRow.Controls.Add(btnReloadAthletes, 1, 0);
+
+            // An international athlete not in the registry (since 2.8.1): found in the public search of World Aquatics by the name
+            // typed in the search (else the name in the report), registered with his code.
+            Button btnWorldAquatics = new SwimNoFocusButton { Text = "🌐", Width = 30, Height = 24, Margin = new Padding(4, 0, 0, 0) };
+            btnWorldAquatics.Click += (s, e) =>
+                manager.SearchWorldAquatics(tbAthleteSearch.Text.Trim().Length > 0 ? tbAthleteSearch.Text : tbAthlete.Text);
+            toolTip.SetToolTip(btnWorldAquatics, SwimLang.T("Αναζήτηση διεθνούς αθλητή στη World Aquatics, με το όνομα που έγραψες στην αναζήτηση ") +
+                SwimLang.T("(αλλιώς με το «Όνομα στο report»): διαλέγεις τον αθλητή και καταχωρείται στους διεθνείς αθλητές με τον κωδικό του."));
+            searchRow.Controls.Add(btnWorldAquatics, 2, 0);
             lbAthletes = new ListBox { Height = 110, IntegralHeight = false };
             lblAthlete = new Label { AutoSize = false, Height = 34, ForeColor = SwimTheme.Accent };
             lblAthleteList = new Label { AutoSize = false, Height = 20, ForeColor = SwimTheme.Dim };
@@ -1149,8 +1159,23 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.");
             toolTip.SetToolTip(tbResultsLink, resultsHelp);
             toolTip.SetToolTip(btnResults, resultsHelp);
+
+            // Results the program cannot read (since 2.8.1: a site with locked results, as the European Aquatics one): the swimmer's
+            // row pasted. The window opens by itself when the link is not read.
+            Button btnPaste = new SwimNoFocusButton { Text = SwimLang.T("📋 Επικόλληση"), AutoSize = true, Height = 26 };
+            btnPaste.Click += (s, e) =>
+            {
+                officialEditRace = null;
+                officialError = null;
+                manager.PasteOfficialResults();
+            };
+            toolTip.SetToolTip(btnPaste, SwimLang.T("Για αποτελέσματα που δεν διαβάζονται αυτόματα (π.χ. European Aquatics): στη σελίδα τους μαρκάρισε ") +
+                SwimLang.T("τη γραμμή του αθλητή (και τους ενδιάμεσους), Ctrl+C, και επικόλλησέ τη εδώ. Ανοίγει και μόνο του όταν ο σύνδεσμος δεν διαβάζεται."));
+            FlowLayoutPanel resultsButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+            resultsButtons.Controls.Add(btnResults);
+            resultsButtons.Controls.Add(btnPaste);
             AddRow(table, SwimLang.T("Αποτελέσματα (σύνδεσμος)"), tbResultsLink);
-            AddRow(table, "", btnResults);
+            AddRow(table, "", resultsButtons);
 
             AddRow(table, SwimLang.T("Σημεία ελέγχου"), tbCheckpoints);
             AddRow(table, "", btnDefaults);
