@@ -252,12 +252,22 @@ public static class ReelPreview
             computed[back] = SwimCalculator.Compute(back, timing, 0.5);
             reels[back] = SwimReel.Build(back, computed[back]);
             frames.Add(new Frame { Name = "bk-26.5-final", Race = back, Time = 26.5, Width = 960, Height = 540, Final = final });
+            // (2.9.4) The last metres before the wall (the speed falls into the turn, no rise), the boards still whole 6 s after the 50 m.
+            frames.Add(new Frame { Name = "bk-23.7-wall", Race = back, Time = 23.7, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-25.5-wall", Race = back, Time = 25.5, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-31.6-boards", Race = back, Time = 31.6, Width = 960, Height = 540, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-final-export", Race = back, Time = 26.5, Width = 960, Height = 540, ExportWidth = 1280, Final = final });
             frames.Add(new Frame { Name = "bk-54.0-finish", Race = back, Time = 54.0, Width = 960, Height = 540, Final = final });
             frames.Add(new Frame { Name = "bk-58.6-summary", Race = back, Time = 58.6, Width = 960, Height = 540, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-portrait", Race = back, Time = 26.5, Width = 405, Height = 720, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-small", Race = back, Time = 26.5, Width = 640, Height = 360, Final = final });
             RenderReport(folder, names, back, computed[back], final, timing);
+
+            // (2.9.4) The speed of the curve through the checkpoints around the first wall of the backstroke: one curve per length.
+            StringBuilder speed = new StringBuilder();
+            for (double t = 21.0; t <= 34.0 + 1e-9; t += 0.25)
+                speed.AppendLine(string.Format(ci, "{0:0.00} s  {1:0.00} m  {2:0.00} m/s", t, reels[back].DistanceAt(t), reels[back].SpeedAt(t)));
+            File.WriteAllText(Path.Combine(folder, "speed.txt"), speed.ToString(), Encoding.UTF8);
             RenderOverlay(folder, names, back);
             RenderBars(folder, names);
         }
