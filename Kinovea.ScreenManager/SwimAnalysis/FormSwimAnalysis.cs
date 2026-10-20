@@ -135,6 +135,7 @@ namespace Kinovea.ScreenManager
         private Button btnSaveReference;
         private CheckBox chkSpeedChart;
         private CheckBox chkGraphics;
+        private CheckBox chkHud;
         private CheckBox chkSplitBoard;
         private CheckBox chkOverlayExports;
         private CheckBox chkVideoBars;
@@ -717,6 +718,17 @@ namespace Kinovea.ScreenManager
             };
             toolTip.SetToolTip(chkGraphics, SwimLang.T("Όλα τα γραφικά της ανάλυσης στο βίντεο μαζί (πίνακες, γραφήματα, σύγκριση, τεχνική): ναι ή όχι.\n") +
                 SwimLang.T("Και με το πλήκτρο V ή το κουμπί «Γραφικά στο βίντεο» δίπλα στο βίντεο. Όχι: ούτε στις εξαγωγές του βίντεο."));
+            // The graphics of a race as the HUD of the demo, or the boards of before (2.9.1).
+            chkHud = new CheckBox { Text = SwimLang.T("HUD (όπως το demo)"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
+            chkHud.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetHud(chkHud.Checked);
+            };
+            toolTip.SetToolTip(chkHud, SwimLang.T("Τα γραφικά του αγώνα ως HUD, όπως το demo: πίνακας ανάλυσης αριστερά (χρόνος, φάση, ταχύτητα, συχνότητα),\n") +
+                SwimLang.T("περάσματα και καταγραφή δεξιά, χάρτης πισίνας κάτω, ενδείξεις πάνω στο βίντεο και «Η ανάλυση με μια ματιά» μετά τον τερματισμό.\n") +
+                SwimLang.T("Τα κουτάκια δίπλα προσθέτουν τα πινακάκια: Δ και ΔΑΚ, γράφημα Δ, πίνακας τελικού, ταχύτητα. Χωρίς αυτό: τα πινακάκια όπως πριν.\n") +
+                SwimLang.T("Σε μικρή εικόνα (κάτω από 900×500) φαίνονται τα πινακάκια."));
             chkSplitBoard = new CheckBox { Text = SwimLang.T("Χρόνος, πέρασμα, Δ"), AutoSize = true, Margin = new Padding(6, 5, 3, 3) };
             cmbCorner = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 112, Margin = new Padding(3, 3, 3, 3) };
             cmbCorner.Items.AddRange(new object[] { SwimLang.T("Πάνω δεξιά"), SwimLang.T("Πάνω αριστερά"), SwimLang.T("Κάτω δεξιά"), SwimLang.T("Κάτω αριστερά") });
@@ -742,6 +754,7 @@ namespace Kinovea.ScreenManager
             toolTip.SetToolTip(chkSplitBoard, SwimLang.T("Χρόνος αγώνα, τελευταίο πέρασμα και Δ με την αναφορά πάνω στο βίντεο."));
             overlay.Controls.Add(Caption(SwimLang.T("Στο βίντεο:")));
             overlay.Controls.Add(chkGraphics);
+            overlay.Controls.Add(chkHud);
             overlay.Controls.Add(chkSpeedChart);
             overlay.Controls.Add(chkSplitBoard);
             AddFinalsOverlayOptions(overlay);
@@ -1487,6 +1500,7 @@ namespace Kinovea.ScreenManager
                 cmbRounding.SelectedIndex = settings.StrokeRounding >= 1 ? 1 : (settings.StrokeRounding > 0 ? 0 : 2);
                 chkAutoSend.Checked = settings.AutoSend;
                 chkGraphics.Checked = settings.VideoGraphics;
+                chkHud.Checked = settings.HudLayout;
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
                 LoadFinalsOverlayOptions(settings);
@@ -3130,6 +3144,14 @@ namespace Kinovea.ScreenManager
                 bool was = updating;
                 updating = true;
                 chkGraphics.Checked = manager.Settings.VideoGraphics;
+                updating = was;
+            }
+
+            if (manager.Settings != null && chkHud != null && chkHud.Checked != manager.Settings.HudLayout)
+            {
+                bool was = updating;
+                updating = true;
+                chkHud.Checked = manager.Settings.HudLayout;
                 updating = was;
             }
 

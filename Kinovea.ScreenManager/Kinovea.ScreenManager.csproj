@@ -1046,6 +1046,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.RaceEvents.cs" />
     <Compile Include="SwimAnalysis\SwimFinals.cs" />
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
     <Compile Include="SwimAnalysis\SwimChartPainter.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
@@ -1060,6 +1061,7 @@
     <Compile Include="SwimAnalysis\SwimPasteDialog.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Paste.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Event.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Hud.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimCompare.cs" />

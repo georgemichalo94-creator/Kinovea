@@ -73,6 +73,14 @@ namespace Kinovea.ScreenManager
         public bool VideoGraphics = true;
 
         /// <summary>
+        /// Since 2.9.1: the graphics of a race as the HUD of the demo (the panel of the analysis on the left, the checkpoints and the
+        /// log on the right, the map of the pool below, the call-outs on the video and «Η ανάλυση με μια ματιά» after the finish); the
+        /// boards of before are added to it with «Στο βίντεο» (Δ and ΔΑΚ, the Δ chart, the board of the final, the speed). Off: the
+        /// boards as before («Πινακάκια»).
+        /// </summary>
+        public bool HudLayout = true;
+
+        /// <summary>
         /// The graphics of the video (race board, velocity chart, values of the start or turn) also in the Kinovea exports
         /// (video, image, clipboard) and in the snapshots of the report, with the proportions they have on the screen.
         /// </summary>

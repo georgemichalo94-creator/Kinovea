@@ -166,7 +166,7 @@ namespace Kinovea.ScreenManager
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
             b.Append(race.Distance).Append('|').Append(race.Pool).Append('|').Append(race.Kind).Append('|');
             b.Append(manager.Settings.ReelOverlay).Append('|').Append(manager.PickingTrack).Append('|').Append(manager.TrackDescription).Append('|');
-            b.Append(manager.Settings.VideoGraphics).Append('|');
+            b.Append(manager.Settings.VideoGraphics).Append('|').Append(manager.Settings.HudLayout).Append('|');
             b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription).Append('|');
             b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
             b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "").Append('|');
@@ -762,19 +762,35 @@ namespace Kinovea.ScreenManager
                 (string.IsNullOrEmpty(KeyOf(PlayerScreenCommands.SwimShowPanel)) ? "" : " (" + KeyOf(PlayerScreenCommands.SwimShowPanel) + ")"),
                 () => manager.TogglePanel());
 
-            // The graphics of the analysis on the video on and off (2.9.0, key V): the swimmer and the image alone.
+            // The graphics of the analysis on the video on and off (2.9.0, key V): the swimmer and the image alone. Beside it (2.9.1, a
+            // race) the look of the graphics: the HUD of the demo or the boards of before.
             bool graphicsOn = manager.Settings.VideoGraphics;
-            RectangleF graphics = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
-            DrawButton(g, list, "graphics", graphics, graphicsOn ? SwimLang.T("◉ Γραφικά στο βίντεο") : SwimLang.T("○ Γραφικά στο βίντεο"), null,
+            RectangleF graphicsRow = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
+            RectangleF graphics = graphicsRow;
+            if (!race.IsTraining)
+            {
+                float split = (graphicsRow.Width - S(4)) * 0.58f;
+                graphics = new RectangleF(graphicsRow.Left, graphicsRow.Top, split, graphicsRow.Height);
+                RectangleF look = new RectangleF(graphics.Right + S(4), graphicsRow.Top, graphicsRow.Right - graphics.Right - S(4), graphicsRow.Height);
+                bool hudOn = manager.Settings.HudLayout;
+                DrawButton(g, list, "hud", look, hudOn ? "HUD" : SwimLang.T("Πινακάκια"), null, null, hudOn ? Look.Primary : Look.Normal, !graphicsOn,
+                    hudOn ? SwimLang.T("Τα γραφικά του αγώνα ως HUD, όπως το demo: πίνακας ανάλυσης αριστερά, περάσματα και καταγραφή δεξιά, χάρτης πισίνας κάτω.\n") +
+                            SwimLang.T("Τα πινακάκια (Δ, γράφημα Δ, τελικός, ταχύτητα) προστίθενται με τα κουτάκια «Στο βίντεο» του πίνακα. Κλικ: τα πινακάκια όπως πριν.")
+                          : SwimLang.T("Τα γραφικά του αγώνα ως πινακάκια, όπως πριν. Κλικ: το HUD, όπως το demo."),
+                    () => manager.SetHud(!manager.Settings.HudLayout));
+            }
+
+            string graphicsText = race.IsTraining ? SwimLang.T("Γραφικά στο βίντεο") : SwimLang.T("Γραφικά");
+            DrawButton(g, list, "graphics", graphics, (graphicsOn ? "◉ " : "○ ") + graphicsText, null,
                 KeyOf(PlayerScreenCommands.SwimGraphics), graphicsOn ? Look.Normal : Look.Quiet, false,
                 graphicsOn ? SwimLang.T("Κρύβει τα γραφικά της ανάλυσης από το βίντεο (πίνακες, γραφήματα, σύγκριση, τεχνική), και από τις εξαγωγές του βίντεο.")
                            : SwimLang.T("Ξαναδείχνει τα γραφικά της ανάλυσης στο βίντεο."),
                 () => manager.SetGraphics(!manager.Settings.VideoGraphics));
             if (race.IsTraining)
-                return graphics.Top;
+                return graphicsRow.Top;
 
             // Technical view on the video (as the swimming reels) and the swimmer that its label follows.
-            RectangleF row = new RectangleF(area.Left, graphics.Top - S(6) - S(28), area.Width, S(28));
+            RectangleF row = new RectangleF(area.Left, graphicsRow.Top - S(6) - S(28), area.Width, S(28));
             float half = (row.Width - S(4)) / 2;
             RectangleF reel = new RectangleF(row.Left, row.Top, half, row.Height);
             RectangleF follow = new RectangleF(reel.Right + S(4), row.Top, row.Right - reel.Right - S(4), row.Height);

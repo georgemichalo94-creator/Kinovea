@@ -124,6 +124,12 @@ namespace Kinovea.ScreenManager
             return Get(LightFamily, size, FontStyle.Regular);
         }
 
+        /// <summary>The lines of the log of the HUD (2.9.1), as on a console: Consolas.</summary>
+        public static Font Mono(float size)
+        {
+            return Get("Consolas", size, FontStyle.Regular);
+        }
+
         public static Font Ui(float size, FontStyle style)
         {
             return Get("Segoe UI", size, style);
@@ -587,6 +593,84 @@ namespace Kinovea.ScreenManager
             if (alpha <= 0.01f)
                 return;
 
+            Offscreen(g, place, draw, (device, image, transform) =>
+            {
+                using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
+                {
+                    attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = alpha });
+                    g.DrawImage(image, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel, attributes);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Draws graphics with a soft see-through hole where the swimmer is (2.9.1, the big panels of the HUD): about a fifth over him,
+        /// more and more away from him, as they are from 'reach' away (units of g). The rest of the panel stays as it is. Empty hole,
+        /// or far from the place: drawn as they are.
+        /// </summary>
+        public static void LayerAround(Graphics g, RectangleF place, RectangleF hole, float reach, Action<Graphics> draw)
+        {
+            if (hole.IsEmpty || hole.Width <= 0 || hole.Height <= 0 || place.Width <= 0 || place.Height <= 0 ||
+                !RectangleF.Inflate(hole, reach, reach * 0.6f).IntersectsWith(place))
+            {
+                draw(g);
+                return;
+            }
+
+            Offscreen(g, place, draw, (device, image, transform) =>
+            {
+                float[] grow = { reach, reach * 0.66f, reach * 0.36f, reach * 0.12f };
+                float[] alpha = { 0.82f, 0.6f, 0.4f, 0.22f };
+
+                // Away from the swimmer: as it is.
+                using (GraphicsPath outer = HoleShape(hole, grow[0], transform))
+                using (Region outside = new Region(device))
+                {
+                    outside.Exclude(outer);
+                    GraphicsState state = g.Save();
+                    g.SetClip(outside, CombineMode.Intersect);
+                    g.DrawImage(image, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel);
+                    g.Restore(state);
+                }
+
+                // Rings nearer and nearer to him, more and more see-through.
+                for (int i = 0; i < grow.Length; i++)
+                {
+                    using (GraphicsPath shape = HoleShape(hole, grow[i], transform))
+                    using (Region ring = new Region(shape))
+                    using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
+                    {
+                        if (i + 1 < grow.Length)
+                        {
+                            using (GraphicsPath inner = HoleShape(hole, grow[i + 1], transform))
+                                ring.Exclude(inner);
+                        }
+
+                        attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = alpha[i] });
+                        GraphicsState state = g.Save();
+                        g.SetClip(ring, CombineMode.Intersect);
+                        g.DrawImage(image, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel, attributes);
+                        g.Restore(state);
+                    }
+                }
+            });
+        }
+
+        /// <summary>The hole of LayerAround: an ellipse around the swimmer, grown by 'grow' (less in height), in device pixels.</summary>
+        private static GraphicsPath HoleShape(RectangleF hole, float grow, Matrix transform)
+        {
+            GraphicsPath path = new GraphicsPath();
+            path.AddEllipse(RectangleF.Inflate(hole, grow, grow * 0.6f));
+            path.Transform(transform);
+            return path;
+        }
+
+        /// <summary>
+        /// The graphics drawn on a see-through bitmap of the pixels of the drawing under 'place' (units of g), then composited on g
+        /// (identity transform, device pixels) by 'composite' with the place in device pixels, the bitmap and the transform of g.
+        /// </summary>
+        private static void Offscreen(Graphics g, RectangleF place, Action<Graphics> draw, Action<Rectangle, Bitmap, Matrix> composite)
+        {
             const float margin = 8f;
             PointF[] corners = { new PointF(place.Left - margin, place.Top - margin), new PointF(place.Right + margin, place.Bottom + margin) };
             using (Matrix transform = g.Transform)
@@ -648,11 +732,7 @@ namespace Kinovea.ScreenManager
                         g.ResetTransform();
                         g.InterpolationMode = InterpolationMode.NearestNeighbor;
                         g.PixelOffsetMode = PixelOffsetMode.Half;
-                        using (System.Drawing.Imaging.ImageAttributes attributes = new System.Drawing.Imaging.ImageAttributes())
-                        {
-                            attributes.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix { Matrix33 = alpha });
-                            g.DrawImage(target, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel, attributes);
-                        }
+                        composite(device, target, transform);
                     }
                     finally
                     {

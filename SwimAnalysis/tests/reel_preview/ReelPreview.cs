@@ -292,6 +292,15 @@ public static class ReelPreview
 
         try
         {
+            RenderHud(folder);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("hud: " + e);
+        }
+
+        try
+        {
             RenderPanel(folder, names);
         }
         catch (Exception e)
@@ -1199,6 +1208,320 @@ public static class ReelPreview
         {
             SwimLang.English = was;
         }
+    }
+
+    // ---- The HUD of the race (2.9.1, as the demo) ----
+
+    /// <summary>
+    /// A fictional 100 m freestyle, long course, as the demo: 3 s of video before the signal, the swimmer followed all the race in
+    /// the middle of the image (or under the panel on the left).
+    /// </summary>
+    public static SwimRace Freestyle100Long(bool underPanel)
+    {
+        const double lead = 3.0;
+        SwimRace race = new SwimRace();
+        race.Athlete = "ΔΟΚΙΜΑΣΤΙΚΟΣ ΑΘΛΗΤΗΣ";
+        race.AthleteGender = "Ανδρών";
+        race.Lane = 4;
+        race.Style = "fs";
+        race.Distance = 100;
+        race.Pool = 50;
+        race.Round = "Τελικός";
+        race.Competition = "Δοκιμή γραφικών";
+        race.Checkpoints = SwimPresets.DefaultCheckpoints(100, 50, false);
+        race.StartTimestamp = Ts(lead);
+
+        Add(race, SwimMarkType.Reaction, lead + 0.62, 0);
+        Add(race, SwimMarkType.FeetOff, lead + 0.70, 0);
+        Add(race, SwimMarkType.Entry, lead + 1.02, 0);
+        for (double k = 1.50; k < 5.0; k += 0.42)
+            Add(race, SwimMarkType.Kick, lead + k, 0);
+        Add(race, SwimMarkType.Breakout, lead + 5.64, 0);
+
+        int[] distances = { 15, 25, 35, 45, 50, 65, 75, 85, 95, 100 };
+        double[] times = { 5.94, 10.86, 16.40, 22.50, 25.44, 32.10, 37.50, 43.20, 49.10, 52.42 };
+        for (int i = 0; i < distances.Length; i++)
+            Add(race, SwimMarkType.Split, lead + times[i], distances[i]);
+
+        Add(race, SwimMarkType.FeetOff, lead + 25.80, 0);
+        for (double k = 26.30; k < 30.5; k += 0.45)
+            Add(race, SwimMarkType.Kick, lead + k, 0);
+        Add(race, SwimMarkType.Breakout, lead + 31.00, 0);
+        for (double t = 5.90; t < 24.9; t += 0.62)
+            Add(race, SwimMarkType.Stroke, lead + t, 0);
+        for (double t = 31.24; t < 52.0; t += 0.64)
+            Add(race, SwimMarkType.Stroke, lead + t, 0);
+        race.UnderwaterDist = 14.4;
+        race.GetTurn(50, true).UnderwaterDist = 12.4;
+
+        SwimTrack track = new SwimTrack();
+        track.Start = Ts(0);
+        track.Step = PerFrame;
+        int n = (int)Math.Round((lead + 66) * Fps) + 1;
+        for (int i = 0; i < n; i++)
+        {
+            double f = i / (double)(n - 1);
+            double x = underPanel ? 330 + 30 * Math.Sin(f * 11) : 1010 + 110 * Math.Sin(f * 7);
+            double y = 600 + 6 * Math.Sin(f * 23);
+            track.X.Add((int)Math.Round(x));
+            track.Y.Add((int)Math.Round(y));
+            track.Top.Add((int)Math.Round(y - 42));
+            track.Bottom.Add((int)Math.Round(y + 42));
+        }
+
+        race.Tracks.Add(track);
+        return race;
+    }
+
+    /// <summary>A fictional final of the 100 m freestyle (eight swimmers), for the boards added to the HUD.</summary>
+    public static string FinalsJsonFree()
+    {
+        StringBuilder b = new StringBuilder();
+        b.Append("{\"format\":\"kinovea-swim-finals\",\"version\":1,\"source\":\"Δοκιμαστικός τελικός\",\"short\":\"ΔΟΚΙΜΗ\",\"pool\":50,\"finals\":[");
+        b.Append("{\"gender\":\"M\",\"style\":\"fs\",\"distance\":100,\"swimmers\":[");
+        string[] names = { "Alpha ONE", "Beta TWO", "Gamma THREE", "Delta FOUR", "Epsilon FIVE", "Zeta SIX", "Eta SEVEN", "Theta EIGHT" };
+        for (int i = 0; i < names.Length; i++)
+        {
+            double k = 1 + 0.004 * i;
+            double t15 = 5.6 + 0.03 * i, t25 = 10.1 * k, t35 = 15.3 * k, t45 = 20.6 * k, t50 = 22.9 * k, t65 = 29.9 * k, t75 = 35.0 * k, t85 = 40.2 * k, t95 = 45.4 * k, t100 = 47.9 * k;
+            if (i > 0)
+                b.Append(",");
+            b.Append(string.Format(ci,
+                "{{\"rank\":{0},\"name\":\"{1}\",\"final\":{2:0.00},\"checkpoints\":{{\"15\":{3:0.00},\"25\":{4:0.00},\"35\":{5:0.00},\"45\":{6:0.00},\"50\":{7:0.00},\"65\":{8:0.00},\"75\":{9:0.00},\"85\":{10:0.00},\"95\":{11:0.00},\"100\":{2:0.00}}}}}",
+                i + 1, names[i], t100, t15, t25, t35, t45, t50, t65, t75, t85, t95));
+        }
+
+        b.Append("]}]}");
+        return b.ToString();
+    }
+
+    private sealed class HudShot
+    {
+        public string Name;
+        public int Kind;
+        public double Time;
+        public int Width = 1920;
+        public int Height = 1080;
+    }
+
+    /// <summary>
+    /// The HUD of the race (2.9.1): the demo layout at the moments of a race (before the signal, the start, a breakout, a checkpoint,
+    /// the swimming, the turn, the finish, «Η ανάλυση με μια ματιά»), with the boards added (Δ and ΔΑΚ, the Δ chart, the board of
+    /// the final), the values of the technical analysis, the label of the swimmer, the swimmer under the panel, other sizes; and the
+    /// time to draw a frame (hud.txt). Not in frames.txt (the annotations): in the zip.
+    /// </summary>
+    private static void RenderHud(string folder)
+    {
+        StringBuilder info = new StringBuilder();
+        SwimTiming timing = Timing();
+        SwimRace race = Freestyle100Long(false);
+        SwimRace under = Freestyle100Long(true);
+        SwimRace added = Freestyle100Long(false);
+        string error;
+        SwimFinals finals = SwimFinals.Parse(FinalsJsonFree(), out error);
+        SwimFinal final = finals != null ? finals.For(added) : null;
+        if (final != null)
+            added.Reference = SwimFinals.Reference(final, final.Swimmers[0]);
+        else
+            info.AppendLine("no final for the 100 m freestyle: " + error);
+
+        Dictionary<SwimRace, SwimComputed> computed = new Dictionary<SwimRace, SwimComputed>();
+        Dictionary<SwimRace, SwimReel> reels = new Dictionary<SwimRace, SwimReel>();
+        foreach (SwimRace r in new[] { race, under, added })
+        {
+            computed[r] = SwimCalculator.Compute(r, timing, 0.5);
+            reels[r] = SwimReel.Build(r, computed[r]);
+        }
+
+        List<KeyValuePair<string, string>> tech = new List<KeyValuePair<string, string>>
+        {
+            new KeyValuePair<string, string>("ΑΝΤΙΔΡΑΣΗ", "0.62"), new KeyValuePair<string, string>("ΑΠΟΔΕΣΜΕΥΣΗ", "0.70"),
+            new KeyValuePair<string, string>("ΕΙΣΟΔΟΣ", "1.02"), new KeyValuePair<string, string>("5 m", "2.08"),
+            new KeyValuePair<string, string>("10 m", "3.96"), new KeyValuePair<string, string>("ΕΞΟΔΟΣ", "5.64"),
+            new KeyValuePair<string, string>("ΔΕΛΦΙΝΙΣΜΟΙ", "9")
+        };
+
+        // Kind: 0 the HUD alone, 1 with all the boards added, 2 the values of the technical analysis, 3 the label of the swimmer,
+        // 4 the swimmer under the panel on the left.
+        List<HudShot> shots = new List<HudShot>
+        {
+            new HudShot { Name = "hud-01-pre", Time = -1.0 },
+            new HudShot { Name = "hud-02-start", Time = 0.30 },
+            new HudShot { Name = "hud-03-breakout", Time = 5.70 },
+            new HudShot { Name = "hud-04-15m", Time = 7.00 },
+            new HudShot { Name = "hud-05-swim", Time = 18.00 },
+            new HudShot { Name = "hud-06-turn-in", Time = 23.00 },
+            new HudShot { Name = "hud-07-turn", Time = 26.60 },
+            new HudShot { Name = "hud-08-turn-out", Time = 31.50 },
+            new HudShot { Name = "hud-09-swim2", Time = 40.00 },
+            new HudShot { Name = "hud-10-finish", Time = 52.42 },
+            new HudShot { Name = "hud-11-finish2", Time = 54.00 },
+            new HudShot { Name = "hud-12-dash-in", Time = 57.62 },
+            new HudShot { Name = "hud-13-dash", Time = 60.50 },
+            new HudShot { Name = "hud-20-add-35m", Kind = 1, Time = 17.00 },
+            new HudShot { Name = "hud-21-add-turn", Kind = 1, Time = 27.00 },
+            new HudShot { Name = "hud-22-add-finish", Kind = 1, Time = 55.00 },
+            new HudShot { Name = "hud-23-add-dash", Kind = 1, Time = 64.00 },
+            new HudShot { Name = "hud-24-add-dash-still", Kind = 1, Time = 66.50 },
+            new HudShot { Name = "hud-30-tech", Kind = 2, Time = 6.20 },
+            new HudShot { Name = "hud-31-label", Kind = 3, Time = 18.00 },
+            new HudShot { Name = "hud-32-under", Kind = 4, Time = 18.00 },
+            new HudShot { Name = "hud-40-1280", Time = 18.00, Width = 1280, Height = 720 },
+            new HudShot { Name = "hud-41-1440x1080", Time = 18.00, Width = 1440, Height = 1080 },
+            new HudShot { Name = "hud-42-1280-add", Kind = 1, Time = 38.00, Width = 1280, Height = 720 }
+        };
+
+        foreach (HudShot shot in shots)
+        {
+            try
+            {
+                SwimRace r = shot.Kind == 1 ? added : (shot.Kind == 4 ? under : race);
+                using (Bitmap image = DrawHud(r, computed[r], reels[r], timing, shot, final, tech, true))
+                    SaveJpeg(image, Path.Combine(folder, shot.Name + ".jpg"), 82);
+                info.AppendLine(shot.Name + ": ok");
+            }
+            catch (Exception e)
+            {
+                info.AppendLine(shot.Name + ": " + e);
+            }
+        }
+
+        // The time to draw the HUD on a frame (without the pool): the first frame, then the mean of 40 frames.
+        try
+        {
+            foreach (HudShot shot in new[]
+            {
+                new HudShot { Name = "1920 alone", Time = 18.00 }, new HudShot { Name = "1920 added", Kind = 1, Time = 17.00 },
+                new HudShot { Name = "1920 under", Kind = 4, Time = 18.00 }, new HudShot { Name = "1920 dashboard", Time = 60.50 },
+                new HudShot { Name = "1280 alone", Time = 18.00, Width = 1280, Height = 720 }
+            })
+            {
+                SwimRace r = shot.Kind == 1 ? added : (shot.Kind == 4 ? under : race);
+                System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+                using (Bitmap first = DrawHud(r, computed[r], reels[r], timing, shot, final, tech, false))
+                {
+                }
+
+                double firstMs = watch.Elapsed.TotalMilliseconds;
+                SwimHudPainter.Timings = new Dictionary<string, double>();
+                watch.Restart();
+                double t0 = shot.Time;
+                for (int i = 0; i < 40; i++)
+                {
+                    shot.Time = t0 + i * 0.02;
+                    using (Bitmap frame = DrawHud(r, computed[r], reels[r], timing, shot, final, tech, false))
+                    {
+                    }
+                }
+
+                info.AppendLine(string.Format(ci, "time {0}: first {1:0.0} ms, then {2:0.0} ms per frame ({3})", shot.Name, firstMs, watch.Elapsed.TotalMilliseconds / 40,
+                    string.Join(", ", SwimHudPainter.Timings.Select(p => p.Key + " " + (p.Value / 40).ToString("0.0", ci)).ToArray())));
+                SwimHudPainter.Timings = null;
+            }
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("time: " + e);
+        }
+
+        // Through the manager as on the screen (DrawHud: its settings, the boards added from them, the final of the race).
+        try
+        {
+            SwimAnalysisManager manager = SwimAnalysisManager.Instance;
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            Type type = typeof(SwimAnalysisManager);
+            type.GetField("currentRace", flags).SetValue(manager, added);
+            type.GetField("currentTiming", flags).SetValue(manager, timing);
+            type.GetProperty("Computed", flags).GetSetMethod(true).Invoke(manager, new object[] { computed[added] });
+            type.GetProperty("Finals", flags).GetSetMethod(true).Invoke(manager, new object[] { finals });
+            System.Reflection.MethodInfo drawHud = type.GetMethod("DrawHud", flags);
+            using (Bitmap image = new Bitmap(1920, 1080, PixelFormat.Format24bppRgb))
+            {
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    long ts = added.StartTimestamp.Value + (long)Math.Round(38.0 * Fps) * PerFrame;
+                    DrawPool(g, 1920, 1080, added, ts, 1f, 1f);
+                    Func<PointF, PointF> toView = p => p;
+                    drawHud.Invoke(manager, new object[] { g, ts, new Size(1920, 1080), toView });
+                }
+
+                SaveJpeg(image, Path.Combine(folder, "hud-50-manager.jpg"), 82);
+            }
+
+            SwimSettings settings = manager.Settings;
+            info.AppendLine(string.Format(ci, "hud-50-manager: ok (HUD {0}, board {1}, speed {2}, Δ chart {3}, final {4}, summary {5})", settings.HudLayout,
+                settings.ShowSplitBoard, settings.ShowSpeedChart, settings.ShowDeltaChart, settings.ShowFinalsBoard, settings.ReelSummary));
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("hud-50-manager: " + (e.InnerException ?? e));
+        }
+
+        info.AppendLine("can paint 1280x720 " + SwimHudPainter.CanPaint(new Size(1280, 720)) + ", 900x500 " + SwimHudPainter.CanPaint(new Size(900, 500)) +
+            ", 880x495 " + SwimHudPainter.CanPaint(new Size(880, 495)) + ", 1080x1920 " + SwimHudPainter.CanPaint(new Size(1080, 1920)));
+        File.WriteAllText(Path.Combine(folder, "hud.txt"), info.ToString(), Encoding.UTF8);
+    }
+
+    private static Bitmap DrawHud(SwimRace race, SwimComputed computed, SwimReel reel, SwimTiming timing, HudShot shot, SwimFinal final,
+        List<KeyValuePair<string, string>> tech, bool pool)
+    {
+        Bitmap image = new Bitmap(shot.Width, shot.Height, PixelFormat.Format24bppRgb);
+        using (Graphics g = Graphics.FromImage(image))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            long ts = race.StartTimestamp.Value + (long)Math.Round(shot.Time * Fps) * PerFrame;
+            float sx = shot.Width / (float)ReferenceWidth, sy = shot.Height / (float)ReferenceHeight;
+            if (pool)
+                DrawPool(g, shot.Width, shot.Height, race, ts, sx, sy);
+            else
+                g.Clear(Color.FromArgb(18, 80, 120));
+
+            SwimHudScene scene = new SwimHudScene();
+            scene.Race = race;
+            scene.Computed = computed;
+            scene.Reel = reel;
+            scene.Timing = timing;
+            scene.Timestamp = ts;
+            scene.Time = timing.Seconds(ts, race.StartTimestamp.Value);
+            scene.FrameNumber = (ts - Origin) / PerFrame;
+            scene.VideoSeconds = scene.FrameNumber / Fps;
+            scene.Fps = Fps;
+            scene.VideoSize = new Size(ReferenceWidth, ReferenceHeight);
+            scene.FromImage = p => new PointF(p.X * sx, p.Y * sy);
+            scene.Calibrated = true;
+            scene.Sync = SwimSyncState.Synced;
+            scene.PdfReady = true;
+            scene.Summary = true;
+            scene.SpeedTrace = true;
+            scene.DeltaInfo = false;
+            scene.DeltaChart = false;
+            if (shot.Kind == 1)
+            {
+                scene.DeltaInfo = true;
+                scene.DeltaChart = true;
+                scene.Final = final;
+                scene.BoardName = "ΔΟΚΙΜΑΣΤΙΚΟΣ";
+            }
+            else if (shot.Kind == 2)
+            {
+                scene.Technical = true;
+                scene.TechTitle = "Εκκίνηση";
+                scene.TechClock = "6.20 s";
+                scene.TechItems = tech;
+            }
+            else if (shot.Kind == 3)
+            {
+                scene.Technical = true;
+                scene.SwimmerLabel = true;
+            }
+
+            SwimHudPainter.Paint(g, new Size(shot.Width, shot.Height), scene);
+        }
+
+        return image;
     }
 
     private static void SaveJpeg(Bitmap image, string path, long quality)
