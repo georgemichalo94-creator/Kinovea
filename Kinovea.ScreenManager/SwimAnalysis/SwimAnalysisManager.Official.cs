@@ -81,6 +81,9 @@ namespace Kinovea.ScreenManager
             /// <summary>The results of the link cannot be read by the program (another site, a page that does not open, no results of the event
             /// published): the analyst pastes them (since 2.8.1).</summary>
             public bool Locked;
+
+            /// <summary>The competition of a results page whose results are not read (its title; since 2.8.2), null when not read.</summary>
+            public SwimEventInfo PageEvent;
         }
 
         private BackgroundWorker officialWorker;
@@ -115,6 +118,11 @@ namespace Kinovea.ScreenManager
                     remembered = true;
                 }
             }
+
+            // A link that names the event (the results of the European Aquatics championships): the race's details from it first
+            // (since 2.8.2), so that its results are read for that event (a new action: asked again if refused before).
+            declinedEvent = null;
+            ApplyEvent(SwimResultsPaste.EventFromLink(Race.ResultsLink), SwimLang.T("τον σύνδεσμο"));
 
             OfficialQuery q = NewOfficialQuery(Race.ResultsLink, remembered);
 
@@ -372,6 +380,10 @@ namespace Kinovea.ScreenManager
                 found.Error = SwimLang.T("ο σύνδεσμος δεν είναι των live αποτελεσμάτων της ΚΟΕ (live.koe.org.gr), σελίδα αποτελεσμάτων της Microplus ή ") +
                     SwimLang.T("διοργάνωση της World Aquatics (worldaquatics.com/competitions/…)· άφησέ τον κενό για αναζήτηση με την ημερομηνία");
                 found.Locked = true;
+
+                // The competition and its city from the title of its page (a link that names the event; since 2.8.2).
+                if (SwimResultsPaste.EventFromLink(q.Link) != null)
+                    found.PageEvent = SwimResultsPaste.EventFromPageTitle(SwimOfficialResults.PageTitle(q.Link));
                 return found;
             }
             else if (units == null && !string.IsNullOrWhiteSpace(q.Link) && !int.TryParse(q.Link.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out code))
@@ -691,7 +703,10 @@ namespace Kinovea.ScreenManager
             {
                 Status("🔗 " + (found.Error ?? SwimLang.T("δεν βρέθηκε ο αγώνας")) + ".", true);
                 if (found.Locked)
+                {
+                    ApplyEvent(found.PageEvent, SwimLang.T("τη σελίδα των αποτελεσμάτων"));
                     PasteOfficialResults(SwimLang.T("Τα αποτελέσματα αυτής της σελίδας δεν διαβάζονται αυτόματα: ") + (found.Error ?? "") + ".");
+                }
                 return;
             }
 
@@ -733,7 +748,7 @@ namespace Kinovea.ScreenManager
             SwimRace race = Race;
             string oldAthlete = race.Athlete, oldId = race.AthleteId, oldGender = race.AthleteGender, oldBorn = race.AthleteBirthYear,
                 oldCategory = race.AthleteCategory, oldClub = race.AthleteClub, oldDate = race.Date, oldRound = race.Round,
-                oldCompetition = race.Competition, oldLink = race.ResultsLink;
+                oldCompetition = race.Competition, oldLink = race.ResultsLink, oldLocation = race.Location;
             int oldLane = race.Lane;
             Action detailsBack = () =>
             {
@@ -748,6 +763,7 @@ namespace Kinovea.ScreenManager
                 race.Round = oldRound;
                 race.Competition = oldCompetition;
                 race.ResultsLink = oldLink;
+                race.Location = oldLocation;
             };
 
             if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
@@ -764,6 +780,13 @@ namespace Kinovea.ScreenManager
                 Race.Round = RoundName(found.Unit.Round);
             if (string.IsNullOrWhiteSpace(Race.Competition) && found.Competition != null)
                 Race.Competition = found.Competition.Name;
+            else if ((Race.Competition ?? "").Trim().Length < 3 && found.Unit.Source == "microplus" && found.Source.Length > 0)
+            {
+                // A Microplus results site: its name (since 2.8.2), and its city when the name has one ("... Belgrade 2024").
+                Race.Competition = found.Source;
+                if ((Race.Location ?? "").Trim().Length < 3 && SwimResultsPaste.CityOf(found.Source).Length > 0)
+                    Race.Location = SwimResultsPaste.CityOf(found.Source);
+            }
             OfficialChanged(times, e.Reaction, detailsBack);
 
             // The link of the competition, for its next races in the same days.

@@ -1059,6 +1059,7 @@
     <Compile Include="SwimAnalysis\SwimResultsPaste.cs" />
     <Compile Include="SwimAnalysis\SwimPasteDialog.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Paste.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Event.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimCompare.cs" />

@@ -803,6 +803,30 @@ namespace Kinovea.ScreenManager
             return "";
         }
 
+        /// <summary>
+        /// The title of a web page (its &lt;title&gt;, the part before the "#" of the link), "" when it cannot be read (since 2.8.2: the
+        /// competition of a results page whose results are not read).
+        /// </summary>
+        public static string PageTitle(string link)
+        {
+            if (string.IsNullOrWhiteSpace(link))
+                return "";
+
+            string url = link.Trim();
+            int hash = url.IndexOf('#');
+            if (hash >= 0)
+                url = url.Substring(0, hash);
+            Uri u;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out u) || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps))
+                return "";
+
+            string html = FetchText(u.AbsoluteUri);
+            if (string.IsNullOrEmpty(html))
+                return "";
+            Match m = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            return m.Success ? WebUtility.HtmlDecode(Regex.Replace(m.Groups[1].Value, @"\s+", " ")).Trim() : "";
+        }
+
         /// <summary>A competition of World Aquatics by its type ("World Championships", "Swimming World Cup", "Olympic Games").</summary>
         private static bool WorldAquaticsHosted(string type)
         {

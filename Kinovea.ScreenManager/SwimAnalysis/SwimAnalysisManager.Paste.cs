@@ -26,6 +26,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The button "📋 Επικόλληση": the results pasted, whatever the link of the race.</summary>
         public void PasteOfficialResults()
         {
+            declinedEvent = null;
             PasteOfficialResults(null);
         }
 
@@ -40,6 +41,11 @@ namespace Kinovea.ScreenManager
 
             // The paste replaces results found on the web and waiting for the end of the reading.
             CancelPendingOffer();
+
+            // A link that names the event: the race's details from it (since 2.8.2). Only from the button: the window that opens by
+            // itself comes from 🔗, which did it already (the analyst is not asked twice).
+            if (intro == null)
+                ApplyEvent(SwimResultsPaste.EventFromLink(Race.ResultsLink), SwimLang.T("τον σύνδεσμο"));
 
             string clip = "";
             try
@@ -56,6 +62,7 @@ namespace Kinovea.ScreenManager
                 clip = "";
 
             SwimPasteRecord chosen;
+            SwimEventInfo titleEvent;
             bool byName;
             using (SwimPasteDialog dialog = new SwimPasteDialog(intro, clip, Race.Distance, Race.Athlete, RaceLaneNumber()))
             {
@@ -67,7 +74,11 @@ namespace Kinovea.ScreenManager
 
                 chosen = dialog.Chosen;
                 byName = dialog.ChosenByName;
+                titleEvent = dialog.Event;
             }
+
+            // The event in the title of the pasted results (since 2.8.2): the race's details from it (its times were read for it).
+            ApplyEvent(titleEvent, SwimLang.T("τον τίτλο των αποτελεσμάτων"));
 
             OfficialQuery q = NewOfficialQuery(Race.ResultsLink, false);
 

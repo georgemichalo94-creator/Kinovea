@@ -65,6 +65,39 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>
+    /// The event of a race read from its results (since 2.8.2): from a results link that names it (".../athletic-result/SWM/ST/M/
+    /// 100MBA.../SFNL/..."), the title of pasted results ("Men's 100m Backstroke Semifinal") or the results page's title (the
+    /// competition and its city). What is not known stays empty (0).
+    /// </summary>
+    public class SwimEventInfo
+    {
+        /// <summary>The whole distance (a relay: legs x leg), the relay, the style ("fs", "bk", "br", "fly", "im").</summary>
+        public int Distance;
+        public bool Relay;
+        public string Style = "";
+
+        /// <summary>"M", "F", "X" (mixed); the round: "heats", "semi", "final".</summary>
+        public string Gender = "";
+        public string Round = "";
+
+        /// <summary>The competition (the results page's title), its city, the pool of a short course competition (25).</summary>
+        public string Competition = "";
+        public string Location = "";
+        public int Pool;
+
+        public bool Any
+        {
+            get { return Distance > 0 || Style.Length > 0 || Gender.Length > 0 || Round.Length > 0 || Competition.Length > 0 || Location.Length > 0 || Pool > 0; }
+        }
+
+        /// <summary>The event itself (distance and style) is known.</summary>
+        public bool HasEvent
+        {
+            get { return Distance > 0 && Style.Length > 0; }
+        }
+    }
+
     /// <summary>What was read from the text: the swimmers, the one of the race and why him.</summary>
     public class SwimPasteResult
     {
@@ -824,6 +857,161 @@ namespace Kinovea.ScreenManager
                 result.Best = 0;
                 result.Why = "only";
             }
+        }
+
+        /// <summary>
+        /// The event of a results link of the widgets that name it in the link (the results of the European Aquatics championships:
+        /// "#/athletic-result/SWM/ST/M/100MBA------------/SFNL/000200--": men, 100 m backstroke, semi-final) and the city of the
+        /// competition's page ("europeanaquatics.org/paris-2026/..."); null when the link names no event.
+        /// </summary>
+        public static SwimEventInfo EventFromLink(string link)
+        {
+            if (string.IsNullOrWhiteSpace(link))
+                return null;
+
+            Match m = Regex.Match(link, @"#/athletic-result/SWM/[A-Z]*/([MWX])/((?:4X)?[0-9]{2,4}M[A-Z]{2,3})-*/([A-Z0-9]+)", RegexOptions.IgnoreCase);
+            if (!m.Success)
+                return null;
+
+            SwimEventInfo ev = new SwimEventInfo();
+            string g = m.Groups[1].Value.ToUpperInvariant();
+            ev.Gender = g == "W" ? "F" : g;
+
+            Match e = Regex.Match(m.Groups[2].Value.ToUpperInvariant(), @"^(4X)?([0-9]{2,4})M([A-Z]{2,3})$");
+            if (e.Success)
+            {
+                int leg = int.Parse(e.Groups[2].Value, CultureInfo.InvariantCulture);
+                ev.Relay = e.Groups[1].Success;
+                ev.Distance = ev.Relay ? 4 * leg : leg;
+                ev.Style = StyleCode(e.Groups[3].Value);
+                if (ev.Style.Length == 0)
+                    ev.Distance = 0;
+            }
+
+            string phase = m.Groups[3].Value.ToUpperInvariant();
+            ev.Round = phase.Contains("SF") || phase.Contains("SEM") ? "semi" :
+                phase.StartsWith("FN", StringComparison.Ordinal) || phase.Contains("FIN") ? "final" :
+                phase.Contains("HEAT") || phase.StartsWith("HT", StringComparison.Ordinal) || phase.StartsWith("PR", StringComparison.Ordinal) ? "heats" : "";
+
+            Match site = Regex.Match(link, @"^https?://[^/#?]+/([^/#?]+)/schedule-and-results", RegexOptions.IgnoreCase);
+            if (site.Success)
+                ev.Location = CityOf(site.Groups[1].Value.Replace('-', ' '));
+            return ev;
+        }
+
+        /// <summary>The style of an event code of the results (FR, BA, BR, BF, IM, ...); "" when unknown.</summary>
+        private static string StyleCode(string code)
+        {
+            switch (code)
+            {
+                case "FR": case "FS": return "fs";
+                case "BA": case "BK": return "bk";
+                case "BR": case "BS": return "br";
+                case "BF": case "FL": case "BU": case "FLY": return "fly";
+                case "IM": case "ME": case "MR": case "MED": return "im";
+                default: return "";
+            }
+        }
+
+        /// <summary>
+        /// The event in the title of pasted results (its first lines): "Men's 100m Backstroke Semifinal", "4x100m Medley Relay Women
+        /// Final", "100μ. Ύπτιο Ανδρών Ημιτελικός"; a distance and a style on the same line, else null.
+        /// </summary>
+        public static SwimEventInfo EventFromText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            string head = Normalize(text.Length > 4000 ? text.Substring(0, 4000) : text);
+            int lines = 0;
+            foreach (string raw in head.Split('\n'))
+            {
+                if (raw.Trim().Length == 0)
+                    continue;
+                if (++lines > 6)
+                    break;
+
+                string line = Plain(raw);
+                Match d = Regex.Match(line, @"(?<![0-9])(4\s*[x×χ]\s*)?([0-9]{2,4})\s*(?:m|μ|μετρ|meter|metre)(?![a-zα-ω])", RegexOptions.IgnoreCase);
+                string style = StyleWord(line);
+                if (!d.Success || style.Length == 0)
+                    continue;
+
+                int n = int.Parse(d.Groups[2].Value, CultureInfo.InvariantCulture);
+                if (n < 25 || n > 1500)
+                    continue;
+
+                SwimEventInfo ev = new SwimEventInfo { Style = style, Relay = d.Groups[1].Success || Regex.IsMatch(line, @"\brelay\b|σκυταλ") };
+                ev.Distance = d.Groups[1].Success ? 4 * n : n;
+                ev.Gender = Regex.IsMatch(line, @"\b(women'?s?|girls|ladies)\b|γυναικ|κοριτσ|κορασιδ|νεανιδ") ? "F" :
+                    Regex.IsMatch(line, @"\b(men'?s?|boys)\b|ανδρ|αγορι|παιδων|εφηβ") ? "M" :
+                    Regex.IsMatch(line, @"\bmixed\b") ? "X" : "";
+                ev.Round = Regex.IsMatch(line, @"semi|ημιτελικ") ? "semi" :
+                    Regex.IsMatch(line, @"\bfinals?\b|τελικ") ? "final" :
+                    Regex.IsMatch(line, @"\bheats?\b|prelim|προκριματικ|σειρ") ? "heats" : "";
+                return ev;
+            }
+
+            return null;
+        }
+
+        /// <summary>The style named in a line (lower case without accents); "" when none.</summary>
+        private static string StyleWord(string line)
+        {
+            if (Regex.IsMatch(line, @"medley|\bim\b|μικτη|μεικτη"))
+                return "im";
+            if (Regex.IsMatch(line, @"backstroke|\bback\b|υπτιο"))
+                return "bk";
+            if (Regex.IsMatch(line, @"breaststroke|\bbreast\b|προσθιο"))
+                return "br";
+            if (Regex.IsMatch(line, @"butterfly|\bfly\b|πεταλουδα"))
+                return "fly";
+            if (Regex.IsMatch(line, @"freestyle|\bfree\b|ελευθερο"))
+                return "fs";
+            return "";
+        }
+
+        /// <summary>
+        /// The competition from the title of its results page ("SCHEDULE & RESULTS – European Aquatics Championships Paris 2026": the
+        /// part that is not the page's own name), its city (the word before the year) and a short course pool (25).
+        /// </summary>
+        public static SwimEventInfo EventFromPageTitle(string title)
+        {
+            SwimEventInfo ev = new SwimEventInfo();
+            if (string.IsNullOrWhiteSpace(title))
+                return ev;
+
+            string best = "";
+            foreach (string part in Regex.Split(System.Net.WebUtility.HtmlDecode(title), @"\s+[–—|\-]\s+"))
+            {
+                string p = part.Trim();
+                string low = p.ToLowerInvariant();
+                if (low.Contains("schedule") || low.Contains("results") || low.Contains("αποτελέσματα") || low.Contains("πρόγραμμα"))
+                    continue;
+                if (p.Length > best.Length)
+                    best = p;
+            }
+
+            ev.Competition = best.Length > 120 ? best.Substring(0, 120) : best;
+            ev.Location = CityOf(best);
+            string all = title.ToLowerInvariant();
+            if (all.Contains("short course") || Regex.IsMatch(all, @"\(25\s*m\)|\b25\s*m\b"))
+                ev.Pool = 25;
+            return ev;
+        }
+
+        /// <summary>The city of a competition's name or page ("paris 2026", "European Championships Belgrade 2024"): the word before
+        /// the year, with a capital; "" when none.</summary>
+        public static string CityOf(string name)
+        {
+            Match m = Regex.Match(name ?? "", @"(\p{L}[\p{L}'’\-]+)\s+(?:19|20)[0-9]{2}\b");
+            if (!m.Success)
+                return "";
+            string w = m.Groups[1].Value;
+            string low = w.ToLowerInvariant();
+            if (low == "championships" || low == "championship" || low == "cup" || low == "games" || low == "open" || low == "meet")
+                return "";
+            return char.ToUpperInvariant(w[0]) + w.Substring(1).ToLowerInvariant();
         }
 
         /// <summary>
