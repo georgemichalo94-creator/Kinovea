@@ -18,16 +18,17 @@ namespace Kinovea.ScreenManager
     public partial class SwimAnalysisManager
     {
         /// <summary>
-        /// The change of the event the analyst refused ("race|results' event|race's event"): not asked again for the same race and
-        /// the same events (the link and then the title of the pasted results of the same event).
+        /// The change of the event the analyst refused ("race|results' event|race's event"): not asked again in the same action
+        /// (🔗 or 📋: the link, then the title of the pasted results of the same event); asked again at the next one.
         /// </summary>
         private string declinedEvent;
 
         /// <summary>
         /// The event into the race's details: the distance, the style and the round as the results say (the analyst is asked first
         /// when the race has marks already and the distance, the style or the pool change: its checkpoints become those of the
-        /// event; a change refused is not asked again); the gender, the competition and the city only when not typed (or one or two
-        /// letters). What changed is said in the status. 'from': where it was read ("τον σύνδεσμο"). False when nothing changed.
+        /// event; a change refused is not asked again in the same action); the gender, the competition and the city only when not
+        /// typed (or one or two letters). What changed is said in the status. 'from': where it was read ("τον σύνδεσμο"). False when
+        /// nothing changed.
         /// </summary>
         private bool ApplyEvent(SwimEventInfo ev, string from)
         {

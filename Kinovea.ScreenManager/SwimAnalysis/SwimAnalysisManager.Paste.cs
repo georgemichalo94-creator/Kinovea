@@ -26,6 +26,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The button "📋 Επικόλληση": the results pasted, whatever the link of the race.</summary>
         public void PasteOfficialResults()
         {
+            declinedEvent = null;
             PasteOfficialResults(null);
         }
 

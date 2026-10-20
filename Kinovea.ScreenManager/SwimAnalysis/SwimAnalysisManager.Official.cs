@@ -120,7 +120,8 @@ namespace Kinovea.ScreenManager
             }
 
             // A link that names the event (the results of the European Aquatics championships): the race's details from it first
-            // (since 2.8.2), so that its results are read for that event.
+            // (since 2.8.2), so that its results are read for that event (a new action: asked again if refused before).
+            declinedEvent = null;
             ApplyEvent(SwimResultsPaste.EventFromLink(Race.ResultsLink), SwimLang.T("τον σύνδεσμο"));
 
             OfficialQuery q = NewOfficialQuery(Race.ResultsLink, remembered);
