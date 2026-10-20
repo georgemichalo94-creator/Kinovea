@@ -121,12 +121,27 @@ Object.keys(layout.paging.blocks).forEach(id => {
   }
 });
 assert.ok(blocks >= 15, 'sections checked: ' + blocks);
-// Το PDF: περιοχή εκτύπωσης A1:O<τελευταία>, με τις σελίδες που υπολογίστηκαν.
+// Το PDF (2.8.0): η πρώτη σελίδα «Με μια ματιά» σε αντίγραφο του φύλλου (σβήνεται μετά), και μετά η αναφορά, περιοχή
+// A1:O<τελευταία>, με τις σελίδες που υπολογίστηκαν: κάθε σελίδα της αναφοράς μία σελίδα πιο κάτω.
 const exp = G._exports[G._exports.length - 1];
-assert.strictEqual(exp.name, sh.getName());
+assert.ok(/^_swim_pdf_\d+$/.test(exp.name), 'the PDF of the copy: ' + exp.name);
+assert.ok(!reports.getSheets().some(s => /^_swim_pdf_\d+$/.test(s.getName())), 'copy removed');
+const quickRows = exp.r2 - layout.print.rows;
+assert.ok(quickRows > 20, 'rows of the first page: ' + quickRows);
+let quickH = 0; for (let row = 1; row <= quickRows; row++) quickH += exp.detail.rowHeights[row];
+assert.ok(quickH <= H && quickH >= H - 8, 'the first page as tall as a page: ' + quickH + ' / ' + H);
 assert.strictEqual(exp.r1, 0); assert.strictEqual(exp.c1, 0);
-assert.strictEqual(exp.r2, layout.print.rows); assert.strictEqual(exp.c2, 15);
-assert.strictEqual(exp.pages, pageOf[layout.print.rows], 'pages of the PDF');
+assert.strictEqual(exp.c2, 15);
+assert.strictEqual(exp.pages, pageOf[layout.print.rows] + 1, 'pages of the PDF');
+const reportStarts = [1]; for (let row = 2; row <= layout.print.rows; row++) if (pageOf[row] !== pageOf[row - 1]) reportStarts.push(row);
+assert.deepStrictEqual(Array.from(exp.detail.pageStarts), [1].concat(reportStarts.map(x => x + quickRows)), 'the report on the same pages, one page later');
+// Οι εικόνες της αναφοράς κατέβηκαν μαζί με τις γραμμές τους, και το τελικό καρέ μπήκε και στην πρώτη σελίδα.
+sh._images.forEach(im => assert.ok(exp.detail.images.some(x => x.row === im.row + quickRows && x.col === im.col), 'image at row ' + im.row + ' moved'));
+// (Τα γραφήματα του Google μπαίνουν ως εικόνες «chart.png» για την εξαγωγή.)
+assert.strictEqual(exp.detail.images.filter(x => x.name !== 'chart.png').length, sh._images.length + 1, 'the final frame on the first page');
+assert.ok(exp.detail.images.some(x => x.row <= quickRows), 'image on the first page');
+// Το φύλλο του αγώνα δεν άλλαξε: ίδια ύψη, ίδιες εικόνες.
+for (let row = 1; row <= layout.print.rows; row++) assert.strictEqual(sh._rowHeights[row], G.swimRowHeight_(layout.grid, row), 'report row ' + row + ' unchanged');
 assert.ok(G._sleeps.indexOf(4000) >= 0, 'wait for the new charts before the PDF');
 // Περιοχή των γραφημάτων σε px (με % το PDF του Google σχεδίαζε μόνο τον τίτλο).
 sh._charts.forEach((c, i) => {

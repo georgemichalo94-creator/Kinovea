@@ -61,7 +61,7 @@ S.swimSetup();
 const call = body => JSON.parse(S.swimDoPost({ postData: { contents: JSON.stringify(Object.assign({ token: 'tok', app: 'kinovea-swim' }, body)) } }).text);
 const res = call({ action: 'update', race: typed });
 assert.ok(res.ok, JSON.stringify(res));
-assert.strictEqual(call({ action: 'ping' }).version, '2.7.7');
+assert.strictEqual(call({ action: 'ping' }).version, '2.8.0');
 
 console.log('counts from times', autoCounts.join(' '), '· typed 25→9, 35→8.5');
 console.log('ALL STROKE COUNT TESTS PASSED');

@@ -271,16 +271,22 @@ function postAll(env, R, lang) {
 // (a) Ελληνικά: lang 'el' στο νέο script = το script πριν από τα αγγλικά, κελί προς κελί (εκτός από την έκδοση)
 // ---------------------------------------------------------------------------------------------
 const OLD = makeContextWith(ORIGINAL, { athletes: ATHLETES });
-const NEW = makeContext({ athletes: ATHLETES });
+// 2.8.0: χωρίς copyTo η πρώτη σελίδα του PDF («Με μια ματιά») δεν γίνεται και το PDF είναι όπως πριν· ελέγχεται στο test_quick.
+const NEW = makeContext({ athletes: ATHLETES, copyTo: false });
 const envOld = prepare(OLD), envNew = prepare(NEW);
 assert.deepStrictEqual(envOld.files, envNew.files, 'same Drive ids in both');
 const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, envNew.reference);
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.7.7');
+assert.strictEqual(vNew, '2.8.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
-let diff = firstDiff(norm(outOld.responses, vOld), norm(outNew.responses, vNew));
+// 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο).
+const withoutTimes = list => list.map(r => r && Array.isArray(r.analyses) ? Object.assign({}, r, { analyses: r.analyses.map(a => {
+  assert.ok(Array.isArray(a.times) && a.times.length > 0, 'times of an analysis');
+  const c = Object.assign({}, a); delete c.times; return c;
+}) }) : r);
+let diff = firstDiff(norm(outOld.responses, vOld), norm(withoutTimes(outNew.responses), vNew));
 assert.strictEqual(diff, null, 'responses differ in Greek: ' + diff);
 diff = firstDiff(norm(stateOf(OLD), vOld), norm(stateOf(NEW), vNew));
 assert.strictEqual(diff, null, 'sheets differ in Greek: ' + diff);
@@ -353,7 +359,7 @@ has('SPI'); has('Speed per segment (m/s)'); has('Stroke rate (cycles/min)'); has
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.7\.7$/, 'version line');
+like(/^Updated .* · version 2\.8\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

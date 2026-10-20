@@ -2,16 +2,33 @@
 const fs = require('fs'); const vm = require('vm'); const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../GoogleSheet/SwimRaceAnalysis.gs'), 'utf8');
 
-function makeSheet(ss, name, id) {
+function makeSheet(ss, name, id, opts) {
+  opts = opts || {};
   const cells = {}; const merges = []; const charts = []; const images = [];
   const rowHeights = {}; const colWidths = {}; const forced = {};
   let maxRows = 1000, maxCols = 26;
   const sheet = {
-    _cells: cells, _charts: charts, _images: images, _name: name, _rowHeights: rowHeights, _colWidths: colWidths, _forced: forced,
+    _cells: cells, _charts: charts, _images: images, _name: name, _rowHeights: rowHeights, _colWidths: colWidths, _forced: forced, _merges: merges,
     getName: () => sheet._name, setName: n => { sheet._name = n; },
     getSheetId: () => id, getParent: () => ss,
     getMaxRows: () => maxRows, getMaxColumns: () => maxCols,
     insertRowsAfter: (a, n) => { maxRows += n; }, insertColumnsAfter: (a, n) => { maxCols += n; },
+    // Γραμμές πριν από μια γραμμή: τα κελιά, τα ύψη, οι ενώσεις, τα γραφήματα και (εκτός αν opts.imagesStay) οι εικόνες κατεβαίνουν.
+    insertRowsBefore: (row, n) => {
+      if (!(n > 0)) throw new Error('insertRowsBefore: bad count');
+      const moved = {};
+      for (const k in cells) { const [r, c] = k.split(':').map(Number); moved[(r >= row ? r + n : r) + ':' + c] = cells[k]; }
+      for (const k in cells) delete cells[k];
+      Object.assign(cells, moved);
+      const shift = o => { const out = {}; Object.keys(o).forEach(k => { const r = +k; out[r >= row ? r + n : r] = o[k]; }); return out; };
+      const rh = shift(rowHeights), fo = shift(forced);
+      Object.keys(rowHeights).forEach(k => delete rowHeights[k]); Object.assign(rowHeights, rh);
+      Object.keys(forced).forEach(k => delete forced[k]); Object.assign(forced, fo);
+      merges.forEach(m => { if (m[0] >= row) m[0] += n; });
+      charts.forEach(ch => { if (ch.pos && ch.pos[0] >= row) ch.pos[0] += n; });
+      if (!opts.imagesStay) images.forEach(im => { if (im.row >= row) im.row += n; });
+      maxRows += n;
+    },
     deleteRows: (row, n) => {
       const moved = {};
       for (const k in cells) {
@@ -157,12 +174,46 @@ function makeDrive() {
 }
 
 let nextId = 100;
-function makeSpreadsheet(name, id) {
+// Αντίγραφο ενός φύλλου (copyTo): κελιά, ύψη, πλάτη, ενώσεις, γραφήματα και εικόνες· όνομα "Copy of …".
+function copySheet(src, dest, opts) {
+  let name = 'Copy of ' + src.getName();
+  while (dest.getSheetByName(name)) name += ' (2)';
+  const copy = dest.insertSheet(name);
+  Object.keys(src._cells).forEach(k => { copy._cells[k] = Object.assign({}, src._cells[k]); });
+  Object.assign(copy._rowHeights, src._rowHeights); Object.assign(copy._colWidths, src._colWidths); Object.assign(copy._forced, src._forced);
+  src._merges.forEach(m => copy._merges.push(m.slice()));
+  src._charts.forEach(ch => {
+    const b = copy.newChart();
+    ch.ranges.forEach(r => b.addRange(copy.getRange(r._r, r._c, r._nr, r._nc)));
+    Object.keys(ch.opts).forEach(k => b.setOption(k, ch.opts[k]));
+    b.setPosition(ch.pos[0], ch.pos[1], ch.pos[2], ch.pos[3]);
+    const built = b.build();
+    built.type = ch.type;
+    copy.insertChart(built);
+  });
+  // opts.copyImages === false: ένα copyTo που δεν αντιγράφει τις εικόνες πάνω από τα κελιά.
+  if (opts.copyImages !== false) src._images.forEach(im => {
+    const c = copy.insertImage(im.blob, im.col, im.row, im.ox, im.oy);
+    c.w = im.w; c.h = im.h; c.alt = im.alt;
+  });
+  copy._inserted = 0;
+  return copy;
+}
+
+function makeSpreadsheet(name, id, opts) {
+  opts = opts || {};
   const sheets = [];
   const ss = {
     getName: () => name, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getId: () => id,
     getSheetByName: n => sheets.find(s => s.getName() === n) || null,
-    insertSheet: (n, idx) => { if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n); const s = makeSheet(ss, n, nextId++); sheets.push(s); return s; },
+    insertSheet: (n, idx) => {
+      if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n);
+      const s = makeSheet(ss, n, nextId++, opts);
+      // copyTo (opts.copyTo === false: όπως ένα παλιό Apps Script χωρίς αυτό, για να μένει το PDF όπως πριν).
+      if (opts.copyTo !== false) s.copyTo = dest => copySheet(s, dest, opts);
+      sheets.push(s);
+      return s;
+    },
     getSheets: () => sheets,
     deleteSheet: sh => sheets.splice(sheets.indexOf(sh), 1),
     _active: null,
@@ -172,7 +223,7 @@ function makeSpreadsheet(name, id) {
 }
 function makeContext(opts) {
   opts = opts || {};
-  const ss = makeSpreadsheet('KOE App', 'DATA');
+  const ss = makeSpreadsheet('KOE App', 'DATA', opts);
   const all = { DATA: ss };
   if (opts.athletes) {
     const sh = ss.insertSheet('Στοιχεία Αθλητών/τριων');
@@ -216,13 +267,18 @@ function makeContext(opts) {
     for (let c = c1 + 1; c <= c2; c++) width += (sheet._colWidths[c] || 100) + 1;
     const H = width * (11.69 - +q('top_margin') - +q('bottom_margin') - pdf.footer) / (8.27 - +q('left_margin') - +q('right_margin'));
     let pages = 1, y = 0;
-    for (let r = r1 + 1; r <= r2; r++) { const h = sheet._rowHeights[r] || 21; if (y > 0 && y + h > H) { pages++; y = h; } else y += h; }
+    const pageStarts = [r1 + 1];
+    for (let r = r1 + 1; r <= r2; r++) { const h = sheet._rowHeights[r] || 21; if (y > 0 && y + h > H) { pages++; y = h; pageStarts.push(r); } else y += h; }
     // Τι τυπώνεται: γραφήματα και εικόνες (των γραφημάτων: chart.png) μέσα στην περιοχή του PDF.
     const printedCharts = sheet._charts.filter(ch => ch.pos && ch.pos[0] <= r2).length;
     const chartImages = sheet._images.filter(im => im.blob && im.blob._name === 'chart.png' && im.row <= r2).length;
     // Τα γραφήματα του Kinovea (εικόνες <raceId>_chart-….png).
     const kinoveaCharts = sheet._images.filter(im => im.blob && /_chart-[0-9a-f]{8}\.png$/.test(im.blob._name) && im.row <= r2).length;
     exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName(), printedCharts, chartImages, kinoveaCharts });
+    // Για τα tests της πρώτης σελίδας (2.8.0), χωρίς να αλλάζει η εγγραφή που συγκρίνεται με τις παλιές εκδόσεις.
+    Object.defineProperty(exports[exports.length - 1], 'detail', { enumerable: false, value: {
+      pageStarts, images: sheet._images.map(im => ({ row: im.row, col: im.col, name: im.blob && im.blob._name, w: im.w, h: im.h })),
+      cells: Object.assign({}, sheet._cells), rowHeights: Object.assign({}, sheet._rowHeights), merges: sheet._merges.map(m => m.slice()) } });
     let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
     for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
     // Γραφήματα: όπως το PDF του Google, με περιοχή σε % σχεδιάζεται μόνο ο τίτλος (λίγα bytes).
@@ -253,7 +309,7 @@ function makeContext(opts) {
         return api;
       },
       openById: id => { if (!all[id]) throw new Error('no ss ' + id); return all[id]; },
-      create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
+      create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length, opts); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
     Logger: { log: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
