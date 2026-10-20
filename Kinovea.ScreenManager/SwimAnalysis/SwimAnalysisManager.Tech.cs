@@ -1055,7 +1055,7 @@ namespace Kinovea.ScreenManager
         /// angles of the frame, race board, velocity chart, values of the start or turn, with the proportions of the screen.
         /// The video export calls this from a background thread: the drawing is done on the UI thread.
         /// </summary>
-        public void DrawExportOverlay(PlayerScreenUserInterface screen, Graphics g, Size outputSize, long timestamp)
+        public void DrawExportOverlay(PlayerScreenUserInterface screen, Graphics g, Size outputSize, long timestamp, Bitmap frame = null)
         {
             // As on the screen: only for the video of the analysis, while the analysis is on the screen (window or bars).
             if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || !Active ||
@@ -1064,7 +1064,7 @@ namespace Kinovea.ScreenManager
 
             // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).
             Action draw = () => DrawGraphicsOnImage(g, outputSize, timestamp, true, false,
-                lastRenderingSize.Width > 0 ? lastRenderingSize.Width : ReportImageWidth, true);
+                lastRenderingSize.Width > 0 ? lastRenderingSize.Width : ReportImageWidth, true, true, frame);
             try
             {
                 if (player.InvokeRequired)
@@ -1085,8 +1085,10 @@ namespace Kinovea.ScreenManager
         /// drawn on the image as they are drawn on a screen of the reference width.
         /// allRace: the race board and chart of the final frame (even if hidden on the screen), without the values of the start or turn.
         /// reel: the technical view instead of the board and the chart when it is on the screen (the video exports, not the report).
+        /// compare: the ghost and the line of the reference when chosen (the video exports, not the report), frame: the image of the video.
         /// </summary>
-        private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth, bool reel = false)
+        private void DrawGraphicsOnImage(Graphics g, Size size, long timestamp, bool panels, bool allRace, float referenceWidth, bool reel = false,
+            bool compare = false, Bitmap frame = null)
         {
             if (Race == null)
                 return;
@@ -1098,6 +1100,15 @@ namespace Kinovea.ScreenManager
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                    if (compare && !allRace && !Race.IsTraining && CompareShown && size.Width > 0 && size.Height > 0)
+                    {
+                        // Reference image pixels → pixels of the exported image; the labels as the other graphics.
+                        Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                        float kx = size.Width / (float)Math.Max(1, reference.Width), ky = size.Height / (float)Math.Max(1, reference.Height);
+                        float textScale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
+                        DrawCompare(g, timestamp, frame, reference, p => new PointF(p.X * kx, p.Y * ky), size, textScale);
+                    }
 
                     foreach (SwimAngle a in Race.Angles.Where(x => SameFrame(x.Timestamp, timestamp)))
                         DrawAngle(g, a, p => p, Math.Max(1f, size.Width / 900f));
@@ -1748,6 +1759,9 @@ namespace Kinovea.ScreenManager
             query["pool"] = Race.Pool;
             query["poolUnit"] = Race.IsYards ? SwimRace.UnitYards : SwimRace.UnitMeters;
             query["raceId"] = Race.Id;
+            // Since 2.8.0 (Apps Script 2.8.0) with the times of each analysis, and the other athletes' analyses of the event, to compare with.
+            query["others"] = true;
+            query["gender"] = Race.AthleteGender ?? "";
             string raceId = Race.Id;
             PbMessage = SwimLang.T("Φόρτωση προηγούμενων αναλύσεων…");
             client.GetAnalyses(Settings.WebAppUrl, Settings.Token, query, result =>
@@ -1771,6 +1785,9 @@ namespace Kinovea.ScreenManager
                     }
 
                     PbMessage = list.Count == 0 ? SwimLang.T("Δεν υπάρχει άλλη ανάλυση του αθλητή σε αυτό το αγώνισμα.") : string.Format(SwimLang.T("{0} προηγούμενες αναλύσεις."), list.Count);
+                    ReadAnalysisReferences(result.Raw);
+                    if (form != null)
+                        form.RefreshReferences();
                 }
                 else
                 {

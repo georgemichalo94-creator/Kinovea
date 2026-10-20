@@ -246,12 +246,18 @@ namespace Kinovea.ScreenManager
             double sx = reference.Width / (double)Math.Max(1, s.Width);
             double sy = reference.Height / (double)Math.Max(1, s.Height);
 
+            double body = s.Detector != null ? s.Detector.SwimmerLength : double.NaN;
             SwimTrack track = new SwimTrack
             {
                 Start = s.Timestamps[0],
-                Step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1)
+                Step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1),
+                Body = double.IsNaN(body) || body <= 0 ? 0 : (int)Math.Round(body * sx)
             };
 
+            // Since 2.8.0 also the camera's displacement along the lane at the swimmer (where the swimmer of the frame before is in
+            // this frame, minus where he was), added up, and the slope of the lane: the place of the pool where a reference is.
+            bool shifts = result.Shifts != null && result.Shifts.Count >= n;
+            double pan = 0;
             for (int i = 0; i < n; i++)
             {
                 double x = result.Path[i];
@@ -261,7 +267,22 @@ namespace Kinovea.ScreenManager
                 track.Y.Add((int)Math.Round(0.5 * (y1 + y2) * sy));
                 track.Top.Add((int)Math.Round(Math.Min(y1, y2) * sy));
                 track.Bottom.Add((int)Math.Round(Math.Max(y1, y2) * sy));
+                if (shifts && i > 0)
+                {
+                    double[] shift = result.Shifts[i];
+                    int at = shift != null && shift.Length > 0 ? Math.Max(0, Math.Min(shift.Length - 1, result.Path[i - 1])) : -1;
+                    double move = at >= 0 ? shift[at] : 0;
+                    if (!double.IsNaN(move) && !double.IsInfinity(move))
+                        pan += move * sx;
+                }
+
+                track.Pan.Add((int)Math.Round(pan));
+                double slope = 0.5 * (lane.A1 + lane.A2) * sy / sx;
+                track.Slope.Add((int)Math.Round(Math.Max(-5, Math.Min(5, double.IsNaN(slope) ? 0 : slope)) * 1000));
             }
+
+            if (!shifts)
+                track.Pan.Clear();
 
             // Not into the length of a part followed before (a reading can go past an unmarked wall).
             SwimReel reel = Reel;

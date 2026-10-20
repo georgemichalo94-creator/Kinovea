@@ -664,10 +664,12 @@ namespace Kinovea.ScreenManager
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             compare.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            Label lblCompare = new Label { Text = SwimLang.T("Σύγκριση με (elite):"), AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
+            Label lblCompare = new Label { Text = SwimLang.T("Σύγκριση με:"), AutoSize = true, Font = valueFont, ForeColor = colorValue, Margin = new Padding(0, 7, 4, 3) };
             cmbReference = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(0, 3, 4, 3) };
             cmbReference.SelectedIndexChanged += CmbReference_SelectedIndexChanged;
-            toolTip.SetToolTip(cmbReference, SwimLang.T("Αναφορά για το Δ σε κάθε πέρασμα (αρνητικό = πιο γρήγορα από την αναφορά). Δείχνει τις αναφορές του ίδιου αγωνίσματος, στυλ και πισίνας."));
+            toolTip.SetToolTip(cmbReference, SwimLang.T("Αναφορά για το Δ σε κάθε πέρασμα (αρνητικό = πιο γρήγορα από την αναφορά), το ghost και τη γραμμή στο βίντεο.\n") +
+                SwimLang.T("Ίδιο αγώνισμα, στυλ και πισίνα: οι elite αναφορές, οι φιναλίστ, οι άλλοι κολυμβητές αυτού του βίντεο,\n") +
+                SwimLang.T("οι άλλοι αγώνες του αθλητή και άλλων αθλητών που έχουν αναλυθεί στο Google Sheet (με το Apps Script 2.8.0)."));
             Button btnRefreshReferences = new SwimNoFocusButton { Text = "↻", Width = 30, Height = 25, Margin = new Padding(0, 2, 4, 2) };
             btnRefreshReferences.Click += (s, e) => manager.RefreshReferences();
             toolTip.SetToolTip(btnRefreshReferences, SwimLang.T("Ανανέωση των αναφορών από το φύλλο «Elite αναφορές» του Google Sheet"));
@@ -732,6 +734,7 @@ namespace Kinovea.ScreenManager
             overlay.Controls.Add(cmbCorner);
             overlay.Controls.Add(chkOverlayExports);
             overlay.Controls.Add(chkVideoBars);
+            Control compareOptions = BuildCompareOptions();
 
             TableLayoutPanel t = NewEventTable();
             AddEventRow(t, SwimLang.T("Χεριά"), PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"),
@@ -838,6 +841,7 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(hint);
             page.Controls.Add(BuildDeltaView());
             page.Controls.Add(t);
+            page.Controls.Add(compareOptions);
             page.Controls.Add(overlay);
             page.Controls.Add(compare);
             return page;
@@ -1445,6 +1449,7 @@ namespace Kinovea.ScreenManager
                 chkSpeedChart.Checked = settings.ShowSpeedChart;
                 chkSplitBoard.Checked = settings.ShowSplitBoard;
                 LoadFinalsOverlayOptions(settings);
+                LoadCompareOptions(settings);
                 chkOverlayExports.Checked = settings.OverlayInExports;
                 chkVideoBars.Checked = settings.VideoBars;
                 chkAutoStrokes.Checked = settings.AutoStrokes;
@@ -2170,6 +2175,7 @@ namespace Kinovea.ScreenManager
             lblReferences.Text = info;
             toolTip.SetToolTip(lblReferences, info);
             btnSaveReference.Enabled = race != null;
+            RefreshCompareHint();
         }
 
         private void CmbReference_SelectedIndexChanged(object sender, EventArgs e)
@@ -2239,11 +2245,13 @@ namespace Kinovea.ScreenManager
             s.ShowSpeedChart = chkSpeedChart.Checked;
             s.ShowSplitBoard = chkSplitBoard.Checked;
             CommitFinalsOverlayOptions(s);
+            CommitCompareOptions(s);
             s.OverlayInExports = chkOverlayExports.Checked;
             if (cmbCorner.SelectedIndex >= 0)
                 s.OverlayCorner = corners[cmbCorner.SelectedIndex];
             s.Save();
             manager.RefreshOverlay();
+            RefreshCompareHint();
         }
 
         /// <summary>
@@ -3075,6 +3083,8 @@ namespace Kinovea.ScreenManager
                 chkReel.Checked = manager.Settings.ReelOverlay;
                 updating = was;
             }
+
+            RefreshCompareHint();
         }
 
         private Button StrokeButton(string text, string tooltip, EventHandler click)

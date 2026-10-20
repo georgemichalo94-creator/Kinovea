@@ -52,6 +52,21 @@ namespace Kinovea.ScreenManager
         /// <summary>Saved on this computer only (not in the Google Sheet yet).</summary>
         public bool Local;
 
+        /// <summary>
+        /// Since 2.8.0: "" for a reference of the sheet "Elite αναφορές" or of this computer, else another race to compare with:
+        /// KindVideo (another swimmer of this video), KindOwn (another analysis of the athlete), KindOther (another athlete's analysis).
+        /// </summary>
+        public string Kind = "";
+
+        public const string KindVideo = "video", KindOwn = "own", KindOther = "other";
+
+        /// <summary>Another race of the video or of the Google Sheet (not kept as the reference of the event).</summary>
+        [JsonIgnore]
+        public bool IsRace
+        {
+            get { return !string.IsNullOrEmpty(Kind); }
+        }
+
         [JsonIgnore]
         public double? FinalTime
         {
@@ -70,12 +85,39 @@ namespace Kinovea.ScreenManager
             get
             {
                 double? final = FinalTime;
-                string text = Name;
+                string text = KindPrefix + Name;
                 if (final.HasValue)
                     text += " (" + FormatTime(final.Value) + ")";
                 if (Local)
                     text += SwimLang.T(" · μόνο σε αυτόν τον υπολογιστή");
                 return text;
+            }
+        }
+
+        /// <summary>What kind of race it is, before its name in the list of the comparisons.</summary>
+        [JsonIgnore]
+        public string KindPrefix
+        {
+            get
+            {
+                switch (Kind ?? "")
+                {
+                    case KindVideo: return SwimLang.T("Ίδιο βίντεο · ");
+                    case KindOwn: return SwimLang.T("Άλλος αγώνας του αθλητή · ");
+                    case KindOther: return SwimLang.T("Άλλος αθλητής · ");
+                    default: return "";
+                }
+            }
+        }
+
+        /// <summary>The name in a few characters, for the labels on the video.</summary>
+        [JsonIgnore]
+        public string ShortName
+        {
+            get
+            {
+                string name = string.IsNullOrWhiteSpace(Name) ? (Id ?? "") : Name.Trim();
+                return name.Length <= 22 ? name : name.Substring(0, 21).TrimEnd() + "…";
             }
         }
 

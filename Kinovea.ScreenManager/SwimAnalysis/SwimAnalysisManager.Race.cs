@@ -859,28 +859,9 @@ namespace Kinovea.ScreenManager
 
             // By the view of the swimmer since 2026-10-18 (a camcorder near him sees the head out sooner than a phone in the stands).
             double far = SwimSplitDetector.FarShare(swimmerLength);
-            bool first = SwimSplitDetector.UsesRiseFirst(style, turn, change) && found.ContainsKey(SwimSplitDetector.CueRiseFirst);
             foreach (KeyValuePair<string, double> c in found)
             {
                 double delay;
-
-                // After a butterfly turn the first rise instead of the steepest (since 2.7.8: the steepest can be the second stroke);
-                // the first rise counts nowhere else.
-                if (c.Key == SwimSplitDetector.CueRiseFirst)
-                {
-                    if (!first)
-                        continue;
-                    // The first stroke counted: as far before the breakout as with the steepest rise.
-                    string name1 = c.Key + ".t";
-                    double delay1 = SwimSplitDetector.TurnRiseFirstDelay(style, far)
-                        + (strokes ? SwimSplitDetector.TurnRiseStrokeDelay(style) - SwimSplitDetector.TurnRiseDelay(style, change, far) : 0);
-                    cues[StyleCue(name1, style)] = c.Value + delay1 * fps;
-                    continue;
-                }
-
-                if (c.Key == SwimSplitDetector.CueRise && first)
-                    continue;
-
                 if (c.Key == SwimSplitDetector.CueRise)
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
@@ -2130,8 +2111,7 @@ namespace Kinovea.ScreenManager
                     weight = sure ? 1.0 : 0.6;
                     spread = sure ? 0.2 : 0.5;
                     break;
-                case SwimSplitDetector.CueRise:
-                case SwimSplitDetector.CueRiseFirst: weight = 1.0; spread = 0.2; break;
+                case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
                 case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;

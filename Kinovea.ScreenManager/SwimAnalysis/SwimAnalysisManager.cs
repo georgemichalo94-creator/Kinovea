@@ -1435,8 +1435,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Draws the calibration and the last measured distance on the player screen (screen only).
+        /// frame: the image of the video on the screen (since 2.8.0, for the ghost of the reference).
         /// </summary>
-        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize)
+        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize, Bitmap frame = null)
         {
             if (screen != player || !Active || VideoFile == null || transform == null)
                 return;
@@ -1452,6 +1453,16 @@ namespace Kinovea.ScreenManager
                 TextRenderingHint textHint = g.TextRenderingHint;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                // The ghost and the line of the reference, on the water under everything else.
+                if (Race != null && !Race.IsTraining && CompareShown)
+                {
+                    Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                    PointF origin = transform.Transform(new PointF(0, 0));
+                    PointF far = transform.Transform(new PointF(10000, 10000));
+                    float sx = (far.X - origin.X) / 10000f, sy = (far.Y - origin.Y) / 10000f;
+                    DrawCompare(g, timestamp, frame, reference, p => new PointF(origin.X + p.X * sx, origin.Y + p.Y * sy), renderingSize, 1f);
+                }
 
                 if (PickTarget == SwimPickTarget.Calibration)
                 {
@@ -1669,7 +1680,7 @@ namespace Kinovea.ScreenManager
             {
                 Rectangle board = new Rectangle(x, top, width, boardHeight);
                 DrawCard(g, board, SwimTheme.Accent);
-                DrawBoard(g, board, now, last);
+                DrawBoard(g, board, now, last, all || Settings.CompareDelta, all || Settings.CompareDelta || CompareShown);
                 top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
             }
 
@@ -1752,7 +1763,8 @@ namespace Kinovea.ScreenManager
                 g.FillRectangle(a, r.Left + 1, r.Top + 7, 3, r.Height - 14);
         }
 
-        private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last)
+        /// <summary>delta: the Δ with the reference at the last checkpoint; versus: the name of the reference.</summary>
+        private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last, bool delta = true, bool versus = true)
         {
             bool finished = last != null && last.D >= Race.Distance;
             Font caption = SwimTheme.Ui(6.75f, FontStyle.Bold);
@@ -1782,15 +1794,15 @@ namespace Kinovea.ScreenManager
                 g.DrawString(label, caption, brushDim, right - ls.Width, r.Top + 6);
                 g.DrawString(split, splitFont, brushText, right - ss.Width, r.Top + 18);
 
-                if (last.Delta.HasValue)
+                if (last.Delta.HasValue && delta)
                 {
-                    string delta = FormatDelta(last.Delta.Value);
+                    string text = FormatDelta(last.Delta.Value);
                     Font deltaFont = SwimTheme.Display(10.5f);
-                    SizeF ds = g.MeasureString(delta, deltaFont);
+                    SizeF ds = g.MeasureString(text, deltaFont);
                     RectangleF pill = new RectangleF(right - ds.Width - 10, r.Top + 40, ds.Width + 10, ds.Height + 1);
                     using (GraphicsPath path = SwimTheme.Rounded(pill, pill.Height / 2))
                         g.FillPath(last.Delta.Value <= 0 ? brushFaster : brushSlower, path);
-                    g.DrawString(delta, deltaFont, brushText, pill.Left + 5, pill.Top + 1);
+                    g.DrawString(text, deltaFont, brushText, pill.Left + 5, pill.Top + 1);
                 }
             }
 
@@ -1810,7 +1822,7 @@ namespace Kinovea.ScreenManager
                 bx = chip.Right + 8;
             }
 
-            if (Computed.Reference != null)
+            if (Computed.Reference != null && versus)
             {
                 using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
                     g.DrawString("vs " + Computed.Reference.Name, caption, brushReference, new RectangleF(bx, r.Bottom - 17, Math.Max(10, r.Right - 90 - bx), 13), format);
@@ -2198,12 +2210,13 @@ namespace Kinovea.ScreenManager
 
         #region Elite references
         /// <summary>
-        /// References of the event of the current race (and of the gender of the athlete when known).
+        /// References of the event of the current race (and of the gender of the athlete when known); since 2.8.0 also the other races
+        /// of the event: the other swimmers of this video, the athlete's other analyses and other athletes' analyses (Google Sheet).
         /// </summary>
         public List<SwimReference> ReferencesForRace()
         {
             List<SwimReference> list = References.For(Race);
-            foreach (SwimReference r in Finals.ReferencesFor(Race))
+            foreach (SwimReference r in Finals.ReferencesFor(Race).Concat(RaceReferences()))
             {
                 if (!list.Any(x => x.Id == r.Id))
                     list.Add(r);
@@ -2330,8 +2343,10 @@ namespace Kinovea.ScreenManager
 
             Race.Reference = reference != null ? reference.Copy() : null;
             string key = EventKey(Race);
-            // "No comparison" is a choice too (an empty id): the winner of the final does not come back for this event.
-            Settings.ReferenceByEvent[key] = reference != null ? reference.Id : "";
+            // "No comparison" is a choice too (an empty id): the winner of the final does not come back for this event. Another race
+            // (of this video, of the athlete or of another athlete) is for this race only.
+            if (reference == null || !reference.IsRace)
+                Settings.ReferenceByEvent[key] = reference != null ? reference.Id : "";
 
             Settings.Save();
             Status(reference != null ? SwimLang.T("Σύγκριση με: ") + reference.Label : SwimLang.T("Χωρίς σύγκριση με αναφορά."), false);

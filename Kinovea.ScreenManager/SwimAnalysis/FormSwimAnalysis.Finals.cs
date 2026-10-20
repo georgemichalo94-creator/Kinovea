@@ -54,7 +54,7 @@ namespace Kinovea.ScreenManager
             toolTip.SetToolTip(chkDeltaChart, SwimLang.T("Γράφημα με το Δ από την αναφορά σε κάθε πέρασμα, κάτω από το γράφημα ταχύτητας στο βίντεο."));
             toolTip.SetToolTip(chkFinalsBoard, SwimLang.T("Σε κάθε σημείο (15μ., 25μ., 50μ., στροφές, τερματισμός) πίνακας με τους φιναλίστ του τελικού\n") +
                 SwimLang.T("και τον αθλητή στη θέση που θα είχε, για λίγα δευτερόλεπτα, στην άλλη πλευρά του βίντεο."));
-            overlay.Controls.Add(chkDeltaChart);
+            // The graphic of the Δ is in the row of the comparison (since 2.8.0).
             overlay.Controls.Add(chkFinalsBoard);
         }
 

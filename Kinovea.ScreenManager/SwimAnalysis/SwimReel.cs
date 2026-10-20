@@ -515,7 +515,7 @@ namespace Kinovea.ScreenManager
         /// Derivatives of the monotone cubic through the points (as scipy's PCHIP): weighted harmonic mean inside,
         /// three-point estimate at the ends.
         /// </summary>
-        private static double[] PchipSlopes(List<double> x, List<double> y)
+        internal static double[] PchipSlopes(List<double> x, List<double> y)
         {
             int n = x.Count;
             double[] m = new double[n];
