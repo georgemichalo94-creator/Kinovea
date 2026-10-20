@@ -1243,6 +1243,10 @@ namespace Kinovea.ScreenManager
                     double? v = s.Race.IsYards ? row.VelYd : row.Vel;
                     if (v.HasValue)
                         Text(g, v.Value.ToString("0.00", CultureInfo.InvariantCulture), Ui(17), Color.FromArgb(217, 201, 251, 255), rr.Left + 202, rr.Top + 9);
+
+                    // (2.9.4) Beside it, under it, the head's velocity of a segment at a wall (the touch, not the head: ≈).
+                    if (row.HeadVel.HasValue && !s.Race.IsYards)
+                        Text(g, SwimLang.T("κεφ. ≈") + row.HeadVel.Value.ToString("0.00", CultureInfo.InvariantCulture), Ui(10), Color.FromArgb(170, 201, 251, 255), rr.Left + 202, rr.Top + 29);
                     if (row.Strokes.HasValue)
                         Text(g, SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture)), Ui(17), Color.FromArgb(217, 201, 251, 255), rr.Left + 286, rr.Top + 9);
                     if (s.DeltaInfo && row.Delta.HasValue && s.Computed.Reference != null)

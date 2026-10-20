@@ -129,4 +129,42 @@ configs.forEach(([style, dist, cps]) => {
   });
   console.log(`preset ${style} ${dist}: rows=${an.rows.length} turns=${an.turnWalls.length} gridRows=${lay.grid.maxRow} charts=${lay.charts.length}`);
 });
+// (2.9.4) The head's velocity (≈) beside the conventional one: the turns (−5 → wall, wall → +15) and the last 5 m.
+(function () {
+  const cps = [15, 25, 35, 45, 50, 65, 75, 85, 95, 100].map(d => ({ d }));
+  const cell = (lay, r, c) => (lay.grid.get(r, c) || {}).v;
+  const check = (style, inExpect, outExpect) => {
+    const r = S.swimNormalizeRace_({ id: 'h' + style, style, distance: 100, pool: 50, checkpoints: cps });
+    const an = S.swimAnalyze_(r);
+    const lay = S.swimBuildLayout_(r, an);
+    const turnRow = Object.values(lay.grid.cells).find(c => c.c === 1 && c.v === 50 && c.r > lay.T0 + an.rows.length);
+    assert.ok(turnRow, 'turn row of ' + style);
+    const x = turnRow.r;
+    assert.strictEqual(cell(lay, x, 14), '=IF(OR(B' + x + '="",B' + x + '=0),"",(5-' + inExpect + ')/B' + x + ')', 'head −5 → wall ' + style);
+    assert.strictEqual(cell(lay, x, 15), '=IF(OR(L' + x + '="",L' + x + '=0),"",(15-' + outExpect + ')/L' + x + ')', 'head wall → +15 ' + style);
+    const fin = Object.values(lay.grid.cells).filter(c => c.c === 7 && typeof c.v === 'string' && /^=IF\(OR\(B\d+="",B\d+=0\),"",\(5-0\.65\)\/B\d+\)$/.test(c.v));
+    assert.strictEqual(fin.length, 1, 'head of the last 5 m ' + style);
+    // the conventional ones stay (5/t, 20/t)
+    assert.strictEqual(cell(lay, x, 8), '=IF(OR(C' + x + '="",C' + x + '=0),"",20/C' + x + ')');
+    const rows = an.rows;
+    const at = d => rows.find(q => q.d === d);
+    return at;
+  };
+  check('fly', 0.65, 0.65);
+  check('br', 0.65, 0.65);
+  check('bk', 1, 1);
+  check('fs', 1, 1);
+  // Velocities of the rows: 45–50 in 2.5 s → 2.00 conventional, (5 − 1) / 2.5 = 1.60 of the head in backstroke.
+  const r = S.swimNormalizeRace_({ id: 'hv', style: 'bk', distance: 100, pool: 50,
+    checkpoints: [{ d: 15, t: 6 }, { d: 25, t: 12 }, { d: 35, t: 18 }, { d: 45, t: 24 }, { d: 50, t: 26.5 }, { d: 65, t: 33 },
+      { d: 75, t: 39.5 }, { d: 85, t: 46 }, { d: 95, t: 52.5 }, { d: 100, t: 55.5 }] });
+  const an = S.swimAnalyze_(r);
+  const row = d => an.rows.find(q => q.d === d);
+  assert.ok(Math.abs(row(50).vel - 2.0) < 1e-9 && Math.abs(row(50).headVel - 1.6) < 1e-9, 'bk 45–50');
+  assert.ok(Math.abs(row(65).headVel - 14 / 6.5) < 1e-9, 'bk 50–65 from the wall');
+  assert.ok(Math.abs(row(100).headVel - 4.35 / 3) < 1e-9, 'bk finish by the hands');
+  assert.strictEqual(row(25).headVel, null, 'mid-pool: none');
+  assert.strictEqual(row(15).headVel, null, 'start: none (the start is on the block)');
+  console.log('head velocity ok: bk 45–50 ' + row(50).vel.toFixed(2) + ' / head ≈' + row(50).headVel.toFixed(2));
+})();
 console.log('ALL ANALYSIS TESTS PASSED');

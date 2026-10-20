@@ -380,6 +380,9 @@ namespace Kinovea.ScreenManager
                     tone = row.D % 25 == 0 ? SwimReelTone.Amber : SwimReelTone.Accent;
                 }
 
+                // (2.9.4) At a wall and at the finish: the speed of the last metres, conventional and of the head (≈).
+                if ((wall || row.D == Distance) && row.Vel.HasValue && row.HeadVel.HasValue)
+                    detail += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0:0.00} · κεφ. ≈{1:0.00} m/s"), row.Vel.Value, row.HeadVel.Value);
                 Badges.Add(new SwimReelBadge { Time = row.OnVideo, Title = title, Value = SwimReference.FormatTime(row.T.Value), Detail = detail, Tone = tone });
             }
 

@@ -17,7 +17,7 @@
  *   7. Φτιάχνει το report, το PDF και τα γραφήματα στα αγγλικά όταν το ζητά το Kinovea (lang 'en', 2.7.7)· αλλιώς στα ελληνικά.
  */
 
-var SWIM_VERSION = '2.8.0';
+var SWIM_VERSION = '2.9.4';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -1102,6 +1102,33 @@ function swimCumulativeStrokes_(strokes, barriers, t) {
   return k + (t - a) / (b - a);
 }
 
+/**
+ * (2.9.4) Πόσο πίσω από τον τοίχο είναι το κεφάλι στο άγγιγμα (μ.): περίπου ένα χέρι στο άγγιγμα με τα χέρια (τερματισμός,
+ * ανοιχτή στροφή, αλλαγή στυλ στο μικτό), περίπου 1 μ. όταν ακουμπούν τα πόδια στην τούμπα (ελεύθερο, ύπτιο). Εκτίμηση (≈)
+ * για την ταχύτητα του κεφαλιού (headVel), δίπλα στη συμβατική (vel), όπως στο Kinovea.
+ */
+var SWIM_HAND_REACH = 0.65;
+var SWIM_FLIP_REACH = 1.0;
+
+/** (2.9.4) Οι στήλες και η σημείωση της ταχύτητας του κεφαλιού (≈) στο report: στροφές, τερματισμός, «Με μια ματιά». */
+var SWIM_HEAD_SPEED = true;
+
+/** Τα μέτρα που το κεφάλι διανύει λιγότερο από το τμήμα prevD → d (τοίχος στο τέλος ή στην αρχή του)· 0: κανένας (και στις σκυταλοδρομίες). */
+function swimWallReach_(race, prevD, d, pool, dist) {
+  if (race.relay || !(pool > 0)) return 0;
+  var reach = 0;
+  var isWall = function (x) { return x > 0 && Math.abs(x / pool - Math.round(x / pool)) < 1e-9; };
+  var touch = function (wall) {
+    if (wall >= dist - 1e-9) return SWIM_HAND_REACH;
+    var into = swimStyleAt_(race, wall), from = swimStyleAt_(race, Math.min(dist, wall + pool));
+    if (into !== from) return SWIM_HAND_REACH;
+    return into === 'fs' || into === 'bk' ? SWIM_FLIP_REACH : SWIM_HAND_REACH;
+  };
+  if (isWall(d)) reach += touch(d);
+  if (isWall(prevD) && prevD < dist - 1e-9) reach += touch(prevD);
+  return reach;
+}
+
 function swimFirst_(arr, pred) {
   for (var i = 0; i < arr.length; i++) if (pred(arr[i])) return arr[i];
   return null;
@@ -1149,6 +1176,9 @@ function swimAnalyze_(race) {
     row.segTime = (row.t !== null && tPrev !== null) ? row.t - tPrev : null;
     row.vel = row.segTime !== null && row.segTime > 0 ? (row.d - row.prevD) * k / row.segTime : null;
     row.velYd = yards && row.segTime !== null && row.segTime > 0 ? (row.d - row.prevD) / row.segTime : null;
+    // (2.9.4) Η ταχύτητα του κεφαλιού στα τμήματα στους τοίχους (στον τοίχο μετράει το άγγιγμα, όχι το κεφάλι): ≈.
+    var reach = swimWallReach_(race, row.prevD, row.d, pool, dist);
+    row.headVel = row.vel !== null && reach > 0 && (row.d - row.prevD) * k > reach ? ((row.d - row.prevD) * k - reach) / row.segTime : null;
     row.avgVel = row.t !== null && row.t > 0 ? row.d * k / row.t : null;
 
     if (row.t !== null) {
@@ -2209,7 +2239,8 @@ function swimLayoutTurns_(L) {
   g.headers(cur + 1, [swimTF_('Τοίχος ({0})', U), swimTF_('Χρόνος προσέγγισης 5{0} (s)', U), swimTF_('Χρόνος -5/+15{0} (s)', U), swimT_('Χρόνος στροφής (s)'),
     swimTF_('Μέτρα κάτω από το νερό ({0})', U), swimT_('Χρόνος κάτω από το νερό (s)'), swimT_('Δελφινισμοί'), swimTF_('Μέση ταχύτητα -5/+15{0} (m/s)', U),
     swimT_('Μέση ταχύτητα από στροφή έως έξοδο (m/s)'), swimT_('Ποσοστό στον τελικό χρόνο'), swimT_('Τελευταία χεριά → τοίχος (s)'),
-    swimTF_('Τοίχος → κεφάλι στα +15{0} (s)', U), swimT_('Είδος στροφής')]);
+    swimTF_('Τοίχος → κεφάλι στα +15{0} (s)', U), swimT_('Είδος στροφής')].concat(SWIM_HEAD_SPEED ?
+    [swimTF_('Ταχύτητα κεφαλιού -5{0} → τοίχος ≈ (m/s)', U), swimTF_('Ταχύτητα κεφαλιού τοίχος → +15{0} ≈ (m/s)', U)] : []));
   var rt = cur + 2;
   L.turnFirst = rt;
   analysis.turnWalls.forEach(function (wall, idx) {
@@ -2233,10 +2264,19 @@ function swimLayoutTurns_(L) {
     if (rp15 !== undefined && rw !== undefined) g.set(x, 12, '=IF(OR(B' + rp15 + '="",B' + rw + '=""),"",B' + rp15 + '-B' + rw + ')', swimF_(SWIM_FMT.time, 'formula'));
     else g.set(x, 12, '', swimF_(null, 'formula'));
     g.set(x, 13, swimTurnKindLabel_(turn), { color: '#555555', align: 'center', size: 9, bg: SWIM_COLORS.label });
+
+    // (2.9.4) Η ταχύτητα του κεφαλιού (≈) στα 5 πριν και στα 15 μετά τον τοίχο: στο άγγιγμα το κεφάλι απέχει από τον τοίχο
+    // (SWIM_HAND_REACH / SWIM_FLIP_REACH), οπότε διανύει τόσο λιγότερο· οι στήλες 2 και 8 μένουν οι συμβατικές.
+    if (SWIM_HEAD_SPEED) {
+      var reachIn = swimWallReach_(race, wall - 5, wall, race.pool, race.distance);
+      var reachOut = swimWallReach_(race, wall, wall + 15, race.pool, race.distance);
+      g.set(x, 14, reachIn > 0 ? '=IF(OR(B' + x + '="",B' + x + '=0),"",(5' + K + '-' + reachIn + ')/B' + x + ')' : '', swimF_(reachIn > 0 ? SWIM_FMT.vel : null, 'formula'));
+      g.set(x, 15, reachOut > 0 ? '=IF(OR(L' + x + '="",L' + x + '=0),"",(15' + K + '-' + reachOut + ')/L' + x + ')' : '', swimF_(reachOut > 0 ? SWIM_FMT.vel : null, 'formula'));
+    }
     L.layout.inputs.turns.push({ r: x, wall: wall });
     L.turnLast = x;
   });
-  g.box(cur + 1, 1, L.turnLast, 13);
+  g.box(cur + 1, 1, L.turnLast, SWIM_HEAD_SPEED ? 15 : 13);
   L.layout.turnRows = { first: L.turnFirst, last: L.turnLast };
   swimKeepEnd_(L, 'turns', L.turnLast, rt + 2);
   L.cur = L.turnLast + 2;
@@ -2264,7 +2304,7 @@ function swimLayoutFinish_(L) {
   g.section(cur, swimT_('Τερματισμός'), L.LAST);
   g.headers(cur + 1, [swimTF_('Χρόνος τελευταίων 15{0} (s)', U), swimTF_('Χρόνος τελευταίων 5{0} (s)', U), swimTF_('Χεριές τελευταίων 5{0}', U),
     swimT_('Προσέγγιση τοίχου σε sec (τελευταία χεριά)'), swimTF_('Προσέγγιση τοίχου σε μήκος {0} (τελευταία χεριά)', U),
-    swimTF_('Μέση ταχύτητα τελευταίων 5{0} (m/s)', U)]);
+    swimTF_('Μέση ταχύτητα τελευταίων 5{0} (m/s)', U)].concat(SWIM_HEAD_SPEED ? [swimTF_('Ταχύτητα κεφαλιού τελευταίων 5{0} ≈ (m/s)', U)] : []));
   var fr = cur + 2;
   var rL15 = rowOf[dist - 15], rL5 = rowOf[dist - 5];
   if (rowOf[dist] !== undefined && rL15 !== undefined) g.set(fr, 1, '=IF(OR(B' + rN + '="",B' + rL15 + '=""),"",B' + rN + '-B' + rL15 + ')', swimF_(SWIM_FMT.time, 'formula'));
@@ -2280,7 +2320,12 @@ function swimLayoutFinish_(L) {
   g.set(fr, 4, '', swimF_(SWIM_FMT.time, 'auto'));
   g.set(fr, 5, '', swimF_(SWIM_FMT.vel, 'input'));
   g.set(fr, 6, '=IF(OR(B' + fr + '="",B' + fr + '=0),"",5' + K + '/B' + fr + ')', swimF_(SWIM_FMT.vel, 'formula'));
-  g.box(cur + 1, 1, fr, 6);
+  // (2.9.4) Η ταχύτητα του κεφαλιού στα τελευταία 5 (≈): στο άγγιγμα των χεριών το κεφάλι είναι περίπου SWIM_HAND_REACH πίσω.
+  if (SWIM_HEAD_SPEED) {
+    var reachEnd = swimWallReach_(race, dist - 5, dist, race.pool, dist);
+    g.set(fr, 7, reachEnd > 0 ? '=IF(OR(B' + fr + '="",B' + fr + '=0),"",(5' + K + '-' + reachEnd + ')/B' + fr + ')' : '', swimF_(reachEnd > 0 ? SWIM_FMT.vel : null, 'formula'));
+  }
+  g.box(cur + 1, 1, fr, SWIM_HEAD_SPEED ? 7 : 6);
   L.layout.inputs.finish = { r: fr };
   L.finishRow = fr;
   swimKeepEnd_(L, 'finish', fr);
@@ -4937,7 +4982,8 @@ function swimQuickSegments_(race, analysis, pbT, refT, mode) {
     analysis.rows.forEach(function (r) {
       if (r.t === null || r.t === undefined) return;
       out.push({ label: r.prevD + '–' + r.d + U, d: r.d, cum: r.t, split: swimQuickNum_(r.segTime), vel: swimQuickNum_(r.vel), strokes: swimQuickNum_(r.strokes),
-        sr: swimQuickNum_(r.sr), dps: swimQuickNum_(r.dps), dak: null, dPb: delta(pbT, r.d, r.t), dRef: delta(refT, r.d, r.t), phase: !r.isFree });
+        sr: swimQuickNum_(r.sr), dps: swimQuickNum_(r.dps), dak: null, dPb: delta(pbT, r.d, r.t), dRef: delta(refT, r.d, r.t), phase: !r.isFree,
+        headVel: swimQuickNum_(r.headVel) });
     });
     return out;
   }
@@ -5308,6 +5354,16 @@ function swimQuickLayout_(race, analysis, extras, kpi, W, level, spacer) {
       cell(15, W, d.mode === 'cp' ? '' : swimQuickFixed_(s.dak, 2), { color: C.dakText, bold: true });
     });
     g.box(head, 1, r, W);
+
+    // (2.9.4) Οι ταχύτητες του κεφαλιού στους τοίχους (≈), κάτω από τον πίνακα: η m/s των τοίχων είναι η συμβατική (το άγγιγμα).
+    var heads = !SWIM_HEAD_SPEED ? [] : d.segments.filter(function (s) { return s.headVel !== null && s.headVel !== undefined; });
+    if (heads.length) {
+      var note = row(30);
+      var text = swimT_('≈ Ταχύτητα του κεφαλιού στα τμήματα στους τοίχους (m/s): ') +
+        heads.map(function (s) { return s.label + ' ' + swimQuickFixed_(s.headVel, 2); }).join(' · ') +
+        swimT_(' — στο άγγιγμα το κεφάλι είναι περίπου 0,65 μ. (χέρια) ή 1 μ. (τούμπα) πριν από τον τοίχο.');
+      swimQuickSet_(g, note, 1, W, text, { size: 8, color: C.dim, wrap: true, fmt: '@' });
+    }
     blank(16);
   }
 
@@ -6657,10 +6713,15 @@ var SWIM_EN_ = {
   'Προσέγγιση τοίχου σε sec (τελευταία χεριά)': 'Wall approach time in sec (last stroke)',
   'Προσέγγιση τοίχου σε μήκος {0} (τελευταία χεριά)': 'Wall approach distance in {0} (last stroke)',
   'Μέση ταχύτητα τελευταίων 5{0} (m/s)': 'Average speed of the last 5{0} (m/s)',
+  'Ταχύτητα κεφαλιού τελευταίων 5{0} ≈ (m/s)': 'Head speed of the last 5{0} ≈ (m/s)',
+  'Ταχύτητα κεφαλιού -5{0} → τοίχος ≈ (m/s)': 'Head speed -5{0} → wall ≈ (m/s)',
+  'Ταχύτητα κεφαλιού τοίχος → +15{0} ≈ (m/s)': 'Head speed wall → +15{0} ≈ (m/s)',
   'Ειδικοί τομείς (καθαρή κολύμβηση)': 'Clean swimming segments',
   'Τμήμα': 'Segment',
   'Χρόνος (s)': 'Time (s)',
   'Ταχύτητα (m/s)': 'Speed (m/s)',
+  '≈ Ταχύτητα του κεφαλιού στα τμήματα στους τοίχους (m/s): ': '≈ Speed of the head in the segments at the walls (m/s): ',
+  ' — στο άγγιγμα το κεφάλι είναι περίπου 0,65 μ. (χέρια) ή 1 μ. (τούμπα) πριν από τον τοίχο.': ' — at the touch the head is about 0.65 m (hands) or 1 m (flip turn) short of the wall.',
   'Μεταβολή ταχύτητας (m/s)': 'Speed change (m/s)',
   'Ποσοστό του συνολικού χρόνου': 'Share of the total time',
   'Χεριές': 'Strokes',

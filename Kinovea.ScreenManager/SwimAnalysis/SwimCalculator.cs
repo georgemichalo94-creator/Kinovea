@@ -90,6 +90,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>25 yard pools: velocity in yd/s (Vel is always in m/s).</summary>
         public double? VelYd;
+
+        /// <summary>
+        /// The velocity of the head in a segment that ends or starts at a wall or at the finish (2.9.4, m/s; null elsewhere): the
+        /// checkpoints are passed by the head, the walls by the touch, when the head is short of the wall (an arm's length behind the
+        /// hands, SwimCalculator.HandReach; about a metre when the feet touch in a flip turn, FlipReach), so the head goes that much
+        /// less than the metres of the segment: (metres − that) / time. An estimate (≈), beside the conventional Vel.
+        /// </summary>
+        public double? HeadVel;
         public double? Strokes;
 
         /// <summary>The strokes of the segment were confirmed or typed by the analyst (SwimRace.StrokeCounts).</summary>
@@ -383,6 +391,11 @@ namespace Kinovea.ScreenManager
                         row.Vel = (row.D - row.PrevD) * k / row.SegTime.Value;
                         if (race.IsYards)
                             row.VelYd = (row.D - row.PrevD) / row.SegTime.Value;
+
+                        // (2.9.4) The head's own velocity where the segment ends or starts at a wall (the touch, not the head).
+                        double reach = WallReach(race, row.PrevD, row.D, pool, distance);
+                        if (reach > 0 && (row.D - row.PrevD) * k > reach)
+                            row.HeadVel = ((row.D - row.PrevD) * k - reach) / row.SegTime.Value;
                     }
                 }
 
@@ -1068,6 +1081,45 @@ namespace Kinovea.ScreenManager
             return (p > 0 ? name.Substring(0, p) : name).ToLowerInvariant();
         }
         #endregion
+
+        /// <summary>
+        /// How far behind the hands the head is when they touch the wall (m, 2.9.4): about an arm's length (the touch of an open turn,
+        /// of a change of style in the medley and of the finish). An estimate for the head's velocity (SwimRow.HeadVel).
+        /// </summary>
+        public const double HandReach = 0.65;
+
+        /// <summary>How far from the wall the head is when the feet touch it in a flip turn (m, 2.9.4: the body tucked; estimate).</summary>
+        public const double FlipReach = 1.0;
+
+        /// <summary>
+        /// The metres the head goes less than the segment from prevD to d (2.9.4): at a wall it ends at or starts from (the turns,
+        /// the finish), how far the head is from the wall at the touch: a flip turn in freestyle and backstroke (FlipReach), else the
+        /// hands (HandReach). 0: no wall (and in the relays, whose legs start on the block).
+        /// </summary>
+        internal static double WallReach(SwimRace race, int prevD, int d, int pool, int distance)
+        {
+            if (race == null || race.Relay || pool <= 0)
+                return 0;
+
+            double reach = 0;
+            if (d > 0 && d % pool == 0)
+                reach += TouchReach(race, d, pool, distance);
+            if (prevD > 0 && prevD % pool == 0 && prevD < distance)
+                reach += TouchReach(race, prevD, pool, distance);
+            return reach;
+        }
+
+        /// <summary>The head's distance from this wall at the touch: the finish and the open turns by the hands, the flip turns by the feet.</summary>
+        private static double TouchReach(SwimRace race, int wall, int pool, int distance)
+        {
+            if (wall >= distance)
+                return HandReach;
+
+            string into = SwimPresets.StyleAt(race, wall), from = SwimPresets.StyleAt(race, Math.Min(distance, wall + pool));
+            if (into != from)
+                return HandReach;
+            return into == "fs" || into == "bk" ? FlipReach : HandReach;
+        }
 
         private static double Round(double x, double step)
         {

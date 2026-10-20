@@ -836,6 +836,7 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("t", SwimLang.T("Χρόνος"), 62));
             grid.Columns.Add(Column("seg", SwimLang.T("Τμήμα"), 56));
             grid.Columns.Add(Column("vel", SwimLang.T("Ταχ. m/s"), 58));
+            grid.Columns.Add(Column("headvel", SwimLang.T("Κεφάλι ≈"), 58));
             grid.Columns.Add(Column("strokes", SwimLang.T("Χεριές"), 52));
             grid.Columns.Add(Column("sr", "SR", 50));
             grid.Columns.Add(Column("dps", "DPS", 50));
@@ -844,6 +845,8 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("ref", SwimLang.T("Αναφορά"), 62));
             grid.Columns.Add(Column("delta", SwimLang.T("Δ"), 54));
             grid.Columns["vel"].ToolTipText = SwimLang.T("Μέση ταχύτητα του τμήματος. Πορτοκαλί: εκκίνηση, στροφή ή τελευταία 5μ. πριν τον τοίχο, όπου η ταχύτητα είναι συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι).");
+            grid.Columns["headvel"].ToolTipText = SwimLang.T("Ταχύτητα του κεφαλιού στα τμήματα που τελειώνουν ή αρχίζουν σε τοίχο (≈): στο άγγιγμα το κεφάλι είναι πίσω από τον τοίχο ") +
+                SwimLang.T("περίπου 0,65 μ. (χέρια: τερματισμός, ανοιχτή στροφή) ή περίπου 1 μ. (πόδια στην τούμπα), οπότε διανύει τόσο λιγότερο από τα μέτρα του τμήματος.");
             grid.Columns["strokes"].ToolTipText = SwimLang.T("Χεριές του τμήματος. ✓: επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ: διόρθωση.");
             grid.Columns["sr"].ToolTipText = SwimLang.T("Συχνότητα (κύκλοι/λεπτό), μόνο στην καθαρή κολύμβηση: από 15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο.");
             grid.Columns["dps"].ToolTipText = SwimLang.T("Μέτρα ανά χεριά (ελεύθερο/ύπτιο: ανά χέρι), μόνο στην καθαρή κολύμβηση.");
@@ -1746,6 +1749,8 @@ namespace Kinovea.ScreenManager
                 gr.Cells["vel"].Value = Format(row.Vel);
                 gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
                 gr.Cells["vel"].ToolTipText = row.VelYd.HasValue ? row.VelYd.Value.ToString("0.00", CultureInfo.InvariantCulture) + " yd/s" : "";
+                gr.Cells["headvel"].Value = row.HeadVel.HasValue ? "≈" + Format(row.HeadVel) : "";
+                gr.Cells["headvel"].Style.BackColor = row.HeadVel.HasValue ? colorPhase : Color.Empty;
                 gr.Cells["strokes"].Value = FormatStrokes(row.Strokes) + (row.StrokesTyped && row.Strokes.HasValue ? " ✓" : "");
                 gr.Cells["strokes"].ToolTipText = row.StrokesTyped
                     ? SwimLang.T("Επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ για αλλαγή.")
