@@ -2352,7 +2352,7 @@ namespace Kinovea.ScreenManager
                 int strokes = 0;
                 foreach (LengthRead l in lengths)
                 {
-                    StoreTrack(l.Session, l.Result);
+                    StoreTrack(l.Session, l.Result, l.ClickIndex);
                     made.AddRange(SplitProposals(l, batch));
                     SwimProposal breakout = BreakoutProposal(l, batch);
                     if (breakout != null)

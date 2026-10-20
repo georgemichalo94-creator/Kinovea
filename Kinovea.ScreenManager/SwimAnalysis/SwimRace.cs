@@ -247,12 +247,15 @@ namespace Kinovea.ScreenManager
         [JsonConverter(typeof(SwimNumbersOnOneLine))]
         public List<int> Slope = new List<int>();
 
-        /// <summary>Since 2.8.0: the length of the swimmer clicked for the reading (head to feet, reference image pixels), 0: unknown.</summary>
+        /// <summary>
+        /// Since 2.8.0: the length of the swimmer clicked for the reading (head to feet) in thousandths of the width of the lane there
+        /// (in pixels both follow the zoom and the perspective), 0: unknown.
+        /// </summary>
         public int Body;
 
         /// <summary>
         /// Since 2.8.0: how far his head (the front of the moving swimmer, where the checkpoints are read) is ahead of the place
-        /// followed, along the swim (reference image pixels, the median of the part), 0: unknown.
+        /// followed, along the swim, in thousandths of the width of the lane (the median of the part), 0: unknown.
         /// </summary>
         public int Lead;
 

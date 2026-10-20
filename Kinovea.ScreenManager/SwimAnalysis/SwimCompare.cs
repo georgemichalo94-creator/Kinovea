@@ -29,6 +29,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The lead of a part is taken up to this share of the swimmer's length.</summary>
         public const double MaxLead = 0.6;
 
+        /// <summary>The swimmer's length in widths of the lane when the part does not say (an older reading).</summary>
+        public const double DefaultBody = 1.7;
+
         /// <summary>A place of the pool is found past the ends of the frames of a length up to this share of the pool.</summary>
         public const double ExtendShare = 0.25;
 
@@ -240,9 +243,14 @@ namespace Kinovea.ScreenManager
             if (double.IsNaN(scale) || Math.Abs(scale) < 1e-3)
                 return null;
 
+            // The width of the lane around this frame (the median of a second on each side: a lane misread for a few frames does not
+            // change the size of the ghost); the swimmer's length and his head's lead in widths of the lane follow the zoom with it.
+            double frame = raceSeconds(track.Start + (long)Math.Round(track.Step)) - raceSeconds(track.Start);
+            int window = frame > 1e-6 && !double.IsNaN(frame) ? Math.Max(1, Math.Min(200, (int)Math.Round(1.0 / frame))) : 25;
+            float lane = LaneAround(track, now, window, n);
             int poolDirection = lap % 2 == 0 ? 1 : -1;
-            float halfHeight = Math.Max(2f, 0.5f * (track.Bottom[now] - track.Top[now]));
-            float body = track.Body > 0 ? track.Body : 3.4f * halfHeight;
+            float halfHeight = Math.Max(2f, 0.5f * lane);
+            float body = track.Body > 0 ? track.Body / 1000f * 2f * halfHeight : (float)(DefaultBody * 2 * halfHeight);
             Placement p = new Placement
             {
                 SwimmerX = track.X[now],
@@ -269,7 +277,7 @@ namespace Kinovea.ScreenManager
             // u: the place followed of the swimmer when his head was at the reference's place (moved to this frame with the camera), so
             // the head of the reference (its line) is the lead of the part ahead of it; its body (the ghost) half a body behind its head,
             // on the other side when it swims the other way. The swimmer's own body (the source of the ghost) the same way from his head.
-            float lead = track.Lead > 0 ? Math.Min(track.Lead, (float)(MaxLead * body)) : (float)(DefaultLead * body);
+            float lead = track.Lead > 0 ? Math.Min(track.Lead / 1000f * 2f * halfHeight, (float)(MaxLead * body)) : (float)(DefaultLead * body);
             float half = 0.5f * body;
             float x0 = track.X[now], y0 = track.Y[now];
             float head = (float)(u + track.Pan[now]) + p.Direction * lead;
@@ -285,6 +293,16 @@ namespace Kinovea.ScreenManager
             p.Inside = inside;
             p.Located = true;
             return p;
+        }
+
+        /// <summary>The width of the lane at the swimmer around a point of the part: the median of 'window' points on each side.</summary>
+        private static float LaneAround(SwimTrack track, int now, int window, int n)
+        {
+            List<int> widths = new List<int>();
+            for (int i = Math.Max(0, now - window); i <= Math.Min(n - 1, now + window); i++)
+                widths.Add(Math.Abs(track.Bottom[i] - track.Top[i]));
+            widths.Sort();
+            return widths.Count == 0 ? 0 : widths[widths.Count / 2];
         }
 
         /// <summary>
@@ -344,16 +362,16 @@ namespace Kinovea.ScreenManager
         public sealed class GhostLook
         {
             /// <summary>Opacity of what differs from the water (the swimmer, the splash) and of the water itself.</summary>
-            public float Strength = 0.92f, Floor = 0.05f;
+            public float Strength = 0.92f, Floor = 0.04f;
 
             /// <summary>Difference from the water (|ΔR| + |ΔG| + |ΔB|) where the swimmer starts to show, and over which he shows fully.</summary>
             public float From = 20f, Span = 60f;
 
             /// <summary>Share of white and of the tint in the colour of the ghost (the rest: the swimmer's own colour).</summary>
-            public float White = 0.32f, Tint = 0.18f;
+            public float White = 0.42f, Tint = 0.18f;
 
             /// <summary>Opacity of a soft light of the length of the body under it (0: none).</summary>
-            public float Glow = 0.28f;
+            public float Glow = 0.24f;
 
             public static readonly GhostLook Default = new GhostLook();
         }

@@ -123,7 +123,7 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Since 2.8.0: how far the head (the front of the moving swimmer, where the checkpoints are read) is ahead of his place in the
-        /// path (working px along the swim, median of the frames), NaN if not known.
+        /// path, in widths of the lane (median of the frames), NaN if not known.
         /// </summary>
         public double HeadLead = double.NaN;
 

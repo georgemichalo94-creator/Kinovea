@@ -231,9 +231,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The place of the swimmer of a reading (automatic strokes or follow) in reference image pixels. It replaces what the
-        /// parts kept before have in its time, and stops where a part of a later length begins.
+        /// parts kept before have in its time, and stops where a part of a later length begins. bodyIndex: the frame of the reading
+        /// where the swimmer's head and feet were given (the click).
         /// </summary>
-        private void StoreTrack(StrokeSession s, SwimStrokeResult result)
+        private void StoreTrack(StrokeSession s, SwimStrokeResult result, int bodyIndex = 0)
         {
             if (Race == null || result == null || result.Path == null || result.Lanes == null)
                 return;
@@ -246,12 +247,16 @@ namespace Kinovea.ScreenManager
             double sx = reference.Width / (double)Math.Max(1, s.Width);
             double sy = reference.Height / (double)Math.Max(1, s.Height);
 
+            // The swimmer's length in widths of the lane where he was clicked (both follow the zoom and the perspective).
             double body = s.Detector != null ? s.Detector.SwimmerLength : double.NaN;
+            int bi = Math.Max(0, Math.Min(n - 1, bodyIndex));
+            SwimStrokeLane bodyLane = result.Lanes[bi];
+            double laneThere = Math.Abs(bodyLane.Y2(result.Path[bi]) - bodyLane.Y1(result.Path[bi]));
             SwimTrack track = new SwimTrack
             {
                 Start = s.Timestamps[0],
                 Step = (s.Timestamps[n - 1] - s.Timestamps[0]) / (double)Math.Max(1, n - 1),
-                Body = double.IsNaN(body) || body <= 0 ? 0 : (int)Math.Round(body * sx)
+                Body = double.IsNaN(body) || body <= 0 || double.IsNaN(laneThere) || laneThere < 5 ? 0 : (int)Math.Round(1000 * body / laneThere)
             };
 
             // Since 2.8.0 also the camera's displacement along the lane at the swimmer (where the swimmer of the frame before is in
@@ -284,7 +289,7 @@ namespace Kinovea.ScreenManager
             double lead = result.HeadLead;
             if (double.IsNaN(lead) && s.Detector != null)
                 lead = SwimSplitDetector.HeadLead(result, s.Detector.Direction, s.Fps);
-            track.Lead = double.IsNaN(lead) || lead < 0 ? 0 : Math.Max(1, (int)Math.Round(lead * sx));
+            track.Lead = double.IsNaN(lead) || lead < 0 ? 0 : Math.Max(1, (int)Math.Round(1000 * lead));
 
             // Not into the length of a part followed before (a reading can go past an unmarked wall).
             SwimReel reel = Reel;
