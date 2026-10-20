@@ -1028,12 +1028,16 @@
     <Compile Include="SwimAnalysis\FormSwimAnalysis.Finals.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\FormSwimAnalysis.Compare.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.AutoPick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.LanePick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Official.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Compare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pilot.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Proposals.cs" />
@@ -1054,6 +1058,7 @@
     <Compile Include="SwimAnalysis\SwimOfficialResults.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
+    <Compile Include="SwimAnalysis\SwimCompare.cs" />
     <Compile Include="SwimAnalysis\SwimEventDetector.cs" />
     <Compile Include="SwimAnalysis\SwimPose.cs" />
     <Compile Include="SwimAnalysis\SwimPoolGrid.cs" />

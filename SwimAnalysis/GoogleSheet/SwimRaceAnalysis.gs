@@ -17,7 +17,7 @@
  *   7. Φτιάχνει το report, το PDF και τα γραφήματα στα αγγλικά όταν το ζητά το Kinovea (lang 'en', 2.7.7)· αλλιώς στα ελληνικά.
  */
 
-var SWIM_VERSION = '2.7.7';
+var SWIM_VERSION = '2.8.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -152,7 +152,13 @@ function swimHandleRequest_(req) {
       var list = swimAthletes_();
       return { ok: true, version: SWIM_VERSION, sheet: list.sheet, athletes: list.athletes };
     },
-    analyses: function () { return { ok: true, version: SWIM_VERSION, analyses: swimAnalysesFor_(req.query || {}) }; },
+    analyses: function () {
+      var q = req.query || {};
+      var out = { ok: true, version: SWIM_VERSION, analyses: swimAnalysesFor_(q) };
+      // 2.8.0: και οι αναλύσεις άλλων αθλητών του αγωνίσματος, για σύγκριση στο βίντεο (με τους χρόνους τους).
+      if (q.others) out.others = swimEventAnalyses_(q);
+      return out;
+    },
     benchmarks: function () { return { ok: true, version: SWIM_VERSION, levels: SWIM_BENCH_LEVELS, benchmarks: swimBenchmarks_() }; },
     eliteFrames: function () { return { ok: true, version: SWIM_VERSION, sheet: SWIM_ELITE_SHEET, frames: swimEliteFrames_() }; },
     getImage: function () { return swimGetImage_(req); },
@@ -214,7 +220,7 @@ function swimHandleRequest_(req) {
       }
       if (action === 'pdf') {
         var ss = swimReportsSpreadsheet_();
-        result.pdf = swimExportPdf_(ss, swimSheetById_(ss, result.sheetId), result.print, result.rebuilt);
+        result.pdf = swimExportPdf_(ss, swimSheetById_(ss, result.sheetId), result.print, result.rebuilt, result.quick);
         swimSetSummaryPdf_(result.raceId, result.pdf.url);
       }
       return swimJson_(result);
@@ -629,11 +635,16 @@ function swimUpsertRace_(rawRace) {
   var charts = swimPlaceChartItems_(sheet, layout, race, rebuilt, rebuilt ? '' : stored.charts);
 
   var kpi = swimReadKpis_(sheet, layout, analysis);
+  // Η πρώτη σελίδα του PDF (2.8.0): μόνο για τους αγώνες, με τη σελίδα της αναφοράς.
+  var quick = null;
+  if (race.kind !== 'training' && layout.page && layout.page.height > 0) {
+    try { quick = swimBuildQuickLook_(race, analysis, extras, kpi, { height: layout.page.height, cols: layout.print.cols }); } catch (e) { quick = null; }
+  }
   var sheetUrl = ss.getUrl() + '#gid=' + sheet.getSheetId();
   swimSaveIndexEntry_(index, entry, race, sheet, layout.signature + '\n' + charts.placement, kpi.finalTime);
   if (race.kind !== 'training') swimWriteSummary_(race, analysis, kpi, sheetUrl);
 
-  return {
+  var result = {
     ok: true,
     version: SWIM_VERSION,
     raceId: race.id,
@@ -663,6 +674,8 @@ function swimUpsertRace_(rawRace) {
     charts: charts.data,
     chartsMissing: charts.missing
   };
+  Object.defineProperty(result, 'quick', { value: quick, enumerable: false });
+  return result;
 }
 
 /** Η υπογραφή του ευρετηρίου: του φύλλου (layout) και, στη δεύτερη γραμμή, της θέσης των γραφημάτων. */
@@ -4260,9 +4273,16 @@ function swimComparisons_(race) {
   return out;
 }
 
+/** Οι χρόνοι μιας ανάλυσης στα σημεία ελέγχου (για τη σύγκριση στο βίντεο, 2.8.0): [{ d, t }]. */
+function swimCheckpointTimes_(race) {
+  return (race.checkpoints || []).filter(function (c) { return c && c.d > 0 && c.t !== null && c.t !== undefined && isFinite(c.t) && c.t > 0; })
+    .map(function (c) { return { d: c.d, t: Math.round(c.t * 1000) / 1000 }; });
+}
+
 /**
  * Οι άλλες αναλύσεις του ίδιου αθλητή στο ίδιο αγώνισμα και την ίδια πισίνα (για το PB), ταξινομημένες από τον καλύτερο
- * χρόνο. Διαβάζει πρώτα τις στήλες χωρίς τα JSON και ανοίγει το JSON μόνο για όσες ταιριάζουν.
+ * χρόνο. Διαβάζει πρώτα τις στήλες χωρίς τα JSON και ανοίγει το JSON μόνο για όσες ταιριάζουν. Από την 2.8.0 και με τους
+ * χρόνους κάθε ανάλυσης (times), για σύγκριση στο βίντεο.
  */
 function swimAnalysesFor_(query) {
   var q = query || {};
@@ -4285,9 +4305,127 @@ function swimAnalysesFor_(query) {
     try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { return; }
     if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) return;
     var ft = swimNum_(row[9]);
-    out.push({ id: id, label: swimRaceLabel_(r, { summary: { finalTime: ft } }), finalTime: ft, date: r.date, round: r.round, competition: r.competition });
+    out.push({ id: id, label: swimRaceLabel_(r, { summary: { finalTime: ft } }), finalTime: ft, date: r.date, round: r.round, competition: r.competition,
+      times: swimCheckpointTimes_(r) });
   });
   out.sort(function (a, b) { return (a.finalTime || 1e9) - (b.finalTime || 1e9); });
+  return out;
+}
+
+/** Πόσες αναλύσεις άλλων αθλητών επιστρέφονται για σύγκριση (οι καλύτεροι χρόνοι). */
+var SWIM_EVENT_ANALYSES = 40;
+
+/**
+ * Πόσες αναλύσεις του αγωνίσματος κρατιούνται στην προσωρινή μνήμη (πριν βγουν του ίδιου αθλητή), για πόσο (s), και πόσα JSON
+ * διαβάζονται το πολύ για να βρεθούν (το ευρετήριο δεν έχει φύλο ούτε πισίνα: τα άλλα ανοίγουν και αφήνονται).
+ */
+var SWIM_EVENT_CACHE = 60, SWIM_EVENT_CACHE_TIME = 3600, SWIM_EVENT_READS = 120;
+
+/** Η στιγμή της τελευταίας αποθήκευσης ανάλυσης στο ευρετήριο (αλλάζει το κλειδί της προσωρινής μνήμης). */
+function swimIndexStamp_() {
+  try { return PropertiesService.getScriptProperties().getProperty('swimIndexStamp') || '0'; } catch (e) { return '0'; }
+}
+
+function swimTouchIndexStamp_() {
+  try { PropertiesService.getScriptProperties().setProperty('swimIndexStamp', String(Date.now())); } catch (e) { /* χωρίς σήμανση */ }
+}
+
+/**
+ * Αναλύσεις άλλων αθλητών στο ίδιο αγώνισμα, πισίνα και φύλο (όταν είναι γνωστό), για σύγκριση στο βίντεο (2.8.0): οι
+ * καλύτεροι χρόνοι, με τους χρόνους στα σημεία ελέγχου. Διαβάζονται μόνο τα JSON των καλύτερων και μένουν στην προσωρινή
+ * μνήμη του script για μία ώρα (μέχρι να μπει νέα ανάλυση): το Kinovea τις ζητά σε κάθε φόρτωση αγώνα.
+ */
+function swimEventAnalyses_(query) {
+  var q = query || {};
+  var index = swimIndexSheet_(swimReportsSpreadsheet_());
+  var last = index.getLastRow();
+  if (last < 2) return [];
+  var want = swimNormalizeRace_({ style: q.style, distance: q.distance, relay: q.relay, pool: q.pool, poolUnit: q.poolUnit, checkpoints: [] });
+  var athleteId = String(q.athleteId === undefined || q.athleteId === null ? '' : q.athleteId).trim();
+  var athlete = swimNormText_(q.athlete);
+  var gender = swimGenderCode_(q.gender);
+  var eventLabel = swimIndexEventLabel_(want);
+  // Το κλειδί: το αγώνισμα με την πισίνα του, το φύλο, το πλήθος των αναλύσεων και η τελευταία αποθήκευση ανάλυσης.
+  var key = ['swimEvent', SWIM_VERSION, SWIM_LANG_, eventLabel, want.distance, want.pool, want.poolUnit || 'm', gender || '-', last,
+    swimIndexStamp_()].join('|');
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  var list = cache ? swimCacheGet_(cache, key) : null;
+  if (!Array.isArray(list)) {
+    list = swimEventCandidates_(index, last, want, gender, eventLabel);
+    if (cache) swimCachePut_(cache, key, list, SWIM_EVENT_CACHE_TIME);
+  }
+  var out = [];
+  for (var k = 0; k < list.length && out.length < SWIM_EVENT_ANALYSES; k++) {
+    var c = list[k];
+    if (c.id === String(q.raceId || '')) continue;
+    // Όχι ο ίδιος αθλητής (αυτές οι αναλύσεις είναι στη λίστα του PB).
+    if ((athleteId && c.athleteId === athleteId) || (athlete && c.athleteKey === athlete)) continue;
+    out.push({ id: c.id, athlete: c.athlete, gender: c.gender, label: c.label, finalTime: c.finalTime, date: c.date, round: c.round,
+      competition: c.competition, times: c.times });
+  }
+  return out;
+}
+
+/** Μέγεθος ενός κομματιού της προσωρινής μνήμης (χαρακτήρες: ως 2 bytes ο καθένας, κάτω από τα 100 KB μιας τιμής). */
+var SWIM_CACHE_PART = 45000;
+
+/**
+ * Μια τιμή της προσωρινής μνήμης σε κομμάτια (ένας αγώνας 1500μ. έχει 150 χρόνους: 60 αναλύσεις δεν χωρούν σε μία τιμή):
+ * στο κλειδί το πλήθος των κομματιών, στα κλειδιά «κλειδί|i» τα κομμάτια. Αν κάτι λείπει, null (ξαναδιαβάζεται).
+ */
+function swimCacheGet_(cache, key) {
+  try {
+    var n = Number(cache.get(key));
+    if (!(n >= 1 && n <= 40)) return null;
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '|' + i);
+    var parts = cache.getAll(keys), text = '';
+    for (var j = 0; j < n; j++) {
+      if (typeof parts[keys[j]] !== 'string') return null;
+      text += parts[keys[j]];
+    }
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
+function swimCachePut_(cache, key, value, seconds) {
+  try {
+    var text = JSON.stringify(value), n = Math.max(1, Math.ceil(text.length / SWIM_CACHE_PART)), parts = {};
+    if (n > 40) return;
+    for (var i = 0; i < n; i++) parts[key + '|' + i] = text.substring(i * SWIM_CACHE_PART, (i + 1) * SWIM_CACHE_PART);
+    cache.putAll(parts, seconds);
+    cache.put(key, String(n), seconds);
+  } catch (e) { /* χωρίς προσωρινή μνήμη: διαβάζεται ξανά την επόμενη φορά */ }
+}
+
+/** Οι καλύτερες αναλύσεις του αγωνίσματος (ως SWIM_EVENT_CACHE) με τους χρόνους τους: το JSON μόνο τους διαβάζεται. */
+function swimEventCandidates_(index, last, want, gender, eventLabel) {
+  var data = index.getRange(2, 1, last - 1, SWIM_IDX.sheetId).getValues();
+  var match = [];
+  data.forEach(function (row, i) {
+    var id = String(row[SWIM_IDX.id]);
+    if (!id) return;
+    if (String(row[4]) !== eventLabel || swimDistanceValue_(row[5]).distance !== want.distance) return;
+    var ft = swimNum_(row[9]);
+    if (!(ft > 0)) return;
+    match.push({ i: i, id: id, ft: ft, athleteId: String(row[3]).trim(), athleteKey: swimNormText_(row[2]) });
+  });
+  match.sort(function (a, b) { return a.ft - b.ft; });
+  var out = [];
+  for (var k = 0; k < match.length && k < SWIM_EVENT_READS && out.length < SWIM_EVENT_CACHE; k++) {
+    var m = match[k], r;
+    try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(m.i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { continue; }
+    if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) continue;
+    if (gender && swimGenderCode_(r.gender) && swimGenderCode_(r.gender) !== gender) continue;
+    var times = swimCheckpointTimes_(r);
+    if (!times.length) continue;
+    out.push({ id: m.id, athleteId: m.athleteId, athleteKey: m.athleteKey, athlete: r.athlete, gender: r.gender,
+      label: swimRaceLabel_(r, { summary: { finalTime: m.ft } }), finalTime: m.ft, date: r.date, round: r.round, competition: r.competition,
+      times: times });
+  }
   return out;
 }
 
@@ -4448,6 +4586,7 @@ function swimSaveIndexEntry_(index, entry, race, sheet, signature, finalTime) {
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'), race.video, String(sheet.getSheetId()), signature, raw];
   var r = entry ? entry.row : index.getLastRow() + 1;
   index.getRange(r, 1, 1, rowValues.length).setValues([rowValues]);
+  swimTouchIndexStamp_();
 }
 
 /**
@@ -4512,26 +4651,50 @@ function swimReportFolder_() {
 /**
  * PDF του φύλλου στον φάκελο των reports. area { rows, cols }: η περιοχή που τυπώνεται (από το layout), ώστε το
  * πλάτος της σελίδας να είναι ακριβώς οι στήλες του report και οι σελίδες να πέφτουν εκεί που υπολογίστηκαν.
+ * quick (2.8.0): η πρώτη σελίδα «Με μια ματιά» (swimBuildQuickLook_), πριν από την αναφορά, σε αντίγραφο του φύλλου.
  */
-function swimExportPdf_(ss, sheet, area, fresh) {
+function swimExportPdf_(ss, sheet, area, fresh, quick) {
   if (!sheet) throw new Error(swimT_('Δεν βρέθηκε το φύλλο για PDF.'));
   SpreadsheetApp.flush();
   swimPrepareCharts_(sheet, fresh);
   // Το Google δεν σχεδιάζει πάντα στο PDF τα γραφήματα ενός φύλλου που δεν είναι ανοιχτό: κάθε γράφημα μπαίνει ως εικόνα
   // στη θέση του για την εξαγωγή, και μετά επιστρέφει.
-  var swapped = swimChartsAsImages_(sheet, area);
-  var blob;
-  try {
-    blob = swimPdfFetch_(swimPdfUrl_(ss, sheet, area));
-  } finally {
-    swimRestoreCharts_(sheet, swapped);
+  var blob = null, withQuick = false;
+  if (quick && area && area.rows > 0 && quick.cols === area.cols) {
+    // Η πρώτη σελίδα «Με μια ματιά» σε ένα αντίγραφο του φύλλου· ό,τι κι αν αποτύχει εκεί, το PDF όπως πριν (χωρίς αυτήν).
+    var copy = null;
+    try {
+      copy = swimQuickLookSheet_(ss, sheet, quick);
+      var print = { rows: area.rows + copy.rows, cols: area.cols };
+      swimChartsAsImages_(copy.sheet, print);
+      blob = swimPdfFetch_(swimPdfUrl_(ss, copy.sheet, print));
+      withQuick = true;
+    } catch (e) {
+      blob = null;
+    } finally {
+      if (copy) {
+        try { ss.deleteSheet(copy.sheet); } catch (e2) { /* σβήνεται την επόμενη φορά */ }
+      }
+    }
+  }
+  if (!blob) {
+    var swapped = [];
+    try {
+      swapped = swimChartsAsImages_(sheet, area);
+      blob = swimPdfFetch_(swimPdfUrl_(ss, sheet, area));
+    } finally {
+      swimRestoreCharts_(sheet, swapped);
+    }
   }
   var fileName = sheet.getName() + '.pdf';
   var folder = swimReportFolder_();
   var old = folder.getFilesByName(fileName);
   while (old.hasNext()) old.next().setTrashed(true);
   var file = folder.createFile(blob.setName(fileName));
-  return { url: file.getUrl(), name: fileName, id: file.getId() };
+  var result = { url: file.getUrl(), name: fileName, id: file.getId() };
+  // Για το Kinovea: η πρώτη σελίδα έγινε ή όχι (ζητήθηκε αλλά δεν έγινε: false).
+  if (quick) result.quick = withQuick;
+  return result;
 }
 
 /**
@@ -4717,6 +4880,624 @@ function swimCalibratePdf_(ss, width) {
     return lo * SWIM_ROW_H + a;
   } finally {
     ss.deleteSheet(sh);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// PDF: η πρώτη σελίδα «Με μια ματιά» (2.8.0)
+//
+// Πριν από την πλήρη αναφορά (ίδια όπως πριν), μία σελίδα για μια γρήγορη ματιά: ο χρόνος και οι συγκρίσεις, οι κύριοι
+// δείκτες, τα βασικά σημεία του αγώνα σε προτάσεις, οι χρόνοι ανά τμήμα / 50 / 100 με μπάρες ταχύτητας, η εκκίνηση, οι
+// στροφές, ο τερματισμός και το καρέ του τερματισμού. Φτιάχνεται μόνο για το PDF, σε αντίγραφο του φύλλου του αγώνα: γραμμές
+// στην αρχή του με ύψος μία σελίδα του PDF (λίγο λιγότερο), ώστε η πλήρης αναφορά να αρχίζει στη 2η σελίδα με τις ίδιες
+// αλλαγές σελίδας. Το αντίγραφο σβήνεται μετά την εξαγωγή· το φύλλο του αγώνα δεν αλλάζει.
+// ---------------------------------------------------------------------------------------------
+
+/** px που μένουν κάτω στην πρώτη σελίδα: η πρώτη γραμμή της αναφοράς (48 px) δεν χωρά εκεί και αρχίζει στη 2η σελίδα. */
+var SWIM_QUICK_SLACK = 4;
+/** Τα αντίγραφα του φύλλου για το PDF (σβήνονται· όσα έμειναν από διακοπή, μετά από 10 λεπτά). */
+var SWIM_QUICK_PREFIX = '_swim_pdf_';
+var SWIM_QUICK_COLORS = {
+  good: '#1E8E5A', bad: '#C62828', neutral: '#14243A', goodBg: '#E5F5EC', badBg: '#FCEBEB', bar: '#2E86DE', soft: '#F6F8FB'
+};
+
+function swimQuickNum_(v) {
+  return typeof v === 'number' && isFinite(v) ? v : null;
+}
+
+/** "+0.45" / "-0.30" (αθλητής − σύγκριση: αρνητικό = πιο γρήγορα). */
+function swimQuickDelta_(v) {
+  if (v === null || v === undefined || !isFinite(v)) return '';
+  var a = Math.round(Math.abs(v) * 100) / 100;
+  return (a < 0.005 ? '±' : (v > 0 ? '+' : '-')) + a.toFixed(2);
+}
+
+function swimQuickFixed_(v, n) {
+  return v === null || v === undefined || !isFinite(v) ? '' : (Math.round(v * Math.pow(10, n)) / Math.pow(10, n)).toFixed(n);
+}
+
+/** Οι χρόνοι μιας ανάλυσης ανά απόσταση. */
+function swimQuickTimes_(analysis) {
+  var m = {};
+  (analysis && analysis.rows ? analysis.rows : []).forEach(function (r) {
+    if (r.t !== null && r.t !== undefined && isFinite(r.t)) m[r.d] = r.t;
+  });
+  return m;
+}
+
+/**
+ * Τα τμήματα του πίνακα: κάθε σημείο ελέγχου έως τα 100, ανά 50 έως τα 400, ανά 100 πιο πάνω (mode 'cp' | '50' | '100').
+ * { label, d, cum, split, vel, strokes, sr, dps, dak, dPb, dRef, phase }.
+ */
+function swimQuickSegments_(race, analysis, pbT, refT, mode) {
+  var k = race.k || 1, U = race.poolUnit === 'yd' ? 'yd' : '';
+  var delta = function (map, d, t) { return t !== null && map[d] !== undefined ? t - map[d] : null; };
+  var out = [];
+  if (mode === 'cp') {
+    analysis.rows.forEach(function (r) {
+      if (r.t === null || r.t === undefined) return;
+      out.push({ label: r.prevD + '–' + r.d + U, d: r.d, cum: r.t, split: swimQuickNum_(r.segTime), vel: swimQuickNum_(r.vel), strokes: swimQuickNum_(r.strokes),
+        sr: swimQuickNum_(r.sr), dps: swimQuickNum_(r.dps), dak: null, dPb: delta(pbT, r.d, r.t), dRef: delta(refT, r.d, r.t), phase: !r.isFree });
+    });
+    return out;
+  }
+  var own = swimQuickTimes_(analysis);
+  var blocks = analysis.blocks || [];
+  var step = mode === '100' ? 100 : 50;
+  for (var b = 0; b + step <= race.distance + 1e-9; b += step) {
+    var e = b + step;
+    var inside = blocks.filter(function (x) { return x.from >= b - 1e-9 && x.to <= e + 1e-9; });
+    if (!inside.length) continue;
+    var cum = own[e] !== undefined ? own[e] : null;
+    var start = b === 0 ? 0 : (own[b] !== undefined ? own[b] : null);
+    var split = cum !== null && start !== null ? cum - start : null;
+    var avg = function (key) {
+      var v = inside.map(function (x) { return x[key]; }).filter(function (x) { return x !== null && x !== undefined && isFinite(x); });
+      return v.length ? v.reduce(function (a, c) { return a + c; }, 0) / v.length : null;
+    };
+    var strokes = inside.some(function (x) { return x.strokes !== null && x.strokes !== undefined; })
+      ? inside.reduce(function (a, x) { return a + (x.strokes || 0); }, 0) : null;
+    out.push({ label: b + '–' + e + U, d: e, cum: cum, split: split, vel: split ? step * k / split : null, strokes: strokes,
+      sr: avg('sr'), dps: avg('dps'), dak: avg('dak'), dPb: delta(pbT, e, cum), dRef: delta(refT, e, cum), phase: false });
+  }
+  return out;
+}
+
+/**
+ * Τα δεδομένα της πρώτης σελίδας (καθαρή συνάρτηση, για τα tests): ο χρόνος, οι συγκρίσεις, οι δείκτες, τα βασικά σημεία,
+ * τα τμήματα του πίνακα, η εκκίνηση, οι στροφές και ο τερματισμός. kpi: οι τιμές του φύλλου (μετρούν και όσα γράφτηκαν με το χέρι).
+ */
+function swimQuickLookData_(race, analysis, extras, kpi, mode) {
+  var x = extras || {}, s = analysis.summary || {}, k = kpi || {}, n = swimQuickNum_;
+  var U = swimUnitLabel_(race);
+  var ft = n(k.finalTime) !== null ? k.finalTime : n(s.finalTime);
+  var own = swimQuickTimes_(analysis);
+  var pbA = x.pb ? x.pb.analysis : null, refA = x.elite ? x.elite.analysis : null;
+  var pbT = swimQuickTimes_(pbA), refT = swimQuickTimes_(refA);
+  var d = { U: U, ft: ft, dq: !!race.dq };
+  d.avgVel = n(k.avgVel) !== null ? k.avgVel : (ft ? race.distance * (race.k || 1) / ft : null);
+  d.strokes = n(k.totalStrokes) !== null ? k.totalStrokes : n(s.totalStrokes);
+  d.sr = n(k.sr) !== null ? k.sr : n(s.avgSr);
+  d.dps = n(k.dps) !== null ? k.dps : n(s.avgDps);
+  d.dak = n(k.dak) !== null ? k.dak : n(s.avgDak);
+
+  var compare = function (c, a) {
+    if (!c || !a) return null;
+    var t = n(a.summary ? a.summary.finalTime : null);
+    return { time: t, delta: t !== null && ft !== null ? ft - t : null, label: swimRaceLabel_(c.race, null, true), name: String(c.label || '') };
+  };
+  d.pb = compare(x.pb, pbA);
+  d.ref = compare(x.elite, refA);
+  if (d.ref) d.ref.label = d.ref.name;
+
+  var half = race.distance / 2;
+  if (race.distance >= 100 && ft !== null && own[half] !== undefined) d.halves = { first: own[half], second: ft - own[half], at: half };
+
+  var st = analysis.start || {}, m = race.manual || {};
+  d.reaction = n(m.reaction);
+  d.t15 = n(st.t15);
+  d.ref15 = refT[15] !== undefined ? refT[15] : null;
+  d.breakout = n(st.breakout);
+  d.breakoutDist = n(m.breakoutDist);
+  d.kicks = n(st.kicks);
+  d.turns = (analysis.turns || []).filter(function (t) { return !t.exchange; }).map(function (t) {
+    return { wall: t.wall, inOut: n(t.inOut), turnTime: n(t.turnTime), out15: n(t.out15), underwater: n(t.underwaterTime) };
+  });
+  var inOuts = d.turns.filter(function (t) { return t.inOut !== null; });
+  d.turnAvg = inOuts.length ? inOuts.reduce(function (a, t) { return a + t.inOut; }, 0) / inOuts.length : null;
+  d.turnBest = inOuts.length ? inOuts.reduce(function (a, t) { return a === null || t.inOut < a.inOut ? t : a; }, null) : null;
+  var refInOuts = refA ? (refA.turns || []).filter(function (t) { return !t.exchange && n(t.inOut) !== null; }) : [];
+  d.refTurnAvg = refInOuts.length ? refInOuts.reduce(function (a, t) { return a + t.inOut; }, 0) / refInOuts.length : null;
+  var fin = analysis.finish || {};
+  d.last5 = n(fin.last5);
+  d.last15 = n(fin.last15);
+  d.lastStroke = n(fin.lastStrokeGap);
+  d.warnings = (analysis.warnings || []).length;
+
+  d.mode = mode || (race.distance <= 100 ? 'cp' : (race.distance <= 400 ? '50' : '100'));
+  d.segments = swimQuickSegments_(race, analysis, pbT, refT, d.mode);
+  d.blocks = (analysis.blocks || []).map(function (b) { return { from: b.from, to: b.to, time: n(b.time), sr: n(b.sr), vel: n(b.vel) }; });
+  d.refBlocks = refA ? (refA.blocks || []).map(function (b) { return { from: b.from, to: b.to, time: n(b.time) }; }) : [];
+  d.cleanVels = analysis.rows.filter(function (r) { return r.isFree && n(r.vel) !== null; }).map(function (r) { return { d: r.d, from: r.prevD, vel: r.vel }; });
+  d.points = swimQuickPoints_(race, d);
+  return d;
+}
+
+/**
+ * Τα βασικά σημεία του αγώνα σε σύντομες προτάσεις: { tag, text, tone ('good' | 'bad' | 'neutral') }, με τη σειρά σημασίας
+ * (PB, αναφορά, ρυθμός, εκκίνηση, στροφές, χεριές, ταχύτητα, τερματισμός, έλεγχοι).
+ */
+function swimQuickPoints_(race, d) {
+  var out = [], U = d.U, T = swimFormatTime_;
+  var add = function (tag, text, tone) { if (text) out.push({ tag: tag, text: text, tone: tone || 'neutral' }); };
+
+  if (d.pb && d.pb.delta !== null) {
+    if (d.pb.delta < -0.005) add(swimT_('PB'), swimTF_('Νέο ατομικό ρεκόρ: {0} από τον καλύτερο χρόνο του αθλητή ({1}, {2}).', swimQuickDelta_(d.pb.delta), T(d.pb.time), d.pb.label), 'good');
+    else add(swimT_('PB'), swimTF_('{0} από τον καλύτερο χρόνο του αθλητή ({1}, {2}).', swimQuickDelta_(d.pb.delta), T(d.pb.time), d.pb.label), d.pb.delta > 0.005 ? 'bad' : 'neutral');
+  }
+
+  if (d.ref && d.ref.delta !== null) {
+    // Το 50 με τη μεγαλύτερη διαφορά από την αναφορά.
+    var worst = null;
+    d.blocks.forEach(function (b) {
+      var r = d.refBlocks.filter(function (x) { return x.from === b.from && x.to === b.to; })[0];
+      if (!r || b.time === null || r.time === null) return;
+      var diff = b.time - r.time;
+      if (worst === null || Math.abs(diff) > Math.abs(worst.diff)) worst = { from: b.from, to: b.to, diff: diff };
+    });
+    var where = worst && d.blocks.length > 1 ? swimTF_(' · η μεγαλύτερη διαφορά στο {0}–{1}{2} ({3})', worst.from, worst.to, U, swimQuickDelta_(worst.diff)) : '';
+    add(swimT_('ΑΝΑΦΟΡΑ'), swimTF_('{0} από την αναφορά {1} ({2}){3}.', swimQuickDelta_(d.ref.delta), d.ref.name, T(d.ref.time), where),
+      d.ref.delta < -0.005 ? 'good' : 'neutral');
+  }
+
+  if (d.halves) {
+    var diff = d.halves.second - d.halves.first;
+    var text = swimTF_('1ο μισό {0} · 2ο μισό {1} ({2}).', T(d.halves.first), T(d.halves.second), swimQuickDelta_(diff));
+    // Ανά 50 μετά το πρώτο (χωρίς την εκκίνηση): το πιο γρήγορο και το πιο αργό.
+    var later = d.blocks.filter(function (b) { return b.from > 0 && b.time !== null; });
+    if (later.length >= 2) {
+      var fast = later.reduce(function (a, b) { return b.time < a.time ? b : a; });
+      var slow = later.reduce(function (a, b) { return b.time > a.time ? b : a; });
+      text += swimTF_(' Μετά το 1ο 50: πιο γρήγορο το {0}–{1} ({2}), πιο αργό το {3}–{4} ({5}).', fast.from, fast.to, T(fast.time), slow.from, slow.to, T(slow.time));
+    }
+    add(swimT_('ΡΥΘΜΟΣ'), text, 'neutral');
+  }
+
+  if (d.t15 !== null || d.reaction !== null) {
+    var parts = [];
+    if (d.t15 !== null) parts.push(swimTF_('15{0} σε {1}', U, T(d.t15)) + (d.ref15 !== null ? swimTF_(' ({0} από την αναφορά)', swimQuickDelta_(d.t15 - d.ref15)) : ''));
+    if (d.reaction !== null) parts.push(swimTF_('αντίδραση {0}', swimQuickFixed_(d.reaction, 2)));
+    if (d.breakoutDist !== null) parts.push(swimTF_('έξοδος από το νερό στα {0}{1}', swimQuickFixed_(d.breakoutDist, 1), U));
+    if (d.kicks !== null && d.kicks > 0) parts.push(swimTF_('{0} υποβρύχιοι δελφινισμοί', d.kicks));
+    var startText = parts.join(' · ');
+    add(swimT_('ΕΚΚΙΝΗΣΗ'), startText.charAt(0).toUpperCase() + startText.substring(1) + '.',
+      d.ref15 !== null && d.t15 !== null ? (d.t15 - d.ref15 <= 0 ? 'good' : 'neutral') : 'neutral');
+  }
+
+  if (d.turnAvg !== null) {
+    var turnText = d.turns.filter(function (t) { return t.inOut !== null; }).length > 1
+      ? swimTF_('Στροφές (-5/+15): μέσος όρος {0} · η πιο γρήγορη στα {1}{2} ({3})', swimQuickFixed_(d.turnAvg, 2), d.turnBest.wall, U, swimQuickFixed_(d.turnBest.inOut, 2))
+      : swimTF_('Στροφή (-5/+15) στα {0}{1}: {2}', d.turnBest.wall, U, swimQuickFixed_(d.turnAvg, 2));
+    if (d.refTurnAvg !== null) turnText += swimTF_(' ({0} από την αναφορά)', swimQuickDelta_(d.turnAvg - d.refTurnAvg));
+    add(swimT_('ΣΤΡΟΦΕΣ'), turnText + '.', d.refTurnAvg !== null && d.turnAvg - d.refTurnAvg <= 0 ? 'good' : 'neutral');
+  }
+
+  if (d.sr !== null || d.dps !== null) {
+    var strokeText = [d.sr !== null ? swimTF_('Συχνότητα {0} κύκλοι/λεπτό', swimQuickFixed_(d.sr, 1)) : '',
+      d.dps !== null ? swimTF_('μήκος χεριάς {0} m', swimQuickFixed_(d.dps, 2)) : ''].filter(function (t) { return t; }).join(' · ');
+    var withSr = d.blocks.filter(function (b) { return b.sr !== null; });
+    if (withSr.length >= 2) {
+      var change = withSr[withSr.length - 1].sr - withSr[0].sr;
+      if (Math.abs(change) >= 1) strokeText += swimTF_(' · στο τελευταίο 50 η συχνότητα {0} κατά {1}', change > 0 ? swimT_('ανέβηκε') : swimT_('έπεσε'), swimQuickFixed_(Math.abs(change), 1));
+    }
+    add(swimT_('ΧΕΡΙΕΣ'), strokeText.charAt(0).toUpperCase() + strokeText.substring(1) + '.', 'neutral');
+  }
+
+  if (d.cleanVels.length >= 2) {
+    var best = d.cleanVels.reduce(function (a, b) { return b.vel > a.vel ? b : a; });
+    var lastV = d.cleanVels[d.cleanVels.length - 1];
+    var drop = best.vel > 0 ? (best.vel - lastV.vel) / best.vel : 0;
+    if (drop >= 0.03 && lastV !== best)
+      add(swimT_('ΤΑΧΥΤΗΤΑ'), swimTF_('Η ταχύτητα της καθαρής κολύμβησης έπεσε {0}% από το καλύτερο τμήμα ({1}–{2}{3}: {4} m/s) στο τελευταίο ({5}–{6}{3}: {7} m/s).',
+        Math.round(drop * 100), best.from, best.d, U, swimQuickFixed_(best.vel, 2), lastV.from, lastV.d, swimQuickFixed_(lastV.vel, 2)), drop >= 0.08 ? 'bad' : 'neutral');
+  }
+
+  if (d.last5 !== null) {
+    add(swimT_('ΤΕΡΜΑΤΙΣΜΟΣ'), swimTF_('Τελευταία 5{0}: {1}', U, swimQuickFixed_(d.last5, 2)) +
+      (d.lastStroke !== null ? swimTF_(' · από την τελευταία χεριά στον τοίχο {0}', swimQuickFixed_(d.lastStroke, 2)) : '') + '.', 'neutral');
+  }
+
+  if (d.warnings > 0) add(swimT_('ΕΛΕΓΧΟΣ'), swimTF_('{0} προειδοποιήσεις στα δεδομένα: δες την πλήρη αναφορά.', d.warnings), 'bad');
+  return out;
+}
+
+/** Οι στήλες c1..c2 ενωμένες, με την ίδια μορφή σε όλες (φόντο). */
+function swimQuickSet_(g, r, c1, c2, v, fmt) {
+  g.set(r, c1, v, fmt);
+  for (var c = c1 + 1; c <= c2; c++) g.set(r, c, '', { bg: fmt && fmt.bg ? fmt.bg : undefined });
+  if (c2 > c1) g.merge(r, c1, r, c2);
+}
+
+/** Πλάτος (px) των στηλών c1..c2. */
+function swimQuickWidth_(c1, c2) {
+  var w = 0;
+  for (var c = c1; c <= c2; c++) w += swimColumnWidth_(c);
+  return w;
+}
+
+/**
+ * Η πρώτη σελίδα σε γραμμές με ακριβές ύψος (px): { grid, heights: [ύψος της γραμμής 1, 2, …], cols, images, total, level }.
+ * page: { height (px της σελίδας του PDF), cols (οι στήλες της αναφοράς) }. Αν το περιεχόμενο δεν χωρά, λιγότερα: σημεία,
+ * μικρότερη εικόνα, τμήματα ανά 50 / 100, χωρίς τη λωρίδα εκκίνησης-στροφών-τερματισμού.
+ */
+function swimBuildQuickLook_(race, analysis, extras, kpi, page) {
+  var H = page && page.height > 0 ? page.height : 0, W = page && page.cols > 0 ? page.cols : 15;
+  if (!(H > 200) || W < 12) return null;
+  var budget = H - SWIM_QUICK_SLACK;
+  var modes = race.distance <= 100 ? ['cp', '50', null] : (race.distance <= 400 ? ['50', '100', null] : ['100', null]);
+  var levels = [
+    { points: 7, image: 300, mode: modes[0], strip: true },
+    { points: 5, image: 230, mode: modes[0], strip: true },
+    { points: 5, image: 230, mode: modes[1] || modes[0], strip: true },
+    { points: 4, image: 200, mode: modes[1] || modes[0], strip: false },
+    { points: 3, image: 0, mode: modes[1] || modes[0], strip: false },
+    { points: 3, image: 0, mode: null, strip: false }
+  ];
+  for (var i = 0; i < levels.length; i++) {
+    var q = swimQuickLayout_(race, analysis, extras, kpi, W, levels[i], 0);
+    if (q.total <= budget) {
+      // Το υπόλοιπο της σελίδας κενό πριν από την τελευταία γραμμή (στο κάτω μέρος της σελίδας): η αναφορά αρχίζει στην επόμενη.
+      var rest = Math.floor(budget - q.total);
+      if (rest >= 1) q = swimQuickLayout_(race, analysis, extras, kpi, W, levels[i], rest);
+      q.level = i;
+      return q;
+    }
+  }
+  return null;
+}
+
+function swimQuickLayout_(race, analysis, extras, kpi, W, level, spacer) {
+  var g = new SwimGrid_(), heights = [], images = [], C = SWIM_COLORS, Q = SWIM_QUICK_COLORS;
+  var d = swimQuickLookData_(race, analysis, extras, kpi, level.mode || undefined);
+  var r = 0;
+  var row = function (h) { r++; heights.push(h); return r; };
+  var blank = function (h, bg) { var x = row(h); if (bg) for (var c = 1; c <= W; c++) g.set(x, c, '', { bg: bg }); return x; };
+  var T = swimFormatTime_;
+  var hv = swimHeaderValues_(race);
+
+  // ---- Τίτλος (όπως της αναφοράς).
+  var r1 = row(48);
+  swimQuickSet_(g, r1, 1, 9, 'SWIMMING RACE ANALYSIS', { bold: true, size: 18, color: C.titleText, bg: C.title });
+  swimQuickSet_(g, r1, 10, W, swimT_('ΜΕ ΜΙΑ ΜΑΤΙΑ'), { bold: true, size: 13, color: C.accent, bg: C.title, align: 'right' });
+  var r2 = row(26);
+  swimQuickSet_(g, r2, 1, 9, swimT_('Κ.Ο.Ε. · Ανάλυση αγώνα με Kinovea'), { size: 9, color: C.subText, bg: C.title });
+  swimQuickSet_(g, r2, 10, W, swimT_('Η πλήρης ανάλυση ακολουθεί στις επόμενες σελίδες'), { size: 9, color: C.subText, bg: C.title, align: 'right' });
+  blank(5, C.accent);
+  blank(10);
+
+  // ---- Αθλητής και αγώνας.
+  var r5 = row(38);
+  swimQuickSet_(g, r5, 1, 8, hv.athlete || swimT_('Αγώνας'), { bold: true, size: 18, color: C.title, fmt: '@' });
+  swimQuickSet_(g, r5, 9, W, hv.eventLine, { bold: true, size: 13, color: C.title, align: 'right', fmt: '@' });
+  var r6 = row(24);
+  swimQuickSet_(g, r6, 1, 8, hv.clubLine, { size: 10, color: C.dim, fmt: '@' });
+  swimQuickSet_(g, r6, 9, W, hv.compLine, { size: 10, color: C.dim, align: 'right', fmt: '@' });
+  blank(14);
+
+  // ---- Ο χρόνος και οι συγκρίσεις.
+  var tone = function (delta) { return delta === null ? C.title : (delta < -0.005 ? Q.good : (delta > 0.005 ? Q.bad : C.title)); };
+  var heroes = [
+    { c1: 1, c2: 4, cap: swimT_('ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ'), val: d.dq ? 'DQ' : (d.ft !== null ? T(d.ft) : '–'),
+      sub: d.avgVel !== null ? swimTF_('μέση ταχύτητα {0} m/s', swimQuickFixed_(d.avgVel, 2)) : '', color: C.title, bg: C.kpi },
+    { c1: 5, c2: 8, cap: swimT_('ΣΕ ΣΧΕΣΗ ΜΕ ΤΟ PB'), val: d.pb && d.pb.delta !== null ? swimQuickDelta_(d.pb.delta) : '–',
+      sub: d.pb ? d.pb.label + (d.pb.time !== null ? ' · ' + T(d.pb.time) : '') : swimT_('χωρίς προηγούμενο αγώνα'), color: tone(d.pb ? d.pb.delta : null), bg: C.kpi },
+    { c1: 9, c2: 12, cap: swimT_('ΣΕ ΣΧΕΣΗ ΜΕ ΤΗΝ ΑΝΑΦΟΡΑ'), val: d.ref && d.ref.delta !== null ? swimQuickDelta_(d.ref.delta) : '–',
+      sub: d.ref ? d.ref.name + (d.ref.time !== null ? ' · ' + T(d.ref.time) : '') : swimT_('χωρίς αναφορά'), color: tone(d.ref ? d.ref.delta : null), bg: C.kpi },
+    d.halves
+      ? { c1: 13, c2: W, cap: swimTF_('1Ο / 2Ο ΜΙΣΟ ({0}{1})', d.halves.at, d.U), val: T(d.halves.first) + ' / ' + T(d.halves.second),
+        sub: swimTF_('διαφορά {0}', swimQuickDelta_(d.halves.second - d.halves.first)), color: C.title, bg: C.kpi, small: true }
+      : { c1: 13, c2: W, cap: swimT_('ΧΕΡΙΕΣ'), val: d.strokes !== null ? swimQuickFixed_(d.strokes, d.strokes % 1 ? 1 : 0) : '–',
+        sub: swimT_('σύνολο του αγώνα'), color: C.title, bg: C.kpi }
+  ];
+  var h1 = row(22), h2 = row(54), h3 = row(36);
+  heroes.forEach(function (h, i) {
+    var bg = i === 0 ? '#E8F1FB' : h.bg;
+    swimQuickSet_(g, h1, h.c1, h.c2, h.cap, { bold: true, size: 8, color: C.dim, bg: bg, align: 'center' });
+    swimQuickSet_(g, h2, h.c1, h.c2, h.val, { bold: true, size: h.small ? 17 : (i === 0 ? 30 : 24), color: h.color, bg: bg, align: 'center', fmt: '@' });
+    swimQuickSet_(g, h3, h.c1, h.c2, h.sub, { size: 8, color: C.dim, bg: bg, align: 'center', wrap: true, fmt: '@' });
+  });
+  blank(14);
+
+  // ---- Δείκτες.
+  var tiles = [
+    { cap: swimT_('ΑΝΤΙΔΡΑΣΗ'), val: swimQuickFixed_(d.reaction, 2), sub: 'sec' },
+    { cap: swimTF_('ΕΚΚΙΝΗΣΗ 0-15{0}', d.U.replace('.', '').toUpperCase()), val: d.t15 !== null ? T(d.t15) : '', sub: swimT_('από το σήμα') },
+    { cap: swimT_('ΣΥΧΝΟΤΗΤΑ'), val: swimQuickFixed_(d.sr, 1), sub: swimT_('κύκλοι/λεπτό') },
+    { cap: swimT_('ΜΗΚΟΣ ΧΕΡΙΑΣ'), val: swimQuickFixed_(d.dps, 2), sub: swimT_('m/χεριά') },
+    { cap: swimT_('ΔΑΚ'), val: swimQuickFixed_(d.dak, 2), sub: swimT_('μ.ο. 50άρι'), accent: true },
+    { cap: swimT_('ΣΤΡΟΦΕΣ -5/+15'), val: swimQuickFixed_(d.turnAvg, 2), sub: swimT_('μέσος όρος (sec)') },
+    { cap: swimTF_('ΤΕΛΕΥΤΑΙΑ 5{0}', d.U.replace('.', '').toUpperCase()), val: swimQuickFixed_(d.last5, 2), sub: 'sec' }
+  ];
+  var k1 = row(20), k2 = row(38), k3 = row(22);
+  tiles.forEach(function (t, i) {
+    var c1 = 1 + 2 * i, c2 = i === tiles.length - 1 ? W : c1 + 1;
+    var bg = t.accent ? C.kpiDak : C.kpi;
+    swimQuickSet_(g, k1, c1, c2, t.cap, { bold: true, size: 8, color: C.dim, bg: bg, align: 'center' });
+    swimQuickSet_(g, k2, c1, c2, t.val || '–', { bold: true, size: 18, color: t.accent ? C.dakText : C.title, bg: bg, align: 'center', fmt: '@' });
+    swimQuickSet_(g, k3, c1, c2, t.sub, { size: 8, color: C.dim, bg: bg, align: 'center', fmt: '@' });
+  });
+  blank(16);
+
+  // ---- Βασικά σημεία (αριστερά) και το καρέ του τερματισμού (δεξιά).
+  var frame = race.finalFrame && race.finalFrame.fileId && level.image > 0 ? race.finalFrame.fileId : '';
+  var textEnd = frame ? 8 : W;
+  var sec = row(28);
+  swimQuickSet_(g, sec, 1, textEnd, swimT_('Βασικά σημεία'), { bg: C.section, color: C.sectionText, bold: true, size: 11 });
+  if (frame) swimQuickSet_(g, sec, textEnd + 1, W, swimT_('Ο τερματισμός'), { bg: C.section, color: C.sectionText, bold: true, size: 11 });
+  var points = d.points.slice(0, level.points);
+  var pointsTop = r + 1, used = 0;
+  var textWidth = swimQuickWidth_(2, textEnd);
+  points.forEach(function (p) {
+    var h = Math.max(34, swimTextHeight_(p.text, textWidth, 10, false) + 8);
+    var x = row(h);
+    used += h;
+    var bg = p.tone === 'good' ? Q.good : (p.tone === 'bad' ? Q.bad : Q.neutral);
+    g.set(x, 1, p.tag, { bold: true, size: 8, color: '#FFFFFF', bg: bg, align: 'center', wrap: true, fmt: '@' });
+    swimQuickSet_(g, x, 2, textEnd, p.text, { size: 10, color: C.text, wrap: true, fmt: '@', bg: p.tone === 'good' ? Q.goodBg : (p.tone === 'bad' ? Q.badBg : Q.soft) });
+  });
+  if (!points.length) {
+    var none = row(30);
+    used += 30;
+    swimQuickSet_(g, none, 1, textEnd, swimT_('Δεν υπάρχουν ακόμη αρκετά δεδομένα για τα βασικά σημεία.'), { size: 10, color: C.dim, fmt: '@' });
+  }
+  if (frame) {
+    var boxW = swimQuickWidth_(textEnd + 1, W) - 12;
+    var boxH = Math.min(level.image, Math.round(boxW * 9 / 16));
+    if (used < boxH + 8) {
+      // Χώρος για την εικόνα κάτω από τα σημεία.
+      var extra = boxH + 8 - used;
+      while (extra > 0) { var hh = Math.min(30, extra); row(hh); extra -= hh; }
+    }
+    images.push({ fileId: frame, row: pointsTop, col: textEnd + 1, offsetX: 6, offsetY: 4, width: boxW, height: boxH, fit: true,
+      x: swimQuickWidth_(1, textEnd) + 6 });
+  }
+  blank(16);
+
+  // ---- Χρόνοι ανά τμήμα / 50 / 100 με μπάρες ταχύτητας.
+  if (level.mode && d.segments.length) {
+    var title = d.mode === 'cp' ? swimT_('Χρόνοι ανά σημείο ελέγχου') : (d.mode === '50' ? swimTF_('Χρόνοι ανά 50{0}', d.U) : swimTF_('Χρόνοι ανά 100{0}', d.U));
+    var st = row(28);
+    swimQuickSet_(g, st, 1, W, title, { bg: C.section, color: C.sectionText, bold: true, size: 11 });
+    var head = row(34);
+    var hfmt = { bg: C.header, color: C.headerText, bold: true, wrap: true, align: 'center', size: 8 };
+    var cols = [
+      [1, 1, swimT_('Τμήμα')], [2, 2, swimT_('Χρόνος')], [3, 3, swimT_('Ενδιάμεσος')], [4, 4, 'm/s'], [5, 8, swimT_('Ταχύτητα')],
+      [9, 9, swimT_('Χεριές')], [10, 10, swimT_('Συχνότητα')], [11, 11, swimT_('Μήκος χεριάς')], [12, 12, swimT_('Δ PB')],
+      [13, 14, swimT_('Δ αναφοράς')], [15, W, d.mode === 'cp' ? '' : swimT_('ΔΑΚ')]
+    ];
+    cols.forEach(function (c) { swimQuickSet_(g, head, c[0], c[1], c[2], hfmt); });
+    // Η κλίμακα των μπαρών από την καθαρή κολύμβηση (η εκκίνηση και οι στροφές, πιο γρήγορες, ως το τέλος της μπάρας).
+    var vmax = 0, vmin = Infinity;
+    var scaled = d.segments.filter(function (s) { return s.vel !== null && !s.phase; });
+    if (scaled.length < 2) scaled = d.segments.filter(function (s) { return s.vel !== null; });
+    scaled.forEach(function (s) { vmax = Math.max(vmax, s.vel); vmin = Math.min(vmin, s.vel); });
+    var first = r + 1;
+    d.segments.forEach(function (s, i) {
+      var x = row(d.segments.length > 12 ? 24 : 28);
+      var bg = i % 2 ? '#FFFFFF' : Q.soft;
+      var cell = function (c1, c2, v, extra) {
+        var f = { bg: bg, align: 'center', size: 10, color: C.text, fmt: '@' };
+        if (extra) for (var key in extra) if (Object.prototype.hasOwnProperty.call(extra, key)) f[key] = extra[key];
+        swimQuickSet_(g, x, c1, c2, v, f);
+      };
+      cell(1, 1, s.label, { bold: true, color: C.headerText, bg: s.phase ? C.phase : C.label });
+      cell(2, 2, s.cum !== null ? T(s.cum) : '', { bold: true });
+      cell(3, 3, s.split !== null ? swimQuickFixed_(s.split, 2) : '');
+      cell(4, 4, swimQuickFixed_(s.vel, 2), s.phase ? { color: C.dim } : null);
+      // Μπάρα ταχύτητας (SPARKLINE): από λίγο κάτω από την πιο αργή ως την πιο γρήγορη, οι συμβατικές (εκκίνηση, στροφή) αχνές.
+      var lo = vmin < Infinity ? Math.max(0, vmin - 0.25 * (vmax - vmin) - 0.05) : 0;
+      var spark = s.vel !== null && vmax > lo
+        ? '=SPARKLINE({' + swimQuickFixed_(Math.max(0, Math.min(vmax, s.vel) - lo), 3) + '},{"charttype","bar";"max",' + swimQuickFixed_(vmax - lo, 3) + ';"color1","' + (s.phase ? '#B0BEC5' : Q.bar) + '"})'
+        : '';
+      cell(5, 8, spark, { fmt: undefined });
+      cell(9, 9, s.strokes !== null ? swimQuickFixed_(s.strokes, s.strokes % 1 ? 1 : 0) : '');
+      cell(10, 10, swimQuickFixed_(s.sr, 1));
+      cell(11, 11, swimQuickFixed_(s.dps, 2));
+      cell(12, 12, swimQuickDelta_(s.dPb), { bold: true, color: tone(s.dPb) });
+      cell(13, 14, swimQuickDelta_(s.dRef), { bold: true, color: tone(s.dRef) });
+      cell(15, W, d.mode === 'cp' ? '' : swimQuickFixed_(s.dak, 2), { color: C.dakText, bold: true });
+    });
+    g.box(head, 1, r, W);
+    blank(16);
+  }
+
+  // ---- Εκκίνηση, στροφές, τερματισμός.
+  if (level.strip) {
+    var panels = [
+      { c1: 1, c2: 5, title: swimT_('Εκκίνηση'), lines: [
+        [swimT_('Αντίδραση'), swimQuickFixed_(d.reaction, 2)],
+        [swimTF_('Χρόνος 15{0}', d.U), d.t15 !== null ? T(d.t15) : ''],
+        [swimT_('Έξοδος από το νερό'), [d.breakout !== null ? swimQuickFixed_(d.breakout, 2) + ' s' : '', d.breakoutDist !== null ? swimQuickFixed_(d.breakoutDist, 1) + ' ' + d.U : ''].filter(function (v) { return v; }).join(' · ')],
+        [swimT_('Υποβρύχιοι δελφινισμοί'), d.kicks !== null ? String(d.kicks) : '']
+      ] },
+      { c1: 6, c2: 10, title: swimT_('Στροφές'), lines: swimQuickTurnLines_(d) },
+      { c1: 11, c2: W, title: swimT_('Τερματισμός'), lines: [
+        [swimTF_('Τελευταία 5{0}', d.U), swimQuickFixed_(d.last5, 2)],
+        [swimTF_('Τελευταία 15{0}', d.U), swimQuickFixed_(d.last15, 2)],
+        [swimT_('Τελευταία χεριά → τοίχος'), swimQuickFixed_(d.lastStroke, 2)],
+        [swimT_('Χεριές του αγώνα'), d.strokes !== null ? swimQuickFixed_(d.strokes, d.strokes % 1 ? 1 : 0) : '']
+      ] }
+    ];
+    var ph = row(28);
+    panels.forEach(function (p) { swimQuickSet_(g, ph, p.c1, p.c2, p.title, { bg: C.section, color: C.sectionText, bold: true, size: 11 }); });
+    var lines = Math.max.apply(null, panels.map(function (p) { return p.lines.length; }));
+    var firstLine = r + 1;
+    for (var li = 0; li < lines; li++) {
+      var x = row(26);
+      panels.forEach(function (p) {
+        var line = p.lines[li] || ['', ''];
+        var bg = li % 2 ? '#FFFFFF' : Q.soft;
+        swimQuickSet_(g, x, p.c1, p.c2 - 2, line[0], { size: 10, color: C.dim, bg: bg, fmt: '@' });
+        swimQuickSet_(g, x, p.c2 - 1, p.c2, line[0] ? (line[1] || '–') : '', { size: 10, bold: true, color: C.text, bg: bg, align: 'right', fmt: '@' });
+      });
+    }
+    panels.forEach(function (p) { g.box(firstLine, p.c1, r, p.c2); });
+    blank(12);
+  }
+
+  // ---- Τέλος της σελίδας.
+  if (spacer > 0) blank(spacer);
+  var f = row(22);
+  swimQuickSet_(g, f, 1, W, swimTF_('Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis {0}', SWIM_VERSION), { size: 8, color: C.dim, align: 'right', fmt: '@' });
+
+  var total = heights.reduce(function (a, h) { return a + h; }, 0);
+  return { grid: g, heights: heights, cols: W, images: images, total: total, data: d };
+}
+
+/** Οι γραμμές των στροφών: έως τρεις μία-μία, αλλιώς μέσος όρος, η πιο γρήγορη και η πιο αργή (-5/+15). */
+function swimQuickTurnLines_(d) {
+  var list = d.turns.filter(function (t) { return t.inOut !== null || t.turnTime !== null; });
+  var U = d.U;
+  if (!list.length) return [[swimT_('Χωρίς στροφές με χρόνους'), '']];
+  if (list.length <= 3) {
+    var lines = list.map(function (t) {
+      return [swimTF_('Στα {0}{1} (-5/+15)', t.wall, U), [swimQuickFixed_(t.inOut, 2), t.turnTime !== null ? swimTF_('στροφή {0}', swimQuickFixed_(t.turnTime, 2)) : '']
+        .filter(function (v) { return v; }).join(' · ')];
+    });
+    if (d.turnAvg !== null && list.length > 1) lines.push([swimT_('Μέσος όρος -5/+15'), swimQuickFixed_(d.turnAvg, 2)]);
+    return lines;
+  }
+  var timed = list.filter(function (t) { return t.inOut !== null; });
+  var slow = timed.length ? timed.reduce(function (a, t) { return t.inOut > a.inOut ? t : a; }) : null;
+  return [
+    [swimT_('Μέσος όρος -5/+15'), swimQuickFixed_(d.turnAvg, 2)],
+    [swimT_('Η πιο γρήγορη'), d.turnBest ? swimTF_('{0} στα {1}{2}', swimQuickFixed_(d.turnBest.inOut, 2), d.turnBest.wall, U) : ''],
+    [swimT_('Η πιο αργή'), slow ? swimTF_('{0} στα {1}{2}', swimQuickFixed_(slow.inOut, 2), slow.wall, U) : ''],
+    [swimT_('Στροφές με χρόνο'), String(timed.length)]
+  ];
+}
+
+/** Η πρώτη σελίδα στις γραμμές 1..n ενός φύλλου (μόλις μπήκαν): τιμές, μορφή, ενώσεις, πλαίσια, ύψη, εικόνες. */
+function swimRenderQuickLook_(sheet, q) {
+  var g = q.grid, n = q.heights.length, W = q.cols;
+  var values = [], bgs = [], weights = [], colors = [], sizes = [], aligns = [], wraps = [], byFormat = {};
+  for (var r = 1; r <= n; r++) {
+    var vr = [], br = [], wr = [], cr = [], zr = [], ar = [], wp = [];
+    for (var c = 1; c <= W; c++) {
+      var cell = g.get(r, c) || {};
+      vr.push(cell.v === undefined || cell.v === null ? '' : cell.v);
+      if (cell.fmt) (byFormat[cell.fmt] = byFormat[cell.fmt] || []).push(swimA1_(r, c));
+      br.push(cell.bg || '#ffffff');
+      wr.push(cell.bold ? 'bold' : 'normal');
+      cr.push(cell.color || SWIM_COLORS.text);
+      zr.push(swimFontSize_(cell.size));
+      ar.push(cell.align || 'left');
+      wp.push(!!cell.wrap);
+    }
+    values.push(vr); bgs.push(br); weights.push(wr); colors.push(cr); sizes.push(zr); aligns.push(ar); wraps.push(wp);
+  }
+  var range = sheet.getRange(1, 1, n, W);
+  range.breakApart();
+  range.setBorder(false, false, false, false, false, false);
+  Object.keys(byFormat).forEach(function (fmt) { sheet.getRangeList(byFormat[fmt]).setNumberFormat(fmt); });
+  range.setFontFamily(SWIM_FONT);
+  range.setValues(values);
+  range.setBackgrounds(bgs);
+  range.setFontWeights(weights);
+  range.setFontStyles(values.map(function (vr) { return vr.map(function () { return 'normal'; }); }));
+  range.setFontColors(colors);
+  range.setFontSizes(sizes);
+  range.setHorizontalAlignments(aligns);
+  range.setWraps(wraps);
+  range.setVerticalAlignment('middle');
+  g.merges.forEach(function (m) { sheet.getRange(m[0], m[1], m[2] - m[0] + 1, m[3] - m[1] + 1).merge(); });
+  g.boxes.forEach(function (b) {
+    sheet.getRange(b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1).setBorder(true, true, true, true, true, true, SWIM_COLORS.border, SpreadsheetApp.BorderStyle.SOLID);
+  });
+  var from = 1;
+  for (var i = 2; i <= n + 1; i++) {
+    if (i <= n && q.heights[i - 1] === q.heights[from - 1]) continue;
+    swimForceRowHeights_(sheet, from, i - from, q.heights[from - 1]);
+    from = i;
+  }
+  (q.images || []).forEach(function (img) {
+    try {
+      var blob = DriveApp.getFileById(img.fileId).getBlob();
+      var im = sheet.insertImage(blob, img.col, img.row, img.offsetX, img.offsetY);
+      var w = img.width, h = img.height;
+      var w0 = swimImageSize_(im, 'Width'), h0 = swimImageSize_(im, 'Height');
+      if (img.fit && w0 > 0 && h0 > 0) {
+        var s = Math.min(img.width / w0, img.height / h0);
+        w = Math.max(1, Math.round(w0 * s));
+        h = Math.max(1, Math.round(h0 * s));
+        var at = swimColumnAt_(img.x + Math.round((img.width - w) / 2));
+        im.setAnchorCell(sheet.getRange(img.row, at.col)).setAnchorCellXOffset(at.offset);
+      }
+      im.setWidth(w).setHeight(h);
+    } catch (e) { /* η σελίδα χωρίς την εικόνα */ }
+  });
+}
+
+/**
+ * Αντίγραφο του φύλλου του αγώνα με την πρώτη σελίδα στην αρχή (γραμμές με ύψος μία σελίδα): οι εικόνες και τα γραφήματα
+ * της αναφοράς κατεβαίνουν μαζί με τις γραμμές τους. Επιστρέφει { sheet, rows }.
+ */
+function swimQuickLookSheet_(ss, sheet, q) {
+  var now = Date.now();
+  ss.getSheets().forEach(function (s) {
+    // Μόνο τα αντίγραφα που ξέμειναν (όνομα: το πρόθεμα και η ώρα τους), όχι άλλα φύλλα με όμοιο όνομα.
+    var name = s.getName(), stamp = name.substring(SWIM_QUICK_PREFIX.length);
+    if (name.indexOf(SWIM_QUICK_PREFIX) === 0 && /^\d+$/.test(stamp) && now - Number(stamp) > 10 * 60 * 1000) {
+      try { ss.deleteSheet(s); } catch (e) { /* σε χρήση */ }
+    }
+  });
+  var count = function (sh) {
+    var c = { images: 0, charts: 0 };
+    try { c.images = sh.getImages().length; } catch (e) { /* παλιότερο Apps Script */ }
+    try { c.charts = sh.getCharts().length; } catch (e2) { /* τίποτα */ }
+    return c;
+  };
+  var source = count(sheet);
+  var copy = sheet.copyTo(ss);
+  try {
+    copy.setName(SWIM_QUICK_PREFIX + now);
+    // Το αντίγραφο πρέπει να έχει όλες τις εικόνες και τα γραφήματα της αναφοράς· αλλιώς το PDF γίνεται όπως πριν.
+    var copied = count(copy);
+    if (copied.images !== source.images || copied.charts !== source.charts) throw new Error('copy without the images of the report');
+    var n = q.heights.length;
+    var images = [], charts = [];
+    try { images = copy.getImages().map(function (im) { var a = im.getAnchorCell(); return { row: a.getRow(), col: a.getColumn() }; }); } catch (e) { images = []; }
+    try { charts = copy.getCharts().map(function (ch) { var i = ch.getContainerInfo(); return { row: i.getAnchorRow(), col: i.getAnchorColumn(), x: i.getOffsetX(), y: i.getOffsetY() }; }); } catch (e2) { charts = []; }
+    copy.insertRowsBefore(1, n);
+    // Όσα δεν κατέβηκαν μόνα τους με τις γραμμές τους κατεβαίνουν εδώ (ξανά από το φύλλο, με την ίδια σειρά).
+    try {
+      var nowImages = copy.getImages();
+      if (nowImages.length === images.length) nowImages.forEach(function (im, i) {
+        var a = im.getAnchorCell();
+        if (a.getRow() === images[i].row && a.getColumn() === images[i].col) im.setAnchorCell(copy.getRange(images[i].row + n, images[i].col));
+      });
+    } catch (e3) { /* όπως είναι */ }
+    try {
+      var nowCharts = copy.getCharts();
+      if (nowCharts.length === charts.length) nowCharts.forEach(function (ch, i) {
+        var info = ch.getContainerInfo(), x = charts[i];
+        if (info.getAnchorRow() === x.row && info.getAnchorColumn() === x.col)
+          copy.updateChart(ch.modify().setPosition(x.row + n, x.col, x.x, x.y).build());
+      });
+    } catch (e4) { /* όπως είναι */ }
+    // Όλα στη θέση τους, μία σελίδα πιο κάτω· αλλιώς το PDF όπως πριν.
+    var moved = copy.getImages().map(function (im) { return im.getAnchorCell().getRow(); }).sort(function (a, b) { return a - b; });
+    var want = images.map(function (x) { return x.row + n; }).sort(function (a, b) { return a - b; });
+    if (JSON.stringify(moved) !== JSON.stringify(want)) throw new Error('the images of the report did not move');
+    var movedCharts = copy.getCharts().map(function (ch) { return ch.getContainerInfo().getAnchorRow(); }).sort(function (a, b) { return a - b; });
+    var wantCharts = charts.map(function (x) { return x.row + n; }).sort(function (a, b) { return a - b; });
+    if (JSON.stringify(movedCharts) !== JSON.stringify(wantCharts)) throw new Error('the charts of the report did not move');
+    swimRenderQuickLook_(copy, q);
+    SpreadsheetApp.flush();
+    return { sheet: copy, rows: n };
+  } catch (e) {
+    try { ss.deleteSheet(copy); } catch (e2) { /* σβήνεται την επόμενη φορά */ }
+    throw e;
   }
 }
 
@@ -5456,7 +6237,7 @@ function swimSelectedBulk_(pdf) {
       // Το report στη γλώσσα του αγώνα όπως κρατήθηκε (2.7.7), αλλιώς στα ελληνικά.
       var made = swimWithLang_(stored.race.lang, function () { return swimUpsertRace_(stored.race); });
       if (pdf) {
-        var info = swimExportPdf_(reports, swimSheetById_(reports, made.sheetId), made.print, made.rebuilt);
+        var info = swimExportPdf_(reports, swimSheetById_(reports, made.sheetId), made.print, made.rebuilt, made.quick);
         swimSetSummaryPdf_(id, info.url);
       }
       done++;
@@ -5671,7 +6452,7 @@ function swimPdfSelected() {
   // Πρώτα το φύλλο, με τις αλλαγές σελίδας του PDF (και για αγώνα χωρίς report, π.χ. από τη βιβλιοθήκη), στη γλώσσα του αγώνα.
   var made = swimWithLang_(stored.race.lang, function () { return swimUpsertRace_(stored.race); });
   var sheet = swimSheetById_(reports, made.sheetId);
-  var info = swimExportPdf_(reports, sheet, made.print, made.rebuilt);
+  var info = swimExportPdf_(reports, sheet, made.print, made.rebuilt, made.quick);
   swimSetSummaryPdf_(id, info.url);
   var html = '<div style="font-family:Arial;font-size:13px"><p>Το PDF αποθηκεύτηκε στον φάκελο <b>' + SWIM_REPORT_FOLDER + '</b>.</p>' +
     '<p><a href="' + info.url + '" target="_blank">Άνοιγμα ' + info.name + '</a></p></div>';
@@ -6137,5 +6918,73 @@ var SWIM_EN_ = {
   'Τελευταία 5μ.': 'Last 5m',
   'χεριές': 'strokes',
   'κύκλοι/λ.': 'cycles/min',
-  'μ./κύκλο': 'm/cycle'
+  'μ./κύκλο': 'm/cycle',
+  // 2.8.0: η πρώτη σελίδα του PDF «Με μια ματιά»
+  'Νέο ατομικό ρεκόρ: {0} από τον καλύτερο χρόνο του αθλητή ({1}, {2}).': 'New personal best: {0} from the best time of the swimmer ({1}, {2}).',
+  '{0} από τον καλύτερο χρόνο του αθλητή ({1}, {2}).': '{0} from the best time of the swimmer ({1}, {2}).',
+  ' · η μεγαλύτερη διαφορά στο {0}–{1}{2} ({3})': ' · the largest difference in {0}–{1}{2} ({3})',
+  'ΑΝΑΦΟΡΑ': 'REFERENCE',
+  '{0} από την αναφορά {1} ({2}){3}.': '{0} from the reference {1} ({2}){3}.',
+  '1ο μισό {0} · 2ο μισό {1} ({2}).': '1st half {0} · 2nd half {1} ({2}).',
+  ' Μετά το 1ο 50: πιο γρήγορο το {0}–{1} ({2}), πιο αργό το {3}–{4} ({5}).': ' After the 1st 50: fastest {0}–{1} ({2}), slowest {3}–{4} ({5}).',
+  'ΡΥΘΜΟΣ': 'PACING',
+  '15{0} σε {1}': '15{0} in {1}',
+  ' ({0} από την αναφορά)': ' ({0} from the reference)',
+  'αντίδραση {0}': 'reaction {0}',
+  'έξοδος από το νερό στα {0}{1}': 'breakout at {0}{1}',
+  '{0} υποβρύχιοι δελφινισμοί': '{0} underwater dolphin kicks',
+  'ΕΚΚΙΝΗΣΗ': 'START',
+  'Στροφές (-5/+15): μέσος όρος {0} · η πιο γρήγορη στα {1}{2} ({3})': 'Turns (-5/+15): average {0} · fastest at {1}{2} ({3})',
+  'Στροφή (-5/+15) στα {0}{1}: {2}': 'Turn (-5/+15) at {0}{1}: {2}',
+  'Συχνότητα {0} κύκλοι/λεπτό': 'Stroke rate {0} cycles/min',
+  'μήκος χεριάς {0} m': 'distance per stroke {0} m',
+  ' · στο τελευταίο 50 η συχνότητα {0} κατά {1}': ' · in the last 50 the stroke rate {0} by {1}',
+  'ανέβηκε': 'went up',
+  'έπεσε': 'went down',
+  'ΧΕΡΙΕΣ': 'STROKES',
+  'ΤΑΧΥΤΗΤΑ': 'SPEED',
+  'Η ταχύτητα της καθαρής κολύμβησης έπεσε {0}% από το καλύτερο τμήμα ({1}–{2}{3}: {4} m/s) στο τελευταίο ({5}–{6}{3}: {7} m/s).': 'The clean swimming speed fell {0}% from the best segment ({1}–{2}{3}: {4} m/s) to the last one ({5}–{6}{3}: {7} m/s).',
+  'ΤΕΡΜΑΤΙΣΜΟΣ': 'FINISH',
+  'Τελευταία 5{0}: {1}': 'Last 5{0}: {1}',
+  ' · από την τελευταία χεριά στον τοίχο {0}': ' · from the last stroke to the wall {0}',
+  'ΕΛΕΓΧΟΣ': 'CHECK',
+  '{0} προειδοποιήσεις στα δεδομένα: δες την πλήρη αναφορά.': '{0} warnings in the data: see the full report.',
+  'ΜΕ ΜΙΑ ΜΑΤΙΑ': 'AT A GLANCE',
+  'Η πλήρης ανάλυση ακολουθεί στις επόμενες σελίδες': 'The full analysis follows on the next pages',
+  'μέση ταχύτητα {0} m/s': 'average speed {0} m/s',
+  'ΣΕ ΣΧΕΣΗ ΜΕ ΤΟ PB': 'VS PB',
+  'χωρίς προηγούμενο αγώνα': 'no previous race',
+  'ΣΕ ΣΧΕΣΗ ΜΕ ΤΗΝ ΑΝΑΦΟΡΑ': 'VS REFERENCE',
+  'χωρίς αναφορά': 'no reference',
+  '1Ο / 2Ο ΜΙΣΟ ({0}{1})': '1ST / 2ND HALF ({0}{1})',
+  'διαφορά {0}': 'difference {0}',
+  'σύνολο του αγώνα': 'whole race',
+  'ΑΝΤΙΔΡΑΣΗ': 'REACTION',
+  'ΕΚΚΙΝΗΣΗ 0-15{0}': 'START 0-15{0}',
+  'από το σήμα': 'from the signal',
+  'μ.ο. 50άρι': 'mean per 50',
+  'ΣΤΡΟΦΕΣ -5/+15': 'TURNS -5/+15',
+  'μέσος όρος (sec)': 'average (sec)',
+  'ΤΕΛΕΥΤΑΙΑ 5{0}': 'LAST 5{0}',
+  'Βασικά σημεία': 'Key points',
+  'Ο τερματισμός': 'The finish',
+  'Δεν υπάρχουν ακόμη αρκετά δεδομένα για τα βασικά σημεία.': 'Not enough data yet for the key points.',
+  'Χρόνοι ανά σημείο ελέγχου': 'Times per checkpoint',
+  'Χρόνοι ανά 50{0}': 'Times per 50{0}',
+  'Χρόνοι ανά 100{0}': 'Times per 100{0}',
+  'Ενδιάμεσος': 'Split',
+  'Δ αναφοράς': 'Δ reference',
+  'Χρόνος 15{0}': '15{0} time',
+  'Τελευταία 5{0}': 'Last 5{0}',
+  'Τελευταία 15{0}': 'Last 15{0}',
+  'Χεριές του αγώνα': 'Strokes of the race',
+  'Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis {0}': 'The full analysis of the race follows · Swim Analysis {0}',
+  'Χωρίς στροφές με χρόνους': 'No turns with times',
+  'Στα {0}{1} (-5/+15)': 'At {0}{1} (-5/+15)',
+  'στροφή {0}': 'turn {0}',
+  'Μέσος όρος -5/+15': 'Average -5/+15',
+  'Η πιο γρήγορη': 'Fastest',
+  '{0} στα {1}{2}': '{0} at {1}{2}',
+  'Η πιο αργή': 'Slowest',
+  'Στροφές με χρόνο': 'Turns with a time'
 };

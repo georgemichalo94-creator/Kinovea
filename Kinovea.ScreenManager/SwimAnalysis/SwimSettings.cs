@@ -53,6 +53,15 @@ namespace Kinovea.ScreenManager
         /// <summary>The board of the swimmers of the final at each checkpoint drawn on the video.</summary>
         public bool ShowFinalsBoard = true;
 
+        /// <summary>Since 2.8.0: the Δ with the reference at the last checkpoint passed on the race board of the video.</summary>
+        public bool CompareDelta = true;
+
+        /// <summary>Since 2.8.0: the ghost of the reference on the video, a translucent copy of the swimmer where the reference is.</summary>
+        public bool CompareGhost = false;
+
+        /// <summary>Since 2.8.0: the line of the reference across the lane on the video, as the world record line of the television.</summary>
+        public bool CompareLine = false;
+
         /// <summary>Corner of the video for the chart: TopRight, TopLeft, BottomRight, BottomLeft.</summary>
         public string OverlayCorner = "TopRight";
 

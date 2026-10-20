@@ -235,6 +235,37 @@ namespace Kinovea.ScreenManager
         [JsonConverter(typeof(SwimNumbersOnOneLine))]
         public List<int> Bottom = new List<int>();
 
+        /// <summary>
+        /// Since 2.8.0: the displacement of the camera along the lane at the swimmer, added up from the first point (reference image
+        /// pixels). X − Pan is the place of the swimmer in the pool in pixels of the image, the same in every frame of the part: where
+        /// the swimmer is, will be or was at a place of the pool (the ghost and the line of a reference). Empty in older analyses.
+        /// </summary>
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Pan = new List<int>();
+
+        /// <summary>Since 2.8.0: the slope of the lane at the swimmer (dy/dx × 1000), for the line of a reference.</summary>
+        [JsonConverter(typeof(SwimNumbersOnOneLine))]
+        public List<int> Slope = new List<int>();
+
+        /// <summary>
+        /// Since 2.8.0: the length of the swimmer clicked for the reading (head to feet) in thousandths of the width of the lane there
+        /// (in pixels both follow the zoom and the perspective), 0: unknown.
+        /// </summary>
+        public int Body;
+
+        /// <summary>
+        /// Since 2.8.0: how far his head (the front of the moving swimmer, where the checkpoints are read) is ahead of the place
+        /// followed, along the swim, in thousandths of the width of the lane (the median of the part), 0: unknown.
+        /// </summary>
+        public int Lead;
+
+        /// <summary>The camera's displacement is known for every point (a part read since 2.8.0).</summary>
+        [JsonIgnore]
+        public bool HasPan
+        {
+            get { return Pan != null && Pan.Count == X.Count && X.Count > 0; }
+        }
+
         [JsonIgnore]
         public long End
         {
@@ -287,11 +318,15 @@ namespace Kinovea.ScreenManager
             if (last - first + 1 < 2)
                 return null;
 
-            SwimTrack part = new SwimTrack { Start = Start + (long)Math.Round(first * Step), Step = Step };
+            SwimTrack part = new SwimTrack { Start = Start + (long)Math.Round(first * Step), Step = Step, Body = Body, Lead = Lead };
             part.X.AddRange(X.GetRange(first, last - first + 1));
             part.Y.AddRange(Y.GetRange(first, last - first + 1));
             part.Top.AddRange(Top.GetRange(first, last - first + 1));
             part.Bottom.AddRange(Bottom.GetRange(first, last - first + 1));
+            if (Pan != null && Pan.Count == X.Count)
+                part.Pan.AddRange(Pan.GetRange(first, last - first + 1));
+            if (Slope != null && Slope.Count == X.Count)
+                part.Slope.AddRange(Slope.GetRange(first, last - first + 1));
             return part;
         }
     }
@@ -925,6 +960,11 @@ namespace Kinovea.ScreenManager
             if (Snapshots == null) Snapshots = new List<SwimSnapshot>();
             if (Tracks == null) Tracks = new List<SwimTrack>();
             Tracks.RemoveAll(t => t == null || t.X == null || t.Y == null || t.Top == null || t.Bottom == null || t.Step <= 0);
+            foreach (SwimTrack t in Tracks)
+            {
+                if (t.Pan == null) t.Pan = new List<int>();
+                if (t.Slope == null) t.Slope = new List<int>();
+            }
             if (Skeletons == null) Skeletons = new List<SwimSkeleton>();
             Skeletons.RemoveAll(s => s == null || s.Data == null || s.Step <= 0 || s.Data.Count % SwimSkeleton.Values != 0);
             if (Proposals == null) Proposals = new List<SwimProposal>();

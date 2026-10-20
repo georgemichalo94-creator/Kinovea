@@ -35,6 +35,9 @@ namespace Kinovea.ScreenManager
         public string SheetName;
         public string SheetUrl;
         public string PdfUrl;
+
+        /// <summary>The PDF starts with the page "At a glance" (Apps Script 2.8.0), null when the answer does not say.</summary>
+        public bool? PdfQuick;
         public string SpreadsheetName;
 
         /// <summary>Google Drive file of an uploaded image.</summary>
@@ -512,7 +515,10 @@ namespace Kinovea.ScreenManager
 
             JObject pdf = o["pdf"] as JObject;
             if (pdf != null)
+            {
                 result.PdfUrl = pdf.Value<string>("url");
+                result.PdfQuick = pdf.Value<bool?>("quick");
+            }
         }
     }
 

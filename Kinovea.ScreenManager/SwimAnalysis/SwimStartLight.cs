@@ -34,7 +34,8 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Where it comes from: "light" (a flash with the swimmers starting to move just after it), "light?" (a flash without that
         /// check: the dive was not seen), "weak light" (a weaker flash with the dive after it, the strong ones failed the check),
-        /// "dive" (no flash fits: the start put 0.30 s before the swimmers start to move), "light+sound" (the light seen just before
+        /// "dive" (no flash fits: the start put 0.30 s before the swimmers start to move), "line" (no start that fits the race: LineDelay
+        /// before the swimmers leave the blocks together, LineStarts), "light+sound" (the light seen just before
         /// the start signal heard), "sound" (no light seen: the signal heard less its usual delay).
         /// </summary>
         public string Source = "light";
@@ -129,6 +130,15 @@ namespace Kinovea.ScreenManager
         private int followChecked;
         private int frames;
 
+        /// <summary>
+        /// The motion of the swimmers at the blocks (since 2.8.0): cells of LineCell px at 960 wide, the mean change of the brightness
+        /// of each cell from the frame before, each frame (zeros for the first).
+        /// </summary>
+        private readonly int lineCell;
+        private readonly int lineCellsX;
+        private readonly int lineCellsY;
+        private readonly List<float[]> lineMotion = new List<float[]>();
+
         // Work buffers.
         private readonly byte[] reference;
         private readonly byte[] referenceMin;
@@ -155,6 +165,9 @@ namespace Kinovea.ScreenManager
             cellsX = (width + CellSize - 1) / CellSize;
             cellsY = (height + CellSize - 1) / CellSize;
             minLightArea = Math.Max(2, (int)Math.Round(3.0 * width * width / (960.0 * 960.0)));
+            lineCell = Math.Max(8, (int)Math.Round(LineCell * width / 960.0));
+            lineCellsX = (width + lineCell - 1) / lineCell;
+            lineCellsY = (height + lineCell - 1) / lineCell;
             int n = width * height;
             reference = new byte[n];
             referenceMin = new byte[n];
@@ -214,12 +227,14 @@ namespace Kinovea.ScreenManager
             if (history.Count == 0)
             {
                 motion.Add(0);
+                lineMotion.Add(new float[lineCellsX * lineCellsY]);
                 history.Add(v);
                 frames++;
                 return;
             }
 
             byte[] v1 = history[history.Count - 1];
+            lineMotion.Add(CellMotion(v, v1));
             byte[] v2 = history.Count >= 2 ? history[history.Count - 2] : null;
             bool haveReference = v2 != null;
             if (haveReference)
@@ -958,6 +973,251 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
+        #region The swimmers leaving the blocks together
+        /// <summary>Size of the cells of the motion at the blocks at 960 wide (px).</summary>
+        internal const int LineCell = 32;
+
+        /// <summary>
+        /// Seconds from the start signal to the first frame of the swimmers' motion along the blocks found by LineStarts (median of
+        /// the 42 videos of the lab where it was found within 0.15 s of the verified start, 2026-10-19).
+        /// </summary>
+        internal static double LineDelay = 0.18;
+
+        /// <summary>The mean change of the brightness of each cell from the frame before (rows of cells).</summary>
+        private float[] CellMotion(byte[] v, byte[] v1)
+        {
+            int cx = lineCellsX, cy = lineCellsY, size = lineCell, w = width, h = height;
+            float[] cells = new float[cx * cy];
+            System.Threading.Tasks.Parallel.For(0, cy, r =>
+            {
+                double[] sum = new double[cx];
+                int[] count = new int[cx];
+                int y0 = r * size, y1 = Math.Min(h, y0 + size);
+                for (int y = y0; y < y1; y++)
+                {
+                    int row = y * w;
+                    for (int x = 0; x < w; x++)
+                    {
+                        int d = v[row + x] - v1[row + x];
+                        int c = x / size;
+                        sum[c] += d < 0 ? -d : d;
+                        count[c]++;
+                    }
+                }
+
+                for (int c = 0; c < cx; c++)
+                    cells[r * cx + c] = count[c] > 0 ? (float)(sum[c] / count[c]) : 0;
+            });
+            return cells;
+        }
+
+        /// <summary>
+        /// The starts seen from the swimmers leaving the blocks together (no light seen, no signal heard: an outdoor pool, the wind),
+        /// in order of time: the frames where cells along a straight line (the blocks, the wall of a backstroke start) start to move
+        /// together, more than they did over the second before (mean + 1 sd, ×1.5 + 1.5 levels of brightness over the next 0.2 s),
+        /// with the camera still before (the median cell moved at most 4 levels) and the whole image moving at least twice as much over
+        /// the second after (the swimmers in the air and in the water, the camera starting to follow): at least 10 cells on the line;
+        /// the first frame of each such run of frames, the start LineDelay before it. Only runs with at least 15 cells on the line for
+        /// at least 8 frames are kept. Lab 2026-10-19, 110 videos with verified starts: within 0.15 s of the start in 42 (the camera
+        /// and the start end in view), the only run of the first 40 s of 7 of the 8 videos of an outdoor meet without signal.
+        /// </summary>
+        public List<SwimStartCandidate> LineStarts()
+        {
+            List<SwimStartCandidate> result = new List<SwimStartCandidate>();
+            int n = lineMotion.Count, C = lineCellsX * lineCellsY;
+            int b0 = Math.Max(2, (int)Math.Round(1.0 * fps)), b1 = Math.Max(1, (int)Math.Round(0.1 * fps));
+            int a1 = Math.Max(1, (int)Math.Round(0.2 * fps)), a3 = Math.Max(a1 + 1, (int)Math.Round(1.0 * fps));
+            if (n < b0 + a3 + 2 || C < 4)
+                return result;
+
+            // The median cell of each frame: the camera moving (all cells) or still.
+            double[] g = new double[n];
+            float[] sorted = new float[C];
+            for (int t = 0; t < n; t++)
+            {
+                Array.Copy(lineMotion[t], sorted, C);
+                Array.Sort(sorted);
+                g[t] = C % 2 == 1 ? sorted[C / 2] : 0.5 * (sorted[C / 2 - 1] + sorted[C / 2]);
+            }
+
+            double[] x = new double[C], y = new double[C];
+            for (int c = 0; c < C; c++)
+            {
+                x[c] = c % lineCellsX;
+                y[c] = c / lineCellsX;
+            }
+
+            // Running sums of each cell over the second before [t - b0, t - b1) and over the next 0.2 s [t, t + a1).
+            double[] s1 = new double[C], s2 = new double[C], ahead = new double[C];
+            for (int k = 0; k < b0 - b1; k++)
+            {
+                float[] m = lineMotion[k];
+                for (int c = 0; c < C; c++)
+                {
+                    s1[c] += m[c];
+                    s2[c] += m[c] * (double)m[c];
+                }
+            }
+
+            for (int k = b0; k < b0 + a1; k++)
+            {
+                float[] m = lineMotion[k];
+                for (int c = 0; c < C; c++)
+                    ahead[c] += m[c];
+            }
+
+            int span = b0 - b1;
+            List<double> before = new List<double>(span);
+            List<int> on = new List<int>(C);
+            Random random = new Random(0);
+            int[] line = new int[n];
+            double[] scene = new double[n];
+            for (int t = b0; t < n - a3; t++)
+            {
+                if (t > b0)
+                {
+                    float[] add = lineMotion[t - b1 - 1], drop = lineMotion[t - b0 - 1], come = lineMotion[t + a1 - 1], go = lineMotion[t - 1];
+                    for (int c = 0; c < C; c++)
+                    {
+                        s1[c] += add[c] - drop[c];
+                        s2[c] += add[c] * (double)add[c] - drop[c] * (double)drop[c];
+                        ahead[c] += come[c] - go[c];
+                    }
+                }
+
+                before.Clear();
+                for (int k = t - b0; k < t - b1; k++)
+                    before.Add(g[k]);
+                double still = Median(before);
+                if (still > LineStill)
+                    continue;
+
+                on.Clear();
+                for (int c = 0; c < C; c++)
+                {
+                    double mean = s1[c] / span, sd = Math.Sqrt(Math.Max(0, s2[c] / span - mean * mean));
+                    if (ahead[c] / a1 > 1.5 * (mean + sd) + 1.5)
+                        on.Add(c);
+                }
+
+                if (on.Count < 4 || on.Count > C / 2)
+                    continue;
+
+                double after = 0;
+                for (int k = t + a1; k < t + a3; k++)
+                    after += g[k];
+                after /= a3 - a1;
+                scene[t] = after / (still + 0.3);
+                if (scene[t] < LineScene)
+                    continue;
+
+                line[t] = BestLine(on, x, y, random);
+            }
+
+            // Runs of frames with enough cells on the line (gaps of up to two frames).
+            int first = -1, last = -1, most = 0, runFrames = 0;
+            Action close = () =>
+            {
+                if (first >= 0 && most >= LineStrongCells && runFrames >= LineStrongFrames)
+                {
+                    result.Add(new SwimStartCandidate
+                    {
+                        Frame = Math.Max(0, first - (int)Math.Round(LineDelay * fps)), Flash = 0, Strength = most, Lights = 0, Follow = -1,
+                        Source = "line", Dive = first
+                    });
+                }
+
+                first = -1;
+                most = 0;
+                runFrames = 0;
+            };
+
+            for (int t = 0; t < n; t++)
+            {
+                if (line[t] < LineCells)
+                    continue;
+
+                if (first >= 0 && t - last > 2)
+                    close();
+                if (first < 0)
+                    first = t;
+                last = t;
+                most = Math.Max(most, line[t]);
+                runFrames++;
+            }
+
+            close();
+            if (Trace != null)
+            {
+                foreach (SwimStartCandidate c in result)
+                    Trace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "line start: frame {0} (motion from {1}, {2} cells)", c.Frame, c.Dive, c.Strength));
+            }
+
+            return result;
+        }
+
+        /// <summary>The cells moving together must be on a straight line: at least this many (LineStarts).</summary>
+        internal const int LineCells = 10;
+
+        /// <summary>Kept: at least this many cells on the line in one frame of the run, and so many frames (LineStarts).</summary>
+        internal const int LineStrongCells = 15, LineStrongFrames = 8;
+
+        /// <summary>The camera still before (the median cell, levels of brightness) and the image moving after (times) (LineStarts).</summary>
+        internal const double LineStill = 4.0, LineScene = 2.0;
+
+        /// <summary>
+        /// The most cells of the list within 0.75 cell of one straight line through two of them at least 3 cells apart (all the pairs
+        /// up to 300, else 300 pairs drawn).
+        /// </summary>
+        private static int BestLine(List<int> cells, double[] x, double[] y, Random random)
+        {
+            int m = cells.Count, best = 0;
+            bool all = m * (m - 1) / 2 <= 300;
+            int pairs = all ? m * (m - 1) / 2 : 300;
+            int i = 0, j = 1;
+            for (int p = 0; p < pairs; p++)
+            {
+                int a, b;
+                if (all)
+                {
+                    a = i;
+                    b = j;
+                    j++;
+                    if (j >= m)
+                    {
+                        i++;
+                        j = i + 1;
+                    }
+                }
+                else
+                {
+                    a = random.Next(m);
+                    b = random.Next(m);
+                    if (a == b)
+                        continue;
+                }
+
+                double ax = x[cells[a]], ay = y[cells[a]], dx = x[cells[b]] - ax, dy = y[cells[b]] - ay;
+                double length = Math.Sqrt(dx * dx + dy * dy);
+                if (length < 3)
+                    continue;
+
+                int count = 0;
+                for (int k = 0; k < m; k++)
+                {
+                    double d = Math.Abs((x[cells[k]] - ax) * dy - (y[cells[k]] - ay) * dx) / length;
+                    if (d <= 0.75)
+                        count++;
+                }
+
+                if (count > best)
+                    best = count;
+            }
+
+            return best;
+        }
+        #endregion
+
         #region Start signal heard
         /// <summary>
         /// The light of the start just before a start signal heard (frames from..to of the frames given): the clearest small flash
@@ -1320,6 +1580,8 @@ namespace Kinovea.ScreenManager
             SwimStartCandidate best = candidates[0];
             if (best.Source == "dive")
                 return 0.35;
+            if (best.Source == "line")
+                return 0.4;
             if (best.Source == "weak light")
                 return 0.55;
             if (best.Source == "light+sound")

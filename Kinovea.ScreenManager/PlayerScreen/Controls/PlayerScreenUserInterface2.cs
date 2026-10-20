@@ -4311,7 +4311,7 @@ namespace Kinovea.ScreenManager
 
                     // Swim race analysis: calibration lines and measured distances (screen only, not exported).
                     if (SwimAnalysisManager.Current != null)
-                        SwimAnalysisManager.Current.DrawOverlay(this, e.Graphics, m_FrameServer.ImageTransform, m_iCurrentPosition, m_viewportManipulator.RenderingSize);
+                        SwimAnalysisManager.Current.DrawOverlay(this, e.Graphics, m_FrameServer.ImageTransform, m_iCurrentPosition, m_viewportManipulator.RenderingSize, m_FrameServer.CurrentImage);
 
                     if (m_MessageToaster.Enabled)
                         m_MessageToaster.Draw(e.Graphics);
@@ -6130,7 +6130,7 @@ namespace Kinovea.ScreenManager
 
                 // Graphics of the swim analysis (race board, velocity chart, values of the start or turn) when enabled for the exports.
                 if (SwimAnalysisManager.Current != null)
-                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, m_iCurrentPosition);
+                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, m_iCurrentPosition, m_FrameServer.CurrentImage);
             }
         }
 
@@ -6163,7 +6163,7 @@ namespace Kinovea.ScreenManager
 
                 // Graphics of the swim analysis, at the time of this frame (see PaintFlushedImage).
                 if (SwimAnalysisManager.Current != null)
-                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, vf.Timestamp);
+                    SwimAnalysisManager.Current.DrawExportOverlay(this, canvas, output.Size, vf.Timestamp, vf.Image);
             }
 
             return keyframeIndex != -1;

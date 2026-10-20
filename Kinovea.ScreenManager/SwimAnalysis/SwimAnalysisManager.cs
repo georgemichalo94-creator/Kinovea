@@ -184,7 +184,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return languageBackend; }
+            get { return quickLookBackend; }
         }
         private bool backendWarned;
         private bool typedStrokesWarned;
@@ -196,6 +196,16 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Oldest Apps Script that makes the report and the PDF in English (the switch ΕΛ / EN).</summary>
         private static readonly Version languageBackend = new Version(2, 7, 7);
+
+        /// <summary>
+        /// Oldest Apps Script with the first page "At a glance" of the PDF and the times of the analyses of the sheet (other races to
+        /// compare with on the video).
+        /// </summary>
+        private static readonly Version quickLookBackend = new Version(2, 8, 0);
+        private bool quickLookWarned;
+
+        /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
+        private readonly HashSet<string> quickLookFailed = new HashSet<string>();
         private List<string> undoStack = new List<string>();
 
         /// <summary>Marks replaced by a new mark (a wall or a technical distance marked again): Undo puts them back.</summary>
@@ -1435,8 +1445,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Draws the calibration and the last measured distance on the player screen (screen only).
+        /// frame: the image of the video on the screen (since 2.8.0, for the ghost of the reference).
         /// </summary>
-        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize)
+        public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize, Bitmap frame = null)
         {
             if (screen != player || !Active || VideoFile == null || transform == null)
                 return;
@@ -1452,6 +1463,16 @@ namespace Kinovea.ScreenManager
                 TextRenderingHint textHint = g.TextRenderingHint;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                // The ghost and the line of the reference, on the water under everything else.
+                if (Race != null && !Race.IsTraining && CompareShown)
+                {
+                    Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                    PointF origin = transform.Transform(new PointF(0, 0));
+                    PointF far = transform.Transform(new PointF(10000, 10000));
+                    float sx = (far.X - origin.X) / 10000f, sy = (far.Y - origin.Y) / 10000f;
+                    DrawCompare(g, timestamp, frame, reference, p => new PointF(origin.X + p.X * sx, origin.Y + p.Y * sy), renderingSize, 1f);
+                }
 
                 if (PickTarget == SwimPickTarget.Calibration)
                 {
@@ -1612,8 +1633,9 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
         /// passed at the current frame are shown, so it plays "live" during the playback.
+        /// report: an image of the report (the Δ and the reference's name on the board whatever is chosen for the video, as before 2.8.0).
         /// </summary>
-        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false)
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false)
         {
             if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
                 return;
@@ -1669,7 +1691,7 @@ namespace Kinovea.ScreenManager
             {
                 Rectangle board = new Rectangle(x, top, width, boardHeight);
                 DrawCard(g, board, SwimTheme.Accent);
-                DrawBoard(g, board, now, last);
+                DrawBoard(g, board, now, last, all || report || Settings.CompareDelta, all || report || Settings.CompareDelta || CompareShown);
                 top += boardHeight + (chartHeight > 0 ? gap : gapDelta);
             }
 
@@ -1752,7 +1774,8 @@ namespace Kinovea.ScreenManager
                 g.FillRectangle(a, r.Left + 1, r.Top + 7, 3, r.Height - 14);
         }
 
-        private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last)
+        /// <summary>delta: the Δ with the reference at the last checkpoint; versus: the name of the reference.</summary>
+        private void DrawBoard(Graphics g, Rectangle r, double now, SwimRow last, bool delta = true, bool versus = true)
         {
             bool finished = last != null && last.D >= Race.Distance;
             Font caption = SwimTheme.Ui(6.75f, FontStyle.Bold);
@@ -1782,15 +1805,15 @@ namespace Kinovea.ScreenManager
                 g.DrawString(label, caption, brushDim, right - ls.Width, r.Top + 6);
                 g.DrawString(split, splitFont, brushText, right - ss.Width, r.Top + 18);
 
-                if (last.Delta.HasValue)
+                if (last.Delta.HasValue && delta)
                 {
-                    string delta = FormatDelta(last.Delta.Value);
+                    string text = FormatDelta(last.Delta.Value);
                     Font deltaFont = SwimTheme.Display(10.5f);
-                    SizeF ds = g.MeasureString(delta, deltaFont);
+                    SizeF ds = g.MeasureString(text, deltaFont);
                     RectangleF pill = new RectangleF(right - ds.Width - 10, r.Top + 40, ds.Width + 10, ds.Height + 1);
                     using (GraphicsPath path = SwimTheme.Rounded(pill, pill.Height / 2))
                         g.FillPath(last.Delta.Value <= 0 ? brushFaster : brushSlower, path);
-                    g.DrawString(delta, deltaFont, brushText, pill.Left + 5, pill.Top + 1);
+                    g.DrawString(text, deltaFont, brushText, pill.Left + 5, pill.Top + 1);
                 }
             }
 
@@ -1810,7 +1833,7 @@ namespace Kinovea.ScreenManager
                 bx = chip.Right + 8;
             }
 
-            if (Computed.Reference != null)
+            if (Computed.Reference != null && versus)
             {
                 using (StringFormat format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter })
                     g.DrawString("vs " + Computed.Reference.Name, caption, brushReference, new RectangleF(bx, r.Bottom - 17, Math.Max(10, r.Right - 90 - bx), 13), format);
@@ -2198,12 +2221,13 @@ namespace Kinovea.ScreenManager
 
         #region Elite references
         /// <summary>
-        /// References of the event of the current race (and of the gender of the athlete when known).
+        /// References of the event of the current race (and of the gender of the athlete when known); since 2.8.0 also the other races
+        /// of the event: the other swimmers of this video, the athlete's other analyses and other athletes' analyses (Google Sheet).
         /// </summary>
         public List<SwimReference> ReferencesForRace()
         {
             List<SwimReference> list = References.For(Race);
-            foreach (SwimReference r in Finals.ReferencesFor(Race))
+            foreach (SwimReference r in Finals.ReferencesFor(Race).Concat(RaceReferences()))
             {
                 if (!list.Any(x => x.Id == r.Id))
                     list.Add(r);
@@ -2330,8 +2354,10 @@ namespace Kinovea.ScreenManager
 
             Race.Reference = reference != null ? reference.Copy() : null;
             string key = EventKey(Race);
-            // "No comparison" is a choice too (an empty id): the winner of the final does not come back for this event.
-            Settings.ReferenceByEvent[key] = reference != null ? reference.Id : "";
+            // "No comparison" is a choice too (an empty id): the winner of the final does not come back for this event. Another race
+            // (of this video, of the athlete or of another athlete) is for this race only.
+            if (reference == null || !reference.IsRace)
+                Settings.ReferenceByEvent[key] = reference != null ? reference.Id : "";
 
             Settings.Save();
             Status(reference != null ? SwimLang.T("Σύγκριση με: ") + reference.Label : SwimLang.T("Χωρίς σύγκριση με αναφορά."), false);
@@ -2450,7 +2476,8 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return false;
 
-            if (Race.Reference != null && Race.Reference.Matches(Race) && Race.Reference.GenderMatches(Race.AthleteGender))
+            // A race chosen to compare with (another swimmer of the video, an analysis of the Google Sheet) stays, of either gender.
+            if (Race.Reference != null && Race.Reference.Matches(Race) && (Race.Reference.IsRace || Race.Reference.GenderMatches(Race.AthleteGender)))
                 return false;
 
             SwimReference remembered = null;
@@ -2683,6 +2710,19 @@ namespace Kinovea.ScreenManager
                             Status(string.Format(CultureInfo.InvariantCulture,
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: τα γραφήματα βγαίνουν άδεια. Βάλε την έκδοση {1} και κάνε «Διαχείριση αναπτύξεων → Νέα έκδοση» (δες τον οδηγό)."),
                                 version, chartsBackend.ToString(3)), true);
+                        }
+                        else if (!quickLookWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < quickLookBackend)
+                        {
+                            // Since 2.8.0 the PDF starts with a page to read at a glance (Apps Script 2.8.0).
+                            quickLookWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς την πρώτη σελίδα «Με μια ματιά». Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, quickLookBackend.ToString(3)), true);
+                        }
+                        else if (e.Result.PdfQuick == false && quickLookFailed.Add(race.Id ?? ""))
+                        {
+                            // The Apps Script could not make the first page (the copy of the sheet): the whole report as before. Said once a race.
+                            Status(SwimLang.T("Το PDF βγήκε χωρίς την πρώτη σελίδα «Με μια ματιά»: η πλήρης αναφορά όπως πριν."), true);
                         }
                     }
 
