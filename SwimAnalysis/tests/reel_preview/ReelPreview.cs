@@ -1423,6 +1423,41 @@ public static class ReelPreview
             info.AppendLine("time: " + e);
         }
 
+        // Through the manager as on the screen (DrawHud: its settings, the boards added from them, the final of the race).
+        try
+        {
+            SwimAnalysisManager manager = SwimAnalysisManager.Instance;
+            System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            Type type = typeof(SwimAnalysisManager);
+            type.GetField("currentRace", flags).SetValue(manager, added);
+            type.GetField("currentTiming", flags).SetValue(manager, timing);
+            type.GetProperty("Computed", flags).GetSetMethod(true).Invoke(manager, new object[] { computed[added] });
+            type.GetProperty("Finals", flags).GetSetMethod(true).Invoke(manager, new object[] { finals });
+            System.Reflection.MethodInfo drawHud = type.GetMethod("DrawHud", flags);
+            using (Bitmap image = new Bitmap(1920, 1080, PixelFormat.Format24bppRgb))
+            {
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    long ts = added.StartTimestamp.Value + (long)Math.Round(38.0 * Fps) * PerFrame;
+                    DrawPool(g, 1920, 1080, added, ts, 1f, 1f);
+                    Func<PointF, PointF> toView = p => p;
+                    drawHud.Invoke(manager, new object[] { g, ts, new Size(1920, 1080), toView });
+                }
+
+                SaveJpeg(image, Path.Combine(folder, "hud-50-manager.jpg"), 82);
+            }
+
+            SwimSettings settings = manager.Settings;
+            info.AppendLine(string.Format(ci, "hud-50-manager: ok (HUD {0}, board {1}, speed {2}, Δ chart {3}, final {4}, summary {5})", settings.HudLayout,
+                settings.ShowSplitBoard, settings.ShowSpeedChart, settings.ShowDeltaChart, settings.ShowFinalsBoard, settings.ReelSummary));
+        }
+        catch (Exception e)
+        {
+            info.AppendLine("hud-50-manager: " + (e.InnerException ?? e));
+        }
+
         info.AppendLine("can paint 1280x720 " + SwimHudPainter.CanPaint(new Size(1280, 720)) + ", 900x500 " + SwimHudPainter.CanPaint(new Size(900, 500)) +
             ", 880x495 " + SwimHudPainter.CanPaint(new Size(880, 495)) + ", 1080x1920 " + SwimHudPainter.CanPaint(new Size(1080, 1920)));
         File.WriteAllText(Path.Combine(folder, "hud.txt"), info.ToString(), Encoding.UTF8);

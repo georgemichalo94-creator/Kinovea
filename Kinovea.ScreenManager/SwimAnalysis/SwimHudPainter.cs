@@ -303,20 +303,11 @@ namespace Kinovea.ScreenManager
                 float em = font.SizeInPoints * g.DpiY / 72f;
                 Color tone = glow ?? C;
                 g.TranslateTransform(x, y);
-                if (em > 44)
+                // One soft pen (stroking the outlines is the cost of the glow); small text has none.
+                if (em >= 15)
                 {
-                    // Big figures: one soft pen (the outline of big text is long to stroke twice every frame).
-                    using (Pen soft = new Pen(SwimTheme.Fade(Color.FromArgb(48, tone), strength), em * 0.13f) { LineJoin = LineJoin.Round })
+                    using (Pen soft = new Pen(SwimTheme.Fade(Color.FromArgb(em > 44 ? 48 : 56, tone), strength), Math.Max(2f, em * (em > 44 ? 0.13f : 0.16f))) { LineJoin = LineJoin.Round })
                         g.DrawPath(soft, shape.Path);
-                }
-                else
-                {
-                    using (Pen wide = new Pen(SwimTheme.Fade(Color.FromArgb(34, tone), strength), Math.Max(2f, em * 0.20f)) { LineJoin = LineJoin.Round })
-                    using (Pen near = new Pen(SwimTheme.Fade(Color.FromArgb(70, tone), strength), Math.Max(1f, em * 0.08f)) { LineJoin = LineJoin.Round })
-                    {
-                        g.DrawPath(wide, shape.Path);
-                        g.DrawPath(near, shape.Path);
-                    }
                 }
 
                 g.TranslateTransform(-x, -y);
@@ -597,6 +588,12 @@ namespace Kinovea.ScreenManager
             if (t < 0)
                 return "−" + Math.Abs(t).ToString("0.00", CultureInfo.InvariantCulture);
             return SwimReference.FormatTime(t);
+        }
+
+        /// <summary>A number of strokes as the panel writes it: "64", "64,5" (Greek), "64.5" (English).</summary>
+        private static string StrokeNumber(double strokes)
+        {
+            return SwimLang.Decimals((Math.Round(strokes * 2, MidpointRounding.AwayFromZero) / 2).ToString("0.#", CultureInfo.InvariantCulture));
         }
 
         /// <summary>Strokes in capitals: "9 ΧΕΡΙΕΣ", "9,5 ΧΕΡΙΕΣ", "1 ΧΕΡΙΑ".</summary>
@@ -1318,16 +1315,17 @@ namespace Kinovea.ScreenManager
             if (c.Strokes.Count > 0)
                 add(c.Strokes[0], string.Format(CultureInfo.InvariantCulture, SwimLang.T("1η χεριά  {0:0.00}"), c.Strokes[0]));
 
-            int total = 0;
+            // The strokes added up as the panel has them (halves at the checkpoints), rounded only when written.
+            double total = 0;
             foreach (SwimRow row in st.Rows.Where(r => r.T.HasValue))
             {
                 if (row.Strokes.HasValue)
-                    total += (int)Math.Round(row.Strokes.Value);
+                    total += row.Strokes.Value;
                 string time = SwimReference.FormatTime(row.T.Value);
                 string text;
                 if (row.D >= s.Race.Distance)
                     text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ  {0}"), time) +
-                        (total > 0 ? StrokesLog(total.ToString(CultureInfo.InvariantCulture)) : "");
+                        (total > 0 ? StrokesLog(StrokeNumber(total)) : "");
                 else if (row.D % Math.Max(1, s.Race.Pool) == 0)
                     text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στροφή {0}  {1}"), Units(s.Race, row.D), time);
                 else
@@ -1436,7 +1434,7 @@ namespace Kinovea.ScreenManager
             double d = st.D;
             double pos = PoolPosition(d, pool);
             bool back = ((int)Math.Floor(d / pool + 1e-9)) % 2 == 1;
-            string where = (st.Started && !st.Finished ? "≈" : "") + d.ToString("0.0", CultureInfo.InvariantCulture);
+            string where = st.Early ? "—" : (st.Started && !st.Finished ? "≈" : "") + d.ToString("0.0", CultureInfo.InvariantCulture);
             Panel(g, r, SwimLang.T("ΧΑΡΤΗΣ ΠΙΣΙΝΑΣ · ") + pool.ToString(CultureInfo.InvariantCulture) + unit,
                 s.Race.Lane > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΔΙΑΔΡ. {0} · {1} {2} · {3}"), s.Race.Lane, where, unit, back ? "←" : "→") : "", 1f, 12);
 
@@ -1791,19 +1789,19 @@ namespace Kinovea.ScreenManager
                 list.Add(new Callout { Time = b, Key = lap == 0 ? SwimLang.T("ΕΞΟΔΟΣ ΑΠΟ ΤΟ ΝΕΡΟ") : SwimLang.T("ΕΞΟΔΟΣ ΣΤΡΟΦΗΣ"), Number = number, Sub = sub });
             }
 
-            int lengthStrokes = 0;
+            double lengthStrokes = 0;
             foreach (SwimRow row in st.Rows.Where(r => r.T.HasValue && r.D < s.Race.Distance))
             {
                 bool wall = row.D % Math.Max(1, s.Race.Pool) == 0;
                 if (row.Strokes.HasValue)
-                    lengthStrokes += (int)Math.Round(row.Strokes.Value);
+                    lengthStrokes += row.Strokes.Value;
                 List<string> sub = new List<string>();
                 double? v = s.Race.IsYards ? row.VelYd : row.Vel;
                 if (wall)
                 {
                     sub.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}ο {1}"), row.D / Math.Max(1, s.Race.Pool), Units(s.Race, s.Race.Pool)));
                     if (lengthStrokes > 0)
-                        sub.Add(StrokesCaps(lengthStrokes.ToString(CultureInfo.InvariantCulture)));
+                        sub.Add(StrokesCaps(StrokeNumber(lengthStrokes)));
                     lengthStrokes = 0;
                 }
                 else
@@ -1839,9 +1837,9 @@ namespace Kinovea.ScreenManager
             // In the middle of the video, else above the swimmer (below him when there is no room above): he stays in front.
             Func<float, RectangleF> block = y => new RectangleF(cx - 420, y - 10, 840, 280);
             float top = 330 * L.H / DesignH;
-            if (!L.Swimmer.IsEmpty && block(top).IntersectsWith(RectangleF.Inflate(L.Swimmer, 0, 16)))
+            if (!L.Swimmer.IsEmpty && block(top).IntersectsWith(RectangleF.Inflate(L.Swimmer, 40, 40)))
             {
-                float above = L.Swimmer.Top - 16 - 270, below = L.Swimmer.Bottom + 26;
+                float above = L.Swimmer.Top - 44 - 270, below = L.Swimmer.Bottom + 54;
                 if (above >= L.Video.Top + 10)
                     top = above;
                 else if (below + 270 <= L.Video.Bottom)
@@ -1901,12 +1899,12 @@ namespace Kinovea.ScreenManager
 
             Caps(g, SwimLang.T("ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ"), Ui(16), A(C2, a), cx, top, 0.5f, -1);
             Glow(g, SwimReference.FormatTime(st.Final), Thin(168), A(Color.White, a), cx, top + 14, 0, 1.4f * a);
-            int strokes = (int)Math.Round(st.Rows.Where(r => r.Strokes.HasValue).Sum(r => r.Strokes.Value));
+            double strokes = st.Rows.Where(r => r.Strokes.HasValue).Sum(r => r.Strokes.Value);
             List<string> sub = new List<string> { EventText(s.Race) };
             if (s.Race.Lane > 0)
                 sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));
             if (strokes > 0)
-                sub.Add(StrokesCaps(strokes.ToString(CultureInfo.InvariantCulture)));
+                sub.Add(StrokesCaps(StrokeNumber(strokes)));
             if (s.DeltaInfo && s.Computed.Reference != null)
             {
                 SwimRow finish = st.Rows.FirstOrDefault(r => r.D >= s.Race.Distance && r.Delta.HasValue);
@@ -1922,30 +1920,152 @@ namespace Kinovea.ScreenManager
         #region «Η ανάλυση με μια ματιά»
         private static void DrawDashboard(Graphics g, SwimHudScene s, State st, Layout L, float a, double t)
         {
-            // The background over the video, with a fine grid.
-            using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(0, 0, L.W, L.H), Color.FromArgb((int)(204 * a), 4, 26, 40), Color.FromArgb((int)(235 * a), 1, 8, 14), LinearGradientMode.Vertical))
-                g.FillRectangle(back, 0, 0, L.W, L.H);
-            using (Pen grid = new Pen(Color.FromArgb((int)(13 * a), 56, 225, 255), 1f))
+            // Still (its animations over): what does not move from a bitmap kept, what moves over it.
+            if (a >= 0.999f && t >= DashStill && DrawDashboardKept(g, s, st, L, t))
+                return;
+
+            DashPass(g, s, st, L, a, t, 0);
+        }
+
+        /// <summary>Seconds after which «Η ανάλυση με μια ματιά» does not move any more (but the swimmer of the pool and a ring).</summary>
+        private const double DashStill = 3.0;
+
+        /// <summary>The part of the dashboard drawn: 0 all, 1 what does not move (the bitmap kept), 2 what moves.</summary>
+        [ThreadStatic]
+        private static int dashPass;
+
+        [ThreadStatic]
+        private static Bitmap dashImage;
+
+        [ThreadStatic]
+        private static SwimComputed dashComputed;
+
+        [ThreadStatic]
+        private static string dashKey;
+
+        /// <summary>
+        /// The still dashboard: its unmoving part drawn once at the pixels of the image and kept (until the race, the size, the
+        /// language or a value shown changes), the moving part drawn over it. False when the drawing is turned (not kept).
+        /// </summary>
+        private static bool DrawDashboardKept(Graphics g, SwimHudScene s, State st, Layout L, double t)
+        {
+            Rectangle device;
+            using (Matrix m = g.Transform)
             {
-                for (float x = 0; x < L.W; x += 48)
-                    g.DrawLine(grid, x, 0, x, L.H);
-                for (float y = 0; y < L.H; y += 48)
-                    g.DrawLine(grid, 0, y, L.W, y);
+                float[] e = m.Elements;
+                if (Math.Abs(e[1]) > 1e-4 || Math.Abs(e[2]) > 1e-4)
+                    return false;
+
+                PointF[] corners = { new PointF(0, 0), new PointF(L.W, L.H) };
+                m.TransformPoints(corners);
+                device = Rectangle.FromLTRB((int)Math.Floor(Math.Min(corners[0].X, corners[1].X)), (int)Math.Floor(Math.Min(corners[0].Y, corners[1].Y)),
+                    (int)Math.Ceiling(Math.Max(corners[0].X, corners[1].X)), (int)Math.Ceiling(Math.Max(corners[0].Y, corners[1].Y)));
+                if (device.Width <= 0 || device.Height <= 0 || device.Width > 8192 || device.Height > 8192)
+                    return false;
+
+                string key = string.Join("|", device.Width.ToString(CultureInfo.InvariantCulture), device.Height.ToString(CultureInfo.InvariantCulture),
+                    (corners[0].X - device.X).ToString("0.00", CultureInfo.InvariantCulture), (corners[0].Y - device.Y).ToString("0.00", CultureInfo.InvariantCulture),
+                    e[0].ToString("0.0000", CultureInfo.InvariantCulture), SwimLang.English.ToString(), (s.Final != null).ToString(), s.DeltaInfo.ToString(),
+                    ((int)s.Sync).ToString(CultureInfo.InvariantCulture), s.PdfReady.ToString(), s.Race.Lane.ToString(CultureInfo.InvariantCulture),
+                    s.Race.Round ?? "", s.Race.Style ?? "", s.Race.Distance.ToString(CultureInfo.InvariantCulture), s.Race.Pool.ToString(CultureInfo.InvariantCulture),
+                    s.Computed.Reference != null ? s.Computed.Reference.Name ?? "" : "-");
+                if (dashImage == null || !ReferenceEquals(dashComputed, s.Computed) || dashKey != key)
+                {
+                    if (dashImage != null)
+                        dashImage.Dispose();
+
+                    dashImage = new Bitmap(device.Width, device.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                    using (Graphics lg = Graphics.FromImage(dashImage))
+                    {
+                        lg.SmoothingMode = SmoothingMode.AntiAlias;
+                        lg.TextRenderingHint = TextRenderingHint.AntiAlias;
+                        using (Matrix local = m.Clone())
+                        {
+                            local.Translate(-device.X, -device.Y, MatrixOrder.Append);
+                            lg.Transform = local;
+                        }
+
+                        DashPass(lg, s, st, L, 1f, DashStill + 5, 1);
+                    }
+
+                    dashComputed = s.Computed;
+                    dashKey = key;
+                }
+            }
+
+            GraphicsState state = g.Save();
+            try
+            {
+                g.ResetTransform();
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(dashImage, device, 0, 0, device.Width, device.Height, GraphicsUnit.Pixel);
+            }
+            finally
+            {
+                g.Restore(state);
+            }
+
+            DashPass(g, s, st, L, 1f, t, 2);
+            return true;
+        }
+
+        private static void DashPass(Graphics g, SwimHudScene s, State st, Layout L, float a, double t, int pass)
+        {
+            int before = dashPass;
+            dashPass = pass;
+            try
+            {
+                DashDraw(g, s, st, L, a, t);
+            }
+            finally
+            {
+                dashPass = before;
+            }
+        }
+
+        private static void DashDraw(Graphics g, SwimHudScene s, State st, Layout L, float a, double t)
+        {
+            // The background over the video, with a fine grid.
+            if (dashPass != 2)
+            {
+                using (LinearGradientBrush back = new LinearGradientBrush(new RectangleF(0, 0, L.W, L.H), Color.FromArgb((int)(204 * a), 4, 26, 40), Color.FromArgb((int)(235 * a), 1, 8, 14), LinearGradientMode.Vertical))
+                    g.FillRectangle(back, 0, 0, L.W, L.H);
+                using (Pen grid = new Pen(Color.FromArgb((int)(13 * a), 56, 225, 255), 1f))
+                using (GraphicsPath lines = new GraphicsPath())
+                {
+                    for (float x = 0; x < L.W; x += 48)
+                    {
+                        lines.StartFigure();
+                        lines.AddLine(x, 0, x, L.H);
+                    }
+
+                    for (float y = 0; y < L.H; y += 48)
+                    {
+                        lines.StartFigure();
+                        lines.AddLine(0, y, L.W, y);
+                    }
+
+                    g.DrawPath(grid, lines);
+                }
             }
 
             // Laid out on 1920 × 1080, in the middle of a wider image.
             float ox = (L.W - DesignW) / 2, oy = (L.H - DesignH) / 2;
             GraphicsState state = g.Save();
             g.TranslateTransform(ox, oy);
-            float head = EaseOut((t + 0.6) / 0.6) * a;
-            Glow(g, SwimLang.T("Η ΑΝΑΛΥΣΗ ΜΕ ΜΙΑ ΜΑΤΙΑ"), Thin(40), A(Color.White, head), 66, 40, -1, head);
-            List<string> sub = new List<string> { EventText(s.Race) };
-            if (!string.IsNullOrWhiteSpace(s.Race.Round))
-                sub.Add(SwimLang.Upper(SwimLang.Label(s.Race.Round.Trim())));
-            sub.Add(SwimLang.T("ΠΙΣΙΝΑ ") + Units(s.Race, s.Race.Pool));
-            if (s.Race.Lane > 0)
-                sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));
-            Caps(g, string.Join(" · ", sub), Ui(13), A(Lbl, head), 70, 104, 0.3f);
+            if (dashPass != 2)
+            {
+                float head = EaseOut((t + 0.6) / 0.6) * a;
+                Glow(g, SwimLang.T("Η ΑΝΑΛΥΣΗ ΜΕ ΜΙΑ ΜΑΤΙΑ"), Thin(40), A(Color.White, head), 66, 40, -1, head);
+                List<string> sub = new List<string> { EventText(s.Race) };
+                if (!string.IsNullOrWhiteSpace(s.Race.Round))
+                    sub.Add(SwimLang.Upper(SwimLang.Label(s.Race.Round.Trim())));
+                sub.Add(SwimLang.T("ΠΙΣΙΝΑ ") + Units(s.Race, s.Race.Pool));
+                if (s.Race.Lane > 0)
+                    sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));
+                Caps(g, string.Join(" · ", sub), Ui(13), A(Lbl, head), 70, 104, 0.3f);
+            }
 
             RectangleF[] boxes =
             {
@@ -1960,6 +2080,10 @@ namespace Kinovea.ScreenManager
                     continue;
                 RectangleF b = boxes[i];
                 b.Offset(0, (1 - p) * 30);
+
+                // What moves: the swimmer of the pool and the ring of the final time.
+                if (dashPass == 2 && i != 0 && i != 4)
+                    continue;
                 switch (i)
                 {
                     case 0: DashTime(g, s, st, b, p, t); break;
@@ -1977,8 +2101,14 @@ namespace Kinovea.ScreenManager
         private static void DashTime(Graphics g, SwimHudScene s, State st, RectangleF b, float a, double t)
         {
             int part = s.Race.Distance > 200 ? 100 : 50;
-            Panel(g, b, SwimLang.T("ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ"), string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΑΝΑ {0}"), Units(s.Race, part)), a);
             float cx = b.Left + 260, cy = b.Top + 44 + 215;
+            if (dashPass == 2)
+            {
+                DashRing(g, cx, cy, a, t);
+                return;
+            }
+
+            Panel(g, b, SwimLang.T("ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ"), string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΑΝΑ {0}"), Units(s.Race, part)), a);
             using (Pen ring = new Pen(A(Color.FromArgb(41, 56, 225, 255), a), 1f))
                 g.DrawEllipse(ring, cx - 190, cy - 190, 380, 380);
             using (Pen tick = new Pen(A(Color.FromArgb(115, 143, 243, 255), a), 1f))
@@ -2020,14 +2150,8 @@ namespace Kinovea.ScreenManager
                 n++;
             }
 
-            using (Pen dashed = new Pen(A(Color.FromArgb(128, 143, 243, 255), a), 1.2f) { DashPattern = new float[] { 2 / 1.2f, 9 / 1.2f } })
-            {
-                GraphicsState state = g.Save();
-                g.TranslateTransform(cx, cy);
-                g.RotateTransform((float)(t * 20 % 360));
-                g.DrawEllipse(dashed, -146, -146, 292, 292);
-                g.Restore(state);
-            }
+            if (dashPass == 0)
+                DashRing(g, cx, cy, a, t);
 
             // The final time as it is (the ring is the animation).
             Glow(g, SwimReference.FormatTime(total), Thin(92), A(Color.White, a), cx, cy - 64, 0, a);
@@ -2045,6 +2169,19 @@ namespace Kinovea.ScreenManager
                 lx += Caps(g, text, Ui(14, true), A(n % 2 == 0 ? C : C3, pa), lx, y, 0.12f) + 24;
                 prev = row.T.Value;
                 n++;
+            }
+        }
+
+        /// <summary>The dashed ring that turns inside the final time.</summary>
+        private static void DashRing(Graphics g, float cx, float cy, float a, double t)
+        {
+            using (Pen dashed = new Pen(A(Color.FromArgb(128, 143, 243, 255), a), 1.2f) { DashPattern = new float[] { 2 / 1.2f, 9 / 1.2f } })
+            {
+                GraphicsState state = g.Save();
+                g.TranslateTransform(cx, cy);
+                g.RotateTransform((float)(t * 20 % 360));
+                g.DrawEllipse(dashed, -146, -146, 292, 292);
+                g.Restore(state);
             }
         }
 
@@ -2255,7 +2392,8 @@ namespace Kinovea.ScreenManager
 
         private static void DashPool(Graphics g, SwimHudScene s, State st, RectangleF b, float a, double t)
         {
-            Panel(g, b, SwimLang.T("ΨΗΦΙΑΚΗ ΠΙΣΙΝΑ"), s.Race.Lane > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΔΙΑΔΡΟΜΗ ΔΙΑΔΡ. {0}"), s.Race.Lane) : "", a);
+            if (dashPass != 2)
+                Panel(g, b, SwimLang.T("ΨΗΦΙΑΚΗ ΠΙΣΙΝΑ"), s.Race.Lane > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΔΙΑΔΡΟΜΗ ΔΙΑΔΡ. {0}"), s.Race.Lane) : "", a);
             int pool = Math.Max(1, s.Race.Pool);
             int lanes = Math.Max(8, Math.Min(10, s.Race.Lane));
             string u = s.Race.IsYards ? "yd" : SwimLang.T("μ.");
@@ -2265,42 +2403,45 @@ namespace Kinovea.ScreenManager
             PointF ux = new PointF(340f / pool, -100f / pool), uy = new PointF(68f / lanes, 120f / lanes * 0.55f);
             Func<double, double, PointF> P = (along, across) => new PointF(o.X + (float)(along * ux.X + across * uy.X), o.Y + (float)(along * ux.Y + across * uy.Y));
             PointF[] outline = { P(0, 0), P(pool, 0), P(pool, lanes), P(0, lanes) };
-            using (SolidBrush water = new SolidBrush(A(Color.FromArgb(15, 56, 225, 255), a)))
-                g.FillPolygon(water, outline);
-            using (Pen glow = new Pen(A(Color.FromArgb(60, 56, 225, 255), a), 8f))
-                g.DrawPolygon(glow, outline);
-            using (Pen border = new Pen(A(Color.FromArgb(204, 143, 243, 255), a), 1.5f))
-                g.DrawPolygon(border, outline);
-            if (s.Race.Lane > 0)
+            if (dashPass != 2)
             {
-                PointF[] mine = { P(0, s.Race.Lane - 1), P(pool, s.Race.Lane - 1), P(pool, s.Race.Lane), P(0, s.Race.Lane) };
-                using (SolidBrush lane = new SolidBrush(A(Color.FromArgb(46, 56, 225, 255), a)))
-                    g.FillPolygon(lane, mine);
-            }
-
-            using (Pen rope = new Pen(A(Color.FromArgb(89, 143, 243, 255), a), 1f) { DashPattern = new float[] { 4, 3 } })
-            {
-                for (int i = 1; i < lanes; i++)
-                    g.DrawLine(rope, P(0, i), P(pool, i));
-            }
-
-            int[] marks = pool >= 50 ? new[] { 15, 25, 35, 45 } : new[] { 5, 10, 15, 20 };
-            using (Pen mark = new Pen(A(Color.FromArgb(115, 143, 243, 255), a), 1f))
-            {
-                foreach (int m in marks.Where(m => m < pool))
+                using (SolidBrush water = new SolidBrush(A(Color.FromArgb(15, 56, 225, 255), a)))
+                    g.FillPolygon(water, outline);
+                using (Pen glow = new Pen(A(Color.FromArgb(60, 56, 225, 255), a), 8f))
+                    g.DrawPolygon(glow, outline);
+                using (Pen border = new Pen(A(Color.FromArgb(204, 143, 243, 255), a), 1.5f))
+                    g.DrawPolygon(border, outline);
+                if (s.Race.Lane > 0)
                 {
-                    g.DrawLine(mark, P(m, 0), P(m, lanes));
-                    PointF lp = P(m, lanes);
-                    Text(g, m.ToString(CultureInfo.InvariantCulture), Ui(13, true), A(C2, a), lp.X, lp.Y + 4, 0);
+                    PointF[] mine = { P(0, s.Race.Lane - 1), P(pool, s.Race.Lane - 1), P(pool, s.Race.Lane), P(0, s.Race.Lane) };
+                    using (SolidBrush lane = new SolidBrush(A(Color.FromArgb(46, 56, 225, 255), a)))
+                        g.FillPolygon(lane, mine);
                 }
-            }
 
-            PointF zero = P(0, 0), end = P(pool, 0);
-            Caps(g, "0" + u, Ui(12, true), A(C2, a), zero.X - 6, zero.Y - 26, 0.2f);
-            Caps(g, pool.ToString(CultureInfo.InvariantCulture) + u, Ui(12, true), A(C2, a), end.X + 6, end.Y - 26, 0.2f, 1);
+                using (Pen rope = new Pen(A(Color.FromArgb(89, 143, 243, 255), a), 1f) { DashPattern = new float[] { 4, 3 } })
+                {
+                    for (int i = 1; i < lanes; i++)
+                        g.DrawLine(rope, P(0, i), P(pool, i));
+                }
+
+                int[] marks = pool >= 50 ? new[] { 15, 25, 35, 45 } : new[] { 5, 10, 15, 20 };
+                using (Pen mark = new Pen(A(Color.FromArgb(115, 143, 243, 255), a), 1f))
+                {
+                    foreach (int m in marks.Where(m => m < pool))
+                    {
+                        g.DrawLine(mark, P(m, 0), P(m, lanes));
+                        PointF lp = P(m, lanes);
+                        Text(g, m.ToString(CultureInfo.InvariantCulture), Ui(13, true), A(C2, a), lp.X, lp.Y + 4, 0);
+                    }
+                }
+
+                PointF zero = P(0, 0), end = P(pool, 0);
+                Caps(g, "0" + u, Ui(12, true), A(C2, a), zero.X - 6, zero.Y - 26, 0.2f);
+                Caps(g, pool.ToString(CultureInfo.InvariantCulture) + u, Ui(12, true), A(C2, a), end.X + 6, end.Y - 26, 0.2f, 1);
+            }
 
             // The swimmer runs the race again, every 7 s.
-            if (s.Race.Lane > 0 && s.Reel != null && s.Reel.HasModel && !double.IsNaN(st.Final))
+            if (dashPass != 1 && s.Race.Lane > 0 && s.Reel != null && s.Reel.HasModel && !double.IsNaN(st.Final))
             {
                 double loop = ((t - 1.0) % 7 + 7) % 7;
                 double rt = Clamp(loop / 6, 0, 1) * st.Final;
