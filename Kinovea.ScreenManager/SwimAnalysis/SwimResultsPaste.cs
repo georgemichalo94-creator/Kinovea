@@ -203,6 +203,14 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrWhiteSpace(text) || distance <= 0)
                 return result;
 
+            // The printouts of Hy-Tek Meet Manager (results and heat sheets of many international junior meets) have their own reader.
+            SwimPasteResult hyTek = ParseHyTek(text, distance);
+            if (hyTek != null)
+            {
+                Choose(hyTek, athlete, lane);
+                return hyTek;
+            }
+
             List<Token> tokens = Tokenize(text);
             List<Start> starts = RecordStarts(tokens);
             if (starts.Count == 0)
@@ -238,6 +246,168 @@ namespace Kinovea.ScreenManager
 
             Choose(result, athlete, lane);
             return result;
+        }
+
+        // A time of Hy-Tek: "51.55", "1:54.85", an exhibition swim with its "X" ("X52.36"); not a time: "NT", "DQ", "NS", "SCR"…
+        private const string HyTime = @"X?(?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}";
+        private const string HyStatus = @"X?(?:DQ|DSQ|NS|DNS|DNF|SCR|DFS|NT)";
+
+        // A row of the results: the place ("8", "*2" a tie, "---" none), the competitor's number, "Surname, Given", the age (or the year), the team
+        // (a country or a club, several words), the entry time, the final time or a status, the points.
+        private static readonly Regex HyResultRow = new Regex(
+            @"^\s*(?<rank>\*?[0-9]{1,3}|-{2,3})\s+(?:(?<no>[0-9]{1,5})\s+)?(?<family>[^,\d\t]+?),\s*(?<given>[^,\d\t]+?)\s+(?<age>[0-9]{1,2}|(?:19|20)[0-9]{2})\s+" +
+            @"(?<team>[^\d\t]*?\p{L}[^\d\t]*?)\s+(?:(?<seed>" + HyTime + "|" + HyStatus + @")\s+)?(?<time>" + HyTime + "|" + HyStatus +
+            @")(?:\s+[0-9]{1,3}(?:\.[0-9])?)?\s*$", RegexOptions.IgnoreCase);
+
+        // A row of a heat sheet: the lane, "Surname, Given", the age, the team, the entry time (no result yet).
+        private static readonly Regex HyStartRow = new Regex(
+            @"^\s*(?<lane>[0-9]{1,2})\s+(?<family>[^,\d\t]+?),\s*(?<given>[^,\d\t]+?)\s+(?<age>[0-9]{1,2}|(?:19|20)[0-9]{2})\s+(?<team>[^\d\t]*?\p{L}[^\d\t]*?)\s+" +
+            @"(?<seed>" + HyTime + "|" + HyStatus + @")\s*$", RegexOptions.IgnoreCase);
+
+        // The splits under a row: the reaction time ("r:+0.65") and the cumulative times, each after the first with the length's own
+        // time in parentheses ("24.73   51.55 (26.82)"); a long race goes on over more lines ("3:19.90 (34.58)  3:54.23 (34.33)").
+        private static readonly Regex HySplitRow = new Regex(
+            @"^\s*(?:r:\s*[+-]?[0-9]\.[0-9]{2}\s+)?(?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}(?:\s*\((?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}\))?" +
+            @"(?:\s+(?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}(?:\s*\((?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}\))?)*\s*$");
+
+        // The countries of the teams written in full (English) -> IOC code.
+        private static readonly Dictionary<string, string> CountryNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Greece", "GRE" }, { "Cyprus", "CYP" }, { "Croatia", "CRO" }, { "Austria", "AUT" }, { "Slovenia", "SLO" }, { "Poland", "POL" },
+            { "Portugal", "POR" }, { "Israel", "ISR" }, { "Turkey", "TUR" }, { "Türkiye", "TUR" }, { "Turkiye", "TUR" }, { "Ukraine", "UKR" },
+            { "Czech Republic", "CZE" }, { "Czechia", "CZE" }, { "Slovakia", "SVK" }, { "Serbia", "SRB" }, { "Bulgaria", "BUL" },
+            { "Romania", "ROU" }, { "Hungary", "HUN" }, { "Italy", "ITA" }, { "Spain", "ESP" }, { "France", "FRA" }, { "Germany", "GER" },
+            { "Great Britain", "GBR" }, { "Switzerland", "SUI" }, { "Belgium", "BEL" }, { "Netherlands", "NED" }, { "Lithuania", "LTU" },
+            { "Latvia", "LAT" }, { "Estonia", "EST" }, { "Finland", "FIN" }, { "Sweden", "SWE" }, { "Norway", "NOR" }, { "Denmark", "DEN" },
+            { "Iceland", "ISL" }, { "Ireland", "IRL" }, { "Luxembourg", "LUX" }, { "Malta", "MLT" }, { "Montenegro", "MNE" },
+            { "North Macedonia", "MKD" }, { "Albania", "ALB" }, { "Bosnia and Herzegovina", "BIH" }, { "Kosovo", "KOS" },
+            { "Georgia", "GEO" }, { "Armenia", "ARM" }, { "Azerbaijan", "AZE" }, { "Moldova", "MDA" }, { "Egypt", "EGY" },
+            { "Lebanon", "LBN" }, { "Jordan", "JOR" }, { "Kazakhstan", "KAZ" }, { "Liechtenstein", "LIE" }, { "Monaco", "MON" },
+            { "Andorra", "AND" }, { "San Marino", "SMR" }, { "Faroe Islands", "FAR" }, { "Gibraltar", "GIB" }, { "Tunisia", "TUN" },
+            { "Algeria", "ALG" }, { "Morocco", "MAR" }, { "USA", "USA" }, { "United States", "USA" }, { "Canada", "CAN" }
+        };
+
+        /// <summary>
+        /// The text of a Hy-Tek Meet Manager printout (copied from its PDF or page; since 2.9.2): results rows "8  144 Surname, Given
+        /// 18 Greece  51.55  1" with the splits on the next line ("24.73  51.55 (26.82)"), or heat sheet rows "3 Surname, Given 18 Greece
+        /// X51.77" (the lane, no time yet). An exhibition swim ("---", "X52.36") is a time like the others. Null when the text is not of
+        /// this layout (the other readers then).
+        /// </summary>
+        private static SwimPasteResult ParseHyTek(string text, int distance)
+        {
+            string[] lines = Normalize(text).Split('\n');
+
+            // A heat sheet ("Heat 4 of 6", a "Lane" column): its rows are lanes and entry times, not places and results.
+            bool sheet = lines.Any(l => Regex.IsMatch(l, @"^\s*Heat\s+[0-9]+\s+of\s+[0-9]+", RegexOptions.IgnoreCase) ||
+                Regex.IsMatch(l, @"^\s*Lane\s+Name\b", RegexOptions.IgnoreCase));
+
+            // The column names of the results ("Seed Time  Finals Time"): of two times in a row the second is the result.
+            bool seedFirst = lines.Any(l => Regex.IsMatch(l, @"\bseed\s+time\b.*\bfinals?\s+time\b", RegexOptions.IgnoreCase));
+            SwimPasteResult result = new SwimPasteResult();
+            SwimPasteRecord last = null;
+            List<double> cumulative = new List<double>();
+            foreach (string raw in lines.Concat(new[] { "" }))
+            {
+                string line = raw.TrimEnd();
+                bool splitLine = last != null && last.Time.HasValue && line.Trim().Length > 0 && HySplitRow.IsMatch(line);
+                if (splitLine)
+                {
+                    Match rt = Regex.Match(line, @"r:\s*([+-]?[0-9]\.[0-9]{2})");
+                    if (rt.Success)
+                    {
+                        double reaction = double.Parse(rt.Groups[1].Value, CultureInfo.InvariantCulture);
+                        if (reaction > 0 && reaction < 1.5)
+                            last.Reaction = reaction;
+                    }
+
+                    string body = Regex.Replace(line, @"r:\s*[+-]?[0-9]\.[0-9]{2}", " ");
+                    body = Regex.Replace(body, @"\([^)]*\)", " ");
+                    foreach (Match tm in Regex.Matches(body, @"(?:[0-9]{1,2}:)?[0-9]{1,2}\.[0-9]{2}"))
+                    {
+                        double v = ParseTime(tm.Value);
+                        if (!double.IsNaN(v))
+                            cumulative.Add(v);
+                    }
+
+                    continue;
+                }
+
+                // The splits of the row before end here (a long race prints them on several lines).
+                if (last != null && cumulative.Count > 0)
+                    SetHyTekSplits(last, cumulative, distance);
+                cumulative.Clear();
+                if (line.Trim().Length == 0)
+                    continue;
+
+                Match m = sheet ? HyStartRow.Match(line) : HyResultRow.Match(line);
+                if (!m.Success)
+                {
+                    // Titles, column names, "Heat 4 of 6", "====", page heads: a row's splits come right after it.
+                    if (!Regex.IsMatch(line, @"^\s*(=+|-+)\s*$"))
+                        last = null;
+                    continue;
+                }
+
+                SwimPasteRecord r = new SwimPasteRecord { Text = line.Trim() };
+                if (m.Groups["age"].Value.Length == 4)
+                    r.BirthYear = int.Parse(m.Groups["age"].Value, CultureInfo.InvariantCulture);
+                r.FamilyName = Regex.Replace(m.Groups["family"].Value.Trim(), @"\s+", " ");
+                r.GivenName = Regex.Replace(m.Groups["given"].Value.Trim(), @"\s+", " ");
+                string team = Regex.Replace(m.Groups["team"].Value.Trim(), @"\s+", " ");
+                string code;
+                if (CountryNames.TryGetValue(team, out code))
+                    r.Nation = code;
+                else if (team.Length == 3 && Nations.Contains(team.ToUpperInvariant()))
+                    r.Nation = team.ToUpperInvariant();
+                else
+                    r.Club = team;
+
+                if (sheet)
+                {
+                    r.Lane = int.Parse(m.Groups["lane"].Value, CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    int place;
+                    r.Rank = int.TryParse(m.Groups["rank"].Value.TrimStart('*'), NumberStyles.Integer, CultureInfo.InvariantCulture, out place) ? place : 0;
+                    string time = m.Groups["time"].Value.TrimStart('X', 'x');
+                    double t = ParseTime(time);
+                    double seed = m.Groups["seed"].Success ? ParseTime(m.Groups["seed"].Value.TrimStart('X', 'x')) : double.NaN;
+                    if (!double.IsNaN(t) && t >= MinRaceTime && !double.IsNaN(seed) && !seedFirst)
+                    {
+                        // Two times and no column names saying which is the entry time: none taken (as the other layouts).
+                        r.TimeChoices.Add(t);
+                        r.TimeChoices.Add(seed);
+                    }
+                    else if (!double.IsNaN(t) && t >= MinRaceTime)
+                        r.Time = t;
+                    else if (double.IsNaN(t) && !Regex.IsMatch(time, "^NT$", RegexOptions.IgnoreCase))
+                        r.Status = time.ToUpperInvariant();
+                }
+
+                result.Records.Add(r);
+                last = r;
+            }
+
+            return result.Records.Count > 0 ? result : null;
+        }
+
+        /// <summary>
+        /// The splits of a Hy-Tek row from its cumulative times (the last one the final time): one every 50 m before the finish (a 25 m
+        /// pool prints every 25 m: the 50 m ones kept). Not all of them: none, and SplitsMissing (the final time alone goes in).
+        /// </summary>
+        private static void SetHyTekSplits(SwimPasteRecord r, List<double> cumulative, int distance)
+        {
+            List<double> c = new List<double>(cumulative);
+            bool rising = c.Zip(c.Skip(1), (a, b) => b > a).All(x => x);
+            if (rising && c.Count > 0 && Math.Abs(c[c.Count - 1] - r.Time.Value) < 0.005)
+                c.RemoveAt(c.Count - 1);
+            int every = c.Count > 0 && distance % (c.Count + 1) == 0 && distance / (c.Count + 1) == 25 ? 2 : 1;
+            List<double> splits = c.Where((v, i) => (i + 1) % every == 0).ToList();
+            if (rising && distance >= 100 && splits.Count == distance / 50 - 1 && splits.All(v => v < r.Time.Value))
+                r.Splits = splits;
+            else if (distance >= 100)
+                r.SplitsMissing = true;
         }
 
         /// <summary>The text in tokens: icons and column titles out, the country written onto the name split ("ITAMarco").</summary>
@@ -932,7 +1102,8 @@ namespace Kinovea.ScreenManager
                     break;
 
                 string line = Plain(raw);
-                Match d = Regex.Match(line, @"(?<![0-9])(4\s*[x×χ]\s*)?([0-9]{2,4})\s*(?:m|μ|μετρ|meter|metre)(?![a-zα-ω])", RegexOptions.IgnoreCase);
+                // Hy-Tek writes the course between them: "100 LC Meter", "50 SC Meter" (since 2.9.2).
+                Match d = Regex.Match(line, @"(?<![0-9])(4\s*[x×χ]\s*)?([0-9]{2,4})\s*(?:(lc|sc)\s*)?(?:m|μ|μετρ|meter|metre)(?![a-zα-ω])", RegexOptions.IgnoreCase);
                 string style = StyleWord(line);
                 if (!d.Success || style.Length == 0)
                     continue;
@@ -943,6 +1114,8 @@ namespace Kinovea.ScreenManager
 
                 SwimEventInfo ev = new SwimEventInfo { Style = style, Relay = d.Groups[1].Success || Regex.IsMatch(line, @"\brelay\b|σκυταλ") };
                 ev.Distance = d.Groups[1].Success ? 4 * n : n;
+                if (d.Groups[3].Success)
+                    ev.Pool = d.Groups[3].Value.ToLowerInvariant() == "sc" ? 25 : 50;
                 ev.Gender = Regex.IsMatch(line, @"\b(women'?s?|girls|ladies)\b|γυναικ|κοριτσ|κορασιδ|νεανιδ") ? "F" :
                     Regex.IsMatch(line, @"\b(men'?s?|boys)\b|ανδρ|αγορι|παιδων|εφηβ") ? "M" :
                     Regex.IsMatch(line, @"\bmixed\b") ? "X" : "";
