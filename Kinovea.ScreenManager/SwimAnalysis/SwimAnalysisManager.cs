@@ -184,7 +184,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return headSpeedBackend; }
+            get { return quickLookBackend; }
         }
         private bool backendWarned;
         private bool typedStrokesWarned;
@@ -203,13 +203,6 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static readonly Version quickLookBackend = new Version(2, 8, 0);
         private bool quickLookWarned;
-
-        /// <summary>
-        /// Oldest Apps Script with the head's velocity (≈) of the segments at the walls in the report and the PDF (2.9.4: the tables
-        /// of the turns and of the finish, the first page). Older ones make the same report without it (the test of the connection
-        /// says so).
-        /// </summary>
-        private static readonly Version headSpeedBackend = new Version(2, 9, 4);
 
         /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
         private readonly HashSet<string> quickLookFailed = new HashSet<string>();

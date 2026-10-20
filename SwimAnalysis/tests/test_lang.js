@@ -273,16 +273,13 @@ function postAll(env, R, lang) {
 const OLD = makeContextWith(ORIGINAL, { athletes: ATHLETES });
 // 2.8.0: χωρίς copyTo η πρώτη σελίδα του PDF («Με μια ματιά») δεν γίνεται και το PDF είναι όπως πριν· ελέγχεται στο test_quick.
 const NEW = makeContext({ athletes: ATHLETES, copyTo: false });
-// 2.9.4: οι νέες στήλες της ταχύτητας του κεφαλιού (στροφές, τερματισμός) κλειστές για τη σύγκριση· ανοίγουν στο (b) και
-// ελέγχονται στο test_analysis.
-NEW.SWIM_HEAD_SPEED = false;
 const envOld = prepare(OLD), envNew = prepare(NEW);
 assert.deepStrictEqual(envOld.files, envNew.files, 'same Drive ids in both');
 const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, envNew.reference);
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.9.4');
+assert.strictEqual(vNew, '2.8.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -330,7 +327,6 @@ console.log('test_lang (a): Greek output identical to the script ' + vOld + ' ('
 // τις τιμές που έγραψε ο αναλυτής στα ελληνικά (η γωνία CUSTOM_ANGLE) και το σύμβολο Δ (διαφορά, όπως στο Kinovea)
 // ---------------------------------------------------------------------------------------------
 const GREEK = /[Ͱ-Ͽἀ-῿]/;
-NEW.SWIM_HEAD_SPEED = true;
 const outEn = postAll(envNew, Rnew, 'en');
 assert.ok(outEn.first.ok && outEn.first.rebuilt, 'another language rebuilds the report');
 assert.strictEqual(NEW.SWIM_LANG_, 'el', 'Greek again after the request');
@@ -367,12 +363,11 @@ const texts = shown.map(x => x.text);
 const has = (t, why) => assert.ok(texts.indexOf(t) >= 0, (why || 'missing') + ': ' + t);
 const like = (re, why) => assert.ok(texts.some(t => re.test(t)), (why || 'missing') + ': ' + re);
 has('Times & Strokes (Timing Data)');
-has('Head speed of the last 5m ≈ (m/s)'); has('Head speed -5m → wall ≈ (m/s)'); has('Head speed wall → +15m ≈ (m/s)');
 has('SPI'); has('Speed per segment (m/s)'); has('Stroke rate (cycles/min)'); has('Race'); has('Swimmer');
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.9\.4$/, 'version line');
+like(/^Updated .* · version 2\.8\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

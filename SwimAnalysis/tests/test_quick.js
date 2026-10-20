@@ -104,7 +104,7 @@ function lastExport(G, report) {
   like(/^Στροφή \(-5\/\+15\) στα 50μ\.: /);
   has('Τελευταία 5μ.'); has('3.18'); has('11.84 · στροφή 0.88');
   like(/^=SPARKLINE\(\{[0-9.]+\},\{"charttype","bar";"max",[0-9.]+;"color1","#[0-9A-F]{6}"\}\)$/);
-  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.9\.4$/);
+  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.8\.0$/);
   ['15–25', '45–50', '95–100'].forEach(has);
   // Το φύλλο του αγώνα δεν έχει τίποτα από την πρώτη σελίδα.
   assert.ok(!Object.keys(sheet._cells).some(k => sheet._cells[k].v === 'ΜΕ ΜΙΑ ΜΑΤΙΑ'), 'the report sheet is unchanged');
@@ -305,23 +305,3 @@ function lastExport(G, report) {
   console.log('test_quick (5): key points');
 }
 console.log('QUICK LOOK OK');
-
-// (2.9.4) The head's velocity at the walls under the table of the checkpoints: 100 fly (open turn and finish: hands, 0.65 m).
-(function () {
-  const ctx = require('./harness');
-  const race = { distance: 100, pool: 50, style: 'fly', k: 1, relay: false, poolUnit: 'm' };
-  const reach = (p, d) => ctx.swimWallReach_(race, p, d, 50, 100);
-  assert.strictEqual(reach(35, 45), 0);
-  assert.strictEqual(reach(45, 50), 0.65);
-  assert.strictEqual(reach(50, 65), 0.65);
-  assert.strictEqual(reach(95, 100), 0.65);
-  const back = { distance: 100, pool: 50, style: 'bk', k: 1, relay: false, poolUnit: 'm' };
-  assert.strictEqual(ctx.swimWallReach_(back, 45, 50, 50, 100), 1.0);
-  assert.strictEqual(ctx.swimWallReach_(back, 50, 65, 50, 100), 1.0);
-  assert.strictEqual(ctx.swimWallReach_(back, 95, 100, 50, 100), 0.65);
-  const im = { distance: 200, pool: 50, style: 'im', k: 1, relay: false, poolUnit: 'm' };
-  assert.strictEqual(ctx.swimWallReach_(im, 95, 100, 50, 200), 0.65);
-  assert.strictEqual(ctx.swimWallReach_({ distance: 400, pool: 50, style: 'im', k: 1, relay: false }, 145, 150, 50, 400), 1.0);
-  assert.strictEqual(ctx.swimWallReach_({ distance: 200, pool: 50, style: 'fs', k: 1, relay: true }, 45, 50, 50, 200), 0);
-  console.log('quick head velocity ok');
-})();
