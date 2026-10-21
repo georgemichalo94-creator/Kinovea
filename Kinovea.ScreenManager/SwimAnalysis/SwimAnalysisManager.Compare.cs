@@ -204,6 +204,38 @@ namespace Kinovea.ScreenManager
             return compareCurve.Valid ? compareCurve : null;
         }
 
+        // (2.9.6) The camera of the video from the parts of the race read (the line of the reference in perspective), found once (about
+        // 0.1 s) for the times of the checkpoints and the breakouts as they are: they give the places of the frames (a stroke or another
+        // mark does not), and for the parts read.
+        private SwimCompare.SideCamera compareCamera;
+        private string compareCameraKey;
+
+        private SwimCompare.SideCamera CompareCamera(SwimTrack track, long start, SwimReel reel)
+        {
+            List<SwimTrack> tracks = Race.Tracks == null ? new List<SwimTrack>() : Race.Tracks.Where(t => t != null && t.HasPan).ToList();
+            string key = string.Join(",", Computed.Rows.Select(r => r.OnVideo.ToString("0.000", CultureInfo.InvariantCulture))) + "|" +
+                string.Join(",", Computed.Breakouts.Select(b => b.ToString("0.000", CultureInfo.InvariantCulture))) + "|" +
+                start.ToString(CultureInfo.InvariantCulture) + "|" + PoolLength.ToString(CultureInfo.InvariantCulture) + "|" +
+                Race.Distance.ToString(CultureInfo.InvariantCulture) + "|" +
+                string.Join(",", tracks.Select(t => t.Start.ToString(CultureInfo.InvariantCulture) + ":" + t.X.Count.ToString(CultureInfo.InvariantCulture))) + "|" +
+                (Race.Id ?? "");
+            if (key == compareCameraKey)
+                return compareCamera;
+
+            compareCameraKey = key;
+            try
+            {
+                compareCamera = SwimCompare.CameraOf(tracks, ts => Timing.Seconds(ts, start), reel.DistanceAt, PoolLength, Race.Distance);
+            }
+            catch (Exception e)
+            {
+                log.Debug("No camera for the line of the reference: " + e.Message);
+                compareCamera = null;
+            }
+
+            return compareCamera;
+        }
+
         /// <summary>The reference at a frame: from the part of the race followed there, else the calibration of a fixed camera.</summary>
         private SwimCompare.Placement ComparePlacement(long timestamp)
         {
@@ -223,7 +255,8 @@ namespace Kinovea.ScreenManager
             SwimTrack track = Race.TrackAt(timestamp);
             if (track != null && track.HasPan)
             {
-                SwimCompare.Placement p = SwimCompare.Place(track, timestamp, ts => Timing.Seconds(ts, start), reel.DistanceAt, curve, PoolLength);
+                SwimCompare.Placement p = SwimCompare.Place(track, timestamp, ts => Timing.Seconds(ts, start), reel.DistanceAt, curve, PoolLength,
+                    CompareCamera(track, start, reel));
                 if (p != null)
                     return p;
             }
