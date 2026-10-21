@@ -3243,7 +3243,7 @@ namespace Kinovea.ScreenManager
                 // (2.9.5) The analyst's frame however far from the proposal: a time out of order is kept with the warning of S.
                 if (!SplitInOrder(distance, timestamp))
                 {
-                    SystemSounds.Exclamation.Play();
+                    System.Media.SystemSounds.Exclamation.Play();
                     done = "⚠ " + string.Format(CultureInfo.InvariantCulture, SwimLang.T("Πέρασμα {0}{1}: {2:0.00} s"), distance, Race.Unit, t) +
                         SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
                 }
@@ -3284,13 +3284,13 @@ namespace Kinovea.ScreenManager
                 distance, Race.Unit, Timing.Seconds(split.Timestamp, Race.StartTimestamp.Value)), false);
         }
 
-        /// <summary>The checkpoint asked for: of the proposal being checked, or the row chosen (-1 none).</summary>
+        /// <summary>The checkpoint asked for: the row chosen (the latest choice), else the one of the proposal being checked (-1 none).</summary>
         private int AskedSplit()
         {
+            if (chosenSplitRace == Race && chosenSplit >= 0)
+                return chosenSplit;
             SwimProposal p = CurrentProposal;
-            if (p != null && p.Kind == KindRaceSplit)
-                return p.Index;
-            return chosenSplitRace == Race ? chosenSplit : -1;
+            return p != null && p.Kind == KindRaceSplit ? p.Index : -1;
         }
 
         /// <summary>
@@ -3300,8 +3300,9 @@ namespace Kinovea.ScreenManager
         /// checkpoints the frame keeps in order, the one whose time is (or would be) nearest to it: a marked one moves, one without a time
         /// is added (its time expected between the marked ones, or at the speed of the race so far). After the last time marked the next
         /// checkpoint wins unless the frame is nearer to the time it would move (a correction of the last one), also over a row chosen.
-        /// Nothing in order (times out of order already): the next one without a time as before; all marked: the one asked for, or the
-        /// nearest (moved, with the warning).
+        /// While the video plays (not asked for), the next one without a time as before. Nothing in order (times out of order already):
+        /// the next one without a time as before; all marked: the one asked for, or the nearest (moved, with the warning). A time far
+        /// off (nearer to a neighbour's) is moved by choosing its row.
         /// </summary>
         public int SplitTargetAt(long timestamp, out bool move)
         {
@@ -3343,10 +3344,14 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // While the video plays, the next checkpoint without a time as always (two presses in a row do not move the last one): a
+            // time marked moves on a paused video (at the right frame) or when asked for.
             int asked = AskedSplit();
             bool nextAtEnd = best >= 0 && !marked.ContainsKey(best) && marked.Keys.All(k => k < best);
             if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked) && !nextAtEnd)
                 best = asked;
+            else if (next >= 0 && HasVideo && player.IsCurrentlyPlaying)
+                return next;
 
             if (best < 0)
             {
@@ -3423,7 +3428,7 @@ namespace Kinovea.ScreenManager
             bool warn = !SplitInOrder(distance, timestamp);
             if (warn)
             {
-                SystemSounds.Exclamation.Play();
+                System.Media.SystemSounds.Exclamation.Play();
                 message += SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
             }
 

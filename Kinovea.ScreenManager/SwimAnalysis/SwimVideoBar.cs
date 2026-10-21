@@ -951,16 +951,24 @@ namespace Kinovea.ScreenManager
             };
         }
 
-        /// <summary>The checkpoint button says which checkpoint the next press marks.</summary>
+        /// <summary>The checkpoint button says which checkpoint the next press marks at this frame (2.9.5: or moves, SplitTargetAt).</summary>
         private Btn SplitButton(SwimRace race)
         {
-            int next = race.NextCheckpoint();
+            bool move = false;
+            long? now = race == manager.Race ? manager.CurrentVideoTimestamp : null;
+            int next = now.HasValue ? manager.SplitTargetAt(now.Value, out move) : race.NextCheckpoint();
             string distance = next.ToString(CultureInfo.InvariantCulture) + race.Unit;
             Btn b = new Btn { Id = "split", Command = PlayerScreenCommands.SwimSplit, Primary = next >= 0, Dim = next < 0 };
             if (next < 0)
             {
                 b.Text = SwimLang.T("Όλα τα περάσματα ✓");
-                b.Tip = SwimLang.T("Όλα τα σημεία ελέγχου έχουν χρόνο. Για να ξαναμαρκάρεις ένα, διάγραψε τον χρόνο του στον πίνακα (επιλογή γραμμής + Delete).");
+                b.Tip = SwimLang.T("Όλα τα σημεία ελέγχου έχουν χρόνο. Για να αλλάξεις έναν: κλικ στη γραμμή του (το βίντεο πάει εκεί), το σωστό καρέ με ← → και «Πέρασμα» (S).");
+            }
+            else if (move)
+            {
+                // (2.9.5) A checkpoint with a time already (also one of the auto pilot): it moves to this frame.
+                b.Text = SwimLang.T("Αλλαγή ") + distance;
+                b.Tip = SwimLang.T("Ο χρόνος των ") + distance + SwimLang.T(" μετακινείται σε αυτό το καρέ (Backspace: η προηγούμενη τιμή). Για άλλο σημείο: κλικ στη γραμμή του στα περάσματα.");
             }
             else if (next >= race.Distance)
             {

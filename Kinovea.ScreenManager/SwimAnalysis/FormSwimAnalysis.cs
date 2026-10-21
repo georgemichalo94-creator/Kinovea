@@ -859,7 +859,7 @@ namespace Kinovea.ScreenManager
                 Dock = DockStyle.Bottom,
                 Height = 32,
                 ForeColor = SwimTheme.Dim,
-                Text = SwimLang.T("Διπλό κλικ: μετάβαση του βίντεο στο σημείο (στη στήλη Χεριές: διόρθωση) · Delete: διαγραφή του χρόνου · SR / DPS / SL μόνο στην καθαρή κολύμβηση (+15μ. έως −5μ.) · πορτοκαλί: συμβατική ταχύτητα")
+                Text = SwimLang.T("Διπλό κλικ: μετάβαση του βίντεο στο σημείο (μετά σωστό καρέ με ← → και S: ο χρόνος του αλλάζει· στη στήλη Χεριές: διόρθωση) · Delete: διαγραφή του χρόνου · SR / DPS / SL μόνο στην καθαρή κολύμβηση (+15μ. έως −5μ.) · πορτοκαλί: συμβατική ταχύτητα")
             };
 
             lnkChecks = new LinkLabel { Dock = DockStyle.Bottom, Height = 34, AutoEllipsis = true, Visible = false, LinkColor = colorWarn, ActiveLinkColor = colorError, Padding = new Padding(0, 2, 0, 0) };

@@ -377,12 +377,13 @@ namespace Kinovea.ScreenManager
                 // A swimmer to follow for the label becomes the swimmer of the strokes (they keep his place too).
                 if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && (!PickingStrokes || PickingTrack) && !resolvingProposal && reviewId == null)
                     BeginAutoStrokes();
-                else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
+                else if (command == PlayerScreenCommands.SwimSplit && splitAdded && !splitMoved && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
 
                 // Manual analysis: after the first checkpoint, one click on the swimmer and the race is read in the background for the learning.
+                // (2.9.5: not for a checkpoint moved, splitMoved.)
                 if (!TechnicalView && !resolvingProposal && reviewId == null &&
-                    ((command == PlayerScreenCommands.SwimSplit && splitAdded) || command == PlayerScreenCommands.SwimWallContact))
+                    ((command == PlayerScreenCommands.SwimSplit && splitAdded && !splitMoved) || command == PlayerScreenCommands.SwimWallContact))
                     OfferQuietLearning();
             }
 
@@ -489,7 +490,10 @@ namespace Kinovea.ScreenManager
             }
 
             bool hadStart = EnsureStart();
-            int distance = Race.NextCheckpoint();
+
+            // (2.9.5) The checkpoint of this frame: the next one, or one with a time already that moves here (SplitTargetAt).
+            bool move;
+            int distance = TakeSplitTarget(timestamp, out move);
             string unit = Race.Unit;
             if (distance < 0)
             {
@@ -497,6 +501,9 @@ namespace Kinovea.ScreenManager
                 Status(SwimLang.T("Όλα τα σημεία έχουν χρόνο. Διάγραψε έναν χρόνο (επιλογή γραμμής + Delete) για να τον ξαναμαρκάρεις."), true);
                 return false;
             }
+
+            if (move)
+                return MoveSplit(distance, timestamp);
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = distance };
             Race.Marks.Add(mark);
@@ -518,8 +525,9 @@ namespace Kinovea.ScreenManager
                 message += SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
             }
 
+            string estimate = ReestimateAfterSplit(distance);
             if (hadStart || warn)
-                Status(message, warn);
+                Status(message + estimate, warn);
 
             return true;
         }
@@ -595,24 +603,27 @@ namespace Kinovea.ScreenManager
             Race.Marks.Remove(mark);
             UndoPilotEffects(mark);
             ForgetTaught(mark);
-            if (mark.Type == SwimMarkType.Split)
+            List<SwimMark> replaced;
+            replacedBy.TryGetValue(mark.Id, out replaced);
+
+            // (2.9.5) A checkpoint moved and put back: the strokes of its segment stay.
+            if (mark.Type == SwimMarkType.Split && (replaced == null || !replaced.Any(m => m.Type == SwimMarkType.Split && m.Distance == mark.Distance)))
                 Race.StrokeCounts.Remove(mark.Distance);
 
             // The automatic snapshot of the event goes with it.
             UndoAutoSnapshots(mark);
 
-            List<SwimMark> replaced;
-            if (replacedBy.TryGetValue(mark.Id, out replaced))
+            if (replaced != null)
             {
                 replacedBy.Remove(mark.Id);
                 Race.Marks.AddRange(replaced);
                 foreach (SwimMark back in replaced)
                     LearnFromMark(back.Type, back.Timestamp);
-                Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + SwimLang.T(" (ξαναμπήκε η προηγούμενη τιμή)"), false);
+                Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + SwimLang.T(" (ξαναμπήκε η προηγούμενη τιμή)") + AfterSplitUndone(mark, replaced), false);
                 return;
             }
 
-            Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark), false);
+            Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + AfterSplitUndone(mark, null), false);
         }
 
         /// <summary>Add a mark that replaces others (Undo puts them back).</summary>
@@ -674,7 +685,12 @@ namespace Kinovea.ScreenManager
 
             SwimMark split = Race.GetSplit(distance);
             if (split != null)
+            {
                 SeekNearest(split.Timestamp);
+
+                // (2.9.5) The row chosen: «Πέρασμα» at the right frame moves this checkpoint there.
+                ChooseSplit(distance);
+            }
         }
 
         private static string MarkLabel(SwimMark mark)
