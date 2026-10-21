@@ -320,7 +320,7 @@ namespace Kinovea.ScreenManager
 
             // Checkpoint times. The official time of the results (typed or from the link, since 2026-10-19) stands as it is at its
             // distance: since 2.9.5b always (the official splits are certain; until 2.9.5 a mark more than a frame and a half from it
-            // kept its own time and the analysis showed a finish of 58.72 for an official 58.58). The mark keeps its frame for the
+            // kept its own time and the analysis showed a finish a tenth slower than the official one). The mark keeps its frame for the
             // video (MarkT); farther than a frame and a half it is shown apart (MarkApart: a mark on another frame, or the start off).
             // (At least 0.015 s: at 120 fps and more a frame and a half is less than the hundredth of the results and the touch.)
             Dictionary<int, double> official = race.OfficialTimes();
@@ -449,6 +449,16 @@ namespace Kinovea.ScreenManager
                 {
                     row.Strokes = typed;
                     row.StrokesTyped = true;
+
+                    // (2.9.6) The rate from the intervals of the presses only while the presses are the strokes typed: an analyst who
+                    // presses once a cycle in freestyle and types the strokes had half the rate there, and extra presses gave a rate
+                    // too high. Otherwise the column shows none.
+                    if (row.SrExact.HasValue && hasStrokes && vRow.HasValue && vPrev.HasValue)
+                    {
+                        double presses = Cumulative(result.Strokes, barriers, vRow.Value) - Cumulative(result.Strokes, barriers, vPrev.Value);
+                        if (Math.Abs(presses - typed) > 0.75)
+                            row.SrExact = null;
+                    }
                 }
 
                 // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),
