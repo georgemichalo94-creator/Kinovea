@@ -1036,6 +1036,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.LanePick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Official.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Dial.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Compare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
@@ -1047,6 +1048,9 @@
     <Compile Include="SwimAnalysis\SwimFinals.cs" />
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimHudDial.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimChartPainter.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />

@@ -136,6 +136,7 @@ namespace Kinovea.Services
         SwimSnapshot,
         SwimAngle,
         SwimGraphics,
+        SwimDial,
     }
 
     public enum DualCaptureCommands

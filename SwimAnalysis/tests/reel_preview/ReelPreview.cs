@@ -338,6 +338,15 @@ public static class ReelPreview
 
         try
         {
+            RenderDial(folder, names);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("dial: " + e);
+        }
+
+        try
+        {
             File.WriteAllText(Path.Combine(folder, "pose.txt"), PoseCheck() + ProposalsCheck() + StartLightCheck() + FinalsCheck(), Encoding.UTF8);
         }
         catch (Exception e)
@@ -349,6 +358,27 @@ public static class ReelPreview
         if (errors.Length > 0)
             File.WriteAllText(Path.Combine(folder, "errors.txt"), errors.ToString(), Encoding.UTF8);
         return names.Count + " images, " + (errors.Length > 0 ? "errors:\n" + errors : "no errors");
+    }
+
+    /// <summary>
+    /// The round button of the analysis in full screen (2.9.5, SwimHudDial, internal: by reflection), with fictional buttons over a
+    /// drawn pool: closed and hidden, open in the middle, open at its first place (bottom middle), open in a corner.
+    /// </summary>
+    private static void RenderDial(string folder, List<string> names)
+    {
+        Type dialType = typeof(SwimAnalysisManager).Assembly.GetType("Kinovea.ScreenManager.SwimHudDial");
+        System.Reflection.MethodInfo preview = dialType != null ?
+            dialType.GetMethod("Preview", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static) : null;
+        if (preview == null)
+            throw new InvalidOperationException("SwimHudDial.Preview not found");
+
+        string[] variants = new string[] { "dial-closed", "dial-open", "dial-bottom", "dial-corner" };
+        for (int i = 0; i < variants.Length; i++)
+        {
+            using (Bitmap image = (Bitmap)preview.Invoke(null, new object[] { i }))
+                SaveJpeg(image, Path.Combine(folder, variants[i] + ".jpg"), 85);
+            names.Add(variants[i]);
+        }
     }
 
     private static Bitmap Draw(Frame frame, SwimComputed computed, SwimReel reel, SwimTiming timing)

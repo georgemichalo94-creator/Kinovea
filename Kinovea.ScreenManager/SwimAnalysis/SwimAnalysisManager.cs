@@ -251,6 +251,10 @@ namespace Kinovea.ScreenManager
             client.StateChanged += Client_StateChanged;
             SwimLang.Changed += SwimLang_Changed;
 
+            // The full screen of the videos: the round button instead of the bars (SwimAnalysisManager.Dial.cs). The manager lives as
+            // long as Kinovea, as its handlers.
+            VideoFullScreen.ActiveChanged += VideoFullScreen_ActiveChanged;
+
             saveTimer = new Timer();
             saveTimer.Interval = 800;
             saveTimer.Tick += SaveTimer_Tick;
@@ -284,14 +288,18 @@ namespace Kinovea.ScreenManager
             switch (command)
             {
                 case PlayerScreenCommands.SwimShowPanel:
-                    // With the bars on the video the key opens and closes the window.
-                    if (PanelOpen && Settings.VideoBars && BarsVisible)
+                    // With the bars on the video (or the round button of the full screen) the key opens and closes the window.
+                    if (PanelOpen && ((Settings.VideoBars && BarsVisible) || DialShown))
                         form.Close();
                     else
                         ShowAnalysis(true);
                     return true;
                 case PlayerScreenCommands.SwimGraphics:
                     SetGraphics(!Settings.VideoGraphics);
+                    return true;
+                case PlayerScreenCommands.SwimDial:
+                    // In full screen: the round button hidden or shown again (2.9.5).
+                    ToggleDial();
                     return true;
                 case PlayerScreenCommands.SwimStart:
                     if (Race.IsTraining)
@@ -3096,8 +3104,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks), and the
-            // auto pilot with it.
-            if (!Settings.VideoBars || !BarsVisible)
+            // auto pilot with it; not in full screen, where the round button stays.
+            if ((!Settings.VideoBars || !BarsVisible) && !DialShown)
             {
                 analysisOn = false;
                 StopPilot();

@@ -57,10 +57,13 @@ namespace Kinovea.ScreenManager
             get { return BarsShown && barsRoom; }
         }
 
-        /// <summary>The analysis is on the screen, in its window or in its bars: graphics on the video, clicks on the image.</summary>
+        /// <summary>
+        /// The analysis is on the screen, in its window, in its bars or in its round button of the full screen: graphics on the
+        /// video, clicks on the image.
+        /// </summary>
         public bool Active
         {
-            get { return PanelOpen || BarsShown; }
+            get { return PanelOpen || BarsShown || DialShown; }
         }
 
         /// <summary>
@@ -69,6 +72,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int LayoutVideoBars(PlayerScreenUserInterface screen, Size viewport)
         {
+            // Full screen (2.9.5): no room beside the image, the round button over it instead (SwimAnalysisManager.Dial.cs).
+            if (VideoFullScreen.Active)
+                return LayoutFullScreen(screen, viewport);
+
             SwimVideoBar left = leftBar;
             SwimVideoBar right = rightBar;
             if (screen == null || screen != barsPlayer || left == null || left.IsDisposed || right == null || right.IsDisposed)
@@ -108,8 +115,9 @@ namespace Kinovea.ScreenManager
             analysisOn = true;
             UpdateBars();
 
-            // Without visible bars (setting off, or a screen too narrow for them) the window, as before.
-            if (panel || !Settings.VideoBars || !BarsVisible)
+            // Without visible bars (setting off, or a screen too narrow for them) the window, as before; not over the full screen,
+            // where the round button has the buttons.
+            if (panel || ((!Settings.VideoBars || !BarsVisible) && !DialShown))
                 EnsureForm(panel);
         }
 
@@ -153,6 +161,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Puts the bars on the video of the analysis, moves them to another screen, or removes them.</summary>
         private void UpdateBars()
         {
+            // In full screen the round button follows the analysis as the bars do (SwimAnalysisManager.Dial.cs).
+            UpdateDial();
+
             bool want = analysisOn && Settings.VideoBars && HasVideo && Race != null;
             PlayerScreenUserInterface target = want ? player : null;
             bool present = leftBar != null && !leftBar.IsDisposed && rightBar != null && !rightBar.IsDisposed &&
@@ -241,8 +252,9 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // The screen became too narrow for the bars while the window is closed: the window, so the analysis stays at hand.
-            if (!barsRoom && !PanelOpen)
+            // The screen became too narrow for the bars while the window is closed: the window, so the analysis stays at hand
+            // (not in full screen, where the round button has the buttons).
+            if (!barsRoom && !PanelOpen && !DialShown)
                 EnsureForm(false);
 
             leftBar.RefreshIfChanged();
@@ -260,13 +272,17 @@ namespace Kinovea.ScreenManager
                 Attach(barsPlayer, barsFrameServer);
         }
 
-        /// <summary>A button of the bars: the command on the screen of the bars, as its key would.</summary>
+        /// <summary>
+        /// A button of the bars: the command on the screen of the bars, as its key would (in full screen, on the screen of the round
+        /// button, which has the same buttons).
+        /// </summary>
         internal bool ExecuteBarCommand(PlayerScreenCommands command)
         {
-            if (barsPlayer == null || barsPlayer.IsDisposed)
+            PlayerScreenUserInterface target = DialShown ? dialPlayer : barsPlayer;
+            if (target == null || target.IsDisposed)
                 return false;
 
-            return barsPlayer.ExecuteScreenCommand((int)command);
+            return target.ExecuteScreenCommand((int)command);
         }
 
         /// <summary>Owner of the dialogs of the analysis: its window, or the main window when only the bars are shown.</summary>
