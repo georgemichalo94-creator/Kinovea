@@ -110,6 +110,7 @@ namespace Kinovea.ScreenManager
             { " Γραμμένο πριν: {0}.", " Entered before: {0}." },
             { " Γύρισαν οι {0} αυτόματες χεριές που είχε σβήσει.", " The {0} automatic strokes it had removed are back." },
             { " Γύρισε η αυτόματη χεριά που είχε σβήσει.", " The automatic stroke it had removed is back." },
+            { " Δεν φαίνεται όταν οι χεριές του τμήματος γράφτηκαν και τα πατήματα δεν είναι όσα αυτές (π.χ. ένα πάτημα ανά κύκλο στο ελεύθερο).", " Not shown when the strokes of the segment were typed and the presses do not match them (e.g. one press per cycle in freestyle)." },
             { " Διαβάστηκε μέχρι τα {0}{1}: για τα υπόλοιπα, «🎓 Κλικ στον αθλητή» σε ένα καρέ μετά.", " Read up to {0}{1}: for the rest, \"🎓 Click the swimmer\" at a frame after that." },
             { " Η πρότασή της περιμένει τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete).", " Its proposal waits for the \"Check\" (Enter on the right frame, or Delete)." },
             { " Οι προτάσεις τους περιμένουν τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete).", " Their proposals wait for the \"Check\" (Enter on the right frame, or Delete)." },
