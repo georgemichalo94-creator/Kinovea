@@ -162,6 +162,315 @@ namespace Kinovea.ScreenManager
             public bool Inside;
         }
 
+        /// <summary>
+        /// (2.9.6) The camera that follows the swimmer, found from the slope of the lane ropes at the swimmer over his place in the pool
+        /// (the parts of the race read): on the side of the pool at Xc along it and D from the lane (pool units), K·D above the water,
+        /// the image turned by Roll; Sign: which way the pool runs in the image; Lead: how far ahead of the swimmer (pool units, in the
+        /// way he swims) it looks. The lines across the pool meet at one point of the horizon (Across): the line of the reference lies
+        /// on the water of the lane, as the marks of the ropes at 15 m, and turns with the camera. On 8 frames of a 100 m backstroke
+        /// against the marks of the ropes at 5, 15, 25, 35 and 45 m (both lengths): 3° RMS (at most 6°), where the line straight up
+        /// the image was 7–70° off. One camera for all the parts with the lead: on 3 other races of the European Championships the
+        /// cameras of the two lengths alone differed by up to 25° at the same place (a part from the start, a camera ahead of the
+        /// swimmer); with the width of the lane against the scale along the pool as a second measure the error was 7°.
+        /// </summary>
+        public sealed class SideCamera
+        {
+            public double Xc, D, K, Roll, Lead;
+            public int Sign;
+
+            /// <summary>Median difference of the slope of the model from the slopes read (dy/dx).</summary>
+            public double Residual;
+
+            /// <summary>The slope of the ropes (dy/dx in the image) with the swimmer at this place of the pool, swimming this way (+1, −1).</summary>
+            public double SlopeAt(double place, int direction)
+            {
+                return Model(new[] { Xc, D, K, Roll, Lead }, place, direction, Sign);
+            }
+
+            /// <summary>
+            /// Where the lines across the pool meet in the image, with the swimmer at this place of the pool swimming this way (+1, −1)
+            /// and at (x, y) of the image; lane: the height of his lane there (pixels), width: its width (pool units, for the focal length).
+            /// </summary>
+            public PointF Across(double place, int direction, float x, float y, float lane, double width)
+            {
+                double t = (place + direction * Lead - Xc) / D;
+                double phi = Math.Atan(t);
+                double st = K / Math.Sqrt(K * K + 1 + t * t);
+                double theta = Math.Asin(Math.Max(-1, Math.Min(1, st)));
+                double distance = D * Math.Sqrt(1 + t * t + K * K);
+                double f = lane * distance * Math.Cos(phi) / (Math.Max(0.1, width) * Math.Max(1e-3, st));
+                double vx = -Sign * f * Math.Tan(phi) / Math.Max(1e-3, Math.Cos(theta)), vy = -f * Math.Tan(theta);
+                double cr = Math.Cos(Roll), sr = Math.Sin(Roll);
+                return new PointF((float)(x + vx * cr - vy * sr), (float)(y + vx * sr + vy * cr));
+            }
+
+            /// <summary>The fit is kept up to this median difference of the slopes (the races read: 0.0025–0.0035).</summary>
+            public const double MaxResidual = 0.008;
+
+            /// <summary>At least this many frames, over at least this share of the pool.</summary>
+            public const int MinPoints = 60;
+            public const double MinSpan = 0.3;
+
+            private const int Parameters = 5;
+
+            /// <summary>
+            /// The camera from frames: their places in the pool, the way the swimmer swims there (+1, −1) and the slopes of the ropes
+            /// (dy/dx). Robust least squares (soft L1, scale 0.02) from a grid of starts, both ways of the pool: a few steps from each,
+            /// then the 8 best to the end (all of them to the end: the same cameras, 8 times longer). Null when too few frames or the
+            /// model does not fit.
+            /// </summary>
+            public static SideCamera Fit(IList<double> places, IList<int> directions, IList<double> slopes, double pool)
+            {
+                int n = Math.Min(Math.Min(places.Count, slopes.Count), directions.Count);
+                if (n < MinPoints || pool <= 0)
+                    return null;
+
+                int step = Math.Max(1, n / 200);
+                List<double> xs = new List<double>(), ss = new List<double>();
+                List<int> ds = new List<int>();
+                for (int i = 0; i < n; i += step)
+                {
+                    if (double.IsNaN(places[i]) || double.IsNaN(slopes[i]) || double.IsInfinity(slopes[i]))
+                        continue;
+                    xs.Add(places[i]);
+                    ss.Add(slopes[i]);
+                    ds.Add(directions[i] >= 0 ? 1 : -1);
+                }
+
+                if (xs.Count < 20 || xs.Max() - xs.Min() < MinSpan * pool)
+                    return null;
+
+                double[] lo = { -0.6 * pool, 2, 0.02, -0.3, -4 }, hi = { 1.6 * pool, 150, 5, 0.3, 4 };
+                List<Tuple<double, int, double[]>> starts = new List<Tuple<double, int, double[]>>();
+                foreach (int sign in new[] { 1, -1 })
+                {
+                    foreach (double xc0 in new[] { 0, 0.25, 0.5, 0.75, 1.0 })
+                    {
+                        foreach (double d0 in new[] { 10.0, 20.0, 35.0, 60.0 })
+                        {
+                            foreach (double k0 in new[] { 0.2, 0.5, 1.0 })
+                            {
+                                double[] p = { xc0 * pool, d0, k0, 0, 0 };
+                                Solve(p, xs, ds, ss, sign, lo, hi, 8);
+                                starts.Add(Tuple.Create(SoftCost(p, xs, ds, ss, sign), sign, p));
+                            }
+                        }
+                    }
+                }
+
+                SideCamera best = null;
+                double bestCost = double.MaxValue;
+                foreach (Tuple<double, int, double[]> s in starts.OrderBy(x => x.Item1).Take(8))
+                {
+                    double[] p = s.Item3;
+                    int sign = s.Item2;
+                    Solve(p, xs, ds, ss, sign, lo, hi, 80);
+                    double cost = 0;
+                    for (int i = 0; i < xs.Count; i++)
+                        cost += Math.Log(1 + Math.Abs(Model(p, xs[i], ds[i], sign) - ss[i]) / FitScale);
+                    if (cost < bestCost)
+                    {
+                        bestCost = cost;
+                        best = new SideCamera { Xc = p[0], D = p[1], K = p[2], Roll = p[3], Lead = p[4], Sign = sign };
+                    }
+                }
+
+                if (best == null)
+                    return null;
+
+                List<double> errors = xs.Select((x, i) => Math.Abs(best.SlopeAt(x, ds[i]) - ss[i])).OrderBy(e => e).ToList();
+                best.Residual = errors[errors.Count / 2];
+                return best.Residual <= MaxResidual ? best : null;
+            }
+
+            private const double FitScale = 0.02;
+
+            private static double Model(double[] p, double x, int direction, int sign)
+            {
+                double t = (x + direction * p[4] - p[0]) / p[1];
+                double st = p[2] / Math.Sqrt(p[2] * p[2] + 1 + t * t);
+                return Math.Tan(Math.Atan(-sign * t * st) + p[3]);
+            }
+
+            /// <summary>Levenberg–Marquardt with the weights of soft L1 (iteratively reweighted), inside the bounds.</summary>
+            private static void Solve(double[] p, List<double> xs, List<int> ds, List<double> ss, int sign, double[] lo, double[] hi, int iterations)
+            {
+                int n = xs.Count, m = Parameters;
+                double lambda = 1e-3;
+                double cost = SoftCost(p, xs, ds, ss, sign);
+                double[] jr = new double[m];
+                double[,] a = new double[m, m];
+                double[] g = new double[m];
+                for (int it = 0; it < iterations; it++)
+                {
+                    Array.Clear(a, 0, a.Length);
+                    Array.Clear(g, 0, g.Length);
+                    for (int i = 0; i < n; i++)
+                    {
+                        double t = (xs[i] + ds[i] * p[4] - p[0]) / p[1];
+                        double r2 = p[2] * p[2] + 1 + t * t, root = Math.Sqrt(r2), r3 = r2 * root;
+                        double v = -sign * t * p[2] / root;
+                        double model = Math.Tan(Math.Atan(v) + p[3]);
+                        double res = model - ss[i];
+                        double dm = (1 + model * model) / (1 + v * v);
+                        double dvdt = -sign * p[2] * (p[2] * p[2] + 1) / r3;
+                        jr[0] = dm * dvdt * (-1 / p[1]);
+                        jr[1] = dm * dvdt * (-t / p[1]);
+                        jr[2] = dm * (-sign * t * (1 + t * t) / r3);
+                        jr[3] = 1 + model * model;
+                        jr[4] = dm * dvdt * (ds[i] / p[1]);
+                        double w = 1 / Math.Sqrt(1 + res * res / (FitScale * FitScale));
+                        for (int j = 0; j < m; j++)
+                        {
+                            g[j] += w * jr[j] * res;
+                            for (int k = 0; k < m; k++)
+                                a[j, k] += w * jr[j] * jr[k];
+                        }
+                    }
+
+                    bool accepted = false;
+                    while (lambda < 1e10)
+                    {
+                        double[,] mm = new double[m, m];
+                        double[] rhs = new double[m];
+                        for (int j = 0; j < m; j++)
+                        {
+                            for (int k = 0; k < m; k++)
+                                mm[j, k] = a[j, k];
+                            mm[j, j] += lambda * Math.Max(a[j, j], 1e-12);
+                            rhs[j] = -g[j];
+                        }
+
+                        double[] delta = SolveLinear(mm, rhs);
+                        if (delta == null)
+                        {
+                            lambda *= 10;
+                            continue;
+                        }
+
+                        double[] q = new double[m];
+                        for (int j = 0; j < m; j++)
+                            q[j] = Math.Max(lo[j], Math.Min(hi[j], p[j] + delta[j]));
+                        double c = SoftCost(q, xs, ds, ss, sign);
+                        if (c < cost)
+                        {
+                            bool small = cost - c < 1e-10 * (1 + cost);
+                            Array.Copy(q, p, m);
+                            cost = c;
+                            lambda = Math.Max(1e-9, lambda / 3);
+                            accepted = !small;
+                            break;
+                        }
+
+                        lambda *= 4;
+                    }
+
+                    if (!accepted)
+                        break;
+                }
+            }
+
+            private static double SoftCost(double[] p, List<double> xs, List<int> ds, List<double> ss, int sign)
+            {
+                double c = 0;
+                for (int i = 0; i < xs.Count; i++)
+                {
+                    double z = (Model(p, xs[i], ds[i], sign) - ss[i]) / FitScale;
+                    c += 2 * (Math.Sqrt(1 + z * z) - 1);
+                }
+
+                return double.IsNaN(c) ? double.MaxValue : c;
+            }
+
+            /// <summary>A small linear system by Gauss elimination with partial pivoting (null if singular).</summary>
+            private static double[] SolveLinear(double[,] m, double[] b)
+            {
+                int n = b.Length;
+                for (int c = 0; c < n; c++)
+                {
+                    int pivot = c;
+                    for (int r = c + 1; r < n; r++)
+                    {
+                        if (Math.Abs(m[r, c]) > Math.Abs(m[pivot, c]))
+                            pivot = r;
+                    }
+
+                    if (Math.Abs(m[pivot, c]) < 1e-18)
+                        return null;
+                    if (pivot != c)
+                    {
+                        for (int k = 0; k < n; k++)
+                        {
+                            double tmp = m[c, k];
+                            m[c, k] = m[pivot, k];
+                            m[pivot, k] = tmp;
+                        }
+
+                        double tb = b[c];
+                        b[c] = b[pivot];
+                        b[pivot] = tb;
+                    }
+
+                    for (int r = c + 1; r < n; r++)
+                    {
+                        double f = m[r, c] / m[c, c];
+                        for (int k = c; k < n; k++)
+                            m[r, k] -= f * m[c, k];
+                        b[r] -= f * b[c];
+                    }
+                }
+
+                double[] x = new double[n];
+                for (int r = n - 1; r >= 0; r--)
+                {
+                    double s = b[r];
+                    for (int k = r + 1; k < n; k++)
+                        s -= m[r, k] * x[k];
+                    x[r] = s / m[r, r];
+                }
+
+                return x.Any(v => double.IsNaN(v) || double.IsInfinity(v)) ? null : x;
+            }
+        }
+
+        /// <summary>
+        /// (2.9.6) The camera of the video (SideCamera.Fit) from the frames of all the parts of the race read: the swimmer's place in the
+        /// pool at each (his curve), the way he swims there and the slope of the ropes. One camera for all the lengths (it turns from
+        /// one place). Null without slopes (a reading before them) or when the model does not fit.
+        /// </summary>
+        public static SideCamera CameraOf(IEnumerable<SwimTrack> tracks, Func<long, double> raceSeconds, Func<double, double> swimmerDistance, int pool, int distance)
+        {
+            if (tracks == null || raceSeconds == null || swimmerDistance == null || pool <= 0 || distance <= 0)
+                return null;
+
+            List<double> places = new List<double>(), slopes = new List<double>();
+            List<int> directions = new List<int>();
+            foreach (SwimTrack track in tracks)
+            {
+                if (track == null || track.Slope == null || track.X == null || track.Step <= 0)
+                    continue;
+
+                int n = Math.Min(track.X.Count, track.Slope.Count);
+                for (int i = 0; i < n; i++)
+                {
+                    double t = raceSeconds(track.Start + (long)Math.Round(i * track.Step));
+                    if (double.IsNaN(t) || t <= 0.5)
+                        continue;
+                    double d = swimmerDistance(t);
+                    if (double.IsNaN(d) || d <= 0 || d >= distance)
+                        continue;
+                    places.Add(PoolPlace(d, pool));
+                    directions.Add(PoolDirection(d, pool));
+                    slopes.Add(track.Slope[i] / 1000.0);
+                }
+            }
+
+            return SideCamera.Fit(places, directions, slopes, pool);
+        }
+
+        /// <summary>The width of a lane (pool units) for the focal length of SideCamera.Across.</summary>
+        public const double LaneWidth = 2.5;
+
         /// <summary>Lap (0: first length) of a distance of the race; a wall belongs to the length that ends there.</summary>
         public static int Lap(double distance, int pool)
         {
@@ -197,7 +506,7 @@ namespace Kinovea.ScreenManager
         /// raceSeconds: time of the race of a timestamp; swimmerDistance: the swimmer's distance at a time of the race (his curve).
         /// </summary>
         public static Placement Place(SwimTrack track, long timestamp, Func<long, double> raceSeconds, Func<double, double> swimmerDistance,
-            Curve reference, int pool)
+            Curve reference, int pool, SideCamera camera = null)
         {
             if (track == null || !track.HasPan || reference == null || !reference.Valid || pool <= 0 || raceSeconds == null || swimmerDistance == null)
                 return null;
@@ -289,6 +598,26 @@ namespace Kinovea.ScreenManager
             float headY = y0 + slope * (head - x0);
             p.LineA = new PointF(head, headY - halfHeight);
             p.LineB = new PointF(head, headY + halfHeight);
+
+            // (2.9.6) With the camera of the part: the line lies on the water of the lane as a line across the pool (towards the point
+            // where those lines meet), from rope to rope (until 2.9.5 straight up the image, 7–70° off the marks of the ropes).
+            if (camera != null)
+            {
+                PointF across = camera.Across(selfPlace, poolDirection, x0, y0, lane, LaneWidth);
+                double dx = across.X - head, dy = across.Y - headY, length = Math.Sqrt(dx * dx + dy * dy);
+                if (length > 1e-3 && !double.IsNaN(length) && !double.IsInfinity(length))
+                {
+                    dx /= length;
+                    dy /= length;
+                    double along = dy - slope * dx;
+                    if (Math.Abs(along) > 0.2)
+                    {
+                        double t = -halfHeight / along;
+                        p.LineA = new PointF((float)(head + t * dx), (float)(headY + t * dy));
+                        p.LineB = new PointF((float)(head - t * dx), (float)(headY - t * dy));
+                    }
+                }
+            }
             p.Side = Math.Abs(head - selfHead) < 0.5f ? 0 : Math.Sign(head - selfHead);
             p.Inside = inside;
             p.Located = true;
