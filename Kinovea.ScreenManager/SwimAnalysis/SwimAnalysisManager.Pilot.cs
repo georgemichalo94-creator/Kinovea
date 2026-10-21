@@ -175,6 +175,7 @@ namespace Kinovea.ScreenManager
             pilotSwimmerAuto = false;
             pilotRefound.Clear();
             pilotNotPut.Clear();
+            pilotDropped.Clear();
             pilotRefoundPending = -1;
             pilotStartNote = Race.StartTimestamp.HasValue ? SwimLang.T("ήταν ήδη βαλμένη") : null;
             RefreshPilotUi();
@@ -568,7 +569,7 @@ namespace Kinovea.ScreenManager
                 PilotBreakout(p);
 
             // (2.9.5b) Its breakouts of earlier readings that the times of this one put past the most a breakout can be go.
-            pilotNotPut.AddRange(DropPastPilotBreakouts());
+            pilotDropped.AddRange(DropPastPilotBreakouts());
 
             // The final frame of the report: the frame of the finish shown (it is the frame painted), with the graphics of all the race.
             SwimMark end = Race.GetSplit(Race.Distance);
@@ -683,6 +684,22 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.9.5b) The breakouts of a reading of the pilot not put (the times put them past the most a breakout can be): for its report.</summary>
         private readonly List<string> pilotNotPut = new List<string>();
 
+        /// <summary>(2.9.6) The breakouts of earlier readings the times of this reading took away (DropPastPilotBreakouts): for its report.</summary>
+        private readonly List<PilotBreakoutGone> pilotDropped = new List<PilotBreakoutGone>();
+
+        /// <summary>(2.9.6) A breakout of the pilot taken away: where the times put it, and what did go back with it.</summary>
+        private sealed class PilotBreakoutGone
+        {
+            /// <summary>Where the times put it (BreakoutPastText), with the underwater distance it had written when that went.</summary>
+            public string Text;
+
+            /// <summary>The automatic strokes before it that came back.</summary>
+            public int Strokes;
+
+            /// <summary>Its proposal waits for the check (in an older analysis there may be none).</summary>
+            public bool Waits;
+        }
+
         /// <summary>
         /// (2.9.5b) The breakouts the pilot put (not checked yet) that the times now put past the most a breakout can be for the style go,
         /// with what they changed (the automatic strokes before them come back, the underwater distance they wrote goes); their proposals
@@ -690,19 +707,47 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string CheckPilotBreakouts()
         {
-            List<string> gone = DropPastPilotBreakouts();
-            if (gone.Count == 0)
-                return "";
-
-            return "⚠ " + (gone.Count == 1 ? SwimLang.T("Η έξοδος του πιλότου σβήστηκε: ") : SwimLang.T("Οι έξοδοι του πιλότου σβήστηκαν: ")) +
-                string.Join("· ", gone.ToArray()) + (gone.Count == 1 ? SwimLang.T(". Οι χεριές πριν από αυτήν γύρισαν· η πρότασή της περιμένει τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete).") :
-                SwimLang.T(". Οι χεριές πριν από αυτές γύρισαν· οι προτάσεις τους περιμένουν τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete)."));
+            return GoneText(DropPastPilotBreakouts());
         }
 
-        /// <summary>The breakouts of the pilot past the most a breakout can be go (CheckPilotBreakouts): where the times put each.</summary>
-        private List<string> DropPastPilotBreakouts()
+        /// <summary>
+        /// (2.9.6) The text of the breakouts of the pilot taken away: where the times put each and only what did happen (the distance
+        /// that went, the strokes that came back), then what waits: their proposals for the check, or, where there is none, the
+        /// breakout to be put (B) or measured (📍). "" if none.
+        /// </summary>
+        private static string GoneText(List<PilotBreakoutGone> gone)
         {
-            List<string> gone = new List<string>();
+            if (gone == null || gone.Count == 0)
+                return "";
+
+            bool one = gone.Count == 1;
+            StringBuilder b = new StringBuilder("⚠ ");
+            b.Append(one ? SwimLang.T("Η έξοδος του πιλότου σβήστηκε: ") : SwimLang.T("Οι έξοδοι του πιλότου σβήστηκαν: "));
+            b.Append(string.Join("· ", gone.Select(g => g.Text).ToArray())).Append('.');
+
+            int strokes = gone.Sum(g => g.Strokes);
+            if (strokes == 1)
+                b.Append(SwimLang.T(" Γύρισε η αυτόματη χεριά που είχε σβήσει."));
+            else if (strokes > 1)
+                b.Append(string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Γύρισαν οι {0} αυτόματες χεριές που είχε σβήσει."), strokes));
+
+            int waiting = gone.Count(g => g.Waits);
+            if (waiting == gone.Count)
+                b.Append(one ? SwimLang.T(" Η πρότασή της περιμένει τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete).") :
+                    SwimLang.T(" Οι προτάσεις τους περιμένουν τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete)."));
+            else if (waiting == 0)
+                b.Append(one ? SwimLang.T(" Βάλε την έξοδο στο σωστό καρέ (B) ή μέτρησέ την (📍).") :
+                    SwimLang.T(" Βάλε τις εξόδους στο σωστό καρέ (B) ή μέτρησέ τες (📍)."));
+            else
+                b.Append(SwimLang.T(" Όπου υπάρχει πρόταση, περιμένει τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete)· αλλιώς βάλε την έξοδο στο σωστό καρέ (B) ή μέτρησέ την (📍)."));
+
+            return b.ToString();
+        }
+
+        /// <summary>The breakouts of the pilot past the most a breakout can be go (CheckPilotBreakouts): where the times put each, what went back.</summary>
+        private List<PilotBreakoutGone> DropPastPilotBreakouts()
+        {
+            List<PilotBreakoutGone> gone = new List<PilotBreakoutGone>();
             if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || Timing == null || !Timing.IsValid)
                 return gone;
 
@@ -713,14 +758,23 @@ namespace Kinovea.ScreenManager
                 if (!BreakoutPastLimit(wall, m.Timestamp, out meters))
                     continue;
 
+                // What it changed goes back (UndoPilotEffects): counted, so that the text says only what did happen.
+                int strokes = Race.Marks.Count(x => x.Type == SwimMarkType.Stroke);
+                double? distance = UnderwaterOf(wall);
                 RemovePilotMark(m);
+                bool waits = false;
                 foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceBreakout && x.Index == wall && (x.PilotMark == m.Id || SameFrame(x.Timestamp, m.Timestamp))))
                 {
                     p.Pilot = false;
                     p.PilotMark = null;
+                    waits = true;
                 }
 
-                gone.Add(BreakoutPastText(wall, meters));
+                string text = BreakoutPastText(wall, meters);
+                if (distance.HasValue && !UnderwaterOf(wall).HasValue)
+                    text += string.Format(CultureInfo.InvariantCulture, SwimLang.T(", και σβήστηκε η απόσταση {0:0.0}{1} που είχε γράψει"), distance.Value, Race.Unit);
+
+                gone.Add(new PilotBreakoutGone { Text = text, Strokes = Math.Max(0, Race.Marks.Count(x => x.Type == SwimMarkType.Stroke) - strokes), Waits = waits });
                 log.DebugFormat("Pilot: breakout after {0} removed ({1:0.0} m by the times).", wall, meters);
             }
 
@@ -1107,6 +1161,8 @@ namespace Kinovea.ScreenManager
                 .Append(CountOf(breakouts, SwimLang.T("έξοδος από το νερό"), SwimLang.T("έξοδοι από το νερό"))).Append(SwimLang.T(" και ")).Append(CountOf(strokes, SwimLang.T("χεριά"), SwimLang.T("χεριές"))).Append(".\n");
             foreach (string notPut in pilotNotPut)
                 b.Append(SwimLang.T("• ⚠ Δεν μπήκε έξοδος από το νερό: ")).Append(notPut).Append(SwimLang.T("· περιμένει τον έλεγχό σου (στο σωστό καρέ Enter, ή Delete).\n"));
+            if (pilotDropped.Count > 0)
+                b.Append("• ").Append(GoneText(pilotDropped)).Append('\n');
             if (raceSplits - splits == 1)
                 b.Append(SwimLang.T("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n"));
             else if (raceSplits > splits)

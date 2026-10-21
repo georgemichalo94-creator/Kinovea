@@ -354,6 +354,15 @@ public static class ReelPreview
             errors.AppendLine("pose: " + e);
         }
 
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "checks.txt"), PilotBreakoutsCheck(), Encoding.UTF8);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("checks: " + e);
+        }
+
         File.WriteAllLines(Path.Combine(folder, "frames.txt"), names.ToArray());
         if (errors.Length > 0)
             File.WriteAllText(Path.Combine(folder, "errors.txt"), errors.ToString(), Encoding.UTF8);
@@ -784,6 +793,121 @@ public static class ReelPreview
 
         File.Delete(path);
         return b.ToString();
+    }
+
+    /// <summary>
+    /// (2.9.6) The text when breakouts of the auto pilot are taken away because the times put them past the most a breakout can be
+    /// (SwimAnalysisManager.CheckPilotBreakouts, private: by reflection, on a manager made without its constructor and given a
+    /// fictional 100 m race): it says only what did happen (the distance that went, the strokes that came back) and what waits
+    /// (the proposal, or, where there is none, the breakout to put or measure). Fictional times: 15/25/35/45 m at
+    /// 6.40/12.20/19.20/26.30 s, the 50 m at 31.00 s, 65/75/85/95 m at 39.00/44.60/51.60/58.60 s.
+    /// </summary>
+    public static string PilotBreakoutsCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        b.AppendLine("pilot breakouts against the times (fictional 100 m races):");
+        b.Append(GoneCase("br, start 11.6 s, 23.9 written, 3 strokes removed, proposal", "br", 11.6, 23.9, 3, true, 0, false, false));
+        b.Append(GoneCase("br, start 11.6 s, 23.9 written, no strokes, no proposal", "br", 11.6, 23.9, 0, false, 0, false, false));
+        b.Append(GoneCase("br, start 11.6 s, nothing written, 1 stroke removed, proposal", "br", 11.6, 0, 1, true, 0, false, false));
+        b.Append(GoneCase("fs, start 6.0 s (plausible: stays)", "fs", 6.0, 14.5, 2, true, 0, false, false));
+        b.Append(GoneCase("fs, start 11.9 s, 2 strokes removed, no proposal", "fs", 11.9, 0, 2, false, 0, false, false));
+        b.Append(GoneCase("br, start 11.6 s with proposal + 50 m wall 44.4 s without", "br", 11.6, 23.9, 2, true, 44.4, false, false));
+        b.Append(GoneCase("br, start 11.6 s with proposal + 50 m wall 44.4 s with", "br", 11.6, 0, 0, true, 44.4, true, false));
+        b.Append(GoneCase("English: br, start 11.6 s, 23.9 written, 3 strokes removed, no proposal", "br", 11.6, 23.9, 3, false, 0, false, true));
+        return b.ToString();
+    }
+
+    private static string GoneCase(string label, string style, double start, double underwater, int removed, bool proposal,
+        double wall50, bool proposal50, bool english)
+    {
+        SwimRace race = new SwimRace();
+        race.Athlete = "ΔΟΚΙΜΑΣΤΙΚΟΣ ΑΘΛΗΤΗΣ";
+        race.Style = style;
+        race.Distance = 100;
+        race.Pool = 50;
+        race.Checkpoints = new List<int> { 15, 25, 35, 45, 50, 65, 75, 85, 95, 100 };
+        race.StartTimestamp = Ts(0);
+        Splits(race, new int[] { 15, 25, 35, 45, 50, 65, 75, 85, 95 }, new double[] { 6.40, 12.20, 19.20, 26.30, 31.00, 39.00, 44.60, 51.60, 58.60 });
+        PilotBreakout(race, 0, start, underwater, removed, proposal, "b0");
+        if (wall50 > 0)
+            PilotBreakout(race, 50, wall50, 0, 0, proposal50, "b50");
+
+        Type type = typeof(SwimAnalysisManager);
+        System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        object manager = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
+        type.GetField("currentRace", flags).SetValue(manager, race);
+        type.GetField("currentTiming", flags).SetValue(manager, Timing());
+        type.GetField("undoStack", flags).SetValue(manager, new List<string>());
+        type.GetField("replacedBy", flags).SetValue(manager, new Dictionary<string, List<SwimMark>>());
+
+        int strokes = race.Marks.Count(m => m.Type == SwimMarkType.Stroke);
+        bool was = SwimLang.English;
+        string text;
+        try
+        {
+            SwimLang.English = english;
+            text = (string)type.GetMethod("CheckPilotBreakouts", flags).Invoke(manager, null);
+        }
+        finally
+        {
+            SwimLang.English = was;
+        }
+
+        StringBuilder b = new StringBuilder();
+        b.AppendLine("- " + label + ":");
+        b.AppendLine("  " + (string.IsNullOrEmpty(text) ? "(nothing)" : text));
+        b.AppendLine(string.Format(ci, "  strokes {0} -> {1}, pilot breakouts left {2}, underwater after the start {3}, proposals waiting {4} of {5}",
+            strokes, race.Marks.Count(m => m.Type == SwimMarkType.Stroke), race.Marks.Count(m => m.Type == SwimMarkType.Breakout && m.Pilot != null),
+            race.UnderwaterDist.HasValue ? race.UnderwaterDist.Value.ToString("0.0", ci) : "-", race.Proposals.Count(p => !p.Pilot), race.Proposals.Count));
+        return b.ToString();
+    }
+
+    /// <summary>A breakout of the auto pilot after 'wall' at 'seconds', as the pilot leaves it: its record of what it changed.</summary>
+    private static void PilotBreakout(SwimRace race, int wall, double seconds, double underwater, int removed, bool proposal, string batch)
+    {
+        SwimMark mark = new SwimMark();
+        mark.Type = SwimMarkType.Breakout;
+        mark.Timestamp = Ts(seconds);
+        mark.Pilot = new SwimPilotMark();
+        mark.Pilot.Wall = wall;
+        if (underwater > 0)
+        {
+            mark.Pilot.Underwater = underwater;
+            if (wall == 0)
+                race.UnderwaterDist = underwater;
+        }
+
+        if (removed > 0)
+        {
+            // The automatic strokes of the reading before the breakout that the pilot removed, and one of the same reading after it.
+            mark.Pilot.Strokes = new List<SwimMark>();
+            for (int i = 0; i < removed; i++)
+            {
+                SwimMark stroke = new SwimMark();
+                stroke.Type = SwimMarkType.Stroke;
+                stroke.Timestamp = Ts(seconds - 4.0 + 1.1 * i);
+                stroke.Batch = batch;
+                mark.Pilot.Strokes.Add(stroke);
+            }
+
+            SwimMark after = new SwimMark();
+            after.Type = SwimMarkType.Stroke;
+            after.Timestamp = Ts(seconds + 1.0);
+            after.Batch = batch;
+            race.Marks.Add(after);
+        }
+
+        race.Marks.Add(mark);
+        if (proposal)
+        {
+            SwimProposal p = new SwimProposal();
+            p.Kind = SwimAnalysisManager.KindRaceBreakout;
+            p.Index = wall;
+            p.Timestamp = mark.Timestamp;
+            p.Pilot = true;
+            p.PilotMark = mark.Id;
+            race.Proposals.Add(p);
+        }
     }
 
     /// <summary>
