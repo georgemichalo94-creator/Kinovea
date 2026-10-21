@@ -184,8 +184,16 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return quickLookBackend; }
+            get { return pdfChartsBackend; }
         }
+
+        /// <summary>
+        /// Oldest Apps Script whose PDF prints every chart (2.9.5: before, the charts of Google with the values written on them came out
+        /// with their title only, when Kinovea's images were not used) and shows the ΔΑΚ of each 50 (no more «Μέση ταχύτητα από
+        /// εκκίνηση»).
+        /// </summary>
+        private static readonly Version pdfChartsBackend = new Version(2, 9, 5);
+        private bool pdfChartsWarned;
         private bool backendWarned;
         private bool typedStrokesWarned;
         private bool chartsWarned;
@@ -251,6 +259,10 @@ namespace Kinovea.ScreenManager
             client.StateChanged += Client_StateChanged;
             SwimLang.Changed += SwimLang_Changed;
 
+            // The full screen of the videos: the round button instead of the bars (SwimAnalysisManager.Dial.cs). The manager lives as
+            // long as Kinovea, as its handlers.
+            VideoFullScreen.ActiveChanged += VideoFullScreen_ActiveChanged;
+
             saveTimer = new Timer();
             saveTimer.Interval = 800;
             saveTimer.Tick += SaveTimer_Tick;
@@ -284,14 +296,18 @@ namespace Kinovea.ScreenManager
             switch (command)
             {
                 case PlayerScreenCommands.SwimShowPanel:
-                    // With the bars on the video the key opens and closes the window.
-                    if (PanelOpen && Settings.VideoBars && BarsVisible)
+                    // With the bars on the video (or the round button of the full screen) the key opens and closes the window.
+                    if (PanelOpen && ((Settings.VideoBars && BarsVisible) || DialShown))
                         form.Close();
                     else
                         ShowAnalysis(true);
                     return true;
                 case PlayerScreenCommands.SwimGraphics:
                     SetGraphics(!Settings.VideoGraphics);
+                    return true;
+                case PlayerScreenCommands.SwimDial:
+                    // In full screen: the round button hidden or shown again (2.9.5).
+                    ToggleDial();
                     return true;
                 case PlayerScreenCommands.SwimStart:
                     if (Race.IsTraining)
@@ -377,12 +393,13 @@ namespace Kinovea.ScreenManager
                 // A swimmer to follow for the label becomes the swimmer of the strokes (they keep his place too).
                 if (command == PlayerScreenCommands.SwimBreakout && Settings.AutoStrokes && (!PickingStrokes || PickingTrack) && !resolvingProposal && reviewId == null)
                     BeginAutoStrokes();
-                else if (command == PlayerScreenCommands.SwimSplit && splitAdded && (Settings.AutoStrokes || StrokeSessionActive))
+                else if (command == PlayerScreenCommands.SwimSplit && splitAdded && !splitMoved && (Settings.AutoStrokes || StrokeSessionActive))
                     StrokesAfterSplit(timestamp);
 
                 // Manual analysis: after the first checkpoint, one click on the swimmer and the race is read in the background for the learning.
+                // (2.9.5: not for a checkpoint moved, splitMoved.)
                 if (!TechnicalView && !resolvingProposal && reviewId == null &&
-                    ((command == PlayerScreenCommands.SwimSplit && splitAdded) || command == PlayerScreenCommands.SwimWallContact))
+                    ((command == PlayerScreenCommands.SwimSplit && splitAdded && !splitMoved) || command == PlayerScreenCommands.SwimWallContact))
                     OfferQuietLearning();
             }
 
@@ -489,7 +506,10 @@ namespace Kinovea.ScreenManager
             }
 
             bool hadStart = EnsureStart();
-            int distance = Race.NextCheckpoint();
+
+            // (2.9.5) The checkpoint of this frame: the next one, or one with a time already that moves here (SplitTargetAt).
+            bool move;
+            int distance = TakeSplitTarget(timestamp, out move);
             string unit = Race.Unit;
             if (distance < 0)
             {
@@ -497,6 +517,9 @@ namespace Kinovea.ScreenManager
                 Status(SwimLang.T("Όλα τα σημεία έχουν χρόνο. Διάγραψε έναν χρόνο (επιλογή γραμμής + Delete) για να τον ξαναμαρκάρεις."), true);
                 return false;
             }
+
+            if (move)
+                return MoveSplit(distance, timestamp);
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = distance };
             Race.Marks.Add(mark);
@@ -518,8 +541,9 @@ namespace Kinovea.ScreenManager
                 message += SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
             }
 
+            string estimate = ReestimateAfterSplit(distance);
             if (hadStart || warn)
-                Status(message, warn);
+                Status(message + estimate, warn);
 
             return true;
         }
@@ -595,24 +619,27 @@ namespace Kinovea.ScreenManager
             Race.Marks.Remove(mark);
             UndoPilotEffects(mark);
             ForgetTaught(mark);
-            if (mark.Type == SwimMarkType.Split)
+            List<SwimMark> replaced;
+            replacedBy.TryGetValue(mark.Id, out replaced);
+
+            // (2.9.5) A checkpoint moved and put back: the strokes of its segment stay.
+            if (mark.Type == SwimMarkType.Split && (replaced == null || !replaced.Any(m => m.Type == SwimMarkType.Split && m.Distance == mark.Distance)))
                 Race.StrokeCounts.Remove(mark.Distance);
 
             // The automatic snapshot of the event goes with it.
             UndoAutoSnapshots(mark);
 
-            List<SwimMark> replaced;
-            if (replacedBy.TryGetValue(mark.Id, out replaced))
+            if (replaced != null)
             {
                 replacedBy.Remove(mark.Id);
                 Race.Marks.AddRange(replaced);
                 foreach (SwimMark back in replaced)
                     LearnFromMark(back.Type, back.Timestamp);
-                Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + SwimLang.T(" (ξαναμπήκε η προηγούμενη τιμή)"), false);
+                Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + SwimLang.T(" (ξαναμπήκε η προηγούμενη τιμή)") + AfterSplitUndone(mark, replaced), false);
                 return;
             }
 
-            Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark), false);
+            Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + AfterSplitUndone(mark, null), false);
         }
 
         /// <summary>Add a mark that replaces others (Undo puts them back).</summary>
@@ -674,7 +701,12 @@ namespace Kinovea.ScreenManager
 
             SwimMark split = Race.GetSplit(distance);
             if (split != null)
+            {
                 SeekNearest(split.Timestamp);
+
+                // (2.9.5) The row chosen: «Πέρασμα» at the right frame moves this checkpoint there.
+                ChooseSplit(distance);
+            }
         }
 
         private static string MarkLabel(SwimMark mark)
@@ -1653,12 +1685,25 @@ namespace Kinovea.ScreenManager
         private static readonly SolidBrush brushReference = new SolidBrush(colorReference);
 
         /// <summary>
+        /// The graphics of the race on the video without the technical view or the HUD: the boards and, after the finish, the summary card
+        /// of the race (2.9.5, as in the technical view), not on the images of the report.
+        /// all: the boards of the whole race (the image of the final frame); report: an image of the report.
+        /// </summary>
+        /// <param name="swimmer">Where the swimmer is on the screen (2.9.0): the graphics fade over him, he stays in front; empty: not known.</param>
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false, RectangleF swimmer = default(RectangleF))
+        {
+            DrawRaceBoards(g, timestamp, size, all, report, swimmer);
+            if (!all && !report)
+                DrawRaceSummary(g, timestamp, size);
+        }
+
+        /// <summary>
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
         /// passed at the current frame are shown, so it plays "live" during the playback.
         /// report: an image of the report (the Δ and the reference's name on the board whatever is chosen for the video, as before 2.8.0).
         /// </summary>
         /// <param name="swimmer">Where the swimmer is on the screen (2.9.0): the graphics fade over him, he stays in front; empty: not known.</param>
-        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false, RectangleF swimmer = default(RectangleF))
+        private void DrawRaceBoards(Graphics g, long timestamp, Size size, bool all, bool report, RectangleF swimmer)
         {
             if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
                 return;
@@ -1740,6 +1785,51 @@ namespace Kinovea.ScreenManager
                 HudLayer(g, delta, SwimmerFade(delta, swimmer), layer =>
                     SwimFinalsPainter.PaintDelta(layer, delta, points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1f));
             }
+        }
+
+        /// <summary>
+        /// (2.9.5) After the finish, the summary card of the race over the boards, as in the technical view (the choice «σύνοψη στο
+        /// τέλος»): on the screen and in the exported video, sooner when the video ends soon after the touch; not while a click on the
+        /// video is awaited.
+        /// </summary>
+        private void DrawRaceSummary(Graphics g, long timestamp, Size size)
+        {
+            if (Settings == null || !Settings.ReelSummary || PickTarget != SwimPickTarget.None || Race == null || Race.IsTraining ||
+                Computed == null || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return;
+
+            SwimReel reel = Reel;
+            if (reel == null || !reel.Finish.HasValue)
+                return;
+
+            SwimReelScene scene = new SwimReelScene
+            {
+                Race = Race,
+                Computed = Computed,
+                Reel = reel,
+                Timing = Timing,
+                Timestamp = timestamp,
+                Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value),
+                Summary = true,
+                Final = Settings.ShowFinalsBoard ? FinalForRace() : null,
+                BoardName = BoardName(Race.Athlete),
+                Delta = Settings.CompareDelta || Settings.ShowDeltaChart,
+                VideoEnd = VideoEndSeconds()
+            };
+            SwimReelPainter.PaintSummary(g, size, scene);
+        }
+
+        /// <summary>Race time of the last frame of the video (its working zone, what is exported), null when not known (2.9.5).</summary>
+        private double? VideoEndSeconds()
+        {
+            if (frameServer == null || !frameServer.Loaded || Race == null || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return null;
+
+            VideoSection zone = frameServer.VideoReader.WorkingZone;
+            if (zone.IsEmpty || zone.End <= Race.StartTimestamp.Value)
+                return null;
+
+            return Timing.Seconds(zone.End, Race.StartTimestamp.Value);
         }
 
         /// <summary>
@@ -2786,6 +2876,14 @@ namespace Kinovea.ScreenManager
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς την πρώτη σελίδα «Με μια ματιά». Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
                                 version, quickLookBackend.ToString(3)), true);
                         }
+                        else if (!pdfChartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < pdfChartsBackend)
+                        {
+                            // Since 2.9.5 every chart of the PDF prints and the ΔΑΚ of each 50 shows (Apps Script 2.9.5).
+                            pdfChartsWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: κάποια γραφήματα μπορεί να βγουν άδεια και ο ΔΑΚ μόνο ως μέσος όρος. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, pdfChartsBackend.ToString(3)), true);
+                        }
                         else if (e.Result.PdfQuick == false && quickLookFailed.Add(race.Id ?? ""))
                         {
                             // The Apps Script could not make the first page (the copy of the sheet): the whole report as before. Said once a race.
@@ -3022,8 +3120,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             // Without visible bars on the video, closing the window ends the analysis on the screen (graphics, clicks), and the
-            // auto pilot with it.
-            if (!Settings.VideoBars || !BarsVisible)
+            // auto pilot with it; not in full screen, where the round button stays.
+            if ((!Settings.VideoBars || !BarsVisible) && !DialShown)
             {
                 analysisOn = false;
                 StopPilot();

@@ -102,6 +102,15 @@ namespace Kinovea.ScreenManager
         public string PanelBounds = "";
 
         /// <summary>
+        /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
+        /// area ("x,y"), empty for the default place (bottom right).
+        /// </summary>
+        public string DialPlace = "";
+
+        /// <summary>Since 2.9.5: the round button of the full screen is hidden (a small dot in the corner brings it back, or the key D).</summary>
+        public bool DialHidden = false;
+
+        /// <summary>
         /// Technical view of the race on the video (as the swimming reels): athlete label following the swimmer, race time with the
         /// strokes, tempo, distance per cycle and speed, phase, badges at the start, the breakouts and the checkpoints, per cycle chart.
         /// It replaces the race board and the velocity chart.

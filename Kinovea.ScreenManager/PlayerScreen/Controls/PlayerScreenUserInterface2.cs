@@ -335,6 +335,11 @@ namespace Kinovea.ScreenManager
         private bool m_fill;
         private double m_lastUserStretch = 1.0f;
         private bool m_bShowImageBorder;
+        // Full screen: only the image, filling the screen's tile (see FullScreen).
+        private bool imageOnly;
+        private Size memoMinimumSize;
+        private bool memoKeyframesCollapsed;
+        private bool renderingSurfaceShown;
         private bool m_bManualSqueeze = true; // If it's allowed to manually reduce the rendering surface under the aspect ratio size.
         private static readonly Pen m_PenImageBorder = Pens.SteelBlue;
         private static readonly Size m_MinimalSize = new Size(160, 120);
@@ -1125,13 +1130,47 @@ namespace Kinovea.ScreenManager
             UpdateInfobar();
             ResetZoom(false);
         }
+        /// <summary>
+        /// Full screen: only the image, as large as the screen's tile allows (aspect kept), with the drawings and the
+        /// graphics of the swim analysis as usual. The title bar, the drawing toolbar, the keyframes, the side panel,
+        /// the timeline and the playback controls are hidden and come back as they were; the keys keep working.
+        /// </summary>
         public void FullScreen(bool _bFullScreen)
         {
-            if (_bFullScreen && !m_fill)
+            if (_bFullScreen == imageOnly)
+                return;
+
+            bool hadFocus = ContainsFocus;
+            imageOnly = _bFullScreen;
+
+            SuspendLayout();
+            if (imageOnly)
             {
-                m_fill = true;
-                ResizeUpdate(true);
+                memoMinimumSize = MinimumSize;
+                memoKeyframesCollapsed = splitKeyframes.Panel2Collapsed;
+                MinimumSize = Size.Empty;
+                panelTop.Visible = false;
+                panelVideoControls.Visible = false;
+                splitKeyframes.Panel2Collapsed = true;
+                splitViewport_Properties.Panel2Collapsed = true;
             }
+            else
+            {
+                MinimumSize = memoMinimumSize;
+                panelTop.Visible = true;
+                panelVideoControls.Visible = true;
+                splitKeyframes.Panel2Collapsed = memoKeyframesCollapsed;
+                splitViewport_Properties.Panel2Collapsed = !isSidePanelVisible;
+            }
+
+            ShowHideRenderingSurface(renderingSurfaceShown);
+            ResumeLayout(true);
+            ResizeUpdate(true);
+
+            // The keys stay with this screen: its focused control may have been hidden, and the screen is moved
+            // to its place in the full screen grid (or back) right after this.
+            if (hadFocus && IsHandleCreated)
+                BeginInvoke((Action)(() => { if (!IsDisposed && panelCenter.CanFocus) panelCenter.Focus(); }));
         }
         public void BeforeAddImageDrawing()
         {
@@ -1346,10 +1385,13 @@ namespace Kinovea.ScreenManager
         }
         private void ShowHideRenderingSurface(bool _bShow)
         {
-            ImageResizerNE.Visible = _bShow;
-            ImageResizerNW.Visible = _bShow;
-            ImageResizerSE.Visible = _bShow;
-            ImageResizerSW.Visible = _bShow;
+            // Full screen: the image without the handles at its corners.
+            renderingSurfaceShown = _bShow;
+            bool resizers = _bShow && !imageOnly;
+            ImageResizerNE.Visible = resizers;
+            ImageResizerNW.Visible = resizers;
+            ImageResizerSE.Visible = resizers;
+            ImageResizerSW.Visible = resizers;
             pbSurfaceScreen.Visible = _bShow;
         }
         private void BuildContextMenus()
@@ -1596,6 +1638,12 @@ namespace Kinovea.ScreenManager
                         break;
                     if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Escape, m_iCurrentPosition))
                         break;
+                    // Full screen: Escape leaves it (a drawing being made or a drawing tool is cancelled first, as usual).
+                    if (imageOnly && m_ActiveTool == m_PointerTool && !m_FrameServer.Metadata.DrawingInitializing)
+                    {
+                        NotificationCenter.RaiseFullScreenToggle();
+                        break;
+                    }
                     DisablePlayAndDraw();
                     DoInvalidate();
                     break;
@@ -1788,6 +1836,7 @@ namespace Kinovea.ScreenManager
                 case PlayerScreenCommands.SwimSnapshot:
                 case PlayerScreenCommands.SwimAngle:
                 case PlayerScreenCommands.SwimGraphics:
+                case PlayerScreenCommands.SwimDial:
                     SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
                     break;
                 default:
@@ -2660,7 +2709,10 @@ namespace Kinovea.ScreenManager
             // Swim race analysis: its bars on the left and right of the viewport, the image between them.
             int swimBar;
             Size imageArea = ImageArea(out swimBar);
-            m_viewportManipulator.Manipulate(finished, imageArea, targetStretch, m_fill, m_FrameServer.ImageTransform.Zoom, canCustomDecodingSize, rotatedCanvas);
+
+            // Full screen: the image fills its tile (the user's stretch comes back after, see the test on m_fill above).
+            bool fill = m_fill || imageOnly;
+            m_viewportManipulator.Manipulate(finished, imageArea, targetStretch, fill, m_FrameServer.ImageTransform.Zoom, canCustomDecodingSize, rotatedCanvas);
 
             Point location = m_viewportManipulator.RenderingLocation;
             pbSurfaceScreen.Location = new Point(location.X + swimBar, location.Y);
@@ -4333,8 +4385,8 @@ namespace Kinovea.ScreenManager
                 log.Error("Painting screen - no image to display.");
             }
 
-            // Draw Selection Border if needed.
-            if (m_bShowImageBorder)
+            // Draw Selection Border if needed (not in full screen: the images are joined).
+            if (m_bShowImageBorder && !imageOnly)
             {
                 DrawImageBorder(e.Graphics);
             }

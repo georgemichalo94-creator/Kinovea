@@ -104,8 +104,10 @@ function lastExport(G, report) {
   like(/^Στροφή \(-5\/\+15\) στα 50μ\.: /);
   has('Τελευταία 5μ.'); has('3.18'); has('11.84 · στροφή 0.88');
   like(/^=SPARKLINE\(\{[0-9.]+\},\{"charttype","bar";"max",[0-9.]+;"color1","#[0-9A-F]{6}"\}\)$/);
-  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.8\.0$/);
+  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.9\.5$/);
   ['15–25', '45–50', '95–100'].forEach(has);
+  // 2.9.5: ο μέσος όρος του ΔΑΚ και από κάτω κάθε 50άρι· ο ΔΑΚ κάθε 50άρι και στον πίνακα.
+  has('ΔΑΚ (μ.ο.)'); has('ΔΑΚ 50άρι'); like(/^1ο \d+\.\d\d · 2ο \d+\.\d\d$/);
   // Το φύλλο του αγώνα δεν έχει τίποτα από την πρώτη σελίδα.
   assert.ok(!Object.keys(sheet._cells).some(k => sheet._cells[k].v === 'ΜΕ ΜΙΑ ΜΑΤΙΑ'), 'the report sheet is unchanged');
 
@@ -117,6 +119,9 @@ function lastExport(G, report) {
   assert.deepStrictEqual(greek, [], 'Greek left on the English first page');
   const hasEn = t => assert.ok(qe.texts.indexOf(t) >= 0, 'missing: ' + t + '\n' + qe.texts.join(' | '));
   hasEn('AT A GLANCE'); hasEn('Key points'); hasEn('Times per checkpoint'); hasEn('VS PB');
+  // 2.9.5: ο ΔΑΚ κάθε 50άρι (πλακίδιο και πίνακας) στα αγγλικά.
+  hasEn('SPI (mean)'); hasEn('SPI of the 50');
+  assert.ok(qe.texts.some(t => /^1st \d+\.\d\d · 2nd \d+\.\d\d$/.test(t)), 'SPI of each 50 under the mean');
   assert.ok(qe.texts.some(t => /^New personal best: -1\.16 from the best time of the swimmer \(59\.10, Semi-final · Quick Open 2026 · 1\.6\.2026\)\.$/.test(t)),
     qe.texts.join(' | '));
   assert.ok(qe.texts.some(t => /^15m in 6\.72 \(\+0\.34 from the reference\) · reaction 0\.66/.test(t)));

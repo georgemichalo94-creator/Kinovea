@@ -2,6 +2,27 @@
 const fs = require('fs'); const vm = require('vm'); const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../GoogleSheet/SwimRaceAnalysis.gs'), 'utf8');
 
+// Τι σχεδιάζει το Google από ένα γράφημα του φύλλου (στο PDF και στην εικόνα του, getAs): μόνο τον τίτλο με την περιοχή του
+// γραφήματος σε % (ως την 2.2.1) ή με τιμές πάνω στις σειρές (dataLabel: στα PDF 2.5–2.9.4 σωζόταν μόνο η πίτα, χωρίς τιμές).
+function titleOnly(opts) {
+  const area = opts && opts.chartArea;
+  if (area && (/%/.test(String(area.width)) || /%/.test(String(area.height)))) return true;
+  const s = (opts && opts.series) || {};
+  return Object.keys(s).some(k => s[k] && s[k].dataLabel);
+}
+
+// Ένα γράφημα όπως τυπώνεται: οι περιοχές του με τις τιμές τους (από το φύλλο τη στιγμή της εξαγωγής) και πόσες από τις
+// γραμμές / στήλες τους είναι κρυμμένες.
+function chartInfo(sheet, ch) {
+  const ranges = (ch.ranges || []).map(rg => {
+    let hidden = 0;
+    for (let i = 0; i < rg._nr; i++) if (sheet._hiddenRows[rg._r + i]) hidden++;
+    for (let j = 0; j < rg._nc; j++) if (sheet._hiddenCols[rg._c + j]) hidden++;
+    return { r: rg._r, c: rg._c, nr: rg._nr, nc: rg._nc, values: sheet.getRange(rg._r, rg._c, rg._nr, rg._nc).getValues(), hidden };
+  });
+  return { type: ch.type, title: (ch.opts || {}).title, hidden: ch.hidden || null, titleOnly: titleOnly(ch.opts), ranges };
+}
+
 function makeSheet(ss, name, id, opts) {
   opts = opts || {};
   const cells = {}; const merges = []; const charts = []; const images = [];
@@ -25,7 +46,11 @@ function makeSheet(ss, name, id, opts) {
       Object.keys(rowHeights).forEach(k => delete rowHeights[k]); Object.assign(rowHeights, rh);
       Object.keys(forced).forEach(k => delete forced[k]); Object.assign(forced, fo);
       merges.forEach(m => { if (m[0] >= row) m[0] += n; });
-      charts.forEach(ch => { if (ch.pos && ch.pos[0] >= row) ch.pos[0] += n; });
+      // Τα γραφήματα κατεβαίνουν, και οι περιοχές των δεδομένων τους μαζί με τις γραμμές τους.
+      charts.forEach(ch => {
+        if (ch.pos && ch.pos[0] >= row) ch.pos[0] += n;
+        (ch.ranges || []).forEach(rg => { if (rg._r >= row) rg._r += n; });
+      });
       if (!opts.imagesStay) images.forEach(im => { if (im.row >= row) im.row += n; });
       maxRows += n;
     },
@@ -52,6 +77,8 @@ function makeSheet(ss, name, id, opts) {
         asLineChart: () => { b.type = 'line'; return api; }, asColumnChart: () => { b.type = 'column'; return api; },
         asPieChart: () => { b.type = 'pie'; return api; }, asComboChart: () => { b.type = 'combo'; return api; },
         setChartType: t => { b.type = t; return api; }, setTransposeRowsAndColumns: v => { b.transpose = v; return api; },
+        // Τα δεδομένα κρυμμένων γραμμών / στηλών (Charts.ChartHiddenDimensionStrategy).
+        setHiddenDimensionStrategy: s => { if (!s) throw new Error('hidden dimension strategy'); b.hidden = s; return api; },
         addRange: r => { if (!r || !r._nr) throw new Error('bad chart range'); b.ranges.push(r); return api; },
         setOption: (k, v) => { if (v === undefined) throw new Error('undefined chart option ' + k); b.opts[k] = v; return api; },
         setPosition: (r, c, ox, oy) => { b.pos = [r, c, ox || 0, oy || 0]; return api; },
@@ -61,8 +88,15 @@ function makeSheet(ss, name, id, opts) {
           b.getChartId = () => b._id;
           b.getContainerInfo = () => ({ getAnchorRow: () => b.pos[0], getAnchorColumn: () => b.pos[1], getOffsetX: () => b.pos[2], getOffsetY: () => b.pos[3] });
           b.getOptions = () => ({ get: k => b.opts[k] });
-          // Η εικόνα του γραφήματος (όπως το σχεδιάζει το Google): ένα PNG με το μέγεθός του.
-          b.getAs = type => { sheet._chartImages = (sheet._chartImages || 0) + 1; const blob = makeBlob([137, 80, 78, 71], type, 'chart.png'); blob._size = [b.opts.width || 546, b.opts.height || 300]; return blob; };
+          // Η εικόνα του γραφήματος (όπως το σχεδιάζει το Google): ένα PNG με το μέγεθός του, από το γράφημα (_chart). Όπως στο
+          // PDF, μόνο ο τίτλος (λίγα bytes) με περιοχή σε % ή με τιμές πάνω στις σειρές (titleOnly).
+          b.getAs = type => {
+            sheet._chartImages = (sheet._chartImages || 0) + 1;
+            const blob = makeBlob(titleOnly(b.opts) ? [137, 80, 78, 71] : [137, 80, 78, 71].concat(new Array(60).fill(7)), type, 'chart.png');
+            blob._size = [b.opts.width || 546, b.opts.height || 300];
+            blob._chart = b;
+            return blob;
+          };
           // modify(): ο builder του ίδιου γραφήματος (για updateChart).
           b.modify = () => {
             const m = { setPosition: (r, c, ox, oy) => { m._pos = [r, c, ox || 0, oy || 0]; return m; }, build: () => ({ _of: b, _pos: m._pos || b.pos }) };
@@ -96,7 +130,14 @@ function makeSheet(ss, name, id, opts) {
     setRowHeights: (r, n, h) => { for (let i = 0; i < n; i++) rowHeights[r + i] = h; },
     setRowHeightsForced: (r, n, h) => { if (!(h > 0) || !(n > 0)) throw new Error('bad row heights'); for (let i = 0; i < n; i++) { rowHeights[r + i] = h; forced[r + i] = true; } },
     setColumnWidth: (c, w) => { colWidths[c] = w; },
-    setHiddenGridlines: () => {}, setFrozenRows: () => {}, hideColumns: () => {},
+    setHiddenGridlines: () => {}, setFrozenRows: () => {},
+    // Κρυμμένες γραμμές και στήλες.
+    _hiddenRows: {}, _hiddenCols: {},
+    hideRows: (r, n) => { for (let i = 0; i < (n || 1); i++) sheet._hiddenRows[r + i] = true; },
+    showRows: (r, n) => { for (let i = 0; i < (n || 1); i++) delete sheet._hiddenRows[r + i]; },
+    hideColumns: (c, n) => { for (let i = 0; i < (n || 1); i++) sheet._hiddenCols[c + i] = true; },
+    showColumns: (c, n) => { for (let i = 0; i < (n || 1); i++) delete sheet._hiddenCols[c + i]; },
+    isRowHiddenByUser: r => !!sheet._hiddenRows[r], isColumnHiddenByUser: c => !!sheet._hiddenCols[c],
     setFrozenColumns: () => {},
     _rules: [], _validations: {}, _activeRanges: [],
     setConditionalFormatRules: rules => { if (!Array.isArray(rules) || rules.some(x => !x || !x._built)) throw new Error('bad rules'); sheet._rules = rules; },
@@ -114,7 +155,12 @@ function makeSheet(ss, name, id, opts) {
       } else { r = a; col = b; nr = c || 1; nc = d || 1; }
       const rng = {
         _r: r, _c: col, _nr: nr, _nc: nc,
-        getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? (String(x.v).startsWith('=') ? 0 : x.v) : ''; })),
+        // Ένας τύπος δίνει 0, ή ό,τι δίνει το opts.formulaValue(φύλλο, γραμμή, στήλη, τύπος) (π.χ. "" για ένα κελί χωρίς τιμή).
+        getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => {
+          const x = cells[(r + i) + ':' + (col + j)];
+          if (!x) return '';
+          return String(x.v).startsWith('=') ? (opts.formulaValue ? opts.formulaValue(sheet, r + i, col + j, x.v) : 0) : x.v;
+        })),
         getDisplayValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? String(x.v) : ''; })),
         getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? x.v : ''; })),
         getValue: () => { const x = cells[r + ':' + col]; return x ? x.v : ''; },
@@ -186,11 +232,13 @@ function copySheet(src, dest, opts) {
     const b = copy.newChart();
     ch.ranges.forEach(r => b.addRange(copy.getRange(r._r, r._c, r._nr, r._nc)));
     Object.keys(ch.opts).forEach(k => b.setOption(k, ch.opts[k]));
+    if (ch.hidden) b.setHiddenDimensionStrategy(ch.hidden);
     b.setPosition(ch.pos[0], ch.pos[1], ch.pos[2], ch.pos[3]);
     const built = b.build();
     built.type = ch.type;
     copy.insertChart(built);
   });
+  Object.assign(copy._hiddenRows, src._hiddenRows); Object.assign(copy._hiddenCols, src._hiddenCols);
   // opts.copyImages === false: ένα copyTo που δεν αντιγράφει τις εικόνες πάνω από τα κελιά.
   if (opts.copyImages !== false) src._images.forEach(im => {
     const c = copy.insertImage(im.blob, im.col, im.row, im.ox, im.oy);
@@ -279,15 +327,17 @@ function makeContext(opts) {
     exports.push({ gid, r1, r2, c1, c2, pages, H, name: sheet.getName(), printedCharts, chartImages, kinoveaCharts });
     // Για τα tests της πρώτης σελίδας (2.8.0), χωρίς να αλλάζει η εγγραφή που συγκρίνεται με τις παλιές εκδόσεις.
     Object.defineProperty(exports[exports.length - 1], 'detail', { enumerable: false, value: {
-      pageStarts, images: sheet._images.map(im => ({ row: im.row, col: im.col, name: im.blob && im.blob._name, w: im.w, h: im.h })),
+      pageStarts, images: sheet._images.map(im => ({ row: im.row, col: im.col, name: im.blob && im.blob._name, w: im.w, h: im.h,
+        // Η εικόνα ενός γραφήματος του Google (getAs): το γράφημά της, όπως ήταν στην εξαγωγή.
+        chart: im.blob && im.blob._chart ? chartInfo(sheet, im.blob._chart) : null, blank: !!(im.blob && im.blob._chart && im.blob._bytes.length < 16) })),
+      // Τα γραφήματα του Google που τυπώνονται ως γραφήματα (μέσα στην περιοχή του PDF).
+      charts: sheet._charts.filter(ch => ch.pos && ch.pos[0] <= r2).map(ch => chartInfo(sheet, ch)),
       cells: Object.assign({}, sheet._cells), rowHeights: Object.assign({}, sheet._rowHeights), merges: sheet._merges.map(m => m.slice()) } });
     let text = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count ' + pages + ' >>\nendobj\n';
     for (let i = 0; i < pages; i++) text += (3 + i) + ' 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n';
-    // Γραφήματα: όπως το PDF του Google, με περιοχή σε % σχεδιάζεται μόνο ο τίτλος (λίγα bytes).
+    // Γραφήματα: όπως το PDF του Google, με περιοχή σε % ή με τιμές πάνω στις σειρές σχεδιάζεται μόνο ο τίτλος (λίγα bytes).
     sheet._charts.forEach(ch => {
-      const area = ch.opts && ch.opts.chartArea;
-      const titleOnly = area && (/%/.test(String(area.width)) || /%/.test(String(area.height)));
-      text += '% chart ' + 'x'.repeat(titleOnly ? 300 : 6000) + '\n';
+      text += '% chart ' + 'x'.repeat(titleOnly(ch.opts) ? 300 : 6000) + '\n';
     });
     return makeBlob(Array.from(Buffer.from(text, 'latin1')), 'application/pdf', 'export.pdf');
   }
@@ -335,7 +385,8 @@ function makeContext(opts) {
     Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
       newBlob: (bytes, type, name) => makeBlob(bytes, type, name), sleep: ms => { sleeps.push(ms); } },
-    Charts: { ChartType: { RADAR: 'radar' } },
+    Charts: { ChartType: { RADAR: 'radar' },
+      ChartHiddenDimensionStrategy: { IGNORE_BOTH: 'IGNORE_BOTH', IGNORE_ROWS: 'IGNORE_ROWS', IGNORE_COLUMNS: 'IGNORE_COLUMNS', SHOW_BOTH: 'SHOW_BOTH' } },
     HtmlService: { createHtmlOutput: html => { const o = { _html: String(html) }; o.setWidth = () => o; o.setHeight = () => o; return o; } },
     Session: { getScriptTimeZone: () => 'Europe/Athens' },
     DriveApp: drive,

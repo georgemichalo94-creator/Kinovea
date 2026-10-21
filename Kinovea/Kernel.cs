@@ -1193,7 +1193,15 @@ namespace Kinovea.Root
                 bool show = WindowManager.ActiveWindow.ExplorerVisible;
                 mainWindow.SupervisorControl.ToggleNavigationPanel(show, false);
             }
-            
+
+            // No border around the screens in full screen (the splitter between the explorer and the screens).
+            foreach (Control control in mainWindow.SupervisorControl.Controls)
+            {
+                SplitContainer workspace = control as SplitContainer;
+                if (workspace != null)
+                    workspace.BorderStyle = mainWindow.FullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
+            }
+
             // Propagates the call to screens.
             screenManager.FullScreen(mainWindow.FullScreen);
         }

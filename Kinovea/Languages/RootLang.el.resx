@@ -137,6 +137,9 @@
   <data name="mnuFile" xml:space="preserve">
     <value>Αρχείο</value>
   </data>
+  <data name="mnuFullScreen" xml:space="preserve">
+    <value>Πλήρης οθόνη</value>
+  </data>
   <data name="mnuHelp" xml:space="preserve">
     <value>Βοήθεια</value>
   </data>

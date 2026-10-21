@@ -53,7 +53,8 @@ checkGrid(layout, '100yd');
 assert.strictEqual(layout.lastCol, 17, 'yards: extra yd/s and yd/stroke columns');
 assert.ok(/yd\/s/.test(layout.grid.get(layout.T0 - 1, 16).v));
 assert.ok(/\*0\.9144/.test(layout.grid.get(layout.T0 + 1, 3).v), 'sheet velocity formula converts yards: ' + layout.grid.get(layout.T0 + 1, 3).v);
-assert.strictEqual(layout.grid.get(layout.kpi.dak.r, layout.kpi.dak.c - 0) && layout.grid.get(8, 1).v, 'ΔΑΚ', 'ΔΑΚ is the first tile');
+// 2.9.5: ο μέσος όρος, και από κάτω ο ΔΑΚ κάθε 50άρι (δύο 50άρια).
+assert.strictEqual(layout.grid.get(layout.kpi.dak.r, layout.kpi.dak.c - 0) && layout.grid.get(8, 1).v, 'ΔΑΚ (μ.ο.)', 'ΔΑΚ is the first tile');
 let sh = sheetOf(r);
 assert.ok(/100yd Ελεύθερο/.test(cell(sh, 5, 9)) && /25yd/.test(cell(sh, 5, 9)), cell(sh, 5, 9));
 assert.ok(/SCY/.test(sh.getName()), 'sheet name says SCY: ' + sh.getName());

@@ -384,7 +384,8 @@ namespace Kinovea.ScreenManager
                 Summary = Settings.ReelSummary,
                 Final = Settings.ShowFinalsBoard && PickTarget == SwimPickTarget.None ? FinalForRace() : null,
                 BoardName = BoardName(Race.Athlete),
-                Delta = Settings.ShowDeltaChart
+                Delta = Settings.ShowDeltaChart,
+                VideoEnd = VideoEndSeconds()
             };
             SwimReelPainter.Paint(g, size, scene);
         }
