@@ -1085,10 +1085,51 @@ namespace Kinovea.ScreenManager
             if ((start && Race.UnderwaterDist.HasValue) || (!start && turn != null && turn.UnderwaterDist.HasValue))
                 return "";
 
-            // The first two checkpoints after the breakout in this length, marked or proposed.
+            int checkpoint;
+            double? implied = ImpliedBreakoutDistance(wall, breakout, out checkpoint);
+            if (!implied.HasValue)
+                return "";
+
+            // (2.9.5b) Past the most a breakout can be for the style by more than the error of the estimate (SwimReel.MaxBreakout): the
+            // swimmer did not come up at this frame; no distance is written and the analyst is told (his mark stays; a breakout of the
+            // auto pilot there is not put, PilotBreakout). Up to that error: the most it can be.
+            double limit = BreakoutLimit(wall);
+            if (implied.Value > limit + SwimReel.EstimateSlack)
+                return " · ⚠ " + BreakoutPastText(wall, implied.Value) + SwimLang.T(": δεν γράφτηκε απόσταση (έλεγξε το καρέ της εξόδου, ή μέτρησε με 📍)");
+            if (checkpoint < 0)
+                return "";
+
+            double distance = Math.Min(implied.Value, limit);
+            if (distance < 2 || distance > (checkpoint - wall) * Race.K)
+                return "";
+
+            distance = Math.Round(distance / Race.K, 1);
+            if (start)
+                Race.UnderwaterDist = distance;
+            else
+                Race.GetTurn(wall, true).UnderwaterDist = distance;
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)"),
+                distance, Race.Unit, checkpoint);
+        }
+
+        /// <summary>
+        /// (2.9.5b) Where the times put a breakout at this frame after the wall at 'wall' (0: the start), in metres from the wall; null when
+        /// they do not tell. Back from the first checkpoint after it in its length (marked or proposed) at the speed of the segment after
+        /// that checkpoint, times the share of that speed for the style and the start or turn (SwimReel.BreakoutSpeedShare); 'checkpoint':
+        /// that checkpoint. When the times after it give no speed (after the last checkpoint with a time in its length): at least at the
+        /// last checkpoint before it ('checkpoint' -1: not an estimate).
+        /// </summary>
+        private double? ImpliedBreakoutDistance(int wall, long breakout, out int checkpoint)
+        {
+            checkpoint = -1;
+            if (Race == null || !Race.StartTimestamp.HasValue || Timing == null || !Timing.IsValid || Race.Pool <= 0)
+                return null;
+
+            // The first two checkpoints after the breakout in this length, marked or proposed, and the last one before it.
             double tb = Timing.Seconds(breakout, Race.StartTimestamp.Value);
             List<Tuple<int, double>> next = new List<Tuple<int, double>>();
-            foreach (int d in Race.Checkpoints.Where(c => c > wall && c < wall + Race.Pool).OrderBy(c => c))
+            int passed = -1;
+            foreach (int d in Race.Checkpoints.Where(c => c > wall && c < wall + Race.Pool).Distinct().OrderBy(c => c))
             {
                 SwimMark mark = Race.GetSplit(d);
                 SwimProposal p = Race.Proposals.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == d);
@@ -1098,27 +1139,49 @@ namespace Kinovea.ScreenManager
                 double t = Timing.Seconds(ts.Value, Race.StartTimestamp.Value);
                 if (t > tb)
                     next.Add(Tuple.Create(d, t));
+                else if (next.Count == 0)
+                    passed = d;
                 if (next.Count == 2)
                     break;
             }
 
-            if (next.Count < 2 || next[1].Item2 <= next[0].Item2)
-                return "";
+            if (next.Count == 2 && next[1].Item2 > next[0].Item2)
+            {
+                checkpoint = next[0].Item1;
+                double speed = (next[1].Item1 - next[0].Item1) * Race.K / (next[1].Item2 - next[0].Item2);
+                bool dive = wall == 0 || (Race.Relay && Race.Distance >= 4 && wall % (Race.Distance / 4) == 0);
+                double share = SwimReel.BreakoutSpeedShare(dive, SwimPresets.StyleAt(Race, next[0].Item1));
+                return (next[0].Item1 - wall) * Race.K - share * speed * (next[0].Item2 - tb);
+            }
 
-            double speed = (next[1].Item1 - next[0].Item1) * Race.K / (next[1].Item2 - next[0].Item2);
-            bool dive = start || (Race.Relay && Race.Distance >= 4 && wall % (Race.Distance / 4) == 0);
-            double share = SwimReel.BreakoutSpeedShare(dive, SwimPresets.StyleAt(Race, next[0].Item1));
-            double distance = (next[0].Item1 - wall) * Race.K - share * speed * (next[0].Item2 - tb);
-            if (distance < 2 || distance > (next[0].Item1 - wall) * Race.K)
-                return "";
+            return passed >= 0 ? (passed - wall) * Race.K : (double?)null;
+        }
 
-            distance = Math.Round(distance / Race.K, 1);
-            if (start)
-                Race.UnderwaterDist = distance;
-            else
-                Race.GetTurn(wall, true).UnderwaterDist = distance;
-            return string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)"),
-                distance, Race.Unit, next[0].Item1);
+        /// <summary>(2.9.5b) The most a breakout after this wall (0: the start) can be from it (m), by the style of its length.</summary>
+        private double BreakoutLimit(int wall)
+        {
+            return SwimReel.MaxBreakout(SwimPresets.StyleAt(Race, Math.Min(Race.Distance, wall + 15)));
+        }
+
+        /// <summary>
+        /// (2.9.5b) The times put the breakout at this frame past the most a breakout can be for the style, by more than the error of the
+        /// estimate: the swimmer did not come up there. 'meters': where they put it (NaN: they do not tell).
+        /// </summary>
+        private bool BreakoutPastLimit(int wall, long breakout, out double meters)
+        {
+            int checkpoint;
+            double? implied = ImpliedBreakoutDistance(wall, breakout, out checkpoint);
+            meters = implied ?? double.NaN;
+            return implied.HasValue && implied.Value > BreakoutLimit(wall) + SwimReel.EstimateSlack;
+        }
+
+        /// <summary>"από τους χρόνους η έξοδος μετά την εκκίνηση θα ήταν στα 23.5μ. (το πολύ 20μ. στο πρόσθιο)".</summary>
+        private string BreakoutPastText(int wall, double meters)
+        {
+            string style = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, wall + 15));
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("από τους χρόνους η έξοδος {0} θα ήταν στα {1:0.0}{2} (το πολύ {3:0.#}{2} {4})"),
+                wall == 0 ? SwimLang.T("μετά την εκκίνηση") : string.Format(CultureInfo.InvariantCulture, SwimLang.T("μετά τον τοίχο των {0}{1}"), wall, Race.Unit),
+                meters / Race.K, Race.Unit, BreakoutLimit(wall) / Race.K, style == "br" ? SwimLang.T("στο πρόσθιο") : SwimLang.T("με τον κανονισμό των 15μ."));
         }
 
         /// <summary>
@@ -3295,14 +3358,11 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.9.5) The checkpoint «Πέρασμα» (S) marks at this frame (-1 none); move: it has a time already, which moves here (after the auto
-        /// pilot all of them have one; until 2.9.4 S only filled the next one without a time, the others with Delete first). The one asked
-        /// for (the proposal of a checkpoint being checked, the row chosen) when the frame keeps the order of the times; else, among the
-        /// checkpoints the frame keeps in order, the one whose time is (or would be) nearest to it: a marked one moves, one without a time
-        /// is added (its time expected between the marked ones, or at the speed of the race so far). After the last time marked the next
-        /// checkpoint wins unless the frame is nearer to the time it would move (a correction of the last one), also over a row chosen.
-        /// While the video plays (not asked for), the next one without a time as before. Nothing in order (times out of order already):
-        /// the next one without a time as before; all marked: the one asked for, or the nearest (moved, with the warning). A time far
-        /// off (nearer to a neighbour's) is moved by choosing its row.
+        /// pilot all of them have one; until 2.9.4 S only filled the next one without a time, the others with Delete first). Only the one
+        /// asked for moves (its row chosen, the proposal of a checkpoint being checked), when the frame keeps the order of the times.
+        /// Otherwise (2.9.5b) a time is never changed: among the checkpoints without a time that the frame keeps in order, the one whose
+        /// time would be nearest to it (expected between the marked ones, or at the speed of the race so far); while the video plays, or
+        /// none in order, the next one without a time as before; all marked: none (-1).
         /// </summary>
         public int SplitTargetAt(long timestamp, out bool move)
         {
@@ -3344,24 +3404,41 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // While the video plays, the next checkpoint without a time as always (two presses in a row do not move the last one): a
-            // time marked moves on a paused video (at the right frame) or when asked for.
+            // The checkpoint asked for (its row chosen, its proposal being checked): marked at this frame, or its time moved here.
             int asked = AskedSplit();
-            bool nextAtEnd = best >= 0 && !marked.ContainsKey(best) && marked.Keys.All(k => k < best);
-            if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked) && !nextAtEnd)
-                best = asked;
-            else if (next >= 0 && HasVideo && player.IsCurrentlyPlaying)
-                return next;
-
-            if (best < 0)
+            if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked))
             {
-                if (next >= 0)
-                    return next;
-                best = asked >= 0 && marked.ContainsKey(asked) ? asked : marked.OrderBy(x => Math.Abs(x.Value)).First().Key;
+                move = marked.ContainsKey(asked);
+                return asked;
             }
 
-            move = marked.ContainsKey(best);
-            return best;
+            // While the video plays, the next checkpoint without a time as always (two presses in a row do not move the last one).
+            if (next >= 0 && HasVideo && player.IsCurrentlyPlaying)
+                return next;
+
+            // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot almost 0.4 s
+            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). The nearest
+            // checkpoint without a time that the frame keeps in order (one skipped), else the next one without a time (none: all have a
+            // time, AddSplit says how to change one).
+            if (best >= 0 && marked.ContainsKey(best))
+            {
+                best = -1;
+                bestAway = double.MaxValue;
+                foreach (int d in checkpoints)
+                {
+                    if (marked.ContainsKey(d) || !inOrder(d))
+                        continue;
+
+                    double away = Math.Abs(ExpectedSplitAway(d, marked, timestamp));
+                    if (away < bestAway)
+                    {
+                        best = d;
+                        bestAway = away;
+                    }
+                }
+            }
+
+            return best >= 0 ? best : next;
         }
 
         /// <summary>«Πέρασμα» pressed: its checkpoint at this frame (SplitTargetAt); the row chosen counts for this press only.</summary>

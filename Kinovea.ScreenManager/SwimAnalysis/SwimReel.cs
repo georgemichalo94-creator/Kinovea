@@ -305,10 +305,18 @@ namespace Kinovea.ScreenManager
                         measured = t.UnderwaterDist;
                 }
 
-                if (measured.HasValue && measured.Value > 0)
+                // (2.9.5b) A value far past what a breakout can be for the style (a breakout of the auto pilot near the 25 m wrote
+                // almost 25 m for a breaststroke breakout near 15 m) is not shown: the estimate from the times instead (the
+                // value stays in the analysis, the panel warns). A value the pilot estimated (its breakout's record) is shown with ≈.
+                double max = MaxBreakout(SwimPresets.StyleAt(race, Math.Min(race.Distance, wall + 15)));
+                double limit = (max + MeasuredSlack) / K;
+                bool pilotEstimate = measured.HasValue && race.Marks.Any(m => m.Type == SwimMarkType.Breakout && m.Pilot != null &&
+                    m.Pilot.Wall == wall && m.Pilot.Underwater.HasValue && Math.Abs(m.Pilot.Underwater.Value - measured.Value) < 1e-6);
+                if (measured.HasValue && measured.Value > 0 && measured.Value <= limit)
                 {
                     BreakoutDistances[lap] = measured.Value;
-                    BreakoutMeasured.Add(lap);
+                    if (!pilotEstimate)
+                        BreakoutMeasured.Add(lap);
                     continue;
                 }
 
@@ -324,10 +332,31 @@ namespace Kinovea.ScreenManager
                 bool dive = lap == 0 || (race.Relay && Distance >= 4 && wall % (Distance / 4) == 0);
                 v *= BreakoutSpeedShare(dive, SwimPresets.StyleAt(race, next.D));
                 double d = next.D - v * (next.OnVideo - b) - wall;
-                if (d > 0 && d < Pool)
-                    BreakoutDistances[lap] = d;
+
+                // (2.9.5b) Past the most a breakout can be for the style by more than the error of the estimate: none (the breakout
+                // marked is not where the swimmer came up); up to it, that most.
+                if (d > 0 && d < Pool && d * K <= max + EstimateSlack)
+                    BreakoutDistances[lap] = Math.Min(d, max / K);
             }
         }
+
+        /// <summary>
+        /// (2.9.5b) The farthest a breakout can be from its wall (m): 15 m by the rules in butterfly, backstroke and freestyle (15.5 m for
+        /// the head a little past the mark when the body comes up); breaststroke has no such rule and its breakouts can come later (20 m).
+        /// </summary>
+        internal static double MaxBreakout(string style)
+        {
+            return style == "br" ? 20.0 : 15.5;
+        }
+
+        /// <summary>
+        /// (2.9.5b) The estimate of a breakout distance from the times is off by up to 0.83 m in 9 of 10 (BreakoutSpeedShare): past
+        /// MaxBreakout by more than this (m) the breakout is not where the swimmer came up (a breakout of the auto pilot there is not put).
+        /// </summary>
+        internal const double EstimateSlack = 1.0;
+
+        /// <summary>A distance in the analysis past MaxBreakout by up to this (m) is still shown (the analyst's clicks are the reference).</summary>
+        internal const double MeasuredSlack = 1.5;
 
         /// <summary>
         /// The speed from the breakout to the next checkpoint against the speed of the segment after it (2.9.5): the median in the
