@@ -1098,6 +1098,7 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="UIHelper.cs" />
+    <Compile Include="VideoFullScreen.cs" />
     <Compile Include="VideoFilters\LensCalibration\FormConfigureLensCalibration.cs">
       <SubType>Form</SubType>
     </Compile>

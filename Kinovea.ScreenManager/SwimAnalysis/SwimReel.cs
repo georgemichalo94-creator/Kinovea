@@ -321,9 +321,29 @@ namespace Kinovea.ScreenManager
                     continue;
 
                 double v = (after.D - next.D) / (after.OnVideo - next.OnVideo);
+                bool dive = lap == 0 || (race.Relay && Distance >= 4 && wall % (Distance / 4) == 0);
+                v *= BreakoutSpeedShare(dive, SwimPresets.StyleAt(race, next.D));
                 double d = next.D - v * (next.OnVideo - b) - wall;
                 if (d > 0 && d < Pool)
                     BreakoutDistances[lap] = d;
+            }
+        }
+
+        /// <summary>
+        /// The speed from the breakout to the next checkpoint against the speed of the segment after it (2.9.5): the median in the
+        /// analysts' races (256 breakouts measured in the 115 races of the lab, by start or turn and style). With it the estimate
+        /// of the breakout distance from the times is off by 0.33 m (median, 0.83 m in 9 of 10) instead of 0.38 m (0.96 m); before,
+        /// it was short by 0.2–0.5 m in backstroke starts and butterfly turns and long by 0.3–0.6 m in freestyle.
+        /// </summary>
+        internal static double BreakoutSpeedShare(bool dive, string style)
+        {
+            switch (style)
+            {
+                case "bk": return dive ? 0.87 : 1.03;
+                case "br": return dive ? 1.05 : 1.00;
+                case "fly": return dive ? 0.98 : 0.93;
+                case "fs": return dive ? 1.07 : 1.06;
+                default: return 1.0;
             }
         }
 
@@ -533,6 +553,21 @@ namespace Kinovea.ScreenManager
                 // The knots first..i are one length (or what is marked of it).
                 List<double> x = knotT.GetRange(first, i - first + 1), y = knotD.GetRange(first, i - first + 1);
                 double[] m = PchipSlopes(x, y);
+
+                // (2.9.5) The first segment of a length (the dive and the underwater phase after the start, the push-off after a
+                // turn) is much faster than the swimming after it: its speed raised the slope at its end (the 15 m), and the next
+                // segment then dipped below its own speed and rose again at its end (1.98 → 1.59 → 1.66 m/s within 15–25 m of a
+                // 100 m breaststroke whose 15–25 m was 1.68 m/s). At that knot the speed of the swimming that follows.
+                if (x.Count >= 3 && x[2] > x[1])
+                {
+                    m[1] = (y[2] - y[1]) / (x[2] - x[1]);
+
+                    // A length of three knots (the wall, the 15 m, the next wall: a 25 m pool) ends with the same speed: its end
+                    // from the first segment too dipped to 1.51 m/s at the wall in a 15–25 m swum at 1.69 m/s.
+                    if (x.Count == 3)
+                        m[2] = m[1];
+                }
+
                 for (int k = first; k < i; k++)
                 {
                     slopeFrom[k] = m[k - first];

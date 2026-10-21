@@ -910,9 +910,10 @@ public static class ReelPreview
             return;
         }
 
-        string[] items = { "overlay-31.0", "overlay-31.0-under", "overlay-56.5-finish" };
-        double[] times = { 31.0, 31.0, 56.5 };
-        foreach (int i in new[] { 0, 1, 2 })
+        // (2.9.5) The last: after the touch (52.95 s) and the board of the final at it (5 s), the summary card of the race over the boards.
+        string[] items = { "overlay-31.0", "overlay-31.0-under", "overlay-56.5-finish", "overlay-60.0-summary" };
+        double[] times = { 31.0, 31.0, 56.5, 60.0 };
+        foreach (int i in new[] { 0, 1, 2, 3 })
         {
             try
             {

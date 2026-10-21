@@ -1035,6 +1035,9 @@
   <data name="ToolTip_First" xml:space="preserve">
     <value>Go to the beginning</value>
   </data>
+  <data name="ToolTip_FullScreen" xml:space="preserve">
+    <value>Full screen (F11, Esc to exit)</value>
+  </data>
   <data name="ToolTip_Last" xml:space="preserve">
     <value>Go to the end</value>
   </data>

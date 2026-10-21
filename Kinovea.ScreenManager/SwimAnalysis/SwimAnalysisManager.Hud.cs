@@ -72,6 +72,7 @@ namespace Kinovea.ScreenManager
                 Final = Settings.ShowFinalsBoard && PickTarget == SwimPickTarget.None ? FinalForRace() : null,
                 BoardName = BoardName(Race.Athlete),
                 Summary = Settings.ReelSummary,
+                VideoEnd = VideoEndSeconds(),
                 Technical = TechnicalView || Settings.ReelOverlay,
                 SwimmerLabel = Settings.ReelOverlay,
                 Sync = SyncState,

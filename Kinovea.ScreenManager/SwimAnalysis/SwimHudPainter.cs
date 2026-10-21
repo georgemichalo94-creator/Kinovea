@@ -47,6 +47,12 @@ namespace Kinovea.ScreenManager
         /// <summary>«Η ανάλυση με μια ματιά» after the finish.</summary>
         public bool Summary = true;
 
+        /// <summary>
+        /// (2.9.5) Race time of the last frame of the video (its working zone, as exported), null when not known: a video that ends soon
+        /// after the touch shows «Η ανάλυση με μια ματιά» in its last seconds.
+        /// </summary>
+        public double? VideoEnd;
+
         /// <summary>The state of the analysis shown on the panel: technical analysis, the Google Sheet, the PDF, the calibration.</summary>
         public bool Technical;
         public SwimSyncState Sync = SwimSyncState.NotConfigured;
@@ -76,7 +82,7 @@ namespace Kinovea.ScreenManager
     public static class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.9.4";
+        public const string AppVersion = "2.9.5";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -641,7 +647,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 // After the finish: the final time, then «Η ανάλυση με μια ματιά» over everything.
-                double dashAt = st.Finished ? st.T - (s.Reel.Finish.Value + FinishSeconds + (s.Final != null ? FinishBoardSeconds - FinishSeconds : 0)) : -1;
+                double dashAt = st.Finished ? st.T - DashStart(s) : -1;
                 float dash = s.Summary && st.Finished ? Ease(dashAt / 0.6) : 0f;
                 if (dash < 0.999f)
                 {
@@ -664,6 +670,19 @@ namespace Kinovea.ScreenManager
             {
                 g.Restore(saved);
             }
+        }
+
+        /// <summary>
+        /// Race time when «Η ανάλυση με μια ματιά» comes: after the final time (and the board of the final); sooner when the video ends
+        /// before it could be read, but not before 2 s after the touch (2.9.5).
+        /// </summary>
+        private static double DashStart(SwimHudScene s)
+        {
+            double finish = s.Reel.Finish.Value;
+            double start = finish + FinishSeconds + (s.Final != null ? FinishBoardSeconds - FinishSeconds : 0);
+            if (s.VideoEnd.HasValue && s.VideoEnd.Value < start + DashStill)
+                start = Math.Max(finish + 2.0, Math.Min(start, s.VideoEnd.Value - DashStill));
+            return start;
         }
 
         /// <summary>For the CI preview: the milliseconds of each part of the HUD are added up here when it is not null.</summary>

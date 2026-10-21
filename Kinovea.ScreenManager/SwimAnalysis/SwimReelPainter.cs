@@ -42,6 +42,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Only the summary card, whole, on a dark background (the graphics of the report).</summary>
         public bool SummaryOnly;
+
+        /// <summary>
+        /// (2.9.5) Race time of the last frame of the video (its working zone, as exported), null when not known: a video that ends soon
+        /// after the touch shows the summary card in its last seconds.
+        /// </summary>
+        public double? VideoEnd;
     }
 
     /// <summary>
@@ -124,7 +130,7 @@ namespace Kinovea.ScreenManager
             }
 
             double t = s.Time;
-            bool summary = s.Summary && s.Reel.Finish.HasValue && t >= s.Reel.Finish.Value + SummaryDelay(s);
+            bool summary = s.Summary && s.Reel.Finish.HasValue && t >= SummaryStart(s);
 
             if (s.FromImage != null && !summary)
                 DrawLabel(g, s, layout);
@@ -141,10 +147,39 @@ namespace Kinovea.ScreenManager
                 DrawSummary(g, s, layout, false);
         }
 
+        /// <summary>
+        /// (2.9.5) Only the summary card after the finish, over the boards of the race (the graphics of the video without the technical view
+        /// or the HUD): when the technical view shows it, with the same choice («σύνοψη στο τέλος»).
+        /// </summary>
+        public static void PaintSummary(Graphics g, Size size, SwimReelScene s)
+        {
+            if (s == null || s.Race == null || s.Computed == null || !s.Summary || !CanPaint(size, s.Reel) || !s.Reel.Finish.HasValue)
+                return;
+
+            if (s.Time >= SummaryStart(s))
+                DrawSummary(g, s, new Layout(size), false);
+        }
+
         /// <summary>After the touch the board of the final comes first (when there is one), then the summary card.</summary>
         private static double SummaryDelay(SwimReelScene s)
         {
             return FinishBoard(s) != null ? FinishBoardSeconds : 1.0;
+        }
+
+        /// <summary>Seconds the summary card stays at least at the end of a video that ends soon after the touch (2.9.5).</summary>
+        private const double SummaryReadSeconds = 2.0;
+
+        /// <summary>
+        /// Race time when the summary card comes: after the board of the final at the touch (or 1 s after the touch); sooner when the video
+        /// ends before the card could be read, but not before 1 s after the touch (2.9.5).
+        /// </summary>
+        private static double SummaryStart(SwimReelScene s)
+        {
+            double finish = s.Reel.Finish.Value;
+            double start = finish + SummaryDelay(s);
+            if (s.VideoEnd.HasValue && s.VideoEnd.Value < start + SummaryReadSeconds)
+                start = Math.Max(finish + 1.0, Math.Min(start, s.VideoEnd.Value - SummaryReadSeconds));
+            return start;
         }
 
         /// <summary>The board of the final at the finish (the athlete among its swimmers), null without a final or a finish time.</summary>
@@ -665,7 +700,7 @@ namespace Kinovea.ScreenManager
         private static void DrawSummary(Graphics g, SwimReelScene s, Layout L, bool whole)
         {
             SwimReel reel = s.Reel;
-            float a = whole ? 1f : (float)Math.Max(0, Math.Min(1, (s.Time - reel.Finish.Value - SummaryDelay(s)) / 0.4));
+            float a = whole ? 1f : (float)Math.Max(0, Math.Min(1, (s.Time - SummaryStart(s)) / 0.4));
             if (a <= 0.01f)
                 return;
 
@@ -718,14 +753,34 @@ namespace Kinovea.ScreenManager
                 new[] { SwimLang.T("ΤΑΧΥΤΗΤΑ"), joined(p => p.Speed, "0.00"), SwimLang.T("m/s ανά τμήμα") }
             };
 
+            // (2.9.5) A third row when the card has room for it over the bars: the ΔΑΚ of each 50, the turns, their breakouts, the last 5.
+            List<int> spans = tiles.Select(tile => 1).ToList();
+            if (card.Height >= SummaryThirdRowHeight * k)
+            {
+                foreach (SummaryTile extra in ExtraTiles(s))
+                {
+                    tiles.Add(extra.Text());
+                    spans.Add(extra.Span);
+                }
+            }
+
             float gap = 12 * k;
             float tw = (inner - 3 * gap) / 4, th = 70 * k;
             float ty = card.Top + 118 * k;
             Font tileCaption = F(8f, k, false, FontStyle.Bold);
             Font tileDetail = F(7.5f, k);
+            int column = 0, row = 0;
             for (int i = 0; i < tiles.Count; i++)
             {
-                RectangleF r = new RectangleF(x0 + (i % 4) * (tw + gap), ty + (i / 4) * (th + gap), tw, th);
+                // Four columns; a tile of the third row can take two.
+                if (column + spans[i] > 4)
+                {
+                    column = 0;
+                    row++;
+                }
+
+                RectangleF r = new RectangleF(x0 + column * (tw + gap), ty + row * (th + gap), spans[i] * tw + (spans[i] - 1) * gap, th);
+                column += spans[i];
                 SwimTheme.HudChip(g, r, SwimTheme.Accent, a, 8 * k, 190);
                 SwimTheme.CapsIn(g, tiles[i][0], tileCaption, Fade(SwimTheme.AccentLight, a), new RectangleF(r.Left + 12 * k, r.Top + 4 * k, r.Width - 18 * k, 18 * k),
                     StringAlignment.Near, 0.08f);
@@ -744,7 +799,8 @@ namespace Kinovea.ScreenManager
             }
 
             // Distance of each cycle, the lengths apart (or of each length, in a long race), with the tempo under it.
-            float by0 = ty + 2 * th + gap + 36 * k;
+            int rows = row + 1;
+            float by0 = ty + rows * th + (rows - 1) * gap + 36 * k;
             float by1 = card.Bottom - 46 * k;
             List<List<SwimReelCycle>> lengths = reel.Cycles.GroupBy(cy => cy.Lap).OrderBy(gr => gr.Key).Select(gr => gr.ToList()).ToList();
             bool perCycle = reel.Cycles.Count <= 80;
@@ -824,6 +880,154 @@ namespace Kinovea.ScreenManager
             }
 
             TextIn(g, note, F(7.25f, k), Fade(SwimTheme.Dim, a), new RectangleF(x0, card.Bottom - 26 * k, inner, 18 * k));
+        }
+
+        /// <summary>
+        /// Height of the summary card (at the scale 1) from which it has a third row of tiles: the title and the time, three rows, the
+        /// bars of the cycles (at least 60) and the note.
+        /// </summary>
+        private const float SummaryThirdRowHeight = 118 + 3 * 70 + 2 * 12 + 36 + 60 + 46;
+
+        /// <summary>A tile of the third row of the summary card: the value of each part when they fit, else their mean and range.</summary>
+        private sealed class SummaryTile
+        {
+            public string Caption;
+
+            /// <summary>The value of each part as shown ("2.31", "≈13.8", "–"), and the numbers of those that have one.</summary>
+            public List<string> Parts = new List<string>();
+            public List<double> Numbers = new List<double>();
+
+            /// <summary>Format of the mean and the range; before the mean ("≈" when estimated); after a single value or the mean (" s").</summary>
+            public string Format = "0.00";
+            public string Prefix = "";
+            public string Unit = "";
+
+            /// <summary>Under the values (when they are all shown).</summary>
+            public string Detail = "";
+
+            /// <summary>Columns of the card it takes (1 or 2).</summary>
+            public int Span = 1;
+
+            /// <summary>All the values fit: four on a column.</summary>
+            public bool Fits
+            {
+                get { return Parts.Count <= 4 * Span; }
+            }
+
+            /// <summary>Caption, value and detail as the other tiles.</summary>
+            public string[] Text()
+            {
+                if (Parts.Count == 1)
+                    return new[] { Caption, Parts[0] + Unit, Detail };
+                if (Fits)
+                    return new[] { Caption, string.Join(" / ", Parts), Detail };
+
+                string mean = Prefix + Numbers.Average().ToString(Format, CultureInfo.InvariantCulture) + Unit;
+                string range = string.Format(CultureInfo.InvariantCulture, SwimLang.T("μέσος όρος · {0}–{1}"),
+                    Numbers.Min().ToString(Format, CultureInfo.InvariantCulture), Numbers.Max().ToString(Format, CultureInfo.InvariantCulture));
+                return new[] { Caption, mean, range };
+            }
+        }
+
+        /// <summary>
+        /// (2.9.5) The third row of the summary card, what is known of it: the ΔΑΚ of each 50, the turns from 5 before to 15 after the
+        /// wall, the breakouts after the turns and the last 5 of the race. A long race: the ΔΑΚ, then the turns, on two columns when
+        /// their values fit there (the breakouts of the turns give their place), else their mean and range.
+        /// </summary>
+        private static List<SummaryTile> ExtraTiles(SwimReelScene s)
+        {
+            CultureInfo ci = CultureInfo.InvariantCulture;
+            SwimComputed c = s.Computed;
+            SwimReel reel = s.Reel;
+            string unit = Unit(s.Race);
+            int pool = Math.Max(1, s.Race.Pool);
+            Func<double?, string> number = v => v.HasValue ? v.Value.ToString("0.00", ci) : "–";
+            List<SummaryTile> list = new List<SummaryTile>();
+
+            SummaryTile dak = null;
+            List<SwimBlock> blocks = c.Blocks.OrderBy(b => b.From).ToList();
+            if (blocks.Any(b => b.Dak.HasValue))
+            {
+                dak = new SummaryTile
+                {
+                    Caption = blocks.Count > 1 ? SwimLang.T("ΔΑΚ ΑΝΑ 50") + " " + UnitCaps(s.Race) : SwimLang.T("ΔΑΚ"),
+                    Parts = blocks.Select(b => number(b.Dak)).ToList(),
+                    Numbers = blocks.Where(b => b.Dak.HasValue).Select(b => b.Dak.Value).ToList(),
+                    Detail = blocks.Count > 1
+                        ? (c.AvgDak.HasValue ? string.Format(ci, SwimLang.T("μέσος όρος {0:0.00}"), c.AvgDak.Value) : "")
+                        : blocks[0].From.ToString(ci) + "-" + blocks[0].To.ToString(ci) + " " + unit
+                };
+                list.Add(dak);
+            }
+
+            // The turns (not the exchanges of a relay), from 5 before to 15 after the wall.
+            SummaryTile turns = null;
+            List<SwimTurnComputed> walls = c.Turns.Where(x => !x.Exchange).OrderBy(x => x.Wall).ToList();
+            if (walls.Any(x => x.InOut.HasValue))
+            {
+                turns = new SummaryTile
+                {
+                    Caption = (walls.Count == 1 ? SwimLang.T("ΣΤΡΟΦΗ") : SwimLang.T("ΣΤΡΟΦΕΣ")) + " −5/+15",
+                    Parts = walls.Select(x => number(x.InOut)).ToList(),
+                    Numbers = walls.Where(x => x.InOut.HasValue).Select(x => x.InOut.Value).ToList(),
+                    Unit = " s",
+                    Detail = walls.Count == 1
+                        ? string.Format(ci, SwimLang.T("−5 → τοίχος {0} · τοίχος → +15 {1}"), number(walls[0].In5), number(walls[0].Out15))
+                        : string.Format(ci, SwimLang.T("τοίχοι {0}"), string.Join(" / ", walls.Select(x => x.Wall.ToString(ci)))) + " " + unit
+                };
+                list.Add(turns);
+            }
+
+            // The breakouts after the turns (not after the dive of a relay swimmer).
+            SummaryTile breakouts = null;
+            HashSet<int> exchanges = new HashSet<int>(c.Turns.Where(x => x.Exchange).Select(x => x.Wall));
+            List<int> laps = reel.BreakoutDistances.Keys.Where(l => l >= 1 && !exchanges.Contains(l * pool)).OrderBy(l => l).ToList();
+            if (laps.Count > 0)
+            {
+                SwimTurnComputed first = c.Turns.FirstOrDefault(x => x.Wall == laps[0] * pool);
+                breakouts = new SummaryTile
+                {
+                    Caption = laps.Count == 1 ? SwimLang.T("BREAKOUT ΣΤΡΟΦΗΣ") : SwimLang.T("BREAKOUT ΣΤΡΟΦΩΝ"),
+                    Parts = laps.Select(l => (reel.BreakoutMeasured.Contains(l) ? "" : "≈") + reel.BreakoutDistances[l].ToString("0.0", ci)).ToList(),
+                    Numbers = laps.Select(l => reel.BreakoutDistances[l]).ToList(),
+                    Format = "0.0",
+                    Prefix = laps.All(l => reel.BreakoutMeasured.Contains(l)) ? "" : "≈",
+                    Unit = " " + unit,
+                    Detail = laps.Count == 1
+                        ? (first != null && first.UnderwaterTime.HasValue ? string.Format(ci, SwimLang.T("{0:0.00} s κάτω από το νερό"), first.UnderwaterTime.Value) : "")
+                        : string.Format(ci, SwimLang.T("τοίχοι {0}"), string.Join(" / ", laps.Select(l => (l * pool).ToString(ci)))) + " " + unit
+                };
+                list.Add(breakouts);
+            }
+
+            if (c.FinishLast5.HasValue)
+            {
+                list.Add(new SummaryTile
+                {
+                    Caption = SwimLang.T("ΤΕΛΕΥΤΑΙΑ 5") + " " + UnitCaps(s.Race),
+                    Parts = new List<string> { number(c.FinishLast5) },
+                    Numbers = new List<double> { c.FinishLast5.Value },
+                    Unit = " s",
+                    Detail = c.FinishLast15.HasValue ? string.Format(ci, SwimLang.T("τελευταία 15 {0}: {1:0.00} s"), unit, c.FinishLast15.Value) : ""
+                });
+            }
+
+            foreach (SummaryTile wide in new[] { dak, turns })
+            {
+                if (wide == null || wide.Fits || wide.Parts.Count > 8)
+                    continue;
+
+                if (list.Sum(x => x.Span) >= 4 && breakouts != null)
+                {
+                    list.Remove(breakouts);
+                    breakouts = null;
+                }
+
+                if (list.Sum(x => x.Span) < 4)
+                    wide.Span = 2;
+            }
+
+            return list;
         }
 
         /// <summary>

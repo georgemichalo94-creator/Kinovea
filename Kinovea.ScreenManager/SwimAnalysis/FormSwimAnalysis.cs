@@ -823,8 +823,10 @@ namespace Kinovea.ScreenManager
                 if (!updating)
                     manager.SetReelSummary(chkReelSummary.Checked);
             };
-            toolTip.SetToolTip(chkReelSummary, SwimLang.T("Κάρτα με τα στοιχεία του αγώνα ένα δευτερόλεπτο μετά τον τερματισμό: τελικός χρόνος, αντίδραση, 15μ., breakout,\n") +
-                SwimLang.T("ενδιάμεσοι, χεριές, συχνότητα, απόσταση ανά κύκλο και ταχύτητα ανά τμήμα, και η απόσταση κάθε κύκλου."));
+            toolTip.SetToolTip(chkReelSummary, SwimLang.T("Κάρτα με τα στοιχεία του αγώνα στο τέλος του βίντεο, με όλα τα γραφικά (και τους πίνακες) και στις εξαγωγές: τελικός χρόνος,\n") +
+                SwimLang.T("αντίδραση, 15μ., breakout, ενδιάμεσοι, χεριές, συχνότητα, απόσταση ανά κύκλο και ταχύτητα ανά τμήμα, ΔΑΚ κάθε 50άρι, στροφές −5/+15,\n") +
+                SwimLang.T("breakout στροφών, τελευταία 5μ. και η απόσταση κάθε κύκλου. Έρχεται ένα δευτερόλεπτο μετά τον τερματισμό (μετά τον πίνακα του τελικού, όταν υπάρχει).\n") +
+                SwimLang.T("Στο HUD είναι «Η ανάλυση με μια ματιά»."));
             lblTrack = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 0, 3), Text = "–" };
             AddEventRow(t, SwimLang.T("Τεχνική ανάλυση (reel)"), null, null, reelHelp, chkReel, btnTrack, btnDeleteTrack, chkReelSummary, lblTrack);
 

@@ -44,7 +44,8 @@ namespace Kinovea.ScreenManager
         #region Properties
         public bool CommonControlsVisible 
         {
-            get { return !splitScreensPanel.Panel2Collapsed; }
+            // In full screen the row is hidden but still drives the screens as before (see SetFullScreen).
+            get { return fullScreen ? !memoCommonControlsCollapsed : !splitScreensPanel.Panel2Collapsed; }
         }
 
         public bool IsTopBottomLayout
@@ -75,6 +76,10 @@ namespace Kinovea.ScreenManager
         private const int gridGap = 3;
         private static readonly int[][] gridRows = new int[][] {
             new int[] { }, new int[] { 1 }, new int[] { 2 }, new int[] { 3 }, new int[] { 2, 2 }, new int[] { 3, 2 }, new int[] { 3, 3 } };
+
+        // Full screen: only the images of the screens, joined in the grid (the row of the common controls and the borders hidden).
+        private bool fullScreen;
+        private bool memoCommonControlsCollapsed;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -108,7 +113,11 @@ namespace Kinovea.ScreenManager
         }
         public void ShowCommonControls(bool show, Pair<Type, Type> types, CommonControlsPlayers cctrlsPlayers, CommonControlsCapture cctrlsCapture)
         {
-            splitScreensPanel.Panel2Collapsed = !show;
+            if (fullScreen)
+                memoCommonControlsCollapsed = !show;
+            else
+                splitScreensPanel.Panel2Collapsed = !show;
+
             if (types == null)
                 return;
 
@@ -121,7 +130,10 @@ namespace Kinovea.ScreenManager
         }
         public void ToggleCommonControls()
         {
-            splitScreensPanel.Panel2Collapsed = !splitScreensPanel.Panel2Collapsed;
+            if (fullScreen)
+                memoCommonControlsCollapsed = !memoCommonControlsCollapsed;
+            else
+                splitScreensPanel.Panel2Collapsed = !splitScreensPanel.Panel2Collapsed;
         }
         public void OrganizeScreens(List<AbstractScreen> screenList)
         {
@@ -150,7 +162,8 @@ namespace Kinovea.ScreenManager
                 splitScreens.Panel1.Controls.Clear();
                 splitScreens.Panel2.Controls.Clear();
 
-                if (screenList.Count <= 2)
+                // Full screen: the grid also for one or two screens, the images joined without gaps.
+                if (screenList.Count <= 2 && !fullScreen)
                 {
                     ClearGrid(false);
                     pnlGrid.Visible = false;
@@ -173,9 +186,22 @@ namespace Kinovea.ScreenManager
                 }
             }
         }
+        /// <summary>
+        /// Full screen: the row of the common controls and the borders hidden, the screens in the grid without gaps
+        /// (OrganizeScreens is called after this). Leaving it puts the row back as it was.
+        /// </summary>
         public void SetFullScreen(bool isFullScreen)
         {
             thumbnailViewerContainer.SetFullScreen(isFullScreen);
+            if (isFullScreen == fullScreen)
+                return;
+
+            if (isFullScreen)
+                memoCommonControlsCollapsed = splitScreensPanel.Panel2Collapsed;
+
+            fullScreen = isFullScreen;
+            splitScreensPanel.Panel2Collapsed = fullScreen || memoCommonControlsCollapsed;
+            splitScreensPanel.BorderStyle = fullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
         }
         public void ToggleDualScreenOrientation()
         {
@@ -306,25 +332,29 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Cells of equal size in each row, rows of equal height.
+        /// Full screen: also one or two screens (two side by side, or one above the other with the vertical layout),
+        /// and no gap between the cells: the images are joined.
         /// </summary>
         private void LayoutGrid()
         {
-            if (gridCount < 3)
+            if (gridCount < (fullScreen ? 1 : 3))
                 return;
 
-            int[] rows = gridCount < gridRows.Length ? gridRows[gridCount] : new int[] { (gridCount + 1) / 2, gridCount / 2 };
+            int[] rows = gridCount == 2 && IsTopBottomLayout ? new int[] { 1, 1 } :
+                (gridCount < gridRows.Length ? gridRows[gridCount] : new int[] { (gridCount + 1) / 2, gridCount / 2 });
+            int gap = fullScreen ? 0 : gridGap;
             Rectangle area = pnlGrid.ClientRectangle;
             int cell = 0;
             int top = area.Top;
             for (int r = 0; r < rows.Length; r++)
             {
                 int bottom = area.Top + (int)Math.Round((double)area.Height * (r + 1) / rows.Length);
-                int height = bottom - top - (r < rows.Length - 1 ? gridGap : 0);
+                int height = bottom - top - (r < rows.Length - 1 ? gap : 0);
                 int left = area.Left;
                 for (int c = 0; c < rows[r] && cell < gridCount; c++)
                 {
                     int right = area.Left + (int)Math.Round((double)area.Width * (c + 1) / rows[r]);
-                    int width = right - left - (c < rows[r] - 1 ? gridGap : 0);
+                    int width = right - left - (c < rows[r] - 1 ? gap : 0);
                     gridCells[cell].Bounds = new Rectangle(left, top, Math.Max(1, width), Math.Max(1, height));
                     left = right;
                     cell++;

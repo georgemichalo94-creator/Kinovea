@@ -4444,6 +4444,15 @@ namespace Kinovea.ScreenManager.Languages {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Full screen (F11, Esc to exit).
+        /// </summary>
+        public static string ToolTip_FullScreen {
+            get {
+                return ResourceManager.GetString("ToolTip_FullScreen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Go to the end.
         /// </summary>
         public static string ToolTip_Last {

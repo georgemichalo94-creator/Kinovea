@@ -76,6 +76,7 @@ namespace Kinovea.ScreenManager
         private IEnumerable<CaptureScreen> captureScreens;
         private AbstractScreen activeScreen = null;
         private bool canShowCommonControls;
+        private bool inFullScreen;
         private List<string> camerasToDiscover = new List<string>();
         private bool autoLaunchInProgress;
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -200,6 +201,7 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem toolThreePlayers = new ToolStripMenuItem();
         private ToolStripMenuItem toolFourPlayers = new ToolStripMenuItem();
         private ToolStripMenuItem toolFivePlayers = new ToolStripMenuItem();
+        private ToolStripButton toolFullScreen = new ToolStripButton();
         #endregion
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -823,6 +825,11 @@ namespace Kinovea.ScreenManager
             toolFivePlayers.Click += (s, e) => SetPlayerScreenCount(5);
             toolMorePlayers.DropDownItems.AddRange(new ToolStripItem[] { toolThreePlayers, toolFourPlayers, toolFivePlayers });
 
+            // Full screen: only the images of the screens, joined (F11 or Esc to come back), as View > Full screen.
+            toolFullScreen.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolFullScreen.Image = Properties.Resources.expand_16;
+            toolFullScreen.Click += (s, e) => NotificationCenter.RaiseFullScreenToggle();
+
             ToolStrip ts = new ToolStrip(new ToolStripItem[] {
                                             toolSave,
                                             new ToolStripSeparator(),
@@ -834,7 +841,9 @@ namespace Kinovea.ScreenManager
                                             toolMorePlayers,
                                             toolOneCapture,
                                             toolTwoCaptures,
-                                            toolTwoMixed });
+                                            toolTwoMixed,
+                                            new ToolStripSeparator(),
+                                            toolFullScreen });
 
             ToolStripManager.Merge(ts, toolbar);
 
@@ -1205,7 +1214,15 @@ namespace Kinovea.ScreenManager
             IdentifyScreens();
             PlayerScreenUserInterface.PlayerScreenCount = Math.Max(1, playerScreens.Count());
 
+            // Full screen: a screen opened meanwhile also shows only its image.
+            if (inFullScreen)
+            {
+                foreach (AbstractScreen screen in screenList)
+                    screen.FullScreen(true);
+            }
+
             view.OrganizeScreens(screenList);
+            UpdateVideoFullScreen();
             NotificationCenter.RaiseUpdateStatus();
 
             if (captureScreens.Count() == 0)
@@ -1304,12 +1321,43 @@ namespace Kinovea.ScreenManager
             foreach (CaptureScreen screen in captureScreens)
                 screen.SetShared(screenList.Count == 2);
         }
+        /// <summary>
+        /// Full screen of the window (F11, View > Full screen, the button of the toolbar, Escape on a screen to leave it):
+        /// only the images of the screens, joined edge to edge; leaving it puts everything back as it was.
+        /// </summary>
         public void FullScreen(bool fullScreen)
         {
+            inFullScreen = fullScreen;
             view.SetFullScreen(fullScreen);
 
             foreach (AbstractScreen screen in screenList)
                 screen.FullScreen(fullScreen);
+
+            // The screens in the grid without gaps, or back in their places.
+            if (screenList.Count > 0)
+                view.OrganizeScreens(screenList);
+
+            UpdateVideoFullScreen();
+        }
+
+        /// <summary>
+        /// Tells the swim analysis whether the videos are in full screen (VideoFullScreen: the window in full screen with
+        /// at least one screen), once the layout is in place, then places the images again with its answer (its bars
+        /// on the sides of the image, or none). On the UI thread, after a change of the full screen or of the screens.
+        /// </summary>
+        private void UpdateVideoFullScreen()
+        {
+            bool active = inFullScreen && screenList.Count > 0;
+            if (VideoFullScreen.Active == active)
+                return;
+
+            VideoFullScreen.Set(active);
+            foreach (AbstractScreen screen in screenList)
+            {
+                PlayerScreenUserInterface player = screen.UI as PlayerScreenUserInterface;
+                if (player != null)
+                    player.SwimLayoutChanged();
+            }
         }
         public static void AlertInvalidFileName()
         {
@@ -2151,6 +2199,7 @@ namespace Kinovea.ScreenManager
             toolThreePlayers.Text = PlayerScreensText(3);
             toolFourPlayers.Text = PlayerScreensText(4);
             toolFivePlayers.Text = PlayerScreensText(5);
+            toolFullScreen.ToolTipText = ScreenManagerLang.ToolTip_FullScreen;
         }
         private void RefreshCultureMenu()
         {

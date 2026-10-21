@@ -347,11 +347,13 @@ namespace Kinovea.ScreenManager
             if (p == null || Race == null)
                 return;
 
-            // Far from the proposal (another part of the video): not an answer to it.
-            if (Math.Abs(Timing.Seconds(timestamp, p.Timestamp)) > 1.0)
+            // (2.9.5) The analyst's frame is his answer however far it is from the proposal (until 2.9.4: within 1 s; the frame proposed
+            // can be many frames off). Only the order of the events is kept: an event of a length (a breakout, a push off, the events of
+            // the start) is not in another length (InLengthOfEvent). A checkpoint out of order is kept with a warning, as with S.
+            if (!InLengthOfEvent(p, timestamp))
             {
                 SystemSounds.Beep.Play();
-                Status(SwimLang.T("Το καρέ είναι μακριά από την πρόταση (πάνω από 1 s): πήγαινε κοντά της με τα βελάκια, ή Delete αν δεν υπάρχει τέτοιο γεγονός."), true);
+                Status(ProposalLabel(p) + SwimLang.T(": το καρέ είναι σε άλλο μήκος του αγώνα (το γεγονός είναι μετά τον τοίχο του μήκους του ή την εκκίνηση, και πριν από τον επόμενο τοίχο). Πήγαινε σε καρέ αυτού του μήκους, ή Delete αν δεν υπάρχει τέτοιο γεγονός."), true);
                 return;
             }
 
@@ -519,17 +521,34 @@ namespace Kinovea.ScreenManager
             if (Race.Proposals.Count == 0)
                 return;
 
-            // During the check, a mark of the kind being checked answers that proposal (as Enter: within 1 s, a kick within 0.2 s);
-            // else the nearest proposal of its kind waiting (a kick within 0.2 s, the others within 0.6 s). A kick added far from
-            // the proposals (one the detector missed) answers none.
+            // During the check, a mark of the kind being checked answers that proposal however far from it (2.9.5, as Enter; until 2.9.4
+            // within 1 s): a kick within 0.2 s (they are many), a checkpoint of its distance, an event of a length in that length. Else
+            // the proposal of the same event of the race (2.9.5: the checkpoint of this distance, the event of this length), else the
+            // nearest proposal of its kind waiting (a kick within 0.2 s, the others within 0.6 s). A kick added far from the proposals
+            // (one the detector missed) answers none.
             SwimProposal current = CurrentProposal;
+            SwimMark split = type == SwimMarkType.Split ?
+                Race.Marks.LastOrDefault(m => m.Type == SwimMarkType.Split && m.Pilot == null && SameFrame(m.Timestamp, timestamp)) : null;
+            Func<SwimProposal, bool> sameEvent = x => x.Kind == KindRaceSplit ? split != null && split.Distance == x.Index :
+                LengthOfEvent(x) >= 0 && InLengthOfEvent(x, timestamp);
             double near = type == SwimMarkType.Kick ? 0.2 : 0.6;
             SwimProposal p = null;
-            if (current != null && current.Type == type && Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= (type == SwimMarkType.Kick ? 0.2 : 1.0))
-                p = current;
+            if (current != null && current.Type == type)
+            {
+                if (type == SwimMarkType.Kick)
+                    p = Math.Abs(Timing.Seconds(timestamp, current.Timestamp)) <= 0.2 ? current : null;
+                else if (current.Kind == KindRaceSplit || LengthOfEvent(current) >= 0)
+                    p = sameEvent(current) ? current : null;
+                else
+                    p = current;
+            }
+
+            if (p == null && type != SwimMarkType.Kick)
+                p = Race.Proposals.Where(x => x.Type == type && sameEvent(x)).OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
             if (p == null)
             {
-                p = Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= near)
+                p = Race.Proposals.Where(x => x.Type == type && Math.Abs(Timing.Seconds(timestamp, x.Timestamp)) <= near &&
+                        (x.Kind != KindRaceSplit || sameEvent(x)))
                     .OrderBy(x => Math.Abs(timestamp - x.Timestamp)).FirstOrDefault();
             }
 
@@ -570,6 +589,42 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>Further from the proposal than this (s), the frame kept answers it but its cues do not teach their delay (2.9.5).</summary>
+        private const double FarAnswer = 1.0;
+
+        /// <summary>
+        /// (2.9.5) The wall of the length of an event of the race (0: the start, for the first movement, the release from the block, the
+        /// entry and the breakout after the start); -1 for the others (the checkpoints, the start signal, the events of the skeleton).
+        /// </summary>
+        private static int LengthOfEvent(SwimProposal p)
+        {
+            if (p.Kind == KindRaceBreakout || p.Kind == KindRacePushoff)
+                return p.Index;
+            if (p.Kind == KindRaceReaction || p.Kind == KindRaceBlock || p.Kind == KindRaceEntry)
+                return 0;
+            return -1;
+        }
+
+        /// <summary>
+        /// (2.9.5) The frame can be the event of this proposal, however far from it: an event of a length is in that length, after its
+        /// wall (or the start) less 1 s (the wall marked can be a little late) and before the next wall; walls not marked do not limit it.
+        /// Any frame for the others.
+        /// </summary>
+        private bool InLengthOfEvent(SwimProposal p, long timestamp)
+        {
+            int wall = LengthOfEvent(p);
+            if (wall < 0 || Race == null || Timing == null || !Timing.IsValid)
+                return true;
+
+            SwimMark from = wall > 0 ? Race.GetSplit(wall) : null;
+            long? origin = wall > 0 ? (from != null ? from.Timestamp : (long?)null) : Race.StartTimestamp;
+            if (origin.HasValue && Timing.Seconds(timestamp, origin.Value) < -1.0)
+                return false;
+
+            SwimMark to = Race.Pool > 0 ? Race.GetSplit(wall + Race.Pool) : null;
+            return to == null || timestamp < to.Timestamp;
+        }
+
         /// <summary>The answer of the analyst to a proposal: kept for the learning, the proposal goes.</summary>
         private void Answer(SwimProposal p, long timestamp, bool right)
         {
@@ -591,8 +646,15 @@ namespace Kinovea.ScreenManager
             if (record != null && right)
             {
                 record.Error = Timing.Seconds(timestamp, taught.Timestamp);
-                foreach (KeyValuePair<string, long> c in taught.Cues)
-                    record.Cues[c.Key] = Timing.Seconds(timestamp, c.Value);
+
+                // (2.9.5) A frame kept far from the proposal (more than FarAnswer, accepted since 2.9.5): the event is there, but the
+                // reading found something else, its cues do not teach their delay (one such answer would widen the spread of each cue).
+                if (p.Official || Math.Abs(record.Error) <= FarAnswer)
+                {
+                    foreach (KeyValuePair<string, long> c in taught.Cues)
+                        record.Cues[c.Key] = Timing.Seconds(timestamp, c.Value);
+                }
+
                 record.Measures = MeasuresAt(taught, timestamp);
             }
 

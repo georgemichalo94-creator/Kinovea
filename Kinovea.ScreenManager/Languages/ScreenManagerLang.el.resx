@@ -428,6 +428,9 @@
   <data name="ToolTip_First" xml:space="preserve">
     <value>Πήγαινε Πίσω στην Αρχή</value>
   </data>
+  <data name="ToolTip_FullScreen" xml:space="preserve">
+    <value>Πλήρης οθόνη (F11, έξοδος με Esc)</value>
+  </data>
   <data name="ToolTip_Last" xml:space="preserve">
     <value>Πήδημα στο Τέλος</value>
   </data>

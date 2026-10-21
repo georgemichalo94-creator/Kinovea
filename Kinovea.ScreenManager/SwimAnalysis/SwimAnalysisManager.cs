@@ -1653,12 +1653,25 @@ namespace Kinovea.ScreenManager
         private static readonly SolidBrush brushReference = new SolidBrush(colorReference);
 
         /// <summary>
+        /// The graphics of the race on the video without the technical view or the HUD: the boards and, after the finish, the summary card
+        /// of the race (2.9.5, as in the technical view), not on the images of the report.
+        /// all: the boards of the whole race (the image of the final frame); report: an image of the report.
+        /// </summary>
+        /// <param name="swimmer">Where the swimmer is on the screen (2.9.0): the graphics fade over him, he stays in front; empty: not known.</param>
+        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false, RectangleF swimmer = default(RectangleF))
+        {
+            DrawRaceBoards(g, timestamp, size, all, report, swimmer);
+            if (!all && !report)
+                DrawRaceSummary(g, timestamp, size);
+        }
+
+        /// <summary>
         /// Panel in a corner of the video, synchronized with the video time: only the splits already
         /// passed at the current frame are shown, so it plays "live" during the playback.
         /// report: an image of the report (the Δ and the reference's name on the board whatever is chosen for the video, as before 2.8.0).
         /// </summary>
         /// <param name="swimmer">Where the swimmer is on the screen (2.9.0): the graphics fade over him, he stays in front; empty: not known.</param>
-        private void DrawRaceOverlay(Graphics g, long timestamp, Size size, bool all = false, bool report = false, RectangleF swimmer = default(RectangleF))
+        private void DrawRaceBoards(Graphics g, long timestamp, Size size, bool all, bool report, RectangleF swimmer)
         {
             if (Race == null || Computed == null || !Race.StartTimestamp.HasValue || Race.Distance <= 0)
                 return;
@@ -1740,6 +1753,51 @@ namespace Kinovea.ScreenManager
                 HudLayer(g, delta, SwimmerFade(delta, swimmer), layer =>
                     SwimFinalsPainter.PaintDelta(layer, delta, points, Race.Distance, PoolLength, Computed.Reference.Name, true, 1f));
             }
+        }
+
+        /// <summary>
+        /// (2.9.5) After the finish, the summary card of the race over the boards, as in the technical view (the choice «σύνοψη στο
+        /// τέλος»): on the screen and in the exported video, sooner when the video ends soon after the touch; not while a click on the
+        /// video is awaited.
+        /// </summary>
+        private void DrawRaceSummary(Graphics g, long timestamp, Size size)
+        {
+            if (Settings == null || !Settings.ReelSummary || PickTarget != SwimPickTarget.None || Race == null || Race.IsTraining ||
+                Computed == null || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return;
+
+            SwimReel reel = Reel;
+            if (reel == null || !reel.Finish.HasValue)
+                return;
+
+            SwimReelScene scene = new SwimReelScene
+            {
+                Race = Race,
+                Computed = Computed,
+                Reel = reel,
+                Timing = Timing,
+                Timestamp = timestamp,
+                Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value),
+                Summary = true,
+                Final = Settings.ShowFinalsBoard ? FinalForRace() : null,
+                BoardName = BoardName(Race.Athlete),
+                Delta = Settings.CompareDelta || Settings.ShowDeltaChart,
+                VideoEnd = VideoEndSeconds()
+            };
+            SwimReelPainter.PaintSummary(g, size, scene);
+        }
+
+        /// <summary>Race time of the last frame of the video (its working zone, what is exported), null when not known (2.9.5).</summary>
+        private double? VideoEndSeconds()
+        {
+            if (frameServer == null || !frameServer.Loaded || Race == null || !Race.StartTimestamp.HasValue || !Timing.IsValid)
+                return null;
+
+            VideoSection zone = frameServer.VideoReader.WorkingZone;
+            if (zone.IsEmpty || zone.End <= Race.StartTimestamp.Value)
+                return null;
+
+            return Timing.Seconds(zone.End, Race.StartTimestamp.Value);
         }
 
         /// <summary>

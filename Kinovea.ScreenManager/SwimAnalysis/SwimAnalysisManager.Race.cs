@@ -1068,9 +1068,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The breakout after the wall at 'wall' (0: the start) is at this frame: the underwater distance from the time to the next
-        /// checkpoint (marked or proposed) at the speed of the swimming after it, 12% faster (the glide of the breakout, as in the
-        /// analyses made: within about 0.3 m). Written only where the analyst has no value; returns the text for the status
-        /// (empty if nothing was written).
+        /// checkpoint (marked or proposed) at the speed of the swimming after it, times the share of that speed from the breakout
+        /// to the checkpoint for the style and the start or turn (SwimReel.BreakoutSpeedShare). Written only where the analyst has
+        /// no value; returns the text for the status (empty if nothing was written).
+        /// (2.9.5) It was 12% faster for every style: the distance came out short, by 0.25–0.45 m after the start and up to 1 m
+        /// after butterfly and breaststroke turns (medians of 689 breakouts of the analysts' library; 14.0 m for a breakout at
+        /// 14.2 m). With the shares the median is within ±0.2 m.
         /// </summary>
         private string EstimateUnderwaterDistance(int wall, long breakout)
         {
@@ -1103,7 +1106,9 @@ namespace Kinovea.ScreenManager
                 return "";
 
             double speed = (next[1].Item1 - next[0].Item1) * Race.K / (next[1].Item2 - next[0].Item2);
-            double distance = (next[0].Item1 - wall) * Race.K - 1.12 * speed * (next[0].Item2 - tb);
+            bool dive = start || (Race.Relay && Race.Distance >= 4 && wall % (Race.Distance / 4) == 0);
+            double share = SwimReel.BreakoutSpeedShare(dive, SwimPresets.StyleAt(Race, next[0].Item1));
+            double distance = (next[0].Item1 - wall) * Race.K - share * speed * (next[0].Item2 - tb);
             if (distance < 2 || distance > (next[0].Item1 - wall) * Race.K)
                 return "";
 
@@ -3234,6 +3239,16 @@ namespace Kinovea.ScreenManager
 
                 double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
                 done = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Πέρασμα {0}{1}: {2:0.00} s"), distance, Race.Unit, t);
+
+                // (2.9.5) The analyst's frame however far from the proposal: a time out of order is kept with the warning of S.
+                if (!SplitInOrder(distance, timestamp))
+                {
+                    SystemSounds.Exclamation.Play();
+                    done = "⚠ " + string.Format(CultureInfo.InvariantCulture, SwimLang.T("Πέρασμα {0}{1}: {2:0.00} s"), distance, Race.Unit, t) +
+                        SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
+                }
+
+                done += ReestimateAfterSplit(distance);
                 if (distance == Race.Distance)
                     CaptureFinalFrame(timestamp);
             }
@@ -3244,6 +3259,195 @@ namespace Kinovea.ScreenManager
             Changed(true);
             NextProposal(timestamp, done);
         }
+
+        #region Checkpoints marked again (2.9.5)
+        /// <summary>The checkpoint chosen with its row (in the table or on the video bar, Seek), -1 none: «Πέρασμα» at the right frame moves it.</summary>
+        private int chosenSplit = -1;
+        private SwimRace chosenSplitRace;
+
+        /// <summary>The last «Πέρασμα» moved a checkpoint marked before (no strokes to count, no offer of the learning: HandleCommand).</summary>
+        private bool splitMoved;
+
+        /// <summary>
+        /// (2.9.5) The checkpoint of a row chosen (the video went to it): the next «Πέρασμα» (S) at the right frame moves its time there
+        /// (SplitTargetAt), also one the auto pilot put or an official one; Backspace puts the time before back.
+        /// </summary>
+        private void ChooseSplit(int distance)
+        {
+            SwimMark split = Race == null ? null : Race.GetSplit(distance);
+            if (split == null || !Race.StartTimestamp.HasValue)
+                return;
+
+            chosenSplit = distance;
+            chosenSplitRace = Race;
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Πέρασμα {0}{1}: {2:0.00} s · για αλλαγή: το σωστό καρέ με ← → και S («Πέρασμα»)· Backspace: η προηγούμενη τιμή."),
+                distance, Race.Unit, Timing.Seconds(split.Timestamp, Race.StartTimestamp.Value)), false);
+        }
+
+        /// <summary>The checkpoint asked for: of the proposal being checked, or the row chosen (-1 none).</summary>
+        private int AskedSplit()
+        {
+            SwimProposal p = CurrentProposal;
+            if (p != null && p.Kind == KindRaceSplit)
+                return p.Index;
+            return chosenSplitRace == Race ? chosenSplit : -1;
+        }
+
+        /// <summary>
+        /// (2.9.5) The checkpoint «Πέρασμα» (S) marks at this frame (-1 none); move: it has a time already, which moves here (after the auto
+        /// pilot all of them have one; until 2.9.4 S only filled the next one without a time, the others with Delete first). The one asked
+        /// for (the proposal of a checkpoint being checked, the row chosen) when the frame keeps the order of the times; else, among the
+        /// checkpoints the frame keeps in order, the one whose time is (or would be) nearest to it: a marked one moves, one without a time
+        /// is added (its time expected between the marked ones, or at the speed of the race so far). After the last time marked the next
+        /// checkpoint wins unless the frame is nearer to the time it would move (a correction of the last one), also over a row chosen.
+        /// Nothing in order (times out of order already): the next one without a time as before; all marked: the one asked for, or the
+        /// nearest (moved, with the warning).
+        /// </summary>
+        public int SplitTargetAt(long timestamp, out bool move)
+        {
+            move = false;
+            if (Race == null)
+                return -1;
+
+            int next = Race.NextCheckpoint();
+            if (Race.IsTraining || !Timing.IsValid)
+                return next;
+
+            // The marked checkpoints: their seconds from this frame (negative: before it).
+            List<int> checkpoints = Race.Checkpoints.Distinct().OrderBy(d => d).ToList();
+            Dictionary<int, double> marked = new Dictionary<int, double>();
+            foreach (int d in checkpoints)
+            {
+                SwimMark m = Race.GetSplit(d);
+                if (m != null)
+                    marked[d] = Timing.Seconds(m.Timestamp, timestamp);
+            }
+
+            if (marked.Count == 0)
+                return next;
+
+            // The frame keeps the order: after the times of the checkpoints before it, before the times of the ones after it.
+            Func<int, bool> inOrder = d => marked.All(x => x.Key == d || (x.Key < d ? x.Value < 0 : x.Value > 0));
+            int best = -1;
+            double bestAway = double.MaxValue;
+            foreach (int d in checkpoints)
+            {
+                if (!inOrder(d))
+                    continue;
+
+                double away = Math.Abs(marked.ContainsKey(d) ? marked[d] : ExpectedSplitAway(d, marked, timestamp));
+                if (away < bestAway)
+                {
+                    best = d;
+                    bestAway = away;
+                }
+            }
+
+            int asked = AskedSplit();
+            bool nextAtEnd = best >= 0 && !marked.ContainsKey(best) && marked.Keys.All(k => k < best);
+            if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked) && !nextAtEnd)
+                best = asked;
+
+            if (best < 0)
+            {
+                if (next >= 0)
+                    return next;
+                best = asked >= 0 && marked.ContainsKey(asked) ? asked : marked.OrderBy(x => Math.Abs(x.Value)).First().Key;
+            }
+
+            move = marked.ContainsKey(best);
+            return best;
+        }
+
+        /// <summary>«Πέρασμα» pressed: its checkpoint at this frame (SplitTargetAt); the row chosen counts for this press only.</summary>
+        private int TakeSplitTarget(long timestamp, out bool move)
+        {
+            int distance = SplitTargetAt(timestamp, out move);
+            chosenSplit = -1;
+            chosenSplitRace = null;
+            splitMoved = false;
+            return distance;
+        }
+
+        /// <summary>
+        /// Where a checkpoint without a time is expected (s from this frame): between the marked ones around it in proportion to the
+        /// distance, or after (before) the last (first) marked one at the mean speed of the race up to it.
+        /// </summary>
+        private double ExpectedSplitAway(int distance, Dictionary<int, double> marked, long timestamp)
+        {
+            int before = marked.Keys.Where(k => k < distance).DefaultIfEmpty(-1).Max();
+            int after = marked.Keys.Where(k => k > distance).DefaultIfEmpty(int.MaxValue).Min();
+            if (before >= 0 && after != int.MaxValue)
+                return marked[before] + (marked[after] - marked[before]) * (distance - before) / (after - before);
+
+            int known = before >= 0 ? before : after;
+            double speed = 1.6;
+            if (Race.StartTimestamp.HasValue)
+            {
+                double raceTime = marked[known] - Timing.Seconds(Race.StartTimestamp.Value, timestamp);
+                if (raceTime > 0.5)
+                    speed = Math.Max(0.5, Math.Min(3.0, known / raceTime));
+            }
+
+            return marked[known] + (distance - known) / speed;
+        }
+
+        /// <summary>The time keeps the order of the checkpoints marked before and after it.</summary>
+        private bool SplitInOrder(int distance, long timestamp)
+        {
+            SwimMark previous = Race.Checkpoints.Where(d => d < distance).Select(d => Race.GetSplit(d)).LastOrDefault(m => m != null);
+            SwimMark next = Race.Checkpoints.Where(d => d > distance).Select(d => Race.GetSplit(d)).FirstOrDefault(m => m != null);
+            return (previous == null || previous.Timestamp < timestamp) && (next == null || next.Timestamp > timestamp);
+        }
+
+        /// <summary>
+        /// (2.9.5) A checkpoint with a time already (the analyst's, the auto pilot's, an official one) moved to this frame with «Πέρασμα»:
+        /// the analyst's mark replaces it (Backspace puts it back), the strokes typed for its segment stay, its proposal waiting is answered
+        /// (as Enter on it), the underwater distance the pilot estimated from it again; the finish takes its final frame again
+        /// (HandleCommand). The times after it follow at the next calculation.
+        /// </summary>
+        private bool MoveSplit(int distance, long timestamp)
+        {
+            SwimMark old = Race.GetSplit(distance);
+            double was = Timing.Seconds(old.Timestamp, Race.StartTimestamp.Value);
+            SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = distance };
+            AddReplacing(mark, m => m.Type == SwimMarkType.Split && m.Distance == distance);
+            splitMoved = true;
+
+            // Its proposal waiting is answered by this frame (the learning), as Enter on it.
+            ResolveProposalsByMark(SwimMarkType.Split, timestamp);
+
+            double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
+            string message = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Πέρασμα {0}{1}: {2:0.00} s (ήταν {3:0.00} s) · Backspace: η προηγούμενη τιμή."),
+                distance, Race.Unit, t, was);
+            bool warn = !SplitInOrder(distance, timestamp);
+            if (warn)
+            {
+                SystemSounds.Exclamation.Play();
+                message += SwimLang.T("  ⚠ ο χρόνος δεν είναι ανάμεσα στα γειτονικά σημεία.");
+            }
+
+            Status(message + ReestimateAfterSplit(distance), warn);
+            return true;
+        }
+
+        /// <summary>
+        /// (2.9.5) After Backspace on a checkpoint: the underwater distance the pilot estimated from it again; a finish moved and put back
+        /// takes its final frame again (the one of the moved finish showed its time). The text for the status.
+        /// </summary>
+        private string AfterSplitUndone(SwimMark undone, List<SwimMark> restored)
+        {
+            if (undone == null || undone.Type != SwimMarkType.Split || Race == null)
+                return "";
+
+            bool finishBack = restored != null && restored.Any(m => m.Type == SwimMarkType.Split && m.Distance == Race.Distance) &&
+                Race.FinalFrame != null && SameFrame(Race.FinalFrame.Timestamp, undone.Timestamp);
+            if (finishBack)
+                PilotLater(() => RecaptureFinalFrame(true, true));
+
+            return ReestimateAfterSplit(undone.Distance);
+        }
+        #endregion
         #endregion
     }
 }

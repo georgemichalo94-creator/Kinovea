@@ -637,6 +637,9 @@ namespace Kinovea.ScreenManager
                 p.PilotMark = old.Id;
                 List<SwimMark> again = TrimAutoStrokesBeforeBreakout(p.Index, p.Timestamp);
                 old.Pilot.Strokes = again.Count > 0 ? again : null;
+
+                // (2.9.5) Its underwater distance again from the checkpoints of this reading (while it is still the pilot's estimate).
+                ReestimatePilotUnderwater(p.Index);
                 return;
             }
 
@@ -775,6 +778,70 @@ namespace Kinovea.ScreenManager
 
             pilot.Strokes = null;
             pilot.Underwater = null;
+        }
+
+        /// <summary>
+        /// (2.9.5) A checkpoint inside a length marked again, put at its proposal or undone: the underwater distance the pilot estimated
+        /// for the breakout of that length (from the first checkpoint after it and the one after that, which give the speed) again. The
+        /// text for the status when it changed, else empty.
+        /// </summary>
+        private string ReestimateAfterSplit(int distance)
+        {
+            if (Race == null || Race.Pool <= 0 || distance % Race.Pool == 0)
+                return "";
+
+            return ReestimatePilotUnderwater(distance - distance % Race.Pool);
+        }
+
+        /// <summary>
+        /// (2.9.5) The underwater distance the pilot estimated for its breakout after this wall (0: the start) estimated again from the
+        /// times as they are now, only while the value is still the one the pilot wrote (Pilot.Underwater, as UndoPilotEffects): a value
+        /// of the analyst is never changed. When the times give no estimate now, the value stays. The text for the status when it changed.
+        /// </summary>
+        private string ReestimatePilotUnderwater(int wall)
+        {
+            SwimMark breakout = Race == null ? null : Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null &&
+                m.Pilot.Wall == wall && m.Pilot.Underwater.HasValue);
+            if (breakout == null)
+                return "";
+
+            double? before = UnderwaterOf(wall);
+            if (!before.HasValue || Math.Abs(before.Value - breakout.Pilot.Underwater.Value) >= 1e-6)
+                return "";
+
+            SetUnderwater(wall, null);
+            string text = EstimateUnderwaterDistance(wall, breakout.Timestamp);
+            double? after = UnderwaterOf(wall);
+            if (text.Length == 0 || !after.HasValue)
+            {
+                SetUnderwater(wall, before);
+                return "";
+            }
+
+            breakout.Pilot.Underwater = after;
+            return Math.Abs(after.Value - before.Value) < 1e-6 ? "" : text;
+        }
+
+        /// <summary>The underwater distance after this wall (0: the start), null if none.</summary>
+        private double? UnderwaterOf(int wall)
+        {
+            if (wall == 0)
+                return Race.UnderwaterDist;
+            SwimTurnManual turn = Race.GetTurn(wall, false);
+            return turn != null ? turn.UnderwaterDist : null;
+        }
+
+        private void SetUnderwater(int wall, double? value)
+        {
+            if (wall == 0)
+            {
+                Race.UnderwaterDist = value;
+                return;
+            }
+
+            SwimTurnManual turn = Race.GetTurn(wall, value.HasValue);
+            if (turn != null)
+                turn.UnderwaterDist = value;
         }
 
         /// <summary>After a reading of the pilot: the swimmer lost (the analyst shows him again, then it goes on), or the report.</summary>
