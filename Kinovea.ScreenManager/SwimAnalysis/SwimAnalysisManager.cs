@@ -514,7 +514,7 @@ namespace Kinovea.ScreenManager
             if (distance < 0)
             {
                 SystemSounds.Beep.Play();
-                Status(SwimLang.T("Όλα τα σημεία έχουν χρόνο. Διάγραψε έναν χρόνο (επιλογή γραμμής + Delete) για να τον ξαναμαρκάρεις."), true);
+                Status(SwimLang.T("Όλα τα σημεία ελέγχου έχουν χρόνο. Για να αλλάξεις έναν: κλικ στη γραμμή του (το βίντεο πάει εκεί), το σωστό καρέ με ← → και «Πέρασμα» (S)."), true);
                 return false;
             }
 
@@ -2145,11 +2145,14 @@ namespace Kinovea.ScreenManager
 
             // Its official times placed in it as it is now (a start moved while another swimmer of the video was shown).
             ReapplyOfficial();
+            string check = CheckOnOpen();
             PbCandidates = new List<SwimAnalysisItem>();
             Changed(false);
             RefreshPbCandidates();
             if (form != null)
                 form.RefreshAll();
+            if (check.Length > 0)
+                Status(check, true);
         }
 
         public void NewRace()
@@ -2956,8 +2959,29 @@ namespace Kinovea.ScreenManager
             EnsureReference();
             ClearUndo();
             Recompute();
+            string check = CheckOnOpen();
             if (form != null)
                 form.RefreshAll();
+            if (check.Length > 0)
+                Status(check, true);
+        }
+
+        /// <summary>
+        /// (2.9.5b) A race opened: the breakouts of the auto pilot not checked yet that the times put past the most a breakout can be
+        /// for the style go (an analysis of an earlier version), and the underwater distances past it are named (they stay). The text
+        /// for the status ("" if nothing).
+        /// </summary>
+        private string CheckOnOpen()
+        {
+            string gone = CheckPilotBreakouts();
+            if (gone.Length > 0)
+            {
+                Recompute();
+                MarkDirty();
+            }
+
+            string far = UnderwaterWarnings();
+            return gone + (gone.Length > 0 && far.Length > 0 ? "  " : "") + far;
         }
 
         private void RefreshTiming()
