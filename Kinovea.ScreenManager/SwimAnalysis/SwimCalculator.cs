@@ -320,7 +320,7 @@ namespace Kinovea.ScreenManager
 
             // Checkpoint times. The official time of the results (typed or from the link, since 2026-10-19) stands as it is at its
             // distance: since 2.9.5b always (the official splits are certain; until 2.9.5 a mark more than a frame and a half from it
-            // kept its own time and the analysis showed a finish of 58.72 for an official 58.58). The mark keeps its frame for the
+            // kept its own time and the analysis showed a finish a tenth slower than the official one). The mark keeps its frame for the
             // video (MarkT); farther than a frame and a half it is shown apart (MarkApart: a mark on another frame, or the start off).
             // (At least 0.015 s: at 120 fps and more a frame and a half is less than the hundredth of the results and the touch.)
             Dictionary<int, double> official = race.OfficialTimes();

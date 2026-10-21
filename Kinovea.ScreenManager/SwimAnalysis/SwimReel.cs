@@ -306,7 +306,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 // (2.9.5b) A value far past what a breakout can be for the style (a breakout of the auto pilot near the 25 m wrote
-                // 24.7 m for a 100 m breaststroke whose breakout was at 14.3 m) is not shown: the estimate from the times instead (the
+                // almost 25 m for a breaststroke breakout near 15 m) is not shown: the estimate from the times instead (the
                 // value stays in the analysis, the panel warns). A value the pilot estimated (its breakout's record) is shown with ≈.
                 double max = MaxBreakout(SwimPresets.StyleAt(race, Math.Min(race.Distance, wall + 15)));
                 double limit = (max + MeasuredSlack) / K;

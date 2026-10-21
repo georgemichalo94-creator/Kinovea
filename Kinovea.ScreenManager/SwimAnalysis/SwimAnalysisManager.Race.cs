@@ -1175,7 +1175,7 @@ namespace Kinovea.ScreenManager
             return implied.HasValue && implied.Value > BreakoutLimit(wall) + SwimReel.EstimateSlack;
         }
 
-        /// <summary>"από τους χρόνους η έξοδος μετά την εκκίνηση θα ήταν στα 24.7μ. (το πολύ 20μ. στο πρόσθιο)".</summary>
+        /// <summary>"από τους χρόνους η έξοδος μετά την εκκίνηση θα ήταν στα 23.5μ. (το πολύ 20μ. στο πρόσθιο)".</summary>
         private string BreakoutPastText(int wall, double meters)
         {
             string style = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, wall + 15));
@@ -3416,8 +3416,8 @@ namespace Kinovea.ScreenManager
             if (next >= 0 && HasVideo && player.IsCurrentlyPlaying)
                 return next;
 
-            // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot from 6.16 to
-            // 5.78 s, before the breakout at 14.3 m, and the speeds after the start went wrong (15–25 m 1.56 m/s, then 1.65). The nearest
+            // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot almost 0.4 s
+            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). The nearest
             // checkpoint without a time that the frame keeps in order (one skipped), else the next one without a time (none: all have a
             // time, AddSplit says how to change one).
             if (best >= 0 && marked.ContainsKey(best))
