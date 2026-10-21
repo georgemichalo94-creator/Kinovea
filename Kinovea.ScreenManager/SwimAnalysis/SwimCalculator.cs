@@ -449,6 +449,16 @@ namespace Kinovea.ScreenManager
                 {
                     row.Strokes = typed;
                     row.StrokesTyped = true;
+
+                    // (2.9.6) The rate from the intervals of the presses only while the presses are the strokes typed: an analyst who
+                    // presses once a cycle in freestyle and types the strokes had half the rate there, and extra presses gave a rate
+                    // too high. Otherwise the column shows none.
+                    if (row.SrExact.HasValue && hasStrokes && vRow.HasValue && vPrev.HasValue)
+                    {
+                        double presses = Cumulative(result.Strokes, barriers, vRow.Value) - Cumulative(result.Strokes, barriers, vPrev.Value);
+                        if (Math.Abs(presses - typed) > 0.75)
+                            row.SrExact = null;
+                    }
                 }
 
                 // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),
