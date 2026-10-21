@@ -17,7 +17,7 @@
  *   7. Φτιάχνει το report, το PDF και τα γραφήματα στα αγγλικά όταν το ζητά το Kinovea (lang 'en', 2.7.7)· αλλιώς στα ελληνικά.
  */
 
-var SWIM_VERSION = '2.8.0';
+var SWIM_VERSION = '2.9.5';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -34,6 +34,20 @@ var SWIM_ALIAS_SHEET = 'Άλλες γραφές ονομάτων';
 var SWIM_ALIAS_HEADERS = ['Αριθμός μητρώου', 'Όνομα όπως γράφεται', 'Καταχώρηση'];
 var SWIM_REPORTS_TITLE = 'Αναλύσεις Αγώνων Κολύμβησης (Kinovea)';
 var SWIM_REPORT_FOLDER = 'Swim Race Reports';
+
+/**
+ * (2.9.5) Ο ΔΑΚ κάθε 50άρι, όχι μόνο ο μέσος όρος του: στη στήλη L των χρόνων (στη θέση της «Μέση ταχύτητα από εκκίνηση»)
+ * στη γραμμή όπου τελειώνει κάθε 50άρι, κάτω από το πλακίδιο του ΔΑΚ και στην πρώτη σελίδα του PDF («Με μια ματιά»).
+ */
+var SWIM_DAK50 = true;
+
+/**
+ * (2.9.5) Τα γραφήματα του PDF: τα γραφήματα του Google (όσα δεν έχουν εικόνα του Kinovea για τις τιμές τους) χωρίς τις τιμές
+ * πάνω στις σειρές (με αυτές το Google, στο PDF και στην εικόνα του γραφήματος, σχεδίαζε μόνο τον τίτλο), με τα δεδομένα τους
+ * και από κρυμμένες γραμμές· ένα γράφημα χωρίς καμία τιμή δεν μπαίνει· όσα έχουν εικόνα του Kinovea για παλιότερες τιμές τα
+ * ζητά ξανά από το Kinovea μία φορά πριν από το PDF.
+ */
+var SWIM_PDF_CHARTS = true;
 
 /** Μέτρα ανά γιάρδα (πισίνες 25yd). */
 var SWIM_YARD = 0.9144;
@@ -217,6 +231,12 @@ function swimHandleRequest_(req) {
           result.needCharts = true;
           return swimJson_(result);
         }
+      } else if (action === 'pdf' && (result.chartsStale || []).length && swimChartsAgain_(result.raceId)) {
+        // 2.9.5: το PDF μετά το ανέβασμα των γραφημάτων (χωρίς drawCharts) βρήκε εικόνες για τιμές που άλλαξαν στο μεταξύ: το
+        // Kinovea τις ξανασχεδιάζει (μία φορά) αντί να μπουν στο PDF γραφήματα του Google.
+        result.charts = chartData.filter(function (c) { return result.chartsStale.indexOf(c.key) >= 0; });
+        result.needCharts = true;
+        return swimJson_(result);
       }
       if (action === 'pdf') {
         var ss = swimReportsSpreadsheet_();
@@ -675,6 +695,8 @@ function swimUpsertRace_(rawRace) {
     chartsMissing: charts.missing
   };
   Object.defineProperty(result, 'quick', { value: quick, enumerable: false });
+  // 2.9.5: τα γραφήματα με εικόνα του Kinovea για άλλες τιμές (το PDF τα ζητά ξανά μία φορά, swimChartsAgain_).
+  Object.defineProperty(result, 'chartsStale', { value: charts.stale || [], enumerable: false });
   return result;
 }
 
@@ -693,7 +715,7 @@ function swimReadKpis_(sheet, layout, analysis) {
   var num = function (v, fallback) { return typeof v === 'number' && isFinite(v) ? v : (fallback === undefined || fallback === null ? '' : fallback); };
   var k = layout.kpi || {};
   var s = analysis.summary || {};
-  return {
+  var out = {
     finalTime: num(read(k.finalTime), s.finalTime),
     avgVel: num(read(k.avgVel), s.avgVel),
     totalStrokes: num(read(k.totalStrokes), s.totalStrokes),
@@ -701,6 +723,25 @@ function swimReadKpis_(sheet, layout, analysis) {
     dps: num(read(k.dps), s.avgDps),
     dak: num(read(k.dak), s.avgDak)
   };
+  // 2.9.5: και ο ΔΑΚ κάθε 50άρι (για την πρώτη σελίδα του PDF).
+  if (SWIM_DAK50) out.dak50 = swimReadDak50_(sheet, layout, analysis);
+  return out;
+}
+
+/**
+ * (2.9.5) Ο ΔΑΚ κάθε 50άρι: [{ k (το πολλοστό 50άρι), v }], από τη στήλη H του πίνακα «Ανά 50» με μία ανάγνωση (μετρά και ό,τι
+ * γράφτηκε με το χέρι), αλλιώς της ανάλυσης. Οι γραμμές του πίνακα είναι τα 50άρια της ανάλυσης, με την ίδια σειρά.
+ */
+function swimReadDak50_(sheet, layout, analysis) {
+  var blocks = (analysis && analysis.blocks) || [];
+  var p = layout && layout.per50, vals = [];
+  if (p && p.first > 0 && p.last - p.first + 1 === blocks.length) {
+    try { vals = sheet.getRange(p.first, 8, blocks.length, 1).getValues(); } catch (e) { vals = []; }
+  }
+  return blocks.map(function (b, i) {
+    var v = vals[i] ? vals[i][0] : null;
+    return { k: Math.round(b.to / 50), v: typeof v === 'number' && isFinite(v) && v > 0 ? v : swimQuickNum_(b.dak) };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1489,7 +1530,8 @@ function swimLayoutSignature_(race, extras, pageHeight) {
   var x = extras || {};
   var sig = function (o) { return o ? String(o.id || '') + ':' + swimHash_(JSON.stringify(o.race)) : ''; };
   var s = {
-    v: 9,
+    // 10 (2.9.5): ο ΔΑΚ κάθε 50άρι στη στήλη L των χρόνων· τα report ξαναφτιάχνονται μία φορά.
+    v: SWIM_DAK50 ? 10 : 9,
     kind: race.kind,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
@@ -1939,8 +1981,11 @@ function swimLayoutTiles_(L, values) {
   var cleanAll = !values ? { sr: '', dps: '' } : (race.strokesPer50 ? swimWhole50Totals_(L) : swimCleanFormulas_(L.cleanSel, L.T0, L.K));
   var r15 = L.rowOf[15];
   var dak = values && L.p50First !== null ? '=IFERROR(AVERAGE(H' + L.p50First + ':H' + L.p50Last + '),"")' : '';
+  // 2.9.5: κάτω από τον μέσο όρο ο ΔΑΚ κάθε 50άρι (2 έως 4 50άρια· με περισσότερα, στους πίνακες).
+  var dak50 = swimDak50Tile_(L);
   var tiles = [
-    { cap: swimT_('ΔΑΚ'), val: dak, fmt: SWIM_FMT.vel, sub: swimT_('Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)'), key: 'dak', accent: true },
+    { cap: swimT_(dak50 ? 'ΔΑΚ (μ.ο.)' : 'ΔΑΚ'), val: dak, fmt: SWIM_FMT.vel, sub: dak50 ? dak50.sub : swimT_('Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)'),
+      key: 'dak', accent: true },
     { cap: swimT_('ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ'), val: '=IF(' + L.FT + '="","",IF(' + L.FT + '<60,TEXT(' + L.FT + ',"0.00"),INT(' + L.FT + '/60)&":"&TEXT(MOD(' + L.FT + ',60),"00.00")))', fmt: '@', sub: swimT_('λεπτά:δευτερόλεπτα'), key: 'finalText' },
     { cap: swimT_('ΜΕΣΗ ΤΑΧΥΤΗΤΑ'), val: '=IF(' + L.FT + '="","",' + race.distance + L.K + '/' + L.FT + ')', fmt: SWIM_FMT.vel,
       sub: L.yards ? '=IF(' + L.FT + '="","m/s",TEXT(' + race.distance + '/' + L.FT + ',"0.00")&" yd/s")' : 'm/s', key: 'avgVel' },
@@ -1966,10 +2011,52 @@ function swimLayoutTiles_(L, values) {
   });
   g.rowHeights[8] = 18;
   g.rowHeights[9] = 34;
-  g.rowHeights[10] = 28;
+  // Ο τύπος των 50άρι μετρά για μία γραμμή: το ύψος από το κείμενο που θα δείξει (ίδιο και στα δύο περάσματα).
+  g.rowHeights[10] = dak50 ? Math.max(28, Math.ceil(dak50.height / SWIM_FONT_SCALE)) : 28;
   if (!values) return;
   L.layout.kpi.finalTime = { r: L.rN, c: 2 };
   L.layout.kpi.totalStrokes = L.p50Total ? { r: L.p50Total, c: 4 } : null;
+}
+
+/** (2.9.5) Τακτικό αριθμητικό ενός 50άρι: «1ο», «2ο» … (στα αγγλικά «1st», «2nd», «3rd», «4th» …). */
+function swimOrdinal_(n) {
+  if (SWIM_LANG_ !== 'en') return n + 'ο';
+  var t = n % 100, u = n % 10;
+  return n + (t >= 11 && t <= 13 ? 'th' : (u === 1 ? 'st' : (u === 2 ? 'nd' : (u === 3 ? 'rd' : 'th'))));
+}
+
+/** (2.9.5) Ο ΔΑΚ κάθε 50άρι σε μία γραμμή: [{ k (το πολλοστό 50άρι), v }] → «1ο 1.23 · 2ο 1.31» (χωρίς τιμή: «–»). */
+function swimDak50Text_(list) {
+  return list.map(function (x) {
+    return swimOrdinal_(x.k) + ' ' + (x.v === null || x.v === undefined || !isFinite(x.v) ? '–' : swimQuickFixed_(x.v, 2));
+  }).join(' · ');
+}
+
+/**
+ * (2.9.5) Το κείμενο κάτω από τον μέσο όρο στο πλακίδιο του ΔΑΚ: ο ΔΑΚ κάθε 50άρι, από τη στήλη L των χρόνων (στις γραμμές
+ * των 50άρι), όταν ο αγώνας έχει 2 έως 4 50άρια. { sub: τύπος του φύλλου, height: px για το κείμενο που θα δείξει } ή null.
+ */
+function swimDak50Tile_(L) {
+  if (!SWIM_DAK50) return null;
+  var list = [];
+  for (var k = 1; k * 50 <= L.race.distance + 1e-9; k++) if (L.rowOf[k * 50] !== undefined) list.push({ k: k, r: L.rowOf[k * 50] });
+  if (list.length < 2 || list.length > 4) return null;
+  // Χωρίς καμία τιμή (π.χ. χωρίς χεριές) το κείμενο όπως πριν.
+  var label = swimT_('Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)');
+  var parts = list.map(function (x) {
+    var o = swimOrdinal_(x.k);
+    return 'IF(ISNUMBER(L' + x.r + '),"' + o + ' "&TEXT(L' + x.r + ',"0.00"),"' + o + ' –")';
+  });
+  // Ως δύο 50άρια σε κάθε γραμμή (τρία ή τέσσερα: δύο γραμμές, χωρίς να κόβεται κάπου αλλού).
+  var lines = function (items, sep, br) { return items.length > 2 ? items.slice(0, 2).join(sep) + br + items.slice(2).join(sep) : items.join(sep); };
+  var refs = list.map(function (x) { return 'L' + x.r; }).join(',');
+  var width = swimColumnWidth_(1) + swimColumnWidth_(2);
+  // Το πιο φαρδύ κείμενο: ΔΑΚ με δύο ψηφία (π.χ. 12.40 σε πισίνα 50μ.).
+  var sample = lines(list.map(function (x) { return swimDak50Text_([{ k: x.k, v: 88.88 }]); }), ' · ', '\n');
+  return {
+    sub: '=IF(COUNT(' + refs + ')=0,"' + label.replace(/"/g, '""') + '",' + lines(parts, '&" · "&', '&CHAR(10)&') + ')',
+    height: Math.max(swimTextHeight_(sample, width, 8, false), swimTextHeight_(label, width, 8, false))
+  };
 }
 
 function swimLayoutStart_(L) {
@@ -2017,7 +2104,8 @@ function swimLayoutTiming_(L) {
   var labels = [
     'Distance (' + (L.yards ? 'yd' : 'm') + ')', 'Time (s)', 'Vel (m/s)', 'Dif Time 25', 'Dif 50', 'Turn time -5/+15',
     'Swolf / Total Strokes by 50', swimT_('Χεριές τμήματος'), 'StrRate (Cycles/min)', 'Distance Per Stroke (m/stroke)',
-    swimT_('Χρόνος τμήματος (s)'), swimT_('Μέση ταχύτητα από εκκίνηση (m/s)'), swimT_('SR από χρόνους χεριών (Cycles/min)'), swimT_('Στυλ'),
+    // 2.9.5: στη στήλη L ο ΔΑΚ κάθε 50άρι (στη γραμμή όπου τελειώνει, από τον πίνακα «Ανά 50») αντί για τη μέση ταχύτητα από την εκκίνηση.
+    swimT_('Χρόνος τμήματος (s)'), SWIM_DAK50 ? swimT_('ΔΑΚ 50άρι') : swimT_('Μέση ταχύτητα από εκκίνηση (m/s)'), swimT_('SR από χρόνους χεριών (Cycles/min)'), swimT_('Στυλ'),
     swimT_('Μήκος κύκλου SL (m/κύκλο)')
   ];
   if (L.yards) labels.push('Vel (yd/s)', swimT_('DPS (yd/χεριά)'));
@@ -2097,7 +2185,9 @@ function swimLayoutTiming_(L) {
 
     if (i === 0) g.set(r, 11, '=IF(' + B + '="","",' + B + ')', swimF_(SWIM_FMT.time, 'formula'));
     else g.set(r, 11, '=IF(OR(' + B + '="",' + Bp + '=""),"",' + B + '-' + Bp + ')', swimF_(SWIM_FMT.time, 'formula'));
-    g.set(r, 12, '=IF(' + B + '="","",A' + r + K + '/' + B + ')', swimF_(SWIM_FMT.vel, 'formula'));
+    // Ο ΔΑΚ των 50άρι μπαίνει στις γραμμές τους από τον πίνακα «Ανά 50» (swimLayoutPer50_).
+    if (SWIM_DAK50) g.set(r, 12, '', swimF_(SWIM_FMT.vel, 'formula'));
+    else g.set(r, 12, '=IF(' + B + '="","",A' + r + K + '/' + B + ')', swimF_(SWIM_FMT.vel, 'formula'));
     g.set(r, 13, '', swimF_(SWIM_FMT.sr, 'auto'));
     g.set(r, 14, row.style, { color: '#777777', align: 'center', size: 9 });
     if (L.yards) {
@@ -2161,6 +2251,8 @@ function swimLayoutPer50_(L) {
     var dakFmt = swimF_(SWIM_FMT.vel, 'formula');
     dakFmt.bg = SWIM_COLORS.kpiDak; dakFmt.bold = true; dakFmt.color = SWIM_COLORS.dakText;
     g.set(x, 8, swimDakFormula_(race, rowOf, dStart, false), dakFmt);
+    // 2.9.5: ο ΔΑΚ του 50άρι και στη στήλη L των χρόνων, στη γραμμή όπου τελειώνει (η τιμή του H αυτού του πίνακα).
+    if (SWIM_DAK50) g.set(re, 12, '=IF(H' + x + '="","",H' + x + ')', dakFmt);
     g.set(x, 9, '=IF(OR(B' + x + '="",B' + x + '=0),"",50' + K + '/B' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
     if (idx > 0) g.set(x, 10, '=IF(OR(B' + x + '="",B' + (x - 1) + '=""),"",B' + x + '-B' + (x - 1) + ')', swimF_(SWIM_FMT.time, 'formula'));
     else g.set(x, 10, '', swimF_(null, 'formula'));
@@ -3708,28 +3800,67 @@ function swimPlaceChartItems_(sheet, layout, race, fresh, stored) {
   var images = race.chartImages || {};
   var items = specs.map(function (spec, i) {
     var im = images[spec.key];
-    return { spec: spec, fileId: im && data[i] && im.hash === data[i].hash ? im.fileId : '' };
+    var it = { spec: spec, fileId: im && data[i] && im.hash === data[i].hash ? im.fileId : '' };
+    if (SWIM_PDF_CHARTS) {
+      // 2.9.5: ένα γράφημα χωρίς καμία τιμή (π.χ. χωρίς χεριές) δεν μπαίνει ούτε ζητιέται από το Kinovea: στο PDF κενός χώρος,
+      // όχι ένα κουτί μόνο με τον τίτλο. Μια εικόνα του Kinovea για άλλες τιμές (άλλαξαν μετά το σχέδιό της): stale.
+      it.none = !swimChartHasValues_(data[i]);
+      it.stale = !it.fileId && !it.none && !!im;
+    }
+    return it;
   });
   var signature = function () {
     return swimHash_(JSON.stringify(items.map(function (it) {
-      return [it.spec.key, it.spec.row, it.spec.col, it.spec.offsetX || 0, it.spec.width, it.spec.height, it.fileId];
+      return [it.spec.key, it.spec.row, it.spec.col, it.spec.offsetX || 0, it.spec.width, it.spec.height, it.none ? 'none' : it.fileId];
     })));
   };
   var placement = signature();
   if (fresh || placement !== stored) {
     if (!fresh) swimRemoveChartItems_(sheet, specs);
     items.forEach(function (it) {
+      if (it.none) return;
       if (it.fileId && swimInsertChartImage_(sheet, it.spec, it.fileId)) return;
       it.fileId = '';
       swimInsertEmbeddedChart_(sheet, it.spec);
     });
     placement = signature();
   }
+  var keys = function (f) { return items.filter(f).map(function (it) { return it.spec.key; }); };
   return {
     data: data,
-    missing: items.filter(function (it) { return !it.fileId; }).map(function (it) { return it.spec.key; }),
+    missing: keys(function (it) { return !it.fileId && !it.none; }),
+    stale: keys(function (it) { return it.stale && !it.fileId; }),
     placement: placement
   };
+}
+
+/** (2.9.5) Έχει το γράφημα έστω και μία τιμή (αριθμό) σε κάποια σειρά του; */
+function swimChartHasValues_(data) {
+  return !!data && (data.series || []).some(function (s) {
+    return (s.values || []).some(function (v) { return typeof v === 'number' && isFinite(v); });
+  });
+}
+
+/** Πόσο κρατά η σημείωση ότι τα γραφήματα ενός αγώνα ζητήθηκαν ξανά (s): μέσα σε αυτό τον χρόνο όχι δεύτερη φορά. */
+var SWIM_CHARTS_AGAIN_TIME = 600;
+
+/**
+ * (2.9.5) Μπορεί το PDF να ζητήσει ξανά από το Kinovea τα γραφήματα με εικόνα για παλιότερες τιμές; Μία φορά ανά αγώνα μέσα σε
+ * SWIM_CHARTS_AGAIN_TIME (στην προσωρινή μνήμη του script), ώστε να μη γίνει ποτέ κύκλος χωρίς τέλος· χωρίς τη μνήμη, όχι.
+ */
+function swimChartsAgain_(raceId) {
+  if (!SWIM_PDF_CHARTS) return false;
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  if (!cache) return false;
+  try {
+    var key = 'swimChartsAgain|' + swimHash_(String(raceId));
+    if (cache.get(key)) return false;
+    cache.put(key, '1', SWIM_CHARTS_AGAIN_TIME);
+    return true;
+  } catch (e2) {
+    return false;
+  }
 }
 
 /** Το γράφημα του Google στη θέση του (ένα γράφημα που δεν υποστηρίζεται, π.χ. radar, δοκιμάζεται ως γραμμή). */
@@ -3820,8 +3951,11 @@ function swimChartOptions_(spec) {
   (spec.labels || []).forEach(function (l, i) { get(i).labelInLegend = l; });
   (spec.seriesTypes || []).forEach(function (t, i) { get(i).type = t; });
   (spec.secondAxis || []).forEach(function (i) { get(i).targetAxisIndex = 1; });
-  // Οι τιμές πάνω στη σειρά του αθλητή (όταν τα σημεία είναι λίγα), ώστε το γράφημα να διαβάζεται και τυπωμένο.
-  if (!spec.noLabels) swimChartLabelSeries_(spec).forEach(function (i) { get(i).dataLabel = 'value'; });
+  // Οι τιμές πάνω στη σειρά του αθλητή (όταν τα σημεία είναι λίγα), ώστε το γράφημα να διαβάζεται και τυπωμένο (2.5). Όχι από την
+  // 2.9.5 (SWIM_PDF_CHARTS, εκτός αν τις ζητά το spec: ο έλεγχος από το μενού): με αυτές το Google σχεδίαζε στο PDF και στην εικόνα
+  // του γραφήματος (getAs) μόνο τον τίτλο· στα PDF 2.5–2.9.4 σωζόταν μόνο η «Σύνθεση αγώνα», η πίτα χωρίς τιμές πάνω της (όπως με
+  // την περιοχή σε % ως την 2.2.1). Οι εικόνες του Kinovea έχουν τις τιμές τους (labelSeries).
+  if (!spec.noLabels && (!SWIM_PDF_CHARTS || spec.dataLabels)) swimChartLabelSeries_(spec).forEach(function (i) { get(i).dataLabel = 'value'; });
   if (Object.keys(series).length) o.series = series;
 
   if (spec.type !== 'pie') {
@@ -3863,6 +3997,10 @@ function swimInsertChart_(sheet, spec, options) {
     var builder = swimChartBuilder_(sheet, spec.type);
     spec.ranges.forEach(function (a1) { builder.addRange(sheet.getRange(a1)); });
     if (spec.transpose) builder.setTransposeRowsAndColumns(true);
+    // 2.9.5: και οι τιμές σε κρυμμένες γραμμές ή στήλες (αν κρυφτεί μέρος του φύλλου, το γράφημα δεν αδειάζει).
+    if (SWIM_PDF_CHARTS) {
+      try { builder.setHiddenDimensionStrategy(Charts.ChartHiddenDimensionStrategy.SHOW_BOTH); } catch (e0) { /* παλιότερο Apps Script */ }
+    }
     Object.keys(opts).forEach(function (k) { builder.setOption(k, opts[k]); });
     builder.setPosition(spec.row, spec.col, spec.offsetX || 0, spec.offsetY || 0);
     return builder.build();
@@ -4980,6 +5118,9 @@ function swimQuickLookData_(race, analysis, extras, kpi, mode) {
   d.sr = n(k.sr) !== null ? k.sr : n(s.avgSr);
   d.dps = n(k.dps) !== null ? k.dps : n(s.avgDps);
   d.dak = n(k.dak) !== null ? k.dak : n(s.avgDak);
+  // 2.9.5: ο ΔΑΚ κάθε 50άρι [{ k, v }] (του φύλλου, αλλιώς της ανάλυσης).
+  d.dak50 = !SWIM_DAK50 ? [] : (Array.isArray(k.dak50) ? k.dak50
+    : (analysis.blocks || []).map(function (b) { return { k: Math.round(b.to / 50), v: n(b.dak) }; }));
 
   var compare = function (c, a) {
     if (!c || !a) return null;
@@ -5209,12 +5350,15 @@ function swimQuickLayout_(race, analysis, extras, kpi, W, level, spacer) {
   blank(14);
 
   // ---- Δείκτες.
+  // 2.9.5: κάτω από τον μέσο όρο του ΔΑΚ ο ΔΑΚ κάθε 50άρι, όταν χωράει σε μία γραμμή του πλακιδίου (π.χ. τα δύο 50άρια των 100).
+  var dak50 = d.dak50.length >= 2 && d.dak50.some(function (x) { return x.v !== null; }) ? swimDak50Text_(d.dak50) : '';
+  if (dak50 && swimTextLines_(dak50, swimQuickWidth_(9, 10) - 5, swimFontSize_(8) * 4 / 3, false) > 1) dak50 = '';
   var tiles = [
     { cap: swimT_('ΑΝΤΙΔΡΑΣΗ'), val: swimQuickFixed_(d.reaction, 2), sub: 'sec' },
     { cap: swimTF_('ΕΚΚΙΝΗΣΗ 0-15{0}', d.U.replace('.', '').toUpperCase()), val: d.t15 !== null ? T(d.t15) : '', sub: swimT_('από το σήμα') },
     { cap: swimT_('ΣΥΧΝΟΤΗΤΑ'), val: swimQuickFixed_(d.sr, 1), sub: swimT_('κύκλοι/λεπτό') },
     { cap: swimT_('ΜΗΚΟΣ ΧΕΡΙΑΣ'), val: swimQuickFixed_(d.dps, 2), sub: swimT_('m/χεριά') },
-    { cap: swimT_('ΔΑΚ'), val: swimQuickFixed_(d.dak, 2), sub: swimT_('μ.ο. 50άρι'), accent: true },
+    { cap: swimT_(dak50 ? 'ΔΑΚ (μ.ο.)' : 'ΔΑΚ'), val: swimQuickFixed_(d.dak, 2), sub: dak50 || swimT_('μ.ο. 50άρι'), accent: true },
     { cap: swimT_('ΣΤΡΟΦΕΣ -5/+15'), val: swimQuickFixed_(d.turnAvg, 2), sub: swimT_('μέσος όρος (sec)') },
     { cap: swimTF_('ΤΕΛΕΥΤΑΙΑ 5{0}', d.U.replace('.', '').toUpperCase()), val: swimQuickFixed_(d.last5, 2), sub: 'sec' }
   ];
@@ -5273,8 +5417,15 @@ function swimQuickLayout_(race, analysis, extras, kpi, W, level, spacer) {
     var cols = [
       [1, 1, swimT_('Τμήμα')], [2, 2, swimT_('Χρόνος')], [3, 3, swimT_('Ενδιάμεσος')], [4, 4, 'm/s'], [5, 8, swimT_('Ταχύτητα')],
       [9, 9, swimT_('Χεριές')], [10, 10, swimT_('Συχνότητα')], [11, 11, swimT_('Μήκος χεριάς')], [12, 12, swimT_('Δ PB')],
-      [13, 14, swimT_('Δ αναφοράς')], [15, W, d.mode === 'cp' ? '' : swimT_('ΔΑΚ')]
+      [13, 14, swimT_('Δ αναφοράς')], [15, W, d.mode === 'cp' ? (SWIM_DAK50 ? swimT_('ΔΑΚ 50άρι') : '') : swimT_('ΔΑΚ')]
     ];
+    // 2.9.5: ο ΔΑΚ κάθε 50άρι στη γραμμή όπου τελειώνει (ανά σημείο ελέγχου) ή στη γραμμή του (ανά 50), όπως στο φύλλο.
+    var dakAt = {};
+    d.dak50.forEach(function (x) { dakAt[x.k * 50] = x.v; });
+    var dakOf = function (s) {
+      if (SWIM_DAK50 && d.mode !== '100' && dakAt[s.d] !== undefined) return dakAt[s.d];
+      return d.mode === 'cp' ? null : s.dak;
+    };
     cols.forEach(function (c) { swimQuickSet_(g, head, c[0], c[1], c[2], hfmt); });
     // Η κλίμακα των μπαρών από την καθαρή κολύμβηση (η εκκίνηση και οι στροφές, πιο γρήγορες, ως το τέλος της μπάρας).
     var vmax = 0, vmin = Infinity;
@@ -5305,7 +5456,7 @@ function swimQuickLayout_(race, analysis, extras, kpi, W, level, spacer) {
       cell(11, 11, swimQuickFixed_(s.dps, 2));
       cell(12, 12, swimQuickDelta_(s.dPb), { bold: true, color: tone(s.dPb) });
       cell(13, 14, swimQuickDelta_(s.dRef), { bold: true, color: tone(s.dRef) });
-      cell(15, W, d.mode === 'cp' ? '' : swimQuickFixed_(s.dak, 2), { color: C.dakText, bold: true });
+      cell(15, W, swimQuickFixed_(dakOf(s), 2), { color: C.dakText, bold: true });
     });
     g.box(head, 1, r, W);
     blank(16);
@@ -5525,6 +5676,14 @@ function swimChartsCheckHtml_(ss) {
       { name: 'χωρίς άξονες και περιοχή', options: function () { var o = swimChartOptions_(spec); delete o.vAxes; delete o.hAxis; delete o.chartArea; return o; } },
       { name: 'περιοχή σε % (έκδοση 2.2.0)', options: function () { var o = swimChartOptions_(spec); o.chartArea = { left: 70, top: 48, width: '74%', height: '58%' }; return o; } }
     ];
+    // 2.9.5: και με τις τιμές πάνω στη σειρά του αθλητή, όπως τα γραφήματα του Google στα report 2.5–2.9.4.
+    if (SWIM_PDF_CHARTS) {
+      variants.push({ name: 'τιμές πάνω στη σειρά (έκδοση 2.5–2.9.4)', options: function () {
+        var labeled = JSON.parse(JSON.stringify(spec));
+        labeled.dataLabels = true;
+        return swimChartOptions_(labeled);
+      } });
+    }
     var area = { rows: spec.row + SWIM_CHART_ROWS, cols: 8 };
     SpreadsheetApp.flush();
     var empty = swimPdfFetch_(swimPdfUrl_(ss, sh, area)).getBytes().length;
@@ -5533,7 +5692,12 @@ function swimChartsCheckHtml_(ss) {
       swimInsertChart_(sh, spec, v.options());
       SpreadsheetApp.flush();
       Utilities.sleep(3000);
-      results.push({ name: v.name, bytes: swimPdfFetch_(swimPdfUrl_(ss, sh, area)).getBytes().length - empty });
+      var res = { name: v.name, bytes: swimPdfFetch_(swimPdfUrl_(ss, sh, area)).getBytes().length - empty };
+      // 2.9.5: και η εικόνα του γραφήματος (getAs), όπως μπαίνει στο PDF όταν δεν υπάρχει εικόνα του Kinovea.
+      if (SWIM_PDF_CHARTS) {
+        try { res.image = sh.getCharts()[0].getAs('image/png').getBytes().length; } catch (e3) { res.image = null; }
+      }
+      results.push(res);
     });
   } catch (e) {
     return '<p style="color:#c06e00">⚠ Ο έλεγχος δεν ολοκληρώθηκε: ' + String(e && e.message ? e.message : e) + '</p>';
@@ -5543,8 +5707,16 @@ function swimChartsCheckHtml_(ss) {
   var ref = results[0].bytes;
   if (!(ref > 1500)) return '<p style="color:#c06e00">⚠ Ούτε το απλό γράφημα σχεδιάστηκε στο PDF (' + ref + ' bytes): το πρόβλημα δεν είναι οι ρυθμίσεις.</p>';
   var drawn = function (r) { return r.bytes >= 0.5 * ref; };
+  // 2.9.5: η εικόνα του γραφήματος (getAs) με το μέγεθός της, απέναντι στην εικόνα του απλού γραφήματος.
+  var refImage = results[0].image;
+  var imageCell = function (r) {
+    if (r.image === undefined) return '';
+    if (r.image === null || !(refImage > 0)) return '<td>εικόνα: –</td>';
+    return '<td style="text-align:right">εικόνα: ' + r.image + ' bytes ' + (r.image >= 0.5 * refImage ? '✔' : '✖') + '</td>';
+  };
   var rows = results.map(function (r) {
-    return '<tr><td>' + r.name + '</td><td style="text-align:right">' + r.bytes + ' bytes</td><td>' + (drawn(r) ? '✔ ολόκληρο' : '✖ μόνο ο τίτλος') + '</td></tr>';
+    return '<tr><td>' + r.name + '</td><td style="text-align:right">' + r.bytes + ' bytes</td><td>' + (drawn(r) ? '✔ ολόκληρο' : '✖ μόνο ο τίτλος') + '</td>' +
+      imageCell(r) + '</tr>';
   }).join('');
   var verdict = drawn(results[1])
     ? '<p style="color:#2e8b57">✔ Τα γραφήματα των reports σχεδιάζονται ολόκληρα στο PDF.</p>'
@@ -6558,6 +6730,8 @@ var SWIM_EN_ = {
   '  (Διάδρομος {0})': '  (Lane {0})',
   'Μητρώο ': 'Reg. no. ',
   'ΔΑΚ': 'SPI',
+  'ΔΑΚ (μ.ο.)': 'SPI (mean)',
+  'ΔΑΚ 50άρι': 'SPI of the 50',
   'Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)': 'Swimming Performance Index (average of the 50s)',
   'ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ': 'FINAL TIME',
   'λεπτά:δευτερόλεπτα': 'minutes:seconds',

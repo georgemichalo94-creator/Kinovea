@@ -184,8 +184,16 @@ namespace Kinovea.ScreenManager
         /// <summary>The Apps Script of this version of the panel (shown by the test of the connection when the web app is older).</summary>
         public static Version RequiredBackend
         {
-            get { return quickLookBackend; }
+            get { return pdfChartsBackend; }
         }
+
+        /// <summary>
+        /// Oldest Apps Script whose PDF prints every chart (2.9.5: before, the charts of Google with the values written on them came out
+        /// with their title only, when Kinovea's images were not used) and shows the ΔΑΚ of each 50 (no more «Μέση ταχύτητα από
+        /// εκκίνηση»).
+        /// </summary>
+        private static readonly Version pdfChartsBackend = new Version(2, 9, 5);
+        private bool pdfChartsWarned;
         private bool backendWarned;
         private bool typedStrokesWarned;
         private bool chartsWarned;
@@ -2867,6 +2875,14 @@ namespace Kinovea.ScreenManager
                             Status(string.Format(CultureInfo.InvariantCulture,
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς την πρώτη σελίδα «Με μια ματιά». Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
                                 version, quickLookBackend.ToString(3)), true);
+                        }
+                        else if (!pdfChartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < pdfChartsBackend)
+                        {
+                            // Since 2.9.5 every chart of the PDF prints and the ΔΑΚ of each 50 shows (Apps Script 2.9.5).
+                            pdfChartsWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: κάποια γραφήματα μπορεί να βγουν άδεια και ο ΔΑΚ μόνο ως μέσος όρος. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, pdfChartsBackend.ToString(3)), true);
                         }
                         else if (e.Result.PdfQuick == false && quickLookFailed.Add(race.Id ?? ""))
                         {

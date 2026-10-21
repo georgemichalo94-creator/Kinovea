@@ -273,13 +273,17 @@ function postAll(env, R, lang) {
 const OLD = makeContextWith(ORIGINAL, { athletes: ATHLETES });
 // 2.8.0: χωρίς copyTo η πρώτη σελίδα του PDF («Με μια ματιά») δεν γίνεται και το PDF είναι όπως πριν· ελέγχεται στο test_quick.
 const NEW = makeContext({ athletes: ATHLETES, copyTo: false });
+// 2.9.5: ο ΔΑΚ κάθε 50άρι (στήλη L των χρόνων, πλακίδιο) και τα γραφήματα του PDF (χωρίς τιμές πάνω στις σειρές, χωρίς τα
+// άδεια) κλειστά για τη σύγκριση· ανοίγουν στο (b) και ελέγχονται στα test_v2, test_charts και test_graphics.
+NEW.SWIM_DAK50 = false;
+NEW.SWIM_PDF_CHARTS = false;
 const envOld = prepare(OLD), envNew = prepare(NEW);
 assert.deepStrictEqual(envOld.files, envNew.files, 'same Drive ids in both');
 const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, envNew.reference);
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.8.0');
+assert.strictEqual(vNew, '2.9.5');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -327,6 +331,8 @@ console.log('test_lang (a): Greek output identical to the script ' + vOld + ' ('
 // τις τιμές που έγραψε ο αναλυτής στα ελληνικά (η γωνία CUSTOM_ANGLE) και το σύμβολο Δ (διαφορά, όπως στο Kinovea)
 // ---------------------------------------------------------------------------------------------
 const GREEK = /[Ͱ-Ͽἀ-῿]/;
+NEW.SWIM_DAK50 = true;
+NEW.SWIM_PDF_CHARTS = true;
 const outEn = postAll(envNew, Rnew, 'en');
 assert.ok(outEn.first.ok && outEn.first.rebuilt, 'another language rebuilds the report');
 assert.strictEqual(NEW.SWIM_LANG_, 'el', 'Greek again after the request');
@@ -364,10 +370,13 @@ const has = (t, why) => assert.ok(texts.indexOf(t) >= 0, (why || 'missing') + ':
 const like = (re, why) => assert.ok(texts.some(t => re.test(t)), (why || 'missing') + ': ' + re);
 has('Times & Strokes (Timing Data)');
 has('SPI'); has('Speed per segment (m/s)'); has('Stroke rate (cycles/min)'); has('Race'); has('Swimmer');
+// 2.9.5: ο ΔΑΚ κάθε 50άρι στα αγγλικά: η στήλη L των χρόνων, το πλακίδιο (μέσος όρος, από κάτω κάθε 50άρι).
+has('SPI of the 50'); has('SPI (mean)');
+like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50s\)",IF\(ISNUMBER\(L\d+\),"1st "&TEXT\(L\d+,"0\.00"\),"1st –"\)&" · "&IF\(ISNUMBER\(L\d+\),"2nd "&TEXT/, 'SPI of each 50 under the tile');
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.8\.0$/, 'version line');
+like(/^Updated .* · version 2\.9\.5$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

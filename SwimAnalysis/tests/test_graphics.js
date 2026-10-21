@@ -58,21 +58,27 @@ assert.ok(layout.charts.length > 0 && layout.charts.every(c => c.row > vIm.row),
 assert.ok(Object.keys(layout.paging.blocks || {}).length === 0 || true);
 assert.notStrictEqual(layout.signature, plain.signature, 'new graphics rebuild the sheet');
 
-// 3) Τα γραφήματα: τιμές πάνω στη σειρά του αθλητή, χρώματα του βίντεο.
+// 3) Τα γραφήματα: χρώματα του βίντεο. Οι τιμές πάνω στη σειρά του αθλητή (2.5) μόνο στις εικόνες του Kinovea (labelSeries) από
+// την 2.9.5: με αυτές το Google σχεδίαζε στο PDF και στην εικόνα του γραφήματος μόνο τον τίτλο. Με dataLabels (ο έλεγχος από το
+// μενού) όπως στην 2.5: στη σειρά του αθλητή, όχι στο PB / elite, όχι με πολλά σημεία, όχι στην πίτα.
 const speed = layout.charts.find(c => /^Ταχύτητα ανά τμήμα/.test(c.title));
+const labelsOf = o => Object.keys(o.series || {}).filter(k => o.series[k].dataLabel).map(Number);
 let o = G.swimChartOptions_(speed);
-assert.strictEqual(o.series[0].dataLabel, 'value', JSON.stringify(o.series));
+assert.deepStrictEqual(labelsOf(o), [], 'no labels on a Google chart: ' + JSON.stringify(o.series));
+assert.deepStrictEqual(Array.from(G.swimChartLabelSeries_(speed)), [0], 'the values on the race in the image of Kinovea');
 assert.strictEqual(o.colors[0], '#F2A900', 'the athlete in the amber of the video');
+const labeled = spec => G.swimChartOptions_(Object.assign({}, spec, { dataLabels: true }));
+assert.deepStrictEqual(labelsOf(labeled(speed)), [0], 'labels when asked (menu check)');
 const pie = layout.charts.find(c => c.type === 'pie');
-o = G.swimChartOptions_(pie);
-assert.ok(!o.series || !Object.keys(o.series).some(k => o.series[k].dataLabel), 'no labels on a pie');
+assert.deepStrictEqual(labelsOf(labeled(pie)), [], 'no labels on a pie');
 const cmp = { type: 'line', title: 'x', ranges: ['A20:A25', 'G20:I25'], labels: ['PB', 'Αγώνας', 'Elite'], colors: [] };
-o = G.swimChartOptions_(cmp);
-assert.ok(o.series[1].dataLabel === 'value' && !o.series[0].dataLabel && !o.series[2].dataLabel, 'labels on the race, not on PB/elite');
-o = G.swimChartOptions_({ type: 'line', title: 'x', ranges: ['A20:A60', 'C20:C60'] });
-assert.ok(!o.series || !o.series[0] || !o.series[0].dataLabel, 'no labels with many points');
-o = G.swimChartOptions_(Object.assign({}, speed, { noLabels: true }));
-assert.ok(!o.series || !o.series[0] || !o.series[0].dataLabel, 'no labels when asked');
+assert.deepStrictEqual(labelsOf(labeled(cmp)), [1], 'labels on the race, not on PB/elite');
+assert.deepStrictEqual(labelsOf(labeled({ type: 'line', title: 'x', ranges: ['A20:A60', 'C20:C60'] })), [], 'no labels with many points');
+assert.deepStrictEqual(labelsOf(labeled(Object.assign({}, speed, { noLabels: true }))), [], 'no labels when asked');
+// Χωρίς το SWIM_PDF_CHARTS, όπως στις 2.5–2.9.4.
+G.SWIM_PDF_CHARTS = false;
+assert.deepStrictEqual(labelsOf(G.swimChartOptions_(speed)), [0], 'as in 2.5–2.9.4 without SWIM_PDF_CHARTS');
+G.SWIM_PDF_CHARTS = true;
 
 // 4) PDF: κάθε γράφημα τυπώνεται ως εικόνα στη θέση του και μετά γυρίζει πίσω.
 let r = call({ action: 'pdf', race: race100 });
