@@ -46,14 +46,21 @@ namespace Kinovea.ScreenManager
         public double? SegTime;
 
         /// <summary>
-        /// T is the official time of the results (SwimRace.Official, since 2026-10-19): the mark is at its frame (or there is none).
-        /// OfficialTime: the official time typed for this distance, also when the analyst's mark is elsewhere (T is the mark's then).
+        /// T is the official time of the results (SwimRace.Official, since 2026-10-19). Since 2.9.5b always at its distance (the
+        /// official splits are certain and do not change), wherever the mark is; until 2.9.5 a mark more than a frame and a half
+        /// from it kept its own time. OfficialTime: the official time of this distance.
         /// </summary>
         public bool Official;
         public double? OfficialTime;
 
-        /// <summary>The time of the mark on the video when T is the official time beside it (the frames round it off).</summary>
+        /// <summary>The time of the mark on the video when T is the official time (the frames round it off; the graphics follow it).</summary>
         public double? MarkT;
+
+        /// <summary>
+        /// (2.9.5b) The mark of a distance with an official time is farther from it than a frame and a half (MarkT - OfficialTime): the
+        /// analysis keeps the official time, the panel shows the mark apart (a mark on another frame, or the start off).
+        /// </summary>
+        public bool MarkApart;
 
         /// <summary>
         /// The analyst or the pilot marked it (T can be an official time without a mark: the checkpoint is still to mark, the
@@ -204,11 +211,13 @@ namespace Kinovea.ScreenManager
         public double? EntryTime;
 
         /// <summary>
-        /// BlockTime is the official reaction time of the results (SwimRace.OfficialReaction, since 2026-10-19): the release from the
-        /// block marked at it (BlockMarkTime) or not marked.
+        /// BlockTime is the official reaction time of the results (SwimRace.OfficialReaction, since 2026-10-19; since 2.9.5b always when
+        /// there is one): the release from the block marked (BlockMarkTime, null: not marked); BlockMarkApart: the mark is farther from
+        /// it than a frame and a half.
         /// </summary>
         public bool BlockOfficial;
         public double? BlockMarkTime;
+        public bool BlockMarkApart;
 
         /// <summary>Flight: feet leave the block → hands enter the water.</summary>
         public double? FlightTime;
@@ -309,10 +318,10 @@ namespace Kinovea.ScreenManager
             int pool = race.Pool <= 0 ? 50 : race.Pool;
             int distance = race.Distance;
 
-            // Checkpoint times. The official time of the results (typed, since 2026-10-19) stands as it is where the mark is at its
-            // frame or the next one (the reading puts the walls there and the frames round it; the analyst's touch a frame off) or
-            // where there is no mark; a mark farther (the start or the official time off) keeps its own time, the official one is
-            // shown beside it.
+            // Checkpoint times. The official time of the results (typed or from the link, since 2026-10-19) stands as it is at its
+            // distance: since 2.9.5b always (the official splits are certain; until 2.9.5 a mark more than a frame and a half from it
+            // kept its own time and the analysis showed a finish of 58.72 for an official 58.58). The mark keeps its frame for the
+            // video (MarkT); farther than a frame and a half it is shown apart (MarkApart: a mark on another frame, or the start off).
             // (At least 0.015 s: at 120 fps and more a frame and a half is less than the hundredth of the results and the touch.)
             Dictionary<int, double> official = race.OfficialTimes();
             double hsf = timing.HighSpeedFactor <= 0 ? 1.0 : timing.HighSpeedFactor;
@@ -339,13 +348,11 @@ namespace Kinovea.ScreenManager
                 if (official.TryGetValue(row.D, out typed))
                 {
                     row.OfficialTime = typed;
-                    if (!row.T.HasValue || Math.Abs(row.T.Value - typed) <= nearFrames)
-                    {
-                        row.MarkT = row.T;
-                        row.T = typed;
-                        row.Official = true;
-                        timeAt[row.D] = typed;
-                    }
+                    row.MarkApart = row.T.HasValue && Math.Abs(row.T.Value - typed) > nearFrames;
+                    row.MarkT = row.T;
+                    row.T = typed;
+                    row.Official = true;
+                    timeAt[row.D] = typed;
                 }
 
                 if (result.Reference != null)
@@ -362,13 +369,25 @@ namespace Kinovea.ScreenManager
             for (int w = pool; w < distance; w += pool)
                 turnWalls.Add(w);
 
-            List<double> barriers = turnWalls.Where(w => timeAt.ContainsKey(w)).Select(w => timeAt[w]).OrderBy(t => t).ToList();
+            // (2.9.5b) What is counted or timed on the video (the strokes of a segment, the turn from the touch to the feet off, the last
+            // stroke before a wall) is between the frames of the checkpoints: their marks (OnVideo), also where an official time stands
+            // for the time of the checkpoint a little off its frame. The same as the times when the marks are at the official times.
+            Dictionary<int, double> videoAt = new Dictionary<int, double>();
+            foreach (SwimRow r in result.Rows)
+            {
+                if (!double.IsNaN(r.OnVideo))
+                    videoAt[r.D] = r.OnVideo;
+            }
+
+            List<double> barriers = turnWalls.Where(w => videoAt.ContainsKey(w)).Select(w => videoAt[w]).OrderBy(t => t).ToList();
             bool hasStrokes = result.Strokes.Count > 0;
 
             double? lastT = null;
             foreach (SwimRow row in result.Rows)
             {
                 double? tPrev = row.Index == 0 ? 0.0 : result.Rows[row.Index - 1].T;
+                double? vPrev = row.Index == 0 ? 0.0 : double.IsNaN(result.Rows[row.Index - 1].OnVideo) ? (double?)null : result.Rows[row.Index - 1].OnVideo;
+                double? vRow = double.IsNaN(row.OnVideo) ? (double?)null : row.OnVideo;
                 int ppc = SwimPresets.PressesPerCycle(row.Style);
                 int lastWall = (int)Math.Floor((row.PrevD + 1e-9) / pool) * pool;
                 row.IsSwim = row.PrevD >= lastWall + 15;
@@ -393,15 +412,15 @@ namespace Kinovea.ScreenManager
                     lastT = row.T;
                 }
 
-                if (hasStrokes && row.T.HasValue && tPrev.HasValue)
+                if (hasStrokes && vRow.HasValue && vPrev.HasValue)
                 {
-                    double nA = Round(Cumulative(result.Strokes, barriers, tPrev.Value), strokeRounding);
-                    double nB = Round(Cumulative(result.Strokes, barriers, row.T.Value), strokeRounding);
+                    double nA = Round(Cumulative(result.Strokes, barriers, vPrev.Value), strokeRounding);
+                    double nB = Round(Cumulative(result.Strokes, barriers, vRow.Value), strokeRounding);
                     row.Strokes = Math.Max(0, Round(nB - nA, strokeRounding > 0 ? strokeRounding : 0));
 
                     // Backstroke after the dive: the first pull is the one that brings the swimmer up (the breakout); the analysts'
                     // sheets count from the next one (their own stroke marks give one more than their sheets in the first segment).
-                    if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && result.Strokes[0] <= row.T.Value)
+                    if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && result.Strokes[0] <= vRow.Value)
                         row.Strokes = Math.Max(0, row.Strokes.Value - 1);
 
                     double sum = 0;
@@ -410,9 +429,9 @@ namespace Kinovea.ScreenManager
                     {
                         double a = result.Strokes[j];
                         double b = result.Strokes[j + 1];
-                        if (a < tPrev.Value - 1e-9)
+                        if (a < vPrev.Value - 1e-9)
                             continue;
-                        if (b > row.T.Value + 1e-9)
+                        if (b > vRow.Value + 1e-9)
                             break;
                         if (HasBarrier(barriers, a, b))
                             continue;
@@ -467,18 +486,21 @@ namespace Kinovea.ScreenManager
             result.BlockTime = First(result.FeetOff, t => t > 0 && t < firstWallT);
 
             // The official reaction time of the results (from the touch pads of the blocks, since 2026-10-19) is the release from the
-            // block: it stands where the mark is at it (as the checkpoints) or there is none.
-            if (race.OfficialReaction.HasValue && race.OfficialReaction.Value > 0 &&
-                (!result.BlockTime.HasValue || Math.Abs(result.BlockTime.Value - race.OfficialReaction.Value) <= nearFrames))
+            // block: since 2.9.5b it always stands, as the official splits (until 2.9.5 only where the mark was at it or there was none).
+            if (race.OfficialReaction.HasValue && race.OfficialReaction.Value > 0)
             {
+                result.BlockMarkApart = result.BlockTime.HasValue && Math.Abs(result.BlockTime.Value - race.OfficialReaction.Value) > nearFrames;
                 result.BlockMarkTime = result.BlockTime;
                 result.BlockTime = race.OfficialReaction.Value;
                 result.BlockOfficial = true;
             }
 
             result.EntryTime = First(result.Entries, t => t > 0 && t < firstWallT);
-            if (result.BlockTime.HasValue && result.EntryTime.HasValue && result.EntryTime.Value > result.BlockTime.Value)
-                result.FlightTime = result.EntryTime.Value - result.BlockTime.Value;
+
+            // The flight on the video: from the release marked (else the official one) to the entry.
+            double? release = result.BlockMarkTime ?? result.BlockTime;
+            if (release.HasValue && result.EntryTime.HasValue && result.EntryTime.Value > release.Value)
+                result.FlightTime = result.EntryTime.Value - release.Value;
             result.StartUnderwaterTime = First(result.Breakouts, t => t > 0 && t < firstWallT);
             if (result.Kicks.Count > 0)
             {
@@ -487,10 +509,11 @@ namespace Kinovea.ScreenManager
                 result.StartKicks = result.Kicks.Count(t => t > fromT && t <= to);
             }
 
-            // Turns.
+            // Turns. The events of the video (feet off, breakout, last stroke, kicks) are found and timed from the walls' frames
+            // (2.9.5b: OnVideo; the official time of a wall is for the times of the checkpoints).
             List<double> wallTimes = result.Rows
-                .Where(r => r.T.HasValue && IsWall(r.D, pool))
-                .Select(r => r.T.Value)
+                .Where(r => !double.IsNaN(r.OnVideo) && IsWall(r.D, pool))
+                .Select(r => r.OnVideo)
                 .OrderBy(t => t)
                 .ToList();
 
@@ -527,32 +550,35 @@ namespace Kinovea.ScreenManager
                 if (hasIn)
                     turn.In5 = tw - tIn;
 
-                double nextT = First(wallTimes, t => t > tw + 1e-9) ?? double.MaxValue;
-                double prevT = Last(wallTimes, t => t < tw - 1e-9) ?? 0;
-                double fromT = turn.Exchange ? tw - 0.5 : tw;
+                double vw;
+                if (!videoAt.TryGetValue(wall, out vw))
+                    vw = tw;
+                double nextT = First(wallTimes, t => t > vw + 1e-9) ?? double.MaxValue;
+                double prevT = Last(wallTimes, t => t < vw - 1e-9) ?? 0;
+                double fromT = turn.Exchange ? vw - 0.5 : vw;
                 double? pushoff = First(result.FeetOff, t => t > fromT && t < nextT);
-                double? breakout = First(result.Breakouts, t => t > tw && t < nextT);
-                double? lastStroke = Last(result.Strokes, t => t < tw && t > prevT);
+                double? breakout = First(result.Breakouts, t => t > vw && t < nextT);
+                double? lastStroke = Last(result.Strokes, t => t < vw && t > prevT);
                 turn.Pushoff = pushoff;
                 turn.Breakout = breakout;
                 if (lastStroke.HasValue)
-                    turn.LastStrokeGap = tw - lastStroke.Value;
+                    turn.LastStrokeGap = vw - lastStroke.Value;
 
                 // Turn time: flip turn from the last hand entry, open turn and exchange from the touch, to the feet off.
                 if (pushoff.HasValue)
                 {
                     if (!turn.Flip)
-                        turn.TurnTime = pushoff.Value - tw;
+                        turn.TurnTime = pushoff.Value - vw;
                     else if (lastStroke.HasValue)
                         turn.TurnTime = pushoff.Value - lastStroke.Value;
                 }
 
                 if (breakout.HasValue)
-                    turn.UnderwaterTime = breakout.Value - (pushoff ?? tw);
+                    turn.UnderwaterTime = breakout.Value - (pushoff ?? vw);
                 if (result.Kicks.Count > 0)
                 {
                     double to = breakout ?? nextT;
-                    turn.Kicks = result.Kicks.Count(t => t > tw && t <= to);
+                    turn.Kicks = result.Kicks.Count(t => t > vw && t <= to);
                 }
             }
 
@@ -561,10 +587,13 @@ namespace Kinovea.ScreenManager
             if (timeAt.TryGetValue(distance, out tFinish))
             {
                 result.FinalTime = tFinish;
-                double? prevWall = Last(wallTimes, t => t < tFinish - 1e-9);
-                double? lastStroke = Last(result.Strokes, t => t < tFinish && (!prevWall.HasValue || t > prevWall.Value));
+                double vFinish;
+                if (!videoAt.TryGetValue(distance, out vFinish))
+                    vFinish = tFinish;
+                double? prevWall = Last(wallTimes, t => t < vFinish - 1e-9);
+                double? lastStroke = Last(result.Strokes, t => t < vFinish && (!prevWall.HasValue || t > prevWall.Value));
                 if (lastStroke.HasValue)
-                    result.FinishLastStrokeGap = tFinish - lastStroke.Value;
+                    result.FinishLastStrokeGap = vFinish - lastStroke.Value;
 
                 double t5, t15;
                 if (timeAt.TryGetValue(distance - 5, out t5))

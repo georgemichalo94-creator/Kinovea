@@ -1742,8 +1742,10 @@ namespace Kinovea.ScreenManager
                 gr.Cells["d"].Value = row.D + race.Unit + (row.Style != race.Style && race.Style == "im" ? " " + row.Style : "");
                 gr.Cells["t"].Value = Format(row.T);
                 gr.Cells["t"].ToolTipText = row.Official
-                    ? SwimLang.T("Ο επίσημος χρόνος των αποτελεσμάτων") + (row.MarkT.HasValue ? SwimLang.T(" (το σημάδι στο ") + FormatRaceTime(row.MarkT.Value) + ")." : SwimLang.T(" (δεν έχει μαρκαριστεί ακόμη)."))
-                    : row.OfficialTime.HasValue ? SwimLang.T("⚠ Ο επίσημος χρόνος είναι ") + FormatRaceTime(row.OfficialTime.Value) + SwimLang.T(": το σημάδι απέχει από αυτόν.") : "";
+                    ? SwimLang.T("Ο επίσημος χρόνος των αποτελεσμάτων") + (row.MarkT.HasValue ? (row.MarkApart ? SwimLang.T(" · ⚠ το σημάδι στο βίντεο είναι στα ") : SwimLang.T(" (το σημάδι στο ")) +
+                        FormatRaceTime(row.MarkT.Value) + (row.MarkApart ? SwimLang.T(": η ανάλυση κρατά τον επίσημο· έλεγξε το καρέ του σημαδιού ή την εκκίνηση.") : ").") :
+                        SwimLang.T(" (δεν έχει μαρκαριστεί ακόμη)."))
+                    : "";
                 gr.Cells["seg"].Value = Format(row.SegTime);
                 gr.Cells["vel"].Value = Format(row.Vel);
                 gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
@@ -2703,9 +2705,16 @@ namespace Kinovea.ScreenManager
             }
 
             List<string> apart = new List<string>();
-            foreach (SwimRow row in computed.Rows.Where(x => x.OfficialTime.HasValue && !x.Official && x.T.HasValue))
+            // (2.9.5b) The official times stand; a mark farther from its official time than a frame and a half is named (its frame, or the
+            // start, is off: the speeds next to it mix the two).
+            foreach (SwimRow row in computed.Rows.Where(x => x.MarkApart && x.MarkT.HasValue && x.OfficialTime.HasValue))
                 apart.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}{1}: σημάδι {2} (Δ {3} s)"), row.D, race.Unit,
-                    FormatRaceTime(row.T.Value), SwimReference.FormatDelta(row.T.Value - row.OfficialTime.Value)));
+                    FormatRaceTime(row.MarkT.Value), SwimReference.FormatDelta(row.MarkT.Value - row.OfficialTime.Value)));
+            if (computed.BlockMarkApart && computed.BlockMarkTime.HasValue && race.OfficialReaction.HasValue)
+                apart.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("αποκόλληση: σημάδι {0} (Δ {1} s)"),
+                    computed.BlockMarkTime.Value.ToString("0.00", CultureInfo.InvariantCulture), SwimReference.FormatDelta(computed.BlockMarkTime.Value - race.OfficialReaction.Value)));
+            if (apart.Count > 0)
+                apart.Add(SwimLang.T("η ανάλυση κρατά τους επίσημους· έλεγξε τα καρέ ή την εκκίνηση"));
 
             // How the times typed are read: each at its distance (the first ones, the final one).
             List<string> at = official.Where(o => o.Key != race.Distance).OrderBy(o => o.Key)

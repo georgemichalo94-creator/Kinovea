@@ -174,6 +174,7 @@ namespace Kinovea.ScreenManager
             pilotStep = PilotStep.None;
             pilotSwimmerAuto = false;
             pilotRefound.Clear();
+            pilotNotPut.Clear();
             pilotRefoundPending = -1;
             pilotStartNote = Race.StartTimestamp.HasValue ? SwimLang.T("ήταν ήδη βαλμένη") : null;
             RefreshPilotUi();
@@ -566,6 +567,9 @@ namespace Kinovea.ScreenManager
             foreach (SwimProposal p in made.Where(x => x.Kind == KindRaceBreakout).OrderBy(x => x.Index).ToList())
                 PilotBreakout(p);
 
+            // (2.9.5b) Its breakouts of earlier readings that the times of this one put past the most a breakout can be go.
+            pilotNotPut.AddRange(DropPastPilotBreakouts());
+
             // The final frame of the report: the frame of the finish shown (it is the frame painted), with the graphics of all the race.
             SwimMark end = Race.GetSplit(Race.Distance);
             if (finish && end != null && HasVideo)
@@ -629,6 +633,22 @@ namespace Kinovea.ScreenManager
 
             // The pilot's breakout after this wall from an earlier reading: the same, or replaced.
             SwimMark old = Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null && m.Pilot.Wall == p.Index);
+
+            // (2.9.5b) Where the times put it past the most a breakout can be for the style (a breakout after the start at 12.0 s of a
+            // 100 m breaststroke whose 15 m was at 6.2 s: 24.7 m, with the strokes before it removed): not put. It waits for the check
+            // (the right frame and Enter, or Delete); the pilot's breakout of an earlier reading at that frame goes.
+            double meters;
+            if (BreakoutPastLimit(p.Index, p.Timestamp, out meters))
+            {
+                p.Pilot = false;
+                p.PilotMark = null;
+                if (old != null && SameFrame(old.Timestamp, p.Timestamp))
+                    RemovePilotMark(old);
+                pilotNotPut.Add(BreakoutPastText(p.Index, meters));
+                log.DebugFormat("Pilot: breakout after {0} not put ({1:0.0} m by the times).", p.Index, meters);
+                return;
+            }
+
             p.Pilot = true;
             if (old != null && SameFrame(old.Timestamp, p.Timestamp))
             {
@@ -650,14 +670,93 @@ namespace Kinovea.ScreenManager
                 ReplacePilotMark(old, mark);
             p.PilotMark = mark.Id;
 
-            // As Enter on it: the automatic strokes before it go (they come back if it moves), the underwater distance is estimated.
+            // As Enter on it: the automatic strokes before it go (they come back if it moves), the underwater distance is estimated
+            // (the pilot's: its record, while it stays the same).
             List<SwimMark> trimmed = TrimAutoStrokesBeforeBreakout(p.Index, p.Timestamp);
             mark.Pilot.Strokes = trimmed.Count > 0 ? trimmed : null;
-            if (EstimateUnderwaterDistance(p.Index, p.Timestamp).Length > 0)
+            bool had = UnderwaterOf(p.Index).HasValue;
+            EstimateUnderwaterDistance(p.Index, p.Timestamp);
+            if (!had)
+                mark.Pilot.Underwater = UnderwaterOf(p.Index);
+        }
+
+        /// <summary>(2.9.5b) The breakouts of a reading of the pilot not put (the times put them past the most a breakout can be): for its report.</summary>
+        private readonly List<string> pilotNotPut = new List<string>();
+
+        /// <summary>
+        /// (2.9.5b) The breakouts the pilot put (not checked yet) that the times now put past the most a breakout can be for the style go,
+        /// with what they changed (the automatic strokes before them come back, the underwater distance they wrote goes); their proposals
+        /// wait for the check. A mark or a distance of the analyst is never changed. The text for the status ("" if none went).
+        /// </summary>
+        private string CheckPilotBreakouts()
+        {
+            List<string> gone = DropPastPilotBreakouts();
+            if (gone.Count == 0)
+                return "";
+
+            return "⚠ " + (gone.Count == 1 ? SwimLang.T("Η έξοδος του πιλότου σβήστηκε: ") : SwimLang.T("Οι έξοδοι του πιλότου σβήστηκαν: ")) +
+                string.Join("· ", gone.ToArray()) + (gone.Count == 1 ? SwimLang.T(". Οι χεριές πριν από αυτήν γύρισαν· η πρότασή της περιμένει τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete).") :
+                SwimLang.T(". Οι χεριές πριν από αυτές γύρισαν· οι προτάσεις τους περιμένουν τον «Έλεγχο» (στο σωστό καρέ Enter, ή Delete)."));
+        }
+
+        /// <summary>The breakouts of the pilot past the most a breakout can be go (CheckPilotBreakouts): where the times put each.</summary>
+        private List<string> DropPastPilotBreakouts()
+        {
+            List<string> gone = new List<string>();
+            if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || Timing == null || !Timing.IsValid)
+                return gone;
+
+            foreach (SwimMark m in Race.Marks.Where(x => x.Type == SwimMarkType.Breakout && x.Pilot != null).ToList())
             {
-                SwimTurnManual turn = p.Index > 0 ? Race.GetTurn(p.Index, false) : null;
-                mark.Pilot.Underwater = p.Index > 0 ? (turn != null ? turn.UnderwaterDist : null) : Race.UnderwaterDist;
+                int wall = m.Pilot.Wall;
+                double meters;
+                if (!BreakoutPastLimit(wall, m.Timestamp, out meters))
+                    continue;
+
+                RemovePilotMark(m);
+                foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceBreakout && x.Index == wall && (x.PilotMark == m.Id || SameFrame(x.Timestamp, m.Timestamp))))
+                {
+                    p.Pilot = false;
+                    p.PilotMark = null;
+                }
+
+                gone.Add(BreakoutPastText(wall, meters));
+                log.DebugFormat("Pilot: breakout after {0} removed ({1:0.0} m by the times).", wall, meters);
             }
+
+            return gone;
+        }
+
+        /// <summary>
+        /// (2.9.5b) The underwater distances of the analysis past the most a breakout can be for the style (with the margin of a measure):
+        /// they stay (the analyst's are his), the text says where. "" if none.
+        /// </summary>
+        private string UnderwaterWarnings()
+        {
+            if (Race == null || Race.IsTraining || Race.Pool <= 0)
+                return "";
+
+            List<string> far = new List<string>();
+            for (int wall = 0; wall < Race.Distance; wall += Race.Pool)
+            {
+                double limit = BreakoutLimit(wall);
+                List<double?> values = wall == 0 ? new List<double?> { Race.BreakoutDist, Race.UnderwaterDist } : new List<double?> { UnderwaterOf(wall) };
+                foreach (double? value in values.Distinct())
+                {
+                    if (!value.HasValue || value.Value * Race.K <= limit + SwimReel.MeasuredSlack)
+                        continue;
+
+                    far.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0.0}{2}",
+                        wall == 0 ? SwimLang.T("μετά την εκκίνηση") : string.Format(CultureInfo.InvariantCulture, SwimLang.T("μετά τα {0}{1}"), wall, Race.Unit),
+                        value.Value, Race.Unit));
+                }
+            }
+
+            if (far.Count == 0)
+                return "";
+
+            return "⚠ " + SwimLang.T("Απόσταση εξόδου πέρα από ό,τι γίνεται στο στυλ: ") + string.Join(", ", far.ToArray()) +
+                SwimLang.T(". Δεν άλλαξε· έλεγξέ την (📍 Μέτρηση). Στο βίντεο φαίνεται η εκτίμηση από τους χρόνους.");
         }
 
         /// <summary>
@@ -790,7 +889,9 @@ namespace Kinovea.ScreenManager
             if (Race == null || Race.Pool <= 0 || distance % Race.Pool == 0)
                 return "";
 
-            return ReestimatePilotUnderwater(distance - distance % Race.Pool);
+            // (2.9.5b) A breakout of the pilot the times now put past the most it can be goes first.
+            string gone = CheckPilotBreakouts();
+            return ReestimatePilotUnderwater(distance - distance % Race.Pool) + (gone.Length > 0 ? "  " + gone : "");
         }
 
         /// <summary>
@@ -1004,6 +1105,8 @@ namespace Kinovea.ScreenManager
                     SwimLang.T("(δες ότι είναι ο ίδιος από εκεί και μετά).\n"), wall, Race.Unit);
             b.Append(SwimLang.T("• Μπήκαν ")).Append(CountOf(splits, SwimLang.T("πέρασμα ή τοίχος"), SwimLang.T("περάσματα και τοίχοι"))).Append(", ")
                 .Append(CountOf(breakouts, SwimLang.T("έξοδος από το νερό"), SwimLang.T("έξοδοι από το νερό"))).Append(SwimLang.T(" και ")).Append(CountOf(strokes, SwimLang.T("χεριά"), SwimLang.T("χεριές"))).Append(".\n");
+            foreach (string notPut in pilotNotPut)
+                b.Append(SwimLang.T("• ⚠ Δεν μπήκε έξοδος από το νερό: ")).Append(notPut).Append(SwimLang.T("· περιμένει τον έλεγχό σου (στο σωστό καρέ Enter, ή Delete).\n"));
             if (raceSplits - splits == 1)
                 b.Append(SwimLang.T("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n"));
             else if (raceSplits > splits)
