@@ -418,11 +418,12 @@ namespace Kinovea.ScreenManager
             LinkLabel resetLearning = new LinkLabel { Text = SwimLang.T("↺ μάθηση"), AutoSize = true, Margin = new Padding(8, 10, 0, 3), LinkColor = SwimTheme.Accent };
             resetLearning.LinkClicked += (s, e) =>
             {
-                if (MessageBox.Show(this, SwimLang.T("Να ξεχάσει ό,τι έμαθε από τις απαντήσεις σου στις προτάσεις;\n(Οι αναλύσεις και τα σημάδια δεν αλλάζουν.)"),
+                if (MessageBox.Show(this, SwimLang.T("Να ξεχάσει ό,τι έμαθε από τις απαντήσεις στις προτάσεις;\n(Οι αναλύσεις και τα σημάδια δεν αλλάζουν. Τα άλλα Kinovea κρατούν τη μάθησή τους.)"),
                     SwimLang.T("Μάθηση των προτάσεων"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                     manager.ResetLearning();
             };
-            toolTip.SetToolTip(resetLearning, SwimLang.T("Η μάθηση κρατιέται μόνο σε αυτόν τον υπολογιστή (αριθμοί, χωρίς ονόματα ή εικόνες)."));
+            toolTip.SetToolTip(resetLearning, SwimLang.T("Η μάθηση μοιράζεται με τα άλλα Kinovea του ίδιου Google Sheet (μόνο αριθμοί, χωρίς ονόματα ή εικόνες). Χωρίς σύνδεση μένει σε αυτόν τον υπολογιστή.\n") +
+                SwimLang.T("«↺ μάθηση»: ξεκινά από την αρχή μόνο σε αυτό το Kinovea."));
             tools.Controls.Add(btnPropose);
             tools.Controls.Add(btnReview);
             tools.Controls.Add(btnProposalRight);

@@ -356,7 +356,7 @@ public static class ReelPreview
 
         try
         {
-            File.WriteAllText(Path.Combine(folder, "checks.txt"), PilotBreakoutsCheck(), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(folder, "checks.txt"), PilotBreakoutsCheck() + OfficialLapCheck() + LearningMergeCheck(), Encoding.UTF8);
         }
         catch (Exception e)
         {
@@ -814,6 +814,108 @@ public static class ReelPreview
         b.Append(GoneCase("br, start 11.6 s with proposal + 50 m wall 44.4 s without", "br", 11.6, 23.9, 2, true, 44.4, false, false));
         b.Append(GoneCase("br, start 11.6 s with proposal + 50 m wall 44.4 s with", "br", 11.6, 0, 0, true, 44.4, true, false));
         b.Append(GoneCase("English: br, start 11.6 s, 23.9 written, 3 strokes removed, no proposal", "br", 11.6, 23.9, 3, false, 0, false, true));
+        return b.ToString();
+    }
+
+    /// <summary>
+    /// (2.9.7) The checkpoints of a length named and checked by the official time of its wall (SwimSplitDetector: OfficialShare,
+    /// FitsOfficial, AddOfficialPace, and the private AssignOfficial by reflection). Fictional breaststroke length after the dive with
+    /// its wall at 32.00 s (50 frames a second): a reading that starts late and sees one mark, a reading that sees three, the marks of
+    /// another swimmer 2.5 s ahead (none fits), a mark of the 25 m alone and the ones missing put where the official times put them.
+    /// </summary>
+    public static string OfficialLapCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        const double fps = 50;
+        SwimOfficialLap lap = new SwimOfficialLap { Start = 0, End = 32.00 * fps, Style = "br", Kind = "dive" };
+        b.AppendLine("official times of the walls (fictional 50 m of breaststroke from the dive, wall 32.00 s):");
+        b.AppendLine("  usable: " + SwimSplitDetector.OfficialUsable(lap, 50, fps) + " (25 m pool: " + SwimSplitDetector.OfficialUsable(lap, 25, fps) +
+            ", length 12 s: " + SwimSplitDetector.OfficialUsable(new SwimOfficialLap { Start = 0, End = 12 * fps, Style = "br", Kind = "dive" }, 50, fps) +
+            ", no style: " + SwimSplitDetector.OfficialUsable(new SwimOfficialLap { Start = 0, End = 32 * fps, Kind = "dive" }, 50, fps) + ")");
+        foreach (int d in new[] { 15, 25, 35, 45 })
+        {
+            double tolerance;
+            double frame = SwimSplitDetector.OfficialFrame(lap, fps, d, out tolerance);
+            b.AppendLine(string.Format(CultureInfo.InvariantCulture, "  {0} m where the official times put it: {1:0.00} s (within {2:0.00} s)", d, frame / fps, tolerance / fps));
+        }
+
+        System.Reflection.MethodInfo assign = typeof(SwimSplitDetector).GetMethod("AssignOfficial", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        foreach (double[] marks in new[] { new[] { 14.60 }, new[] { 7.80, 14.60, 21.50 }, new[] { 5.30, 12.10, 19.00 }, new[] { 7.80, 9.90, 14.60 } })
+        {
+            List<double> times = marks.Select(t => t * fps).ToList();
+            int[] named = (int[])assign.Invoke(null, new object[] { times, lap, fps, new[] { 15, 25, 35 } });
+            b.AppendLine("  marks at " + string.Join(" / ", marks.Select(t => t.ToString("0.00", CultureInfo.InvariantCulture))) + " s -> " +
+                string.Join(" / ", named.Select(n => n > 0 ? n + " m" : "none")));
+        }
+
+        b.AppendLine("  fits: 25 m at 14.60 s " + SwimSplitDetector.FitsOfficial(lap, fps, 25, 14.60 * fps) + ", 15 m at 14.60 s " +
+            SwimSplitDetector.FitsOfficial(lap, fps, 15, 14.60 * fps) + ", 45 m at 27.90 s " + SwimSplitDetector.FitsOfficial(lap, fps, 45, 27.90 * fps));
+
+        List<SwimSplitFound> found = new List<SwimSplitFound> { new SwimSplitFound { LapDistance = 25, Confidence = 0.85 } };
+        found[0].Cues[SwimSplitDetector.CueFar] = 14.60 * fps;
+        int added = SwimSplitDetector.AddOfficialPace(found, lap, fps, 50, (int)(33 * fps));
+        b.AppendLine("  the 25 m alone found, " + added + " added: " + string.Join(", ", found.Select(f => string.Format(CultureInfo.InvariantCulture, "{0} m {1:0.00} s ({2})",
+            f.LapDistance, f.Cues.Values.First() / fps, string.Join("+", f.Cues.Keys)))));
+        List<SwimSplitFound> early = new List<SwimSplitFound>();
+        int addedEarly = SwimSplitDetector.AddOfficialPace(early, lap, fps, 50, (int)(20 * fps));
+        b.AppendLine("  nothing found, frames read to 20 s: " + addedEarly + " added (" + string.Join(", ", early.Select(f => f.LapDistance + " m")) + ")");
+        return b.ToString();
+    }
+
+    /// <summary>
+    /// (2.9.7) The shared learning in memory (SwimLearning.Merge, Forget, Reset, StableId; no file): each answer once, of one event the
+    /// latest, an answer taken away in one Kinovea taken away in the other, nothing from before a reset. Fictional answers.
+    /// </summary>
+    public static string LearningMergeCheck()
+    {
+        StringBuilder b = new StringBuilder();
+        b.AppendLine("shared learning (fictional answers):");
+        DateTime t0 = new DateTime(2026, 10, 26, 20, 0, 0, DateTimeKind.Local);
+        Func<string, string, int, double, SwimLearningRecord> answer = (id, key, minute, error) => new SwimLearningRecord
+        {
+            Id = id, Origin = "other", Date = t0.AddMinutes(minute), Kind = "race.split", Video = "a1b2c3d4e5", Right = true, Error = error, Key = key, Confidence = 0.85
+        };
+
+        SwimLearning.Here = "here";
+        SwimLearning a = new SwimLearning();
+        SwimLearningRecord own1 = answer(null, "v|r|race.split|15", 1, 0.10);
+        own1.Origin = null;
+        a.Add(own1);
+        SwimLearningRecord own2 = answer(null, "v|r|race.split|25", 2, 0.20);
+        own2.Origin = null;
+        a.Add(own2);
+        b.AppendLine("  own answers: " + a.Records.Count + ", ids " + (a.Records.All(r => !string.IsNullOrEmpty(r.Id)) ? "set" : "missing") +
+            ", origin " + string.Join("/", a.Records.Select(r => r.Origin)));
+
+        int merged = a.Merge(new[]
+        {
+            new SwimLearningRecord { Id = own1.Id, Origin = "here", Date = own1.Date, Kind = own1.Kind, Key = own1.Key, Error = own1.Error, Right = true },
+            answer("x3", "v|r|race.split|35", 0, 0.30),
+            answer("x4", "v|r|race.split|25", 5, 0.25),
+            answer("x5", "v|r|race.split|15", 0, 0.99),
+        });
+        b.AppendLine("  merge of 4 (one already here, one new, one later of the same event, one older of an event): " + merged + " in -> " +
+            string.Join(", ", a.Records.Select(r => r.Key.Substring(r.Key.LastIndexOf('|') + 1) + " " + r.Error.ToString("0.00", CultureInfo.InvariantCulture))));
+
+        a.Forget("v|r|race.split|35");
+        SwimLearningForget forgot = a.Forgotten.LastOrDefault();
+        b.AppendLine("  forget 35 here: " + a.Records.Count + " answers, " + a.Forgotten.Count + " to send (shared " + (forgot != null && forgot.Shared) + ")");
+
+        SwimLearning other = new SwimLearning();
+        other.Merge(new[] { answer("x3", "v|r|race.split|35", 0, 0.30) });
+        int gone = other.Merge(new[] { new SwimLearningRecord { Id = forgot.Id, Origin = "here", Date = forgot.Date, Kind = SwimLearning.ForgetKind, Key = forgot.Key } });
+        int back = other.Merge(new[] { answer("x3b", "v|r|race.split|35", -1, 0.31) });
+        b.AppendLine("  the other Kinovea: the forget took away " + gone + ", an older answer of that event afterwards: " + back + " in (" + other.Records.Count + " answers)");
+
+        SwimLearning reset = new SwimLearning();
+        reset.Reset();
+        int beforeReset = reset.Merge(new[] { answer("old", "v|r|race.split|45", -60, 0.4) });
+        int afterReset = reset.Merge(new[] { new SwimLearningRecord { Id = "new", Origin = "other", Date = DateTime.Now.AddMinutes(1), Kind = "race.split", Right = true, Error = 0.1 } });
+        b.AppendLine("  after a reset: an answer from before " + beforeReset + " in, from after " + afterReset + " in");
+
+        SwimLearningRecord s1 = answer(null, "k", 3, 0.123), s2 = answer(null, "k", 3, 0.123), s3 = answer(null, "k", 3, 0.124);
+        b.AppendLine("  ids of answers older than 2.9.7: same answer " + (SwimLearning.StableId(s1) == SwimLearning.StableId(s2)) +
+            ", another error " + (SwimLearning.StableId(s1) == SwimLearning.StableId(s3)) + ", length " + SwimLearning.StableId(s1).Length);
         return b.ToString();
     }
 

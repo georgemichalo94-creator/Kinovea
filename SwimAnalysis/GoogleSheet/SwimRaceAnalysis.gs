@@ -15,9 +15,12 @@
  *   5. Εξάγει το report σε PDF στον φάκελο "Swim Race Reports" του Drive.
  *   6. Κρατά τις elite αναφορές (φύλλο "Elite αναφορές") για το live Δ στα περάσματα στο Kinovea.
  *   7. Φτιάχνει το report, το PDF και τα γραφήματα στα αγγλικά όταν το ζητά το Kinovea (lang 'en', 2.7.7)· αλλιώς στα ελληνικά.
+ *   8. Κρατά την κοινή μάθηση (2.9.7): οι απαντήσεις των αναλυτών στις αυτόματες προτάσεις από κάθε Kinovea που συνδέεται εδώ
+ *      (μόνο αριθμοί, χωρίς ονόματα), στο φύλλο "Μάθηση Kinovea" του spreadsheet των αναφορών· κάθε Kinovea στέλνει τις δικές του
+ *      και παίρνει των άλλων, ώστε να μαθαίνουν όλα μαζί.
  */
 
-var SWIM_VERSION = '2.9.5';
+var SWIM_VERSION = '2.9.7';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -176,6 +179,7 @@ function swimHandleRequest_(req) {
     benchmarks: function () { return { ok: true, version: SWIM_VERSION, levels: SWIM_BENCH_LEVELS, benchmarks: swimBenchmarks_() }; },
     eliteFrames: function () { return { ok: true, version: SWIM_VERSION, sheet: SWIM_ELITE_SHEET, frames: swimEliteFrames_() }; },
     getImage: function () { return swimGetImage_(req); },
+    learningPull: function () { return swimLearningPull_(req); },
     image: function () { return swimSaveSnapshot_(req); },
     images: function () { return swimSaveImages_(req); }
   };
@@ -216,6 +220,10 @@ function swimHandleRequest_(req) {
 
     if (action === 'addAlias') {
       return swimJson_(swimAddAlias_(req));
+    }
+
+    if (action === 'learningPush') {
+      return swimJson_(swimLearningPush_(req));
     }
 
     if (action === 'update' || action === 'pdf') {
@@ -5749,6 +5757,97 @@ function swimPdfPagesCheck() {
 
 var SWIM_SNAPSHOT_FOLDER = 'Στιγμιότυπα';
 var SWIM_ELITE_FOLDER = 'Elite καρέ';
+/**
+ * (2.9.7) Η κοινή μάθηση των Kinovea: μία γραμμή ανά απάντηση (αύξων, id, ποιο Kinovea, πότε, είδος, η απάντηση σε JSON: μόνο
+ * αριθμοί και κωδικοί, χωρίς ονόματα), με τη σειρά που ήρθαν. Μη σβήνεις γραμμές: τα Kinovea ζητούν τις νέες από τον αύξοντα.
+ */
+var SWIM_LEARNING_SHEET = 'Μάθηση Kinovea';
+var SWIM_LEARNING_HEADERS = ['Αύξων', 'Id', 'Kinovea', 'Ημερομηνία', 'Είδος', 'Απάντηση'];
+
+/** Απαντήσεις ανά αίτημα το πολύ (την πρώτη φορά ένα Kinovea παίρνει μόνο τις πιο πρόσφατες τόσες). */
+var SWIM_LEARNING_MAX_PULL = 6000;
+
+function swimLearningSheet_(create) {
+  var ss = swimReportsSpreadsheet_();
+  var sh = ss.getSheetByName(SWIM_LEARNING_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(SWIM_LEARNING_SHEET);
+    sh.getRange(1, 1, 1, SWIM_LEARNING_HEADERS.length).setValues([SWIM_LEARNING_HEADERS]).setFontWeight('bold');
+    // Κείμενο, όχι ημερομηνίες ή αριθμοί που αλλάζει το Sheets.
+    sh.getRange(1, 2, 1, SWIM_LEARNING_HEADERS.length - 1).setNumberFormat('@');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/**
+ * Οι απαντήσεις ενός Kinovea (req.records, req.origin): μπαίνουν όσες δεν υπάρχουν ήδη (το id τους), στο τέλος του φύλλου.
+ * Επιστρέφει πόσες μπήκαν και τον τελευταίο αύξοντα.
+ */
+function swimLearningPush_(req) {
+  var records = Array.isArray(req.records) ? req.records : [];
+  var origin = String(req.origin || '').slice(0, 64);
+  var sh = swimLearningSheet_(true);
+  var last = sh.getLastRow();
+  var seen = {};
+  if (last > 1) {
+    var ids = sh.getRange(2, 2, last - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) seen[String(ids[i][0])] = true;
+  }
+
+  var rows = [];
+  var seq = Math.max(0, last - 1);
+  records.forEach(function (r) {
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+    var id = String(r.Id || '').slice(0, 64);
+    var kind = String(r.Kind || '').slice(0, 80);
+    if (!id || !kind || seen[id]) return;
+    if (!r.Origin) r.Origin = origin;
+    var json = JSON.stringify(r);
+    if (json.length > 40000) return;
+    seen[id] = true;
+    seq++;
+    rows.push([seq, id, String(r.Origin).slice(0, 64), String(r.Date || ''), kind, json]);
+  });
+
+  if (rows.length) {
+    var range = sh.getRange(last + 1, 1, rows.length, SWIM_LEARNING_HEADERS.length);
+    sh.getRange(last + 1, 2, rows.length, SWIM_LEARNING_HEADERS.length - 1).setNumberFormat('@');
+    range.setValues(rows);
+  }
+  return { ok: true, version: SWIM_VERSION, stored: rows.length, seq: seq };
+}
+
+/**
+ * Οι απαντήσεις μετά τον αύξοντα req.since (το πολύ req.max): την πρώτη φορά (since 0) οι πιο πρόσφατες. «more»: υπάρχουν κι άλλες.
+ */
+function swimLearningPull_(req) {
+  var sh = swimLearningSheet_(false);
+  var total = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+  var since = Math.max(0, Math.floor(Number(req.since) || 0));
+  var max = Math.max(1, Math.min(SWIM_LEARNING_MAX_PULL, Math.floor(Number(req.max) || 2000)));
+  // Το φύλλο άδειασε ή αντικαταστάθηκε: όλα ξανά (από τα πιο πρόσφατα).
+  if (since > total) since = 0;
+  var from = since === 0 ? Math.max(0, total - max) : since;
+  var count = Math.max(0, Math.min(max, total - from));
+  var records = [];
+  if (count > 0) {
+    var values = sh.getRange(from + 2, 1, count, SWIM_LEARNING_HEADERS.length).getValues();
+    values.forEach(function (v) {
+      try {
+        var r = JSON.parse(String(v[5]));
+        if (r && typeof r === 'object' && !Array.isArray(r)) {
+          if (!r.Origin) r.Origin = String(v[2]);
+          records.push(r);
+        }
+      } catch (e) {
+        // Γραμμή που άλλαξε με το χέρι: παραλείπεται.
+      }
+    });
+  }
+  return { ok: true, version: SWIM_VERSION, records: records, seq: from + count, total: total, more: from + count < total };
+}
+
 var SWIM_ELITE_SHEET = 'Elite καρέ';
 var SWIM_ELITE_HEADERS = ['Καρέ', 'Στυλ', 'Φάση', 'Στάδιο', 'Αθλητής', 'Πηγή', 'Σχόλιο', 'Εικόνα (Drive)', 'Προστέθηκε'];
 var SWIM_ELITE = { label: 0, style: 1, kind: 2, stage: 3, athlete: 4, source: 5, comment: 6, file: 7, added: 8 };

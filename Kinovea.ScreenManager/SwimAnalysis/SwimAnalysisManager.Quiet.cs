@@ -590,6 +590,7 @@ namespace Kinovea.ScreenManager
             {
                 Learning.Forget(key);
                 Learning.Save();
+                LearningChanged();
             }
         }
 
@@ -662,6 +663,7 @@ namespace Kinovea.ScreenManager
             {
                 Learning.Forget(key);
                 Learning.Save();
+                LearningChanged();
                 foreach (SwimMark other in Race.Marks.Where(m => m.Taught == key).ToList())
                 {
                     other.Taught = null;

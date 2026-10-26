@@ -33,6 +33,12 @@ namespace Kinovea.ScreenManager
         public bool AutoSend = true;
 
         /// <summary>
+        /// (2.9.7) The learning of the proposals shared through the Google Sheet with every Kinovea connected to it (SwimLearningSync):
+        /// the answers of all their analysts teach all of them.
+        /// </summary>
+        public bool SharedLearning = true;
+
+        /// <summary>
         /// The camera does not move: one calibration of the water surface is valid for the whole video.
         /// Otherwise a distance can only be measured on the frame of a calibration.
         /// </summary>
