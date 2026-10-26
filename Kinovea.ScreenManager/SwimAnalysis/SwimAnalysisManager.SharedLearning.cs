@@ -39,6 +39,10 @@ namespace Kinovea.ScreenManager
 
         public DateTime? LastSync;
 
+        /// <summary>This Kinovea does not share its learning (a copy for tests: its answers are not an analyst's).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Off;
+
         private static string FilePath
         {
             get { return Path.Combine(Software.SettingsDirectory, "SwimLearningSync.json"); }
@@ -167,7 +171,7 @@ namespace Kinovea.ScreenManager
 
         private void LearningSyncTick()
         {
-            if (learningSync == null || learningSyncBusy || learningSyncUnsupported || DateTime.Now < learningNextSync)
+            if (learningSync == null || learningSync.Off || learningSyncBusy || learningSyncUnsupported || DateTime.Now < learningNextSync)
                 return;
             if (Settings == null || !Settings.SharedLearning || !Settings.IsConfigured || LearningInUse)
                 return;
