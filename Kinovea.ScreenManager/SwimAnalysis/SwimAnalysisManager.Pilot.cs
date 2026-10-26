@@ -338,6 +338,7 @@ namespace Kinovea.ScreenManager
             resumeWall = -1;
             resumeLapStart = long.MinValue;
             resumeAt = long.MinValue;
+            resumeGap = 0;
 
             // The swimmer is looked for a few seconds after the start, as the analysts click him (after the breakout).
             SeekTo(Math.Min(frameServer.VideoReader.WorkingZone.End, Race.StartTimestamp.Value + RealSpan(AutoPickSeconds)));
@@ -1103,7 +1104,9 @@ namespace Kinovea.ScreenManager
 
                 PilotPrompt();
                 MessageBox.Show(DialogOwner, string.Format(CultureInfo.InvariantCulture,
-                    SwimLang.T("Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}") +
+                    (resumeGap != 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στον τοίχο των {0}{1} η ανάγνωση απείχε {2:0.0} s από τον επίσημο χρόνο: δεν ακολούθησε τον αθλητή ως εκεί. "),
+                        pilotLostWall, Race.Unit, Math.Abs(resumeGap)).Replace("{", "{{").Replace("}", "}}") + SwimLang.T("Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}") :
+                    SwimLang.T("Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Όσα μήκη διαβάστηκαν μπήκαν ήδη.\n\n{2}")) +
                     SwimLang.T("ο πιλότος συνεχίζει μόνος του ως τον τερματισμό και το PDF (Esc: σταμάτημα)."), pilotLostWall, Race.Unit,
                     autoPick != null ? SwimLang.T("Ο πιλότος σημείωσε ") + PickWho(autoPick) + SwimLang.T(": Enter αν είναι αυτός (↑/↓: άλλη διαδρομή), αλλιώς σε ένα ") +
                         SwimLang.T("καρέ μετά την έξοδο από το νερό κλικ στο κεφάλι του αθλητή και μετά στα πόδια του: ") :

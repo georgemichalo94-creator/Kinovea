@@ -177,6 +177,32 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.9.7) The answers of this Kinovea for the shared learning (sheet "Μάθηση Kinovea" of the Apps Script 2.9.7): each one kept
+        /// once there (its Id); Raw["stored"], Raw["seq"]. The callback runs on the UI thread.
+        /// </summary>
+        public void PushLearning(string url, string token, string origin, JArray records, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "learningPush");
+            o["origin"] = origin;
+            o["records"] = records;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, LearningTimeout);
+        }
+
+        /// <summary>
+        /// (2.9.7) The answers of the shared learning after the one numbered 'since' (0: the latest 'max'): Raw["records"], Raw["seq"]
+        /// (the number of the last one), Raw["more"]. The callback runs on the UI thread.
+        /// </summary>
+        public void PullLearning(string url, string token, long since, int max, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "learningPull");
+            o["since"] = since;
+            o["max"] = max;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, LearningTimeout);
+        }
+
+        private const int LearningTimeout = 120000;
+
+        /// <summary>
         /// Download the elite references (sheet "Elite αναφορές"). The callback runs on the UI thread.
         /// </summary>
         public void GetReferences(string url, string token, Action<SwimSheetResult> callback)

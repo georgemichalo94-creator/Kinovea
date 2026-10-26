@@ -24,6 +24,26 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
+    /// (2.9.7) A length whose wall has its official time (typed from the results): the start of the length and that wall in frames of
+    /// its reading, with the style of the length and how it starts. The checkpoints of the length are named and checked by where the
+    /// official times put them (SwimSplitDetector.OfficialShare).
+    /// </summary>
+    public sealed class SwimOfficialLap
+    {
+        /// <summary>The start of the length: the start signal, the official time of the wall before it, else the reading's own wall (frames).</summary>
+        public double Start = double.NaN;
+
+        /// <summary>The official time of the wall of the length (frames of the reading, also after the frames read).</summary>
+        public double End = double.NaN;
+
+        /// <summary>Style of the length ("fs", "bk", "br", "fly").</summary>
+        public string Style;
+
+        /// <summary>How the length starts: "dive" (the start, the dive of a relay), "turn" (a wall, the same style), "change" (a turn of the medley into another style).</summary>
+        public string Kind;
+    }
+
+    /// <summary>
     /// Checkpoints of a lap followed by the camera (stands), from the marks of the lane ropes: the red floats at 15 m and 25 m
     /// from each wall and the red last 5 m before each wall.
     ///
@@ -59,9 +79,11 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Checkpoints of the lap. direction: +1 if the swimmer goes to larger x in the image, −1 if to smaller x.
         /// fps: frames per second of the reading. lapStart: frame index where the lap started (start signal or wall), can be
-        /// negative (before the frames read). pool: length of the pool (only 50 has the 15/25/35/45 marks used).
+        /// negative (before the frames read). pool: length of the pool (only 50 has the 15/25/35/45 marks used). official (2.9.7):
+        /// the official time of the wall of the lap, null if none: the marks are named by where the official times put them and the
+        /// ones far from that go (OfficialShare).
         /// </summary>
-        public static List<SwimSplitFound> Detect(SwimStrokeResult result, int direction, double fps, double lapStart, int pool)
+        public static List<SwimSplitFound> Detect(SwimStrokeResult result, int direction, double fps, double lapStart, int pool, SwimOfficialLap official = null)
         {
             List<SwimSplitFound> found = new List<SwimSplitFound>();
             if (result == null || result.Path == null || result.Lanes.Count == 0 || fps <= 0)
@@ -95,8 +117,14 @@ namespace Kinovea.ScreenManager
             // The start of the red last 5 m, when seen, is on the pace of the swimmer too: the marks before it get the distances
             // that bring him there at that pace (a reading that starts late, from the click, sees the 25 m mark first, not the 15).
             // Without a choice that fits it (the red seen at another moment), the marks alone.
+            // (2.9.7) With the official time of the wall of the lap the marks get the distances where the official times put them
+            // (a reading that starts late sees the 25 m mark first; marks of another swimmer, of another lap, reflections fit none).
+            bool byOfficial = OfficialUsable(official, pool, fps);
             int[] assigned = null;
-            if (EndInAssign && ends.Count > 0)
+            if (byOfficial)
+                assigned = AssignOfficial(times, official, fps, distances);
+
+            if (assigned == null && EndInAssign && ends.Count > 0)
             {
                 assigned = Assign(times, lapStart, fps, distances, Time(ends[0]), pool - 5);
                 if (assigned.All(a => a <= 0))
@@ -135,6 +163,14 @@ namespace Kinovea.ScreenManager
                     foreach (string k in f.Cues.Keys.ToList())
                         f.Cues[k] += MarkDelay(k, f.LapDistance) * fps;
                 }
+            }
+
+            // (2.9.7) Far from where the official times put them (the start of the red last 5 m too): not the swimmer's.
+            if (byOfficial)
+            {
+                int gone = found.RemoveAll(f => !FitsOfficial(official, fps, f.LapDistance, Time(f.Cues)));
+                if (gone > 0 && Trace != null)
+                    Trace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "official: {0} checkpoint(s) far from the official times went", gone));
             }
 
             return found.OrderBy(f => f.LapDistance).ToList();
@@ -271,6 +307,193 @@ namespace Kinovea.ScreenManager
             double r = LastFiveRatio(kind, style);
             return (wall + r * before) / (1 + r);
         }
+
+        #region Official times of the walls (2.9.7)
+        /// <summary>
+        /// Share of the time of a length of a 50 m pool at which the analysts mark its checkpoints 15, 25, 35 and 45 m from its wall,
+        /// then the spread (sd) of each share, by the style of the length and how it starts ("dive", "turn", "change": a turn of the
+        /// medley into another style). The analysts' races of the library with both walls of the length (2026-10-26, 3580 checkpoints
+        /// of 50 m pools, relays apart): the swimmers keep their share within 1–2 % of the length.
+        /// </summary>
+        private static readonly Dictionary<string, double[]> LapShares = new Dictionary<string, double[]>
+        {
+            { "fs|dive", new[] { 0.2532, 0.4555, 0.6668, 0.8837, 0.0129, 0.0103, 0.0127, 0.0097 } },
+            { "fs|turn", new[] { 0.2724, 0.4746, 0.6800, 0.8873, 0.0196, 0.0188, 0.0225, 0.0161 } },
+            { "fs|change", new[] { 0.2893, 0.4868, 0.6908, 0.8959, 0.0206, 0.0081, 0.0095, 0.0091 } },
+            { "bk|dive", new[] { 0.2485, 0.4539, 0.6685, 0.8872, 0.0116, 0.0092, 0.0092, 0.0060 } },
+            { "bk|turn", new[] { 0.2624, 0.4686, 0.6778, 0.8908, 0.0145, 0.0157, 0.0174, 0.0127 } },
+            { "bk|change", new[] { 0.2787, 0.4776, 0.6843, 0.8941, 0.0115, 0.0085, 0.0092, 0.0095 } },
+            { "br|dive", new[] { 0.2430, 0.4542, 0.6714, 0.8901, 0.0123, 0.0074, 0.0083, 0.0050 } },
+            { "br|turn", new[] { 0.2839, 0.4860, 0.6899, 0.8956, 0.0116, 0.0078, 0.0124, 0.0054 } },
+            { "br|change", new[] { 0.2771, 0.4811, 0.6876, 0.8954, 0.0077, 0.0074, 0.0098, 0.0129 } },
+            { "fly|dive", new[] { 0.2402, 0.4501, 0.6664, 0.8873, 0.0122, 0.0071, 0.0071, 0.0069 } },
+            { "fly|turn", new[] { 0.2837, 0.4816, 0.6860, 0.8940, 0.0108, 0.0097, 0.0099, 0.0069 } },
+        };
+
+        /// <summary>
+        /// A checkpoint is off where the official times put it by more than OfficialMarkMin seconds and OfficialMarkSpreads spreads of
+        /// its share: not the swimmer's (another swimmer followed, another lap, a reflection). The library tried in two halves (the
+        /// shares of one half on the other): 1.2 % of the analysts' own checkpoints that far, most of them analyses with a wall or a
+        /// lap off by seconds; the readings of another swimmer are 2 s and more off.
+        /// </summary>
+        public const double OfficialMarkMin = 1.2, OfficialMarkSpreads = 4.0;
+
+        /// <summary>
+        /// The reading's own wall this far (s) from the official time of the wall: the reading did not follow the swimmer to it (another
+        /// swimmer, a stop of the path). The reading does not go on from there: the swimmer is looked for again after the wall.
+        /// </summary>
+        public const double OfficialWallGap = 1.0;
+
+        /// <summary>The official times name and check the checkpoints (tests, lab variants).</summary>
+        internal static bool OfficialChecks = true;
+
+        /// <summary>The official times of a length can name and check its checkpoints: a 50 m pool, a known style, a length of plausible time.</summary>
+        public static bool OfficialUsable(SwimOfficialLap official, int pool, double fps)
+        {
+            if (!OfficialChecks || official == null || pool != 50 || fps <= 0 || double.IsNaN(official.Start) || double.IsNaN(official.End))
+                return false;
+
+            double seconds = (official.End - official.Start) / fps;
+            double spread;
+            return seconds >= 50 * FastestPace && seconds <= 50 * 1.6 && !double.IsNaN(OfficialShare(official.Style, official.Kind, 25, out spread));
+        }
+
+        /// <summary>
+        /// Share of the time of a length at which the checkpoint lapDistance from its wall comes (NaN: none), and its spread. A start
+        /// with no data of its own (a turn of a relay into butterfly) as a turn of the style.
+        /// </summary>
+        public static double OfficialShare(string style, string kind, int lapDistance, out double spread)
+        {
+            spread = double.NaN;
+            int i = Array.IndexOf(new[] { 15, 25, 35, 45 }, lapDistance);
+            double[] shares;
+            if (i < 0 || string.IsNullOrEmpty(style))
+                return double.NaN;
+            if (!LapShares.TryGetValue(style + "|" + (kind ?? "turn"), out shares) && !LapShares.TryGetValue(style + "|turn", out shares))
+                return double.NaN;
+
+            spread = shares[4 + i];
+            return shares[i];
+        }
+
+        /// <summary>The frame where the official times put the checkpoint lapDistance from the wall of the length (NaN: none), with its tolerance (frames).</summary>
+        public static double OfficialFrame(SwimOfficialLap official, double fps, int lapDistance, out double tolerance)
+        {
+            tolerance = double.NaN;
+            double spread = double.NaN;
+            double share = official == null ? double.NaN : OfficialShare(official.Style, official.Kind, lapDistance, out spread);
+            if (double.IsNaN(share))
+                return double.NaN;
+
+            double length = official.End - official.Start;
+            tolerance = Math.Max(OfficialMarkMin * fps, OfficialMarkSpreads * spread * length);
+            return official.Start + share * length;
+        }
+
+        /// <summary>A checkpoint at this frame fits the official times of its length (true when they say nothing of its distance).</summary>
+        public static bool FitsOfficial(SwimOfficialLap official, double fps, int lapDistance, double frame)
+        {
+            double tolerance;
+            double expected = OfficialFrame(official, fps, lapDistance, out tolerance);
+            return double.IsNaN(expected) || double.IsNaN(frame) || Math.Abs(frame - expected) <= tolerance;
+        }
+
+        /// <summary>
+        /// Distance of each mark passed (0: none) by the official times of the length: in order, each one at the distance where they
+        /// put it within the tolerance, the closest ones (in spreads of their share), a mark left out costing as one three spreads off.
+        /// No mark fits: all 0.
+        /// </summary>
+        private static int[] AssignOfficial(List<double> times, SwimOfficialLap official, double fps, int[] distances)
+        {
+            int n = times.Count;
+            int[] result = new int[n];
+            if (n == 0)
+                return result;
+
+            int m = distances.Length;
+            double[,] cost = new double[n, m];
+            double length = official.End - official.Start;
+            for (int i = 0; i < n; i++)
+            {
+                for (int k = 0; k < m; k++)
+                {
+                    double tolerance, spread;
+                    double expected = OfficialFrame(official, fps, distances[k], out tolerance);
+                    OfficialShare(official.Style, official.Kind, distances[k], out spread);
+                    double off = times[i] - expected;
+                    cost[i, k] = double.IsNaN(expected) || Math.Abs(off) > tolerance ? double.MaxValue : Math.Pow(off / Math.Max(1e-6, spread * length), 2);
+                }
+            }
+
+            const double skip = 9.0;
+            double bestScore = double.MaxValue;
+            int[] best = null;
+            int[] choice = new int[n];
+            Search(0, -1, 0.0);
+            if (best != null)
+            {
+                for (int i = 0; i < n; i++)
+                    result[i] = best[i] >= 0 ? distances[best[i]] : 0;
+            }
+
+            return result;
+
+            // Local recursive search (n and m are small).
+            void Search(int i, int lastIndex, double score)
+            {
+                if (score >= bestScore)
+                    return;
+                if (i == n)
+                {
+                    bestScore = score;
+                    best = (int[])choice.Clone();
+                    return;
+                }
+
+                choice[i] = -1;
+                Search(i + 1, lastIndex, score + skip);
+                for (int k = lastIndex + 1; k < m; k++)
+                {
+                    if (cost[i, k] == double.MaxValue)
+                        continue;
+                    choice[i] = k;
+                    Search(i + 1, k, score + cost[i, k]);
+                }
+
+                choice[i] = -1;
+            }
+        }
+
+        /// <summary>
+        /// The checkpoints of a length with official times not found (15, 25, 35, 45 m from its wall) where the official times put
+        /// them, with the cue "pace" (the analyst checks them): only those in the frames read (0 to frames − 1). Returns how many.
+        /// </summary>
+        public static int AddOfficialPace(List<SwimSplitFound> found, SwimOfficialLap official, double fps, int pool, int frames)
+        {
+            if (found == null || !OfficialUsable(official, pool, fps))
+                return 0;
+
+            int added = 0;
+            foreach (int d in new[] { 15, 25, 35, 45 })
+            {
+                if (found.Any(f => f.LapDistance == d))
+                    continue;
+
+                double tolerance;
+                double frame = OfficialFrame(official, fps, d, out tolerance);
+                if (double.IsNaN(frame) || frame < 0 || frame > frames - 1)
+                    continue;
+
+                SwimSplitFound paced = new SwimSplitFound { LapDistance = d, Confidence = PaceConfidence };
+                paced.Cues[CuePace] = frame;
+                found.Add(paced);
+                added++;
+            }
+
+            found.Sort((a, b) => a.LapDistance.CompareTo(b.LapDistance));
+            return added;
+        }
+        #endregion
 
         /// <summary>
         /// The confidence shown with a checkpoint of a 50 m pool: the part of such checkpoints within 0.2 s of the analysts

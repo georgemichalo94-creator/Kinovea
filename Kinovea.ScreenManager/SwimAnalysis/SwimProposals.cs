@@ -90,10 +90,19 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
-    /// One answer of the analyst to a proposal: numbers only (no name, no image), kept on this computer for the learning.
+    /// One answer of the analyst to a proposal: numbers only (no name, no image), kept on this computer for the learning (and, since
+    /// 2.9.7, shared with every Kinovea connected to the same Google Sheet: SwimLearningSync).
     /// </summary>
     public class SwimLearningRecord
     {
+        /// <summary>(2.9.7) The answer's own id: every Kinovea keeps each answer once. Answers older than 2.9.7 get one from what they are (StableId).</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Id;
+
+        /// <summary>(2.9.7) The Kinovea (its folder of settings) the answer was given in (SwimLearning.Here), null for answers older than 2.9.7.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Origin;
+
         public DateTime Date;
         public string Kind;
 
@@ -123,6 +132,22 @@ namespace Kinovea.ScreenManager
         public string Key;
     }
 
+    /// <summary>(2.9.7) An answer taken away (its mark undone or deleted): for the shared learning, the answers of its key given before it go.</summary>
+    public class SwimLearningForget
+    {
+        public string Key;
+        public DateTime Date;
+        public string Id;
+
+        /// <summary>It came from another Kinovea (it is not sent again).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Shared;
+
+        /// <summary>It was sent to the Google Sheet.</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Sent;
+    }
+
     /// <summary>What was learned for one cue: its usual delay (to add) and how far from the analyst it is (s).</summary>
     public struct SwimCueLearning
     {
@@ -140,8 +165,22 @@ namespace Kinovea.ScreenManager
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        /// <summary>Records kept (the oldest go first).</summary>
-        public const int MaxRecords = 4000;
+        /// <summary>Records kept (the oldest go first): since 2.9.7 the answers of every Kinovea of the team (shared learning).</summary>
+        public const int MaxRecords = 12000;
+
+        /// <summary>(2.9.7) The kind of a shared answer that takes away the answers of its key given before it (a mark undone or deleted).</summary>
+        public const string ForgetKind = "~forget";
+
+        /// <summary>(2.9.7) The id of this Kinovea for the shared learning (set by SwimLearningSync), null before.</summary>
+        [JsonIgnore]
+        public static string Here;
+
+        /// <summary>(2.9.7) The learning of this Kinovea started again from here (Reset): the shared answers given before are not taken.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public DateTime? ResetAt;
+
+        /// <summary>(2.9.7) The answers taken away (their mark undone or deleted), for the other Kinovea too, and the ones they took away.</summary>
+        public List<SwimLearningForget> Forgotten = new List<SwimLearningForget>();
 
         /// <summary>Answers of a kind used for its learning (the latest).</summary>
         public const int Window = 40;
@@ -175,12 +214,18 @@ namespace Kinovea.ScreenManager
                 learning = new SwimLearning();
             if (learning.Records == null)
                 learning.Records = new List<SwimLearningRecord>();
-            learning.Records.RemoveAll(r => r == null || string.IsNullOrEmpty(r.Kind));
+            learning.Records.RemoveAll(r => r == null || string.IsNullOrEmpty(r.Kind) || r.Kind == ForgetKind);
             foreach (SwimLearningRecord r in learning.Records)
             {
                 if (r.Cues == null)
                     r.Cues = new Dictionary<string, double>();
+                if (string.IsNullOrEmpty(r.Id))
+                    r.Id = StableId(r);
             }
+
+            if (learning.Forgotten == null)
+                learning.Forgotten = new List<SwimLearningForget>();
+            learning.Forgotten.RemoveAll(f => f == null || string.IsNullOrEmpty(f.Key));
 
             learning.Path = path;
             return learning;
@@ -209,15 +254,138 @@ namespace Kinovea.ScreenManager
             if (!string.IsNullOrEmpty(record.Key))
                 Records.RemoveAll(r => r.Key == record.Key);
 
+            if (string.IsNullOrEmpty(record.Id))
+                record.Id = Guid.NewGuid().ToString("N");
+            if (string.IsNullOrEmpty(record.Origin))
+                record.Origin = Here;
             Records.Add(record);
             if (Records.Count > MaxRecords)
                 Records.RemoveRange(0, Records.Count - MaxRecords);
         }
 
+        /// <summary>Forget what was learned here: the shared answers given before now are not taken again (2.9.7).</summary>
         public void Reset()
         {
             Records.Clear();
+            ResetAt = DateTime.Now;
         }
+
+        /// <summary>
+        /// (2.9.7) The id of an answer older than 2.9.7 from what it is (when, what, which video and event, how far): the same answer
+        /// copied to another Kinovea has the same id there.
+        /// </summary>
+        public static string StableId(SwimLearningRecord r)
+        {
+            string text = string.Join("|", r.Date.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture), r.Kind ?? "", r.Video ?? "", r.Key ?? "",
+                r.Right ? "1" : "0", r.Error.ToString("R", CultureInfo.InvariantCulture));
+            using (SHA1 sha = SHA1.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
+                return "s" + string.Concat(hash.Take(10).Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
+            }
+        }
+
+        /// <summary>
+        /// (2.9.7) The answers of the other Kinovea (shared learning) into this one: each answer once (its id); of one event of a race the
+        /// latest; not the ones given before ResetAt nor before they were taken away; an answer of the kind ForgetKind takes away the
+        /// answers of its key given before it. The answers are then in the order of their dates (the latest of a kind teach). Returns
+        /// how many answers came in or went.
+        /// </summary>
+        public int Merge(IEnumerable<SwimLearningRecord> incoming)
+        {
+            if (incoming == null)
+                return 0;
+
+            HashSet<string> ids = new HashSet<string>(Records.Where(r => r.Id != null).Select(r => r.Id));
+            Dictionary<string, SwimLearningRecord> byKey = new Dictionary<string, SwimLearningRecord>();
+            foreach (SwimLearningRecord x in Records)
+            {
+                SwimLearningRecord y;
+                if (!string.IsNullOrEmpty(x.Key) && (!byKey.TryGetValue(x.Key, out y) || x.Date > y.Date))
+                    byKey[x.Key] = x;
+            }
+
+            Dictionary<string, DateTime> gone = new Dictionary<string, DateTime>();
+            foreach (SwimLearningForget f in Forgotten)
+            {
+                DateTime d;
+                if (!gone.TryGetValue(f.Key, out d) || f.Date > d)
+                    gone[f.Key] = f.Date;
+            }
+
+            int changed = 0;
+            bool added = false;
+            foreach (SwimLearningRecord r in incoming)
+            {
+                if (r == null || string.IsNullOrEmpty(r.Kind))
+                    continue;
+
+                if (r.Kind == ForgetKind)
+                {
+                    if (string.IsNullOrEmpty(r.Key) || Forgotten.Any(f => f.Id == r.Id))
+                        continue;
+                    int taken = Records.RemoveAll(x => x.Key == r.Key && x.Date <= r.Date);
+                    if (taken > 0)
+                    {
+                        changed += taken;
+                        SwimLearningRecord left = Records.Where(x => x.Key == r.Key).OrderBy(x => x.Date).LastOrDefault();
+                        if (left == null)
+                            byKey.Remove(r.Key);
+                        else
+                            byKey[r.Key] = left;
+                    }
+
+                    Forgotten.Add(new SwimLearningForget { Key = r.Key, Date = r.Date, Id = r.Id, Shared = true });
+                    DateTime d;
+                    if (!gone.TryGetValue(r.Key, out d) || r.Date > d)
+                        gone[r.Key] = r.Date;
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(r.Id))
+                    r.Id = StableId(r);
+                if (ids.Contains(r.Id) || (ResetAt.HasValue && r.Date < ResetAt.Value))
+                    continue;
+
+                DateTime forgot;
+                if (!string.IsNullOrEmpty(r.Key) && gone.TryGetValue(r.Key, out forgot) && r.Date <= forgot)
+                    continue;
+
+                if (!string.IsNullOrEmpty(r.Key))
+                {
+                    SwimLearningRecord same;
+                    if (byKey.TryGetValue(r.Key, out same))
+                    {
+                        if (same.Date >= r.Date)
+                            continue;
+                        Records.RemoveAll(x => x.Key == r.Key);
+                    }
+
+                    byKey[r.Key] = r;
+                }
+
+                if (r.Cues == null)
+                    r.Cues = new Dictionary<string, double>();
+                Records.Add(r);
+                ids.Add(r.Id);
+                changed++;
+                added = true;
+            }
+
+            if (added)
+            {
+                Records = Records.OrderBy(r => r.Date).ToList();
+                if (Records.Count > MaxRecords)
+                    Records.RemoveRange(0, Records.Count - MaxRecords);
+            }
+
+            if (Forgotten.Count > MaxForgotten)
+                Forgotten = Forgotten.OrderBy(f => f.Date).Skip(Forgotten.Count - MaxForgotten).ToList();
+            return changed;
+        }
+
+        /// <summary>Answers taken away kept (the oldest go first).</summary>
+        public const int MaxForgotten = 3000;
 
         /// <summary>
         /// The start systems the analyst has confirmed (2.9.3): the tones of the signals heard at the starts he kept at them (kind:
@@ -266,11 +434,18 @@ namespace Kinovea.ScreenManager
             return v.Count % 2 == 1 ? v[v.Count / 2] : 0.5 * (v[v.Count / 2 - 1] + v[v.Count / 2]);
         }
 
-        /// <summary>The answer about one event of a race goes (its mark was undone or deleted).</summary>
+        /// <summary>The answer about one event of a race goes (its mark was undone or deleted), in the other Kinovea too (2.9.7).</summary>
         public void Forget(string key)
         {
-            if (!string.IsNullOrEmpty(key))
-                Records.RemoveAll(r => r.Key == key);
+            if (string.IsNullOrEmpty(key))
+                return;
+
+            if (Records.RemoveAll(r => r.Key == key) > 0)
+            {
+                Forgotten.Add(new SwimLearningForget { Key = key, Date = DateTime.Now, Id = Guid.NewGuid().ToString("N") });
+                if (Forgotten.Count > MaxForgotten)
+                    Forgotten.RemoveRange(0, Forgotten.Count - MaxForgotten);
+            }
         }
 
         /// <summary>Short code of a video file (its name), the same on every computer.</summary>

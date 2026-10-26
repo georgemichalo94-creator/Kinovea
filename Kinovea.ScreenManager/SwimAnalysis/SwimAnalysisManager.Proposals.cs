@@ -79,6 +79,9 @@ namespace Kinovea.ScreenManager
                 int answers = Learning.Records.Count;
                 string p = pending == 0 ? SwimLang.T("καμία πρόταση σε αναμονή") : pending == 1 ? SwimLang.T("1 πρόταση σε αναμονή") : pending + SwimLang.T(" προτάσεις σε αναμονή");
                 string l = answers == 0 ? SwimLang.T("δεν έχει μάθει ακόμα") : SwimLang.T("έμαθε από ") + answers + (answers == 1 ? SwimLang.T(" απάντηση") : SwimLang.T(" απαντήσεις"));
+                int shared = quietThread == null ? SharedAnswers : 0;
+                if (shared > 0)
+                    l += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" ({0} από τα άλλα Kinovea)"), shared);
                 return p + " · " + l;
             }
         }
@@ -94,6 +97,7 @@ namespace Kinovea.ScreenManager
         {
             Learning.Reset();
             Learning.Save();
+            LearningChanged();
             Status(SwimLang.T("Η μάθηση των προτάσεων ξεκινά από την αρχή."), false);
             RefreshProposalsUi();
         }
@@ -662,6 +666,7 @@ namespace Kinovea.ScreenManager
             {
                 Learning.Add(record);
                 Learning.Save();
+                LearningChanged();
             }
 
             // The mark of the event keeps its answer: undone, deleted or replaced, the answer goes with it.

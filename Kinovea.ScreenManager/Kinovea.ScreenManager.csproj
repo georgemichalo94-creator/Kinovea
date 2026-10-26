@@ -1074,6 +1074,7 @@
     <Compile Include="SwimAnalysis\SwimPoolGrid.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimProposals.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.SharedLearning.cs" />
     <Compile Include="SwimAnalysis\SwimRace.cs" />
     <Compile Include="SwimAnalysis\SwimReel.cs" />
     <Compile Include="SwimAnalysis\SwimReelPainter.cs" />

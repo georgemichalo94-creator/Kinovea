@@ -783,6 +783,57 @@ namespace Kinovea.ScreenManager
 
             /// <summary>The swimmer clicked: his length in widths of his lane there (the same in every length), NaN if not known.</summary>
             public double BodyLanes = double.NaN;
+
+            /// <summary>(2.9.7) The official time of the wall of the length with its start (frames of the reading), null if none.</summary>
+            public SwimOfficialLap Official;
+        }
+
+        /// <summary>
+        /// (2.9.7) The official time of the wall of a length read (typed from the results) and the start of the length (the start
+        /// signal, the official time of the wall before it, else where the reading's length started), frames of its reading; null when
+        /// the wall has no official time.
+        /// </summary>
+        private SwimOfficialLap OfficialLap(StrokeSession s, double lapStart)
+        {
+            long? end = OfficialWallStamp(s.Wall);
+            if (!end.HasValue || s.Timestamps.Count < 2)
+                return null;
+
+            int lapFrom = s.Wall - Race.Pool;
+            double start = lapStart;
+            if (lapFrom > 0)
+            {
+                long? before = OfficialWallStamp(lapFrom);
+                if (before.HasValue)
+                    start = SessionIndex(s, before.Value);
+            }
+
+            string style = SwimPresets.StyleAt(Race, s.Wall);
+            string kind = IsDive(lapFrom) ? "dive" : lapFrom > 0 && SwimPresets.StyleAt(Race, lapFrom) != style ? "change" : "turn";
+            return new SwimOfficialLap { Start = start, End = SessionIndex(s, end.Value), Style = style, Kind = kind };
+        }
+
+        /// <summary>
+        /// (2.9.7) The reading's own wall of a length is OfficialWallGap seconds and more from the official time of the wall: it did not
+        /// follow the swimmer to it (gap: own − official, s; 0 when there is no such gap).
+        /// </summary>
+        private bool OffOfficialWall(LengthRead l, out double gap)
+        {
+            gap = 0;
+            if (l == null || l.Session == null || !SwimSplitDetector.OfficialChecks)
+                return false;
+
+            long? official = OfficialWallStamp(l.Session.Wall);
+            double own = WallSample(l);
+            if (!official.HasValue || double.IsNaN(own))
+                return false;
+
+            double g = Timing.Seconds(SessionStampOut(l.Session, own), official.Value);
+            if (Math.Abs(g) < SwimSplitDetector.OfficialWallGap)
+                return false;
+
+            gap = g;
+            return true;
         }
 
         /// <summary>Proposal of a breakout after a wall or the start, found in the whole race (Index: the wall before it, 0 the start).</summary>
@@ -1265,17 +1316,22 @@ namespace Kinovea.ScreenManager
             LengthRead l = new LengthRead { Session = s, Result = result, LapFrom = s.Wall - Race.Pool, SwimmerLength = s.Detector.SwimmerLength };
             try
             {
-                l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool);
+                // (2.9.7) The official time of the wall of the length names and checks its checkpoints.
+                l.Official = OfficialLap(s, lapStart);
+                bool byOfficial = SwimSplitDetector.OfficialUsable(l.Official, Race.Pool, s.Fps);
+                l.Found = SwimSplitDetector.Detect(result, s.Detector.Direction, s.Fps, lapStart, Race.Pool, byOfficial ? l.Official : null);
                 SwimSplitDetector.AddFifteenDelay(l.Found, s.Fps, Race.Pool, l.LapFrom > 0 && !IsDive(l.LapFrom), SwimPresets.StyleAt(Race, s.Wall));
                 double last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
                 l.Wall = SwimSplitDetector.WallCues(result, s.Detector.Direction, s.Fps, last, lapStart, Race.Pool, s.Shortest);
 
-                // Checkpoints far from the time of the length (the one before it, the wall seen) go.
+                // Checkpoints far from the time of the length (the one before it, the wall seen) go (with the official times: these
+                // did it already).
                 int lapFrom = s.Wall - Race.Pool;
                 bool sameStyle = lapFrom > 0 && SwimPresets.StyleAt(Race, s.Wall) == SwimPresets.StyleAt(Race, lapFrom) && !IsDive(lapFrom);
                 int foundBefore = l.Found.Count;
-                SwimSplitDetector.KeepWithLength(l.Found, l.Wall, lapStart, s.Fps, Race.Pool, IsDive(lapFrom), s.PreviousSeconds,
-                    lapFrom > 0 && IsDive(lapFrom - Race.Pool), sameStyle);
+                if (!byOfficial)
+                    SwimSplitDetector.KeepWithLength(l.Found, l.Wall, lapStart, s.Fps, Race.Pool, IsDive(lapFrom), s.PreviousSeconds,
+                        lapFrom > 0 && IsDive(lapFrom - Race.Pool), sameStyle);
                 if (l.Found.Count != foundBefore)
                 {
                     last = l.Found.Count > 0 ? l.Found.Max(f => f.Cues.Values.Max()) : double.NaN;
@@ -1289,6 +1345,15 @@ namespace Kinovea.ScreenManager
                 // One checkpoint only (the swimmer far or hidden): the wall from it and the start of the length.
                 if (double.IsNaN(l.PaceWall))
                     l.PaceWall = SwimSplitDetector.AddSinglePace(l.Found, l.Wall, Race.Pool, lapStart, IsDive(lapFrom), WallKind(s.Wall), n);
+
+                // The ones of the pace far from the official times go, and the ones still not found are put where the official times
+                // put them (the analyst checks them).
+                if (byOfficial)
+                {
+                    l.Found.RemoveAll(f => f.Cues.Count > 0 && f.Cues.Keys.All(k => k == SwimSplitDetector.CuePace) &&
+                        !SwimSplitDetector.FitsOfficial(l.Official, s.Fps, f.LapDistance, f.Cues[SwimSplitDetector.CuePace]));
+                    SwimSplitDetector.AddOfficialPace(l.Found, l.Official, s.Fps, Race.Pool, n);
+                }
             }
             catch (Exception e)
             {
@@ -2332,6 +2397,9 @@ namespace Kinovea.ScreenManager
         private long resumeLapStart = long.MinValue;
         private long resumeAt = long.MinValue;
 
+        /// <summary>(2.9.7) The reading stopped because its wall was this far (s) from the official time of the wall (0: the swimmer lost).</summary>
+        private double resumeGap;
+
         /// <summary>The next two clicks (head and feet of the swimmer after the breakout) start the analysis of the whole race.</summary>
         public void BeginAutoRace()
         {
@@ -2367,10 +2435,12 @@ namespace Kinovea.ScreenManager
 
             int keepWall = resumeWall;
             long keepLapStart = resumeLapStart, keepAt = resumeAt;
+            double keepGap = resumeGap;
             BeginTrackSwimmer();
             resumeWall = keepWall;
             resumeLapStart = keepLapStart;
             resumeAt = keepAt;
+            resumeGap = keepGap;
             if (PickingTrack)
             {
                 pickForRace = true;
@@ -2500,6 +2570,11 @@ namespace Kinovea.ScreenManager
                 if (!pilot && cancelled)
                     Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Η ανάγνωση σταμάτησε μετά από {0}: προτείνονται όσα βρέθηκαν."),
                         CountOf(lengths.Count, SwimLang.T("μήκος"), SwimLang.T("μήκη"))), true);
+                else if (!pilot && resumeWall > 0 && resumeGap != 0)
+                    Status(string.Format(CultureInfo.InvariantCulture,
+                        SwimLang.T("🤖 Στον τοίχο των {0}{1} η ανάγνωση απείχε {2:0.0} s από τον επίσημο χρόνο: δεν ακολούθησε τον αθλητή ως εκεί. Έλεγξε τις προτάσεις ") +
+                        SwimLang.T("και μετά πάτα ξανά «🤖 Όλος ο αγώνας» σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."),
+                        resumeWall - Race.Pool, Race.Unit, Math.Abs(resumeGap)), true);
                 else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» ") +
@@ -2835,6 +2910,7 @@ namespace Kinovea.ScreenManager
             long start = Race.StartTimestamp.Value;
             List<List<LengthRead>> runs = new List<List<LengthRead>>();
             List<Tuple<int, long, long>> states = new List<Tuple<int, long, long>>();
+            List<double> gaps = new List<double>();
             bool completed = true;
             int kept = -1;
             try
@@ -2867,6 +2943,7 @@ namespace Kinovea.ScreenManager
                     runs.Add(run);
                     bool done = ReadRace(p.Head, p.Feet, p.Frame, run, worker, p.Lane);
                     states.Add(Tuple.Create(resumeWall, resumeLapStart, resumeAt));
+                    gaps.Add(resumeGap);
                     if (!done || worker.CancellationPending)
                     {
                         completed = false;
@@ -2883,6 +2960,7 @@ namespace Kinovea.ScreenManager
                 resumeWall = states[kept].Item1;
                 resumeLapStart = states[kept].Item2;
                 resumeAt = states[kept].Item3;
+                resumeGap = gaps[kept];
                 log.DebugFormat("Proposed swimmer read {0} times, reading {1} kept.", runs.Count, kept + 1);
                 return completed;
             }
@@ -3052,6 +3130,7 @@ namespace Kinovea.ScreenManager
                 resumeWall = -1;
                 resumeLapStart = long.MinValue;
                 resumeAt = long.MinValue;
+                resumeGap = 0;
             }
 
             // The lane of the pool's grid (the swimmer proposed by the program) against the ropes found at the click as for an
@@ -3183,6 +3262,7 @@ namespace Kinovea.ScreenManager
                         resumeWall = wall;
                         resumeLapStart = lapStart;
                         resumeAt = from + RealSpan(2.5);
+                        resumeGap = 0;
                     }
 
                     s.Dispose();
@@ -3210,6 +3290,28 @@ namespace Kinovea.ScreenManager
                 lengths.Add(l);
                 if (wall >= Race.Distance || worker.CancellationPending)
                     break;
+
+                // (2.9.7) The reading's wall far from the official time of the wall: it did not follow the swimmer to it (another
+                // swimmer, the path stopped). Its strokes after its last checkpoint seen are not his; the next length is not read from
+                // there: the swimmer is looked for again after the wall (the analyst's click, or the pilot's own pick), from the
+                // official time of the wall.
+                double officialGap;
+                if (OffOfficialWall(l, out officialGap))
+                {
+                    double lastSeen = l.Found.Where(f => f.Cues.Keys.Any(k => k != SwimSplitDetector.CuePace)).Select(f => f.Cues.Values.Max()).DefaultIfEmpty(double.NaN).Max();
+                    l.Strokes.RemoveAll(t => double.IsNaN(lastSeen) || t > lastSeen);
+                    long? official = OfficialWallStamp(wall);
+                    log.DebugFormat("Wall {0}: the reading's own wall {1:+0.00;-0.00} s from the official one, the swimmer looked for again after it.", wall, officialGap);
+                    if (!background && official.HasValue)
+                    {
+                        resumeWall = wall + Race.Pool;
+                        resumeLapStart = official.Value;
+                        resumeAt = official.Value + RealSpan(2.7);
+                        resumeGap = officialGap;
+                    }
+
+                    break;
+                }
 
                 // The wall: the swimmer turns there; the next length starts from it, the other way, a little after.
                 bool officialWall;

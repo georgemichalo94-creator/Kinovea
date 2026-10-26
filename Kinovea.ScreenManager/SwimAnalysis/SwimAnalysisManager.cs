@@ -271,6 +271,9 @@ namespace Kinovea.ScreenManager
             sendTimer = new Timer();
             sendTimer.Interval = 1500;
             sendTimer.Tick += SendTimer_Tick;
+
+            // (2.9.7) The learning shared with the other Kinovea of the Google Sheet.
+            StartLearningSync();
         }
 
         #region Entry points from the player screen
