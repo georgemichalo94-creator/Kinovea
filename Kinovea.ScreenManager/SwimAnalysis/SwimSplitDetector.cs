@@ -340,9 +340,11 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The reading's own wall this far (s) from the official time of the wall: the reading did not follow the swimmer to it (another
-        /// swimmer, a stop of the path). The reading does not go on from there: the swimmer is looked for again after the wall.
+        /// swimmer, a stop of the path). The reading does not go on from there: the swimmer is looked for again after the wall. In the
+        /// lab (115 analysts' races, their walls as the official times) the walls before the finish were at most 1.3 s off, and the
+        /// readings went on well after them (stopping at 1 s lost the rest of 5 races); the ones lost after a wall were 10 s and more off.
         /// </summary>
-        public const double OfficialWallGap = 1.0;
+        public const double OfficialWallGap = 2.5;
 
         /// <summary>The official times name and check the checkpoints (tests, lab variants).</summary>
         internal static bool OfficialChecks = true;
