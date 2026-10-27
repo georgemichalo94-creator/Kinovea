@@ -338,7 +338,7 @@ namespace Kinovea.ScreenManager
         public const double PushoffWindow = 1.6;
         public const double PushoffDrop = 0.03;
         public const double PushoffDropWindow = 0.25;
-        public const double PushoffMinSpeed = 1.0;
+        public const double PushoffMinSpeed = 1.5;
         public const double PlantDistance = 0.12;
         public const double PlantWindow = 1.2;
         public const double PlantBeforeTurn = 0.4;
@@ -640,8 +640,9 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Push-off: the first clear peak of the speed away from the wall after the turn (at least one body length per
-        /// second, and the speed drops by 3% within 0.25 s after it; else the highest speed within 1.6 s), then the first
+        /// Push-off: the first clear peak of the speed away from the wall after the turn (at least 1.5 body lengths per
+        /// second: the hips also drift from the wall while an open turn rotates; and the speed drops by 3% within 0.25 s
+        /// after it; else the highest speed within 1.6 s), then the first
         /// image with 90% of that speed. The first peak and not the highest: the pan of the camera can add a later one.
         /// </summary>
         private static int Pushoff(Signals s, int i0, int sign)
