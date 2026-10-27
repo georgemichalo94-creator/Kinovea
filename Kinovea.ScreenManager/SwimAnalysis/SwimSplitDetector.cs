@@ -931,6 +931,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The steepest rise of the motion around the swimmer (breakout).</summary>
         public const string CueRise = "rise";
 
+        /// <summary>The first peak of the regular strokes of the swimming (breakout of breaststroke, since 2.9.8).</summary>
+        public const string CueTrain = "train";
+
         /// <summary>The breakout after a turn with its own cues and delays (tests).</summary>
         public static bool TurnBreakout = true;
 
@@ -1145,6 +1148,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static Dictionary<string, double> BreakoutCues(SwimStrokeResult result, double fps, int from, int to)
         {
+            return BreakoutCues(result, fps, from, to, double.NaN);
+        }
+
+        /// <summary>
+        /// The same with the frame of the wall or the start of the length (lapStart, NaN when not known): it adds the first peak of
+        /// the regular strokes of the swimming ("train", BreakoutTrain).
+        /// </summary>
+        public static Dictionary<string, double> BreakoutCues(SwimStrokeResult result, double fps, int from, int to, double lapStart)
+        {
             Dictionary<string, double> cues = new Dictionary<string, double>();
             if (result == null || result.Path == null || fps <= 0)
                 return cues;
@@ -1206,6 +1218,11 @@ namespace Kinovea.ScreenManager
             double usual = SwimLearningMedian(level);
             if (usual <= 1e-6)
                 return cues;
+
+            // (2.9.8) The first peak of the regular strokes, also where no quiet moment under the water was seen.
+            double train = BreakoutTrain(result, es, usual, fps, from, to, lapStart);
+            if (!double.IsNaN(train))
+                cues[CueTrain] = train;
 
             // The quietest moment of the underwater phase (a reading that starts in the swimming has none), then the rise to the
             // level of the swimming: half way from the quiet level, staying above a third of the way for a second.
@@ -1285,6 +1302,105 @@ namespace Kinovea.ScreenManager
 
             return cues;
         }
+
+        /// <summary>
+        /// The first peak of the regular strokes of the swimming (cue "train", 2.9.8). The motion around the swimmer has a peak at
+        /// each stroke; going back from the first peak after the 15 m, the peaks one stroke apart (0.55-1.6 cycles of the strokes
+        /// after the 15 m) and as strong as them (at least 0.6 of their median, standing out by 0.15 of the swimming's level) are
+        /// the strokes; the earliest of them is the first stroke after the head is out. In breaststroke the pull-out and the kick
+        /// under the water come before it and move the water too: the cues of the motion found them, not the head out (the 115
+        /// analysts' races, breaststroke starts, turns and medley turns into breaststroke, 29: more than 0.5 s off 13 -> 9, more than a
+        /// second 10 -> 6, the delays of the first peak fitted on the other races). Frame of the reading, NaN if not found.
+        /// </summary>
+        public static double BreakoutTrain(SwimStrokeResult result, double[] es, double usual, double fps, int from, int to, double lapStart)
+        {
+            if (!BreastTrain || result == null || es == null || usual <= 1e-6 || fps <= 0)
+                return double.NaN;
+
+            int T = es.Length;
+            int a = Math.Max(0, (int)Math.Floor(double.IsNaN(lapStart) ? from - 1.0 * fps : lapStart - 0.5 * fps));
+            int b = Math.Min(T - 1, Math.Max(from, to) + (int)Math.Round(3 * fps));
+            if (b - a < (int)Math.Round(2 * fps))
+                return double.NaN;
+
+            // The peaks of the motion in the window, with how much each stands out (both sides, up to a higher point).
+            List<int> peaks = new List<int>();
+            for (int i = a + 1; i < b; i++)
+            {
+                if (!(es[i] > es[i - 1] && es[i] >= es[i + 1]))
+                    continue;
+                double lowLeft = es[i], lowRight = es[i];
+                for (int l = i; l > a && es[l - 1] <= es[i]; l--)
+                    lowLeft = Math.Min(lowLeft, es[l - 1]);
+                for (int r = i; r < b && es[r + 1] <= es[i]; r++)
+                    lowRight = Math.Min(lowRight, es[r + 1]);
+                if ((es[i] - Math.Max(lowLeft, lowRight)) / usual >= TrainProminence)
+                    peaks.Add(i);
+            }
+
+            // The strokes after the 15 m (from 1.5 s before it): their usual strength and cycle.
+            List<int> swimming = peaks.Where(i => i >= to - 1.5 * fps).ToList();
+            if (swimming.Count == 0)
+                return double.NaN;
+            double strength = SwimLearningMedian(swimming.Select(i => es[i] / usual).ToList());
+            double cycle = double.NaN;
+            if (swimming.Count >= 2)
+            {
+                List<double> gaps = new List<double>();
+                for (int k = 1; k < swimming.Count; k++)
+                    gaps.Add((swimming[k] - swimming[k - 1]) / fps);
+                cycle = SwimLearningMedian(gaps);
+            }
+
+            if ((double.IsNaN(cycle) || cycle < 0.4) && result.Strokes != null)
+            {
+                List<int> strokes = result.Strokes.Where(k => k >= to - 3 * fps && k <= b).OrderBy(k => k).ToList();
+                if (strokes.Count >= 3)
+                {
+                    List<double> gaps = new List<double>();
+                    for (int k = 1; k < strokes.Count; k++)
+                        gaps.Add((strokes[k] - strokes[k - 1]) / fps);
+                    cycle = SwimLearningMedian(gaps);
+                }
+            }
+
+            if (double.IsNaN(cycle) || cycle < 0.4 || cycle > 3)
+                return double.NaN;
+
+            // Back from the first stroke after the 15 m, one stroke at a time, not before a second after the wall (the start: its
+            // entry splash).
+            double earliest = double.IsNaN(lapStart) ? from : lapStart + 1.0 * fps;
+            int current = swimming.Where(i => i >= to).DefaultIfEmpty(swimming[swimming.Count - 1]).First();
+            while (true)
+            {
+                int cur = current;
+                List<int> before = peaks.Where(i => i < cur && i >= earliest && (cur - i) / fps >= TrainNear * cycle && (cur - i) / fps <= TrainFar * cycle &&
+                    es[i] / usual >= TrainStrength * strength).ToList();
+                if (before.Count == 0)
+                    break;
+                current = before.Max();
+            }
+
+            return current;
+        }
+
+        /// <summary>The first peak of the strokes as a cue of the breakout of breaststroke (tests and lab variants).</summary>
+        internal static bool BreastTrain = true;
+
+        /// <summary>See BreakoutTrain (tests and lab variants).</summary>
+        internal static double TrainProminence = 0.15, TrainStrength = 0.6, TrainNear = 0.55, TrainFar = 1.6;
+
+        /// <summary>
+        /// Usual delay (s) of the first peak of the strokes ("train") from the breakout the analysts mark, in breaststroke: after the
+        /// start 0.73 s, after a turn 1.56 s, after the medley turn from backstroke 0.61 s (medians on the 115 analysts' races).
+        /// </summary>
+        public static double TrainDelay(bool turn, bool change)
+        {
+            return !turn ? TrainDelayStart : change ? TrainDelayChange : TrainDelayTurn;
+        }
+
+        /// <summary>See TrainDelay (tests).</summary>
+        internal static double TrainDelayStart = -0.73, TrainDelayTurn = -1.56, TrainDelayChange = -0.61;
 
         public const string CueStop = "stop";
         public const string CueWallHead = "wallhead";
