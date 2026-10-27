@@ -393,7 +393,7 @@ namespace Kinovea.ScreenManager
                 (SameFrame(m.Timestamp, timestamp) || (markType == SwimMarkType.Kick && Math.Abs(Timing.Seconds(m.Timestamp, timestamp)) <= 0.2)));
             PlayerScreenCommands command;
             string done;
-            if (exists || !CommandOf(p.Type, out command))
+            if (exists || !CommandOf(p, out command))
             {
                 string again = "";
                 if (pilot != null)
@@ -755,6 +755,18 @@ namespace Kinovea.ScreenManager
                 pilotStops ? SwimLang.T(" ✈ Ο αυτόματος πιλότος σταμάτησε.") : ""), false);
         }
 
+        /// <summary>The command of a proposal: its type's, and C for the strokes the technical pilot proposes (a stroke of the other proposals only teaches).</summary>
+        private static bool CommandOf(SwimProposal p, out PlayerScreenCommands command)
+        {
+            if (p.Type == SwimMarkType.Stroke && (p.Kind == KindTechLastStroke || p.Kind == KindTechFirstStroke))
+            {
+                command = PlayerScreenCommands.SwimStroke;
+                return true;
+            }
+
+            return CommandOf(p.Type, out command);
+        }
+
         private static bool CommandOf(SwimMarkType type, out PlayerScreenCommands command)
         {
             switch (type)
@@ -783,13 +795,16 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.BackFoot: name = SwimLang.T("Πίσω πόδι φεύγει"); break;
                 case SwimMarkType.FeetOff:
                     name = p.Kind == KindRacePushoff ? SwimLang.T("Αποκόλληση από τον τοίχο των ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") :
-                        p.Kind == SwimEventDetector.TurnFeet ? SwimLang.T("Αποκόλληση από τον τοίχο") : p.Kind == KindRaceBlock ? SwimLang.T("Αποκόλληση ποδιών (εκκίνηση)") : SwimLang.T("Αποκόλληση ποδιών");
+                        p.Kind == SwimEventDetector.TurnFeet || p.Kind == KindTechPushoff ? SwimLang.T("Αποκόλληση από τον τοίχο") : p.Kind == KindRaceBlock ? SwimLang.T("Αποκόλληση ποδιών (εκκίνηση)") : SwimLang.T("Αποκόλληση ποδιών");
                     break;
                 case SwimMarkType.Entry: name = SwimLang.T("Είσοδος χεριών στο νερό"); break;
                 case SwimMarkType.Kick: name = SwimLang.T("Δελφινισμός") + (p.Index > 0 ? " " + p.Index : ""); break;
                 case SwimMarkType.Breakout: name = SwimLang.T("Έξοδος από το νερό") + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? SwimLang.T(" μετά τα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T(" μετά την εκκίνηση")) : ""); break;
                 case SwimMarkType.WallContact: name = SwimLang.T("Επαφή στον τοίχο"); break;
                 case SwimMarkType.RotationStart: name = SwimLang.T("Αρχή περιστροφής"); break;
+                case SwimMarkType.Stroke:
+                    name = p.Kind == KindTechLastStroke ? SwimLang.T("Τελευταία χεριά πριν τον τοίχο") : p.Kind == KindTechFirstStroke ? SwimLang.T("Πρώτη χεριά μετά την έξοδο") : SwimLang.T("Χεριά");
+                    break;
                 case SwimMarkType.Split:
                     name = (p.Kind == KindRaceSplit ? SwimLang.T("Πέρασμα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T("Πέρασμα")) +
                         (p.Official ? SwimLang.T(" · από τον επίσημο χρόνο") : "");

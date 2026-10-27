@@ -1045,6 +1045,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Quiet.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Race.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.RaceEvents.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.TechPilot.cs" />
     <Compile Include="SwimAnalysis\SwimFinals.cs" />
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />

@@ -62,6 +62,7 @@ namespace Kinovea.ScreenManager
         private CheckBox chkSkeletonAngles;
         private Label lblSkeleton;
         private Button btnPropose;
+        private Button btnTechPilot;
         private Button btnReview;
         private Button btnProposalRight;
         private Button btnProposalWrong;
@@ -390,6 +391,14 @@ namespace Kinovea.ScreenManager
             tools.Controls.Add(lblSkeleton);
             tools.SetFlowBreak(lblSkeleton, true);
 
+            // (2.9.9) The turn read on its own (side camera under the water): its events as proposals, checked as the others.
+            btnTechPilot = new SwimNoFocusButton { Text = SwimLang.T("🤖 Στροφή αυτόματα"), Width = 150, Height = 32, Primary = true };
+            btnTechPilot.Click += (s, e) => manager.RunTechPilot();
+            toolTip.SetToolTip(btnTechPilot, SwimLang.T("Βίντεο προπόνησης από την υποβρύχια πλάγια κάμερα: διαβάζεται όλο (ή η ζώνη εργασίας) και προτείνονται η τελευταία χεριά,\n") +
+                SwimLang.T("η αρχή της περιστροφής, η επαφή στον τοίχο, η αποκόλληση, οι δελφινισμοί, η έξοδος και η πρώτη χεριά.\n") +
+                SwimLang.T("Το στυλ της ανάλυσης λέει το είδος της στροφής (ελεύθερο, ύπτιο: ανάποδη· πρόσθιο, πεταλούδα: ανοιχτή).\n") +
+                SwimLang.T("Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος."));
+
             // Automatic proposals from the skeleton, checked one by one on the video; the learning of this computer.
             btnPropose = new SwimNoFocusButton { Text = SwimLang.T("✨ Προτάσεις"), Width = 120, Height = 32 };
             btnPropose.Click += (s, e) => manager.ProposeHere();
@@ -424,6 +433,7 @@ namespace Kinovea.ScreenManager
             };
             toolTip.SetToolTip(resetLearning, SwimLang.T("Η μάθηση μοιράζεται με τα άλλα Kinovea του ίδιου Google Sheet (μόνο αριθμοί, χωρίς ονόματα ή εικόνες). Χωρίς σύνδεση μένει σε αυτόν τον υπολογιστή.\n") +
                 SwimLang.T("«↺ μάθηση»: ξεκινά από την αρχή μόνο σε αυτό το Kinovea."));
+            tools.Controls.Add(btnTechPilot);
             tools.Controls.Add(btnPropose);
             tools.Controls.Add(btnReview);
             tools.Controls.Add(btnProposalRight);
@@ -647,6 +657,7 @@ namespace Kinovea.ScreenManager
             int pending = manager.Race != null ? manager.Race.Proposals.Count : 0;
             bool reviewing = manager.Reviewing;
             btnPropose.Enabled = parts.Length > 0 && !manager.SkeletonRunning;
+            btnTechPilot.Enabled = manager.HasVideo && manager.Race != null && manager.Race.IsTraining && !manager.SkeletonRunning && !manager.TechPilotRunning;
             btnReview.Enabled = pending > 0 && !reviewing;
             btnReview.Text = pending > 0 ? SwimLang.T("▶ Έλεγχος ") + pending : SwimLang.T("▶ Έλεγχος");
             btnProposalRight.Enabled = reviewing;
