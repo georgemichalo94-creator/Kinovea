@@ -148,7 +148,7 @@ namespace Kinovea.ScreenManager
                     if (double.IsNaN(u))
                         continue;
                     float x = fromImage(new PointF((float)(u + s.Pan), 0)).X;
-                    if (x < video.Left + 4 || x > video.Right - 4)
+                    if (x < Math.Max(video.Left + 4, 520) || x > video.Right - 4)
                         continue;
 
                     float age = (float)Math.Max(0, s.Time - c.Start);
