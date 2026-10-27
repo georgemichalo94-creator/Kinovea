@@ -619,7 +619,11 @@ namespace Kinovea.ScreenManager
         /// same pole, just above the underwater one; their times in seconds of this reading, the two videos synchronised). For
         /// each pass of the camera through the flags' plane (SwimFlagReader.Choose), the column of the string at a quarter of the
         /// height is the column of that plane: mapped into the underwater image (Refraction from the centre), the head crosses it
-        /// in the swimming direction within 1.5 s of the pass. Checked by eye on 5 turns: within 0.1-0.2 s.
+        /// in the swimming direction within 1.5 s of the pass. Checked by eye on 5 turns: within 0.1-0.2 s. (2.9.10) The nose only
+        /// at the leading end of the swimmer's box (the pose swaps head and feet now and then: those images made the crossing up to
+        /// 0.35 s late); the frames may come from the motion of the string (SwimFlagReader.Frame) or from coloured pennants against
+        /// the sky (SwimFlagReader.ColourTrack, then SwimFlagReader.Merge); how far the string was from the vertical at the crossing
+        /// is kept (InOffPlane, OutOffPlane): the quarter-height column is the plane at the swimmer's lane only near the vertical.
         /// </summary>
         public static SwimFlagHead HeadAtFlags(SwimTechReading uw, SwimTurnEvents ev, IList<SwimFlagFrame> frames, int extWidth)
         {
@@ -633,16 +637,25 @@ namespace Kinovea.ScreenManager
             if (passes.Count == 0)
                 return head;
 
-            // The head's column where the swimmer is seen under water, the gaps filled, a median of 5 images.
+            // The head's column where the swimmer is seen under water: the nose only at the leading end of the swimmer's box in the
+            // direction of the swim (the pose of a horizontal body now and then puts the head at the feet: up to a third of the
+            // images near a pass in the lab, the crossing moved by up to 0.35 s), the gaps filled, a median of 5 images.
             Signals s = Read(uw);
-            double[] hx = new double[s.N];
-            for (int i = 0; i < s.N; i++)
-                hx[i] = s.Present[i] && s.InWater[i] ? s.NoseX[i] : double.NaN;
-            hx = SwimSignal.Median(SwimSignal.Interp(hx), 5);
-            if (hx.All(double.IsNaN))
-                return head;
+            Func<int, double[]> headTrack = swim =>
+            {
+                double[] x = new double[s.N];
+                for (int i = 0; i < s.N; i++)
+                {
+                    bool leading = (s.NoseX[i] - 0.5 * (s.BoxX0[i] + s.BoxX1[i])) * swim > 0;
+                    x[i] = s.Present[i] && s.InWater[i] && leading ? s.NoseX[i] : double.NaN;
+                }
+
+                return SwimSignal.Median(SwimSignal.Interp(x), 5);
+            };
 
             List<SwimFlagFrame> seen = frames.Where(f => !float.IsNaN(f.X25)).OrderBy(f => f.T).ToList();
+            List<float> rolls = frames.Where(f => !float.IsNaN(f.Roll)).Select(f => f.Roll).OrderBy(r => r).ToList();
+            double roll = rolls.Count > 0 ? rolls[rolls.Count / 2] : 0;
             // A start (no wall): only the head at 5 m after the entry.
             foreach (bool approach in ev.Wall.HasValue ? new[] { true, false } : new[] { false })
             {
@@ -655,6 +668,13 @@ namespace Kinovea.ScreenManager
 
                 // > 0: the head is past the plane in the swimming direction (towards the wall on the approach).
                 int direction = approach ? -ev.Sign : ev.Sign;
+                double[] hx = headTrack(direction);
+                if (hx.All(double.IsNaN))
+                {
+                    head.Trace += (approach ? "in" : "out") + ": no head under water; ";
+                    continue;
+                }
+
                 double? cross = null;
                 double prevT = double.NaN, prevD = double.NaN;
                 double low = double.PositiveInfinity, high = double.NegativeInfinity;
@@ -706,15 +726,28 @@ namespace Kinovea.ScreenManager
                     fitted ? " (fitted plane)" : "", implausible ?? "");
                 if (implausible != null)
                     cross = null;
+
+                // How far from the vertical the string was at the crossing (the camera away from the plane: see InOffPlane).
+                double offPlane = double.NaN;
+                if (cross.HasValue && seen.Count > 0)
+                {
+                    SwimFlagFrame at = seen.OrderBy(f => Math.Abs(f.T - cross.Value)).First();
+                    if (Math.Abs(at.T - cross.Value) <= 0.35 && !float.IsNaN(at.Angle))
+                        offPlane = Math.Abs(at.Angle - 90 - roll);
+                    head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: string {1:0} degrees from the vertical at the crossing; ", approach ? "in" : "out", offPlane);
+                }
+
                 if (approach)
                 {
                     head.InPass = pass;
                     head.In = cross;
+                    head.InOffPlane = offPlane;
                 }
                 else
                 {
                     head.OutPass = pass;
                     head.Out = cross;
+                    head.OutOffPlane = offPlane;
                 }
             }
 

@@ -48,6 +48,15 @@ namespace Kinovea.ScreenManager
         public const double FlagsConfidence = 0.6;
 
         /// <summary>
+        /// The confidence of a head at ±5 m: lower when the string was 25 degrees or more from the vertical at the crossing (the
+        /// camera away from the flags' plane: about ±0.1-0.3 s, SwimFlagHead.InOffPlane).
+        /// </summary>
+        private static double FlagConfidence(double offPlane)
+        {
+            return !double.IsNaN(offPlane) && offPlane >= 25 ? FlagsConfidence - 0.15 : FlagsConfidence;
+        }
+
+        /// <summary>
         /// Words of the underwater camera in a file name and the word of the external camera of the same take (…_Υποβρύχια.MP4 and
         /// …_Εξωτερική.MP4 of the analysts' exports; …_uw / …_ext).
         /// </summary>
@@ -405,6 +414,10 @@ namespace Kinovea.ScreenManager
                 int height = Math.Max(2, (int)Math.Round(width * (double)size.Height / Math.Max(1, size.Width)) / 2 * 2);
 
                 List<SwimFlagFrame> frames = new List<SwimFlagFrame>();
+                // The same images for coloured pennants against the sky (outdoor pools): candidates per image, roll from the motion.
+                List<double> times = new List<double>();
+                List<List<SwimFlagCandidate>> candidates = new List<List<SwimFlagCandidate>>();
+                List<float> rolls = new List<float>();
                 Exception error = null;
                 bool cancelled = false;
                 TechPilotRunning = true;
@@ -430,12 +443,18 @@ namespace Kinovea.ScreenManager
 
                                 double t = (frame.Timestamp - ext.Info.FirstTimeStamp) / extRate - offset;
                                 OpenCvSharp.Mat cur = SwimStrokeVideo.ToWorking(frame.Image, width, height);
+                                float roll = float.NaN;
                                 if (prev != null)
                                 {
-                                    frames.Add(SwimFlagReader.Frame(prev, cur, t));
+                                    SwimFlagFrame f = SwimFlagReader.Frame(prev, cur, t);
+                                    frames.Add(f);
+                                    roll = f.Roll;
                                     prev.Dispose();
                                 }
 
+                                times.Add(t);
+                                candidates.Add(SwimFlagReader.ColourCandidates(cur));
+                                rolls.Add(roll);
                                 prev = cur;
                                 w.ReportProgress((int)Math.Max(0, Math.Min(100, 100.0 * (frame.Timestamp - extFrom) / Math.Max(1, extEnd - extFrom))));
                                 if (!hasMore)
@@ -478,12 +497,15 @@ namespace Kinovea.ScreenManager
                 }
 
                 SwimFlagHead head = SwimTurnReader.HeadAtFlags(reading, ev, frames, width);
+                List<SwimFlagFrame> pennants = SwimFlagReader.ColourTrack(times, candidates, rolls, height);
+                if (pennants.Count >= SwimFlagReader.PennantImages)
+                    head = SwimFlagReader.Merge(head, SwimTurnReader.HeadAtFlags(reading, ev, pennants, width), pennants.Count);
+                Func<List<SwimFlagFrame>, string> passes = list => string.Join(" ", SwimFlagReader.Passes(list).Select(p =>
+                    string.Format(CultureInfo.InvariantCulture, "{0:0.00}{1}@{2:0}", p.T, p.Direction > 0 ? "+" : "-", p.X)));
                 log.DebugFormat(CultureInfo.InvariantCulture,
-                    "Flags of the turn: {0} images {1:0.00}-{2:0.00} s (step {3}, {4}x{5}, offset {6:0.000}); reading {7} images {8}x{9}; side {10}, wall {11}, push-off {12}; passes: {13}; {14}",
+                    "Flags of the turn: {0} images {1:0.00}-{2:0.00} s (step {3}, {4}x{5}, offset {6:0.000}); reading {7} images {8}x{9}; side {10}, wall {11}, push-off {12}; passes: {13}; coloured pennants in {14} images, passes: {15}; {16}",
                     frames.Count, frames.Count > 0 ? frames[0].T : double.NaN, frames.Count > 0 ? frames[frames.Count - 1].T : double.NaN, step, width, height, offset,
-                    reading.Frames.Count, reading.Width, reading.Height, ev.Sign, ev.Wall, ev.Pushoff,
-                    string.Join(" ", SwimFlagReader.Passes(frames).Select(p => string.Format(CultureInfo.InvariantCulture, "{0:0.00}{1}@{2:0}", p.T, p.Direction > 0 ? "+" : "-", p.X))),
-                    head.Trace);
+                    reading.Frames.Count, reading.Width, reading.Height, ev.Sign, ev.Wall, ev.Pushoff, passes(frames), pennants.Count, passes(pennants), head.Trace);
                 if (head.Passes == 0)
                     notes.Add("±5μ.: δεν φαίνονται οι σημαίες του ύπτιου στην εξωτερική κάμερα");
                 else if (!head.In.HasValue && !head.Out.HasValue)
@@ -558,7 +580,7 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < strokes.Count; i++)
                 add(SwimMarkType.Stroke, i == 0 ? KindTechFirstStroke : KindTechStroke, strokes[i], i + 1, i == 0 ? 0.7 : 0.6);
             if (flags != null)
-                add(SwimMarkType.TechSplit, KindTechHeadStart, flags.Out, 5, FlagsConfidence);
+                add(SwimMarkType.TechSplit, KindTechHeadStart, flags.Out, 5, FlagConfidence(flags.OutOffPlane));
             made = made.OrderBy(p => p.Timestamp).ToList();
             if (made.Count == 0)
             {
@@ -660,8 +682,8 @@ namespace Kinovea.ScreenManager
             add(SwimMarkType.Stroke, KindTechFirstStroke, firstStroke, 0, 0.7);
             if (flags != null)
             {
-                add(SwimMarkType.TechSplit, KindTechHeadIn, flags.In, -5, FlagsConfidence);
-                add(SwimMarkType.TechSplit, KindTechHeadOut, flags.Out, 5, FlagsConfidence);
+                add(SwimMarkType.TechSplit, KindTechHeadIn, flags.In, -5, FlagConfidence(flags.InOffPlane));
+                add(SwimMarkType.TechSplit, KindTechHeadOut, flags.Out, 5, FlagConfidence(flags.OutOffPlane));
             }
 
             made = made.OrderBy(p => p.Timestamp).ToList();
