@@ -763,7 +763,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The command of a proposal: its type's, and C for the strokes the technical pilot proposes (a stroke of the other proposals only teaches).</summary>
         private static bool CommandOf(SwimProposal p, out PlayerScreenCommands command)
         {
-            if (p.Type == SwimMarkType.Stroke && (p.Kind == KindTechLastStroke || p.Kind == KindTechFirstStroke))
+            if (p.Type == SwimMarkType.Stroke && (p.Kind == KindTechLastStroke || p.Kind == KindTechFirstStroke || p.Kind == KindTechStroke))
             {
                 command = PlayerScreenCommands.SwimStroke;
                 return true;
@@ -815,7 +815,8 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.WallContact: name = SwimLang.T("Επαφή στον τοίχο"); break;
                 case SwimMarkType.RotationStart: name = SwimLang.T("Αρχή περιστροφής"); break;
                 case SwimMarkType.Stroke:
-                    name = p.Kind == KindTechLastStroke ? SwimLang.T("Τελευταία χεριά πριν τον τοίχο") : p.Kind == KindTechFirstStroke ? SwimLang.T("Πρώτη χεριά μετά την έξοδο") : SwimLang.T("Χεριά");
+                    name = p.Kind == KindTechLastStroke ? SwimLang.T("Τελευταία χεριά πριν τον τοίχο") : p.Kind == KindTechFirstStroke ? SwimLang.T("Πρώτη χεριά μετά την έξοδο") :
+                        SwimLang.T("Χεριά") + (p.Kind == KindTechStroke && p.Index > 0 ? " " + p.Index.ToString(CultureInfo.InvariantCulture) : "");
                     break;
                 case SwimMarkType.Split:
                     name = (p.Kind == KindRaceSplit ? SwimLang.T("Πέρασμα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T("Πέρασμα")) +

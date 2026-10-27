@@ -1556,6 +1556,11 @@ namespace Kinovea.ScreenManager
                     // chosen in «Στο βίντεο» are added to it.
                     DrawHud(g, timestamp, renderingSize, p => transform.Transform(p));
                 }
+                else if (TechHudReady(renderingSize, timestamp))
+                {
+                    // (2.9.9) The technical HUD of a start or a turn of a training video.
+                    DrawTechHud(g, timestamp, renderingSize, p => transform.Transform(p));
+                }
                 else if (ReelReady(renderingSize))
                 {
                     // The technical view replaces the race board, the velocity chart and the values of the start or turn.

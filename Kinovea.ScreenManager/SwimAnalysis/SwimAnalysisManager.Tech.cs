@@ -1138,6 +1138,14 @@ namespace Kinovea.ScreenManager
                             float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
                             DrawHud(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
                         }
+                        else if (reel && !allRace && TechHudReady(logical, timestamp))
+                        {
+                            // (2.9.9) The technical HUD of a training video as on the screen.
+                            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                            float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
+                            float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
+                            DrawTechHud(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
+                        }
                         else if (reel && !allRace && ReelReady(logical))
                         {
                             // Video image (reference pixels) → logical units of the exported image.

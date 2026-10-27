@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.Linq;
 using Kinovea.Video;
 
 namespace Kinovea.ScreenManager
@@ -107,6 +108,90 @@ namespace Kinovea.ScreenManager
             }
 
             SwimHudPainter.Paint(g, size, scene);
+        }
+
+        /// <summary>The measures of the phase shown last (kept while the analysis does not change).</summary>
+        private SwimTechRun techRun;
+        private string techRunKey;
+
+        /// <summary>
+        /// (2.9.9) The technical HUD of a training video at this frame: the HUD chosen, the image large enough, and a start or a turn with
+        /// something measured (strokes, or the underwater phase).
+        /// </summary>
+        private bool TechHudReady(Size size, long timestamp)
+        {
+            return HudChosen && Race != null && Race.IsTraining && SwimHudPainter.CanPaint(size) && TechRunAt(timestamp) != null;
+        }
+
+        /// <summary>The measures of the start or the turn of a frame (SwimTechRun), null without one.</summary>
+        private SwimTechRun TechRunAt(long timestamp)
+        {
+            if (Race == null || !Race.IsTraining || TechPhases == null || !Timing.IsValid)
+                return null;
+
+            SwimTechPhase phase = SwimTechCalculator.PhaseAt(TechPhases, timestamp);
+            if (phase == null)
+                return null;
+
+            string key = phase.Id + "|" + DataVersion.ToString(CultureInfo.InvariantCulture);
+            if (techRunKey != key)
+            {
+                SwimSkeleton skeleton = Race.Skeletons.Where(s => s != null && s.Count > 0 && s.Start <= phase.WindowEnd && s.End >= phase.WindowStart)
+                    .OrderByDescending(s => s.Count).FirstOrDefault();
+                SwimTrack track = Race.Tracks.Where(t => t != null && t.HasPan && t.Start <= phase.WindowEnd && t.End >= phase.WindowStart)
+                    .OrderByDescending(t => t.X.Count).FirstOrDefault();
+                try
+                {
+                    techRun = SwimTechRun.Of(Race, Timing, phase, skeleton, track);
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not measure the phase for the technical HUD.", e);
+                    techRun = null;
+                }
+
+                techRunKey = key;
+            }
+
+            SwimTechRun run = techRun;
+            return run != null && (run.Cycles.Count > 0 || run.Approach.Count > 0 || run.Phase.Breakout.HasValue) ? run : null;
+        }
+
+        /// <summary>The technical HUD (2.9.9) at this frame: the clock and values of the phase, the strokes on the water, the card at the end.</summary>
+        private void DrawTechHud(Graphics g, long timestamp, Size size, Func<PointF, PointF> fromImage)
+        {
+            SwimTechRun run = TechRunAt(timestamp);
+            if (run == null)
+                return;
+
+            double t = Timing.Seconds(timestamp, run.Phase.Origin);
+            PointF? head = null;
+            double pan = double.NaN;
+            SwimTrack track = Race.TrackAt(timestamp);
+            if (track != null && track.HasPan)
+            {
+                float x, y, top, bottom;
+                if (track.TryGet(timestamp, 1, out x, out y, out top, out bottom))
+                    head = new PointF(x, y);
+                pan = SwimTechRun.TrackPan(track, timestamp);
+            }
+
+            // The card after the last stroke measured, until the end of the phase.
+            double cardAt = run.Last + 0.8;
+            bool card = run.Cycles.Count > 0 && t > cardAt;
+            SwimTechHudScene scene = new SwimTechHudScene
+            {
+                Run = run,
+                Time = t,
+                Title = run.Phase.Title,
+                FromImage = fromImage,
+                Head = head,
+                Pan = pan,
+                VideoSize = frameServer != null && frameServer.VideoReader != null ? frameServer.VideoReader.Info.ReferenceSize : Size.Empty,
+                Card = card,
+                CardFade = card ? (float)Math.Min(1.0, (t - cardAt) / 0.6) : 0f
+            };
+            SwimHudPainter.PaintTech(g, size, scene);
         }
         #endregion
     }

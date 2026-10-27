@@ -1049,6 +1049,7 @@
     <Compile Include="SwimAnalysis\SwimFinals.cs" />
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimHudPainter.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimHudDial.cs">
       <SubType>Component</SubType>
     </Compile>
@@ -1075,6 +1076,7 @@
     <Compile Include="SwimAnalysis\SwimTechReader.cs" />
     <Compile Include="SwimAnalysis\SwimTechEvents.cs" />
     <Compile Include="SwimAnalysis\SwimFlagReader.cs" />
+    <Compile Include="SwimAnalysis\SwimTechRun.cs" />
     <Compile Include="SwimAnalysis\SwimPoolGrid.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimProposals.cs" />

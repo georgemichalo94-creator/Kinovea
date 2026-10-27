@@ -316,6 +316,13 @@ namespace Kinovea.ScreenManager
         /// <summary>Arm strokes (furthest reach of a hand) before the turn and after the breakout; the last one before and the first one after.</summary>
         public List<double> StrokesIn = new List<double>();
         public List<double> StrokesOut = new List<double>();
+
+        /// <summary>
+        /// (2.9.9) The pulls: where each reach of the hands ends (the hands start to pull back), the stroke of a cycle of breaststroke
+        /// and butterfly (the glide is before it); pulls closer than PullMinGap merged (the later kept).
+        /// </summary>
+        public List<double> PullsIn = new List<double>();
+        public List<double> PullsOut = new List<double>();
         public double? LastStroke;
         public double? FirstStroke;
 
@@ -520,6 +527,10 @@ namespace Kinovea.ScreenManager
                     ev.FirstStroke = ev.StrokesOut[0];
             }
 
+            // The cycles of breaststroke and butterfly: not the reach of the touch (the last 0.5 s before the wall).
+            ev.PullsIn = CyclePulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign);
+            if (breakout.HasValue)
+                ev.PullsOut = CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
             return ev;
         }
 
@@ -1331,15 +1342,7 @@ namespace Kinovea.ScreenManager
         /// <summary>Furthest reach of a hand along the swimming direction (body lengths ahead of the shoulders) between ta and tb.</summary>
         private static List<double> Strokes(Signals s, double ta, double tb, int direction)
         {
-            double[] f = new double[s.N];
-            for (int i = 0; i < s.N; i++)
-            {
-                double a = (s.WrX[0][i] - s.ShX[i]) * direction / s.L, b = (s.WrX[1][i] - s.ShX[i]) * direction / s.L;
-                double m = double.IsNaN(a) ? b : double.IsNaN(b) ? a : Math.Max(a, b);
-                f[i] = s.Present[i] && s.InWater[i] ? m : double.NaN;
-            }
-
-            f = SwimSignal.SavGol(SwimSignal.Interp(f), 7, 2);
+            double[] f = Reach(s, direction);
             List<double> strokes = new List<double>();
             foreach (int p in SwimStrokeDetector.FindPeaks(f, (int)(0.35 * s.Fps), 0.15))
             {
@@ -1348,6 +1351,61 @@ namespace Kinovea.ScreenManager
             }
 
             return strokes;
+        }
+
+        /// <summary>The hands ahead of the shoulders along the swim (body lengths), smoothed; NaN-free where the swimmer was seen.</summary>
+        private static double[] Reach(Signals s, int direction)
+        {
+            double[] f = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+            {
+                double a = (s.WrX[0][i] - s.ShX[i]) * direction / s.L, b = (s.WrX[1][i] - s.ShX[i]) * direction / s.L;
+                double m = double.IsNaN(a) ? b : double.IsNaN(b) ? a : Math.Max(a, b);
+                f[i] = s.Present[i] && s.InWater[i] ? m : double.NaN;
+            }
+
+            return SwimSignal.SavGol(SwimSignal.Interp(f), 7, 2);
+        }
+
+        /// <summary>Breaststroke and butterfly: the reaches of two cycles are at least this far apart (seconds).</summary>
+        public const double CycleMinGap = 0.6;
+
+        /// <summary>Two pulls closer than this (seconds) are one cycle (the later kept).</summary>
+        public const double PullMinGap = 0.7;
+
+        /// <summary>Where the reach of a cycle ends: forward from its peak while the hands stay within PullDrop body lengths of it.</summary>
+        public const double PullDrop = 0.08;
+
+        /// <summary>The reach of the hands at the touch of an open turn is not a cycle: none in this many seconds before the wall.</summary>
+        public const double PullBeforeWall = 0.5;
+
+        /// <summary>
+        /// Breaststroke and butterfly: one reach of both hands per cycle (peaks of the reach at least CycleMinGap apart, prominence 0.15
+        /// body lengths); the pull of each where its reach ends (the glide is before it).
+        /// </summary>
+        private static List<double> CyclePulls(Signals s, double ta, double tb, int direction)
+        {
+            List<double> pulls = new List<double>();
+            if (s.L <= 0 || tb <= ta)
+                return pulls;
+
+            double[] f = Reach(s, direction);
+            foreach (int p in SwimStrokeDetector.FindPeaks(f, (int)(CycleMinGap * s.Fps), 0.15))
+            {
+                if (s.T[p] < ta || s.T[p] > tb)
+                    continue;
+                int e = p;
+                while (e + 1 < s.N && s.T[e + 1] - s.T[p] <= 1.5 && f[e + 1] >= f[p] - PullDrop)
+                    e++;
+                if (s.T[e] > tb + 0.5)
+                    continue;
+                if (pulls.Count > 0 && s.T[e] - pulls[pulls.Count - 1] < PullMinGap)
+                    pulls[pulls.Count - 1] = s.T[e];
+                else
+                    pulls.Add(s.T[e]);
+            }
+
+            return pulls;
         }
     }
 }

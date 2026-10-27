@@ -24,6 +24,7 @@ namespace Kinovea.ScreenManager
         public const string KindTechBreakout = "tech.turn.breakout";
         public const string KindTechLastStroke = "tech.turn.stroke.last";
         public const string KindTechFirstStroke = "tech.turn.stroke.first";
+        public const string KindTechStroke = "tech.turn.stroke";
         public const string KindTechHeadIn = "tech.turn.head.in5";
         public const string KindTechHeadOut = "tech.turn.head.out5";
 
@@ -188,6 +189,10 @@ namespace Kinovea.ScreenManager
                 reading.Video = System.IO.Path.GetFileName(video.FilePath ?? "");
                 SwimTurnEvents ev = SwimTurnReader.Find(reading, kind);
 
+                // The reading stays with the analysis: the skeleton (the glides) and the head with the camera's pan (the strokes on the
+                // water and the metres between the known places of the technical HUD).
+                StoreTechReading(reading, stamps);
+
                 // The head at −5 / +5 from the backstroke flags in the external video of the same take (when there is one).
                 SwimFlagHead flags = null;
                 List<string> flagNotes = new List<string>();
@@ -207,6 +212,46 @@ namespace Kinovea.ScreenManager
                 RefreshTechPilotUi();
                 InvalidatePlayer();
             }
+        }
+
+        /// <summary>
+        /// The reading kept with the analysis (2.9.9): the skeleton of each image (SwimSkeleton: the glides of the technical HUD) and the
+        /// head with the camera's pan added up (SwimTrack: X − Pan is the head in the frame of the pool, where the strokes are drawn on
+        /// the water and the metres are measured between the known places). Both replace what older readings had in their time.
+        /// </summary>
+        private void StoreTechReading(SwimTechReading r, List<long> stamps)
+        {
+            if (Race == null)
+                return;
+
+            SwimSkeleton skeleton;
+            SwimTrack track;
+            if (!SwimTechRun.PartsOfReading(r, stamps, frameServer.VideoReader.Info.ReferenceSize, out skeleton, out track))
+                return;
+
+            StoreSkeleton(skeleton);
+            long start = track.Start, end = track.End;
+            List<SwimTrack> kept = new List<SwimTrack>();
+            foreach (SwimTrack old in Race.Tracks.Where(t => t != null && t.X.Count > 0))
+            {
+                if (old.End < start || old.Start > end)
+                {
+                    kept.Add(old);
+                    continue;
+                }
+
+                SwimTrack before = old.Slice(old.Start, start - 1);
+                SwimTrack after = old.Slice(end + 1, old.End);
+                if (before != null)
+                    kept.Add(before);
+                if (after != null)
+                    kept.Add(after);
+            }
+
+            kept.Add(track);
+            kept.Sort((a, b) => a.Start.CompareTo(b.Start));
+            Race.Tracks.Clear();
+            Race.Tracks.AddRange(kept);
         }
 
         /// <summary>The kind of the turn from the style of the analysis (medley and none: from the video).</summary>
@@ -503,14 +548,27 @@ namespace Kinovea.ScreenManager
 
             bool open = ev.Kind == SwimTurnKind.Open;
             double guess = ev.KindFromVideo ? 0.15 : 0;
-            add(SwimMarkType.Stroke, KindTechLastStroke, ev.LastStroke, 0, 0.6 - guess);
+
+            // The strokes (2.9.9: all of them, for the cycles of the technical HUD): breaststroke and butterfly at the pulls (the end
+            // of the reach: the glide is before it), freestyle and backstroke at the reach of each arm. The last one before the wall and
+            // the first after the breakout keep their names.
+            bool pulls = Race.Style == "br" || Race.Style == "fly";
+            List<double> strokesIn = pulls ? ev.PullsIn : ev.StrokesIn;
+            List<double> strokesOut = pulls ? ev.PullsOut : ev.StrokesOut;
+            double? lastStroke = strokesIn.Count > 0 ? strokesIn[strokesIn.Count - 1] : ev.LastStroke;
+            double? firstStroke = strokesOut.Count > 0 ? strokesOut[0] : ev.FirstStroke;
+            for (int i = 0; i + 1 < strokesIn.Count; i++)
+                add(SwimMarkType.Stroke, KindTechStroke, strokesIn[i], i + 1, 0.55 - guess);
+            for (int i = 1; i < strokesOut.Count; i++)
+                add(SwimMarkType.Stroke, KindTechStroke, strokesOut[i], i + 1, 0.6);
+            add(SwimMarkType.Stroke, KindTechLastStroke, lastStroke, 0, 0.6 - guess);
             add(SwimMarkType.RotationStart, KindTechRotation, open ? null : ev.RotationStart, 0, 0.8 - guess);
             add(SwimMarkType.WallContact, KindTechWall, ev.Wall, 0, (open ? 0.7 : 0.85) - guess - (ev.PlantFromTurn ? 0.2 : 0));
             add(SwimMarkType.FeetOff, KindTechPushoff, ev.Pushoff, 0, 0.85);
             for (int i = 0; i < ev.Kicks.Count; i++)
                 add(SwimMarkType.Kick, KindTechKick, ev.Kicks[i], i + 1, 0.8);
             add(SwimMarkType.Breakout, KindTechBreakout, ev.Breakout, 0, ev.BreakoutBySurface ? 0.75 : ev.BreakoutByLine ? 0.5 : 0.4);
-            add(SwimMarkType.Stroke, KindTechFirstStroke, ev.FirstStroke, 0, 0.7);
+            add(SwimMarkType.Stroke, KindTechFirstStroke, firstStroke, 0, 0.7);
             if (flags != null)
             {
                 add(SwimMarkType.TechSplit, KindTechHeadIn, flags.In, -5, FlagsConfidence);
