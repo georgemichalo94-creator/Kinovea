@@ -308,6 +308,12 @@ namespace Kinovea.ScreenManager
         /// lane rope at the surface makes the strongest band of a side view under water (the level of the breakout).
         /// </summary>
         public float[] Rows;
+
+        /// <summary>
+        /// (2.9.9) Long, nearly horizontal straight lines of the image (the lane rope seen from below, the edge of the surface):
+        /// up to LineCount × [middle y, x1, x2 (0–1 of the height and width), angle (degrees)], the longest first.
+        /// </summary>
+        public float[] Lines;
     }
 
     /// <summary>(2.9.9) A technical reading of a video: one frame per image read, at Fps, in images of Width × Height.</summary>
@@ -536,6 +542,38 @@ namespace Kinovea.ScreenManager
                 for (int k = 0; k < RowBins; k++)
                     rows[k] = (float)Math.Round(rows[k] / Math.Max(1, counts[k]), 1);
                 f.Rows = rows;
+                f.Lines = LongLines(small, w, h);
+            }
+        }
+
+        /// <summary>Lines in SwimTechFrame.Lines (at most).</summary>
+        public const int LineCount = 8;
+
+        /// <summary>Long, nearly horizontal lines (at least 35% of the width, within 8° of the horizontal, above the lowest 15%).</summary>
+        private static float[] LongLines(OpenCvSharp.Mat small, int w, int h)
+        {
+            using (OpenCvSharp.Mat gray = new OpenCvSharp.Mat())
+            using (OpenCvSharp.Mat edges = new OpenCvSharp.Mat())
+            {
+                OpenCvSharp.Cv2.CvtColor(small, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+                OpenCvSharp.Cv2.Canny(gray, edges, 30, 90);
+                OpenCvSharp.LineSegmentPoint[] segments = OpenCvSharp.Cv2.HoughLinesP(edges, 1, Math.PI / 360, 60, 0.35 * w, 10);
+                List<float[]> kept = new List<float[]>();
+                foreach (OpenCvSharp.LineSegmentPoint sgm in segments)
+                {
+                    double angle = Math.Atan2(sgm.P2.Y - sgm.P1.Y, sgm.P2.X - sgm.P1.X) * 180 / Math.PI;
+                    if (angle > 90)
+                        angle -= 180;
+                    if (angle < -90)
+                        angle += 180;
+                    double mid = (sgm.P1.Y + sgm.P2.Y) / 2.0;
+                    if (Math.Abs(angle) > 8 || mid > 0.85 * h)
+                        continue;
+                    double x1 = Math.Min(sgm.P1.X, sgm.P2.X), x2 = Math.Max(sgm.P1.X, sgm.P2.X);
+                    kept.Add(new[] { (float)Math.Round(mid / h, 3), (float)Math.Round(x1 / w, 3), (float)Math.Round(x2 / w, 3), (float)Math.Round(angle, 1) });
+                }
+
+                return kept.OrderByDescending(l => l[2] - l[1]).Take(LineCount).SelectMany(l => l).ToArray();
             }
         }
 
