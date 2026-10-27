@@ -542,9 +542,11 @@ namespace Kinovea.ScreenManager
                 ev.StrokesOut = Strokes(s, breakout.Value - 0.2, breakout.Value + 10, ev.Sign);
                 if (ev.StrokesOut.Count > 0)
                     ev.FirstStroke = ev.StrokesOut[0];
-                // Breaststroke (and the breaststroke after the pull-out of a medley): the pulls from the kicks.
+                // Breaststroke (and the breaststroke after the pull-out of a medley): the pulls from the kicks, from the kick of the
+                // pull-out on (the first pull is at the breakout, which can be found late: a002 of a second reading 24.04 for 22.7).
                 bool breast = style == "br" || (style == "im" && ev.PullDown.HasValue);
-                ev.PullsOut = breast ? BreastPulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign)
+                double from = ev.LegKicks.Count > 0 ? Math.Min(breakout.Value - 0.3, ev.LegKicks[ev.LegKicks.Count - 1] + 0.3) : breakout.Value - 0.6;
+                ev.PullsOut = breast ? BreastPulls(s, from, breakout.Value + 10, ev.Sign)
                                      : CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
             }
 
