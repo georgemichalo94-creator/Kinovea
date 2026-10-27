@@ -639,16 +639,27 @@ namespace Kinovea.ScreenManager
             {
                 SwimFlagPass pass = SwimFlagReader.Choose(passes, approach, ev.Wall ?? ev.Pushoff.Value, ev.Pushoff.Value, ev.Sign, extWidth);
                 if (pass == null)
+                {
+                    head.Trace += (approach ? "in" : "out") + ": no pass; ";
                     continue;
+                }
 
                 // > 0: the head is past the plane in the swimming direction (towards the wall on the approach).
                 int direction = approach ? -ev.Sign : ev.Sign;
                 double? cross = null;
                 double prevT = double.NaN, prevD = double.NaN;
+                double low = double.PositiveInfinity, high = double.NegativeInfinity;
+                int near = 0;
                 foreach (SwimFlagFrame f in seen.Where(f => Math.Abs(f.T - pass.T) <= 1.5))
                 {
                     double plane = uw.Width / 2.0 + SwimFlagReader.Refraction * (f.X25 - extWidth / 2.0) * uw.Width / extWidth;
                     double d = (At(s.T, hx, f.T) - plane) * direction;
+                    near++;
+                    if (!double.IsNaN(d))
+                    {
+                        low = Math.Min(low, d);
+                        high = Math.Max(high, d);
+                    }
                     if (!double.IsNaN(prevD) && !double.IsNaN(d) && f.T - prevT <= 0.35 && prevD < 0 && d >= 0)
                     {
                         cross = prevT + (f.T - prevT) * (-prevD) / (d - prevD + 1e-9);
@@ -659,6 +670,8 @@ namespace Kinovea.ScreenManager
                     prevD = d;
                 }
 
+                head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: pass {1:0.00} at {2:0} px, {3} images, head {4:0}..{5:0} px from the plane, crossed {6}; ",
+                    approach ? "in" : "out", pass.T, pass.X, near, low, high, cross.HasValue ? cross.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "-");
                 if (approach)
                 {
                     head.InPass = pass;

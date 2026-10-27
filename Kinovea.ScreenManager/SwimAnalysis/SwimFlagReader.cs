@@ -53,6 +53,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Passes of the camera through the flags found in the external video (0: no flags seen).</summary>
         public int Passes;
+
+        /// <summary>What was found for each side (for the log): the pass used, the images near it, the head against the plane.</summary>
+        public string Trace = "";
     }
 
     /// <summary>

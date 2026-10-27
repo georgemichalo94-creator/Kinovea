@@ -478,6 +478,12 @@ namespace Kinovea.ScreenManager
                 }
 
                 SwimFlagHead head = SwimTurnReader.HeadAtFlags(reading, ev, frames, width);
+                log.DebugFormat(CultureInfo.InvariantCulture,
+                    "Flags of the turn: {0} images {1:0.00}-{2:0.00} s (step {3}, {4}x{5}, offset {6:0.000}); reading {7} images {8}x{9}; side {10}, wall {11}, push-off {12}; passes: {13}; {14}",
+                    frames.Count, frames.Count > 0 ? frames[0].T : double.NaN, frames.Count > 0 ? frames[frames.Count - 1].T : double.NaN, step, width, height, offset,
+                    reading.Frames.Count, reading.Width, reading.Height, ev.Sign, ev.Wall, ev.Pushoff,
+                    string.Join(" ", SwimFlagReader.Passes(frames).Select(p => string.Format(CultureInfo.InvariantCulture, "{0:0.00}{1}@{2:0}", p.T, p.Direction > 0 ? "+" : "-", p.X))),
+                    head.Trace);
                 if (head.Passes == 0)
                     notes.Add("±5μ.: δεν φαίνονται οι σημαίες του ύπτιου στην εξωτερική κάμερα");
                 else if (!head.In.HasValue && !head.Out.HasValue)
