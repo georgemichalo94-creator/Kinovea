@@ -433,7 +433,9 @@ namespace Kinovea.ScreenManager
             float inner = S(10);
             float header = S(26);
             float spacing = S(5);
-            float autoHeight = skeletonRow ? 2 * S(26) + S(4) + S(8) : autoRow ? S(26) + S(8) : 0;
+            // The skeleton row, the proposals' row and (a training video, 2.9.9) the autopilot's row.
+            bool pilotRow = skeletonRow && manager.Race != null && manager.Race.IsTraining && !manager.Reviewing;
+            float autoHeight = pilotRow ? 3 * S(26) + 2 * S(4) + S(8) : skeletonRow ? 2 * S(26) + S(4) + S(8) : autoRow ? S(26) + S(8) : 0;
             int n = buttons.Count;
             float room = space.Height - header - S(8) - autoHeight;
             int columns = 1;
@@ -506,7 +508,7 @@ namespace Kinovea.ScreenManager
 
                 // (2.9.9) A training video: the start or the turn read on its own, its events proposed for the check.
                 float ty = py + S(30);
-                if (manager.Race != null && manager.Race.IsTraining && !manager.Reviewing && ty + S(26) <= card.Bottom)
+                if (pilotRow && ty + S(26) <= card.Bottom)
                     DrawButton(g, list, TechPilotButton(), new RectangleF(x0, ty, width, S(26)));
                 return;
             }
