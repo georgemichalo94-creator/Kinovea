@@ -356,6 +356,8 @@ namespace Kinovea.ScreenManager
         public const double BreakoutRise = 0.25;
         public const double PullDownBack = -0.2;
         public const double PullDownHold = 0.4;
+        public const double BreaststrokeDolphinAfter = 1.1;
+        public const double FlutterGapFraction = 0.75;
 
         private sealed class Signals
         {
@@ -448,13 +450,37 @@ namespace Kinovea.ScreenManager
 
             double kickEnd = breakout ?? pushoff + 8;
             ev.PullDown = PullDown(s, pushoff, kickEnd, ev.Sign);
-            foreach (KeyValuePair<double, double> kick in Kicks(s, pushoff + 0.1, kickEnd))
+            List<KeyValuePair<double, double>> found = Kicks(s, pushoff + 0.1, kickEnd);
+            List<KeyValuePair<double, double>> dolphin = found.Where(q => !ev.PullDown.HasValue || q.Key < ev.PullDown.Value).ToList();
+            List<KeyValuePair<double, double>> legs = found.Where(q => ev.PullDown.HasValue && q.Key >= ev.PullDown.Value).ToList();
+            if (ev.PullDown.HasValue)
             {
-                if (ev.PullDown.HasValue && kick.Key >= ev.PullDown.Value)
-                    ev.LegKicks.Add(kick.Key);
-                else
-                    ev.Kicks.Add(kick.Key);
+                // Breaststroke pull-out: one dolphin kick (the one nearest 1.1 s after the push-off) and one breaststroke kick
+                // (the deepest bend of the knees).
+                if (dolphin.Count > 0)
+                    dolphin = new List<KeyValuePair<double, double>> { dolphin.OrderBy(q => Math.Abs(q.Key - (pushoff + BreaststrokeDolphinAfter))).First() };
+                if (legs.Count > 0)
+                    legs = new List<KeyValuePair<double, double>> { legs.OrderBy(q => q.Value).First() };
             }
+            else if (dolphin.Count >= 3)
+            {
+                // The dolphin kicks are regular: a kick much sooner than the usual interval is the flutter of the breakout.
+                double[] gaps = new double[dolphin.Count - 1];
+                for (int i = 0; i < gaps.Length; i++)
+                    gaps[i] = dolphin[i + 1].Key - dolphin[i].Key;
+                double usual = SwimSignal.Percentile(gaps.Take(Math.Max(2, gaps.Length - 1)), 50);
+                for (int i = 0; i < gaps.Length; i++)
+                {
+                    if (gaps[i] < FlutterGapFraction * usual)
+                    {
+                        dolphin = dolphin.Take(i + 1).ToList();
+                        break;
+                    }
+                }
+            }
+
+            ev.Kicks.AddRange(dolphin.Select(q => q.Key));
+            ev.LegKicks.AddRange(legs.Select(q => q.Key));
 
             double reference = ev.RotationStart ?? ev.Wall ?? s.T[i0];
             ev.StrokesIn = Strokes(s, reference - 6, reference - 0.15, -ev.Sign);
