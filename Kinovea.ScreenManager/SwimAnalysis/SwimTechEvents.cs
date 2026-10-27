@@ -670,8 +670,17 @@ namespace Kinovea.ScreenManager
                     prevD = d;
                 }
 
-                head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: pass {1:0.00} at {2:0} px, {3} images, head {4:0}..{5:0} px from the plane, crossed {6}; ",
-                    approach ? "in" : "out", pass.T, pass.X, near, low, high, cross.HasValue ? cross.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "-");
+                // The images of the string not following each other across the head (a gap of more than 0.35 s): the plane fitted in time.
+                bool fitted = false;
+                if (!cross.HasValue)
+                {
+                    cross = FittedCrossing(s, hx, seen, pass, direction, uw.Width, extWidth);
+                    fitted = cross.HasValue;
+                }
+
+                head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: pass {1:0.00} at {2:0} px, {3} images, head {4:0}..{5:0} px from the plane, crossed {6}{7}; ",
+                    approach ? "in" : "out", pass.T, pass.X, near, low, high, cross.HasValue ? cross.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "-",
+                    fitted ? " (fitted plane)" : "");
                 if (approach)
                 {
                     head.InPass = pass;
@@ -685,6 +694,80 @@ namespace Kinovea.ScreenManager
             }
 
             return head;
+        }
+
+        /// <summary>
+        /// The head at the plane of the flags when the images of the string do not follow each other across it: the column of the plane
+        /// fitted as a line in time on the images of the string within 1 s of the pass (fitted again twice on those within max(60 px,
+        /// 2.5 × the median distance) of the line), the head crossing it in the swimming direction nearest to the pass; null with fewer
+        /// than 5 images. On the 6 turns read both ways it is within 0.07 s of the crossing of the images (one 0.2 s), and the same
+        /// (17.45 s) for the external video read by the lab and by Kinovea, where the crossing of the images differs by 0.09 s.
+        /// </summary>
+        private static double? FittedCrossing(Signals s, double[] hx, List<SwimFlagFrame> seen, SwimFlagPass pass, int direction, int uwWidth, int extWidth)
+        {
+            List<double> ts = new List<double>(), ys = new List<double>();
+            foreach (SwimFlagFrame f in seen.Where(f => Math.Abs(f.T - pass.T) <= 1.0))
+            {
+                ts.Add(f.T - pass.T);
+                ys.Add(uwWidth / 2.0 + SwimFlagReader.Refraction * (f.X25 - extWidth / 2.0) * uwWidth / extWidth);
+            }
+
+            int m = ts.Count;
+            if (m < 5)
+                return null;
+
+            bool[] keep = Enumerable.Repeat(true, m).ToArray();
+            double slope = 0, offset = 0;
+            for (int round = 0; ; round++)
+            {
+                double n = 0, st = 0, sy = 0, stt = 0, sty = 0;
+                for (int i = 0; i < m; i++)
+                {
+                    if (!keep[i])
+                        continue;
+                    n++;
+                    st += ts[i];
+                    sy += ys[i];
+                    stt += ts[i] * ts[i];
+                    sty += ts[i] * ys[i];
+                }
+
+                double det = n * stt - st * st;
+                if (n < 5 || Math.Abs(det) < 1e-12)
+                    return null;
+                slope = (n * sty - st * sy) / det;
+                offset = (sy - slope * st) / n;
+                if (round == 2)
+                    break;
+
+                double[] residual = new double[m];
+                for (int i = 0; i < m; i++)
+                    residual[i] = Math.Abs(ys[i] - (slope * ts[i] + offset));
+                double limit = Math.Max(60, 2.5 * SwimSignal.Percentile(residual, 50));
+                for (int i = 0; i < m; i++)
+                    keep[i] = residual[i] < limit;
+            }
+
+            double from = pass.T + ts.Min(), to = pass.T + ts.Max();
+            double? best = null;
+            double prevT = double.NaN, prevG = double.NaN;
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] < from || s.T[i] > to)
+                    continue;
+                double g = (hx[i] - (slope * (s.T[i] - pass.T) + offset)) * direction;
+                if (!double.IsNaN(prevG) && !double.IsNaN(g) && prevG < 0 && g >= 0)
+                {
+                    double x = prevT + (s.T[i] - prevT) * (-prevG) / (g - prevG + 1e-9);
+                    if (!best.HasValue || Math.Abs(x - pass.T) < Math.Abs(best.Value - pass.T))
+                        best = x;
+                }
+
+                prevT = s.T[i];
+                prevG = g;
+            }
+
+            return best;
         }
 
         /// <summary>The value of a signal at time t (linear between the images, the first and last value outside them).</summary>
