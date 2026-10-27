@@ -1576,7 +1576,91 @@ namespace Kinovea.ScreenManager
                 pulls.Add(t);
             }
 
-            return pulls;
+            if (pulls.Count < 3)
+                return pulls;
+
+            // A kick not seen (the legs out of the image, the knees not found bent): a gap of more than 1.6 cycles gets the
+            // largest fall of the hands in its middle, and after the last pull one more cycle when the hands fall again a cycle
+            // later (both with the hands staying low, seen under water: not the camera leaving the water). Checked on the clips:
+            // the last pull of a take found (0.02 s), none added where there was none.
+            double[] held = SwimSignal.Median(hands, 5);
+            List<double> gaps = new List<double>();
+            for (int i = 1; i < pulls.Count; i++)
+                gaps.Add(pulls[i] - pulls[i - 1]);
+            double cycle = SwimSignal.Percentile(gaps, 50);
+            List<double> filled = new List<double> { pulls[0] };
+            for (int i = 1; i < pulls.Count; i++)
+            {
+                double a = pulls[i - 1], b = pulls[i];
+                if (b - a > 1.6 * cycle)
+                {
+                    double? t = FallPull(s, f, hands, held, a + 0.5 * cycle, b - 0.4 * cycle, w);
+                    if (t.HasValue && t.Value - a > 0.6 * cycle && b - t.Value > 0.6 * cycle)
+                        filled.Add(t.Value);
+                }
+
+                filled.Add(b);
+            }
+
+            double lastPull = pulls[pulls.Count - 1];
+            if (lastPull + 1.4 * cycle <= tb + 0.5)
+            {
+                double? t = FallPull(s, f, hands, held, lastPull + 0.6 * cycle, Math.Min(tb, lastPull + 1.6 * cycle), w);
+                if (t.HasValue && t.Value - lastPull >= 0.75 * cycle)
+                    filled.Add(t.Value);
+            }
+
+            return filled;
+        }
+
+        /// <summary>
+        /// Breaststroke without its kick: the largest fall of the hands (at least 0.25 body lengths in BreastFallWindow) in a window, the
+        /// hands then low for 3 images seen under water within 0.4 s; the pull where the fall leaves the reach of the glide. Null if none.
+        /// </summary>
+        private static double? FallPull(Signals s, double[] f, double[] hands, double[] held, double ta, double tb, int w)
+        {
+            int n = s.N;
+            int lo = FirstAtOrAfter(s.T, ta), hi = FirstAtOrAfter(s.T, tb);
+            double best = -1;
+            int start = -1;
+            for (int i = lo; i < hi; i++)
+            {
+                double bottom = f[i];
+                for (int j = i; j <= Math.Min(n - 1, i + w); j++)
+                    bottom = Math.Min(bottom, f[j]);
+                if (f[i] - bottom > best + 1e-9)
+                {
+                    best = f[i] - bottom;
+                    start = i;
+                }
+            }
+
+            if (start < 0 || best < 0.25)
+                return null;
+
+            int e = start;
+            for (int j = start; j <= Math.Min(n - 1, start + w); j++)
+            {
+                if (f[j] < f[e])
+                    e = j;
+            }
+
+            int j0 = FirstAtOrAfter(s.T, s.T[start] - 0.6);
+            double level = SwimSignal.Percentile(f.Skip(j0).Take(start - j0 + 1), 80);
+            int seen = 0;
+            for (int q = e; q < n && s.T[q] < s.T[e] + 0.4; q++)
+            {
+                if (s.Present[q] && s.InWater[q] && !double.IsNaN(hands[q]) && held[q] <= level - 0.25)
+                    seen++;
+            }
+
+            if (seen < 3)
+                return null;
+
+            int pull = e;
+            while (pull > j0 && f[pull] < level - PullDrop)
+                pull--;
+            return s.T[pull];
         }
 
         /// <summary>The first index with a time at or after t (the length when none).</summary>
