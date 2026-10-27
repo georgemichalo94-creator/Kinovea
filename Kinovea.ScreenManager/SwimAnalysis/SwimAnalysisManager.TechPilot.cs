@@ -552,9 +552,11 @@ namespace Kinovea.ScreenManager
             // The strokes (2.9.9: all of them, for the cycles of the technical HUD): breaststroke and butterfly at the pulls (the end
             // of the reach: the glide is before it), freestyle and backstroke at the reach of each arm. The last one before the wall and
             // the first after the breakout keep their names.
-            bool pulls = Race.Style == "br" || Race.Style == "fly";
-            List<double> strokesIn = pulls ? ev.PullsIn : ev.StrokesIn;
-            List<double> strokesOut = pulls ? ev.PullsOut : ev.StrokesOut;
+            // (A medley: an open turn comes from breaststroke or butterfly; a breaststroke pull-out goes on in breaststroke.)
+            bool pullsIn = ev.Kind == SwimTurnKind.Open;
+            bool pullsOut = Race.Style == "br" || Race.Style == "fly" || (Race.Style == "im" && ev.PullDown.HasValue);
+            List<double> strokesIn = pullsIn ? ev.PullsIn : ev.StrokesIn;
+            List<double> strokesOut = pullsOut ? ev.PullsOut : ev.StrokesOut;
             double? lastStroke = strokesIn.Count > 0 ? strokesIn[strokesIn.Count - 1] : ev.LastStroke;
             double? firstStroke = strokesOut.Count > 0 ? strokesOut[0] : ev.FirstStroke;
             for (int i = 0; i + 1 < strokesIn.Count; i++)

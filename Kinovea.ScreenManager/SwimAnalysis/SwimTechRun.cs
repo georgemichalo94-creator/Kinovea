@@ -75,11 +75,20 @@ namespace Kinovea.ScreenManager
 
         public SwimTechPhase Phase;
         public string Style;
+
+        /// <summary>The parts of the reading measured (null without them) and the timing of the video.</summary>
+        public SwimSkeleton Skeleton;
+        public SwimTrack Track;
+        public SwimTiming Timing;
         public bool Breaststroke;
         public bool Butterfly;
 
-        /// <summary>Strokes per cycle: 1 (breaststroke, butterfly), 2 (freestyle, backstroke).</summary>
+        /// <summary>Strokes per cycle: 1 (breaststroke, butterfly; a medley: each stroke), 2 (freestyle, backstroke).</summary>
         public int StrokesPerCycle = 1;
+
+        /// <summary>The approach of a turn: strokes per cycle (2 before a flip turn) and its glides (before an open turn).</summary>
+        public int ApproachPerCycle = 1;
+        public bool ApproachGlides;
 
         /// <summary>Seconds from the origin of the stroke marks after the breakout and before the wall.</summary>
         public List<double> Strokes = new List<double>();
@@ -229,10 +238,16 @@ namespace Kinovea.ScreenManager
             if (race == null || timing == null || !timing.IsValid || phase == null)
                 return null;
 
-            SwimTechRun run = new SwimTechRun { Phase = phase, Style = race.Style ?? "" };
+            SwimTechRun run = new SwimTechRun { Phase = phase, Style = race.Style ?? "", Skeleton = skeleton, Track = track, Timing = timing };
             run.Breaststroke = run.Style == "br";
             run.Butterfly = run.Style == "fly";
-            run.StrokesPerCycle = run.Breaststroke || run.Butterfly ? 1 : 2;
+            run.StrokesPerCycle = run.Style == "fs" || run.Style == "bk" ? 2 : 1;
+
+            // The approach of a turn: a flip turn comes from freestyle or backstroke (two strokes a cycle), an open one from breaststroke
+            // or butterfly (one, with its glide) — also in a medley.
+            bool flipApproach = phase.RotationStart.HasValue || run.Style == "fs" || run.Style == "bk";
+            run.ApproachPerCycle = flipApproach ? 2 : 1;
+            run.ApproachGlides = !flipApproach;
 
             Func<long, double> rel = ts => timing.Seconds(ts, phase.Origin);
             List<double> strokes = race.Marks
@@ -247,9 +262,10 @@ namespace Kinovea.ScreenManager
             int k = run.StrokesPerCycle;
             for (int i = 0; i + k < run.Strokes.Count; i += k)
                 run.Cycles.Add(new SwimTechCycle { Number = run.Cycles.Count + 1, Start = run.Strokes[i], End = run.Strokes[i + k] });
-            for (int i = 0; i + k < run.ApproachStrokes.Count; i += k)
-                run.Approach.Add(new SwimTechCycle { Number = run.Approach.Count + 1, Start = run.ApproachStrokes[i], End = run.ApproachStrokes[i + k] });
-            if (run.ApproachStrokes.Count > 0 && (run.Breaststroke || run.Butterfly))
+            int ka = run.ApproachPerCycle;
+            for (int i = 0; i + ka < run.ApproachStrokes.Count; i += ka)
+                run.Approach.Add(new SwimTechCycle { Number = run.Approach.Count + 1, Start = run.ApproachStrokes[i], End = run.ApproachStrokes[i + ka] });
+            if (run.ApproachStrokes.Count > 0 && run.ApproachGlides)
             {
                 // The last pull of the approach goes to the wall (the touch of an open turn).
                 double last = run.ApproachStrokes[run.ApproachStrokes.Count - 1];
@@ -271,12 +287,11 @@ namespace Kinovea.ScreenManager
         /// <summary>Breaststroke and butterfly: the glide at the end of each cycle, and the legs of breaststroke, from the skeleton.</summary>
         private void MeasureGlides(SwimSkeleton sk, SwimTiming timing)
         {
-            if (!Breaststroke && !Butterfly)
-                return;
-
             PointF[] pts = new PointF[SwimJoints.Count];
             float[] vis = new float[SwimJoints.Count];
-            foreach (SwimTechCycle c in Cycles.Concat(Approach.Where(a => !a.ToWall)))
+            IEnumerable<SwimTechCycle> measured = (Breaststroke || Butterfly ? Cycles : Enumerable.Empty<SwimTechCycle>())
+                .Concat(ApproachGlides ? Approach.Where(a => !a.ToWall) : Enumerable.Empty<SwimTechCycle>());
+            foreach (SwimTechCycle c in measured)
             {
                 List<double> ts = new List<double>(), reach = new List<double>(), knee = new List<double>();
                 for (double t = c.Start; t <= c.End + 1e-6; t += 1.0 / 30)
@@ -598,14 +613,15 @@ namespace Kinovea.ScreenManager
                 if (t.HasValue)
                     race.Marks.Add(new SwimMark { Type = type, Timestamp = ts(t.Value), Distance = distance, Wall = -1 });
             };
-            bool pulls = style == "br" || style == "fly";
+            bool pullsIn = ev.Kind == SwimTurnKind.Open;
+            bool pullsOut = style == "br" || style == "fly" || (style == "im" && ev.PullDown.HasValue);
             mark(SwimMarkType.WallContact, ev.Wall, 0);
             mark(SwimMarkType.RotationStart, ev.RotationStart, 0);
             mark(SwimMarkType.FeetOff, ev.Pushoff, 0);
             mark(SwimMarkType.Breakout, ev.Breakout, 0);
             foreach (double k in ev.Kicks)
                 mark(SwimMarkType.Kick, k, 0);
-            foreach (double s in (pulls ? ev.PullsIn : ev.StrokesIn).Concat(pulls ? ev.PullsOut : ev.StrokesOut))
+            foreach (double s in (pullsIn ? ev.PullsIn : ev.StrokesIn).Concat(pullsOut ? ev.PullsOut : ev.StrokesOut))
                 mark(SwimMarkType.Stroke, s, 0);
             mark(SwimMarkType.TechSplit, in5, -5);
             mark(SwimMarkType.TechSplit, out5, 5);
