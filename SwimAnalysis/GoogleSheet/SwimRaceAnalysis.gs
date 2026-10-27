@@ -20,7 +20,7 @@
  *      και παίρνει των άλλων, ώστε να μαθαίνουν όλα μαζί.
  */
 
-var SWIM_VERSION = '2.9.7';
+var SWIM_VERSION = '2.9.8';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';

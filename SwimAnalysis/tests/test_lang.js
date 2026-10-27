@@ -290,7 +290,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.9.7');
+assert.strictEqual(vNew, '2.9.8');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -383,7 +383,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.9\.7$/, 'version line');
+like(/^Updated .* · version 2\.9\.8$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');
