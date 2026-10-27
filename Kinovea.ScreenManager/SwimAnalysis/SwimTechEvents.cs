@@ -342,6 +342,12 @@ namespace Kinovea.ScreenManager
         public const double PushoffDrop = 0.03;
         public const double PushoffDropWindow = 0.25;
         public const double PushoffMinSpeed = 1.5;
+
+        /// <summary>
+        /// The first peak of a flip turn's push-off can be lower in the camera's frame (bubbles at the wall move the
+        /// background): 0.8 body lengths/s. Open turns keep 1.5 (the hips drift ~1 body length/s while the body turns).
+        /// </summary>
+        public const double PushoffMinSpeedFlip = 0.8;
         public const double PlantDistance = 0.12;
         public const double PlantWindow = 1.2;
         public const double PlantBeforeTurn = 0.4;
@@ -405,17 +411,24 @@ namespace Kinovea.ScreenManager
             }
 
             ev.Extreme = s.T[i0];
-            int k = Pushoff(s, i0, ev.Sign);
+            int k = Pushoff(s, i0, ev.Sign, kind == SwimTurnKind.Flip ? PushoffMinSpeedFlip : PushoffMinSpeed);
             double pushoff = s.T[k];
-            ev.Pushoff = pushoff;
             bool fromTurn;
             ev.Plant = Plant(s, ev.Sign, pushoff, i0, out fromTurn);
-            ev.PlantFromTurn = fromTurn;
             if (kind == SwimTurnKind.Unknown)
             {
                 kind = Upright(s, i0, pushoff) ? SwimTurnKind.Open : SwimTurnKind.Flip;
                 ev.KindFromVideo = true;
+                if (kind == SwimTurnKind.Flip)
+                {
+                    k = Pushoff(s, i0, ev.Sign, PushoffMinSpeedFlip);
+                    pushoff = s.T[k];
+                    ev.Plant = Plant(s, ev.Sign, pushoff, i0, out fromTurn);
+                }
             }
+
+            ev.Pushoff = pushoff;
+            ev.PlantFromTurn = fromTurn;
 
             ev.Kind = kind;
             if (kind == SwimTurnKind.Open)
@@ -685,7 +698,7 @@ namespace Kinovea.ScreenManager
         /// after it; else the highest speed within 1.6 s), then the first
         /// image with 90% of that speed. The first peak and not the highest: the pan of the camera can add a later one.
         /// </summary>
-        private static int Pushoff(Signals s, int i0, int sign)
+        private static int Pushoff(Signals s, int i0, int sign, double minSpeed)
         {
             double[] d = SwimSignal.SavGol(s.Xs, 9, 2, 1);
             double[] v = new double[s.N];
@@ -696,7 +709,7 @@ namespace Kinovea.ScreenManager
             int pk = -1;
             for (int i = i0 + 1; i < j1 && pk < 0; i++)
             {
-                if (v[i] < v[i - 1] || v[i] < v[i + 1] || v[i] < PushoffMinSpeed * s.L)
+                if (v[i] < v[i - 1] || v[i] < v[i + 1] || v[i] < minSpeed * s.L)
                     continue;
                 double low = v[i];
                 for (int q = i; q <= Math.Min(s.N - 1, i + nd); q++)
