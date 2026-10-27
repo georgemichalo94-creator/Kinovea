@@ -239,7 +239,7 @@ namespace Kinovea.ScreenManager
                     return true;
                 case PlayerScreenCommands.SwimTechSplit:
                     if (answeringSplit.HasValue)
-                        AddTechSplit(timestamp, answeringSplit.Value, SwimPhaseKind.Turn);
+                        AddTechSplit(timestamp, answeringSplit.Value, answeringSplitKind);
                     else
                         AddTechSplit(timestamp, null);
                     return true;

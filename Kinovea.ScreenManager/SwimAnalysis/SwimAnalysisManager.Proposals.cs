@@ -38,6 +38,7 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The distance of the technical split proposal being answered (−5, +5): T marks that one, not the next of the phase.</summary>
         private int? answeringSplit;
+        private SwimPhaseKind answeringSplitKind = SwimPhaseKind.Turn;
 
         /// <summary>The learning of this computer (read once).</summary>
         public SwimLearning Learning
@@ -417,6 +418,7 @@ namespace Kinovea.ScreenManager
             {
                 resolvingProposal = true;
                 answeringSplit = p.Type == SwimMarkType.TechSplit && p.Index != 0 ? p.Index : (int?)null;
+                answeringSplitKind = p.Kind == KindTechHeadStart ? SwimPhaseKind.Start : SwimPhaseKind.Turn;
                 try
                 {
                     HandleCommand(player, frameServer, command, timestamp);
@@ -823,8 +825,9 @@ namespace Kinovea.ScreenManager
                         (p.Official ? SwimLang.T(" · από τον επίσημο χρόνο") : "");
                     break;
                 case SwimMarkType.TechSplit:
-                    name = p.Index < 0 ? SwimLang.T("Κεφάλι στα −5 πριν τον τοίχο") : SwimLang.T("Κεφάλι στα +5 μετά τον τοίχο");
-                    if (p.Kind == KindTechHeadIn || p.Kind == KindTechHeadOut)
+                    name = p.Kind == KindTechHeadStart ? SwimLang.T("Κεφάλι στα 5 μ. από την εκκίνηση") :
+                        p.Index < 0 ? SwimLang.T("Κεφάλι στα −5 πριν τον τοίχο") : SwimLang.T("Κεφάλι στα +5 μετά τον τοίχο");
+                    if (p.Kind == KindTechHeadIn || p.Kind == KindTechHeadOut || p.Kind == KindTechHeadStart)
                         name += SwimLang.T(" · σημαίες ύπτιου");
                     break;
                 case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? SwimLang.T("Σήμα εκκίνησης (φως)") + (p.Index > 1 ? SwimLang.T(" · εναλλακτική ") + (p.Index - 1) : "") : SwimLang.T("Σήμα εκκίνησης"); break;

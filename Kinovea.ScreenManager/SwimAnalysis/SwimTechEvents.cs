@@ -460,6 +460,23 @@ namespace Kinovea.ScreenManager
             if (ev.KindFromVideo)
                 ev.Notes.Add(kind == SwimTurnKind.Open ? "ανοιχτή στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)" : "ανάποδη στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)");
 
+            double? breakout = AfterPushoff(uw, s, ev, pushoff);
+
+            double reference = ev.RotationStart ?? ev.Wall ?? s.T[i0];
+            ev.StrokesIn = Strokes(s, reference - 6, reference - 0.15, -ev.Sign);
+            if (ev.StrokesIn.Count > 0)
+                ev.LastStroke = ev.StrokesIn[ev.StrokesIn.Count - 1];
+            // The cycles of breaststroke and butterfly: not the reach of the touch (the last 0.5 s before the wall).
+            ev.PullsIn = CyclePulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign);
+            return ev;
+        }
+
+        /// <summary>
+        /// After the push-off of a turn or the entry of a start: the breakout (the surface band, the rope line, else the head), the
+        /// dolphin kicks (and the pull-out of breaststroke), the strokes and the pulls after the breakout. Returns the breakout.
+        /// </summary>
+        private static double? AfterPushoff(SwimTechReading uw, Signals s, SwimTurnEvents ev, double pushoff)
+        {
             double[] surface = Surface(uw, s);
             double? breakout = surface != null ? BreakoutBySurface(s, pushoff, surface) : null;
             ev.BreakoutBySurface = breakout.HasValue;
@@ -516,21 +533,66 @@ namespace Kinovea.ScreenManager
             ev.Kicks.AddRange(dolphin.Select(q => q.Key));
             ev.LegKicks.AddRange(legs.Select(q => q.Key));
 
-            double reference = ev.RotationStart ?? ev.Wall ?? s.T[i0];
-            ev.StrokesIn = Strokes(s, reference - 6, reference - 0.15, -ev.Sign);
-            if (ev.StrokesIn.Count > 0)
-                ev.LastStroke = ev.StrokesIn[ev.StrokesIn.Count - 1];
             if (breakout.HasValue)
             {
                 ev.StrokesOut = Strokes(s, breakout.Value - 0.2, breakout.Value + 10, ev.Sign);
                 if (ev.StrokesOut.Count > 0)
                     ev.FirstStroke = ev.StrokesOut[0];
+                ev.PullsOut = CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
             }
 
-            // The cycles of breaststroke and butterfly: not the reach of the touch (the last 0.5 s before the wall).
-            ev.PullsIn = CyclePulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign);
-            if (breakout.HasValue)
-                ev.PullsOut = CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
+            return breakout;
+        }
+
+        /// <summary>
+        /// (2.9.9) Events of a start in a reading of the side underwater camera that follows the swimmer (the analyst gives the start
+        /// signal): the entry (the swimmer first seen under water for good), then as after the push-off of a turn the dolphin kicks, the
+        /// breakout and the strokes. Wall, plant and rotation: none; Pushoff: the entry. Sign from the motion in the frame of the pool.
+        /// </summary>
+        public static SwimTurnEvents FindStart(SwimTechReading uw)
+        {
+            SwimTurnEvents ev = new SwimTurnEvents();
+            if (uw == null || uw.Frames.Count < 60)
+            {
+                ev.Notes.Add("λίγα καρέ στην υποβρύχια ανάγνωση");
+                return ev;
+            }
+
+            Signals s = Read(uw);
+            ev.BodyLength = s.L;
+            if (!Segment(s))
+            {
+                ev.Notes.Add("ο κολυμβητής δεν φαίνεται αρκετά στην υποβρύχια κάμερα");
+                return ev;
+            }
+
+            // The direction of the swim: the frame of the pool in the first and the last second of the swimmer under water.
+            int k = (int)Math.Max(3, s.Fps);
+            Func<int, int, double> mean = (from, to) =>
+            {
+                double sum = 0;
+                int n = 0;
+                for (int i = Math.Max(s.A, from); i <= Math.Min(s.B, to); i++)
+                {
+                    if (double.IsNaN(s.X[i]))
+                        continue;
+                    sum += s.X[i];
+                    n++;
+                }
+
+                return n > 0 ? sum / n : double.NaN;
+            };
+            double x0 = mean(s.A, s.A + k), x1 = mean(s.B - k, s.B);
+            if (double.IsNaN(x0) || double.IsNaN(x1))
+            {
+                ev.Notes.Add("δεν βρέθηκε η κατεύθυνση του κολυμβητή");
+                return ev;
+            }
+
+            ev.Sign = x1 >= x0 ? 1 : -1;
+            double entry = s.T[s.A];
+            ev.Pushoff = entry;
+            AfterPushoff(uw, s, ev, entry);
             return ev;
         }
 
@@ -545,7 +607,7 @@ namespace Kinovea.ScreenManager
         {
             SwimFlagHead head = new SwimFlagHead();
             if (uw == null || ev == null || frames == null || frames.Count < 10 || extWidth <= 0 || uw.Width <= 0 ||
-                !ev.Wall.HasValue || !ev.Pushoff.HasValue || (ev.Sign != 1 && ev.Sign != -1) || uw.Frames.Count < 60)
+                !ev.Pushoff.HasValue || (ev.Sign != 1 && ev.Sign != -1) || uw.Frames.Count < 60)
                 return head;
 
             List<SwimFlagPass> passes = SwimFlagReader.Passes(frames);
@@ -563,9 +625,10 @@ namespace Kinovea.ScreenManager
                 return head;
 
             List<SwimFlagFrame> seen = frames.Where(f => !float.IsNaN(f.X25)).OrderBy(f => f.T).ToList();
-            foreach (bool approach in new[] { true, false })
+            // A start (no wall): only the head at 5 m after the entry.
+            foreach (bool approach in ev.Wall.HasValue ? new[] { true, false } : new[] { false })
             {
-                SwimFlagPass pass = SwimFlagReader.Choose(passes, approach, ev.Wall.Value, ev.Pushoff.Value, ev.Sign, extWidth);
+                SwimFlagPass pass = SwimFlagReader.Choose(passes, approach, ev.Wall ?? ev.Pushoff.Value, ev.Pushoff.Value, ev.Sign, extWidth);
                 if (pass == null)
                     continue;
 

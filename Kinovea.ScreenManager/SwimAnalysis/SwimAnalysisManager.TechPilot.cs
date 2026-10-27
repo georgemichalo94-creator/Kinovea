@@ -25,6 +25,8 @@ namespace Kinovea.ScreenManager
         public const string KindTechLastStroke = "tech.turn.stroke.last";
         public const string KindTechFirstStroke = "tech.turn.stroke.first";
         public const string KindTechStroke = "tech.turn.stroke";
+        public const string KindTechEntry = "tech.start.entry";
+        public const string KindTechHeadStart = "tech.start.head5";
         public const string KindTechHeadIn = "tech.turn.head.in5";
         public const string KindTechHeadOut = "tech.turn.head.out5";
 
@@ -80,7 +82,7 @@ namespace Kinovea.ScreenManager
 
             if (!Race.IsTraining)
             {
-                Status(SwimLang.T("🤖 Ο αυτόματος πιλότος της τεχνικής διαβάζει βίντεο προπόνησης από την υποβρύχια πλάγια κάμερα (στροφή). Σε αγώνα: ✈ Πιλότος."), true);
+                Status(SwimLang.T("🤖 Ο αυτόματος πιλότος της τεχνικής διαβάζει βίντεο προπόνησης από την υποβρύχια πλάγια κάμερα (εκκίνηση ή στροφή). Σε αγώνα: ✈ Πιλότος."), true);
                 return;
             }
 
@@ -123,7 +125,7 @@ namespace Kinovea.ScreenManager
             bool cancelled = false;
             TechPilotRunning = true;
             RefreshTechPilotUi();
-            Status(SwimLang.T("🤖 Ανάγνωση της στροφής: ο κολυμβητής, ο σκελετός και η κίνηση της κάμερας σε κάθε καρέ…"), false);
+            Status(SwimLang.T("🤖 Ανάγνωση: ο κολυμβητής, ο σκελετός και η κίνηση της κάμερας σε κάθε καρέ…"), false);
 
             player.BeforeExportVideo();
             using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true })
@@ -182,12 +184,18 @@ namespace Kinovea.ScreenManager
 
                 if (cancelled || reading == null)
                 {
-                    Status(SwimLang.T("🤖 Η ανάγνωση της στροφής ακυρώθηκε."), false);
+                    Status(SwimLang.T("🤖 Η ανάγνωση ακυρώθηκε."), false);
                     return;
                 }
 
                 reading.Video = System.IO.Path.GetFileName(video.FilePath ?? "");
-                SwimTurnEvents ev = SwimTurnReader.Find(reading, kind);
+
+                // A start when the analyst gave its signal (G) in the part read and no wall after it: the entry, the kicks, the breakout
+                // and the strokes; else a turn.
+                SwimMark signal = Race.Marks.Where(m => m.Type == SwimMarkType.Signal && m.Timestamp >= from - RealSpan(5) && m.Timestamp <= end)
+                    .OrderBy(m => m.Timestamp).FirstOrDefault();
+                bool start = signal != null && !Race.Marks.Any(m => m.Type == SwimMarkType.WallContact && m.Timestamp > signal.Timestamp && m.Timestamp <= end);
+                SwimTurnEvents ev = start ? SwimTurnReader.FindStart(reading) : SwimTurnReader.Find(reading, kind);
 
                 // The reading stays with the analysis: the skeleton (the glides) and the head with the camera's pan (the strokes on the
                 // water and the metres between the known places of the technical HUD).
@@ -196,7 +204,7 @@ namespace Kinovea.ScreenManager
                 // The head at −5 / +5 from the backstroke flags in the external video of the same take (when there is one).
                 SwimFlagHead flags = null;
                 List<string> flagNotes = new List<string>();
-                if (ev != null && ev.Wall.HasValue && ev.Pushoff.HasValue)
+                if (ev != null && (ev.Wall.HasValue || start) && ev.Pushoff.HasValue)
                 {
                     string external = SiblingExternalVideo(video.FilePath);
                     if (external == null)
@@ -205,7 +213,10 @@ namespace Kinovea.ScreenManager
                         flags = ReadTurnFlags(external, reading, ev, from, flagNotes);
                 }
 
-                ProposeTurn(ev, from, stamps, flags, flagNotes);
+                if (start)
+                    ProposeStart(ev, from, stamps, flags, flagNotes);
+                else
+                    ProposeTurn(ev, from, stamps, flags, flagNotes);
             }
             finally
             {
@@ -379,12 +390,14 @@ namespace Kinovea.ScreenManager
                 // The reading's seconds are from 'from'; the external video's from its first image, the same moment as the
                 // underwater video's first image.
                 double offset = (from - uw.Info.FirstTimeStamp) / uwRate;
-                double start = Math.Max(reading.Frames[0].T, ev.Wall.Value - FlagsBefore) + offset;
+                // A turn: from 13 s before the wall; a start (no wall): from 2 s before the entry.
+                double first = ev.Wall.HasValue ? ev.Wall.Value - FlagsBefore : ev.Pushoff.Value - 2;
+                double begin = Math.Max(reading.Frames[0].T, first) + offset;
                 double stop = Math.Min(Math.Min(reading.Frames[reading.Frames.Count - 1].T, ev.Pushoff.Value + FlagsAfter) + offset, extLength);
-                if (stop - start < 2)
+                if (stop - begin < 2)
                     return null;
 
-                long extFrom = ext.Info.FirstTimeStamp + (long)Math.Round(start * extRate);
+                long extFrom = ext.Info.FirstTimeStamp + (long)Math.Round(begin * extRate);
                 long extEnd = ext.Info.FirstTimeStamp + (long)Math.Round(stop * extRate);
                 int step = Math.Max(1, (int)Math.Round(ext.Info.FramesPerSeconds / FlagsFps));
                 Size size = ext.Info.ReferenceSize;
@@ -508,6 +521,74 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>The events of a start as proposals (2.9.9): the entry, the kicks, the breakout, the strokes, the head at 5 m.</summary>
+        private void ProposeStart(SwimTurnEvents ev, long from, List<long> stamps, SwimFlagHead flags, List<string> flagNotes)
+        {
+            if (ev == null || !ev.Pushoff.HasValue || stamps.Count == 0)
+            {
+                string why = ev != null && ev.Notes.Count > 0 ? SwimLang.T(ev.Notes[0]) : SwimLang.T("δεν βρέθηκε ο κολυμβητής κάτω από το νερό");
+                Status(SwimLang.T("🤖 Δεν βρέθηκε η εκκίνηση στο βίντεο: ") + why + ".", true);
+                return;
+            }
+
+            string batch = Guid.NewGuid().ToString("N");
+            List<SwimProposal> made = new List<SwimProposal>();
+            Action<SwimMarkType, string, double?, int, double> add = (type, kindName, t, index, confidence) =>
+            {
+                if (!t.HasValue)
+                    return;
+                long ts = NearestStamp(stamps, from, t.Value);
+                if (HasMarkNear(type, ts, type == SwimMarkType.Kick ? 0.12 : 0.3))
+                    return;
+                made.Add(new SwimProposal { Type = type, Timestamp = ts, Kind = kindName, Index = index, Batch = batch, Confidence = confidence });
+            };
+
+            bool pulls = Race.Style == "br" || Race.Style == "fly" || (Race.Style == "im" && ev.PullDown.HasValue);
+            List<double> strokes = pulls ? ev.PullsOut : ev.StrokesOut;
+            add(SwimMarkType.Entry, KindTechEntry, ev.Pushoff, 0, 0.5);
+            for (int i = 0; i < ev.Kicks.Count; i++)
+                add(SwimMarkType.Kick, KindTechKick, ev.Kicks[i], i + 1, 0.75);
+            add(SwimMarkType.Breakout, KindTechBreakout, ev.Breakout, 0, ev.BreakoutBySurface ? 0.75 : ev.BreakoutByLine ? 0.5 : 0.4);
+            for (int i = 0; i < strokes.Count; i++)
+                add(SwimMarkType.Stroke, i == 0 ? KindTechFirstStroke : KindTechStroke, strokes[i], i + 1, i == 0 ? 0.7 : 0.6);
+            if (flags != null)
+                add(SwimMarkType.TechSplit, KindTechHeadStart, flags.Out, 5, FlagsConfidence);
+            made = made.OrderBy(p => p.Timestamp).ToList();
+            if (made.Count == 0)
+            {
+                Status(SwimLang.T("🤖 Τα γεγονότα της εκκίνησης που βρέθηκαν έχουν ήδη σημάδι."), false);
+                return;
+            }
+
+            Race.Proposals.RemoveAll(p => p.Kind != null && (p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal) || p.Kind.StartsWith("tech.start.", StringComparison.Ordinal)));
+            Race.Proposals.AddRange(made);
+            Changed(false);
+            RefreshProposalsUi();
+            List<string> remarks = ev.Notes.Concat(flagNotes ?? new List<string>()).ToList();
+            string notes = remarks.Count > 0 ? " · " + string.Join(" · ", remarks.Select(SwimLang.T)) : "";
+            BeginReview(made[0]);
+            Status(string.Format(CultureInfo.InvariantCulture,
+                SwimLang.T("🤖 Εκκίνηση: {0} προτάσεις{1}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος."), made.Count, notes), ev.Notes.Count > 0);
+        }
+
+        /// <summary>The timestamp of the image read nearest a time (seconds from 'from').</summary>
+        private long NearestStamp(List<long> stamps, long from, double t)
+        {
+            long best = stamps[0];
+            double bestDiff = double.MaxValue;
+            foreach (long s in stamps)
+            {
+                double d = Math.Abs(Timing.Seconds(s, from) - t);
+                if (d < bestDiff)
+                {
+                    bestDiff = d;
+                    best = s;
+                }
+            }
+
+            return best;
+        }
+
         /// <summary>The events of the turn as proposals (in the order of the video), then the check from the first.</summary>
         private void ProposeTurn(SwimTurnEvents ev, long from, List<long> stamps, SwimFlagHead flags, List<string> flagNotes)
         {
@@ -586,7 +667,7 @@ namespace Kinovea.ScreenManager
             }
 
             // The proposals of an earlier reading of the pilot (not answered) go: this reading replaces them.
-            Race.Proposals.RemoveAll(p => p.Kind != null && p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal));
+            Race.Proposals.RemoveAll(p => p.Kind != null && (p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal) || p.Kind.StartsWith("tech.start.", StringComparison.Ordinal)));
             Race.Proposals.AddRange(made);
             Changed(false);
             RefreshProposalsUi();

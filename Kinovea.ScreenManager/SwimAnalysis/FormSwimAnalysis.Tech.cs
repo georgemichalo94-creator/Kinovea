@@ -392,12 +392,14 @@ namespace Kinovea.ScreenManager
             tools.SetFlowBreak(lblSkeleton, true);
 
             // (2.9.9) The turn read on its own (side camera under the water): its events as proposals, checked as the others.
-            btnTechPilot = new SwimNoFocusButton { Text = SwimLang.T("🤖 Στροφή αυτόματα"), Width = 150, Height = 32, Primary = true };
+            btnTechPilot = new SwimNoFocusButton { Text = SwimLang.T("🤖 Αυτόματα"), Width = 150, Height = 32, Primary = true };
             btnTechPilot.Click += (s, e) => manager.RunTechPilot();
-            toolTip.SetToolTip(btnTechPilot, SwimLang.T("Βίντεο προπόνησης από την υποβρύχια πλάγια κάμερα: διαβάζεται όλο (ή η ζώνη εργασίας) και προτείνονται η τελευταία χεριά,\n") +
-                SwimLang.T("η αρχή της περιστροφής, η επαφή στον τοίχο, η αποκόλληση, οι δελφινισμοί, η έξοδος και η πρώτη χεριά.\n") +
+            toolTip.SetToolTip(btnTechPilot, SwimLang.T("Βίντεο προπόνησης από την υποβρύχια πλάγια κάμερα: διαβάζεται όλο (ή η ζώνη εργασίας).\n") +
+                SwimLang.T("Στροφή: η τελευταία χεριά, η αρχή της περιστροφής, η επαφή, η αποκόλληση, οι δελφινισμοί, η έξοδος και κάθε χεριά μετά.\n") +
+                SwimLang.T("Εκκίνηση (με το σήμα G μαρκαρισμένο): η είσοδος, οι δελφινισμοί, η έξοδος και κάθε χεριά μετά.\n") +
+                SwimLang.T("Με το βίντεο της εξωτερικής κάμερας στον ίδιο φάκελο: το κεφάλι στα 5 μ. από τις σημαίες του ύπτιου.\n") +
                 SwimLang.T("Το στυλ της ανάλυσης λέει το είδος της στροφής (ελεύθερο, ύπτιο: ανάποδη· πρόσθιο, πεταλούδα: ανοιχτή).\n") +
-                SwimLang.T("Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος."));
+                SwimLang.T("Μετά ελέγχεις μία μία: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος, Esc τέλος. Με το HUD: οι μετρήσεις της φάσης στο βίντεο."));
 
             // Automatic proposals from the skeleton, checked one by one on the video; the learning of this computer.
             btnPropose = new SwimNoFocusButton { Text = SwimLang.T("✨ Προτάσεις"), Width = 120, Height = 32 };
