@@ -39,6 +39,41 @@ namespace Kinovea.ScreenManager
         public double Range;
     }
 
+    /// <summary>
+    /// A line of coloured pennants against the sky in one image of the external camera (outdoor pools, where the string of
+    /// triangles is often too busy for the motion of SwimFlagReader.Frame): from SwimFlagReader.ColourCandidates.
+    /// </summary>
+    public sealed class SwimFlagCandidate
+    {
+        /// <summary>Angle in the image (degrees in [0, 180), 90 = vertical).</summary>
+        public float Angle;
+
+        /// <summary>Column at a quarter of the image height.</summary>
+        public float X25;
+
+        /// <summary>Coloured pixels within 4 px of the line.</summary>
+        public int Support;
+
+        /// <summary>Highest and lowest rows of those pixels.</summary>
+        public int Top, Bottom;
+
+        /// <summary>Those pixels by colour: red/pink, yellow/orange, green.</summary>
+        public int Red, Yellow, Green;
+
+        /// <summary>Two colours or more along the line (each at least 12% of the pixels): a string of pennants, not one pennant, a roof or a row of seats.</summary>
+        public bool Diverse
+        {
+            get
+            {
+                int all = Red + Yellow + Green;
+                if (all <= 0)
+                    return false;
+                int n = (Red >= 0.12 * all ? 1 : 0) + (Yellow >= 0.12 * all ? 1 : 0) + (Green >= 0.12 * all ? 1 : 0);
+                return n >= 2;
+            }
+        }
+    }
+
     /// <summary>The head at the flags (5 m) before and after the wall, in seconds of the underwater reading, and the passes used.</summary>
     public sealed class SwimFlagHead
     {
@@ -50,6 +85,13 @@ namespace Kinovea.ScreenManager
 
         public SwimFlagPass InPass;
         public SwimFlagPass OutPass;
+
+        /// <summary>
+        /// Degrees of the string from the vertical (the roll taken off) at the crossing of each side, NaN when unknown. Far from 0
+        /// the camera was away from the flags' plane when the head crossed it: the column of the string at a quarter of the height
+        /// is then the plane at one depth only, not at the swimmer's lane (about ±0.1-0.3 s off when 25 degrees or more).
+        /// </summary>
+        public double InOffPlane = double.NaN, OutOffPlane = double.NaN;
 
         /// <summary>Passes of the camera through the flags found in the external video (0: no flags seen).</summary>
         public int Passes;
@@ -285,5 +327,332 @@ namespace Kinovea.ScreenManager
 
             return sxx > 0 && syy > 0 ? sxy / Math.Sqrt(sxx * syy) : 0;
         }
+
+        #region Coloured pennants against the sky
+        /// <summary>Part of the height (from the top) where the sky and the pennants are looked for.</summary>
+        public const double SkyBand = 0.7;
+
+        /// <summary>
+        /// The candidate lines of a string of coloured pennants in one image (BGR, 720 px wide or so), the strongest first (at most k):
+        /// the sky is the run of blue or white pixels down from the top of each column (gaps of up to 20 px bridged), its lower end
+        /// smoothed across columns (running median of 61, never below the 70th percentile + 6% of the height: gaps between buildings
+        /// open onto the blue water); the saturated red, yellow and green pixels down to 6 px below it are the pennants and the steep
+        /// lines through them (probabilistic Hough, segments of the same line merged) the candidates, refitted on their pixels.
+        /// No sky (indoor pools): none. Checked on the 39 turns of an outdoor pool (Heraklion): the string is among them as the
+        /// camera passes the flags; SwimFlagReader.ColourTrack picks it over time.
+        /// </summary>
+        public static List<SwimFlagCandidate> ColourCandidates(OpenCvSharp.Mat bgr, int k = 8)
+        {
+            List<SwimFlagCandidate> result = new List<SwimFlagCandidate>();
+            int width = bgr.Width, height = bgr.Height;
+            int h = (int)(SkyBand * height);
+            if (width < 64 || h < 16)
+                return result;
+
+            byte[] hsv = new byte[width * h * 3];
+            using (OpenCvSharp.Mat band = new OpenCvSharp.Mat(bgr, new OpenCvSharp.Rect(0, 0, width, h)))
+            using (OpenCvSharp.Mat converted = new OpenCvSharp.Mat())
+            {
+                OpenCvSharp.Cv2.CvtColor(band, converted, OpenCvSharp.ColorConversionCodes.BGR2HSV);
+                for (int y = 0; y < h; y++)
+                    System.Runtime.InteropServices.Marshal.Copy(converted.Ptr(y), hsv, y * width * 3, width * 3);
+            }
+
+            // The skyline: per column the end of the sky down from the top.
+            int[] ends = new int[width];
+            for (int x = 0; x < width; x++)
+            {
+                if (!Sky(hsv, (0 * width + x) * 3))
+                    continue;
+                int end = 0, miss = 0;
+                for (int y = 0; y < h; y++)
+                {
+                    if (Sky(hsv, (y * width + x) * 3))
+                    {
+                        end = y;
+                        miss = 0;
+                    }
+                    else if (++miss > 20)
+                    {
+                        break;
+                    }
+                }
+
+                ends[x] = end;
+            }
+
+            int[] line = new int[width];
+            int[] window = new int[61];
+            for (int x = 0; x < width; x++)
+            {
+                for (int j = 0; j < 61; j++)
+                    window[j] = ends[Math.Max(0, Math.Min(width - 1, x - 30 + j))];
+                Array.Sort(window);
+                line[x] = window[30];
+            }
+
+            int[] sorted = (int[])line.Clone();
+            Array.Sort(sorted);
+            double at = 0.7 * (width - 1);
+            int lo = (int)Math.Floor(at);
+            double p70 = sorted[lo] + (lo + 1 < width ? (at - lo) * (sorted[lo + 1] - sorted[lo]) : 0);
+            int cap = (int)p70 + (int)(0.06 * height);
+            for (int x = 0; x < width; x++)
+                line[x] = Math.Min(line[x], cap);
+
+            // The coloured pixels above the skyline.
+            byte[] mask = new byte[width * h];
+            List<int> xs = new List<int>(), ys = new List<int>();
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (y > line[x] + 6)
+                        continue;
+                    int i = (y * width + x) * 3;
+                    int hue = hsv[i], sat = hsv[i + 1], val = hsv[i + 2];
+                    bool colour = hue <= 14 || hue >= 158 || (hue >= 17 && hue <= 88);
+                    if (!colour || sat < 90 || val < 80)
+                        continue;
+                    mask[y * width + x] = 255;
+                    xs.Add(x);
+                    ys.Add(y);
+                }
+            }
+
+            if (xs.Count < 20)
+                return result;
+
+            OpenCvSharp.LineSegmentPoint[] segs;
+            using (OpenCvSharp.Mat m = new OpenCvSharp.Mat(h, width, OpenCvSharp.MatType.CV_8UC1))
+            using (OpenCvSharp.Mat dilated = new OpenCvSharp.Mat())
+            using (OpenCvSharp.Mat kernel = new OpenCvSharp.Mat(3, 3, OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.All(1)))
+            {
+                for (int y = 0; y < h; y++)
+                    System.Runtime.InteropServices.Marshal.Copy(mask, y * width, m.Ptr(y), width);
+                OpenCvSharp.Cv2.Dilate(m, dilated, kernel);
+                segs = OpenCvSharp.Cv2.HoughLinesP(dilated, 1, Math.PI / 180, 15, (int)(0.08 * h), 40);
+            }
+
+            // Segments of the same line merged (the longest kept): within 6 degrees and 20 px at a quarter of the height.
+            double y25 = 0.25 * height;
+            List<double[]> raw = new List<double[]>();
+            foreach (OpenCvSharp.LineSegmentPoint s in segs)
+            {
+                if (s.P1.Y == s.P2.Y)
+                    continue;
+                double ang = Angle(s.P1.X, s.P1.Y, s.P2.X, s.P2.Y);
+                if (Math.Abs(ang - 90) > 65)
+                    continue;
+                double len = Math.Sqrt((double)(s.P2.X - s.P1.X) * (s.P2.X - s.P1.X) + (double)(s.P2.Y - s.P1.Y) * (s.P2.Y - s.P1.Y));
+                double x25 = s.P1.X + (y25 - s.P1.Y) * (s.P2.X - s.P1.X) / (double)(s.P2.Y - s.P1.Y);
+                raw.Add(new[] { len, ang, x25 });
+            }
+
+            raw.Sort((p, q) => q[0].CompareTo(p[0]));
+            List<double[]> groups = new List<double[]>();
+            foreach (double[] r in raw)
+            {
+                if (!groups.Any(g => Math.Abs(g[1] - r[1]) <= 6 && Math.Abs(g[2] - r[2]) <= 20))
+                    groups.Add(r);
+            }
+
+            foreach (double[] g in groups.Take(2 * k))
+            {
+                double ang = g[1], x25 = g[2];
+                double rad = ang * Math.PI / 180, dx = Math.Cos(rad), dy = Math.Sin(rad);
+                double sy = 0, sx = 0, syy = 0, sxy = 0;
+                int n = 0, top = int.MaxValue, bottom = int.MinValue, red = 0, yellow = 0, green = 0;
+                for (int j = 0; j < xs.Count; j++)
+                {
+                    if (Math.Abs((xs[j] - x25) * dy - (ys[j] - y25) * dx) > 4)
+                        continue;
+                    n++;
+                    sy += ys[j]; sx += xs[j]; syy += (double)ys[j] * ys[j]; sxy += (double)xs[j] * ys[j];
+                    top = Math.Min(top, ys[j]);
+                    bottom = Math.Max(bottom, ys[j]);
+                    int hue = hsv[(ys[j] * width + xs[j]) * 3];
+                    if (hue <= 14 || hue >= 158)
+                        red++;
+                    else if (hue >= 15 && hue <= 35)
+                        yellow++;
+                    else if (hue >= 36 && hue <= 88)
+                        green++;
+                }
+
+                if (n < 20)
+                    continue;
+
+                // Refitted x = c + kk y on its pixels, kept unless it moves away from the segment.
+                double det = n * syy - sy * sy;
+                if (bottom - top >= 10 && det > 1e-6)
+                {
+                    double kk = (n * sxy - sx * sy) / det;
+                    double c = (sx - kk * sy) / n;
+                    double angF = ((Math.Atan2(1, kk) * 180 / Math.PI) % 180 + 180) % 180;
+                    double x25F = c + kk * y25;
+                    if (Math.Abs(angF - ang) <= 8 && Math.Abs(x25F - x25) <= 30)
+                    {
+                        ang = angF;
+                        x25 = x25F;
+                    }
+                }
+
+                result.Add(new SwimFlagCandidate { Angle = (float)ang, X25 = (float)x25, Support = n, Top = top, Bottom = bottom, Red = red, Yellow = yellow, Green = green });
+            }
+
+            return result.OrderByDescending(c => c.Support).Take(k).ToList();
+        }
+
+        /// <summary>Blue sky (hue 85-135, bright) or white clouds (grey, very bright) at this HSV pixel.</summary>
+        private static bool Sky(byte[] hsv, int i)
+        {
+            int hue = hsv[i], sat = hsv[i + 1], val = hsv[i + 2];
+            return (hue >= 85 && hue <= 135 && val >= 120) || (sat < 45 && val >= 165);
+        }
+
+        /// <summary>
+        /// The string of coloured pennants over time from the candidates of each image (times in seconds, same order): chains of
+        /// candidates with a smooth angle and column (dynamic programming over gaps of up to 5 images and 0.55 s, the best chain
+        /// first, up to 6; up to 22 degrees and 90 px an image: near the vertical the string turns fast when the camera passes the
+        /// flags, and 14 degrees lost 9 of 30 approach passes), a candidate worth more when it has many pixels, reaches the top of the image and has several colours
+        /// (the string, not a roof or one big pennant), steeper than 35 degrees from the horizontal. The chains of 8 images or
+        /// more with several colours on at least half of them give the string's images (the best chain where two meet); roll from
+        /// the given values (the motion reading of the same images), NaN without them.
+        /// </summary>
+        public static List<SwimFlagFrame> ColourTrack(IList<double> times, IList<List<SwimFlagCandidate>> candidates, IList<float> rolls = null, int imageHeight = 540)
+        {
+            int n = Math.Min(times.Count, candidates.Count);
+            List<SwimFlagCandidate>[] c = new List<SwimFlagCandidate>[n];
+            for (int i = 0; i < n; i++)
+                c[i] = candidates[i] ?? new List<SwimFlagCandidate>();
+
+            HashSet<long> used = new HashSet<long>();
+            SwimFlagCandidate[] chosen = new SwimFlagCandidate[n];
+            for (int round = 0; round < 6; round++)
+            {
+                double[][] cost = new double[n][];
+                int[][] prevI = new int[n][], prevK = new int[n][];
+                double best = 0;
+                int bi = -1, bk = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    int m = c[i].Count;
+                    cost[i] = new double[m];
+                    prevI[i] = new int[m];
+                    prevK[i] = new int[m];
+                    for (int k = 0; k < m; k++)
+                    {
+                        cost[i][k] = double.NaN;
+                        prevI[i][k] = -1;
+                        if (used.Contains(((long)i << 8) | (uint)k))
+                            continue;
+                        double reward;
+                        if (!Reward(c[i][k], imageHeight, out reward))
+                            continue;
+                        double v0 = 0.5 - reward;
+                        for (int g = 1; g <= 5; g++)
+                        {
+                            int j = i - g;
+                            if (j < 0 || times[i] - times[j] > 0.55)
+                                break;
+                            for (int l = 0; l < c[j].Count; l++)
+                            {
+                                if (double.IsNaN(cost[j][l]))
+                                    continue;
+                                double da = c[i][k].Angle - c[j][l].Angle, dx = c[i][k].X25 - c[j][l].X25;
+                                if (Math.Abs(da) > 22 * g || Math.Abs(dx) > 90 * g)
+                                    continue;
+                                double v = cost[j][l] + (da / (7.0 * g)) * (da / (7.0 * g)) + (dx / (30.0 * g)) * (dx / (30.0 * g)) + 0.4 * (g - 1) - reward;
+                                if (v < v0)
+                                {
+                                    v0 = v;
+                                    prevI[i][k] = j;
+                                    prevK[i][k] = l;
+                                }
+                            }
+                        }
+
+                        cost[i][k] = v0;
+                        if (v0 < best)
+                        {
+                            best = v0;
+                            bi = i;
+                            bk = k;
+                        }
+                    }
+                }
+
+                if (bi < 0)
+                    break;
+
+                List<int[]> chain = new List<int[]>();
+                for (int i = bi, k = bk; i >= 0; )
+                {
+                    chain.Add(new[] { i, k });
+                    int pi = prevI[i][k], pk = prevK[i][k];
+                    i = pi;
+                    k = pk;
+                }
+
+                foreach (int[] node in chain)
+                    used.Add(((long)node[0] << 8) | (uint)node[1]);
+
+                if (chain.Count < 8 || chain.Count(node => c[node[0]][node[1]].Diverse) < 0.5 * chain.Count)
+                    continue;
+                foreach (int[] node in chain)
+                {
+                    if (chosen[node[0]] == null)
+                        chosen[node[0]] = c[node[0]][node[1]];
+                }
+            }
+
+            List<SwimFlagFrame> frames = new List<SwimFlagFrame>();
+            for (int i = 0; i < n; i++)
+            {
+                if (chosen[i] == null)
+                    continue;
+                frames.Add(new SwimFlagFrame
+                {
+                    T = times[i],
+                    Angle = chosen[i].Angle,
+                    X25 = chosen[i].X25,
+                    Inliers = chosen[i].Support,
+                    Roll = rolls != null && i < rolls.Count ? rolls[i] : float.NaN
+                });
+            }
+
+            return frames;
+        }
+
+        /// <summary>What a candidate adds to a chain (false: too far from the vertical to be the string near a pass).</summary>
+        private static bool Reward(SwimFlagCandidate c, int imageHeight, out double reward)
+        {
+            reward = 0;
+            if (Math.Abs(c.Angle - 90) > 55)
+                return false;
+            reward = Math.Log(1 + c.Support / 40.0) + (c.Top <= 0.04 * imageHeight ? 0.5 : 0) + (c.Diverse ? 1.5 : -0.5) - 1.2;
+            return true;
+        }
+
+        /// <summary>Images of the string of coloured pennants from which a video counts as one with pennants (SwimFlagReader.Merge).</summary>
+        public const int PennantImages = 20;
+
+        /// <summary>
+        /// The head at the flags of a video with coloured pennants against the sky (outdoor pools): from the pennants alone when
+        /// their string was followed in PennantImages images or more, else from the motion of the string. In such videos the motion
+        /// picks posts, floodlight masts and the flapping of the pennants (Heraklion, 39 turns: 17 −5 and 8 +5 from the motion, most
+        /// off by 0.4-1.6 s or on a mast, against 21 and 29 from the pennants): no value is better than one of those.
+        /// </summary>
+        public static SwimFlagHead Merge(SwimFlagHead motion, SwimFlagHead colour, int pennantImages)
+        {
+            if (colour == null || pennantImages < PennantImages)
+                return motion;
+
+            colour.Passes = Math.Max(colour.Passes, motion != null ? motion.Passes : 0);
+            colour.Trace = "pennants in " + pennantImages + " images: " + colour.Trace + (motion != null ? "(motion, not used: " + motion.Trace + ")" : "");
+            return colour;
+        }
+        #endregion
     }
 }
