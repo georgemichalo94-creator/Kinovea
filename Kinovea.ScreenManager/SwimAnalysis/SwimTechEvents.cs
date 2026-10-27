@@ -415,7 +415,7 @@ namespace Kinovea.ScreenManager
             ev.Kind = kind;
             if (kind == SwimTurnKind.Open)
             {
-                ev.Touch = Touch(s, i0, ev.Sign);
+                ev.Touch = TouchBySpeed(s, i0, ev.Sign, pushoff) ?? Touch(s, i0, ev.Sign);
                 ev.Wall = ev.Touch;
                 if (!ev.Touch.HasValue)
                     ev.Notes.Add("δεν βρέθηκε η επαφή των χεριών στον τοίχο");
@@ -749,6 +749,60 @@ namespace Kinovea.ScreenManager
             }
 
             return count >= 5 && min < UprightShoulders;
+        }
+
+        /// <summary>
+        /// Open turn: the hands touch the wall when the body starts its last deceleration. The hips (frame of the pool) stop
+        /// (speed towards the wall at most 0.1 body lengths/s) at t0; the approach speed is the median of [t0−2, t0−1] s; the
+        /// touch is the later of the last image before t0 still at 80% of it and the last speed peak before t0 (at least half
+        /// of it: the final glide of a breaststroke approach is slower than the approach).
+        /// </summary>
+        private static double? TouchBySpeed(Signals s, int i0, int sign, double pushoff)
+        {
+            double[] d = SwimSignal.SavGol(s.Xs, 15, 2, 1);
+            double[] v = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                v[i] = -d[i] * s.Fps * sign / s.L;
+            double te = s.T[i0];
+            int stop = -1;
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] >= te - 2.5 && s.T[i] <= pushoff && v[i] <= 0.1 && s.T[i] > te - 1.5)
+                {
+                    stop = i;
+                    break;
+                }
+            }
+
+            if (stop < 0)
+                return null;
+            List<double> approach = new List<double>();
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] >= s.T[stop] - 2.0 && s.T[i] <= s.T[stop] - 1.0)
+                    approach.Add(v[i]);
+            }
+
+            if (approach.Count < 5)
+                return null;
+            double va = SwimSignal.Percentile(approach, 50);
+            if (!(va > 0.3))
+                return null;
+            int back = (int)(2 * s.Fps), k1 = -1, k2 = -1;
+            for (int i = stop; i > Math.Max(0, stop - back) && k1 < 0; i--)
+            {
+                if (v[i] >= 0.8 * va)
+                    k1 = i;
+            }
+
+            for (int i = stop - 1; i > Math.Max(1, stop - back) && k2 < 0; i--)
+            {
+                if (v[i] >= v[i - 1] && v[i] >= v[i + 1] && v[i] >= 0.5 * va)
+                    k2 = i;
+            }
+
+            int k = Math.Max(k1, k2);
+            return k >= 0 ? s.T[k] : (double?)null;
         }
 
         /// <summary>
