@@ -504,6 +504,10 @@ namespace Kinovea.ScreenManager
                     DrawButton(g, list, proposals[0], new RectangleF(x0, py, width, S(26)));
                 }
 
+                // (2.9.9) A training video: the start or the turn read on its own, its events proposed for the check.
+                float ty = py + S(30);
+                if (manager.Race != null && manager.Race.IsTraining && !manager.Reviewing && ty + S(26) <= card.Bottom)
+                    DrawButton(g, list, TechPilotButton(), new RectangleF(x0, ty, width, S(26)));
                 return;
             }
 
@@ -906,6 +910,21 @@ namespace Kinovea.ScreenManager
             };
         }
 
+        /// <summary>(2.9.9) The technique autopilot of a training video (the button of the panel's tools).</summary>
+        private SwimBarButton TechPilotButton()
+        {
+            return new SwimBarButton
+            {
+                Id = "tech-pilot",
+                Text = SwimLang.T("🤖 Αυτόματα"),
+                Look = Look.Primary,
+                Dim = manager.SkeletonRunning,
+                Tip = SwimLang.T("Η εκκίνηση ή η στροφή διαβάζεται μόνη της (υποβρύχια πλάγια κάμερα): τα γεγονότα και κάθε χεριά προτείνονται για έλεγχο.\n") +
+                    SwimLang.T("Εκκίνηση: με το σήμα G μαρκαρισμένο. Με το βίντεο της εξωτερικής κάμερας στον ίδιο φάκελο: το κεφάλι στα 5 μ."),
+                Click = () => manager.RunTechPilot()
+            };
+        }
+
         /// <summary>
         /// Technical analysis: the automatic proposals, checked one by one (✓ ✕ Τέλος while it runs), the check of the ones that wait
         /// and their deletion, or proposals made from the skeleton.
@@ -1108,6 +1127,8 @@ namespace Kinovea.ScreenManager
             {
                 list.AddRange(SkeletonButtons());
                 list.AddRange(ProposalButtons());
+                if (race.IsTraining && !manager.Reviewing)
+                    list.Add(TechPilotButton());
             }
             else
             {
