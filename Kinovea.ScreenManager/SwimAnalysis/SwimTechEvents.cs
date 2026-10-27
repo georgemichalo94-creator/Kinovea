@@ -351,6 +351,9 @@ namespace Kinovea.ScreenManager
         public const double TouchLead = 0.1;
         public const double RotationOpenAngle = 160;
         public const double SurfaceMinDepth = 0.3;
+        public const double BreakoutLevelWindow = 2.0;
+        public const double BreakoutLevelTolerance = 0.03;
+        public const double BreakoutRise = 0.25;
         public const double PullDownBack = -0.2;
         public const double PullDownHold = 0.4;
 
@@ -440,6 +443,8 @@ namespace Kinovea.ScreenManager
             ev.Breakout = breakout;
             if (!breakout.HasValue)
                 ev.Notes.Add("δεν βρέθηκε η έξοδος από το νερό");
+            else if (!ev.BreakoutBySurface)
+                ev.Notes.Add("η έξοδος χωρίς τη γραμμή της επιφάνειας (κατά προσέγγιση: έλεγξέ την)");
 
             double kickEnd = breakout ?? pushoff + 8;
             ev.PullDown = PullDown(s, pushoff, kickEnd, ev.Sign);
@@ -944,9 +949,11 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The head comes up from its deepest point after the push-off. With the surface: first within 0.10 body lengths
-        /// of the surface (for 0.3 s) and lowest level reached (minus 0.2 s), their mean, or the second when the swimmer
-        /// glided long just under the surface. Without it: within 0.1 body lengths of the highest level of the head.
+        /// The head comes up from its deepest point after the push-off. With the surface: the head rises to the level it
+        /// keeps while swimming at the surface; the breakout is the first image within 0.03 body lengths of the level of the
+        /// next 2 s (median), once the head has risen at least 0.25 body lengths (the band must be the surface: the head at
+        /// least 0.3 body lengths under it at the deepest point). Without it: within 0.1 body lengths of the highest level
+        /// of the head.
         /// </summary>
         private static double? Rise(Signals s, double pushoff, double[] d, bool bySurface)
         {
@@ -966,14 +973,11 @@ namespace Kinovea.ScreenManager
                     deep = i;
             }
 
-            // The band must be the surface: the head well under it at the deepest point of the glide.
-            if (bySurface && d[deep] < SurfaceMinDepth)
-                return null;
-            List<int> after = idx.Where(i => i > deep && s.T[i] < s.T[deep] + 6).ToList();
-            if (after.Count < 15)
-                return null;
             if (!bySurface)
             {
+                List<int> after = idx.Where(i => i > deep && s.T[i] < s.T[deep] + 6).ToList();
+                if (after.Count < 15)
+                    return null;
                 double level = after.Min(i => d[i]);
                 foreach (int i in after)
                 {
@@ -984,24 +988,24 @@ namespace Kinovea.ScreenManager
                 return null;
             }
 
-            int n3 = (int)(0.3 * s.Fps);
-            double? t1 = null;
-            for (int j = 0; j < after.Count && !t1.HasValue; j++)
+            // The band must be the surface: the head well under it at the deepest point of the glide.
+            if (d[deep] < SurfaceMinDepth)
+                return null;
+            int n = (int)(BreakoutLevelWindow * s.Fps);
+            foreach (int i in idx)
             {
-                if (d[after[j]] > 0.10)
+                if (i <= deep)
                     continue;
-                bool stays = true;
-                for (int q = j; q < Math.Min(after.Count, j + n3); q++)
-                    stays &= d[after[q]] <= 0.13;
-                if (stays)
-                    t1 = s.T[after[j]];
+                if (i + n > s.N)
+                    break;
+                double[] w = new double[n];
+                Array.Copy(d, i, w, 0, n);
+                double level = SwimSignal.Percentile(w, 50);
+                if (d[deep] - level >= BreakoutRise && d[i] <= level + BreakoutLevelTolerance)
+                    return s.T[i];
             }
 
-            double floor = SwimSignal.Percentile(after.Select(i => d[i]), 5);
-            double t2 = s.T[after.First(i => d[i] <= floor + 0.03)] - 0.2;
-            if (!t1.HasValue || t2 - t1.Value > 0.6)
-                return t2;
-            return 0.5 * (t1.Value + t2);
+            return null;
         }
 
         /// <summary>Deepest bends of the knees between ta and tb: (time, angle).</summary>
