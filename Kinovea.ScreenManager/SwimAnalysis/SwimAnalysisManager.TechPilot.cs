@@ -195,7 +195,7 @@ namespace Kinovea.ScreenManager
                 SwimMark signal = Race.Marks.Where(m => m.Type == SwimMarkType.Signal && m.Timestamp >= from - RealSpan(5) && m.Timestamp <= end)
                     .OrderBy(m => m.Timestamp).FirstOrDefault();
                 bool start = signal != null && !Race.Marks.Any(m => m.Type == SwimMarkType.WallContact && m.Timestamp > signal.Timestamp && m.Timestamp <= end);
-                SwimTurnEvents ev = start ? SwimTurnReader.FindStart(reading) : SwimTurnReader.Find(reading, kind);
+                SwimTurnEvents ev = start ? SwimTurnReader.FindStart(reading, Race.Style) : SwimTurnReader.Find(reading, kind, Race.Style);
 
                 // The reading stays with the analysis: the skeleton (the glides) and the head with the camera's pan (the strokes on the
                 // water and the metres between the known places of the technical HUD).
@@ -675,7 +675,9 @@ namespace Kinovea.ScreenManager
             string kindText = ev.Kind == SwimTurnKind.Open ? SwimLang.T("ανοιχτή") : SwimLang.T("ανάποδη");
             List<string> remarks = ev.Notes.Concat(flagNotes ?? new List<string>()).ToList();
             string notes = remarks.Count > 0 ? " · " + string.Join(" · ", remarks.Select(SwimLang.T)) : "";
-            BeginReview(made[0]);
+            // The check starts at the wall: its mark makes the turn (W), the marks before it (the strokes of the approach, the −5,
+            // the rotation) need it; the check goes on after the wall and then comes back to them.
+            BeginReview(made.FirstOrDefault(p => p.Kind == KindTechWall) ?? made[0]);
             Status(string.Format(CultureInfo.InvariantCulture,
                 SwimLang.T("🤖 Στροφή ({0}): {1} προτάσεις{2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος."),
                 kindText, made.Count, notes), ev.Notes.Count > 0);

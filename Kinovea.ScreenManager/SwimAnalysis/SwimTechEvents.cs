@@ -393,7 +393,7 @@ namespace Kinovea.ScreenManager
         /// The events of the turn in an underwater reading. kind: from the style of the race (breaststroke, butterfly and
         /// the changes of style of the medley: open; freestyle, backstroke: flip), Unknown to find it from the video.
         /// </summary>
-        public static SwimTurnEvents Find(SwimTechReading uw, SwimTurnKind kind = SwimTurnKind.Unknown)
+        public static SwimTurnEvents Find(SwimTechReading uw, SwimTurnKind kind = SwimTurnKind.Unknown, string style = null)
         {
             SwimTurnEvents ev = new SwimTurnEvents();
             if (uw == null || uw.Frames.Count < 60)
@@ -460,14 +460,18 @@ namespace Kinovea.ScreenManager
             if (ev.KindFromVideo)
                 ev.Notes.Add(kind == SwimTurnKind.Open ? "ανοιχτή στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)" : "ανάποδη στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)");
 
-            double? breakout = AfterPushoff(uw, s, ev, pushoff);
+            double? breakout = AfterPushoff(uw, s, ev, pushoff, style);
 
             double reference = ev.RotationStart ?? ev.Wall ?? s.T[i0];
             ev.StrokesIn = Strokes(s, reference - 6, reference - 0.15, -ev.Sign);
             if (ev.StrokesIn.Count > 0)
                 ev.LastStroke = ev.StrokesIn[ev.StrokesIn.Count - 1];
-            // The cycles of breaststroke and butterfly: not the reach of the touch (the last 0.5 s before the wall).
-            ev.PullsIn = CyclePulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign);
+            // The cycles of breaststroke and butterfly: not the reach of the touch (the last 0.5 s before the wall). Breaststroke (and
+            // the breaststroke of a medley before an open turn, when its kicks are found): the pulls from the kicks.
+            List<double> breastIn = style == "br" || (style == "im" && kind == SwimTurnKind.Open)
+                ? BreastPulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign) : null;
+            ev.PullsIn = breastIn != null && (style == "br" || breastIn.Count >= 2)
+                ? breastIn : CyclePulls(s, reference - 6, reference - PullBeforeWall, -ev.Sign);
             return ev;
         }
 
@@ -475,7 +479,7 @@ namespace Kinovea.ScreenManager
         /// After the push-off of a turn or the entry of a start: the breakout (the surface band, the rope line, else the head), the
         /// dolphin kicks (and the pull-out of breaststroke), the strokes and the pulls after the breakout. Returns the breakout.
         /// </summary>
-        private static double? AfterPushoff(SwimTechReading uw, Signals s, SwimTurnEvents ev, double pushoff)
+        private static double? AfterPushoff(SwimTechReading uw, Signals s, SwimTurnEvents ev, double pushoff, string style)
         {
             double[] surface = Surface(uw, s);
             double? breakout = surface != null ? BreakoutBySurface(s, pushoff, surface) : null;
@@ -538,7 +542,10 @@ namespace Kinovea.ScreenManager
                 ev.StrokesOut = Strokes(s, breakout.Value - 0.2, breakout.Value + 10, ev.Sign);
                 if (ev.StrokesOut.Count > 0)
                     ev.FirstStroke = ev.StrokesOut[0];
-                ev.PullsOut = CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
+                // Breaststroke (and the breaststroke after the pull-out of a medley): the pulls from the kicks.
+                bool breast = style == "br" || (style == "im" && ev.PullDown.HasValue);
+                ev.PullsOut = breast ? BreastPulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign)
+                                     : CyclePulls(s, breakout.Value - 0.3, breakout.Value + 10, ev.Sign);
             }
 
             return breakout;
@@ -549,7 +556,7 @@ namespace Kinovea.ScreenManager
         /// signal): the entry (the swimmer first seen under water for good), then as after the push-off of a turn the dolphin kicks, the
         /// breakout and the strokes. Wall, plant and rotation: none; Pushoff: the entry. Sign from the motion in the frame of the pool.
         /// </summary>
-        public static SwimTurnEvents FindStart(SwimTechReading uw)
+        public static SwimTurnEvents FindStart(SwimTechReading uw, string style = null)
         {
             SwimTurnEvents ev = new SwimTurnEvents();
             if (uw == null || uw.Frames.Count < 60)
@@ -592,7 +599,7 @@ namespace Kinovea.ScreenManager
             ev.Sign = x1 >= x0 ? 1 : -1;
             double entry = s.T[s.A];
             ev.Pushoff = entry;
-            AfterPushoff(uw, s, ev, entry);
+            AfterPushoff(uw, s, ev, entry, style);
             return ev;
         }
 
@@ -1469,6 +1476,116 @@ namespace Kinovea.ScreenManager
             }
 
             return pulls;
+        }
+
+        /// <summary>Breaststroke: a kick bends the knees below this at its deepest (degrees, median of 5 images).</summary>
+        public const double BreastKickKnee = 125;
+
+        /// <summary>Breaststroke: the pull of a cycle is this far before its kick at most (seconds), and at least BreastPullBeforeKickMin.</summary>
+        public const double BreastPullBeforeKick = 1.1;
+        public const double BreastPullBeforeKickMin = 0.1;
+
+        /// <summary>Breaststroke: the hands fall at least this far (body lengths) in BreastFallWindow seconds at the pull.</summary>
+        public const double BreastFall = 0.15;
+        public const double BreastFallWindow = 0.35;
+
+        /// <summary>
+        /// (2.9.9) Breaststroke: one pull a cycle, found from its kick (the deepest bends of the knees, at least 0.7 s apart, below
+        /// BreastKickKnee): the largest fall of the hands (the mean of the two wrists, a median of 5 images) in the 1.1 s before the
+        /// kick and ending before it, and the pull where that fall leaves the reach of the glide (within PullDrop of the level of the
+        /// 0.6 s before it, its 80th percentile). The wrists of the pose jump between the arms and the legs while the legs kick: the
+        /// reach alone gave late, doubled or missing cycles. Checked by eye on 30 fps clips (VOLOS): 18 pulls after 4 turns within
+        /// 0.1 s (one 0.16 s), one missed at the end of a take (the legs out of the image); before the wall 0.15-0.25 s late.
+        /// </summary>
+        private static List<double> BreastPulls(Signals s, double ta, double tb, int direction)
+        {
+            List<double> pulls = new List<double>();
+            if (s.L <= 0 || tb <= ta || s.N < 10)
+                return pulls;
+
+            int n = s.N;
+            double[] hands = new double[n];
+            double[] knee = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                bool seen = s.Present[i] && s.InWater[i];
+                double a = (s.WrX[0][i] - s.ShX[i]) * direction / s.L, b = (s.WrX[1][i] - s.ShX[i]) * direction / s.L;
+                double v = double.IsNaN(a) ? b : double.IsNaN(b) ? a : 0.5 * (a + b);
+                hands[i] = seen ? v : double.NaN;
+                knee[i] = seen ? s.KneeAngle[i] : double.NaN;
+            }
+
+            double[] f = SwimSignal.SavGol(SwimSignal.Interp(SwimSignal.Median(hands, 5)), 7, 2);
+            double[] kneeMedian = SwimSignal.Median(knee, 5);
+            double[] k = SwimSignal.Interp(kneeMedian);
+            double[] bend = new double[n];
+            for (int i = 0; i < n; i++)
+                bend[i] = -k[i];
+
+            int w = (int)Math.Round(BreastFallWindow * s.Fps);
+            foreach (int kick in SwimStrokeDetector.FindPeaks(bend, (int)(0.7 * s.Fps), 25))
+            {
+                double tk = s.T[kick];
+                if (tk < ta || tk > tb + BreastPullBeforeKick || double.IsNaN(kneeMedian[kick]) || k[kick] > BreastKickKnee)
+                    continue;
+
+                // The largest fall of the hands before the kick (its lowest point not after the kick).
+                int lo = FirstAtOrAfter(s.T, tk - BreastPullBeforeKick), hi = FirstAtOrAfter(s.T, tk - BreastPullBeforeKickMin);
+                double best = -1;
+                int start = -1;
+                for (int i = lo; i < hi; i++)
+                {
+                    int end = Math.Min(Math.Min(n - 1, i + w), kick);
+                    double low = f[i];
+                    for (int j = i; j <= end; j++)
+                        low = Math.Min(low, f[j]);
+                    if (f[i] - low > best + 1e-9)
+                    {
+                        best = f[i] - low;
+                        start = i;
+                    }
+                }
+
+                if (start < 0 || best < BreastFall)
+                    continue;
+
+                int bottom = start;
+                int last = Math.Min(Math.Min(n - 1, start + w), kick);
+                for (int j = start; j <= last; j++)
+                {
+                    if (f[j] < f[bottom])
+                        bottom = j;
+                }
+
+                // Back from the bottom to the last image still on the reach of the glide.
+                int j0 = FirstAtOrAfter(s.T, s.T[start] - 0.6);
+                double level = SwimSignal.Percentile(f.Skip(j0).Take(start - j0 + 1), 80);
+                int pull = bottom;
+                while (pull > j0 && f[pull] < level - PullDrop)
+                    pull--;
+
+                double t = s.T[pull];
+                if (t < ta || t > tb)
+                    continue;
+
+                // Two kicks found for one cycle: one pull.
+                if (pulls.Count > 0 && t - pulls[pulls.Count - 1] < 0.3)
+                    continue;
+                pulls.Add(t);
+            }
+
+            return pulls;
+        }
+
+        /// <summary>The first index with a time at or after t (the length when none).</summary>
+        private static int FirstAtOrAfter(double[] times, double t)
+        {
+            int i = Array.BinarySearch(times, t);
+            if (i < 0)
+                return ~i;
+            while (i > 0 && times[i - 1] >= t)
+                i--;
+            return i;
         }
     }
 }

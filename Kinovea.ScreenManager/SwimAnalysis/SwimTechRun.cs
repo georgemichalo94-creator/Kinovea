@@ -81,6 +81,9 @@ namespace Kinovea.ScreenManager
         public SwimTrack Track;
         public SwimTiming Timing;
         public bool Breaststroke;
+
+        /// <summary>A medley: strokes closer than this (seconds, median) are the arms of freestyle or backstroke, else cycles.</summary>
+        public const double MedleyCycleGap = 0.9;
         public bool Butterfly;
 
         /// <summary>Strokes per cycle: 1 (breaststroke, butterfly; a medley: each stroke), 2 (freestyle, backstroke).</summary>
@@ -255,6 +258,19 @@ namespace Kinovea.ScreenManager
             run.Strokes = strokes.Where(t => t >= after && t <= after + DepartureSeconds).ToList();
             if (phase.Kind == SwimPhaseKind.Turn)
                 run.ApproachStrokes = strokes.Where(t => t < 0 && t >= -ApproachSeconds && (!phase.RotationStart.HasValue || t < phase.RotationStart.Value)).ToList();
+
+            // A medley: the stroke after the start is butterfly; after a turn, breaststroke when its strokes are a cycle apart (1 s or
+            // more), else freestyle or backstroke (an arm each 0.5-0.8 s: two strokes a cycle).
+            if (run.Style == "im")
+            {
+                List<double> gaps = new List<double>();
+                for (int i = 1; i < run.Strokes.Count; i++)
+                    gaps.Add(run.Strokes[i] - run.Strokes[i - 1]);
+                bool arms = gaps.Count >= 2 && SwimSignal.Percentile(gaps, 50) < MedleyCycleGap;
+                run.StrokesPerCycle = arms ? 2 : 1;
+                run.Breaststroke = !arms && phase.Kind == SwimPhaseKind.Turn;
+                run.Butterfly = !arms && phase.Kind != SwimPhaseKind.Turn;
+            }
 
             // The cycles: from a stroke to the stroke of the same arm action.
             int k = run.StrokesPerCycle;
