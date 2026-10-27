@@ -433,7 +433,9 @@ namespace Kinovea.ScreenManager
             float inner = S(10);
             float header = S(26);
             float spacing = S(5);
-            float autoHeight = skeletonRow ? 2 * S(26) + S(4) + S(8) : autoRow ? S(26) + S(8) : 0;
+            // The skeleton row, the proposals' row and (a training video, 2.9.9) the autopilot's row.
+            bool pilotRow = skeletonRow && manager.Race != null && manager.Race.IsTraining && !manager.Reviewing;
+            float autoHeight = pilotRow ? 3 * S(26) + 2 * S(4) + S(8) : skeletonRow ? 2 * S(26) + S(4) + S(8) : autoRow ? S(26) + S(8) : 0;
             int n = buttons.Count;
             float room = space.Height - header - S(8) - autoHeight;
             int columns = 1;
@@ -504,6 +506,10 @@ namespace Kinovea.ScreenManager
                     DrawButton(g, list, proposals[0], new RectangleF(x0, py, width, S(26)));
                 }
 
+                // (2.9.9) A training video: the start or the turn read on its own, its events proposed for the check.
+                float ty = py + S(30);
+                if (pilotRow && ty + S(26) <= card.Bottom)
+                    DrawButton(g, list, TechPilotButton(), new RectangleF(x0, ty, width, S(26)));
                 return;
             }
 
@@ -758,21 +764,27 @@ namespace Kinovea.ScreenManager
             DrawButton(g, list, panelButton, panel);
 
             // The graphics of the analysis on the video on and off (2.9.0, key V): the swimmer and the image alone. Beside it (2.9.1, a
-            // race) the look of the graphics: the HUD of the demo or the boards of before.
+            // race) the look of the graphics: the HUD of the demo or the boards of before; (2.9.9, a training video) the measures of
+            // the start or the turn as a HUD (clock, cycles, tempo, glide, the strokes on the water, the card), else the board of before.
             bool graphicsOn = manager.Settings.VideoGraphics;
             RectangleF graphicsRow = new RectangleF(area.Left, panel.Top - S(6) - S(28), area.Width, S(28));
             RectangleF graphics = graphicsRow;
-            if (!race.IsTraining)
             {
                 float split = (graphicsRow.Width - S(4)) * 0.58f;
                 graphics = new RectangleF(graphicsRow.Left, graphicsRow.Top, split, graphicsRow.Height);
                 RectangleF look = new RectangleF(graphics.Right + S(4), graphicsRow.Top, graphicsRow.Right - graphics.Right - S(4), graphicsRow.Height);
                 bool hudOn = manager.Settings.HudLayout;
+                string hudTip;
+                if (race.IsTraining)
+                    hudTip = hudOn ? SwimLang.T("Οι μετρήσεις της εκκίνησης ή της στροφής ως HUD: ρολόι, κύκλοι, συχνότητα, γλίστρημα, οι χεριές πάνω στο νερό\n") +
+                                     SwimLang.T("και η κάρτα στο τέλος (από τα σημάδια: «🤖 Αυτόματα» και έλεγχος). Κλικ: το πινακάκι όπως πριν.")
+                                   : SwimLang.T("Οι χρόνοι της προσπάθειας σε πινακάκι, όπως πριν. Κλικ: οι μετρήσεις της εκκίνησης ή της στροφής ως HUD.");
+                else
+                    hudTip = hudOn ? SwimLang.T("Τα γραφικά του αγώνα ως HUD, όπως το demo: πίνακας ανάλυσης αριστερά, περάσματα και καταγραφή δεξιά, χάρτης πισίνας κάτω.\n") +
+                                     SwimLang.T("Τα πινακάκια (Δ, γράφημα Δ, τελικός, ταχύτητα) προστίθενται με τα κουτάκια «Στο βίντεο» του πίνακα. Κλικ: τα πινακάκια όπως πριν.")
+                                   : SwimLang.T("Τα γραφικά του αγώνα ως πινακάκια, όπως πριν. Κλικ: το HUD, όπως το demo.");
                 DrawButton(g, list, "hud", look, hudOn ? "HUD" : SwimLang.T("Πινακάκια"), null, null, hudOn ? Look.Primary : Look.Normal, !graphicsOn,
-                    hudOn ? SwimLang.T("Τα γραφικά του αγώνα ως HUD, όπως το demo: πίνακας ανάλυσης αριστερά, περάσματα και καταγραφή δεξιά, χάρτης πισίνας κάτω.\n") +
-                            SwimLang.T("Τα πινακάκια (Δ, γράφημα Δ, τελικός, ταχύτητα) προστίθενται με τα κουτάκια «Στο βίντεο» του πίνακα. Κλικ: τα πινακάκια όπως πριν.")
-                          : SwimLang.T("Τα γραφικά του αγώνα ως πινακάκια, όπως πριν. Κλικ: το HUD, όπως το demo."),
-                    () => manager.SetHud(!manager.Settings.HudLayout));
+                    hudTip, () => manager.SetHud(!manager.Settings.HudLayout));
             }
 
             string graphicsText = race.IsTraining ? SwimLang.T("Γραφικά στο βίντεο") : SwimLang.T("Γραφικά");
@@ -897,6 +909,21 @@ namespace Kinovea.ScreenManager
                     Tip = SwimLang.T("Διαγραφή του σκελετού αυτού του σημείου του βίντεο"),
                     Click = () => manager.DeleteSkeleton()
                 }
+            };
+        }
+
+        /// <summary>(2.9.9) The technique autopilot of a training video (the button of the panel's tools).</summary>
+        private SwimBarButton TechPilotButton()
+        {
+            return new SwimBarButton
+            {
+                Id = "tech-pilot",
+                Text = SwimLang.T("🤖 Αυτόματα"),
+                Look = Look.Primary,
+                Dim = manager.SkeletonRunning,
+                Tip = SwimLang.T("Η εκκίνηση ή η στροφή διαβάζεται μόνη της (υποβρύχια πλάγια κάμερα): τα γεγονότα και κάθε χεριά προτείνονται για έλεγχο.\n") +
+                    SwimLang.T("Εκκίνηση: με το σήμα G μαρκαρισμένο. Με το βίντεο της εξωτερικής κάμερας στον ίδιο φάκελο: το κεφάλι στα 5 μ."),
+                Click = () => manager.RunTechPilot()
             };
         }
 
@@ -1102,6 +1129,8 @@ namespace Kinovea.ScreenManager
             {
                 list.AddRange(SkeletonButtons());
                 list.AddRange(ProposalButtons());
+                if (race.IsTraining && !manager.Reviewing)
+                    list.Add(TechPilotButton());
             }
             else
             {

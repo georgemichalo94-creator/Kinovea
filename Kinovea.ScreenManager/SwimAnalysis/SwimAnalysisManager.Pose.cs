@@ -52,7 +52,8 @@ namespace Kinovea.ScreenManager
                 if (Race == null || Race.Skeletons.Count == 0 || !Timing.IsValid)
                     return "";
 
-                long origin = Race.StartTimestamp ?? frameServer.Metadata.TimeOrigin;
+                // A training video has no start signal: the origin of the player (none while no video is open, as in the off-screen check).
+                long origin = Race.StartTimestamp ?? (frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0);
                 return string.Join(", ", Race.Skeletons.OrderBy(s => s.Start).Select(s => string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} s",
                     Timing.Seconds(s.Start, origin), Timing.Seconds(s.End, origin))));
             }

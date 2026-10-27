@@ -238,7 +238,10 @@ namespace Kinovea.ScreenManager
                         AddWallSplit(timestamp);
                     return true;
                 case PlayerScreenCommands.SwimTechSplit:
-                    AddTechSplit(timestamp, null);
+                    if (answeringSplit.HasValue)
+                        AddTechSplit(timestamp, answeringSplit.Value, answeringSplitKind);
+                    else
+                        AddTechSplit(timestamp, null);
                     return true;
                 case PlayerScreenCommands.SwimSnapshot:
                     TakeSnapshot(timestamp);
@@ -1134,6 +1137,14 @@ namespace Kinovea.ScreenManager
                             float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
                             float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
                             DrawHud(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
+                        }
+                        else if (reel && !allRace && TechHudReady(logical, timestamp))
+                        {
+                            // (2.9.9) The technical HUD of a training video as on the screen.
+                            Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                            float sx = size.Width / (float)Math.Max(1, reference.Width) / scale;
+                            float sy = size.Height / (float)Math.Max(1, reference.Height) / scale;
+                            DrawTechHud(g, timestamp, logical, p => new PointF(p.X * sx, p.Y * sy));
                         }
                         else if (reel && !allRace && ReelReady(logical))
                         {

@@ -79,10 +79,10 @@ namespace Kinovea.ScreenManager
     /// turns, the final time; after the finish «Η ανάλυση με μια ματιά». Designed for 1920 × 1080 and drawn at the scale of the image;
     /// the boards of before can be added (Δ and ΔΑΚ, the Δ chart, the board of the final). The panels fade where the swimmer is.
     /// </summary>
-    public static class SwimHudPainter
+    public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.9.8";
+        public const string AppVersion = "2.9.9";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
