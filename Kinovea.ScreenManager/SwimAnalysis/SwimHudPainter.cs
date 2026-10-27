@@ -82,7 +82,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.9.8";
+        public const string AppVersion = "2.9.9";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
