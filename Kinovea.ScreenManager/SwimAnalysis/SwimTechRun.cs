@@ -136,10 +136,8 @@ namespace Kinovea.ScreenManager
         /// <summary>The last cycle finished by this time (its values are the ones shown).</summary>
         public SwimTechCycle LastDone(double t)
         {
-            SwimTechCycle c = Cycles.LastOrDefault(x => x.End <= t + 1e-6);
-            if (c != null)
-                return c;
-            return t < 0 ? Approach.LastOrDefault(x => x.End <= t + 1e-6) : Approach.LastOrDefault();
+            // After the wall only the cycles after it (none yet before the first one ends).
+            return t >= 0 ? Cycles.LastOrDefault(x => x.End <= t + 1e-6) : Approach.LastOrDefault(x => x.End <= t + 1e-6);
         }
 
         /// <summary>Metres of the head from the wall at a time (null: not measured there).</summary>

@@ -212,7 +212,7 @@ namespace Kinovea.ScreenManager
             SwimTechRun run = s.Run;
             RectangleF r = new RectangleF(36, 76, 470, 232);
             bool turn = run.Phase.Kind == SwimPhaseKind.Turn;
-            Panel(g, r, (s.Title ?? "").ToUpper(CultureInfo.CurrentCulture) + " · " + StyleName(run.Style),
+            Panel(g, r, SwimLang.Upper(s.Title ?? "") + " · " + StyleName(run.Style),
                 turn ? SwimLang.T("ΑΠΟ ΤΟΝ ΤΟΙΧΟ") : SwimLang.T("ΑΠΟ ΤΟ ΣΗΜΑ"));
             double t = s.Time;
             string clock = (t < 0 ? "−" : "") + Math.Abs(t).ToString("0.00", CultureInfo.InvariantCulture);
@@ -220,7 +220,7 @@ namespace Kinovea.ScreenManager
             Caps(g, "s", Ui(22, true), C2, r.Left + 30 + Width(g, clock, Thin(112)), r.Top + 118, 0.1f);
             string part = run.PartAt(t);
             if (!string.IsNullOrEmpty(part))
-                Caps(g, part.ToUpper(CultureInfo.CurrentCulture), Ui(17, true), Amb, r.Left + 24, r.Bottom - 46, 0.18f);
+                Caps(g, SwimLang.Upper(part), Ui(17, true), Amb, r.Left + 24, r.Bottom - 46, 0.18f);
         }
 
         /// <summary>Strokes, tempo, metres and glide of the last cycle done.</summary>
@@ -351,11 +351,15 @@ namespace Kinovea.ScreenManager
             RectangleF r = new RectangleF((L.W - w) / 2, (L.H - h) / 2, w, h);
             using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(120 * a), 0, 8, 16)))
                 g.FillRectangle(dim, 0, 0, L.W, L.H);
-            Panel(g, r, (s.Title ?? "").ToUpper(CultureInfo.CurrentCulture) + " · " + StyleName(run.Style), SwimLang.T("Η ΦΑΣΗ ΜΕ ΜΙΑ ΜΑΤΙΑ"), a);
+            Panel(g, r, SwimLang.Upper(s.Title ?? "") + " · " + StyleName(run.Style), SwimLang.T("Η ΦΑΣΗ ΜΕ ΜΙΑ ΜΑΤΙΑ"), a);
 
             double total = run.Last;
-            Glow(g, total.ToString("0.00", CultureInfo.InvariantCulture), Thin(96), A(Amb, a), r.Left + 30, r.Top + 44, -1, 1f, Amb);
-            Caps(g, "s", Ui(20, true), A(C2, a), r.Left + 40 + Width(g, total.ToString("0.00", CultureInfo.InvariantCulture), Thin(96)), r.Top + 110, 0.1f);
+            string totalText = total.ToString("0.00", CultureInfo.InvariantCulture);
+            Glow(g, totalText, Thin(96), A(Amb, a), r.Left + 30, r.Top + 44, -1, 1f, Amb);
+            float after = r.Left + 40 + Width(g, totalText, Thin(96));
+            Caps(g, "s", Ui(20, true), A(C2, a), after, r.Top + 110, 0.1f);
+            Caps(g, p.Kind == SwimPhaseKind.Turn ? SwimLang.T("ΑΠΟ ΤΟΝ ΤΟΙΧΟ ΩΣ ΤΗΝ ΤΕΛΕΥΤΑΙΑ ΧΕΡΙΑ") : SwimLang.T("ΑΠΟ ΤΟ ΣΗΜΑ ΩΣ ΤΗΝ ΤΕΛΕΥΤΑΙΑ ΧΕΡΙΑ"),
+                Ui(11, true), A(Lbl, a), after + 34, r.Top + 116, 0.16f);
 
             int strokes = run.Strokes.Count;
             double? tempo = cycles.Count > 0 ? cycles.Average(c => c.Tempo) : (double?)null;
@@ -402,17 +406,20 @@ namespace Kinovea.ScreenManager
             if (bars.Height < 60 || cycles.Count == 0)
                 return;
 
+            // Two charts side by side: the metres per stroke (else the tempo) and the glides (else the tempo).
             bool glide = cycles.Any(c => c.Glide.HasValue);
             bool dist = cycles.Any(c => c.Distance.HasValue);
-            RectangleF left = dist && glide ? new RectangleF(bars.Left, bars.Top, bars.Width / 2 - 16, bars.Height) : bars;
-            RectangleF right = dist && glide ? new RectangleF(bars.Left + bars.Width / 2 + 16, bars.Top, bars.Width / 2 - 16, bars.Height) : bars;
+            RectangleF left = new RectangleF(bars.Left, bars.Top, bars.Width / 2 - 16, bars.Height);
+            RectangleF right = new RectangleF(bars.Left + bars.Width / 2 + 16, bars.Top, bars.Width / 2 - 16, bars.Height);
             if (dist)
                 CardBars(g, left, SwimLang.T("ΜΕΤΡΑ ΑΝΑ ΧΕΡΙΑ"), cycles.Select(c => c.Distance).ToList(), c => Amb, a, null);
+            else
+                CardBars(g, left, SwimLang.T("ΡΥΘΜΟΣ ΑΝΑ ΚΥΚΛΟ (s)"), cycles.Select(c => (double?)c.Tempo).ToList(), v => C, a, null);
             if (glide)
                 CardBars(g, right, SwimLang.T("ΓΛΙΣΤΡΗΜΑ ΑΝΑ ΧΕΡΙΑ (s)"), cycles.Select(c => c.Glide).ToList(),
                     v => GlideColor(SwimTechRun.Classify(v)), a, SwimTechRun.FullGlide);
-            if (!dist && !glide)
-                CardBars(g, bars, SwimLang.T("ΡΥΘΜΟΣ ΑΝΑ ΚΥΚΛΟ (s)"), cycles.Select(c => (double?)c.Tempo).ToList(), v => C, a, null);
+            else if (dist)
+                CardBars(g, right, SwimLang.T("ΡΥΘΜΟΣ ΑΝΑ ΚΥΚΛΟ (s)"), cycles.Select(c => (double?)c.Tempo).ToList(), v => C, a, null);
         }
 
         private static void CardBars(Graphics g, RectangleF r, string title, List<double?> values, Func<double?, Color> tone, float a, double? line)
