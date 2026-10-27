@@ -293,8 +293,7 @@ namespace Kinovea.ScreenManager
 
             if (skeleton != null && skeleton.Count > 10)
                 run.MeasureGlides(skeleton, timing);
-            if (track != null && track.HasPan)
-                run.MeasurePositions(race, timing, skeleton, track);
+            run.MeasurePositions(timing, track);
             return run;
         }
 
@@ -374,85 +373,58 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The head from the wall in metres between the known places (the wall at the feet or the hands; the technical distances marked,
-        /// the head at 5 m from the flags): linear in the frame of the pool of the reading between two of them, not outside.
+        /// The head from the wall in metres between the known places (the head at the technical distances marked, from the flags and
+        /// the marks of the pool; the contact of a turn): even speed between two of them, not outside. With a reading (its track and
+        /// the camera's pan), the head in the frame of the pool for the strokes drawn on the water.
         /// </summary>
-        private void MeasurePositions(SwimRace race, SwimTiming timing, SwimSkeleton sk, SwimTrack track)
+        private void MeasurePositions(SwimTiming timing, SwimTrack track)
         {
             SwimTechPhase p = Phase;
-            Func<double, double> pan = t => TrackPan(track, p.Origin + Ticks(timing, t));
-            Func<double, double> headX = t =>
+            if (track != null && track.HasPan)
             {
-                float x, y, top, bottom;
-                long ts = p.Origin + Ticks(timing, t);
-                return track.TryGet(ts, 1, out x, out y, out top, out bottom) ? x : double.NaN;
-            };
-            poolX = t =>
-            {
-                double h = headX(t), q = pan(t);
-                return double.IsNaN(h) || double.IsNaN(q) ? double.NaN : h - q;
-            };
+                Func<double, double> pan = t => TrackPan(track, p.Origin + Ticks(timing, t));
+                Func<double, double> headX = t =>
+                {
+                    float x, y, top, bottom;
+                    long ts = p.Origin + Ticks(timing, t);
+                    return track.TryGet(ts, 1, out x, out y, out top, out bottom) ? x : double.NaN;
+                };
+                poolX = t =>
+                {
+                    double h = headX(t), q = pan(t);
+                    return double.IsNaN(h) || double.IsNaN(q) ? double.NaN : h - q;
+                };
+            }
 
-            // The known places in the frame of the pool: (seconds, pixels, metres).
-            List<Tuple<double, double, double>> known = new List<Tuple<double, double, double>>();
+            // (2.9.9) The known places in time: (seconds, metres). The head at the splits (±5 from the backstroke flags, ±10/±15 from
+            // the marks of the pool) and, before a turn, its contact (0 m: from the head at 5 m to the touch are the 5 m of the
+            // analysts). Between two of them the swimmer's speed is taken as even: the camera's pan as a ruler was off by 12-35%
+            // (checked on the turns of VOLOS), the times of the known places are what the analysts measure. No metres outside them.
+            List<Tuple<double, double>> known = new List<Tuple<double, double>>();
             foreach (KeyValuePair<int, double> s in p.Splits)
             {
-                double u = poolX(s.Value);
-                if (!double.IsNaN(u))
-                    known.Add(Tuple.Create(s.Value, u, (double)Math.Abs(s.Key)));
+                known.Add(Tuple.Create(s.Value, (double)Math.Abs(s.Key)));
                 Anchors[s.Value] = Math.Abs(s.Key);
             }
 
-            // The wall: the feet at the push-off (turn) or at the release from the block (start), the hands or the feet at the contact.
-            PointF[] pts = new PointF[SwimJoints.Count];
-            float[] vis = new float[SwimJoints.Count];
-            Func<double, int[], double> wallAt = (t, joints) =>
-            {
-                if (sk == null || !sk.TryGet(p.Origin + Ticks(timing, t), 1, pts, vis))
-                    return double.NaN;
-                List<float> xs = joints.Where(j => vis[j] >= 0.3f).Select(j => pts[j].X).ToList();
-                if (xs.Count == 0)
-                    return double.NaN;
-                double q = pan(t);
-                return double.IsNaN(q) ? double.NaN : xs.Average() - q;
-            };
-            int[] feet = { SwimJoints.LeftAnkle, SwimJoints.RightAnkle, SwimJoints.LeftToe, SwimJoints.RightToe };
-            int[] hands = { SwimJoints.LeftWrist, SwimJoints.RightWrist };
-            double? release = p.Kind == SwimPhaseKind.Turn ? p.Pushoff : p.Block;
-            if (release.HasValue)
-            {
-                double u = wallAt(release.Value, feet);
-                if (!double.IsNaN(u))
-                    known.Add(Tuple.Create(release.Value, u, 0.0));
-            }
-
             if (p.Kind == SwimPhaseKind.Turn)
-            {
-                double u = wallAt(0, p.Flip ? feet : hands);
-                if (!double.IsNaN(u))
-                    known.Add(Tuple.Create(0.0, u, 0.0));
-            }
+                known.Add(Tuple.Create(0.0, 0.0));
 
-            // Two sides of a turn: before the contact (the approach) and after it; each needs two known places.
+            // Two sides of a turn: before the contact (the approach) and after it; each needs two known places (a start: after it).
             foreach (bool approach in new[] { true, false })
             {
-                List<Tuple<double, double, double>> side = known.Where(q => approach ? q.Item1 <= 0 : q.Item1 >= 0).OrderBy(q => q.Item1).ToList();
-                if (p.Kind == SwimPhaseKind.Turn && !approach)
-                    side.RemoveAll(q => q.Item1 == 0 && q.Item3 == 0 && release.HasValue);
+                List<Tuple<double, double>> side = known.Where(q => approach ? q.Item1 <= 0 : q.Item1 > 0).OrderBy(q => q.Item1).ToList();
                 if (side.Count < 2)
                     continue;
 
                 double t0 = side[0].Item1, t1 = side[side.Count - 1].Item1;
                 for (double t = t0; t <= t1 + 1e-6; t += 1.0 / 30)
                 {
-                    double u = poolX(t);
-                    if (double.IsNaN(u))
-                        continue;
                     int i = side.FindIndex(q => q.Item1 >= t);
-                    Tuple<double, double, double> a = side[Math.Max(0, i - 1)], b = side[Math.Max(1, i)];
-                    if (Math.Abs(b.Item2 - a.Item2) < 20)
+                    Tuple<double, double> a = side[Math.Max(0, i - 1)], b = side[Math.Max(1, i)];
+                    if (b.Item1 - a.Item1 < 0.2)
                         continue;
-                    double m = a.Item3 + (b.Item3 - a.Item3) * (u - a.Item2) / (b.Item2 - a.Item2);
+                    double m = a.Item2 + (b.Item2 - a.Item2) * (t - a.Item1) / (b.Item1 - a.Item1);
                     Positions.Add(new PointF((float)t, (float)m));
                 }
             }

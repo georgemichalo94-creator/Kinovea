@@ -89,9 +89,18 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The technical HUD at a frame: the clock and the values of the phase, the strokes on the water, the timeline, the card.</summary>
+        /// <summary>
+        /// The technical HUD on an image of this size: smaller than the race's (the training videos are watched on the laptop beside the
+        /// panels: 780 × 590 on the analysis computer); landscape or 4:3.
+        /// </summary>
+        public static bool CanPaintTech(Size size)
+        {
+            return size.Width >= 640 && size.Height >= 360 && size.Width >= 1.2f * size.Height;
+        }
+
         public static void PaintTech(Graphics g, Size size, SwimTechHudScene s)
         {
-            if (s == null || s.Run == null || s.Run.Phase == null || !CanPaint(size))
+            if (s == null || s.Run == null || s.Run.Phase == null || !CanPaintTech(size))
                 return;
 
             Layout L = MakeLayout(size);

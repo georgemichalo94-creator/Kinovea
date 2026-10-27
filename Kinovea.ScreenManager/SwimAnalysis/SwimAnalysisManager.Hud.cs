@@ -120,7 +120,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private bool TechHudReady(Size size, long timestamp)
         {
-            return HudChosen && Race != null && Race.IsTraining && SwimHudPainter.CanPaint(size) && TechRunAt(timestamp) != null;
+            return HudChosen && Race != null && Race.IsTraining && SwimHudPainter.CanPaintTech(size) && TechRunAt(timestamp) != null;
         }
 
         /// <summary>The measures of the start or the turn of a frame (SwimTechRun), null without one.</summary>
