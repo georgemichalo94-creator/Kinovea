@@ -605,6 +605,15 @@ namespace Kinovea.ScreenManager
             return ev;
         }
 
+        /// <summary>A turn: the head at −5 at least this long before the wall (5 m in less is not swimming).</summary>
+        public const double FlagInMinSeconds = 1.5;
+
+        /// <summary>A turn: the head at +5 at least this long after the push-off (the head is about a body length out at the push-off).</summary>
+        public const double FlagOutMinSeconds = 0.9;
+
+        /// <summary>A turn: the head at ±5 at most this long from the wall or the push-off.</summary>
+        public const double FlagMaxSeconds = 8;
+
         /// <summary>
         /// The head at the backstroke flags (5 m) before and after the wall, from the images of the external side camera (on the
         /// same pole, just above the underwater one; their times in seconds of this reading, the two videos synchronised). For
@@ -678,9 +687,25 @@ namespace Kinovea.ScreenManager
                     fitted = cross.HasValue;
                 }
 
-                head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: pass {1:0.00} at {2:0} px, {3} images, head {4:0}..{5:0} px from the plane, crossed {6}{7}; ",
+                // A turn: not a swimmer's time (another pass of the camera, the string of another lane): the head at −5 between 1.5 and
+                // 8 s before the wall, at +5 between 0.9 and 8 s after the push-off. On the 90 turns of the lab: 1 of 55 −5 (9.7 s) and 5
+                // of 47 +5 (0.35-0.68 s after the push-off, mostly from 2-6 images of the string) out of these; the rest 2.1-5.8 s and
+                // 1.5-4.5 s from the wall.
+                string implausible = null;
+                if (cross.HasValue && ev.Wall.HasValue)
+                {
+                    double before = ev.Wall.Value - cross.Value, after = cross.Value - ev.Pushoff.Value;
+                    if (approach && (before < FlagInMinSeconds || before > FlagMaxSeconds))
+                        implausible = string.Format(System.Globalization.CultureInfo.InvariantCulture, " (dropped: {0:0.00} s before the wall)", before);
+                    else if (!approach && (after < FlagOutMinSeconds || after > FlagMaxSeconds))
+                        implausible = string.Format(System.Globalization.CultureInfo.InvariantCulture, " (dropped: {0:0.00} s after the push-off)", after);
+                }
+
+                head.Trace += string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}: pass {1:0.00} at {2:0} px, {3} images, head {4:0}..{5:0} px from the plane, crossed {6}{7}{8}; ",
                     approach ? "in" : "out", pass.T, pass.X, near, low, high, cross.HasValue ? cross.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : "-",
-                    fitted ? " (fitted plane)" : "");
+                    fitted ? " (fitted plane)" : "", implausible ?? "");
+                if (implausible != null)
+                    cross = null;
                 if (approach)
                 {
                     head.InPass = pass;
