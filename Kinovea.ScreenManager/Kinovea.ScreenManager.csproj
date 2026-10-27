@@ -1071,6 +1071,8 @@
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
     <Compile Include="SwimAnalysis\SwimEventDetector.cs" />
     <Compile Include="SwimAnalysis\SwimPose.cs" />
+    <Compile Include="SwimAnalysis\SwimTechReader.cs" />
+    <Compile Include="SwimAnalysis\SwimTechEvents.cs" />
     <Compile Include="SwimAnalysis\SwimPoolGrid.cs" />
     <Compile Include="SwimAnalysis\SwimPresets.cs" />
     <Compile Include="SwimAnalysis\SwimProposals.cs" />
