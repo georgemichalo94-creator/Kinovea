@@ -301,6 +301,9 @@ namespace Kinovea.ScreenManager
         public double? Breakout;
         public bool BreakoutBySurface;
 
+        /// <summary>The breakout found with the rope line of the long lines (SwimTechFrame.Lines) when the band is not the surface.</summary>
+        public bool BreakoutByLine;
+
         /// <summary>Breaststroke pull-out: the hands sweep back to the thighs under water.</summary>
         public double? PullDown;
 
@@ -441,10 +444,21 @@ namespace Kinovea.ScreenManager
             double? breakout = surface != null ? BreakoutBySurface(s, pushoff, surface) : null;
             ev.BreakoutBySurface = breakout.HasValue;
             if (!breakout.HasValue)
+            {
+                // The band is not the surface (e.g. a camera that tilts with the swimmer outdoors): the rope line followed
+                // over time from the long lines of the images.
+                double[] line = LineSurface(uw, s);
+                breakout = line != null ? BreakoutBySurface(s, pushoff, line) : null;
+                ev.BreakoutByLine = breakout.HasValue;
+            }
+
+            if (!breakout.HasValue)
                 breakout = BreakoutByHead(s, pushoff);
             ev.Breakout = breakout;
             if (!breakout.HasValue)
                 ev.Notes.Add("δεν βρέθηκε η έξοδος από το νερό");
+            else if (ev.BreakoutByLine)
+                ev.Notes.Add("η έξοδος από τη γραμμή του σχοινιού (η κάμερα γέρνει: έλεγξέ την)");
             else if (!ev.BreakoutBySurface)
                 ev.Notes.Add("η έξοδος χωρίς τη γραμμή της επιφάνειας (κατά προσέγγιση: έλεγξέ την)");
 
@@ -1005,6 +1019,114 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < n; i++)
                 y[i] = Math.Exp(score[i, path[i]]) >= 1.3 ? (path[i] + 0.5) * r.Height / bins : double.NaN;
             return SwimSignal.Interp(y);
+        }
+
+        /// <summary>Height bins of the image for the rope line (LineSurface).</summary>
+        public const int LineBins = 100;
+
+        /// <summary>Cost of moving the rope line by one bin between images (against the length of a line, 0.35-1).</summary>
+        public const double LineJump = 0.6;
+
+        /// <summary>
+        /// The rope line at the surface (pixels of the reading) per image from SwimTechFrame.Lines: dynamic programming
+        /// through height bins scored by the length of the longest line in the bin (and 70% of it in the next bins: the two
+        /// edges of a thin rope), above the nose (+3% of the height: the floor lines are below the swimmer), with a cost
+        /// for moving; nan where less than a quarter of the images within 0.5 s have a line on the path. Null without lines.
+        /// </summary>
+        private static double[] LineSurface(SwimTechReading r, Signals s)
+        {
+            int n = s.N;
+            if (!r.Frames.Any(f => f.Lines != null && f.Lines.Length >= 4))
+                return null;
+            int bins = LineBins, top = (int)(bins * 0.85);
+            double[] nose = SwimSignal.Median(SwimSignal.Interp(s.NoseY), 5);
+            double[,] score = new double[n, top];
+            bool[,] allowed = new bool[n, top];
+            for (int i = 0; i < n; i++)
+            {
+                double[] v = new double[top];
+                float[] lines = r.Frames[i].Lines;
+                if (lines != null)
+                {
+                    for (int q = 0; q + 3 < lines.Length; q += 4)
+                    {
+                        int b = (int)(lines[q] * bins);
+                        if (b >= 0 && b < top)
+                            v[b] = Math.Max(v[b], lines[q + 2] - lines[q + 1]);
+                    }
+                }
+
+                int limit = double.IsNaN(nose[i]) ? top : (int)Math.Min(top, Math.Max(0, (nose[i] / r.Height + 0.03) * bins));
+                for (int b = 0; b < top; b++)
+                {
+                    double up = b > 0 ? v[b - 1] : 0, down = b + 1 < top ? v[b + 1] : 0;
+                    score[i, b] = Math.Max(v[b], 0.7 * Math.Max(up, down));
+                    allowed[i, b] = b < limit;
+                }
+            }
+
+            const double big = 1e3;
+            double[] cost = new double[top], next = new double[top];
+            int[,] back = new int[n, top];
+            for (int b = 0; b < top; b++)
+                cost[b] = -score[0, b] + (allowed[0, b] ? 0 : big);
+            for (int i = 1; i < n; i++)
+            {
+                for (int b = 0; b < top; b++)
+                {
+                    double bestC = double.MaxValue;
+                    int bestB = 0;
+                    for (int p = 0; p < top; p++)
+                    {
+                        double c = cost[p] + LineJump * Math.Abs(b - p);
+                        if (c < bestC)
+                        {
+                            bestC = c;
+                            bestB = p;
+                        }
+                    }
+
+                    next[b] = bestC - score[i, b] + (allowed[i, b] ? 0 : big);
+                    back[i, b] = bestB;
+                }
+
+                double[] t = cost;
+                cost = next;
+                next = t;
+            }
+
+            int[] path = new int[n];
+            int last = 0;
+            for (int b = 1; b < top; b++)
+            {
+                if (cost[b] < cost[last])
+                    last = b;
+            }
+
+            path[n - 1] = last;
+            for (int i = n - 1; i > 0; i--)
+                path[i - 1] = back[i, path[i]];
+
+            // Support: share of the images within 0.5 s with a line on the path.
+            int k = Math.Max(1, (int)Math.Round(1.0 * s.Fps));
+            double[] hit = new double[n];
+            for (int i = 0; i < n; i++)
+                hit[i] = score[i, path[i]] > 0 ? 1 : 0;
+            double[] y = new double[n];
+            int seen = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int a = Math.Max(0, i - k / 2), z = Math.Min(n - 1, a + k - 1);
+                double sum = 0;
+                for (int q = a; q <= z; q++)
+                    sum += hit[q];
+                bool ok = sum / k >= 0.25;
+                y[i] = ok ? (path[i] + 0.5) * r.Height / bins : double.NaN;
+                if (ok)
+                    seen++;
+            }
+
+            return seen >= 5 ? SwimSignal.Interp(y) : null;
         }
 
         private static double? BreakoutBySurface(Signals s, double pushoff, double[] surface)
