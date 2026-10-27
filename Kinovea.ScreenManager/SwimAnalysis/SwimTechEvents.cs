@@ -260,6 +260,14 @@ namespace Kinovea.ScreenManager
         }
     }
 
+    /// <summary>(2.9.9) Flip turn (somersault, the feet touch the wall) or open turn (the hands touch: breaststroke, butterfly, changes of style).</summary>
+    public enum SwimTurnKind
+    {
+        Unknown,
+        Flip,
+        Open
+    }
+
     /// <summary>(2.9.9) The events of a turn found in the technical readings, in seconds of the video (null when not found).</summary>
     public sealed class SwimTurnEvents
     {
@@ -269,8 +277,22 @@ namespace Kinovea.ScreenManager
         /// <summary>+1: the swimmer leaves the wall towards the right of the image, −1: towards the left.</summary>
         public int Sign;
 
-        /// <summary>Feet reach the wall (contact of a flip turn).</summary>
+        /// <summary>Flip or open turn; KindFromVideo: found from the video (no style given), to be checked.</summary>
+        public SwimTurnKind Kind;
+        public bool KindFromVideo;
+
+        /// <summary>Contact with the wall (W): the feet for a flip turn, the hands for an open turn.</summary>
+        public double? Wall;
+
+        /// <summary>Feet reach the wall; PlantFromTurn: not seen at the ankles, taken just before the turn of the body.</summary>
         public double? Plant;
+        public bool PlantFromTurn;
+
+        /// <summary>Open turn: the hands touch the wall.</summary>
+        public double? Touch;
+
+        /// <summary>Flip turn: the head starts to go down (O).</summary>
+        public double? RotationStart;
 
         /// <summary>Feet leave the wall.</summary>
         public double? Pushoff;
@@ -279,15 +301,20 @@ namespace Kinovea.ScreenManager
         public double? Breakout;
         public bool BreakoutBySurface;
 
-        /// <summary>Dolphin kicks (deepest bend of the knees) between the push-off and the breakout.</summary>
+        /// <summary>Breaststroke pull-out: the hands sweep back to the thighs under water.</summary>
+        public double? PullDown;
+
+        /// <summary>Dolphin kicks (deepest bend of the knees) between the push-off and the breakout (before the pull-down).</summary>
         public List<double> Kicks = new List<double>();
 
-        /// <summary>Other kicks of the legs there (knees bent below 100°: breaststroke kick).</summary>
+        /// <summary>Kicks after the pull-down of a breaststroke pull-out (the breaststroke kick).</summary>
         public List<double> LegKicks = new List<double>();
 
-        /// <summary>Arm strokes (furthest reach of a hand) before the turn and after the breakout.</summary>
+        /// <summary>Arm strokes (furthest reach of a hand) before the turn and after the breakout; the last one before and the first one after.</summary>
         public List<double> StrokesIn = new List<double>();
         public List<double> StrokesOut = new List<double>();
+        public double? LastStroke;
+        public double? FirstStroke;
 
         /// <summary>Body length in the image (shoulder–hip–ankle, pixels of the reading).</summary>
         public double BodyLength;
@@ -299,8 +326,9 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// (2.9.9) Events of a turn from the reading of the side underwater camera that follows the swimmer: the turn is the
     /// closest approach to the wall of the body in the frame of the pool (image position minus the pan of the camera);
-    /// push-off when the speed away from the wall reaches 90% of its peak; contact when the ankles reach the wall;
-    /// kicks at the deepest bends of the knees; breakout when the head comes up to the band of the lane rope at the
+    /// push-off when the speed away from the wall reaches 90% of its first peak; contact of a flip turn when the ankles
+    /// reach the wall, of an open turn when the front of the swimmer stops at the wall; rotation when the hips start to
+    /// fold; kicks at the deepest bends of the knees; breakout when the head comes up to the band of the lane rope at the
     /// surface; strokes at the furthest reach of the hands.
     /// </summary>
     public static class SwimTurnReader
@@ -308,10 +336,23 @@ namespace Kinovea.ScreenManager
         public const double VisibilityMin = 0.3;
         public const double PushoffFraction = 0.9;
         public const double PushoffWindow = 1.6;
+        public const double PushoffDrop = 0.03;
+        public const double PushoffDropWindow = 0.25;
+        public const double PushoffMinSpeed = 1.0;
         public const double PlantDistance = 0.12;
+        public const double PlantWindow = 1.2;
+        public const double PlantBeforeTurn = 0.4;
+        public const double PlantBeforeExtreme = 0.2;
         public const double DolphinMaxAngle = 148;
-        public const double LegKickMaxAngle = 100;
         public const double KickProminence = 15;
+        public const double UprightShoulders = -0.25;
+        public const double TouchSpeedFraction = 0.2;
+        public const double TouchHold = 0.2;
+        public const double TouchLead = 0.1;
+        public const double RotationOpenAngle = 160;
+        public const double SurfaceMinDepth = 0.3;
+        public const double PullDownBack = -0.2;
+        public const double PullDownHold = 0.4;
 
         private sealed class Signals
         {
@@ -321,13 +362,17 @@ namespace Kinovea.ScreenManager
             public bool[] Present, InWater;
             public double[] NoseX, NoseY, ShX, ShY, HipX, HipY, KnX, KnY, AnkX, AnkY;
             public double[][] WrX;
-            public double[] KneeAngle;
+            public double[] KneeAngle, HipAngle, BoxX0, BoxX1;
             public double[] X, Xs;
             public double L;
             public int A, B;
         }
 
-        public static SwimTurnEvents Find(SwimTechReading uw)
+        /// <summary>
+        /// The events of the turn in an underwater reading. kind: from the style of the race (breaststroke, butterfly and
+        /// the changes of style of the medley: open; freestyle, backstroke: flip), Unknown to find it from the video.
+        /// </summary>
+        public static SwimTurnEvents Find(SwimTechReading uw, SwimTurnKind kind = SwimTurnKind.Unknown)
         {
             SwimTurnEvents ev = new SwimTurnEvents();
             if (uw == null || uw.Frames.Count < 60)
@@ -353,33 +398,70 @@ namespace Kinovea.ScreenManager
 
             ev.Extreme = s.T[i0];
             int k = Pushoff(s, i0, ev.Sign);
-            ev.Pushoff = s.T[k];
-            double? plant = Plant(s, ev.Sign, s.T[k]);
-            ev.Plant = plant;
-            if (!plant.HasValue)
-                ev.Notes.Add("δεν φαίνονται τα πόδια στον τοίχο");
+            double pushoff = s.T[k];
+            ev.Pushoff = pushoff;
+            bool fromTurn;
+            ev.Plant = Plant(s, ev.Sign, pushoff, i0, out fromTurn);
+            ev.PlantFromTurn = fromTurn;
+            if (kind == SwimTurnKind.Unknown)
+            {
+                kind = Upright(s, i0, pushoff) ? SwimTurnKind.Open : SwimTurnKind.Flip;
+                ev.KindFromVideo = true;
+            }
+
+            ev.Kind = kind;
+            if (kind == SwimTurnKind.Open)
+            {
+                ev.Touch = Touch(s, i0, ev.Sign);
+                ev.Wall = ev.Touch;
+                if (!ev.Touch.HasValue)
+                    ev.Notes.Add("δεν βρέθηκε η επαφή των χεριών στον τοίχο");
+            }
+            else
+            {
+                ev.Wall = ev.Plant;
+                if (!ev.Plant.HasValue)
+                    ev.Notes.Add("δεν φαίνονται τα πόδια στον τοίχο");
+                else if (fromTurn)
+                    ev.Notes.Add("η επαφή των ποδιών από την αλλαγή κατεύθυνσης (δεν φαίνονται καθαρά τα πόδια)");
+                ev.RotationStart = RotationStart(s, i0, ev.Plant);
+                if (!ev.RotationStart.HasValue)
+                    ev.Notes.Add("δεν βρέθηκε η αρχή της περιστροφής");
+            }
+
+            if (ev.KindFromVideo)
+                ev.Notes.Add(kind == SwimTurnKind.Open ? "ανοιχτή στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)" : "ανάποδη στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)");
 
             double[] surface = Surface(uw, s);
-            double? breakout = surface != null ? BreakoutBySurface(s, s.T[k], surface) : null;
+            double? breakout = surface != null ? BreakoutBySurface(s, pushoff, surface) : null;
             ev.BreakoutBySurface = breakout.HasValue;
             if (!breakout.HasValue)
-                breakout = BreakoutByHead(s, s.T[k]);
+                breakout = BreakoutByHead(s, pushoff);
             ev.Breakout = breakout;
             if (!breakout.HasValue)
                 ev.Notes.Add("δεν βρέθηκε η έξοδος από το νερό");
 
-            double kickEnd = breakout ?? s.T[k] + 8;
-            foreach (KeyValuePair<double, double> kick in Kicks(s, s.T[k] + 0.1, kickEnd))
+            double kickEnd = breakout ?? pushoff + 8;
+            ev.PullDown = PullDown(s, pushoff, kickEnd, ev.Sign);
+            foreach (KeyValuePair<double, double> kick in Kicks(s, pushoff + 0.1, kickEnd))
             {
-                if (kick.Value >= LegKickMaxAngle)
-                    ev.Kicks.Add(kick.Key);
-                else
+                if (ev.PullDown.HasValue && kick.Key >= ev.PullDown.Value)
                     ev.LegKicks.Add(kick.Key);
+                else
+                    ev.Kicks.Add(kick.Key);
             }
 
-            ev.StrokesIn = Strokes(s, s.T[i0] - 6, s.T[i0], -ev.Sign);
+            double reference = ev.RotationStart ?? ev.Wall ?? s.T[i0];
+            ev.StrokesIn = Strokes(s, reference - 6, reference - 0.15, -ev.Sign);
+            if (ev.StrokesIn.Count > 0)
+                ev.LastStroke = ev.StrokesIn[ev.StrokesIn.Count - 1];
             if (breakout.HasValue)
+            {
                 ev.StrokesOut = Strokes(s, breakout.Value - 0.2, breakout.Value + 10, ev.Sign);
+                if (ev.StrokesOut.Count > 0)
+                    ev.FirstStroke = ev.StrokesOut[0];
+            }
+
             return ev;
         }
 
@@ -399,6 +481,9 @@ namespace Kinovea.ScreenManager
             s.KnX = Nan(n); s.KnY = Nan(n); s.AnkX = Nan(n); s.AnkY = Nan(n);
             s.WrX = new[] { Nan(n), Nan(n) };
             s.KneeAngle = Nan(n);
+            s.HipAngle = Nan(n);
+            s.BoxX0 = Nan(n);
+            s.BoxX1 = Nan(n);
             double pan = 0;
             bool anyWater = false;
             for (int i = 0; i < n; i++)
@@ -410,6 +495,8 @@ namespace Kinovea.ScreenManager
                 s.Present[i] = f.Box != null;
                 s.Cx[i] = f.Box != null ? f.Box.CenterX : double.NaN;
                 s.Cy[i] = f.Box != null ? f.Box.CenterY : double.NaN;
+                s.BoxX0[i] = f.Box != null ? f.Box.X0 : double.NaN;
+                s.BoxX1[i] = f.Box != null ? f.Box.X1 : double.NaN;
                 s.Water[i] = f.Water;
                 anyWater |= f.Water > 0 || f.Bubbles > 0 || f.Body > 0;
                 float[] p = f.Pose;
@@ -431,6 +518,9 @@ namespace Kinovea.ScreenManager
                 double kl = SwimSignal.Angle(J(SwimJoints.LeftHip, 0), J(SwimJoints.LeftHip, 1), J(SwimJoints.LeftKnee, 0), J(SwimJoints.LeftKnee, 1), J(SwimJoints.LeftAnkle, 0), J(SwimJoints.LeftAnkle, 1));
                 double kr = SwimSignal.Angle(J(SwimJoints.RightHip, 0), J(SwimJoints.RightHip, 1), J(SwimJoints.RightKnee, 0), J(SwimJoints.RightKnee, 1), J(SwimJoints.RightAnkle, 0), J(SwimJoints.RightAnkle, 1));
                 s.KneeAngle[i] = SwimSignal.NanMean(kl, kr);
+                double hl = SwimSignal.Angle(J(SwimJoints.LeftShoulder, 0), J(SwimJoints.LeftShoulder, 1), J(SwimJoints.LeftHip, 0), J(SwimJoints.LeftHip, 1), J(SwimJoints.LeftKnee, 0), J(SwimJoints.LeftKnee, 1));
+                double hr = SwimSignal.Angle(J(SwimJoints.RightShoulder, 0), J(SwimJoints.RightShoulder, 1), J(SwimJoints.RightHip, 0), J(SwimJoints.RightHip, 1), J(SwimJoints.RightKnee, 0), J(SwimJoints.RightKnee, 1));
+                s.HipAngle[i] = SwimSignal.NanMean(hl, hr);
             }
 
             // The camera under water: mostly water around (out of the water the image is the hall).
@@ -544,42 +634,220 @@ namespace Kinovea.ScreenManager
             return i0 >= 0;
         }
 
+        /// <summary>
+        /// Push-off: the first clear peak of the speed away from the wall after the turn (at least one body length per
+        /// second, and the speed drops by 3% within 0.25 s after it; else the highest speed within 1.6 s), then the first
+        /// image with 90% of that speed. The first peak and not the highest: the pan of the camera can add a later one.
+        /// </summary>
         private static int Pushoff(Signals s, int i0, int sign)
         {
-            double[] v = SwimSignal.SavGol(s.Xs, 9, 2, 1);
+            double[] d = SwimSignal.SavGol(s.Xs, 9, 2, 1);
+            double[] v = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                v[i] = d[i] * s.Fps * sign;
             int j1 = Math.Min(s.N - 1, i0 + (int)(PushoffWindow * s.Fps));
-            int pk = i0;
-            for (int i = i0; i <= j1; i++)
+            int nd = (int)(PushoffDropWindow * s.Fps);
+            int pk = -1;
+            for (int i = i0 + 1; i < j1 && pk < 0; i++)
             {
-                if (v[i] * sign > v[pk] * sign)
+                if (v[i] < v[i - 1] || v[i] < v[i + 1] || v[i] < PushoffMinSpeed * s.L)
+                    continue;
+                double low = v[i];
+                for (int q = i; q <= Math.Min(s.N - 1, i + nd); q++)
+                    low = Math.Min(low, v[q]);
+                if (low <= (1 - PushoffDrop) * v[i])
                     pk = i;
             }
 
-            double vmax = v[pk] * sign;
+            if (pk < 0)
+            {
+                pk = i0;
+                for (int i = i0; i <= j1; i++)
+                {
+                    if (v[i] > v[pk])
+                        pk = i;
+                }
+            }
+
+            double vmax = v[pk];
             for (int i = i0; i <= pk; i++)
             {
-                if (v[i] * sign >= PushoffFraction * vmax)
+                if (v[i] >= PushoffFraction * vmax)
                     return i;
             }
 
             return pk;
         }
 
-        private static double? Plant(Signals s, int sign, double pushoff)
+        /// <summary>
+        /// Contact of the feet: the wall is where the ankles are closest to it (10th percentile in the frame of the pool)
+        /// between the turn (from 0.4 s before the closest approach of the body, at most 1.2 s before the push-off) and the
+        /// push-off; the feet reach it at the first image within 0.12 body lengths of it. The knees bend on the wall for
+        /// about 0.1 s after the contact: an ankle contact long before the turn of the body is noise of the ankles
+        /// (bubbles), and then the contact is taken just before the turn (fromTurn).
+        /// </summary>
+        private static double? Plant(Signals s, int sign, double pushoff, int i0, out bool fromTurn)
         {
+            fromTurn = false;
+            double turn = s.T[i0];
+            double from = Math.Max(pushoff - PlantWindow, turn - PlantBeforeTurn);
             List<int> m = new List<int>();
             for (int i = 0; i < s.N; i++)
             {
-                if (s.T[i] > pushoff - 1.2 && s.T[i] < pushoff && !double.IsNaN(s.AnkX[i]))
+                if (s.T[i] > from && s.T[i] < pushoff && !double.IsNaN(s.AnkX[i]))
                     m.Add(i);
             }
 
             if (m.Count < 5)
                 return null;
             double wall = SwimSignal.Percentile(m.Select(i => s.AnkX[i] - s.Pan[i]), sign == 1 ? 10 : 90);
+            double? found = null;
             foreach (int i in m)
             {
                 if ((s.AnkX[i] - s.Pan[i] - wall) * sign < PlantDistance * s.L)
+                {
+                    found = s.T[i];
+                    break;
+                }
+            }
+
+            if (!found.HasValue || turn - found.Value > PlantBeforeExtreme)
+            {
+                fromTurn = true;
+                return turn - 0.05;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Open turn from the video: the shoulders come well above the hips at the wall (the body upright, between 1.2 s
+        /// before the turn and the push-off).
+        /// </summary>
+        private static bool Upright(Signals s, int i0, double pushoff)
+        {
+            double[] d = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                d[i] = (s.ShY[i] - s.HipY[i]) / s.L;
+            if (d.All(double.IsNaN))
+                return false;
+            d = SwimSignal.Median(SwimSignal.Interp(d), 5);
+            int count = 0;
+            double min = double.MaxValue;
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] >= s.T[i0] - 1.2 && s.T[i] <= pushoff)
+                {
+                    count++;
+                    min = Math.Min(min, d[i]);
+                }
+            }
+
+            return count >= 5 && min < UprightShoulders;
+        }
+
+        /// <summary>
+        /// Open turn: the front of the swimmer (the edge of the box on the side of the wall: the hands ahead) stops at the
+        /// wall. From the fastest approach of that edge (in the 2.5 s before the turn), the first time its speed stays under
+        /// 20% of that peak for 0.2 s; the hands touched 0.1 s before it stops.
+        /// </summary>
+        private static double? Touch(Signals s, int i0, int sign)
+        {
+            double[] edge = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                edge[i] = ((sign == 1 ? s.BoxX0[i] : s.BoxX1[i]) - s.Pan[i]) * sign / s.L;
+            if (edge.All(double.IsNaN))
+                return null;
+            double[] d = SwimSignal.SavGol(SwimSignal.Interp(edge), 9, 2, 1);
+            double[] v = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                v[i] = -d[i] * s.Fps;
+            double te = s.T[i0];
+            int ia = -1;
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] >= te - 2.5 && s.T[i] <= te && (ia < 0 || v[i] > v[ia]))
+                    ia = i;
+            }
+
+            if (ia < 0 || !(v[ia] > 0))
+                return null;
+            int hold = Math.Max(1, (int)(TouchHold * s.Fps));
+            for (int i = ia; i < s.N - hold; i++)
+            {
+                bool stopped = true;
+                for (int q = i; q < i + hold && stopped; q++)
+                    stopped = v[q] < TouchSpeedFraction * v[ia];
+                if (stopped)
+                    return s.T[i] - TouchLead;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Flip turn: the head starts down when the body starts to fold. From the most compact moment of the turn (the
+        /// narrowest box, from 1 s before the turn to the contact) back to the last three images with the hips open
+        /// (shoulder–hip–knee at least 160°): the first image after them with the hips closing.
+        /// </summary>
+        private static double? RotationStart(Signals s, int i0, double? plant)
+        {
+            double hi = plant ?? s.T[i0] + 0.3;
+            int tuck = -1;
+            for (int i = 0; i < s.N; i++)
+            {
+                double w = s.BoxX1[i] - s.BoxX0[i];
+                if (s.T[i] >= s.T[i0] - 1.0 && s.T[i] <= hi && !double.IsNaN(w) && (tuck < 0 || w < s.BoxX1[tuck] - s.BoxX0[tuck]))
+                    tuck = i;
+            }
+
+            if (tuck < 0)
+                return null;
+            int start = -1, run = 0;
+            for (int i = tuck; i > Math.Max(0, tuck - (int)(2.0 * s.Fps)); i--)
+            {
+                if (double.IsNaN(s.HipAngle[i]))
+                    continue;
+                if (s.HipAngle[i] < RotationOpenAngle)
+                {
+                    start = i;
+                    run = 0;
+                }
+                else if (++run >= 3)
+                {
+                    return start >= 0 ? s.T[start] : (double?)null;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Breaststroke pull-out: the hands sweep back behind the shoulders (0.2 body lengths) and stay there for 0.4 s
+        /// (the glide), from 0.3 s after the push-off to 0.5 s before the breakout.
+        /// </summary>
+        private static double? PullDown(Signals s, double pushoff, double breakout, int sign)
+        {
+            double[] f = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+            {
+                double a = (s.WrX[0][i] - s.ShX[i]) * sign / s.L, b = (s.WrX[1][i] - s.ShX[i]) * sign / s.L;
+                double m = double.IsNaN(a) ? b : double.IsNaN(b) ? a : Math.Max(a, b);
+                f[i] = s.Present[i] && s.InWater[i] ? m : double.NaN;
+            }
+
+            if (f.All(double.IsNaN))
+                return null;
+            f = SwimSignal.Median(SwimSignal.Interp(f), 9);
+            int hold = (int)(PullDownHold * s.Fps);
+            for (int i = 0; i < s.N; i++)
+            {
+                if (!(s.T[i] > pushoff + 0.3 && s.T[i] < breakout - 0.5) || f[i] >= PullDownBack || i + hold >= s.N)
+                    continue;
+                bool stays = true;
+                for (int q = i; q < i + hold && stays; q++)
+                    stays = f[q] < PullDownBack;
+                if (stays)
                     return s.T[i];
             }
 
@@ -698,6 +966,9 @@ namespace Kinovea.ScreenManager
                     deep = i;
             }
 
+            // The band must be the surface: the head well under it at the deepest point of the glide.
+            if (bySurface && d[deep] < SurfaceMinDepth)
+                return null;
             List<int> after = idx.Where(i => i > deep && s.T[i] < s.T[deep] + 6).ToList();
             if (after.Count < 15)
                 return null;
