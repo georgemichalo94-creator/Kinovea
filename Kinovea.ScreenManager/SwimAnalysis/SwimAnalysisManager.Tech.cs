@@ -238,7 +238,10 @@ namespace Kinovea.ScreenManager
                         AddWallSplit(timestamp);
                     return true;
                 case PlayerScreenCommands.SwimTechSplit:
-                    AddTechSplit(timestamp, null);
+                    if (answeringSplit.HasValue)
+                        AddTechSplit(timestamp, answeringSplit.Value, SwimPhaseKind.Turn);
+                    else
+                        AddTechSplit(timestamp, null);
                     return true;
                 case PlayerScreenCommands.SwimSnapshot:
                     TakeSnapshot(timestamp);

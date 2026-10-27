@@ -523,6 +523,92 @@ namespace Kinovea.ScreenManager
             return ev;
         }
 
+        /// <summary>
+        /// The head at the backstroke flags (5 m) before and after the wall, from the images of the external side camera (on the
+        /// same pole, just above the underwater one; their times in seconds of this reading, the two videos synchronised). For
+        /// each pass of the camera through the flags' plane (SwimFlagReader.Choose), the column of the string at a quarter of the
+        /// height is the column of that plane: mapped into the underwater image (Refraction from the centre), the head crosses it
+        /// in the swimming direction within 1.5 s of the pass. Checked by eye on 5 turns: within 0.1-0.2 s.
+        /// </summary>
+        public static SwimFlagHead HeadAtFlags(SwimTechReading uw, SwimTurnEvents ev, IList<SwimFlagFrame> frames, int extWidth)
+        {
+            SwimFlagHead head = new SwimFlagHead();
+            if (uw == null || ev == null || frames == null || frames.Count < 10 || extWidth <= 0 || uw.Width <= 0 ||
+                !ev.Wall.HasValue || !ev.Pushoff.HasValue || (ev.Sign != 1 && ev.Sign != -1) || uw.Frames.Count < 60)
+                return head;
+
+            List<SwimFlagPass> passes = SwimFlagReader.Passes(frames);
+            head.Passes = passes.Count;
+            if (passes.Count == 0)
+                return head;
+
+            // The head's column where the swimmer is seen under water, the gaps filled, a median of 5 images.
+            Signals s = Read(uw);
+            double[] hx = new double[s.N];
+            for (int i = 0; i < s.N; i++)
+                hx[i] = s.Present[i] && s.InWater[i] ? s.NoseX[i] : double.NaN;
+            hx = SwimSignal.Median(SwimSignal.Interp(hx), 5);
+            if (hx.All(double.IsNaN))
+                return head;
+
+            List<SwimFlagFrame> seen = frames.Where(f => !float.IsNaN(f.X25)).OrderBy(f => f.T).ToList();
+            foreach (bool approach in new[] { true, false })
+            {
+                SwimFlagPass pass = SwimFlagReader.Choose(passes, approach, ev.Wall.Value, ev.Pushoff.Value, ev.Sign, extWidth);
+                if (pass == null)
+                    continue;
+
+                // > 0: the head is past the plane in the swimming direction (towards the wall on the approach).
+                int direction = approach ? -ev.Sign : ev.Sign;
+                double? cross = null;
+                double prevT = double.NaN, prevD = double.NaN;
+                foreach (SwimFlagFrame f in seen.Where(f => Math.Abs(f.T - pass.T) <= 1.5))
+                {
+                    double plane = uw.Width / 2.0 + SwimFlagReader.Refraction * (f.X25 - extWidth / 2.0) * uw.Width / extWidth;
+                    double d = (At(s.T, hx, f.T) - plane) * direction;
+                    if (!double.IsNaN(prevD) && !double.IsNaN(d) && f.T - prevT <= 0.35 && prevD < 0 && d >= 0)
+                    {
+                        cross = prevT + (f.T - prevT) * (-prevD) / (d - prevD + 1e-9);
+                        break;
+                    }
+
+                    prevT = f.T;
+                    prevD = d;
+                }
+
+                if (approach)
+                {
+                    head.InPass = pass;
+                    head.In = cross;
+                }
+                else
+                {
+                    head.OutPass = pass;
+                    head.Out = cross;
+                }
+            }
+
+            return head;
+        }
+
+        /// <summary>The value of a signal at time t (linear between the images, the first and last value outside them).</summary>
+        private static double At(double[] t, double[] v, double at)
+        {
+            int n = t.Length;
+            if (n == 0)
+                return double.NaN;
+            if (at <= t[0])
+                return v[0];
+            if (at >= t[n - 1])
+                return v[n - 1];
+            int i = Array.BinarySearch(t, at);
+            if (i >= 0)
+                return v[i];
+            i = ~i;
+            double w = (at - t[i - 1]) / Math.Max(1e-9, t[i] - t[i - 1]);
+            return v[i - 1] + (v[i] - v[i - 1]) * w;
+        }
+
         private static Signals Read(SwimTechReading r)
         {
             Signals s = new Signals();

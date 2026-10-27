@@ -36,6 +36,9 @@ namespace Kinovea.ScreenManager
         private int reviewWrong;
         private bool resolvingProposal;
 
+        /// <summary>The distance of the technical split proposal being answered (−5, +5): T marks that one, not the next of the phase.</summary>
+        private int? answeringSplit;
+
         /// <summary>The learning of this computer (read once).</summary>
         public SwimLearning Learning
         {
@@ -413,6 +416,7 @@ namespace Kinovea.ScreenManager
             else
             {
                 resolvingProposal = true;
+                answeringSplit = p.Type == SwimMarkType.TechSplit && p.Index != 0 ? p.Index : (int?)null;
                 try
                 {
                     HandleCommand(player, frameServer, command, timestamp);
@@ -420,6 +424,7 @@ namespace Kinovea.ScreenManager
                 finally
                 {
                     resolvingProposal = false;
+                    answeringSplit = null;
                 }
 
                 // The command refused the mark (for example a wall that already has its time): the proposal goes without an answer
@@ -764,6 +769,13 @@ namespace Kinovea.ScreenManager
                 return true;
             }
 
+            // The head at a technical distance of the pilot (−5 / +5): T at its distance (answeringSplit).
+            if (p.Type == SwimMarkType.TechSplit && p.Index != 0)
+            {
+                command = PlayerScreenCommands.SwimTechSplit;
+                return true;
+            }
+
             return CommandOf(p.Type, out command);
         }
 
@@ -808,6 +820,11 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.Split:
                     name = (p.Kind == KindRaceSplit ? SwimLang.T("Πέρασμα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T("Πέρασμα")) +
                         (p.Official ? SwimLang.T(" · από τον επίσημο χρόνο") : "");
+                    break;
+                case SwimMarkType.TechSplit:
+                    name = p.Index < 0 ? SwimLang.T("Κεφάλι στα −5 πριν τον τοίχο") : SwimLang.T("Κεφάλι στα +5 μετά τον τοίχο");
+                    if (p.Kind == KindTechHeadIn || p.Kind == KindTechHeadOut)
+                        name += SwimLang.T(" · σημαίες ύπτιου");
                     break;
                 case SwimMarkType.Signal: name = p.Kind == KindRaceStart ? SwimLang.T("Σήμα εκκίνησης (φως)") + (p.Index > 1 ? SwimLang.T(" · εναλλακτική ") + (p.Index - 1) : "") : SwimLang.T("Σήμα εκκίνησης"); break;
                 default: name = p.Type.ToString(); break;

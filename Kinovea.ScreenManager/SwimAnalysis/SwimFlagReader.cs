@@ -39,6 +39,22 @@ namespace Kinovea.ScreenManager
         public double Range;
     }
 
+    /// <summary>The head at the flags (5 m) before and after the wall, in seconds of the underwater reading, and the passes used.</summary>
+    public sealed class SwimFlagHead
+    {
+        /// <summary>The head 5 m before the wall (null: not found).</summary>
+        public double? In;
+
+        /// <summary>The head 5 m after the wall (null: not found).</summary>
+        public double? Out;
+
+        public SwimFlagPass InPass;
+        public SwimFlagPass OutPass;
+
+        /// <summary>Passes of the camera through the flags found in the external video (0: no flags seen).</summary>
+        public int Passes;
+    }
+
     /// <summary>
     /// The backstroke flags (5 m from each wall) in the external side camera that follows the swimmer. The string of flags
     /// is near the camera, so once the far scene of two images is aligned (phase correlation of the upper part) it is what
@@ -231,6 +247,26 @@ namespace Kinovea.ScreenManager
             }
 
             return passes;
+        }
+
+        /// <summary>
+        /// Image columns from the centre are this many times wider under water than above it (flat port of the underwater
+        /// camera, the same lens as the external one just above it on the pole).
+        /// </summary>
+        public const double Refraction = 1.33;
+
+        /// <summary>
+        /// The pass for the head at 5 m: on the approach the last one 1 to 12 s before the wall, after the push-off the first one
+        /// within 10 s; the camera moving with the swimmer (side: +1 when the swimmer leaves the wall towards the right of the
+        /// image, so the angle grows on the approach and falls after the push-off); the string in the middle 80% of the image.
+        /// </summary>
+        public static SwimFlagPass Choose(IList<SwimFlagPass> passes, bool approach, double wall, double pushoff, int side, int width)
+        {
+            int want = approach ? side : -side;
+            IEnumerable<SwimFlagPass> ok = passes.Where(p => p.Direction == want && p.X >= 0.1 * width && p.X <= 0.9 * width);
+            if (approach)
+                return ok.Where(p => p.T >= wall - 12 && p.T <= wall - 1.0).OrderByDescending(p => p.T).FirstOrDefault();
+            return ok.Where(p => p.T >= pushoff && p.T <= pushoff + 10).OrderBy(p => p.T).FirstOrDefault();
         }
 
         private static double Correlation(double[] x, double[] y)
