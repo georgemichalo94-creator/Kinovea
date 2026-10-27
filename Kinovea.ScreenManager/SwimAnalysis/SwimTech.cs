@@ -64,6 +64,9 @@ namespace Kinovea.ScreenManager
         public double? Block;
         public double? Entry;
         public double? LastStroke;
+
+        /// <summary>(2.9.9) A turn of a training video: the first stroke marked in its approach (the technical analysis marks every stroke).</summary>
+        public double? FirstApproachStroke;
         public double? RotationStart;
         public double? Pushoff;
         public double? Breakout;
@@ -483,7 +486,7 @@ namespace Kinovea.ScreenManager
             return Math.Min(boundary, bTime);
         }
 
-        /// <summary>Seconds (negative) of the first event of the approach of a turn (−5, last stroke, rotation), 0 without one.</summary>
+        /// <summary>Seconds (negative) of the first event of the approach of a turn (−5, its strokes, rotation), 0 without one.</summary>
         private static double FirstApproachEvent(SwimTechPhase p)
         {
             double first = 0;
@@ -494,6 +497,8 @@ namespace Kinovea.ScreenManager
                 first = p.LastStroke.Value;
             if (p.RotationStart.HasValue && p.RotationStart.Value < first)
                 first = p.RotationStart.Value;
+            if (p.FirstApproachStroke.HasValue && p.FirstApproachStroke.Value < first)
+                first = p.FirstApproachStroke.Value;
             return first;
         }
 
@@ -640,6 +645,10 @@ namespace Kinovea.ScreenManager
             else
             {
                 p.LastStroke = last(SwimMarkType.Stroke, t => t < 0 && t >= -LastStrokeSeconds);
+                // A training video (the technical analysis): the window of the turn begins with the strokes of its approach (a race
+                // marks its strokes all along the length: its windows stay as they were).
+                if (!wallMarks)
+                    p.FirstApproachStroke = first(SwimMarkType.Stroke, t => t < 0 && t >= -ApproachSearchSeconds);
                 p.RotationStart = last(SwimMarkType.RotationStart, t => t <= 0);
                 p.Pushoff = first(SwimMarkType.FeetOff, t => t >= 0);
                 double after = p.Pushoff ?? 0;
