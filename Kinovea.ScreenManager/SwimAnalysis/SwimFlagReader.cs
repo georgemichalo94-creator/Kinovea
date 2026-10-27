@@ -514,7 +514,8 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The string of coloured pennants over time from the candidates of each image (times in seconds, same order): chains of
         /// candidates with a smooth angle and column (dynamic programming over gaps of up to 5 images and 0.55 s, the best chain
-        /// first, up to 6), a candidate worth more when it has many pixels, reaches the top of the image and has several colours
+        /// first, up to 6; up to 22 degrees and 90 px an image: near the vertical the string turns fast when the camera passes the
+        /// flags, and 14 degrees lost 9 of 30 approach passes), a candidate worth more when it has many pixels, reaches the top of the image and has several colours
         /// (the string, not a roof or one big pennant), steeper than 35 degrees from the horizontal. The chains of 8 images or
         /// more with several colours on at least half of them give the string's images (the best chain where two meet); roll from
         /// the given values (the motion reading of the same images), NaN without them.
@@ -560,9 +561,9 @@ namespace Kinovea.ScreenManager
                                 if (double.IsNaN(cost[j][l]))
                                     continue;
                                 double da = c[i][k].Angle - c[j][l].Angle, dx = c[i][k].X25 - c[j][l].X25;
-                                if (Math.Abs(da) > 14 * g || Math.Abs(dx) > 90 * g)
+                                if (Math.Abs(da) > 22 * g || Math.Abs(dx) > 90 * g)
                                     continue;
-                                double v = cost[j][l] + (da / (5.0 * g)) * (da / (5.0 * g)) + (dx / (30.0 * g)) * (dx / (30.0 * g)) + 0.4 * (g - 1) - reward;
+                                double v = cost[j][l] + (da / (7.0 * g)) * (da / (7.0 * g)) + (dx / (30.0 * g)) * (dx / (30.0 * g)) + 0.4 * (g - 1) - reward;
                                 if (v < v0)
                                 {
                                     v0 = v;
