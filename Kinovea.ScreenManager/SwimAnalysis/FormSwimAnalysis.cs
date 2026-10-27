@@ -114,6 +114,7 @@ namespace Kinovea.ScreenManager
         private TextBox tbUnderwaterDist;
         private Label lblFirstSplitTitle;
         private Label lblFirstSplit;
+        private Label lblStartSpeeds;
 
         // Tab: swimming
         private DataGridView grid;
@@ -155,6 +156,7 @@ namespace Kinovea.ScreenManager
         private Label lblTurnTime;
         private Label lblTurnKicks;
         private Label lblTurnUnderwater;
+        private Label lblTurnSpeeds;
         private DataGridView gridTurns;
         private int currentTurnWall;
 
@@ -654,6 +656,10 @@ namespace Kinovea.ScreenManager
             lblFirstSplitTitle = AddEventRow(t, SwimLang.T("Πέρασμα 15μ."), PlayerScreenCommands.SwimSplit, SwimLang.T("Πέρασμα"),
                 SwimLang.T("Το κεφάλι περνά το πρώτο σημείο ελέγχου. Μετά συνεχίζεις στην καρτέλα Κολύμβηση."), lblFirstSplit);
 
+            // (2.9.8) The speeds before and after the breakout.
+            lblStartSpeeds = ValueLabel();
+            AddEventRow(t, SwimLang.T("Ταχύτητες εξόδου"), null, null, BreakoutSpeedsHelp(true), lblStartSpeeds);
+
             page.Controls.Add(t);
             return page;
         }
@@ -904,6 +910,8 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Το κεφάλι βγαίνει από το νερό. Τα μέτρα κάτω από το νερό μετριούνται από τον τοίχο της στροφής."),
                 lblTurnUnderwater,
                 PickButton(SwimPickTarget.TurnUnderwater, SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: μέτρα κάτω από το νερό από τον τοίχο της στροφής.")));
+            lblTurnSpeeds = ValueLabel();
+            AddEventRow(t, SwimLang.T("Ταχύτητες εξόδου"), null, null, BreakoutSpeedsHelp(false), lblTurnSpeeds);
 
             gridTurns = CreateGrid();
             gridTurns.ReadOnly = false;
@@ -914,6 +922,10 @@ namespace Kinovea.ScreenManager
             gridTurns.Columns.Add(Column("uwTime", SwimLang.T("Υποβρύχιος χρόνος (s)"), 86));
             gridTurns.Columns.Add(Column("kicks", SwimLang.T("Δελφινισμοί"), 72));
             gridTurns.Columns.Add(Column("gap", SwimLang.T("Τελ. χεριά → τοίχος (s)"), 90));
+            gridTurns.Columns.Add(Column("vOut", SwimLang.T("Αποκόλληση → έξοδος (m/s)"), 96));
+            gridTurns.Columns.Add(Column("v15", SwimLang.T("Έξοδος → +15 (m/s)"), 86));
+            gridTurns.Columns["vOut"].ToolTipText = BreakoutSpeedsHelp(false);
+            gridTurns.Columns["v15"].ToolTipText = BreakoutSpeedsHelp(false);
             foreach (DataGridViewColumn c in gridTurns.Columns)
             {
                 c.ReadOnly = c.Name != "uwDist" && c.Name != "turnTime";
@@ -1649,12 +1661,22 @@ namespace Kinovea.ScreenManager
                 SetText(tbUnderwaterDist, Format(r.UnderwaterDist));
                 SetText(tbBreakoutDist, Format(r.BreakoutDist));
                 SetText(tbFinishDist, Format(r.FinishLastStrokeDist));
+
+                // (2.9.8) The estimate from the times apart (dim, with a tooltip): no speeds of the breakout from it.
+                if (underwaterColor == Color.Empty)
+                    underwaterColor = tbUnderwaterDist.ForeColor;
+                bool estimated = r.UnderwaterEstimated && r.UnderwaterDist.HasValue;
+                tbUnderwaterDist.ForeColor = estimated ? SwimTheme.Dim : underwaterColor;
+                toolTip.SetToolTip(tbUnderwaterDist, estimated ? SwimLang.T("Εκτίμηση από τους χρόνους (για ακρίβεια 📍 Μέτρηση ή γράψε την τιμή).") : "");
             }
             finally
             {
                 updating = false;
             }
         }
+
+        /// <summary>(2.9.8) The color of the underwater distance of the start when it is not the estimate.</summary>
+        private Color underwaterColor = Color.Empty;
 
         private static void SetText(TextBox tb, string text)
         {
@@ -1852,6 +1874,7 @@ namespace Kinovea.ScreenManager
             SwimRow first = computed.Rows.FirstOrDefault();
             lblFirstSplitTitle.Text = first != null ? SwimLang.T("Πέρασμα ") + first.D + race.Unit : SwimLang.T("Πρώτο πέρασμα");
             lblFirstSplit.Text = first != null ? Seconds(first.T) : "–";
+            lblStartSpeeds.Text = BreakoutSpeedsText(PhaseOf(0), race.Unit);
 
             // Finish.
             lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? SwimLang.T("τελ. χεριά → τοίχος ") + Seconds(computed.FinishLastStrokeGap) : "–";
@@ -1916,6 +1939,17 @@ namespace Kinovea.ScreenManager
                     gr.Cells["uwTime"].Value = Format(t.UnderwaterTime);
                     gr.Cells["kicks"].Value = t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "";
                     gr.Cells["gap"].Value = Format(t.LastStrokeGap);
+
+                    // (2.9.8) The speeds of the breakout (its technical phase), with why one is missing in the tooltip.
+                    SwimTechPhase phase = PhaseOf(t.Wall);
+                    gr.Cells["vOut"].Value = phase != null ? Format(phase.Value("uwVel")) : "";
+                    gr.Cells["v15"].Value = phase != null ? Format(phase.Value("bo15Vel")) : "";
+                    string note = phase != null && phase.Breakout.HasValue && phase.SpeedNote != null ? phase.SpeedNote : "";
+                    gr.Cells["vOut"].ToolTipText = note;
+                    gr.Cells["v15"].ToolTipText = note;
+                    bool estimated = manual != null && manual.UnderwaterDist.HasValue && manual.UnderwaterEstimated;
+                    gr.Cells["uwDist"].ToolTipText = estimated ? SwimLang.T("Εκτίμηση από τους χρόνους (για ακρίβεια 📍 Μέτρηση ή γράψε την τιμή).") : "";
+                    gr.Cells["uwDist"].Style.ForeColor = estimated ? SwimTheme.Dim : Color.Empty;
                 }
             }
 
@@ -1971,8 +2005,10 @@ namespace Kinovea.ScreenManager
                 lblTurnTime.Text = "–";
             lblTurnKicks.Text = t != null && t.Kicks.HasValue ? t.Kicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             string uwTime = t != null && t.UnderwaterTime.HasValue ? SwimLang.T("υποβρύχια ") + Seconds(t.UnderwaterTime) : "–";
-            string uwDist = manual != null && manual.UnderwaterDist.HasValue ? " · " + Format(manual.UnderwaterDist) + " " + race.Unit : "";
+            string uwDist = manual != null && manual.UnderwaterDist.HasValue
+                ? " · " + (manual.UnderwaterEstimated ? "≈" : "") + Format(manual.UnderwaterDist) + " " + race.Unit : "";
             lblTurnUnderwater.Text = uwTime + uwDist;
+            lblTurnSpeeds.Text = wall > 0 ? BreakoutSpeedsText(PhaseOf(wall), race.Unit) : "–";
 
             foreach (DataGridViewRow gr in gridTurns.Rows)
             {
@@ -2744,7 +2780,12 @@ namespace Kinovea.ScreenManager
             r.EntryVelHands = Parse(tbEntryVelHands);
             r.EntryVelHips = Parse(tbEntryVelHips);
             r.EntryVelFeet = Parse(tbEntryVelFeet);
-            r.UnderwaterDist = Parse(tbUnderwaterDist);
+
+            // (2.9.8) A value typed is the analyst's, no longer the estimate from the times (the same value shown again stays one).
+            double? underwater = Parse(tbUnderwaterDist);
+            if (!underwater.HasValue || !r.UnderwaterDist.HasValue || Math.Abs(underwater.Value - r.UnderwaterDist.Value) > 0.005)
+                r.UnderwaterEstimated = false;
+            r.UnderwaterDist = underwater;
             r.BreakoutDist = Parse(tbBreakoutDist);
             r.FinishLastStrokeDist = Parse(tbFinishDist);
             manager.ManualValuesChanged();
@@ -2797,7 +2838,10 @@ namespace Kinovea.ScreenManager
 
             SwimTurnManual manual = manager.Race.GetTurn(wall, true);
             if (column == "uwDist")
+            {
                 manual.UnderwaterDist = value;
+                manual.UnderwaterEstimated = false;
+            }
             else if (column == "turnTime")
                 manual.TurnTime = value;
 
@@ -3025,6 +3069,50 @@ namespace Kinovea.ScreenManager
         private static string Format(double? value)
         {
             return Format(value, "0.00");
+        }
+
+        /// <summary>(2.9.8) The technical phase of the start (0) or of the turn at this wall of the race, null if none.</summary>
+        private SwimTechPhase PhaseOf(int wall)
+        {
+            if (manager.TechPhases == null || manager.Race == null || manager.Race.IsTraining)
+                return null;
+            SwimPhaseKind kind = wall == 0 ? SwimPhaseKind.Start : SwimPhaseKind.Turn;
+            return manager.TechPhases.FirstOrDefault(p => p.Kind == kind && p.Wall == wall);
+        }
+
+        /// <summary>
+        /// (2.9.8) "αποδέσμευση → έξοδος 2.85 m/s · έξοδος → 15μ. 1.95 m/s" for the start, "αποκόλληση → έξοδος …" for a turn, with why a
+        /// speed is missing once the breakout is marked.
+        /// </summary>
+        private static string BreakoutSpeedsText(SwimTechPhase phase, string unit)
+        {
+            if (phase == null)
+                return "–";
+
+            bool start = phase.Kind == SwimPhaseKind.Start;
+            double? before = phase.Value(start ? "pushVel" : "uwVel");
+            double? after = phase.Value("bo15Vel");
+            List<string> parts = new List<string>();
+            if (before.HasValue)
+                parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0.00} m/s", start ? SwimLang.T("αποδέσμευση → έξοδος") : SwimLang.T("αποκόλληση → έξοδος"), before.Value));
+            if (after.HasValue)
+                parts.Add(string.Format(CultureInfo.InvariantCulture, "{0}{1} {2:0.00} m/s", start ? SwimLang.T("έξοδος → 15") : SwimLang.T("έξοδος → +15"), unit, after.Value));
+
+            string text = parts.Count > 0 ? string.Join(" · ", parts.ToArray()) : "–";
+            if (parts.Count < 2 && phase.Breakout.HasValue && !string.IsNullOrEmpty(phase.SpeedNote))
+                text += " · " + phase.SpeedNote;
+            return text;
+        }
+
+        /// <summary>(2.9.8) What the speeds of the breakout are and what they need.</summary>
+        private static string BreakoutSpeedsHelp(bool start)
+        {
+            return (start
+                ? SwimLang.T("Μέση ταχύτητα από την αποδέσμευση από τον βατήρα έως την έξοδο του κεφαλιού (απόσταση της εξόδου από τον τοίχο / χρόνος) ")
+                : SwimLang.T("Μέση ταχύτητα από την αποκόλληση από τον τοίχο έως την έξοδο του κεφαλιού (απόσταση της εξόδου από τον τοίχο / χρόνος) ")) +
+                SwimLang.T("και από την έξοδο έως το κεφάλι στα 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
+                SwimLang.T("Χρειάζονται η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή γραμμένη, όχι η εκτίμηση από τους χρόνους, και τα σημάδια ") +
+                (start ? SwimLang.T("της αποδέσμευσης (ή ο επίσημος χρόνος αντίδρασης), της εξόδου και των 15μ.") : SwimLang.T("της αποκόλλησης, της εξόδου και του +15."));
         }
 
         private static string Format(double? value, string format)

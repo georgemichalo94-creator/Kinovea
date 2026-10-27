@@ -1255,9 +1255,14 @@ namespace Kinovea.ScreenManager
             {
                 case SwimPickTarget.EntryHands: Race.EntryDistHands = value; break;
                 case SwimPickTarget.EntryHips: Race.EntryDistHips = value; break;
-                case SwimPickTarget.StartUnderwater: Race.UnderwaterDist = value; break;
+                // (2.9.8) Measured on the video: no longer the estimate from the times.
+                case SwimPickTarget.StartUnderwater: Race.UnderwaterDist = value; Race.UnderwaterEstimated = false; break;
                 case SwimPickTarget.StartBreakout: Race.BreakoutDist = value; break;
-                case SwimPickTarget.TurnUnderwater: Race.GetTurn(wall, true).UnderwaterDist = value; break;
+                case SwimPickTarget.TurnUnderwater:
+                    SwimTurnManual turn = Race.GetTurn(wall, true);
+                    turn.UnderwaterDist = value;
+                    turn.UnderwaterEstimated = false;
+                    break;
                 case SwimPickTarget.FinishLastStroke: Race.FinishLastStrokeDist = value; break;
                 case SwimPickTarget.PhaseEntry: Race.GetPhaseValues(pendingPhaseId, true).EntryDist = value; break;
                 case SwimPickTarget.PhaseBreakout: Race.GetPhaseValues(pendingPhaseId, true).BreakoutDist = value; break;

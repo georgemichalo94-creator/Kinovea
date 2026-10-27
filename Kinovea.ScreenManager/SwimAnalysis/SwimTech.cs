@@ -77,6 +77,19 @@ namespace Kinovea.ScreenManager
         public double? EntryDist;
         public double? BreakoutDist;
 
+        /// <summary>
+        /// (2.9.8) Where the head came out for the speeds of the breakout (pool units from the wall): BreakoutDist, at the start of a race
+        /// else the underwater distance; OutEstimated: it is the estimate from the times (no speeds from it).
+        /// </summary>
+        public double? OutDist;
+        public bool OutEstimated;
+
+        /// <summary>(2.9.8) Start of a race: the official reaction time (the release from the block) when the release is not marked.</summary>
+        public double? OfficialRelease;
+
+        /// <summary>(2.9.8) Why a speed of the breakout is not given (in the language of the analysis), null when nothing is missing.</summary>
+        public string SpeedNote;
+
         /// <summary>Values sent to the report, with the keys of SWIM_TECH_METRICS of the backend.</summary>
         public Dictionary<string, double> Values = new Dictionary<string, double>();
 
@@ -169,7 +182,12 @@ namespace Kinovea.ScreenManager
             new SwimTechMetric("kickDist", "Απόσταση ανά δελφινισμό", "d", null),
             new SwimTechMetric("breakoutTime", "Έξοδος από το νερό", "s", null),
             new SwimTechMetric("breakoutDist", "Απόσταση εξόδου", "d", null),
-            new SwimTechMetric("uwVel", "Ταχύτητα υποβρύχιας φάσης", "v", null),
+            // (2.9.8) The speeds of the breakout: before it (start: from the entry and from the release; turn: from the push-off,
+            // the same value as before under another name) and after it to the 15.
+            new SwimTechMetric("uwVel", "Ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)", "v", SwimPhaseKind.Start),
+            new SwimTechMetric("pushVel", "Ταχύτητα αποδέσμευση → έξοδος", "v", SwimPhaseKind.Start),
+            new SwimTechMetric("uwVel", "Ταχύτητα αποκόλληση → έξοδος", "v", SwimPhaseKind.Turn),
+            new SwimTechMetric("bo15Vel", "Ταχύτητα έξοδος → 15", "v", null),
             new SwimTechMetric("firstStroke", "Πρώτη χεριά", "s", null)
         };
 
@@ -312,13 +330,23 @@ namespace Kinovea.ScreenManager
                         p.Reaction = race.Reaction.Value;
                     p.EntryDist = race.EntryDistHands;
                     p.BreakoutDist = race.BreakoutDist;
+
+                    // (2.9.8) The speeds of the breakout: where the head came out (else the underwater distance, as the video shows it).
+                    p.OutDist = race.BreakoutDist ?? race.UnderwaterDist;
+                    p.OutEstimated = !race.BreakoutDist.HasValue && race.UnderwaterDist.HasValue && race.UnderwaterEstimated;
+                    if (race.OfficialReaction.HasValue && race.OfficialReaction.Value > 0)
+                        p.OfficialRelease = race.OfficialReaction.Value;
                 }
                 else
                 {
                     // The turn values of the race analysis (underwater distance, last stroke, push-off) also hold here.
                     SwimTurnManual manual = race.GetTurn(p.Wall, false);
                     if (manual != null)
+                    {
                         p.BreakoutDist = manual.UnderwaterDist;
+                        p.OutDist = manual.UnderwaterDist;
+                        p.OutEstimated = manual.UnderwaterDist.HasValue && manual.UnderwaterEstimated;
+                    }
 
                     SwimTurnComputed turn = computed.Turns.FirstOrDefault(t => t.Wall == p.Wall);
                     if (turn != null && turn.LastStrokeGap.HasValue)
@@ -406,6 +434,7 @@ namespace Kinovea.ScreenManager
                 {
                     p.EntryDist = manual.EntryDist;
                     p.BreakoutDist = manual.BreakoutDist;
+                    p.OutDist = manual.BreakoutDist;
                 }
             }
 
@@ -635,6 +664,7 @@ namespace Kinovea.ScreenManager
             double k = race.K;
             Dictionary<string, double> v = p.Values;
             v.Clear();
+            p.SpeedNote = null;
             Action<string, double?> set = (key, value) =>
             {
                 if (value.HasValue && !double.IsNaN(value.Value) && !double.IsInfinity(value.Value))
@@ -674,6 +704,11 @@ namespace Kinovea.ScreenManager
                     set("kickDist", (p.BreakoutDist.Value - p.EntryDist.Value) / p.Kicks.Count);
                 if (p.EntryDist.HasValue && p.BreakoutDist.HasValue && p.Breakout.HasValue && p.Entry.HasValue && p.Breakout.Value > p.Entry.Value)
                     set("uwVel", (p.BreakoutDist.Value - p.EntryDist.Value) * k / (p.Breakout.Value - p.Entry.Value));
+
+                // (2.9.8) The speeds of the breakout: from the release from the block (marked, else the official reaction time) to the
+                // breakout, and from the breakout to the head at 15.
+                set("pushVel", BreakoutSpeed(p, p.Block ?? p.OfficialRelease, k, SwimLang.T("αποδέσμευση → έξοδος")));
+                set("bo15Vel", SpeedTo15(p, t15, k));
             }
             else
             {
@@ -710,8 +745,10 @@ namespace Kinovea.ScreenManager
                 set("underwater", diff(p.Breakout, p.Pushoff));
                 if (p.BreakoutDist.HasValue && p.Kicks.Count > 0)
                     set("kickDist", p.BreakoutDist.Value / p.Kicks.Count);
-                if (p.BreakoutDist.HasValue && p.Breakout.HasValue && p.Pushoff.HasValue && p.Breakout.Value > p.Pushoff.Value)
-                    set("uwVel", p.BreakoutDist.Value * k / (p.Breakout.Value - p.Pushoff.Value));
+                // (2.9.8) The speed from the push-off to the breakout (the "underwater" speed of a turn) and from the breakout to the head
+                // at +15; not from a distance estimated from the times (the speed after the breakout would be the one the estimate took).
+                set("uwVel", BreakoutSpeed(p, p.Pushoff, k, SwimLang.T("αποκόλληση → έξοδος")));
+                set("bo15Vel", SpeedTo15(p, o15, k));
             }
 
             // 0 kicks only when kicks are marked in this video (otherwise they were not counted).
@@ -727,6 +764,93 @@ namespace Kinovea.ScreenManager
             set("breakoutTime", p.Breakout);
             set("breakoutDist", p.BreakoutDist);
             set("firstStroke", p.FirstStroke);
+        }
+
+        /// <summary>
+        /// (2.9.8) The breakout's distance from the wall has to be at least this far before the 15 (pool units) for the speed from the
+        /// breakout to 15: nearer, a click of a few tenths of a metre off the head would change it by a tenth and more.
+        /// </summary>
+        internal const double SpeedMinSpan = 2.0;
+
+        /// <summary>(2.9.8) Shortest time a speed of the breakout is measured over (s).</summary>
+        internal const double SpeedMinTime = 0.3;
+
+        /// <summary>
+        /// (2.9.8) Plausible speeds (m/s) from the release or the push-off to the breakout, and from the breakout to 15: out of them a
+        /// mark or the distance is wrong and no speed is given (the note says so).
+        /// </summary>
+        internal const double UnderwaterSpeedMin = 0.7, UnderwaterSpeedMax = 4.5, After15SpeedMin = 0.6, After15SpeedMax = 3.0;
+
+        /// <summary>
+        /// (2.9.8) Mean speed from 'from' (release from the block, push-off from the wall; seconds from the origin) to the breakout: the
+        /// distance where the head came out from the wall over the time, as the race sheets have it. Null when something is missing, the
+        /// distance is the estimate from the times or the speed is not plausible ('name' for the note).
+        /// </summary>
+        private static double? BreakoutSpeed(SwimTechPhase p, double? from, double k, string name)
+        {
+            if (!p.Breakout.HasValue || !from.HasValue || !Usable(p))
+                return null;
+
+            double time = p.Breakout.Value - from.Value;
+            if (time < SpeedMinTime)
+                return null;
+
+            double speed = p.OutDist.Value * k / time;
+            if (speed >= UnderwaterSpeedMin && speed <= UnderwaterSpeedMax)
+                return speed;
+
+            Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1:0.00} m/s δεν γίνεται· έλεγξε την απόσταση της εξόδου και τα σημάδια"), name, speed));
+            return null;
+        }
+
+        /// <summary>
+        /// (2.9.8) Mean speed from the breakout to the head at 15 ('at15': seconds from the origin): what is left to the 15 over the time.
+        /// Null when something is missing, the breakout is less than SpeedMinSpan before the 15 or the speed is not plausible.
+        /// </summary>
+        private static double? SpeedTo15(SwimTechPhase p, double? at15, double k)
+        {
+            if (!p.Breakout.HasValue || !at15.HasValue || !Usable(p))
+                return null;
+
+            double span = 15 - p.OutDist.Value;
+            double time = at15.Value - p.Breakout.Value;
+            if (span < SpeedMinSpan || time < SpeedMinTime)
+            {
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("έξοδος → 15: η έξοδος είναι λιγότερο από {0:0} πριν από τα 15 (πολύ κοντά για ταχύτητα)"), SpeedMinSpan));
+                return null;
+            }
+
+            double speed = span * k / time;
+            if (speed >= After15SpeedMin && speed <= After15SpeedMax)
+                return speed;
+
+            Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1:0.00} m/s δεν γίνεται· έλεγξε την απόσταση της εξόδου και τα σημάδια"),
+                SwimLang.T("έξοδος → 15"), speed));
+            return null;
+        }
+
+        /// <summary>(2.9.8) The distance where the head came out can give the speeds (else the note says why).</summary>
+        private static bool Usable(SwimTechPhase p)
+        {
+            if (!p.OutDist.HasValue || p.OutDist.Value <= 0)
+            {
+                Note(p, SwimLang.T("χρειάζεται η απόσταση της εξόδου (📍 Μέτρηση ή γράψ' την)"));
+                return false;
+            }
+
+            if (p.OutEstimated)
+            {
+                Note(p, SwimLang.T("η απόσταση της εξόδου είναι εκτίμηση από τους χρόνους: μέτρησέ τη (📍) για τις ταχύτητες"));
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void Note(SwimTechPhase p, string note)
+        {
+            if (p.SpeedNote == null)
+                p.SpeedNote = note;
         }
         #endregion
 

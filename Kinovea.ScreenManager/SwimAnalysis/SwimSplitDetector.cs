@@ -1391,6 +1391,12 @@ namespace Kinovea.ScreenManager
         internal static double TrainProminence = 0.15, TrainStrength = 0.6, TrainNear = 0.55, TrainFar = 1.6;
 
         /// <summary>
+        /// (2.9.8) The breakout of the strokes (train) stands only up to this long (s) after the head at 15 m of the reading (the end
+        /// of the search, a little before the checkpoint): later the first strokes after the head was out were not found.
+        /// </summary>
+        internal static double TrainAfter15 = 0.2;
+
+        /// <summary>
         /// Usual delay (s) of the first peak of the strokes ("train") from the breakout the analysts mark, in breaststroke: after the
         /// start 0.73 s, after a turn 1.56 s, after the medley turn from backstroke 0.61 s (medians on the 115 analysts' races).
         /// </summary>

@@ -3088,7 +3088,12 @@ var SWIM_TECH_METRICS = [
   { key: 'kickDist', label: 'Απόσταση ανά δελφινισμό', unit: 'd', kind: 'both' },
   { key: 'breakoutTime', label: 'Έξοδος από το νερό', unit: 's', kind: 'both' },
   { key: 'breakoutDist', label: 'Απόσταση εξόδου (κεφάλι)', unit: 'd', kind: 'both' },
-  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύχιας φάσης', unit: 'v', kind: 'both', best: 'max' },
+  // 2.9.8: οι ταχύτητες της εξόδου. Πριν από αυτήν (εκκίνηση: από την είσοδο και από την αποδέσμευση· στροφή: από την
+  // αποκόλληση, η ίδια τιμή με πριν με άλλο όνομα) και μετά από αυτήν έως τα 15. Όχι από απόσταση που εκτιμήθηκε από τους χρόνους.
+  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)', unit: 'v', kind: 'start', best: 'max' },
+  { key: 'pushVel', label: 'Μέση ταχύτητα αποδέσμευση → έξοδος', unit: 'v', kind: 'start', best: 'max' },
+  { key: 'uwVel', label: 'Μέση ταχύτητα αποκόλληση → έξοδος', unit: 'v', kind: 'turn', best: 'max' },
+  { key: 'bo15Vel', label: 'Μέση ταχύτητα έξοδος → 15', unit: 'v', kind: 'both', best: 'max' },
   { key: 'firstStroke', label: 'Πρώτη χεριά μετά την έξοδο', unit: 's', kind: 'both' }
 ];
 
@@ -7111,6 +7116,10 @@ var SWIM_EN_ = {
   'Απόσταση ανά δελφινισμό': 'Distance per kick',
   'Απόσταση εξόδου (κεφάλι)': 'Breakout distance (head)',
   'Μέση ταχύτητα υποβρύχιας φάσης': 'Average speed of the underwater phase',
+  'Μέση ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)': 'Average speed of the underwater phase (entry → breakout)',
+  'Μέση ταχύτητα αποδέσμευση → έξοδος': 'Average speed release → breakout',
+  'Μέση ταχύτητα αποκόλληση → έξοδος': 'Average speed push-off → breakout',
+  'Μέση ταχύτητα έξοδος → 15': 'Average speed breakout → 15',
   'Πρώτη χεριά μετά την έξοδο': 'First stroke after the breakout',
   'δελφ./s': 'kicks/s',
   'Γωνία: ': 'Angle: ',
