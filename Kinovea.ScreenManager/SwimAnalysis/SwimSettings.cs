@@ -59,6 +59,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The board of the swimmers of the final at each checkpoint drawn on the video.</summary>
         public bool ShowFinalsBoard = true;
 
+        /// <summary>
+        /// (2.9.8) The set of the finals the races are compared with (its short name, e.g. "Ευρωπαϊκό 2026"); empty: automatic (the set of
+        /// the competition of the race, else the first one).
+        /// </summary>
+        public string FinalsSet = "";
+
         /// <summary>Since 2.8.0: the Δ with the reference at the last checkpoint passed on the race board of the video.</summary>
         public bool CompareDelta = true;
 

@@ -240,8 +240,8 @@ namespace Kinovea.ScreenManager
             Athletes = SwimAthleteList.Load();
             References = SwimReferenceList.Load();
             Finals = SwimFinals.Load();
-            if (Finals.Finals.Count == 0)
-                Finals = SwimFinals.ImportNearby() ?? Finals;
+            // (2.9.8) Also a set of finals put next to the program after the first one (or a newer file of a set).
+            Finals = SwimFinals.ImportNearby(Finals) ?? Finals;
             if (Settings.ReferenceByEvent == null)
                 Settings.ReferenceByEvent = new Dictionary<string, string>();
             if (Settings.LaneNumbering == null)
@@ -2395,7 +2395,7 @@ namespace Kinovea.ScreenManager
         public List<SwimReference> ReferencesForRace()
         {
             List<SwimReference> list = References.For(Race);
-            foreach (SwimReference r in Finals.ReferencesFor(Race).Concat(RaceReferences()))
+            foreach (SwimReference r in Finals.ReferencesFor(Race, Settings.FinalsSet).Concat(RaceReferences()))
             {
                 if (!list.Any(x => x.Id == r.Id))
                     list.Add(r);
@@ -2407,7 +2407,30 @@ namespace Kinovea.ScreenManager
         /// <summary>The final of the event of the race (same style, distance and gender, 50 m pool), null if none.</summary>
         public SwimFinal FinalForRace()
         {
-            return Finals.For(Race);
+            return Finals.For(Race, Settings.FinalsSet);
+        }
+
+        /// <summary>
+        /// (2.9.8) The set of the finals the races are compared with (its Short; empty: automatic, the one of the competition of the
+        /// race, else the first set).
+        /// </summary>
+        public void SetFinalsSet(string shortName)
+        {
+            shortName = shortName ?? "";
+            if (Settings.FinalsSet == shortName)
+                return;
+
+            Settings.FinalsSet = shortName;
+            Settings.Save();
+            if (Race != null && EnsureReference())
+                Changed(false);
+            if (form != null)
+            {
+                form.RefreshReferences();
+                form.RefreshAll();
+            }
+
+            InvalidatePlayer();
         }
 
         /// <summary>A reference of the sheet, of this computer or one of the swimmers of the finals.</summary>
@@ -2431,7 +2454,8 @@ namespace Kinovea.ScreenManager
             if (Race != null && EnsureReference())
                 Changed(false);
             SwimFinal final = FinalForRace();
-            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🏅 {0}: {1} τελικοί, {2} κολυμβητές.{3}"), finals.Source, finals.Finals.Count, finals.SwimmerCount,
+            SwimFinals set = finals.Imported ?? finals;
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🏅 {0}: {1} τελικοί, {2} κολυμβητές.{3}"), set.Source, set.Finals.Count, set.SwimmerCount,
                 final != null ? SwimLang.T(" Αυτός ο αγώνας συγκρίνεται με τον τελικό ") + final.Label + "." :
                 Race != null && SwimReference.NormalizeGender(Race.AthleteGender).Length == 0 ? SwimLang.T(" Για τη σύγκριση χρειάζεται το φύλο του αθλητή.") : ""), false);
             if (form != null)
@@ -2658,7 +2682,7 @@ namespace Kinovea.ScreenManager
                 remembered = null;
 
             if (remembered == null && !chosen && Finals != null)
-                remembered = Finals.ReferencesFor(Race).FirstOrDefault();
+                remembered = Finals.ReferencesFor(Race, Settings.FinalsSet).FirstOrDefault();
 
             SwimReference before = Race.Reference;
             Race.Reference = remembered != null ? remembered.Copy() : null;
@@ -2796,7 +2820,7 @@ namespace Kinovea.ScreenManager
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
-                Finals != null ? Finals.For(race) : null, pdf && drawCharts), race.Id, pdf);
+                Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts), race.Id, pdf);
         }
 
         public void OpenSheet()
