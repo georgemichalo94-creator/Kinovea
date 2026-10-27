@@ -115,6 +115,13 @@ namespace Kinovea.ScreenManager
     {
         public double? UnderwaterDist;
         public double? TurnTime;
+
+        /// <summary>
+        /// (2.9.8) UnderwaterDist is the estimate from the times (written with a breakout, SwimAnalysisManager.EstimateUnderwaterDistance),
+        /// not measured on the video or typed: the speeds of the breakout are not computed from it (SwimTechCalculator).
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool UnderwaterEstimated;
     }
 
     /// <summary>
@@ -569,6 +576,10 @@ namespace Kinovea.ScreenManager
         public double? UnderwaterDist;
         public double? BreakoutDist;
         public double? FinishLastStrokeDist;
+
+        /// <summary>(2.9.8) UnderwaterDist of the start is the estimate from the times (see SwimTurnManual.UnderwaterEstimated).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool UnderwaterEstimated;
 
         /// <summary>
         /// The official times of the results, typed by the analyst (since 2026-10-19): the final time alone, or the times at every

@@ -351,7 +351,8 @@ namespace Kinovea.ScreenManager
                 return 0;
 
             int space = Math.Max(1, (int)Math.Round(font.SizeInPoints * g.DpiY / 72f * tracking));
-            TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+            // NoPrefix: an "&" of the text is drawn as it is (not the underline of a mnemonic).
+            TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
             List<int> widths = text.Select(ch => TextRenderer.MeasureText(g, ch.ToString(), font, Size.Empty, flags).Width).ToList();
             int total = widths.Sum() + space * (text.Length - 1);
             if (total > box.Width)
@@ -816,7 +817,7 @@ namespace Kinovea.ScreenManager
 
         public override Size GetPreferredSize(Size proposedSize)
         {
-            Size text = TextRenderer.MeasureText(Text ?? "", Font);
+            Size text = TextRenderer.MeasureText(Text ?? "", Font, Size.Empty, TextFormatFlags.NoPrefix);
             int badge = string.IsNullOrEmpty(key) ? 0 : TextRenderer.MeasureText(key, SwimTheme.Ui(7f, FontStyle.Bold)).Width + 12;
             return new Size(text.Width + badge + 22, Math.Max(26, text.Height + 10));
         }
@@ -922,7 +923,7 @@ namespace Kinovea.ScreenManager
                 area.Width = badge.Left - area.Left - 4;
             }
 
-            TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.WordBreak;
+            TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
             flags |= string.IsNullOrEmpty(key) ? TextFormatFlags.HorizontalCenter : TextFormatFlags.Left;
             TextRenderer.DrawText(g, Text ?? "", Font, area, text, flags);
         }
@@ -1050,8 +1051,9 @@ namespace Kinovea.ScreenManager
                     }
 
                     Font font = SwimTheme.Ui(8.5f, active ? FontStyle.Bold : FontStyle.Regular);
+                    // NoPrefix: "4 · Τερματισμός & ΔΑΚ" with its "&" (not "Τερματισμός _ΔΑΚ", the underline of a mnemonic).
                     TextRenderer.DrawText(g, page.Text, font, r, active ? Color.White : SwimTheme.Dim,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
                     if (active)
                     {
                         using (SolidBrush glow = new SolidBrush(Color.FromArgb(70, SwimTheme.Accent)))
@@ -1069,7 +1071,7 @@ namespace Kinovea.ScreenManager
                 if (n == 0)
                     return;
 
-                List<int> widths = owner.visible.Select(p => TextRenderer.MeasureText(g, p.Text, SwimTheme.Ui(8.5f, FontStyle.Bold)).Width + 20).ToList();
+                List<int> widths = owner.visible.Select(p => TextRenderer.MeasureText(g, p.Text, SwimTheme.Ui(8.5f, FontStyle.Bold), Size.Empty, TextFormatFlags.NoPrefix).Width + 20).ToList();
                 int total = widths.Sum();
                 double scale = total > Width ? (double)Width / total : 1.0;
                 int x = 0;
@@ -1201,7 +1203,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 TextRenderer.DrawText(g, items[i], Font, r, active ? Color.White : SwimTheme.Dim,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
             }
         }
 

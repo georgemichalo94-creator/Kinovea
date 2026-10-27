@@ -118,6 +118,8 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// The finals for the comparisons (the 8 of an Olympic final), loaded once from a file of the analyses of the finals and kept
     /// on this computer (not in the program: the data stay with the analyst). Each finalist is also a reference for the Δ.
+    /// Since 2.9.8 several sets (e.g. the Olympic Games of 2024 and the European Championships of 2026), each kept in its own file:
+    /// the final of a race is the one of the set chosen, else of the competition of the race, else of the first set.
     /// </summary>
     public sealed class SwimFinals
     {
@@ -125,13 +127,86 @@ namespace Kinovea.ScreenManager
 
         public const string Format = "kinovea-swim-finals";
 
+        /// <summary>Of the first set (the file of before 2.9.8).</summary>
         public string Source = "";
         public string Short = "";
         public List<SwimFinal> Finals = new List<SwimFinal>();
 
+        /// <summary>(2.9.8) The set of the file just imported (for the status), null otherwise.</summary>
+        public SwimFinals Imported;
+
         public static string FilePath
         {
             get { return Path.Combine(Software.SettingsDirectory, "SwimFinals.json"); }
+        }
+
+        /// <summary>(2.9.8) The names of the sets (Short), in the order they were loaded.</summary>
+        public List<string> SetNames
+        {
+            get { return Finals.Select(f => f.Short).Distinct().ToList(); }
+        }
+
+        /// <summary>(2.9.8) The long name of a set ("" if there is none).</summary>
+        public string SourceOf(string shortName)
+        {
+            return Finals.Where(f => f.Short == shortName).Select(f => f.Source).FirstOrDefault() ?? "";
+        }
+
+        /// <summary>(2.9.8) The finals of a set (a file) after those loaded before: a set of the same name replaces its finals.</summary>
+        private void AddSet(SwimFinals set)
+        {
+            Finals.RemoveAll(f => f.Short == set.Short);
+            Finals.AddRange(set.Finals);
+            if (Source.Length == 0)
+            {
+                Source = set.Source;
+                Short = set.Short;
+            }
+        }
+
+        /// <summary>(2.9.8) The files of the sets: the one of before 2.9.8 first, then "SwimFinals-name.json".</summary>
+        private static List<string> SetFiles()
+        {
+            List<string> files = new List<string>();
+            try
+            {
+                if (File.Exists(FilePath))
+                    files.Add(FilePath);
+                string dir = Path.GetDirectoryName(FilePath);
+                if (Directory.Exists(dir))
+                    files.AddRange(Directory.GetFiles(dir, "SwimFinals-*.json").OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not list the files of the finals.", e);
+            }
+
+            return files;
+        }
+
+        /// <summary>
+        /// (2.9.8) Where a set is kept: the file of before 2.9.8 while it is the first set (or that set again), else a file of its own.
+        /// </summary>
+        private static string SetPath(string shortName)
+        {
+            if (!File.Exists(FilePath))
+                return FilePath;
+
+            SwimFinals first = null;
+            try
+            {
+                string error;
+                first = Parse(File.ReadAllText(FilePath, Encoding.UTF8), out error);
+            }
+            catch (Exception)
+            {
+            }
+
+            if (first == null || first.Short == shortName)
+                return FilePath;
+
+            string safe = new string((shortName ?? "").Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray()).Trim('_');
+            return Path.Combine(Path.GetDirectoryName(FilePath), "SwimFinals-" + (safe.Length > 0 ? safe : "set") + ".json");
         }
 
         public int SwimmerCount
@@ -141,31 +216,37 @@ namespace Kinovea.ScreenManager
 
         public static SwimFinals Load()
         {
-            try
+            SwimFinals all = new SwimFinals();
+            foreach (string path in SetFiles())
             {
-                if (File.Exists(FilePath))
+                try
                 {
                     string error;
-                    SwimFinals finals = Parse(File.ReadAllText(FilePath, Encoding.UTF8), out error);
+                    SwimFinals finals = Parse(File.ReadAllText(path, Encoding.UTF8), out error);
                     if (finals != null)
-                        return finals;
-                    log.Error("Could not read the finals: " + error);
+                        all.AddSet(finals);
+                    else
+                        log.Error("Could not read the finals of " + Path.GetFileName(path) + ": " + error);
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not read the finals of " + Path.GetFileName(path) + ".", e);
                 }
             }
-            catch (Exception e)
-            {
-                log.Error("Could not read the finals.", e);
-            }
 
-            return new SwimFinals();
+            return all;
         }
 
         /// <summary>
-        /// The first time on a computer: a file of the finals next to the program (in its folder or in one of the five above it, e.g.
-        /// "ai\OlympicFinalsParis2024.json" beside the portable folder) is imported as with the button. Null if there is none.
+        /// A file of the finals next to the program (in its folder or in one of the five above it, e.g. "ai\OlympicFinalsParis2024.json"
+        /// beside the portable folder) is imported as with the button: the first time on a computer, and since 2.9.8 also a set not
+        /// loaded yet or a newer file of a set (e.g. the European Championships of 2026 put beside the Olympic Games of 2024). All the
+        /// sets after it, null if nothing was imported.
         /// </summary>
-        public static SwimFinals ImportNearby()
+        public static SwimFinals ImportNearby(SwimFinals loaded)
         {
+            HashSet<string> done = new HashSet<string>();
+            bool imported = false;
             try
             {
                 DirectoryInfo dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
@@ -184,15 +265,34 @@ namespace Kinovea.ScreenManager
                     foreach (FileInfo f in files.Where(x => x.Name.IndexOf("final", StringComparison.OrdinalIgnoreCase) >= 0 && x.Length < 20 * 1024 * 1024)
                         .OrderByDescending(x => x.LastWriteTimeUtc))
                     {
-                        if (string.Equals(f.FullName, FilePath, StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(f.DirectoryName, Path.GetDirectoryName(FilePath), StringComparison.OrdinalIgnoreCase))
                             continue;
 
                         string error;
-                        SwimFinals finals = Import(f.FullName, out error);
-                        if (finals != null)
+                        SwimFinals set;
+                        try
                         {
-                            log.InfoFormat("Finals imported from {0}: {1} finals.", f.FullName, finals.Finals.Count);
-                            return finals;
+                            set = Parse(File.ReadAllText(f.FullName, Encoding.UTF8), out error);
+                        }
+                        catch (Exception)
+                        {
+                            continue;
+                        }
+
+                        if (set == null || done.Contains(set.Short))
+                            continue;
+                        done.Add(set.Short);
+
+                        // Kept already, from this file or a newer one: nothing to do.
+                        bool known = loaded != null && loaded.Finals.Any(x => x.Short == set.Short);
+                        string target = SetPath(set.Short);
+                        if (known && File.Exists(target) && File.GetLastWriteTimeUtc(target) >= f.LastWriteTimeUtc)
+                            continue;
+
+                        if (Import(f.FullName, out error) != null)
+                        {
+                            imported = true;
+                            log.InfoFormat("Finals imported from {0}: {1} finals.", f.FullName, set.Finals.Count);
                         }
                     }
                 }
@@ -202,7 +302,7 @@ namespace Kinovea.ScreenManager
                 log.Error("Could not look for a file of the finals next to the program.", e);
             }
 
-            return null;
+            return imported ? Load() : null;
         }
 
         /// <summary>The finals of a file (kept on this computer for the next times); null with the reason if it is not such a file.</summary>
@@ -227,7 +327,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                File.WriteAllText(FilePath, text, Encoding.UTF8);
+                File.WriteAllText(SetPath(finals.Short), text, Encoding.UTF8);
             }
             catch (Exception e)
             {
@@ -235,7 +335,9 @@ namespace Kinovea.ScreenManager
                 return null;
             }
 
-            return finals;
+            SwimFinals all = Load();
+            all.Imported = finals;
+            return all;
         }
 
         /// <summary>The finals of the text of a file (format "kinovea-swim-finals").</summary>
@@ -383,6 +485,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public SwimFinal For(SwimRace race)
         {
+            return For(race, null);
+        }
+
+        /// <summary>
+        /// (2.9.8) The same among the sets: the one chosen ('preferred', its Short; empty: automatic), else the one of the competition
+        /// of the race (an analysis at the European Championships with the European final), else the first set.
+        /// </summary>
+        public SwimFinal For(SwimRace race, string preferred)
+        {
             if (race == null || race.Relay || race.IsYards || race.Pool != 50)
                 return null;
 
@@ -390,13 +501,37 @@ namespace Kinovea.ScreenManager
             if (gender != "M" && gender != "F")
                 return null;
 
-            return Finals.FirstOrDefault(f => f.Style == race.Style && f.Distance == race.Distance && f.Pool == race.Pool && f.Gender == gender);
+            List<SwimFinal> finals = Finals.Where(f => f.Style == race.Style && f.Distance == race.Distance && f.Pool == race.Pool && f.Gender == gender).ToList();
+            if (finals.Count <= 1)
+                return finals.FirstOrDefault();
+
+            SwimFinal chosen = string.IsNullOrEmpty(preferred) ? null : finals.FirstOrDefault(f => f.Short == preferred);
+            return chosen ?? finals.FirstOrDefault(f => SameCompetition(f, race.Competition)) ?? finals[0];
+        }
+
+        /// <summary>(2.9.8) The competition of a race is the one of a set: both European Championships, or both Olympic Games.</summary>
+        private static bool SameCompetition(SwimFinal f, string competition)
+        {
+            if (string.IsNullOrEmpty(competition))
+                return false;
+
+            string c = competition.ToLowerInvariant();
+            string s = (f.Source + " " + f.Short).ToLowerInvariant();
+            bool europe = c.Contains("ευρωπ") || c.Contains("europ");
+            bool olympic = c.Contains("ολυμπ") || c.Contains("olymp");
+            return (europe && (s.Contains("ευρωπ") || s.Contains("europ"))) || (olympic && (s.Contains("ολυμπ") || s.Contains("olymp")));
         }
 
         /// <summary>The swimmers of the final of the race as references (for the Δ): fastest first.</summary>
         public List<SwimReference> ReferencesFor(SwimRace race)
         {
-            SwimFinal final = For(race);
+            return ReferencesFor(race, null);
+        }
+
+        /// <summary>(2.9.8) The same in the set chosen (see For).</summary>
+        public List<SwimReference> ReferencesFor(SwimRace race, string preferred)
+        {
+            SwimFinal final = For(race, preferred);
             return final == null ? new List<SwimReference>() : final.Swimmers.Select(s => Reference(final, s)).ToList();
         }
 

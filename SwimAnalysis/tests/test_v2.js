@@ -288,4 +288,32 @@ assert.strictEqual(Object.values(layout.grid.cells).filter(c => c.c === 1 && /^�
 r = call({ action: 'update', race: longRace });
 assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
 
-console.log('V2 OK: pools, ΔΑΚ, comparisons, levels, technical analysis, images');
+// ---------------------------------------------------------------------------------------------
+// 8) 2.9.8: οι ταχύτητες της εξόδου στην τεχνική ενότητα (εκκίνηση: αποδέσμευση → έξοδος, έξοδος → 15· στροφή: αποκόλληση → έξοδος,
+// έξοδος → +15), ελληνικά και αγγλικά, με τη μονάδα της πισίνας στο → 15.
+// ---------------------------------------------------------------------------------------------
+const speeds = JSON.parse(JSON.stringify(G.swimDemoRace_()));
+speeds.id = 'demo-speeds';
+Object.assign(speeds.tech.phases[0].values, { pushVel: 3.07, bo15Vel: 1.96 });
+Object.assign(speeds.tech.phases[1].values, { bo15Vel: 1.88 });
+race = G.swimNormalizeRace_(speeds);
+const labelsIn = l => Object.values(l.grid.cells).map(c => c.v).filter(v => typeof v === 'string');
+layout = G.swimBuildLayout_(race, G.swimAnalyze_(race), {});
+checkGrid(layout, 'speeds');
+let texts = labelsIn(layout);
+['Μέση ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος) (m/s)', 'Μέση ταχύτητα αποδέσμευση → έξοδος (m/s)', 'Μέση ταχύτητα αποκόλληση → έξοδος (m/s)',
+  'Μέση ταχύτητα έξοδος → 15μ. (m/s)'].forEach(t => assert.ok(texts.indexOf(t) >= 0, 'label ' + t + ' in ' + texts.filter(x => /ταχύτητα/.test(x)).join(' | ')));
+assert.strictEqual(texts.filter(t => t === 'Μέση ταχύτητα έξοδος → 15μ. (m/s)').length, 2, 'breakout → 15 in the start and the turn tables');
+// Οι τιμές γράφονται από τα blocks της τεχνικής ανάλυσης (μία στήλη ανά φάση), στη γραμμή της ετικέτας τους.
+const cells = Object.values(layout.grid.cells);
+const rowOf = t => cells.filter(c => c.v === t).map(c => c.r);
+const valuesIn = r => [].concat.apply([], layout.inputs.blocks.filter(b => r >= b.r && r < b.r + b.values.length).map(b => b.values[r - b.r]));
+assert.ok(valuesIn(rowOf('Μέση ταχύτητα αποδέσμευση → έξοδος (m/s)')[0]).indexOf(3.07) >= 0, 'release → breakout value');
+assert.ok(rowOf('Μέση ταχύτητα έξοδος → 15μ. (m/s)').some(r => valuesIn(r).indexOf(1.96) >= 0), 'start breakout → 15 value');
+assert.ok(rowOf('Μέση ταχύτητα έξοδος → 15μ. (m/s)').some(r => valuesIn(r).indexOf(1.88) >= 0), 'turn breakout → +15 value');
+layout = G.swimWithLang_('en', () => G.swimBuildLayout_(race, G.swimAnalyze_(race), {}));
+texts = labelsIn(layout);
+['Average speed of the underwater phase (entry → breakout) (m/s)', 'Average speed release → breakout (m/s)', 'Average speed push-off → breakout (m/s)',
+  'Average speed breakout → 15m (m/s)'].forEach(t => assert.ok(texts.indexOf(t) >= 0, 'English label ' + t + ' in ' + texts.filter(x => /speed/i.test(x)).join(' | ')));
+
+console.log('V2 OK: pools, ΔΑΚ, comparisons, levels, technical analysis, images, breakout speeds');

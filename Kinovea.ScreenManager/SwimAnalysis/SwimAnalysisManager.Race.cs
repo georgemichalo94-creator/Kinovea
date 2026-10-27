@@ -768,6 +768,9 @@ namespace Kinovea.ScreenManager
             /// <summary>Cues of the breakout after the wall (or the start) of the length (frames of the reading), empty if not seen.</summary>
             public Dictionary<string, double> Breakout = new Dictionary<string, double>();
 
+            /// <summary>(2.9.8) Where the search of the breakout ended: the head at 15 m of the reading (frame), NaN if not read.</summary>
+            public double BreakoutEnd = double.NaN;
+
             /// <summary>Strokes of the length (frames of the reading): from the breakout to a little before the wall.</summary>
             public readonly List<int> Strokes = new List<int>();
             public double Period;
@@ -869,7 +872,8 @@ namespace Kinovea.ScreenManager
                 SwimSplitFound f15 = l.Found.FirstOrDefault(f => f.LapDistance == 15);
                 double at15 = f15 != null ? SwimSplitDetector.BreakoutSearchEnd(f15.Cues, !dive, style, s.Fps, Race.Pool) : double.NaN;
                 int to = !double.IsNaN(at15) ? (int)Math.Round(at15) : from + (int)Math.Round(8 * s.Fps);
-                l.Breakout = SwimSplitDetector.BreakoutCues(l.Result, s.Fps, from, to);
+                l.Breakout = SwimSplitDetector.BreakoutCues(l.Result, s.Fps, from, to, lapStart);
+                l.BreakoutEnd = at15;
 
                 // After the start not before 3 s (entry and glide of the fastest). Cues earlier than that are the kicks under the
                 // surface before the head is out (distance freestyle): the breakout is then that of the first stroke counted. The
@@ -950,7 +954,7 @@ namespace Kinovea.ScreenManager
             string style = SwimPresets.StyleAt(Race, l.Session.Wall);
             bool turn = !IsDive(l.LapFrom);
             bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
-            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change, startUndelayed, l.SwimmerLength);
+            return BreakoutCuesDelayed(l.Breakout, style, l.Session.Fps, turn, strokes, change, startUndelayed, l.SwimmerLength, l.BreakoutEnd);
         }
 
         /// <summary>
@@ -962,16 +966,35 @@ namespace Kinovea.ScreenManager
         /// (SwimSplitDetector.StrokeStartDelay, with the names and the learning of the breakout before 2026-10-15). change: a turn
         /// into another style (the open turns of the medley): the steepest rise in backstroke has its own delay and learning there
         /// (".o"; the motion starting after the turn into freestyle tried as not sure: as many breakouts better as worse).
+        /// searchEnd: the head at 15 m of the reading (frame, NaN if not read).
         /// </summary>
-        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false, bool startUndelayed = false, double swimmerLength = double.NaN)
+        private static Dictionary<string, double> BreakoutCuesDelayed(Dictionary<string, double> found, string style, double fps, bool turn, bool strokes = false, bool change = false, bool startUndelayed = false, double swimmerLength = double.NaN, double searchEnd = double.NaN)
         {
             Dictionary<string, double> cues = new Dictionary<string, double>();
+
+            // (2.9.8) In breaststroke the first peak of the regular strokes alone ("train"): the pull-out and the kick under the water
+            // move the water before the head is out, the other cues found them (SwimSplitDetector.BreakoutTrain). Its delay after the
+            // start, a turn and the medley turn from backstroke apart, and learned apart (".t", ".c"). Not when it puts the head out
+            // after the head at 15 m (TrainAfter15): the strokes before were not found (the lab: the only two breaststroke breakouts
+            // after the 15 m were 1.9 and 3.0 s late, all the others more than 1.5 s before it); the other cues then.
+            if (style == "br" && !strokes && SwimSplitDetector.BreastTrain && found.ContainsKey(SwimSplitDetector.CueTrain))
+            {
+                double at = found[SwimSplitDetector.CueTrain] + SwimSplitDetector.TrainDelay(turn, change) * fps;
+                if (double.IsNaN(searchEnd) || at <= searchEnd + SwimSplitDetector.TrainAfter15 * fps)
+                {
+                    string trainName = SwimSplitDetector.CueTrain + (turn ? ".t" : "") + (turn && change ? ".c" : "");
+                    cues[StyleCue(trainName, style)] = at;
+                    return cues;
+                }
+            }
 
             // By the view of the swimmer since 2026-10-18 (a camcorder near him sees the head out sooner than a phone in the stands).
             double far = SwimSplitDetector.FarShare(swimmerLength);
             foreach (KeyValuePair<string, double> c in found)
             {
                 double delay;
+                if (c.Key == SwimSplitDetector.CueTrain)
+                    continue;
                 if (c.Key == SwimSplitDetector.CueRise)
                 {
                     if (string.IsNullOrEmpty(style) || (strokes && style == "fs"))
@@ -1067,7 +1090,8 @@ namespace Kinovea.ScreenManager
             bool change = turn && l.LapFrom > 0 && SwimPresets.StyleAt(Race, l.LapFrom) != style;
             SwimDetection d = new SwimDetection(KindRaceBreakout, SwimMarkType.Breakout, l.LapFrom)
             {
-                Confidence = SwimSplitDetector.BreakoutConfidence(style, turn, change, cues.Count)
+                Confidence = SwimSplitDetector.BreakoutConfidence(style, turn, change,
+                    cues.Keys.Any(k => k.StartsWith(SwimSplitDetector.CueTrain, StringComparison.Ordinal)) ? Math.Max(2, cues.Count) : cues.Count)
             };
             foreach (KeyValuePair<string, double> c in cues)
             {
@@ -1156,9 +1180,17 @@ namespace Kinovea.ScreenManager
 
             distance = Math.Round(distance / Race.K, 1);
             if (start)
+            {
                 Race.UnderwaterDist = distance;
+                Race.UnderwaterEstimated = true;
+            }
             else
-                Race.GetTurn(wall, true).UnderwaterDist = distance;
+            {
+                SwimTurnManual written = Race.GetTurn(wall, true);
+                written.UnderwaterDist = distance;
+                written.UnderwaterEstimated = true;
+            }
+
             return string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · κάτω από το νερό {0:0.0}{1} (εκτίμηση από τον χρόνο ως τα {2}· για ακρίβεια 📍 Μέτρηση)"),
                 distance, Race.Unit, checkpoint);
         }
@@ -2304,6 +2336,7 @@ namespace Kinovea.ScreenManager
                     spread = sure ? 0.2 : 0.5;
                     break;
                 case SwimSplitDetector.CueRise: weight = 1.0; spread = 0.2; break;
+                case SwimSplitDetector.CueTrain: weight = 1.0; spread = 0.4; break;
                 case SwimSplitDetector.CueWallBody: weight = 0.5; spread = 0.3; break;
                 case SwimSplitDetector.CueWallHead: weight = 0.4; spread = 0.3; break;
                 case SwimSplitDetector.CueStop: weight = 0.3; spread = 0.35; break;

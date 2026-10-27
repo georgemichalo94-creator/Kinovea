@@ -842,7 +842,7 @@ namespace Kinovea.ScreenManager
             }
 
             string[] lowerIsBetter = { "reaction", "handsOff", "backFoot", "blockTime", "blockPhase", "entryTime", "in5", "rotation", "contact", "turnTime", "t5", "t10", "t15", "out5", "out10", "out15", "inOut5", "inOut10", "inOut15" };
-            string[] higherIsBetter = { "entryDist", "v0_5", "v5_10", "v10_15", "uwVel" };
+            string[] higherIsBetter = { "entryDist", "v0_5", "v5_10", "v10_15", "uwVel", "pushVel", "bo15Vel" };
             for (int r = 0; r < metrics.Count; r++)
             {
                 SwimTechMetric m = metrics[r];

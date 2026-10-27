@@ -924,9 +924,15 @@ namespace Kinovea.ScreenManager
                 if (now.HasValue && Math.Abs(now.Value - pilot.Underwater.Value) < 1e-6)
                 {
                     if (turn != null)
+                    {
                         turn.UnderwaterDist = null;
+                        turn.UnderwaterEstimated = false;
+                    }
                     else
+                    {
                         Race.UnderwaterDist = null;
+                        Race.UnderwaterEstimated = false;
+                    }
                 }
             }
 
@@ -987,17 +993,22 @@ namespace Kinovea.ScreenManager
             return turn != null ? turn.UnderwaterDist : null;
         }
 
+        /// <summary>Only for the estimate of the pilot (taken away, or put back): a value set here is the estimate from the times.</summary>
         private void SetUnderwater(int wall, double? value)
         {
             if (wall == 0)
             {
                 Race.UnderwaterDist = value;
+                Race.UnderwaterEstimated = value.HasValue;
                 return;
             }
 
             SwimTurnManual turn = Race.GetTurn(wall, value.HasValue);
             if (turn != null)
+            {
                 turn.UnderwaterDist = value;
+                turn.UnderwaterEstimated = value.HasValue;
+            }
         }
 
         /// <summary>After a reading of the pilot: the swimmer lost (the analyst shows him again, then it goes on), or the report.</summary>

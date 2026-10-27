@@ -23,6 +23,13 @@ function originalSource() {
   throw new Error('no script without the English report in the history');
 }
 const ORIGINAL = originalSource();
+// 2.9.8: η μέση ταχύτητα της υποβρύχιας φάσης με το όνομα του πού αρχίζει (εκκίνηση: η είσοδος· στροφή: η αποκόλληση), όπως
+// στο νέο script· οι νέες ταχύτητες της εξόδου (pushVel, bo15Vel) δεν έχουν τιμές στις αναλύσεις αυτού του ελέγχου.
+const UW_OLD = "  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύχιας φάσης', unit: 'v', kind: 'both', best: 'max' },\n";
+const UW_NEW = "  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)', unit: 'v', kind: 'start', best: 'max' },\n" +
+  "  { key: 'uwVel', label: 'Μέση ταχύτητα αποκόλληση → έξοδος', unit: 'v', kind: 'turn', best: 'max' },\n";
+assert.ok(ORIGINAL.indexOf(UW_OLD) > 0 && CURRENT.indexOf(UW_OLD) < 0, 'the 2.9.8 names of the underwater speed');
+const ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW);
 
 // Το mock των υπηρεσιών με άλλο script (το mock_gas διαβάζει το αρχείο όταν φορτώνεται).
 function makeContextWith(src, opts) {
@@ -270,7 +277,7 @@ function postAll(env, R, lang) {
 // ---------------------------------------------------------------------------------------------
 // (a) Ελληνικά: lang 'el' στο νέο script = το script πριν από τα αγγλικά, κελί προς κελί (εκτός από την έκδοση)
 // ---------------------------------------------------------------------------------------------
-const OLD = makeContextWith(ORIGINAL, { athletes: ATHLETES });
+const OLD = makeContextWith(ORIGINAL_NAMED, { athletes: ATHLETES });
 // 2.8.0: χωρίς copyTo η πρώτη σελίδα του PDF («Με μια ματιά») δεν γίνεται και το PDF είναι όπως πριν· ελέγχεται στο test_quick.
 const NEW = makeContext({ athletes: ATHLETES, copyTo: false });
 // 2.9.5: ο ΔΑΚ κάθε 50άρι (στήλη L των χρόνων, πλακίδιο) και τα γραφήματα του PDF (χωρίς τιμές πάνω στις σειρές, χωρίς τα
@@ -283,7 +290,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.9.7');
+assert.strictEqual(vNew, '2.9.8');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -376,7 +383,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.9\.7$/, 'version line');
+like(/^Updated .* · version 2\.9\.8$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');
