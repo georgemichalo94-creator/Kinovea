@@ -266,14 +266,15 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.9.11) A detour of the path jumps away (more than DetourJump box diagonals per detection step) and back, within
-        /// maxDetour images, to a box that continues the box before the first jump, every box between away from the line
-        /// joining the two (DetourAway diagonals, at most DetourOverlap of the line's box): meanwhile the path followed
-        /// someone else (a swimmer passing by, a person standing at the wall during a turn) where the swimmer's own
-        /// detections were weak or missing. A detour is replaced by the best chain from the box before to the box after
-        /// through the detections near that line, or by the boxes in between when there are none. MinScale: the diagonal
-        /// of a box counts at least this many pixels (a swimmer far away is small and moves many of its diagonals).
+        /// maxDetour images, to a box that continues the box before the first jump (at most DetourJump per step and DetourBack
+        /// diagonals in all), every box between away from the line joining the two (DetourAway diagonals, at most DetourOverlap
+        /// of the line's box): meanwhile the path followed someone else (a swimmer passing by, a person standing at the wall
+        /// during a turn) where the swimmer's own detections were weak or missing. A detour is replaced by the best chain from
+        /// the box before to the box after through the detections near that line, or by the boxes in between when there are
+        /// none. MinScale: the diagonal of a box counts at least this many pixels (a swimmer far away is small and moves many
+        /// of its diagonals).
         /// </summary>
-        public const double DetourJump = 0.3, DetourAway = 0.3, DetourOverlap = 0.4;
+        public const double DetourJump = 0.3, DetourBack = 0.35, DetourAway = 0.3, DetourOverlap = 0.4;
 
         private static double Scale(SwimBox a, SwimBox b, double minScale)
         {
@@ -287,7 +288,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The move from a to b in box diagonals per detection step (g images apart, the detector on one in every).</summary>
-        private static double Step(SwimBox a, SwimBox b, int g, int every, double minScale)
+        public static double Step(SwimBox a, SwimBox b, int g, int every, double minScale)
         {
             return Distance(a, b) / Scale(a, b, minScale) / Math.Sqrt(Math.Max(1.0, g / (double)every));
         }
@@ -328,7 +329,7 @@ namespace Kinovea.ScreenManager
                         continue;
 
                     SwimBox a = chosen[ai], b = chosen[bi];
-                    if (Step(a, b, bi - ai, every, minScale) > DetourJump)
+                    if (Step(a, b, bi - ai, every, minScale) > DetourJump || Distance(a, b) / Scale(a, b, minScale) > DetourBack)
                         continue;
 
                     bool away = true;
