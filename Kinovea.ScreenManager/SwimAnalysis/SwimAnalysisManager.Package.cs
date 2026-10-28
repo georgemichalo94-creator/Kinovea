@@ -554,9 +554,15 @@ namespace Kinovea.ScreenManager
 
                         if (!encoder.Write(buffer))
                         {
-                            string ignored;
-                            encoder.Finish(5000, out ignored);
-                            return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), encoder.Errors);
+                            // ffmpeg stopped taking images: a video it finished well is kept (the images to here), else its error.
+                            string stopped;
+                            if (!encoder.Finish(60000, out stopped))
+                                return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), string.IsNullOrEmpty(stopped) ? encoder.Errors : stopped);
+                            log.WarnFormat("Swim package video: ffmpeg ended after {0} of {1} frames.", count, total);
+                            package.VideoPath = ReplaceFile(temp, package.VideoPath);
+                            package.VideoSeconds = count / fps;
+                            package.VideoReady = true;
+                            return null;
                         }
 
                         count++;

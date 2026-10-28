@@ -179,7 +179,7 @@ namespace Kinovea.ScreenManager
             Panel buttons = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(10, 8, 10, 8), BackColor = SwimTheme.Back };
             btnOk = new SwimButton(true) { Text = SwimLang.T("✓ OK – Αποστολή με Smash"), AutoSize = true, Height = 34, Primary = true, Enabled = false, Dock = DockStyle.Right };
             btnClose = new SwimButton(true) { Text = SwimLang.T("Ακύρωση"), AutoSize = true, Height = 34, Dock = DockStyle.Right };
-            btnFolder = new SwimButton(true) { Text = SwimLang.T("📁 Άνοιγμα φακέλου"), AutoSize = true, Height = 34, Dock = DockStyle.Left };
+            btnFolder = new SwimButton(true) { Text = SwimLang.T("Άνοιγμα φακέλου"), AutoSize = true, Height = 34, Dock = DockStyle.Left };
             Panel gap = new Panel { Width = 8, Dock = DockStyle.Right };
             buttons.Controls.Add(btnClose);
             buttons.Controls.Add(gap);
@@ -414,22 +414,37 @@ namespace Kinovea.ScreenManager
             pdfShown = path + "|" + File.GetLastWriteTimeUtc(path).Ticks.ToString(CultureInfo.InvariantCulture);
             int seq = ++pdfRenderSeq;
             int width = Math.Max(600, Math.Min(1400, pdfScroll.ClientSize.Width * 2));
+            // Drawn on a thread of the pool, shown on the thread of the window (BeginInvoke: whatever the synchronization context).
             Task.Factory.StartNew(() =>
             {
                 string error;
                 List<Bitmap> pages = SwimPdfPages.Render(path, width, 16, out error);
-                return new KeyValuePair<List<Bitmap>, string>(pages, error);
-            }).ContinueWith(t =>
-            {
-                if (IsDisposed || seq != pdfRenderSeq)
+                Action show = () =>
                 {
-                    if (t.Result.Key != null)
-                        t.Result.Key.ForEach(b => b.Dispose());
-                    return;
-                }
+                    if (IsDisposed || seq != pdfRenderSeq)
+                    {
+                        if (pages != null)
+                            pages.ForEach(b => b.Dispose());
+                        return;
+                    }
 
-                ShowPages(t.Result.Key, t.Result.Value);
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+                    ShowPages(pages, error);
+                };
+
+                try
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                        BeginInvoke(show);
+                    else if (pages != null)
+                        pages.ForEach(b => b.Dispose());
+                }
+                catch (InvalidOperationException)
+                {
+                    // The window closed meanwhile.
+                    if (pages != null)
+                        pages.ForEach(b => b.Dispose());
+                }
+            });
         }
 
         private void ShowPages(List<Bitmap> pages, string error)
@@ -652,9 +667,9 @@ namespace Kinovea.ScreenManager
             };
             t.Controls.Add(drag);
             FlowLayoutPanel fileButtons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 8) };
-            SwimButton open = new SwimButton(true) { Text = SwimLang.T("🌐 Άνοιγμα Smash"), AutoSize = true, Height = 30 };
+            SwimButton open = new SwimButton(true) { Text = SwimLang.T("Άνοιγμα Smash"), AutoSize = true, Height = 30 };
             open.Click += (s, e) => FormSwimPackage.Open("https://fromsmash.com/");
-            SwimButton folder = new SwimButton(true) { Text = SwimLang.T("📁 Φάκελος"), AutoSize = true, Height = 30 };
+            SwimButton folder = new SwimButton(true) { Text = SwimLang.T("Άνοιγμα φακέλου"), AutoSize = true, Height = 30 };
             folder.Click += (s, e) =>
             {
                 if (files.Length > 0)

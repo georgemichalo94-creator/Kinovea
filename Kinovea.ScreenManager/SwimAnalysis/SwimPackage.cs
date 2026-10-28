@@ -185,8 +185,8 @@ namespace Kinovea.ScreenManager
         {
             int w = Math.Max(2, frame.Width), h = Math.Max(2, frame.Height);
             double k = Math.Min(1.0, VideoMaxSide / (double)Math.Max(w, h));
-            int width = Math.Max(2, (int)Math.Round(w * k / 2) * 2);
-            int height = Math.Max(2, (int)Math.Round(h * k / 2) * 2);
+            int width = Math.Max(2, (int)Math.Floor(w * k / 2) * 2);
+            int height = Math.Max(2, (int)Math.Floor(h * k / 2) * 2);
             return new Size(width, height);
         }
         #endregion
@@ -357,10 +357,11 @@ namespace Kinovea.ScreenManager
             if (sound)
                 a.Append("-map 1:a:0 ");
             // H.264 4:2:0 (every player), quality first (the graphics must stay sharp), the bitrate capped for the sending.
-            a.Append("-c:v libx264 -preset veryfast -crf 23 -maxrate 4000k -bufsize 8000k -pix_fmt yuv420p ");
+            a.Append("-c:v libx264 -preset veryfast -crf 24 -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p ");
             a.AppendFormat(ci, "-g {0} ", Math.Max(1, (int)Math.Round(fps * 2)));
+            // The sound padded with silence and cut at the end of the images: never longer or shorter than the video.
             if (sound)
-                a.Append("-c:a aac -strict -2 -b:a 128k -ac 2 -shortest ");
+                a.Append("-af apad -c:a aac -strict -2 -b:a 128k -ac 2 -shortest ");
             a.Append("-movflags +faststart -f mp4 \"" + output + "\"");
             return a.ToString();
         }
@@ -634,7 +635,7 @@ namespace Kinovea.ScreenManager
             }
             catch (Exception e)
             {
-                while (e is TargetInvocationException && e.InnerException != null)
+                while ((e is TargetInvocationException || e is AggregateException) && e.InnerException != null)
                     e = e.InnerException;
                 error = e.Message;
                 foreach (Bitmap b in pages)
