@@ -164,19 +164,25 @@ function makeSheet(ss, name, id, opts) {
         getDisplayValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x ? String(x.v) : ''; })),
         getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? x.v : ''; })),
         getValue: () => { const x = cells[r + ':' + col]; return x ? x.v : ''; },
+        // Τύποι R1C1 (κρατιούνται ως έχουν, με το πρόθεμα R1C1:) και μορφή αριθμών ανά κελί.
+        getFormulasR1C1: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => { const x = cells[(r + i) + ':' + (col + j)]; return x && String(x.v).startsWith('=') ? String(x.v) : ''; })),
+        setFormulaR1C1: f => { cells[r + ':' + col] = { v: f }; return rng; },
+        getNumberFormat: () => { const x = cells[r + ':' + col]; return x && x.fmt ? x.fmt : 'General'; },
         getRow: () => r, getColumn: () => col, getNumRows: () => nr, getNumColumns: () => nc,
         clearContent: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) delete cells[(r + i) + ':' + (col + j)]; return rng; },
         setDataValidation: v => { if (!v || !v._built) throw new Error('bad validation'); for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sheet._validations[(r + i) + ':' + (col + j)] = v; return rng; },
         clearDataValidations: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) delete sheet._validations[(r + i) + ':' + (col + j)]; return rng; },
         setWrap: () => rng,
         setValues: vals => { if (vals.length !== nr || vals[0].length !== nc) throw new Error(`setValues size ${vals.length}x${vals[0].length} != ${nr}x${nc}`); vals.forEach((row, i) => row.forEach((v, j) => { cells[(r + i) + ':' + (col + j)] = { v }; })); return rng; },
-        setValue: v => { cells[r + ':' + col] = { v }; return rng; },
+        // Η τιμή αλλάζει, η μορφή του κελιού μένει (όπως στο Sheets).
+        setValue: v => { const k = r + ':' + col; cells[k] = cells[k] && cells[k].fmt ? { v, fmt: cells[k].fmt } : { v }; return rng; },
         merge: () => { merges.push([r, col, nr, nc]); return rng; }, breakApart: () => rng,
       };
       ['setNumberFormats','setBackgrounds','setFontWeights','setFontStyles','setFontColors','setFontSizes','setHorizontalAlignments','setWraps','setVerticalAlignments'].forEach(fn => {
         rng[fn] = arr => { if (arr.length !== nr || arr[0].length !== nc) throw new Error(fn + ' size mismatch'); return rng; };
       });
-      ['setVerticalAlignment','setFontFamily','setBorder','setFontWeight','setBackground','setNote','setNumberFormat'].forEach(fn => { rng[fn] = () => rng; });
+      ['setVerticalAlignment','setFontFamily','setBorder','setFontWeight','setBackground','setNote'].forEach(fn => { rng[fn] = () => rng; });
+      rng.setNumberFormat = f => { if (nr === 1 && nc === 1) { const k = r + ':' + col; cells[k] = Object.assign(cells[k] || { v: '' }, { fmt: f }); } return rng; };
       return rng;
     },
   };
@@ -187,6 +193,7 @@ function makeBlob(bytes, type, name) {
   const blob = { _bytes: bytes || [], _type: type || 'application/octet-stream', _name: name || '' };
   blob.setName = n => { blob._name = n; return blob; };
   blob.getBytes = () => blob._bytes; blob.getContentType = () => blob._type; blob.getName = () => blob._name;
+  blob.copyBlob = () => makeBlob(blob._bytes.slice(), blob._type, blob._name);
   blob.getDataAsString = cs => Buffer.from(blob._bytes).toString(cs && /8859|latin/i.test(cs) ? 'latin1' : 'utf8');
   return blob;
 }
@@ -213,9 +220,13 @@ function makeDrive() {
   const drive = {
     _files: files, _root: root,
     getFileById: id => { if (files[id]) return files[id]; return { moveTo: () => {}, getId: () => id, getParents: () => iter([]), getBlob: () => makeBlob([1, 2, 3], 'image/jpeg', 'x'), getName: () => 'x' }; },
-    getFoldersByName: n => iter(root._folders.filter(f => f._name === n)),
+    getFoldersByName: n => iter(allFolders().filter(f => f._name === n)),
     createFolder: n => root.createFolder(n),
+    // Όλο το Drive: αρχεία με αυτό το όνομα (σε όποιον φάκελο), φάκελος με το id του.
+    getFilesByName: n => iter(Object.keys(files).map(k => files[k]).filter(f => f.getName() === n && !f._trashed)),
+    getFolderById: id => { const f = allFolders().find(x => x.getId() === id); if (!f) throw new Error('no folder ' + id); return f; },
   };
+  function allFolders() { const out = []; const walk = f => { f._folders.forEach(x => { out.push(x); walk(x); }); }; walk(root); return out; }
   return drive;
 }
 
@@ -382,9 +393,13 @@ function makeContext(opts) {
           Object.keys(o).forEach(k => { cacheStore[k] = o[k]; }); } };
     } } : undefined,
     ContentService: { createTextOutput: t => ({ text: t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
-    Utilities: { formatDate: () => '09/10/2026 23:59:00', getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
+    // Η ώρα είναι πάντα 09/10/2026 23:59:00 (ίδια σε κάθε εκτέλεση), γραμμένη με το μοτίβο (yyyy MM dd HH mm ss).
+    Utilities: { formatDate: (d, tz, pattern) => String(pattern || 'dd/MM/yyyy HH:mm:ss').replace(/yyyy|MM|dd|HH|mm|ss/g, k => ({ yyyy: '2026', MM: '10', dd: '09', HH: '23', mm: '59', ss: '00' })[k]), getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
-      newBlob: (bytes, type, name) => makeBlob(bytes, type, name), sleep: ms => { sleeps.push(ms); } },
+      newBlob: (bytes, type, name) => makeBlob(bytes, type, name), sleep: ms => { sleeps.push(ms); },
+      DigestAlgorithm: { MD5: 'md5' },
+      // Όπως το Apps Script: bytes με πρόσημο (-128…127).
+      computeDigest: (alg, text) => Array.from(require('crypto').createHash(alg).update(String(text), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)) },
     Charts: { ChartType: { RADAR: 'radar' },
       ChartHiddenDimensionStrategy: { IGNORE_BOTH: 'IGNORE_BOTH', IGNORE_ROWS: 'IGNORE_ROWS', IGNORE_COLUMNS: 'IGNORE_COLUMNS', SHOW_BOTH: 'SHOW_BOTH' } },
     HtmlService: { createHtmlOutput: html => { const o = { _html: String(html) }; o.setWidth = () => o; o.setHeight = () => o; return o; } },
