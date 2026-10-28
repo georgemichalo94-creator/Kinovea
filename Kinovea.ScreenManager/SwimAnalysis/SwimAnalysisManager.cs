@@ -2811,6 +2811,14 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.13.0) The program's automatic error lists of a training, up to date in the report.
+            if (UpdateAutoEvals() > 0)
+            {
+                MarkDirty();
+                if (form != null)
+                    form.RefreshData();
+            }
+
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts,
                 PackageFlags(Race));

@@ -23,7 +23,7 @@
  *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
  */
 
-var SWIM_VERSION = '2.12.0';
+var SWIM_VERSION = '2.13.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -645,6 +645,15 @@ function swimUpsertRace_(rawRace, opts) {
   var analysis = swimAnalyze_(race);
   var extras = race.kind === 'training' ? {} : swimComparisons_(race);
   var ss = swimReportsSpreadsheet_();
+  // 2.13.0: οι αξιολογήσεις τεχνικής στο φύλλο «Αξιολογήσεις τεχνικής» (μία γραμμή η καθεμία) και η πρόοδος του αθλητή για το report.
+  if (swimTechEvalList_(race).length) {
+    try {
+      swimSaveEvals_(ss, race);
+      extras.evalHistory = swimEvalHistory_(ss, race);
+    } catch (e) {
+      extras.evalHistory = null;
+    }
+  }
   // Ύψος της σελίδας του PDF (μετριέται μία φορά από το ίδιο το Google): οι αλλαγές σελίδας του layout.
   extras.pageHeight = function (width) { return swimPdfPageHeight_(ss, width); };
   var layout = swimBuildLayout_(race, analysis, extras);
@@ -1410,6 +1419,49 @@ function swimNormalizeTech_(raw) {
       eliteFileId: String(s.eliteFileId || ''), eliteLabel: String(s.eliteLabel || ''), eliteComment: String(s.eliteComment || '')
     });
   });
+  // 2.13.0: οι αξιολογήσεις με τα φύλλα κριτηρίων (τα κείμενα κάθε φύλλου μία φορά, στη γλώσσα της ανάλυσης).
+  var sheets = {};
+  if (t.sheets && typeof t.sheets === 'object') {
+    Object.keys(t.sheets).forEach(function (id) {
+      var sh = t.sheets[id];
+      if (!sh || typeof sh !== 'object') return;
+      var groups = [];
+      (sh.groups || []).forEach(function (gr) {
+        if (!gr || typeof gr !== 'object') return;
+        var items = [];
+        (gr.items || []).forEach(function (x) {
+          if (!x || typeof x !== 'object' || !x.key) return;
+          items.push({ n: String(x.n || ''), key: String(x.key), text: String(x.text || ''), level: String(x.level || ''),
+            cue: String(x.cue || ''), target: String(x.target || '') });
+        });
+        if (items.length) groups.push({ label: String(gr.label || ''), items: items });
+      });
+      if (groups.length) sheets[String(id)] = { title: String(sh.title || ''), source: String(sh.source || ''), scored: sh.scored !== false, groups: groups };
+    });
+  }
+  var evals = [];
+  (t.evals || []).forEach(function (e) {
+    if (!e || typeof e !== 'object' || !sheets[String(e.sheet || '')]) return;
+    var scores = {};
+    if (e.scores && typeof e.scores === 'object') {
+      Object.keys(e.scores).forEach(function (k) {
+        var sc = e.scores[k];
+        if (!sc || typeof sc !== 'object') return;
+        var v = swimNum_(sc.v);
+        scores[k] = { v: v === null ? null : (v > 0 ? 1 : v < 0 ? -1 : 0), a: sc.a ? 1 : 0, m: String(sc.m || ''), f: String(sc.f || '') };
+      });
+    }
+    var lv = e.level && typeof e.level === 'object'
+      ? { label: String(e.level.label || ''), value: swimNum_(e.level.value), text: String(e.level.text || ''), level: swimNum_(e.level.level), levels: swimNum_(e.level.levels) }
+      : null;
+    evals.push({ id: String(e.id || ''), phase: String(e.phase || ''), phaseLabel: String(e.phaseLabel || ''), phaseKind: e.phaseKind === 'turn' ? 'turn' : 'start',
+      sheet: String(e.sheet), date: String(e.date || ''), notes: String(e.notes || ''), scores: scores, level: lv });
+  });
+  // Μόνο όταν υπάρχουν: τα report χωρίς αξιολογήσεις μένουν όπως ήταν (ίδιες υπογραφές).
+  if (evals.length) {
+    tech.sheets = sheets;
+    tech.evals = evals;
+  }
   return tech;
 }
 
@@ -1920,7 +1972,7 @@ function swimLayoutSignature_(race, extras, pageHeight) {
     })))) : '',
     finalsMetrics: race.finals && race.finals.metrics && race.finals.metrics.length ? race.finals.metrics.length + ':' + race.finals.label : '',
     bench: x.benchmarks ? swimHash_(JSON.stringify(x.benchmarks)) : '',
-    tech: swimTechSignature_(race),
+    tech: swimTechSignature_(race, x),
     final: race.finalFrame ? race.finalFrame.fileId : '',
     graphics: race.graphics ? [race.graphics.summary || '', race.graphics.versus || ''].join(',') : '',
     page: pageHeight || 0
@@ -3521,9 +3573,10 @@ function swimTechLooseAngles_(race) {
  * Η δομή της τεχνικής ανάλυσης για την υπογραφή του layout: φάσεις, ποιες τιμές και γωνίες εμφανίζονται, στιγμιότυπα.
  * Οι ίδιες οι τιμές και τα σχόλια γράφονται σε κάθε ενημέρωση χωρίς να ξαναφτιάχνεται το φύλλο.
  */
-function swimTechSignature_(race) {
+function swimTechSignature_(race, extras) {
   var tech = race.tech || { phases: [], angles: [], snapshots: [], values: {} };
-  if (!tech.phases.length && !tech.snapshots.length && !tech.angles.length && !(tech.values && tech.values.notes)) return '';
+  var evals = swimTechEvalList_(race);
+  if (!tech.phases.length && !tech.snapshots.length && !tech.angles.length && !(tech.values && tech.values.notes) && !evals.length) return '';
   var phases = swimTechPhases_(race);
   var parts = ['start', 'turn'].map(function (kind) {
     var list = phases.filter(function (p) { return p.kind === kind; });
@@ -3535,6 +3588,8 @@ function swimTechSignature_(race) {
     return [s.id, s.phase, s.fileId, s.eliteFileId, swimSnapshotHeight_(swimSnapshotText_(s))].join(':');
   }).join(','));
   parts.push(tech.values && tech.values.notes ? 'notes' + swimSnapshotHeight_(tech.values.notes) : '');
+  // 2.13.0: οι αξιολογήσεις γράφονται στην ανακατασκευή: κάθε αλλαγή τους (και της προόδου) ξαναφτιάχνει το φύλλο.
+  if (evals.length) parts.push(swimHash_(JSON.stringify(evals) + JSON.stringify(extras && extras.evalHistory ? extras.evalHistory : null)));
   return swimHash_(parts.join('|'));
 }
 
@@ -3655,7 +3710,12 @@ function swimTechSnapshotList_(race, phases) {
   var tech = race.tech || { snapshots: [] };
   var byId = {};
   phases.forEach(function (p) { byId[p.id] = p; });
-  return tech.snapshots.map(function (s) {
+  // 2.13.0: τα καρέ των λαθών μιας αξιολόγησης μπαίνουν με την αξιολόγηση, όχι στα στιγμιότυπα.
+  var evalFiles = {};
+  swimTechEvalList_(race).forEach(function (e) { e.frames.forEach(function (f) { evalFiles[f.fileId] = true; }); });
+  return tech.snapshots.filter(function (s) {
+    return !(String(s.event || '').indexOf('eval:') === 0 && (!s.fileId || evalFiles[s.fileId]));
+  }).map(function (s) {
     var o = {};
     for (var k in s) if (Object.prototype.hasOwnProperty.call(s, k)) o[k] = s[k];
     o.phaseTitle = byId[s.phase] ? swimPhaseTitle_(byId[s.phase], race) : '';
@@ -3729,6 +3789,268 @@ function swimTechNotes_(L, cur, W) {
   return cur + 2;
 }
 
+/**
+ * 2.13.0: οι αξιολογήσεις τεχνικής με τα κείμενα των φύλλων τους: ανά φάση του φύλλου τα σημεία με το αποτέλεσμα (1 ✓, 0 ✗, -1 –,
+ * null χωρίς βαθμολογία· σε λίστα λαθών 1 = υπάρχει το λάθος), αν το έβαλε το πρόγραμμα (🤖), τι μέτρησε και η εικόνα ενός λάθους,
+ * τα σύνολα και το επίπεδο του πίνακα του φύλλου.
+ */
+function swimTechEvalList_(race) {
+  var tech = race.tech || {};
+  var sheets = tech.sheets || {};
+  return (tech.evals || []).map(function (e) {
+    var sh = sheets[e.sheet];
+    if (!sh) return null;
+    var good = 0, scored = 0, total = 0, auto = 0, errors = [], frames = [];
+    var groups = sh.groups.map(function (gr) {
+      var gGood = 0, gScored = 0;
+      var items = gr.items.map(function (it) {
+        var sc = e.scores[it.key] || {};
+        var v = sc.v === undefined ? null : sc.v;
+        var item = { n: it.n, key: it.key, text: it.text, level: it.level, cue: it.cue, target: it.target, value: v, auto: !!sc.a,
+          measure: sc.m || '', fileId: sc.f || '' };
+        item.error = sh.scored ? v === 0 : v === 1;
+        if (v !== null && v >= 0) { gScored++; if (v === 1) gGood++; }
+        if (sc.a && v !== null) auto++;
+        if (item.error) {
+          errors.push(item);
+          if (item.fileId) frames.push(item);
+        }
+        return item;
+      });
+      good += gGood; scored += gScored; total += items.length;
+      return { label: gr.label, items: items, good: gGood, scored: gScored, total: items.length };
+    });
+    return { id: e.id, phase: e.phase, phaseLabel: e.phaseLabel, phaseKind: e.phaseKind, sheet: e.sheet, title: sh.title, source: sh.source,
+      scored: sh.scored, date: e.date, notes: e.notes, level: e.level, groups: groups, good: good, scoredCount: scored, total: total,
+      auto: auto, errors: errors, frames: frames };
+  }).filter(function (e) { return e; });
+}
+
+/** Το κελί του αποτελέσματος ενός σημείου: κείμενο και χρώματα (✓ πράσινο, ✗ κόκκινο, – γκρι, 🤖 όταν το έβαλε το πρόγραμμα). */
+function swimEvalResult_(it, scored) {
+  var v = it.value, auto = it.auto ? '🤖' : '';
+  if (v === null || v === undefined) return { text: '·', bg: null, color: SWIM_COLORS.dim };
+  if (v < 0) return { text: '–', bg: '#EEF1F4', color: SWIM_COLORS.dim };
+  var good = scored ? v === 1 : v === 0;
+  var text = scored ? (v === 1 ? '✓' : '✗') : (v === 1 ? swimT_('ναι') : swimT_('όχι'));
+  return good ? { text: auto + text, bg: '#E3F6EC', color: '#1B7F4B' } : { text: auto + text, bg: '#FDE8E8', color: '#C62828' };
+}
+
+/** Η γραμμή του συνόλου μιας αξιολόγησης: ✓ / σημεία (ή τα λάθη που υπάρχουν) και το επίπεδο. */
+function swimEvalSummary_(e) {
+  var parts = [];
+  if (e.scored) parts.push(swimTF_('Σύνολο {0}/{1}', e.good, e.total) + (e.scoredCount < e.total ? swimTF_(' (βαθμολογήθηκαν {0})', e.scoredCount) : ''));
+  else parts.push(swimTF_('Λάθη που υπάρχουν: {0} από {1}', e.errors.length, e.total));
+  if (e.level && e.level.text) {
+    parts.push((e.level.label ? e.level.label + ': ' : '') + e.level.text +
+      (e.level.level !== null && e.level.levels ? swimTF_(' (από {0} επίπεδα, 1 = καλύτερο)', e.level.levels) : ''));
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * 2.13.0: η ενότητα των αξιολογήσεων τεχνικής: για κάθε αξιολόγηση ο τίτλος (προσπάθεια, φύλλο), η πηγή, το σύνολο και το επίπεδο, ο
+ * πίνακας των σημείων ανά φάση (αποτέλεσμα, μέτρηση, τι να διορθώσει), οι σημειώσεις και τα καρέ των λαθών ανά δύο· στο τέλος η
+ * πρόοδος του αθλητή με κάθε φύλλο (extras.evalHistory). Όλα γράφονται στην ανακατασκευή του φύλλου (μέρος της υπογραφής).
+ */
+function swimTechEvals_(L, cur, W, head) {
+  var g = L.g;
+  var evals = swimTechEvalList_(L.race);
+  if (!evals.length) return cur;
+  var full = function (r, text, fmt) {
+    g.set(r, 1, text, fmt);
+    for (var c = 2; c <= W; c++) g.set(r, c, '', { bg: fmt.bg });
+    g.merge(r, 1, r, W);
+  };
+  evals.forEach(function (e, i) {
+    cur = swimKeep_(L, cur, 'eval');
+    if (i === 0 && head) cur = head(cur);
+    full(cur, [swimT_('Αξιολόγηση τεχνικής'), e.phaseLabel, e.title].filter(function (x) { return x; }).join(' · '),
+      { bold: true, color: SWIM_COLORS.titleText, bg: SWIM_COLORS.accentDark, size: 11, fmt: '@' });
+    g.rowHeights[cur] = 26;
+    cur++;
+    full(cur, [swimEvalSummary_(e), e.source, e.date].filter(function (x) { return x; }).join('  ·  '),
+      { bold: true, color: SWIM_COLORS.text, bg: SWIM_COLORS.kpi, size: 9, fmt: '@', wrap: true });
+    g.rowHeights[cur] = 22;
+    cur++;
+    var top = cur;
+    g.headers(cur, ['#', swimT_('Σημείο'), '', '', '', '', '', '', swimT_('Αποτέλεσμα'), swimT_('Μέτρηση'), '', swimT_('Τι να διορθώσει'), '', '', ''], 1);
+    g.merge(cur, 2, cur, 8); g.merge(cur, 10, cur, 11); g.merge(cur, 12, cur, 15);
+    g.rowHeights[cur] = 24;
+    cur++;
+    e.groups.forEach(function (gr) {
+      full(cur, gr.label + (e.scored ? '   ' + gr.good + '/' + gr.total : ''), { bold: true, color: SWIM_COLORS.text, bg: SWIM_COLORS.phase, size: 9, fmt: '@' });
+      g.rowHeights[cur] = 20;
+      cur++;
+      gr.items.forEach(function (it) {
+        var res = swimEvalResult_(it, e.scored);
+        var measure = it.measure + (it.measure && it.target ? '\n' + swimT_('στόχος ') + it.target : '');
+        var cue = it.error ? it.cue : '';
+        g.set(cur, 1, it.n, { align: 'center', size: 9, color: SWIM_COLORS.dim, fmt: '@' });
+        g.set(cur, 2, it.text, { wrap: true, size: 9, color: SWIM_COLORS.text, fmt: '@' });
+        for (var c = 3; c <= 8; c++) g.set(cur, c, '', {});
+        g.merge(cur, 2, cur, 8);
+        g.set(cur, 9, res.text, { bold: true, align: 'center', bg: res.bg || undefined, color: res.color, size: 10, fmt: '@' });
+        g.set(cur, 10, measure, { wrap: true, size: 8, color: SWIM_COLORS.dim, fmt: '@', align: 'center' });
+        g.set(cur, 11, '', {});
+        g.merge(cur, 10, cur, 11);
+        g.set(cur, 12, cue, { wrap: true, size: 8, color: SWIM_COLORS.text, fmt: '@' });
+        for (c = 13; c <= 15; c++) g.set(cur, c, '', {});
+        g.merge(cur, 12, cur, 15);
+        g.exactHeights[cur] = Math.max(24, swimTextHeight_(it.text, 518, 9, false), cue ? swimTextHeight_(cue, 274, 8, false) : 0,
+          measure ? swimTextHeight_(measure, 148, 8, false) : 0);
+        cur++;
+      });
+    });
+    g.box(top, 1, cur - 1, W);
+    if (e.auto) {
+      full(cur, swimT_('🤖 = από τις μετρήσεις του προγράμματος, χωρίς επιβεβαίωση του προπονητή.'), { italic: true, color: SWIM_COLORS.dim, size: 8, fmt: '@' });
+      cur++;
+    }
+    if (e.notes) {
+      full(cur, e.notes, { wrap: true, color: SWIM_COLORS.title, bg: SWIM_COLORS.kpi, valign: 'top', fmt: '@' });
+      g.exactHeights[cur] = swimSnapshotHeight_(e.notes);
+      cur++;
+    }
+    swimKeepEnd_(L, 'eval', cur - 1);
+    cur++;
+
+    // Τα καρέ των λαθών: δύο ανά σειρά, κάθε σειρά σε μία σελίδα· από κάτω το σημείο και τι να διορθώσει.
+    var rightCol = swimColumnAt_(SWIM_PAIR.right).col, n = SWIM_IMAGE_ROWS;
+    for (var j = 0; j < e.frames.length; j += 2) {
+      cur = swimKeep_(L, cur, 'evalFrames', true);
+      if (j === 0) {
+        g.set(cur, 1, swimT_('Τα λάθη στο βίντεο'), { bold: true, color: SWIM_COLORS.title, size: 10 });
+        g.merge(cur, 1, cur, W);
+        cur++;
+      }
+      var pair = e.frames.slice(j, j + 2);
+      pair.forEach(function (f, k) {
+        L.layout.images.push({ fileId: f.fileId, row: cur, x: k === 0 ? 0 : SWIM_PAIR.right, width: SWIM_PAIR.width, height: SWIM_PAIR.imageHeight });
+        var c1 = k === 0 ? 1 : rightCol, c2 = k === 0 ? rightCol - 1 : W;
+        g.set(cur + n, c1, '✗ ' + (f.n ? f.n + '. ' : '') + f.text, { bold: true, wrap: true, color: '#C62828', size: 9, fmt: '@' });
+        for (var cc = c1 + 1; cc <= c2; cc++) g.set(cur + n, cc, '', {});
+        g.merge(cur + n, c1, cur + n, c2);
+        g.set(cur + n + 1, c1, f.cue ? '→ ' + f.cue : '', { wrap: true, color: SWIM_COLORS.text, size: 9, fmt: '@', valign: 'top' });
+        for (cc = c1 + 1; cc <= c2; cc++) g.set(cur + n + 1, cc, '', {});
+        g.merge(cur + n + 1, c1, cur + n + 1, c2);
+      });
+      var capH = Math.max.apply(null, pair.map(function (f) { return swimTextHeight_('✗ ' + f.n + '. ' + f.text, 546, 9, true); }).concat([24]));
+      var cueH = Math.max.apply(null, pair.map(function (f) { return f.cue ? swimTextHeight_('→ ' + f.cue, 546, 9, false) : 20; }));
+      g.exactHeights[cur + n] = capH;
+      g.exactHeights[cur + n + 1] = cueH;
+      swimKeepEnd_(L, 'evalFrames', cur + n + 1);
+      cur = cur + n + 3;
+    }
+  });
+
+  // Η πρόοδος του αθλητή με κάθε φύλλο (οι αξιολογήσεις του, με την πιο πρόσφατη τελευταία).
+  var history = L.extras && L.extras.evalHistory ? L.extras.evalHistory : null;
+  if (history) {
+    Object.keys(history).forEach(function (sheetId) {
+      var rows = history[sheetId];
+      if (!rows || rows.length < 2) return;
+      cur = swimKeep_(L, cur, 'evalHistory');
+      g.set(cur, 1, swimTF_('Πρόοδος: {0}', rows[0].title || sheetId), { bold: true, color: SWIM_COLORS.title, size: 10, fmt: '@' });
+      g.merge(cur, 1, cur, W);
+      cur++;
+      g.headers(cur, [swimT_('Ημερομηνία'), swimT_('Προσπάθεια'), '', '', swimT_('Σύνολο'), swimT_('Βαθμολογήθηκαν'), swimT_('Επίπεδο'), swimT_('Χρόνος'),
+        swimT_('Λάθη'), '', '', '', '', '', ''], 1);
+      g.merge(cur, 2, cur, 4); g.merge(cur, 9, cur, 15);
+      g.rowHeights[cur] = 24;
+      var h0 = cur;
+      cur++;
+      rows.forEach(function (row) {
+        g.set(cur, 1, row.date, { size: 9, fmt: '@', align: 'center' });
+        g.set(cur, 2, row.phase, { size: 9, fmt: '@' }); g.set(cur, 3, '', {}); g.set(cur, 4, '', {}); g.merge(cur, 2, cur, 4);
+        g.set(cur, 5, row.scored ? row.good + '/' + row.total : String(row.errors), { size: 9, fmt: '@', align: 'center', bold: true });
+        g.set(cur, 6, String(row.scoredCount), { size: 9, fmt: '@', align: 'center' });
+        g.set(cur, 7, row.level !== null && row.level !== '' ? String(row.level) : '', { size: 9, fmt: '@', align: 'center' });
+        g.set(cur, 8, row.levelValue !== null && row.levelValue !== '' ? String(row.levelValue) : '', { size: 9, fmt: '@', align: 'center' });
+        g.set(cur, 9, row.errorText || '', { size: 8, fmt: '@', wrap: true, color: SWIM_COLORS.dim });
+        for (var c = 10; c <= 15; c++) g.set(cur, c, '', {});
+        g.merge(cur, 9, cur, 15);
+        g.exactHeights[cur] = Math.max(22, swimTextHeight_(row.errorText || ' ', 518, 8, false));
+        cur++;
+      });
+      g.box(h0, 1, cur - 1, W);
+      swimKeepEnd_(L, 'evalHistory', cur - 1);
+      cur++;
+    });
+  }
+  return cur + 1;
+}
+
+var SWIM_EVALS_SHEET = 'Αξιολογήσεις τεχνικής';
+var SWIM_EVALS_HEADERS = ['Ημερομηνία', 'Κωδικός αθλητή', 'Αθλητής', 'Φύλο', 'Στυλ', 'Φύλλο', 'Τίτλος φύλλου', 'Προσπάθεια', '✓', 'Βαθμολογήθηκαν',
+  'Σημεία', 'Λάθη', '🤖', 'Επίπεδο', 'Χρόνος επιπέδου', 'Λάθη (σημεία)', 'Αγώνας / βίντεο', 'Αξιολόγηση'];
+
+/** Το φύλλο των αξιολογήσεων στο spreadsheet των αναφορών (φτιάχνεται την πρώτη φορά). */
+function swimEvalSheet_(ss) {
+  var sheet = ss.getSheetByName(SWIM_EVALS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SWIM_EVALS_SHEET);
+    sheet.getRange(1, 1, 1, SWIM_EVALS_HEADERS.length).setValues([SWIM_EVALS_HEADERS]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Η ημερομηνία μιας αξιολόγησης (d/M/yyyy HH:mm) ως αριθμός για ταξινόμηση (0 όταν δεν διαβάζεται). */
+function swimEvalDateKey_(text) {
+  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/.exec(String(text || ''));
+  if (!m) return 0;
+  return Number(m[3]) * 1e8 + Number(m[2]) * 1e6 + Number(m[1]) * 1e4 + Number(m[4] || 0) * 100 + Number(m[5] || 0);
+}
+
+/** Γράφει (ή ενημερώνει, με το id της) κάθε αξιολόγηση του αγώνα σε μία γραμμή του φύλλου των αξιολογήσεων. */
+function swimSaveEvals_(ss, race) {
+  var evals = swimTechEvalList_(race);
+  if (!evals.length) return;
+  var sheet = swimEvalSheet_(ss);
+  var last = sheet.getLastRow();
+  var ids = last > 1 ? sheet.getRange(2, SWIM_EVALS_HEADERS.length, last - 1, 1).getValues().map(function (r) { return String(r[0]); }) : [];
+  evals.forEach(function (e) {
+    var row = [e.date, race.athleteId || '', race.athlete || '', race.gender || '', race.style || '', e.sheet, e.title, e.phaseLabel,
+      e.scored ? e.good : '', e.scoredCount, e.total, e.errors.length, e.auto,
+      e.level && e.level.level !== null ? e.level.level : '', e.level && e.level.value !== null ? e.level.value : '',
+      e.errors.map(function (x) { return (x.n ? x.n + '. ' : '') + x.text; }).join(' | '), race.id, e.id];
+    var at = ids.indexOf(e.id);
+    if (at >= 0) sheet.getRange(at + 2, 1, 1, row.length).setValues([row]);
+    else {
+      sheet.appendRow(row);
+      ids.push(e.id);
+    }
+  });
+}
+
+/**
+ * Η πρόοδος του αθλητή: οι αξιολογήσεις του (με τον κωδικό του, αλλιώς με το όνομα) με τα φύλλα αυτού του αγώνα, ανά φύλλο, από την
+ * παλαιότερη στη νεότερη (οι 8 τελευταίες).
+ */
+function swimEvalHistory_(ss, race) {
+  var sheet = ss.getSheetByName(SWIM_EVALS_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  var wanted = {};
+  swimTechEvalList_(race).forEach(function (e) { wanted[e.sheet] = true; });
+  var id = String(race.athleteId || ''), name = String(race.athlete || '');
+  if (!id && !name) return null;
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, SWIM_EVALS_HEADERS.length).getValues();
+  var out = {};
+  values.forEach(function (r) {
+    var sameAthlete = id ? String(r[1]) === id : String(r[2]) === name;
+    if (!sameAthlete || !wanted[String(r[5])]) return;
+    var list = out[String(r[5])] = out[String(r[5])] || [];
+    list.push({ date: String(r[0]), title: String(r[6]), phase: String(r[7]), scored: r[8] !== '', good: r[8], scoredCount: r[9], total: r[10],
+      errors: r[11], level: r[13], levelValue: r[14], errorText: String(r[15] || ''), key: swimEvalDateKey_(r[0]) });
+  });
+  Object.keys(out).forEach(function (k) {
+    out[k].sort(function (a, b) { return a.key - b.key; });
+    out[k] = out[k].slice(-8);
+  });
+  return out;
+}
+
 /** Ενότητα «Τεχνική ανάλυση» στο τέλος του report του αγώνα (μόνο αν υπάρχουν δεδομένα). */
 function swimLayoutTech_(L, cur) {
   var race = L.race, g = L.g;
@@ -3736,7 +4058,8 @@ function swimLayoutTech_(L, cur) {
   var snaps = swimTechSnapshotList_(race, phases);
   var loose = swimTechLooseAngles_(race);
   var hasNotes = !!(race.tech && race.tech.values && race.tech.values.notes);
-  if (!phases.length && !snaps.length && !loose.length && !hasNotes) { L.cur = cur; return; }
+  var hasEvals = swimTechEvalList_(race).length > 0;
+  if (!phases.length && !snaps.length && !loose.length && !hasNotes && !hasEvals) { L.cur = cur; return; }
   // Ο τίτλος της ενότητας και οι σημειώσεις μένουν στην ίδια σελίδα με ό,τι ακολουθεί (πρώτος πίνακας ή στιγμιότυπο).
   var pending = true;
   var section = function (r) {
@@ -3752,6 +4075,7 @@ function swimLayoutTech_(L, cur) {
   var t2 = turns.length ? swimTechTable_(L, turns, 'turn', cur, swimT_('Στροφές (χρόνοι από την επαφή στον τοίχο)'), first()) : null;
   if (t2) cur = t2.next;
   cur = swimTechLooseTable_(L, cur, first());
+  if (hasEvals) cur = swimTechEvals_(L, cur, L.LAST, first());
   if (snaps.length) {
     var head = first();
     cur = swimTechSnapshots_(L, snaps, cur, function (r) {
@@ -3826,6 +4150,8 @@ function swimBuildTechLayout_(race, analysis, extras, paging) {
     if (t2) cur = t2.next;
   }
   cur = swimTechLooseTable_(L, cur);
+  // 2.13.0: οι αξιολογήσεις τεχνικής (φύλλα κριτηρίων) μετά τους πίνακες τιμών.
+  cur = swimTechEvals_(L, cur, W, sectionWriter(swimT_('Αξιολόγηση τεχνικής')));
 
   // Γραφήματα: μικροί βοηθητικοί πίνακες (γραμμές οι προσπάθειες, τύποι προς τους πίνακες τιμών), τρεις ανά σειρά·
   // κάθε σειρά σε μία σελίδα, η πρώτη μαζί με τον τίτλο.
@@ -9415,5 +9741,24 @@ var SWIM_EN_ = {
   'το μήκος χεριάς ανέβηκε από {0} σε {1} μ.': 'the distance per stroke rose from {0} to {1} m',
   // 2.12.0: η σύντομη και η πλήρης ανάλυση σε δύο χωριστά αρχεία.
   ' - Σύντομη ανάλυση': ' - Short analysis',
+  // 2.13.0: οι αξιολογήσεις τεχνικής
+  'Αξιολόγηση τεχνικής': 'Technique evaluation',
+  'ναι': 'yes',
+  'όχι': 'no',
+  'Σύνολο {0}/{1}': 'Total {0}/{1}',
+  ' (βαθμολογήθηκαν {0})': ' ({0} scored)',
+  'Λάθη που υπάρχουν: {0} από {1}': 'Errors present: {0} of {1}',
+  ' (από {0} επίπεδα, 1 = καλύτερο)': ' (of {0} levels, 1 = best)',
+  'Σημείο': 'Point',
+  'Αποτέλεσμα': 'Result',
+  'Μέτρηση': 'Measured',
+  'Τι να διορθώσει': 'What to correct',
+  'στόχος ': 'target ',
+  '🤖 = από τις μετρήσεις του προγράμματος, χωρίς επιβεβαίωση του προπονητή.': '🤖 = from the program\'s measurements, not confirmed by the coach.',
+  'Τα λάθη στο βίντεο': 'The errors on the video',
+  'Πρόοδος: {0}': 'Progress: {0}',
+  'Ημερομηνία': 'Date',
+  'Βαθμολογήθηκαν': 'Scored',
+  'Λάθη': 'Errors',
   'Η σύντομη ανάλυση δεν έγινε.': 'The short analysis could not be made.'
 };

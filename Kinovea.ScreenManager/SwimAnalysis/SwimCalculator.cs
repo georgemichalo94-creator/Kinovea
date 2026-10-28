@@ -35,6 +35,17 @@ namespace Kinovea.ScreenManager
             double hsf = HighSpeedFactor <= 0 ? 1.0 : HighSpeedFactor;
             return frames * FrameIntervalMilliseconds / hsf / 1000.0;
         }
+
+        /// <summary>(2.13.0) The video timestamp of a time in seconds from the origin (the frame nearest to it).</summary>
+        public long Timestamp(double seconds, long origin)
+        {
+            if (!IsValid)
+                return origin;
+
+            double hsf = HighSpeedFactor <= 0 ? 1.0 : HighSpeedFactor;
+            double frames = Math.Round(seconds * 1000.0 * hsf / FrameIntervalMilliseconds);
+            return origin + (long)Math.Round(frames * AverageTimestampsPerFrame);
+        }
     }
 
     public class SwimRow

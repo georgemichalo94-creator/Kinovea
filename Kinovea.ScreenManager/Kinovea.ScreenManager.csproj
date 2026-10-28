@@ -1025,6 +1025,9 @@
     <Compile Include="SwimAnalysis\FormSwimAnalysis.Tech.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\FormSwimAnalysis.TechEval.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\FormSwimAnalysis.Finals.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1102,6 +1105,10 @@
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />
     <Compile Include="SwimAnalysis\SwimStrokeDetector.cs" />
     <Compile Include="SwimAnalysis\SwimTech.cs" />
+    <Compile Include="SwimAnalysis\SwimTechSheets.cs" />
+    <Compile Include="SwimAnalysis\SwimTechLearning.cs" />
+    <Compile Include="SwimAnalysis\SwimTechEval.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.TechEval.cs" />
     <Compile Include="SwimAnalysis\SwimUi.cs" />
     <Compile Include="SwimAnalysis\SwimVideoBar.cs">
       <SubType>Component</SubType>
