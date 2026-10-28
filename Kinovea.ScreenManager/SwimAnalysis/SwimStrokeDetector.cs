@@ -460,6 +460,18 @@ namespace Kinovea.ScreenManager
         {
             return (style == "fs" || style == "bk") ? 0.6 : 0.1;
         }
+
+        /// <summary>
+        /// (2.11.1) No stroke is searched in this time before the finish (s; NaN: WallMargin as before the turns): there is no
+        /// turn, and the analysts count the last stroke into the wall. With 0.6 s the last 5 m of the 71 finishes of the analysts'
+        /// races came 0.7 strokes short (freestyle 1.1, backstroke 0.8; 61% within half a stroke), with 0.15 s 0.25 (79%).
+        /// </summary>
+        internal static double FinishMarginAll = 0.15;
+
+        public static double FinishMargin(string style)
+        {
+            return double.IsNaN(FinishMarginAll) ? WallMargin(style) : FinishMarginAll;
+        }
         #endregion
 
         /// <summary>

@@ -426,7 +426,7 @@ namespace Kinovea.ScreenManager
             while (last > 0 && s.Timestamps[last] > until)
                 last--;
             if (wall)
-                last -= (int)Math.Round(SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
+                last -= (int)Math.Round((Race != null && s.Wall >= Race.Distance ? SwimStrokeDetector.FinishMargin(s.Style) : SwimStrokeDetector.WallMargin(s.Style)) * s.Fps);
             if (last < 5)
                 return;
 

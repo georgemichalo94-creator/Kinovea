@@ -906,7 +906,8 @@ namespace Kinovea.ScreenManager
             }
 
             double wall = GoOnSample(l);
-            int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - SwimStrokeDetector.WallMargin(s.Style) * s.Fps);
+            double margin = Race != null && s.Wall >= Race.Distance ? SwimStrokeDetector.FinishMargin(s.Style) : SwimStrokeDetector.WallMargin(s.Style);
+            int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - margin * s.Fps);
             last = Math.Min(n - 1, last);
             first = Math.Max(0, Math.Min(n - 1, first));
             if (last <= first + 5)
