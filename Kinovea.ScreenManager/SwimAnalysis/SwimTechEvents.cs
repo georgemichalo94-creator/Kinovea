@@ -373,6 +373,9 @@ namespace Kinovea.ScreenManager
         public const double PushoffFitMinPush = 0.1;
         public const double PushoffFitMaxPush = 0.7;
         public const double PushoffFitTail = 0.1;
+
+        /// <summary>(2.9.13) The shortest contact with the wall (push-off − wall) for the fitted push-off; shorter: the 90% image.</summary>
+        public const double PushoffMinContact = 0.15;
         public const double PlantDistance = 0.12;
         public const double PlantWindow = 1.2;
         public const double PlantBeforeTurn = 0.4;
@@ -479,6 +482,10 @@ namespace Kinovea.ScreenManager
                 if (!ev.RotationStart.HasValue)
                     ev.Notes.Add("δεν βρέθηκε η αρχή της περιστροφής");
             }
+
+            // (2.9.13) Feet on the wall for less than PushoffMinContact is not a push (the wall found late): the 90% image.
+            if (ev.Wall.HasValue && feetOff < ev.Wall.Value + PushoffMinContact)
+                ev.Pushoff = pushoff;
 
             if (ev.KindFromVideo)
                 ev.Notes.Add(kind == SwimTurnKind.Open ? "ανοιχτή στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)" : "ανάποδη στροφή κατά το βίντεο (το στυλ το επιβεβαιώνει)");
