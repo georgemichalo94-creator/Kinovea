@@ -77,6 +77,9 @@ namespace Kinovea.ScreenManager
         private AbstractScreen activeScreen = null;
         private bool canShowCommonControls;
         private bool inFullScreen;
+
+        // (Swim 2.14.0) Big screens: with two or more screens each shows only its image in the window (VideoBigScreens).
+        private bool bigScreens;
         private List<string> camerasToDiscover = new List<string>();
         private bool autoLaunchInProgress;
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -215,6 +218,7 @@ namespace Kinovea.ScreenManager
             view = new ScreenManagerUserInterface();
             view.FileLoadAsked += View_FileLoadAsked;
             view.AutoLaunchAsked += View_AutoLaunchAsked;
+            view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
             AddCommonControlsEventHandlers();
 
             dualPlayer.ExportImageAsked += (s, e) => ExportImages(ImageExportFormat.SideBySide);
@@ -1106,6 +1110,8 @@ namespace Kinovea.ScreenManager
         {
             dualPlayer.View.SwapAsked += CCtrl_SwapAsked;
             dualCapture.View.SwapAsked += CCtrl_SwapAsked;
+            dualPlayer.View.BigScreensAsked += (s, e) => BigScreens(!bigScreens);
+            dualPlayer.View.GroupAsked += (s, e) => ShowGroupMenu(s as Control);
         }
         private void CCtrl_SwapAsked(object sender, EventArgs e)
         {
@@ -1137,6 +1143,10 @@ namespace Kinovea.ScreenManager
                 OrganizeMenus();
             }
 
+            // (Swim 2.14.0) Several cameras of the same swimmer: the swim analysis follows the screen the analyst works on.
+            PlayerScreen activePlayer = screen as PlayerScreen;
+            if (activePlayer != null && activePlayer.FrameServer != null && SwimAnalysisManager.Current != null)
+                SwimAnalysisManager.Current.ScreenActivated(activePlayer.view, activePlayer.FrameServer);
         }
         public void SetAllToInactive()
         {
@@ -1197,13 +1207,39 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (Swim 2.14.0) Two screens change places (one dragged onto the other by its top row or its grip): their videos, their analyses,
+        /// their group and their synchronisation go with them.
+        /// </summary>
+        public void SwapScreens(int first, int second)
+        {
+            if (first == second || first < 0 || second < 0 || first >= screenList.Count || second >= screenList.Count)
+                return;
+
+            AbstractScreen temp = screenList[first];
+            screenList[first] = screenList[second];
+            screenList[second] = temp;
+
+            OrganizeScreens();
+            OrganizeMenus();
+            NotificationCenter.RaiseUpdateStatus();
+            dualPlayer.ScreenOrderChanged(screenList);
+            if (screenList[second] != null)
+                SetActiveScreen(screenList[second]);
+        }
+
+        /// <summary>
         /// Make sure the screens know their index in the list.
         /// Should be called after any change to the screen list.
         /// </summary>
         private void IdentifyScreens()
         {
             for (int i = 0; i < screenList.Count; i++)
+            {
                 screenList[i].Identify(i);
+                PlayerScreen player = screenList[i] as PlayerScreen;
+                if (player != null && player.view != null)
+                    player.view.SwimScreenNumber = i + 1;
+            }
         }
 
         /// <summary>
@@ -1214,8 +1250,21 @@ namespace Kinovea.ScreenManager
             IdentifyScreens();
             PlayerScreenUserInterface.PlayerScreenCount = Math.Max(1, playerScreens.Count());
 
-            // Full screen: a screen opened meanwhile also shows only its image.
-            if (inFullScreen)
+            // (Swim 2.14.0) The group of screens keeps the screens still open with a video, in their order.
+            UpdateSwimGroup(null, null);
+
+            // Big screens only with two screens or more (the common controls drive them): one screen gets its controls back.
+            if (bigScreens && playerScreens.Count() < 2)
+            {
+                bigScreens = false;
+                view.SetBigScreens(false);
+                dualPlayer.View.SetBigScreens(false);
+                foreach (AbstractScreen screen in screenList)
+                    screen.FullScreen(inFullScreen);
+            }
+
+            // Full screen (or big screens): a screen opened meanwhile also shows only its image.
+            if (inFullScreen || bigScreens)
             {
                 foreach (AbstractScreen screen in screenList)
                     screen.FullScreen(true);
@@ -1223,6 +1272,7 @@ namespace Kinovea.ScreenManager
 
             view.OrganizeScreens(screenList);
             UpdateVideoFullScreen();
+            UpdateVideoBigScreens();
             NotificationCenter.RaiseUpdateStatus();
 
             if (captureScreens.Count() == 0)
@@ -1331,13 +1381,205 @@ namespace Kinovea.ScreenManager
             view.SetFullScreen(fullScreen);
 
             foreach (AbstractScreen screen in screenList)
-                screen.FullScreen(fullScreen);
+                screen.FullScreen(fullScreen || bigScreens);
 
             // The screens in the grid without gaps, or back in their places.
             if (screenList.Count > 0)
                 view.OrganizeScreens(screenList);
 
             UpdateVideoFullScreen();
+            UpdateVideoBigScreens();
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) Big screens on or off (the button of the common controls): with two screens or more each shows only its image,
+        /// the common controls stay and drive them, the screens are arranged so that the videos are as big as they can be.
+        /// </summary>
+        public void BigScreens(bool on)
+        {
+            if (on && playerScreens.Count() < 2)
+                on = false;
+
+            bigScreens = on;
+            view.SetBigScreens(on);
+            dualPlayer.View.SetBigScreens(on);
+            foreach (AbstractScreen screen in screenList)
+                screen.FullScreen(inFullScreen || on);
+
+            if (screenList.Count > 0)
+                view.OrganizeScreens(screenList);
+
+            UpdateVideoBigScreens();
+        }
+
+        #region Swim: group of screens (2.14.0)
+        /// <summary>
+        /// The menu of the button «Ομάδα» of the common controls: the screens with a video (checked: in the group), all, none, and the
+        /// screen whose video keeps the analysis of the group. It stays open while screens are checked; each change applies at once.
+        /// </summary>
+        private void ShowGroupMenu(Control button)
+        {
+            List<PlayerScreen> players = screenList.OfType<PlayerScreen>().Where(p => p.Full).ToList();
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.ShowCheckMargin = true;
+            menu.ShowImageMargin = false;
+            menu.Closing += (s, e) =>
+            {
+                if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked)
+                    e.Cancel = true;
+            };
+            menu.Closed += (s, e) => BeginInvokeDispose(menu);
+
+            ToolStripLabel title = new ToolStripLabel(SwimLang.T("Ομάδα: οι οθόνες του ίδιου αγώνα (άλλες κάμερες)"));
+            title.Font = new Font(menu.Font, FontStyle.Bold);
+            menu.Items.Add(title);
+
+            if (players.Count < 2)
+            {
+                menu.Items.Add(new ToolStripLabel(SwimLang.T("Χρειάζονται δύο οθόνες ή περισσότερες με βίντεο.")) { Enabled = false });
+            }
+            else
+            {
+                List<ToolStripMenuItem> screenItems = new List<ToolStripMenuItem>();
+                foreach (PlayerScreen p in players)
+                {
+                    PlayerScreen screen = p;
+                    string file = Path.GetFileName(screen.FilePath ?? "");
+                    ToolStripMenuItem item = new ToolStripMenuItem(string.Format(System.Globalization.CultureInfo.InvariantCulture, SwimLang.T("Οθόνη {0}"), screenList.IndexOf(screen) + 1) +
+                        (string.IsNullOrEmpty(file) ? "" : "  ·  " + file));
+                    item.Checked = VideoScreenGroup.Members.Contains(screen.view);
+                    item.Click += (s, e) =>
+                    {
+                        item.Checked = !item.Checked;
+                        ApplyGroupMenu(players, screenItems, null);
+                    };
+                    screenItems.Add(item);
+                    menu.Items.Add(item);
+                }
+
+                menu.Items.Add(new ToolStripSeparator());
+                ToolStripMenuItem all = new ToolStripMenuItem(SwimLang.T("Όλες οι οθόνες"));
+                all.Click += (s, e) =>
+                {
+                    foreach (ToolStripMenuItem i in screenItems)
+                        i.Checked = true;
+                    ApplyGroupMenu(players, screenItems, null);
+                };
+                menu.Items.Add(all);
+                ToolStripMenuItem none = new ToolStripMenuItem(SwimLang.T("Χωρίς ομάδα (κάθε οθόνη η δική της ανάλυση)"));
+                none.Click += (s, e) =>
+                {
+                    foreach (ToolStripMenuItem i in screenItems)
+                        i.Checked = false;
+                    ApplyGroupMenu(players, screenItems, null);
+                };
+                menu.Items.Add(none);
+
+                // The screen whose video keeps the race of the group.
+                ToolStripMenuItem leadMenu = new ToolStripMenuItem(SwimLang.T("Η ανάλυση της ομάδας στο βίντεο της"));
+                leadMenu.DropDownOpening += (s, e) =>
+                {
+                    leadMenu.DropDownItems.Clear();
+                    foreach (PlayerScreen p in players)
+                    {
+                        PlayerScreen screen = p;
+                        if (!VideoScreenGroup.Members.Contains(screen.view))
+                            continue;
+                        ToolStripMenuItem choice = new ToolStripMenuItem(string.Format(System.Globalization.CultureInfo.InvariantCulture, SwimLang.T("Οθόνη {0}"), screenList.IndexOf(screen) + 1));
+                        choice.Checked = VideoScreenGroup.Lead == screen.view;
+                        choice.Click += (s2, e2) => ApplyGroupMenu(players, screenItems, screen.view);
+                        leadMenu.DropDownItems.Add(choice);
+                    }
+                };
+                leadMenu.DropDownItems.Add(new ToolStripMenuItem("…"));
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add(leadMenu);
+                ToolStripLabel hint = new ToolStripLabel(SwimLang.T("Συγχρόνισε πρώτα τις οθόνες στο σήμα εκκίνησης (κουμπί συγχρονισμού)."));
+                hint.Enabled = false;
+                menu.Items.Add(hint);
+            }
+
+            if (button != null && !button.IsDisposed)
+                menu.Show(button, new Point(0, button.Height), ToolStripDropDownDirection.AboveRight);
+            else
+                menu.Show(Cursor.Position);
+        }
+
+        private void BeginInvokeDispose(ContextMenuStrip menu)
+        {
+            try
+            {
+                if (view != null && view.IsHandleCreated)
+                    view.BeginInvoke((Action)(() => menu.Dispose()));
+                else
+                    menu.Dispose();
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while closing the menu of the group of screens.", e);
+            }
+        }
+
+        /// <summary>The group as the menu has it (its checked screens; the lead asked for, or kept).</summary>
+        private void ApplyGroupMenu(List<PlayerScreen> players, List<ToolStripMenuItem> items, PlayerScreenUserInterface lead)
+        {
+            List<PlayerScreenUserInterface> members = new List<PlayerScreenUserInterface>();
+            for (int i = 0; i < players.Count && i < items.Count; i++)
+            {
+                if (items[i].Checked && players[i].view != null && !players[i].view.IsDisposed)
+                    members.Add(players[i].view);
+            }
+
+            UpdateSwimGroup(members, lead);
+        }
+
+        /// <summary>
+        /// The group of screens (its screens in the order of the screens, those still open with a video): the given ones, or the ones it
+        /// has (null). Its lead: the one asked for, else the one it had, else the screen of the swim analysis, else the first. The
+        /// button of the group follows.
+        /// </summary>
+        private void UpdateSwimGroup(List<PlayerScreenUserInterface> members, PlayerScreenUserInterface lead)
+        {
+            List<PlayerScreenUserInterface> open = screenList.OfType<PlayerScreen>().Where(p => p.Full && p.view != null && !p.view.IsDisposed).Select(p => p.view).ToList();
+            List<PlayerScreenUserInterface> wanted = members ?? VideoScreenGroup.Members.ToList();
+            List<PlayerScreenUserInterface> next = open.Where(v => wanted.Contains(v)).ToList();
+
+            PlayerScreenUserInterface nextLead = lead;
+            if (nextLead == null || !next.Contains(nextLead))
+                nextLead = VideoScreenGroup.Lead;
+            if (nextLead == null || !next.Contains(nextLead))
+            {
+                PlayerScreenUserInterface analysis = SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.AnalysisScreen : null;
+                nextLead = analysis != null && next.Contains(analysis) ? analysis : null;
+            }
+
+            VideoScreenGroup.Set(next, nextLead);
+            if (VideoScreenGroup.Active)
+            {
+                string numbers = string.Join(", ", VideoScreenGroup.Members.Select(v => v.SwimScreenNumber).OrderBy(n => n).Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray());
+                dualPlayer.View.SetGroup(true, SwimScreensIcons.GroupTip(numbers, VideoScreenGroup.Lead.SwimScreenNumber));
+            }
+            else
+            {
+                dualPlayer.View.SetGroup(false, SwimScreensIcons.GroupTip(null, 0));
+            }
+        }
+        #endregion
+
+        /// <summary>Tells the swim analysis whether the screens show only their images in the window, then places the images again.</summary>
+        private void UpdateVideoBigScreens()
+        {
+            bool active = bigScreens && !inFullScreen && screenList.Count > 1;
+            if (VideoBigScreens.Active == active)
+                return;
+
+            VideoBigScreens.Set(active);
+            foreach (AbstractScreen screen in screenList)
+            {
+                PlayerScreenUserInterface player = screen.UI as PlayerScreenUserInterface;
+                if (player != null)
+                    player.SwimLayoutChanged();
+            }
         }
 
         /// <summary>

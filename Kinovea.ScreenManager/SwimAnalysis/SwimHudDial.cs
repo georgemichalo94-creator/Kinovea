@@ -23,7 +23,10 @@ namespace Kinovea.ScreenManager
     /// with a short name (the tip has its whole name, its key and its help): the phase shown, the check of the proposals, the marks of
     /// the phase and their tools, undo, the window of the analysis and «Απόκρυψη». A drag moves it anywhere on the video (its place is
     /// kept); hidden, a small dot in the corner brings it back (so does the key of SwimDial).
-    /// Flat: a dark disk with a thin edge, no glow. It never takes the keyboard focus: the keys of the analysis keep going to the video.
+    /// Since 2.14.0 every screen with a video has one (several cameras of the same swimmer, also with the big screens): the one of the
+    /// screen of the analysis has the race time and the buttons; the others wait with the number of their screen, and a click takes
+    /// the analysis to their video and opens its buttons. Drawn as a lens: a metal rim, a dark face, fine marks and a glowing ring
+    /// (an own design). It never takes the keyboard focus: the keys of the analysis keep going to the video.
     /// </summary>
     internal sealed class SwimHudDial : Control, IMessageFilter
     {
@@ -55,6 +58,12 @@ namespace Kinovea.ScreenManager
 
         private readonly SwimAnalysisManager manager;
 
+        /// <summary>(2.14.0) The round button of a group of screens: in the middle of the group, over its screens.</summary>
+        private readonly bool group;
+
+        /// <summary>(2.14.0) Where the area is in the control the button is on (the group: the screens of the group in their common parent).</summary>
+        private Point origin;
+
         /// <summary>A left bar that is never shown: the buttons of the bars (DialButtons) and the phase chosen on the round button.</summary>
         private readonly SwimVideoBar source;
         private readonly ToolTip toolTip = new ToolTip { InitialDelay = 500, ReshowDelay = 100, AutoPopDelay = 15000 };
@@ -83,9 +92,10 @@ namespace Kinovea.ScreenManager
         private Point downMouse;
         private PointF downPlace;
 
-        public SwimHudDial(SwimAnalysisManager manager)
+        public SwimHudDial(SwimAnalysisManager manager, bool group = false)
         {
             this.manager = manager;
+            this.group = group;
             source = new SwimVideoBar(manager, true);
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             SetStyle(ControlStyles.Selectable, false);
@@ -126,6 +136,12 @@ namespace Kinovea.ScreenManager
             get { return manager.Settings.DialHidden; }
         }
 
+        /// <summary>(2.14.0) On another screen than the one of the analysis: it waits, with the number of its screen.</summary>
+        private bool Standby
+        {
+            get { return !manager.IsAnalysisScreen(this); }
+        }
+
         private float S(float value)
         {
             return value * scale;
@@ -135,7 +151,22 @@ namespace Kinovea.ScreenManager
         /// <summary>The video area (its size) changed, or the full screen started: the button at its place in it.</summary>
         internal void PlaceIn(Size viewport)
         {
-            area = viewport;
+            PlaceIn(new Rectangle(Point.Empty, viewport));
+        }
+
+        /// <summary>(2.14.0) The area of the button in the control it is on (the screens of a group in their common parent).</summary>
+        internal void PlaceIn(Rectangle where)
+        {
+            if (where.Size == area && where.Location == origin && area.Width > 0 && !IsDisposed && Parent != null)
+            {
+                // Same place: only on top again (the screens may have been put over it).
+                if (Parent.Controls.GetChildIndex(this) != 0)
+                    BringToFront();
+                return;
+            }
+
+            origin = where.Location;
+            area = where.Size;
             scale = Math.Max(1f, DeviceDpi / 96f);
             place = Clamp(SavedPlace());
             Relayout();
@@ -144,7 +175,7 @@ namespace Kinovea.ScreenManager
         /// <summary>Lays it out again now (hidden or shown, its buttons).</summary>
         internal void RefreshNow()
         {
-            if (Hidden && expanded)
+            if ((Hidden || Standby) && expanded)
                 SetExpanded(false);
 
             signature = Signature();
@@ -157,6 +188,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         internal void RefreshIfChanged()
         {
+            if (Standby && expanded)
+                SetExpanded(false);
+
             string current = Signature();
             string clock = Clock();
             if (current != signature)
@@ -177,7 +211,7 @@ namespace Kinovea.ScreenManager
         /// <summary>Opens or closes the buttons around the centre.</summary>
         internal void SetExpanded(bool open)
         {
-            if (open && Hidden)
+            if (open && (Hidden || Standby))
                 open = false;
             if (expanded == open)
                 return;
@@ -201,7 +235,13 @@ namespace Kinovea.ScreenManager
         {
             float fx = DefaultPlace.X;
             float fy = DefaultPlace.Y;
-            string text = manager.Settings.DialPlace;
+            if (group)
+            {
+                fx = 0.5f;
+                fy = 0.5f;
+            }
+
+            string text = group ? manager.Settings.GroupDialPlace : manager.Settings.DialPlace;
             if (!string.IsNullOrEmpty(text))
             {
                 string[] parts = text.Split(',');
@@ -224,7 +264,11 @@ namespace Kinovea.ScreenManager
             if (area.Width < 1 || area.Height < 1)
                 return;
 
-            manager.Settings.DialPlace = string.Format(CultureInfo.InvariantCulture, "{0:0.####},{1:0.####}", place.X / area.Width, place.Y / area.Height);
+            string value = string.Format(CultureInfo.InvariantCulture, "{0:0.####},{1:0.####}", place.X / area.Width, place.Y / area.Height);
+            if (group)
+                manager.Settings.GroupDialPlace = value;
+            else
+                manager.Settings.DialPlace = value;
             manager.Settings.Save();
         }
 
@@ -297,6 +341,8 @@ namespace Kinovea.ScreenManager
                 next = new Region(path);
             }
 
+            // In the control it is on (the area of a group is not at its corner).
+            bounds.Offset(origin);
             if (Bounds != bounds)
                 Bounds = bounds;
             Region = next;
@@ -594,8 +640,20 @@ namespace Kinovea.ScreenManager
                 return SwimLang.T("Το στρογγυλό κουμπί της ανάλυσης: κλικ για να ξαναφανεί.") + (string.IsNullOrEmpty(key) ? "" : " (" + key + ")");
             }
 
+            if (id == CenterId && Standby)
+            {
+                string head = manager.DialName(this);
+                return (head.Length > 0 ? head + ": " : "") + (manager.AnalysisBusy ?
+                    SwimLang.T("η ανάλυση μένει στο βίντεο της ανάγνωσης ή του αυτόματου πιλότου μέχρι να τελειώσει.") :
+                    group ? SwimLang.T("κλικ για την ανάλυση της ομάδας (τα κουμπιά ανοίγουν γύρω του).") :
+                    SwimLang.T("κλικ για την ανάλυση αυτού του βίντεο (τα κουμπιά ανοίγουν γύρω του)."));
+            }
+
             if (id == CenterId)
-                return expanded ? SwimLang.T("Κλείνει τα κουμπιά.") : SwimLang.T("Τα κουμπιά της ανάλυσης: κλικ για να ανοίξουν γύρω του, σύρσιμο για να μετακινηθεί.");
+            {
+                string head = group ? manager.DialName(this) + "\n" : "";
+                return head + (expanded ? SwimLang.T("Κλείνει τα κουμπιά.") : SwimLang.T("Τα κουμπιά της ανάλυσης: κλικ για να ανοίξουν γύρω του, σύρσιμο για να μετακινηθεί."));
+            }
 
             Item item = items.FirstOrDefault(x => x.Button.Id == id);
             return item != null ? TipOf(item.Button) : "";
@@ -604,6 +662,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The race time in the middle (as the bar: seconds, minutes after the first one).</summary>
         private string Clock()
         {
+            if (Standby)
+                return "";
+
             double? now = manager.CurrentRaceTime;
             if (!now.HasValue)
                 return "–";
@@ -615,7 +676,7 @@ namespace Kinovea.ScreenManager
         private string Signature()
         {
             StringBuilder b = new StringBuilder();
-            b.Append(Hidden).Append('|').Append(expanded);
+            b.Append(Hidden).Append('|').Append(expanded).Append('|').Append(Standby).Append('|').Append(manager.StandbyText(this));
             if (expanded && !Hidden)
             {
                 foreach (SwimBarButton x in Buttons())
@@ -657,7 +718,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             // As a click on the video: this screen is the active one and gets the keys.
-            manager.DialClicked();
+            manager.DialClicked(this);
             string id = HitTest(e.Location);
             pressedId = id;
             downOnCenter = id == CenterId;
@@ -821,7 +882,8 @@ namespace Kinovea.ScreenManager
         {
             try
             {
-                Draw(e.Graphics, Hidden, center, expanded, items, Clock(), hoverId, pressedId, Hidden ? scale : drawScale);
+                bool standby = Standby;
+                Draw(e.Graphics, Hidden, center, expanded, items, Clock(), hoverId, pressedId, Hidden ? scale : drawScale, standby, standby ? manager.StandbyText(this) : null);
             }
             catch (Exception ex)
             {
@@ -829,13 +891,20 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The button: the dot when hidden; else the small buttons and the centre (the race time, a cross when open).</summary>
-        private static void Draw(Graphics g, bool hidden, PointF center, bool expanded, List<Item> items, string clock, string hoverId, string pressedId, float scale)
+        /// <summary>
+        /// The button: the dot when hidden; else the small buttons and the centre (the race time, a cross when open; on another screen
+        /// than the one of the analysis the number of its screen, waiting for a click).
+        /// </summary>
+        private static void Draw(Graphics g, bool hidden, PointF center, bool expanded, List<Item> items, string clock, string hoverId, string pressedId, float scale,
+            bool standby = false, string standbyText = null)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             if (hidden)
             {
-                Disk(g, Circle(center, DotSize * scale), hoverId == DotId ? SwimTheme.RaisedHover : SwimTheme.Back, SwimTheme.Accent, scale);
+                RectangleF dot = Circle(center, DotSize * scale);
+                Rim(g, dot, 0.22f);
+                Face(g, Inset(dot, 0.22f), hoverId == DotId ? SwimTheme.Mix(SwimTheme.AccentDark, SwimTheme.Accent, 0.5) : SwimTheme.AccentDark, SwimTheme.Back);
                 return;
             }
 
@@ -843,58 +912,137 @@ namespace Kinovea.ScreenManager
                 DrawItem(g, it, it.Button.Id == hoverId, it.Button.Id == hoverId && it.Button.Id == pressedId, scale);
 
             bool hover = hoverId == CenterId;
-            Color fill = hover && pressedId == CenterId ? SwimTheme.Pressed : hover ? SwimTheme.RaisedHover : SwimTheme.Back;
+            bool pressed = hover && pressedId == CenterId;
             RectangleF disk = Circle(center, CenterSize * scale);
-            Disk(g, disk, fill, SwimTheme.Accent, scale);
-            RectangleF inner = Inset(disk, 0.14f);
-            if (expanded)
-                Write(g, "✕", SwimTheme.Ui(13f, FontStyle.Bold), inner, SwimTheme.Text);
+            Ring ring = standby ? Ring.Quiet : Ring.Primary;
+            Lens(g, disk, ring, hover, pressed, true);
+
+            RectangleF inner = Inset(disk, 0.22f);
+            if (expanded && !standby)
+                Write(g, "✕", SwimTheme.Ui(13f, FontStyle.Bold), inner, SwimTheme.Text, true);
+            else if (standby)
+                Write(g, string.IsNullOrEmpty(standbyText) ? "◉" : standbyText,
+                    string.IsNullOrEmpty(standbyText) ? SwimTheme.Ui(13f, FontStyle.Bold) : Fit(g, standbyText, inner.Width, false), inner, hover ? SwimTheme.Text : SwimTheme.Dim, hover);
             else
-                Write(g, clock, Fit(g, clock, inner.Width, true), inner, Color.White);
+                Write(g, clock, Fit(g, clock, inner.Width, true), inner, Color.White, true);
         }
 
-        /// <summary>A small round button: flat, its edge in the accent when it is a main one, lighter under the mouse.</summary>
+        /// <summary>How bright the rings of a round button are.</summary>
+        private enum Ring
+        {
+            Normal,
+            Primary,
+            Danger,
+            Quiet,
+            Dim
+        }
+
+        /// <summary>A small round button: the lens of the centre, smaller; its ring after its look; lighter under the mouse.</summary>
         private static void DrawItem(Graphics g, Item it, bool hover, bool pressed, float scale)
         {
             SwimBarButton b = it.Button;
-            bool primary = b.Look == SwimBarLook.Primary;
-            Color fill = primary ? SwimTheme.AccentDark : SwimTheme.Raised;
-            if (pressed)
-                fill = SwimTheme.Pressed;
-            else if (hover)
-                fill = primary ? SwimTheme.Mix(SwimTheme.AccentDark, SwimTheme.Accent, 0.25) : SwimTheme.RaisedHover;
-            else if (b.Dim)
-                fill = SwimTheme.Mix(fill, SwimTheme.Back, 0.6);
-
-            Color edge = hover ? SwimTheme.Mix(SwimTheme.Border, SwimTheme.Accent, 0.8) :
-                primary && !b.Dim ? SwimTheme.Mix(SwimTheme.Border, SwimTheme.Accent, 0.5) : SwimTheme.Border;
+            Ring ring = b.Dim ? Ring.Dim : b.Look == SwimBarLook.Primary ? Ring.Primary : b.Look == SwimBarLook.Danger ? Ring.Danger : Ring.Normal;
             RectangleF r = Circle(it.Center, ItemSize * scale);
-            Disk(g, r, fill, edge, scale);
+            Lens(g, r, ring, hover, pressed, false);
 
-            // A value already measured: a small dot at the top.
+            // A value already measured: a small light at the top, inside the ring.
             if (!string.IsNullOrEmpty(b.Value))
             {
                 float d = 4f * scale;
-                using (SolidBrush mark = new SolidBrush(b.Dim ? SwimTheme.Faint : SwimTheme.Accent))
-                    g.FillEllipse(mark, it.Center.X - d / 2, r.Top + 5f * scale, d, d);
+                float y = r.Top + r.Height * 0.17f;
+                using (SolidBrush halo = new SolidBrush(Color.FromArgb(b.Dim ? 30 : 90, SwimTheme.Accent)))
+                    g.FillEllipse(halo, it.Center.X - d, y - d / 2, 2 * d, 2 * d);
+                using (SolidBrush mark = new SolidBrush(b.Dim ? SwimTheme.Faint : SwimTheme.AccentPale))
+                    g.FillEllipse(mark, it.Center.X - d / 2, y, d, d);
             }
 
             string label = it.Label ?? "";
             Color color = b.Dim && !hover ? SwimTheme.Faint : SwimTheme.Text;
-            RectangleF inner = Inset(r, 0.12f);
+            RectangleF inner = Inset(r, 0.19f);
             Font font = label.Length <= 2 ? SwimTheme.Ui(13f, FontStyle.Bold) : Fit(g, label, inner.Width, false);
-            Write(g, label, font, inner, color);
+            Write(g, label, font, inner, color, !b.Dim || hover);
         }
 
-        /// <summary>A flat disk with a thin edge.</summary>
-        private static void Disk(Graphics g, RectangleF r, Color fill, Color edge, float scale)
+        /// <summary>
+        /// A round button drawn as a lens: a metal rim, a dark face lit from the middle, a ring of fine marks, a glowing ring and a thin
+        /// inner ring. Under the mouse the glow is stronger, pressed the face lights up.
+        /// </summary>
+        private static void Lens(Graphics g, RectangleF r, Ring ring, bool hover, bool pressed, bool centre)
         {
-            using (SolidBrush b = new SolidBrush(fill))
-                g.FillEllipse(b, r);
+            Color glow = ring == Ring.Danger ? SwimTheme.Amber : ring == Ring.Primary ? SwimTheme.AccentLight : SwimTheme.Accent;
+            int strength = ring == Ring.Dim ? 40 : ring == Ring.Quiet ? 70 : ring == Ring.Normal ? 120 : 170;
+            if (hover)
+                strength = Math.Min(255, strength + 70);
 
-            float w = Math.Max(1f, 1.5f * scale);
-            using (Pen p = new Pen(edge, w))
-                g.DrawEllipse(p, r.X + w / 2, r.Y + w / 2, r.Width - w, r.Height - w);
+            Rim(g, r, 0.09f);
+            RectangleF face = Inset(r, 0.09f);
+            Color middle = pressed ? SwimTheme.Mix(SwimTheme.AccentDark, SwimTheme.Accent, 0.35) :
+                hover ? SwimTheme.Mix(SwimTheme.Raised, SwimTheme.AccentDark, 0.8) : SwimTheme.Mix(SwimTheme.Raised, SwimTheme.AccentDark, 0.35);
+            Face(g, face, middle, SwimTheme.Back);
+
+            float w = r.Width;
+            PointF c = new PointF(r.X + w / 2, r.Y + w / 2);
+
+            // The fine marks, every 10° (every 30° longer), between the rim and the glowing ring.
+            int marks = centre ? 36 : 24;
+            using (Pen fine = new Pen(Color.FromArgb(Math.Min(255, strength / 2 + 20), glow), Math.Max(0.8f, w * 0.012f)))
+            using (Pen bold = new Pen(Color.FromArgb(Math.Min(255, strength), glow), Math.Max(1f, w * 0.02f)))
+            {
+                for (int i = 0; i < marks; i++)
+                {
+                    double a = 2 * Math.PI * i / marks;
+                    bool major = i % (marks / 12) == 0;
+                    float outer = w * 0.41f, innerR = major ? w * 0.37f : w * 0.385f;
+                    g.DrawLine(major ? bold : fine,
+                        c.X + (float)(innerR * Math.Cos(a)), c.Y + (float)(innerR * Math.Sin(a)),
+                        c.X + (float)(outer * Math.Cos(a)), c.Y + (float)(outer * Math.Sin(a)));
+                }
+            }
+
+            // The glowing ring: wide and faint, then narrow and bright.
+            RectangleF glowRing = Circle(c, w * 0.70f);
+            using (Pen halo = new Pen(Color.FromArgb(Math.Min(255, strength / 3), glow), w * 0.07f))
+                g.DrawEllipse(halo, glowRing);
+            using (Pen line = new Pen(Color.FromArgb(Math.Min(255, strength + 40), glow), Math.Max(1.2f, w * 0.03f)))
+                g.DrawEllipse(line, glowRing);
+
+            // The thin inner ring of the centre.
+            if (centre)
+            {
+                using (Pen thin = new Pen(Color.FromArgb(Math.Min(255, strength / 2), glow), Math.Max(0.8f, w * 0.012f)))
+                    g.DrawEllipse(thin, Circle(c, w * 0.58f));
+            }
+        }
+
+        /// <summary>The metal rim of a round button: light at the top left, dark at the bottom right; 'share' of the width.</summary>
+        internal static void Rim(Graphics g, RectangleF r, float share)
+        {
+            float t = Math.Max(1f, r.Width * share);
+            RectangleF band = new RectangleF(r.X + t / 2, r.Y + t / 2, r.Width - t, r.Height - t);
+            using (LinearGradientBrush metal = new LinearGradientBrush(r, Color.FromArgb(178, 196, 206), Color.FromArgb(24, 38, 48), LinearGradientMode.ForwardDiagonal))
+            using (Pen pen = new Pen(metal, t))
+                g.DrawEllipse(pen, band);
+            using (Pen edge = new Pen(Color.FromArgb(120, 0, 0, 0), 1f))
+                g.DrawEllipse(edge, r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1);
+        }
+
+        /// <summary>The face of a round button: its middle colour fading to the edge colour.</summary>
+        internal static void Face(Graphics g, RectangleF r, Color middle, Color edge)
+        {
+            if (r.Width < 1 || r.Height < 1)
+                return;
+
+            using (GraphicsPath path = new GraphicsPath())
+            {
+                path.AddEllipse(r);
+                using (PathGradientBrush light = new PathGradientBrush(path))
+                {
+                    light.CenterColor = middle;
+                    light.SurroundColors = new[] { edge };
+                    light.CenterPoint = new PointF(r.X + r.Width * 0.45f, r.Y + r.Height * 0.4f);
+                    g.FillPath(light, path);
+                }
+            }
         }
 
         private static RectangleF Inset(RectangleF r, float share)
@@ -922,8 +1070,8 @@ namespace Kinovea.ScreenManager
             return font;
         }
 
-        /// <summary>Text in the middle of a square, on one line or more.</summary>
-        private static void Write(Graphics g, string text, Font font, RectangleF r, Color color)
+        /// <summary>Text in the middle of a square, on one line or more; with 'glow' a faint light of the accent around it.</summary>
+        private static void Write(Graphics g, string text, Font font, RectangleF r, Color color, bool glow = false)
         {
             if (string.IsNullOrEmpty(text) || font == null)
                 return;
@@ -931,6 +1079,17 @@ namespace Kinovea.ScreenManager
             TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
             Size size = TextRenderer.MeasureText(g, text, font, Size.Empty, flags);
             Rectangle box = new Rectangle((int)Math.Round(r.Left), (int)Math.Round(r.Top + (r.Height - size.Height) / 2), (int)Math.Round(r.Width), size.Height);
+            if (glow)
+            {
+                Color light = SwimTheme.Mix(SwimTheme.Back, SwimTheme.Accent, 0.45);
+                foreach (Point o in new[] { new Point(-1, 0), new Point(1, 0), new Point(0, -1), new Point(0, 1) })
+                {
+                    Rectangle moved = box;
+                    moved.Offset(o);
+                    TextRenderer.DrawText(g, text, font, moved, light, flags);
+                }
+            }
+
             TextRenderer.DrawText(g, text, font, box, color, flags);
         }
         #endregion
@@ -938,8 +1097,9 @@ namespace Kinovea.ScreenManager
         #region Preview
         /// <summary>
         /// For the previews of the CI (tests/reel_preview, by reflection): the round button with fictional buttons over a drawn pool.
-        /// 0: closed (left) and the dot of the hidden one (bottom right); 1: open in the middle; 2: open at its first place (bottom
-        /// middle, an arc upwards); 3: open in the bottom right corner (moved into the video).
+        /// 0: closed (left), pressed, waiting on screens 2 and 3 (the second under the mouse) and the dot of the hidden one (bottom
+        /// right); 1: open in the middle; 2: open at its first place (bottom middle, an arc upwards); 3: open in the bottom right corner
+        /// (moved into the video).
         /// </summary>
         internal static Bitmap Preview(int variant)
         {
@@ -953,6 +1113,10 @@ namespace Kinovea.ScreenManager
                 if (variant == 0)
                 {
                     Draw(g, false, new PointF(w * 0.12f, h * 0.5f), false, none, "23.45", null, null, 1f);
+                    Draw(g, false, new PointF(w * 0.30f, h * 0.5f), false, none, "1:02.37", CenterId, CenterId, 1f);
+                    Draw(g, false, new PointF(w * 0.50f, h * 0.5f), false, none, "", null, null, 1f, true, "2\n" + SwimLang.T("οθόνη"));
+                    Draw(g, false, new PointF(w * 0.70f, h * 0.5f), false, none, "", CenterId, null, 1f, true, SwimLang.T("ομάδα") + "\n1·2·3");
+                    Draw(g, false, new PointF(w * 0.88f, h * 0.5f), false, none, "–", CenterId, null, 1.5f);
                     Draw(g, true, new PointF(w - Margin - DotSize / 2, h - Margin - DotSize / 2), false, none, "", null, null, 1f);
                 }
                 else

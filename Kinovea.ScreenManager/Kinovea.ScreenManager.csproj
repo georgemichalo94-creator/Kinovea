@@ -1107,6 +1107,8 @@
     <Compile Include="SwimAnalysis\SwimTech.cs" />
     <Compile Include="SwimAnalysis\SwimTechSheets.cs" />
     <Compile Include="SwimAnalysis\SwimTechLearning.cs" />
+    <Compile Include="SwimAnalysis\SwimScreensIcons.cs" />
+    <Compile Include="SwimAnalysis\SwimScreenGrip.cs" />
     <Compile Include="SwimAnalysis\SwimTechEval.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.TechEval.cs" />
     <Compile Include="SwimAnalysis\SwimUi.cs" />
@@ -1126,6 +1128,9 @@
     </Compile>
     <Compile Include="UIHelper.cs" />
     <Compile Include="VideoFullScreen.cs" />
+    <Compile Include="VideoBigScreens.cs" />
+    <Compile Include="VideoScreenGroup.cs" />
+    <Compile Include="SwimScreenDrag.cs" />
     <Compile Include="VideoFilters\LensCalibration\FormConfigureLensCalibration.cs">
       <SubType>Form</SubType>
     </Compile>

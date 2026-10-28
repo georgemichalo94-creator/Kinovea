@@ -47,6 +47,10 @@ namespace Kinovea.ScreenManager
         public event EventHandler MergeAsked;
         public event EventHandler ExportImageAsked;
         public event EventHandler ExportvideoAsked;
+        /// <summary>(Swim 2.14.0) The big screens on or off: the screens show only their images, these controls drive them.</summary>
+        public event EventHandler BigScreensAsked;
+        /// <summary>(Swim 2.14.0) The menu of the group of screens (the sender is the button, to show it under).</summary>
+        public event EventHandler GroupAsked;
         #endregion
 
         #region Properties
@@ -65,6 +69,10 @@ namespace Kinovea.ScreenManager
         private bool merging;
         private int playerCount = 2;
         private long oldPosition;
+        private Button btnBigScreens;
+        private bool bigScreens;
+        private Button btnGroup;
+        private string groupTip;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
 
@@ -85,6 +93,80 @@ namespace Kinovea.ScreenManager
             btnDualSave.Click += (s, e) => ExportvideoAsked?.Invoke(s, e);
             btnSwap.Click += (s, e) => SwapAsked?.Invoke(s, e);
             btnSync.Click += (s, e) => SyncAsked?.Invoke(s, e);
+            AddBigScreensButton();
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) The buttons of the group of screens and of the big screens, at the right end: the timeline and the side by side
+        /// exports move left to make room for them.
+        /// </summary>
+        private void AddBigScreensButton()
+        {
+            const int room = 68;
+            trkFrame.Width -= room;
+            btnSnapshot.Left -= room;
+            btnDualSave.Left -= room;
+
+            btnGroup = new Button();
+            btnGroup.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnGroup.Cursor = Cursors.Hand;
+            btnGroup.FlatStyle = FlatStyle.Flat;
+            btnGroup.FlatAppearance.BorderSize = 0;
+            btnGroup.FlatAppearance.MouseOverBackColor = Color.WhiteSmoke;
+            btnGroup.BackColor = Color.White;
+            btnGroup.Margin = new Padding(0);
+            btnGroup.Size = new Size(30, 25);
+            btnGroup.Location = new Point(btnDualSave.Right + 6, 10);
+            btnGroup.TabStop = false;
+            btnGroup.Image = SwimScreensIcons.Group(false);
+            btnGroup.Click += (s, e) => GroupAsked?.Invoke(btnGroup, EventArgs.Empty);
+            Controls.Add(btnGroup);
+            groupTip = SwimScreensIcons.GroupTip(null, 0);
+            toolTips.SetToolTip(btnGroup, groupTip);
+
+            btnBigScreens = new Button();
+            btnBigScreens.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnBigScreens.Cursor = Cursors.Hand;
+            btnBigScreens.FlatStyle = FlatStyle.Flat;
+            btnBigScreens.FlatAppearance.BorderSize = 0;
+            btnBigScreens.FlatAppearance.MouseOverBackColor = Color.WhiteSmoke;
+            btnBigScreens.BackColor = Color.White;
+            btnBigScreens.Margin = new Padding(0);
+            btnBigScreens.Size = new Size(30, 25);
+            btnBigScreens.Location = new Point(btnGroup.Right + 4, 10);
+            btnBigScreens.TabStop = false;
+            btnBigScreens.Image = SwimScreensIcons.BigScreens(false);
+            btnBigScreens.Click += (s, e) => BigScreensAsked?.Invoke(this, EventArgs.Empty);
+            Controls.Add(btnBigScreens);
+            toolTips.SetToolTip(btnBigScreens, SwimScreensIcons.BigScreensTip(false));
+        }
+
+        /// <summary>(Swim 2.14.0) There is a group of screens or not: the icon and the tip of its button follow.</summary>
+        public void SetGroup(bool on, string tip)
+        {
+            if (btnGroup == null)
+                return;
+
+            Image old = btnGroup.Image;
+            btnGroup.Image = SwimScreensIcons.Group(on);
+            if (old != null)
+                old.Dispose();
+            groupTip = tip;
+            toolTips.SetToolTip(btnGroup, tip);
+        }
+
+        /// <summary>(Swim 2.14.0) The big screens are on or off: the icon and the tip of the button follow.</summary>
+        public void SetBigScreens(bool on)
+        {
+            bigScreens = on;
+            if (btnBigScreens == null)
+                return;
+
+            Image old = btnBigScreens.Image;
+            btnBigScreens.Image = SwimScreensIcons.BigScreens(on);
+            if (old != null)
+                old.Dispose();
+            toolTips.SetToolTip(btnBigScreens, SwimScreensIcons.BigScreensTip(on));
         }
         #endregion
         
@@ -104,6 +186,10 @@ namespace Kinovea.ScreenManager
             toolTips.SetToolTip(btnSync, ScreenManagerLang.btnSync_ToolTip);
             toolTips.SetToolTip(btnSnapshot, ScreenManagerLang.ToolTip_SideBySideSnapshot);
             toolTips.SetToolTip(btnDualSave, ScreenManagerLang.ToolTip_SideBySideVideo);
+            if (btnBigScreens != null)
+                toolTips.SetToolTip(btnBigScreens, SwimScreensIcons.BigScreensTip(bigScreens));
+            if (btnGroup != null)
+                toolTips.SetToolTip(btnGroup, groupTip);
             
             RefreshMergeTooltip();
         }
@@ -177,6 +263,14 @@ namespace Kinovea.ScreenManager
             btnSwap.Visible = dual;
             btnSnapshot.Visible = dual;
             btnDualSave.Visible = dual;
+
+            // (Swim 2.14.0) The timeline up to the next button shown (the side by side exports, or the group and the big screens).
+            if (btnBigScreens != null && btnGroup != null)
+            {
+                int end = dual ? btnSnapshot.Left - 2 : btnGroup.Left - 4;
+                if (end - trkFrame.Left >= trkFrame.MinimumSize.Width)
+                    trkFrame.Width = end - trkFrame.Left;
+            }
 
             if (!dual && merging)
                 StopMerge();

@@ -119,6 +119,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public string DialPlace = "";
 
+        /// <summary>(2.14.0) The place of the round button of a group of screens, a fraction of the area of the group ("" = its middle).</summary>
+        public string GroupDialPlace = "";
+
         /// <summary>Since 2.9.5: the round button of the full screen is hidden (a small dot in the corner brings it back, or the key D).</summary>
         public bool DialHidden = false;
 
