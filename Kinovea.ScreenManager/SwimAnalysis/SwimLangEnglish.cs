@@ -1524,6 +1524,7 @@ namespace Kinovea.ScreenManager
             { "κύκλοι/λ.", "cycles/min" },
             { "κύκλοι/λεπτό", "cycles/min" },
             { "λάθος τιμή στο αρχείο (", "wrong value in the file (" },
+            { "λίγα καρέ με καθαρό σκελετό κάτω από το νερό: έλεγξε τους δελφινισμούς", "few images with a clear skeleton under water: check the kicks" },
             { "λίγα καρέ στην υποβρύχια ανάγνωση", "few frames in the underwater reading" },
             { "λίγο πριν τη βουτιά (δεν φάνηκε φως ούτε ακούστηκε σήμα)", "just before the dive (no light was seen and no signal was heard)" },
             { "λίγο πριν φύγουν όλοι μαζί από τους βατήρες (κανένα σήμα δεν ταίριαζε με τον αγώνα)", "just before all the swimmers leave the blocks together (no signal fitted the race)" },
