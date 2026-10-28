@@ -177,7 +177,8 @@ namespace Kinovea.ScreenManager
     public static class SwimTrackPath
     {
         public static List<SwimBox> Find(List<List<SwimBox>> detections, out bool[] observed, int candidates = 6, int maxGap = 12,
-            double motion = 20.0, double gap = 0.6, double size = 1.5, double start = 2.0, double reward = 2.5, float minScore = 0.05f, int every = 1)
+            double motion = 20.0, double gap = 0.6, double size = 1.5, double start = 2.0, double reward = 2.5, float minScore = 0.05f, int every = 1,
+            int maxDetour = 0, double minScale = 0)
         {
             every = Math.Max(1, every);
             int n = detections.Count;
@@ -243,6 +244,9 @@ namespace Kinovea.ScreenManager
                 ci = ni;
             }
 
+            if (maxDetour > 0)
+                RepairDetours(chosen, cand, maxDetour, minScale, every, motion, gap, size, reward);
+
             int[] keys = chosen.Keys.ToArray();
             for (int k = 0; k < keys.Length; k++)
             {
@@ -258,6 +262,149 @@ namespace Kinovea.ScreenManager
             }
 
             return path;
+        }
+
+        /// <summary>
+        /// (2.9.11) A detour of the path jumps away (more than DetourJump box diagonals per detection step) and back, within
+        /// maxDetour images, to a box that continues the box before the first jump (at most DetourJump per step and DetourBack
+        /// diagonals in all), every box between away from the line joining the two (DetourAway diagonals, at most DetourOverlap
+        /// of the line's box): meanwhile the path followed someone else (a swimmer passing by, a person standing at the wall
+        /// during a turn) where the swimmer's own detections were weak or missing. A detour is replaced by the best chain from
+        /// the box before to the box after through the detections near that line, or by the boxes in between when there are
+        /// none. MinScale: the diagonal of a box counts at least this many pixels (a swimmer far away is small and moves many
+        /// of its diagonals).
+        /// </summary>
+        public const double DetourJump = 0.3, DetourBack = 0.35, DetourAway = 0.3, DetourOverlap = 0.4;
+
+        private static double Scale(SwimBox a, SwimBox b, double minScale)
+        {
+            return Math.Max(minScale, 0.5 * (a.Diagonal + b.Diagonal)) + 1e-6;
+        }
+
+        private static double Distance(SwimBox a, SwimBox b)
+        {
+            double dx = b.CenterX - a.CenterX, dy = b.CenterY - a.CenterY;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>The move from a to b in box diagonals per detection step (g images apart, the detector on one in every).</summary>
+        public static double Step(SwimBox a, SwimBox b, int g, int every, double minScale)
+        {
+            return Distance(a, b) / Scale(a, b, minScale) / Math.Sqrt(Math.Max(1.0, g / (double)every));
+        }
+
+        private static double Overlap(SwimBox a, SwimBox b)
+        {
+            double ix = Math.Max(0, Math.Min(a.X1, b.X1) - Math.Max(a.X0, b.X0));
+            double iy = Math.Max(0, Math.Min(a.Y1, b.Y1) - Math.Max(a.Y0, b.Y0));
+            double i = ix * iy, u = a.Width * a.Height + b.Width * b.Height - i;
+            return u > 0 ? i / u : 0;
+        }
+
+        /// <summary>Replaces the detours of the chosen boxes (image -> box); returns how many.</summary>
+        public static int RepairDetours(SortedDictionary<int, SwimBox> chosen, List<SwimBox>[] cand, int maxDetour, double minScale,
+            int every, double motion = 20.0, double gap = 0.6, double size = 1.5, double reward = 2.5)
+        {
+            every = Math.Max(1, every);
+            int repaired = 0;
+            int m = 1;
+            while (true)
+            {
+                int[] keys = chosen.Keys.ToArray();
+                if (m >= keys.Length)
+                    break;
+
+                int ai = keys[m - 1];
+                if (Step(chosen[ai], chosen[keys[m]], keys[m] - ai, every, minScale) <= DetourJump)
+                {
+                    m++;
+                    continue;
+                }
+
+                int found = -1;
+                for (int q = m + 1; q < keys.Length && keys[q] - ai <= maxDetour; q++)
+                {
+                    int bi = keys[q];
+                    if (Step(chosen[keys[q - 1]], chosen[bi], bi - keys[q - 1], every, minScale) <= DetourJump)
+                        continue;
+
+                    SwimBox a = chosen[ai], b = chosen[bi];
+                    if (Step(a, b, bi - ai, every, minScale) > DetourJump || Distance(a, b) / Scale(a, b, minScale) > DetourBack)
+                        continue;
+
+                    bool away = true;
+                    for (int k = m; k < q && away; k++)
+                    {
+                        SwimBox line = SwimBox.Lerp(a, b, (keys[k] - ai) / (float)(bi - ai));
+                        SwimBox p = chosen[keys[k]];
+                        away = Distance(line, p) / Scale(line, p, minScale) >= DetourAway && Overlap(line, p) <= DetourOverlap;
+                    }
+
+                    if (away)
+                    {
+                        found = q;
+                        break;
+                    }
+                }
+
+                if (found < 0)
+                {
+                    m++;
+                    continue;
+                }
+
+                // The best chain from the box before to the box after through the detections near the line between them.
+                int t0 = ai, t1 = keys[found];
+                SwimBox from = chosen[t0], to = chosen[t1];
+                List<int> nodeT = new List<int> { t0 };
+                List<SwimBox> nodeB = new List<SwimBox> { from };
+                for (int t = t0 + 1; t < t1; t++)
+                {
+                    SwimBox line = SwimBox.Lerp(from, to, (t - t0) / (float)(t1 - t0));
+                    foreach (SwimBox c in cand[t])
+                    {
+                        if (Distance(line, c) / Scale(line, c, minScale) < DetourAway)
+                        {
+                            nodeT.Add(t);
+                            nodeB.Add(c);
+                        }
+                    }
+                }
+
+                nodeT.Add(t1);
+                nodeB.Add(to);
+                int n = nodeT.Count;
+                double[] cost = new double[n];
+                int[] prev = new int[n];
+                for (int k = 1; k < n; k++)
+                {
+                    cost[k] = double.MaxValue;
+                    prev[k] = -1;
+                    double node = k == n - 1 ? 0.0 : -Math.Log(Math.Max(nodeB[k].Score, 1e-3)) - reward;
+                    for (int j = 0; j < k; j++)
+                    {
+                        if (nodeT[j] >= nodeT[k] || cost[j] == double.MaxValue)
+                            continue;
+
+                        double c = cost[j] + Transition(nodeB[j], nodeB[k], nodeT[k] - nodeT[j], every, motion, gap, size) + node;
+                        if (c < cost[k])
+                        {
+                            cost[k] = c;
+                            prev[k] = j;
+                        }
+                    }
+                }
+
+                for (int k = m; k < found; k++)
+                    chosen.Remove(keys[k]);
+                for (int k = prev[n - 1]; k > 0; k = prev[k])
+                    chosen[nodeT[k]] = nodeB[k];
+
+                repaired++;
+                m = chosen.Keys.ToList().IndexOf(t1) + 1;
+            }
+
+            return repaired;
         }
 
         private static double Transition(SwimBox a, SwimBox b, int g, int every, double motion, double gap, double size)
@@ -348,6 +495,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The path crosses at most this many detections in a row without the swimmer (the bubbles of a turn, a breakout).</summary>
         public int MaxGapDetections = 20;
 
+        /// <summary>(2.9.11) Detours of the path (SwimTrackPath.RepairDetours) up to as many images as the gaps; the smallest
+        /// diagonal of a box there, as a share of the width of the image.</summary>
+        public double DetourMinScale = 0.12;
+
         /// <summary>Boxes as x0, y0, x1, y1, score (at most max, in the order given).</summary>
         public static float[] Flatten(List<SwimBox> boxes, int max)
         {
@@ -421,7 +572,8 @@ namespace Kinovea.ScreenManager
 
             bool[] observed;
             int every = Math.Max(1, DetectEvery);
-            List<SwimBox> path = SwimTrackPath.Find(detections, out observed, maxGap: MaxGapDetections * every, every: every);
+            List<SwimBox> path = SwimTrackPath.Find(detections, out observed, maxGap: MaxGapDetections * every, every: every,
+                maxDetour: MaxGapDetections * every, minScale: DetourMinScale * reading.Width);
             for (int i = 0; i < frames.Count; i++)
             {
                 frames[i].Box = path[i];
