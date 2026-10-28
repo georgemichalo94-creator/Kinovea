@@ -126,15 +126,23 @@ assert.ok(blocks >= 15, 'sections checked: ' + blocks);
 const exp = G._exports[G._exports.length - 1];
 assert.ok(/^_swim_pdf_\d+$/.test(exp.name), 'the PDF of the copy: ' + exp.name);
 assert.ok(!reports.getSheets().some(s => /^_swim_pdf_\d+$/.test(s.getName())), 'copy removed');
-const quickRows = exp.r2 - layout.print.rows;
+// (2.11.0) Τα σχόλια στο τέλος της πλήρους ανάλυσης: μετά την αναφορά, από την κενή γραμμή πριν από τον τίτλο «Σχόλια».
+let notesAt = 0;
+Object.keys(exp.detail.cells).forEach(k => { const [r, c] = k.split(':').map(Number); if (c === 1 && exp.detail.cells[k].v === 'Σχόλια' && r > notesAt) notesAt = r; });
+assert.ok(notesAt > 0, 'comments at the end of the full analysis');
+const notesRows = exp.r2 - notesAt + 2;
+const quickRows = exp.r2 - layout.print.rows - notesRows;
 assert.ok(quickRows > 20, 'rows of the first page: ' + quickRows);
 let quickH = 0; for (let row = 1; row <= quickRows; row++) quickH += exp.detail.rowHeights[row];
 assert.ok(quickH <= H && quickH >= H - 8, 'the first page as tall as a page: ' + quickH + ' / ' + H);
 assert.strictEqual(exp.r1, 0); assert.strictEqual(exp.c1, 0);
 assert.strictEqual(exp.c2, 15);
-assert.strictEqual(exp.pages, pageOf[layout.print.rows] + 1, 'pages of the PDF');
+assert.ok(exp.pages === pageOf[layout.print.rows] + 1 || exp.pages === pageOf[layout.print.rows] + 2, 'pages of the PDF (with the comments)');
 const reportStarts = [1]; for (let row = 2; row <= layout.print.rows; row++) if (pageOf[row] !== pageOf[row - 1]) reportStarts.push(row);
-assert.deepStrictEqual(Array.from(exp.detail.pageStarts), [1].concat(reportStarts.map(x => x + quickRows)), 'the report on the same pages, one page later');
+assert.deepStrictEqual(Array.from(exp.detail.pageStarts).slice(0, reportStarts.length + 1), [1].concat(reportStarts.map(x => x + quickRows)), 'the report on the same pages, one page later');
+// Τα σχόλια ολόκληρα σε μία σελίδα (στο υπόλοιπο της τελευταίας της αναφοράς ή στην επόμενη).
+const notesStart = notesAt - 1, starts = Array.from(exp.detail.pageStarts);
+assert.ok(!starts.some(s => s > notesAt && s <= exp.r2), 'the comments on one page: ' + JSON.stringify(starts.slice(-3)) + ' from ' + notesStart);
 // Οι εικόνες της αναφοράς κατέβηκαν μαζί με τις γραμμές τους, και το τελικό καρέ μπήκε και στην πρώτη σελίδα.
 sh._images.forEach(im => assert.ok(exp.detail.images.some(x => x.row === im.row + quickRows && x.col === im.col), 'image at row ' + im.row + ' moved'));
 // (Τα γραφήματα του Google μπαίνουν ως εικόνες «chart.png» για την εξαγωγή.)

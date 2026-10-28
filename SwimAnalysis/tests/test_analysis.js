@@ -19,8 +19,11 @@ assert.strictEqual(rows[0].strokes, 3.5, 'first segment');
 assert.strictEqual(rows[1].strokes, 9.5, '15-25');
 // exact SR 15-25: interval 0.5 s, fs => cycle 1.0 s => 60
 assert.ok(near(rows[1].srExact, 60), 'srExact ' + rows[1].srExact);
-// formula-style SR: strokes/2*60/segTime = 9.5/2*60/4.9
-assert.ok(near(rows[1].sr, 9.5 / 2 * 60 / 4.9), 'sr');
+// 2.11.0: one rate. From the stroke times (60) where the strokes of the segment are those of the times (not corrected) and agree
+// with them (60 × 4.9 / 60 × 2 = 9.8 strokes ≈ 9.5); otherwise strokes / 2 × 60 / segTime (test_strokes).
+assert.ok(near(rows[1].sr, 60), 'sr ' + rows[1].sr);
+assert.strictEqual(rows[1].srTimes, true, 'rate from the times');
+assert.strictEqual(rows[1].strokesAuto, 9.5);
 // wall at 24.0: last press 23.5 before wall, next 28.0 after -> no interpolation across the wall
 const n50 = rows.slice(0, 5).reduce((s, r) => s + r.strokes, 0);
 assert.strictEqual(n50, 38, 'strokes to 50 = number of presses before wall'); // 5.0..23.5 => 38 presses
@@ -35,7 +38,7 @@ assert.ok(near(rows[1].sl, 10 / (9.5 / 2)), 'SL per cycle ' + rows[1].sl);
 assert.ok(near(rows[1].dps * 2, rows[1].sl), 'fs: SL = 2 x DPS');
 // average SR weighted by time over the clean segments
 const clean = rows.filter(r => r.sr !== null);
-const wsr = clean.reduce((s, r) => s + r.strokes / r.ppc, 0) * 60 / clean.reduce((s, r) => s + r.segTime, 0);
+const wsr = clean.reduce((s, r) => s + r.sr * r.segTime, 0) / clean.reduce((s, r) => s + r.segTime, 0);
 assert.ok(near(a.summary.avgSr, wsr), 'weighted avg SR');
 // start
 assert.strictEqual(a.start.blockTime, 0.7); assert.strictEqual(a.start.entryTime, 1.0);

@@ -1054,6 +1054,7 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimChartPainter.cs" />
+    <Compile Include="SwimAnalysis\SwimChartPainter.Light.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
@@ -1068,6 +1069,9 @@
     <Compile Include="SwimAnalysis\SwimPackage.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Package.cs" />
     <Compile Include="SwimAnalysis\FormSwimPackage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SwimAnalysis\FormSwimPdfChoice.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Paste.cs" />

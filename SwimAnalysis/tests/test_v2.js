@@ -50,8 +50,10 @@ assert.ok(near(b0.dakYd, ((11.3 - 5.9) + (23.6 - 18.2) + s15_25 + s40_50) / 2.0)
 assert.ok(r.blocks && r.blocks.length === 2 && near(r.blocks[0].dak, b0.dak), 'response carries the 50s with ΔΑΚ');
 let layout = G.swimBuildLayout_(race, an, {});
 checkGrid(layout, '100yd');
-assert.strictEqual(layout.lastCol, 17, 'yards: extra yd/s and yd/stroke columns');
-assert.ok(/yd\/s/.test(layout.grid.get(layout.T0 - 1, 16).v));
+// 2.11.0: μία στήλη συχνότητας· οι στήλες των γιαρδών στα O και P.
+assert.strictEqual(layout.lastCol, 16, 'yards: extra yd/s and yd/stroke columns');
+assert.ok(/yd\/s/.test(layout.grid.get(layout.T0 - 1, 15).v));
+assert.ok(/yd\//.test(layout.grid.get(layout.T0 - 1, 16).v));
 assert.ok(/\*0\.9144/.test(layout.grid.get(layout.T0 + 1, 3).v), 'sheet velocity formula converts yards: ' + layout.grid.get(layout.T0 + 1, 3).v);
 // 2.9.5: ο μέσος όρος, και από κάτω ο ΔΑΚ κάθε 50άρι (δύο 50άρια).
 assert.strictEqual(layout.grid.get(layout.kpi.dak.r, layout.kpi.dak.c - 0) && layout.grid.get(8, 1).v, 'ΔΑΚ (μ.ο.)', 'ΔΑΚ is the first tile');
