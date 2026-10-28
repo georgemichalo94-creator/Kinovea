@@ -295,7 +295,7 @@ namespace Kinovea.ScreenManager
 
             SwimTechAgreement agreement = manager.TechAgreement(item.Criterion);
             if (agreement != null && agreement.Samples > 0)
-                lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text + (agreement.Reliable ? " 🟢" : agreement.Disagrees ? SwimLang.T(" 🔴 (δεν προτείνεται πια μόνο του)") : ""));
+                lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text + (agreement.Reliable ? " ★" : agreement.Disagrees ? SwimLang.T(" ⚠ (δεν προτείνεται πια μόνο του)") : ""));
 
             if (item.Criterion.Level == "A")
                 lines.Add(measured ? SwimLang.T("Το μετρά το πρόγραμμα: 🤖 ώσπου να το επιβεβαιώσεις ή να το αλλάξεις.") : SwimLang.T("Δεν το μετρά ακόμη το πρόγραμμα: το κρίνεις εσύ στο καρέ."));
@@ -482,7 +482,8 @@ namespace Kinovea.ScreenManager
                 if (it == null)
                     continue;
 
-                // 🤖 the program measures it, 🟢 and agrees with the coach's answers (9 in 10), 🔴 it does not (no proposal any more),
+                // 🤖 the program measures it, ★ and agrees with the coach's answers (9 in 10), ⚠ it does not (no proposal any more),
+                // (symbols, not colours: the lists of the program draw the emoji without their colours),
                 // ◐ it measures a part of it, 👁 the coach judges it.
                 SwimTechAgreement agreement = manager.TechAgreement(it.Criterion);
                 bool measured = it.Criterion.Check != null && SwimTechEvaluator.MeasuredChecks.Contains(it.Criterion.Check);
@@ -490,9 +491,9 @@ namespace Kinovea.ScreenManager
                 if (it.Criterion.Level == "X" || it.Criterion.Check == null)
                     mark = "👁 ";
                 else if (measured && agreement != null && agreement.Disagrees && it.Criterion.Level == "A")
-                    mark = "🔴 ";
+                    mark = "⚠ ";
                 else if (measured && agreement != null && agreement.Reliable)
-                    mark = "🟢 ";
+                    mark = "★ ";
                 else if (measured && it.Criterion.Level == "A")
                     mark = "🤖 ";
                 else

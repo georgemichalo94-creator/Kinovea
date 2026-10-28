@@ -2063,7 +2063,7 @@ namespace Kinovea.ScreenManager
             { " (από τις απαντήσεις σου· αρχικά ", " (from your answers; at first " },
             { " (από τις απαντήσεις σου)", " (from your answers)" },
             { "Συμφωνία με τις απαντήσεις σου: ", "Agreement with your answers: " },
-            { " 🔴 (δεν προτείνεται πια μόνο του)", " 🔴 (no longer proposed on its own)" },
+            { " ⚠ (δεν προτείνεται πια μόνο του)", " ⚠ (no longer proposed on its own)" },
             { "Το μετρά το πρόγραμμα: 🤖 ώσπου να το επιβεβαιώσεις ή να το αλλάξεις.", "The program measures it: 🤖 until you confirm or change it." },
             { "Δεν το μετρά ακόμη το πρόγραμμα: το κρίνεις εσύ στο καρέ.", "The program does not measure it yet: you judge it at the frame." },
             { "Το πρόγραμμα μετρά μέρος του: έλεγξέ το στο καρέ. Το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου.",
