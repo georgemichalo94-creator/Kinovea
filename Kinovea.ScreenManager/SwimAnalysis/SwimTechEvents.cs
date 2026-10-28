@@ -380,7 +380,23 @@ namespace Kinovea.ScreenManager
         public const double PlantWindow = 1.2;
         public const double PlantBeforeTurn = 0.4;
         public const double PlantBeforeExtreme = 0.2;
-        public const double DolphinMaxAngle = 148;
+        /// <summary>
+        /// (2.9.14) The deepest bend of a dolphin kick: at most this angle of the knees (degrees). It was 148: kids bend the knees
+        /// less and their kicks were lost (Heraklion, 19 turns checked by eye).
+        /// </summary>
+        public const double DolphinMaxAngle = 158;
+
+        /// <summary>The deepest bend of the breaststroke kick of a pull-out: at most this angle of the knees (degrees).</summary>
+        public const double BreaststrokeKickMaxAngle = 148;
+
+        /// <summary>
+        /// (2.9.14) The dolphin kicks only from the skeletons that lie along the swim: the shoulders at least KickShoulders body
+        /// lengths ahead of the hips and the ankles at least KickAnkles behind them. Streamlined under water the body looks the
+        /// same at both ends and the pose often puts the head at the feet, or all the joints together; the angle of its "knees"
+        /// then made kicks in the glide.
+        /// </summary>
+        public const double KickShoulders = 0.1;
+        public const double KickAnkles = 0.1;
         public const double KickProminence = 15;
         public const double UprightShoulders = -0.25;
         public const double TouchSpeedFraction = 0.2;
@@ -396,6 +412,12 @@ namespace Kinovea.ScreenManager
         public const double PullDownHold = 0.4;
         public const double BreaststrokeDolphinAfter = 1.1;
         public const double FlutterGapFraction = 0.75;
+
+        /// <summary>
+        /// (2.9.14) The flutter of the breakout only in the last FlutterTail s before it: before, a short interval anywhere (a kick
+        /// found in the glide, a double bend) cut all the kicks after it.
+        /// </summary>
+        public const double FlutterTail = 0.8;
 
         private sealed class Signals
         {
@@ -535,9 +557,13 @@ namespace Kinovea.ScreenManager
 
             double kickEnd = breakout ?? pushoff + 8;
             ev.PullDown = PullDown(s, pushoff, kickEnd, ev.Sign);
-            List<KeyValuePair<double, double>> found = Kicks(s, pushoff + 0.1, kickEnd);
+            // (2.9.14) The dolphin kicks from the skeletons along the swim; the breaststroke kick as before (the heels come up to
+            // the hips: the ankles are not behind them).
+            List<KeyValuePair<double, double>> found = Kicks(s, pushoff + 0.1, kickEnd, ev.Sign, DolphinMaxAngle);
             List<KeyValuePair<double, double>> dolphin = found.Where(q => !ev.PullDown.HasValue || q.Key < ev.PullDown.Value).ToList();
-            List<KeyValuePair<double, double>> legs = found.Where(q => ev.PullDown.HasValue && q.Key >= ev.PullDown.Value).ToList();
+            List<KeyValuePair<double, double>> legs = ev.PullDown.HasValue
+                ? Kicks(s, pushoff + 0.1, kickEnd, 0, BreaststrokeKickMaxAngle).Where(q => q.Key >= ev.PullDown.Value).ToList()
+                : new List<KeyValuePair<double, double>>();
             if (ev.PullDown.HasValue)
             {
                 // Breaststroke pull-out: one dolphin kick (the one nearest 1.1 s after the push-off) and one breaststroke kick
@@ -549,14 +575,14 @@ namespace Kinovea.ScreenManager
             }
             else if (dolphin.Count >= 3)
             {
-                // The dolphin kicks are regular: a kick much sooner than the usual interval is the flutter of the breakout.
+                // The dolphin kicks are regular: a kick much sooner than the usual interval near the breakout is its flutter.
                 double[] gaps = new double[dolphin.Count - 1];
                 for (int i = 0; i < gaps.Length; i++)
                     gaps[i] = dolphin[i + 1].Key - dolphin[i].Key;
                 double usual = SwimSignal.Percentile(gaps.Take(Math.Max(2, gaps.Length - 1)), 50);
                 for (int i = 0; i < gaps.Length; i++)
                 {
-                    if (gaps[i] < FlutterGapFraction * usual)
+                    if (gaps[i] < FlutterGapFraction * usual && dolphin[i + 1].Key >= kickEnd - FlutterTail)
                     {
                         dolphin = dolphin.Take(i + 1).ToList();
                         break;
@@ -1672,18 +1698,31 @@ namespace Kinovea.ScreenManager
             return null;
         }
 
-        /// <summary>Deepest bends of the knees between ta and tb: (time, angle).</summary>
-        private static List<KeyValuePair<double, double>> Kicks(Signals s, double ta, double tb)
+        /// <summary>
+        /// Deepest bends of the knees between ta and tb, at most maxAngle: (time, angle). sign not 0: only the images whose
+        /// skeleton lies along the swim in that direction (the shoulders ahead of the hips, the ankles behind them).
+        /// </summary>
+        private static List<KeyValuePair<double, double>> Kicks(Signals s, double ta, double tb, int sign, double maxAngle)
         {
             double[] k = new double[s.N];
+            int known = 0;
             for (int i = 0; i < s.N; i++)
-                k[i] = s.Present[i] && s.InWater[i] ? s.KneeAngle[i] : double.NaN;
+            {
+                bool along = sign == 0
+                    || ((s.ShX[i] - s.HipX[i]) * sign >= KickShoulders * s.L && (s.HipX[i] - s.AnkX[i]) * sign >= KickAnkles * s.L);
+                k[i] = s.Present[i] && s.InWater[i] && along ? s.KneeAngle[i] : double.NaN;
+                if (!double.IsNaN(k[i]))
+                    known++;
+            }
+
+            List<KeyValuePair<double, double>> found = new List<KeyValuePair<double, double>>();
+            if (known < 3)
+                return found;
             k = SwimSignal.Median(SwimSignal.Interp(k), 3);
             double[] neg = k.Select(v => -v).ToArray();
-            List<KeyValuePair<double, double>> found = new List<KeyValuePair<double, double>>();
             foreach (int p in SwimStrokeDetector.FindPeaks(neg, (int)(0.25 * s.Fps), KickProminence))
             {
-                if (s.T[p] >= ta && s.T[p] <= tb && k[p] <= DolphinMaxAngle)
+                if (s.T[p] >= ta && s.T[p] <= tb && k[p] <= maxAngle)
                     found.Add(new KeyValuePair<double, double>(s.T[p], k[p]));
             }
 
