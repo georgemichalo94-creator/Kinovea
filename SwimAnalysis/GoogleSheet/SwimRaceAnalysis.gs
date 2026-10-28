@@ -18,9 +18,12 @@
  *   8. Κρατά την κοινή μάθηση (2.9.7): οι απαντήσεις των αναλυτών στις αυτόματες προτάσεις από κάθε Kinovea που συνδέεται εδώ
  *      (μόνο αριθμοί, χωρίς ονόματα), στο φύλλο "Μάθηση Kinovea" του spreadsheet των αναφορών· κάθε Kinovea στέλνει τις δικές του
  *      και παίρνει των άλλων, ώστε να μαθαίνουν όλα μαζί.
+ *   9. Βάζει κάθε PDF αναφοράς στο φύλλο "Αρχεία Αθλητών/τριων" του KOE App (2.10.0), με τον αριθμό μητρώου του αθλητή (profile_id),
+ *      μία γραμμή ανά αγώνα, και το αρχείο στον φάκελο των αρχείων της εφαρμογής ώστε να ανοίγει από το KOE App. Για το πακέτο
+ *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
  */
 
-var SWIM_VERSION = '2.9.8';
+var SWIM_VERSION = '2.10.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -250,6 +253,12 @@ function swimHandleRequest_(req) {
         var ss = swimReportsSpreadsheet_();
         result.pdf = swimExportPdf_(ss, swimSheetById_(ss, result.sheetId), result.print, result.rebuilt, result.quick);
         swimSetSummaryPdf_(result.raceId, result.pdf.url);
+        // 2.10.0: το PDF και στο «Αρχεία Αθλητών/τριων» του KOE App (εκτός αν το Kinovea ζητά archive: false), και για το πακέτο
+        // αποστολής του Kinovea το ίδιο το PDF (pdfData) και τα email των προπονητών του αθλητή (coaches).
+        var athleteRec = swimRegistryRecordSafe_(req.race);
+        if (req.archive !== false) result.archive = swimArchiveReport_(req.race, result.pdf, result.pdf.blob, athleteRec);
+        if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
+        if (req.pdfData && result.pdf.blob) result.pdf.data = Utilities.base64Encode(result.pdf.blob.getBytes());
       }
       return swimJson_(result);
     }
@@ -823,6 +832,300 @@ function swimSetSummaryPdf_(raceId, url) {
   var sh = swimSummarySheet_(swimDataSpreadsheet_());
   var row = swimSummaryRow_(sh, raceId);
   if (row) sh.getRange(row, SWIM_SUM.pdf + 1).setValue(url);
+}
+
+// ---------------------------------------------------------------------------------------------
+// (2.10.0) Το PDF της αναφοράς στο «Αρχεία Αθλητών/τριων» του KOE App, με τον αριθμό μητρώου του αθλητή
+// ---------------------------------------------------------------------------------------------
+
+/** Το φύλλο των αρχείων των αθλητών στο κύριο αρχείο (KOE App): ένα αρχείο ανά γραμμή, με το profile_id του αθλητή. */
+var SWIM_FILES_SHEET = 'Αρχεία Αθλητών/τριων';
+
+/** Η περιγραφή του αρχείου: αναφορά αγώνα ή τεχνικής ανάλυσης (εκκινήσεις και στροφές). */
+var SWIM_FILES_LABELS = { race: 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', training: 'ΑΡΧΕΙΟ ΤΕΧΝΙΚΗΣ ΑΝΑΛΥΣΗΣ' };
+
+/** Πόσες από τις τελευταίες γραμμές του φύλλου κοιτάζει για να μάθει πώς είναι γραμμένες (ημερομηνία, διαδρομή αρχείου…). */
+var SWIM_FILES_SAMPLE = 300;
+
+/**
+ * Το φύλλο του μητρώου (προτιμά το «Στοιχεία Αθλητών/τριων», αλλιώς όποιο φύλλο έχει στήλες unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ), όπως
+ * το swimRegistryAthletes_: { sheet, map, header } ή null.
+ */
+function swimRegistrySheet_() {
+  var ss = swimDataSpreadsheet_();
+  var preferred = swimProps_().getProperty('SWIM_ATHLETES_SHEET') || SWIM_ATHLETES_SHEET;
+  var sheet = ss.getSheetByName(preferred);
+  var candidates = sheet ? [sheet] : ss.getSheets();
+  for (var s = 0; s < candidates.length; s++) {
+    var sh = candidates[s];
+    var lastCol = sh.getLastColumn(), lastRow = sh.getLastRow();
+    if (lastCol < 2 || lastRow < 2) continue;
+    var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var map = swimHeaderMap_(header);
+    if (map.id === undefined || map.name === undefined) continue;
+    return { sheet: sh, map: map, header: header };
+  }
+  return null;
+}
+
+/**
+ * Ο αθλητής του μητρώου της ΚΟΕ με αυτόν τον αριθμό μητρώου: { id (όπως είναι στο φύλλο), name, club, coaches: [email…] } (τα
+ * email από τις στήλες «EMAIL ΠΡΟΠΟΝΗΤΗ…»), αλλιώς null (π.χ. διεθνής αθλητής ή χωρίς αθλητή).
+ */
+function swimRegistryRecord_(athleteId) {
+  var id = String(athleteId === null || athleteId === undefined ? '' : athleteId).trim();
+  if (!id) return null;
+  var reg = swimRegistrySheet_();
+  if (!reg) return null;
+  var sh = reg.sheet, map = reg.map;
+  var norm = reg.header.map(swimNormText_);
+  var coachCols = [];
+  norm.forEach(function (h, i) { if (h.indexOf('EMAIL') >= 0 && h.indexOf('ΠΡΟΠΟΝΗΤ') >= 0) coachCols.push(i); });
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, reg.header.length).getValues();
+  var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  for (var i = 0; i < rows.length; i++) {
+    if (text(rows[i][map.id]) !== id) continue;
+    var coaches = [], seen = {};
+    coachCols.forEach(function (c) {
+      text(rows[i][c]).split(/[;,\s]+/).forEach(function (e) {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) || seen[e.toLowerCase()]) return;
+        seen[e.toLowerCase()] = true;
+        coaches.push(e);
+      });
+    });
+    return { id: rows[i][map.id], name: text(rows[i][map.name]), club: map.club === undefined ? '' : text(rows[i][map.club]), coaches: coaches };
+  }
+  return null;
+}
+
+/** Ο αθλητής του μητρώου ενός αγώνα (όπως έρχεται από το Kinovea), χωρίς ποτέ να αποτυγχάνει το αίτημα. */
+function swimRegistryRecordSafe_(raw) {
+  try {
+    return swimRegistryRecord_(swimNormalizeRace_(raw).athleteId);
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Το φύλλο «Αρχεία Αθλητών/τριων» (με το όνομα του Script Property SWIM_FILES_SHEET, ή χωρίς κενά, τόνους και «/»), αλλιώς null. */
+function swimFilesSheet_() {
+  var ss = swimDataSpreadsheet_();
+  var name = swimProps_().getProperty('SWIM_FILES_SHEET') || SWIM_FILES_SHEET;
+  var sh = ss.getSheetByName(name);
+  if (sh) return sh;
+  var key = function (n) { return swimNormText_(n).replace(/[^A-ZΑ-Ω0-9]/g, ''); };
+  var want = key(name);
+  var all = ss.getSheets();
+  for (var i = 0; i < all.length; i++) if (key(all[i].getName()) === want) return all[i];
+  return null;
+}
+
+/**
+ * Οι στήλες του «Αρχεία Αθλητών/τριων» (θέσεις από 0, -1 όταν δεν υπάρχει): από τις επικεφαλίδες, και η στήλη του αρχείου από
+ * τις τιμές της (διαδρομές «…_Files_/…» της εφαρμογής), αλλιώς από την επικεφαλίδα «Αρχείο».
+ */
+function swimFilesColumns_(header, rows) {
+  var norm = header.map(swimNormText_);
+  var find = function (test) {
+    for (var i = 0; i < norm.length; i++) if (test(norm[i])) return i;
+    return -1;
+  };
+  var cols = {
+    uid: find(function (h) { return h === 'UNIQUE_ID' || h === 'UNIQUEID' || h === 'UNIQUE ID'; }),
+    profile: find(function (h) { return h === 'PROFILE_ID' || h === 'PROFILEID' || h === 'PROFILE ID'; }),
+    date: find(function (h) { return h.indexOf('ΗΜΕΡΟΜΗΝΙΑ') >= 0; }),
+    desc: find(function (h) { return h.indexOf('ΠΕΡΙΓΡΑΦΗ') >= 0; }),
+    name: find(function (h) { return h === 'ΟΝΟΜΑΤΕΠΩΝΥΜΟ'; }),
+    file: -1
+  };
+  var counts = {};
+  rows.forEach(function (r) {
+    r.forEach(function (v, i) { if (typeof v === 'string' && /_Files_\//.test(v)) counts[i] = (counts[i] || 0) + 1; });
+  });
+  Object.keys(counts).forEach(function (k) { if (cols.file < 0 || counts[k] > counts[cols.file]) cols.file = Number(k); });
+  if (cols.file < 0) {
+    cols.file = find(function (h) {
+      return (h.indexOf('ΑΡΧΕΙΟ') === 0 || h === 'FILE' || h === 'PDF') && h.indexOf('ΠΕΡΙΓΡΑΦΗ') < 0 && h.indexOf('ΗΜΕΡΟΜΗΝΙΑ') < 0;
+    });
+  }
+  return cols;
+}
+
+/** Οι μη κενές τιμές μιας στήλης (από τις γραμμές rows), από την τελευταία προς τα πάνω. */
+function swimColumnSamples_(rows, col) {
+  var out = [];
+  if (col < 0) return out;
+  for (var i = rows.length - 1; i >= 0; i--) {
+    var v = rows[i][col];
+    if (v !== '' && v !== null && v !== undefined) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Η ημερομηνία εισαγωγής γραμμένη όπως οι άλλες γραμμές: ημερομηνία του φύλλου (Date), εκτός αν είναι κείμενο σαν το
+ * String(new Date()) του Apps Script («Wed Oct 28 2026 08:12:00 GMT+0200 …») ή σαν «28/10/2026 08:12:00» (μέρα πρώτη).
+ */
+function swimFilesDate_(samples, now) {
+  var tz = Session.getScriptTimeZone();
+  var strings = samples.filter(function (v) { return typeof v === 'string'; });
+  if (!strings.length || strings.length < samples.length / 2) return now;
+  if (strings.some(function (v) { return /GMT[+-]\d{4}/.test(v); })) return String(now);
+  var dayFirst = strings.some(function (v) { var m = v.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}/); return m && Number(m[1]) > 12; });
+  var monthFirst = strings.some(function (v) { var m = v.match(/^(\d{1,2})\/(\d{1,2})\/\d{4}/); return m && Number(m[2]) > 12; });
+  if (dayFirst && !monthFirst) {
+    var withTime = strings.filter(function (v) { return /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}/.test(v); });
+    if (!withTime.length) return Utilities.formatDate(now, tz, 'dd/MM/yyyy');
+    return Utilities.formatDate(now, tz, /:\d{2}:\d{2}/.test(withTime[0]) ? 'dd/MM/yyyy HH:mm:ss' : 'dd/MM/yyyy HH:mm');
+  }
+  return now;
+}
+
+/** Ένας κωδικός 8 χαρακτήρων σε δεκαεξαδικό, σαν το UNIQUEID() της εφαρμογής, ο n-οστός για αυτόν τον αγώνα (n = 0, 1…). */
+function swimFilesUid_(raceId, n) {
+  var id = String(raceId || '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(raceId || ''));
+    id = bytes.map(function (b) { var x = (b < 0 ? b + 256 : b).toString(16); return x.length < 2 ? '0' + x : x; }).join('');
+  }
+  return id.substring((n % 4) * 8, (n % 4) * 8 + 8);
+}
+
+/**
+ * Ο φάκελος των αρχείων της εφαρμογής για τη στήλη του αρχείου («<πίνακας>_Files_»): ο φάκελος ενός αρχείου που ανέβηκε ήδη από την
+ * εφαρμογή (με το όνομά του, από τις διαδρομές της στήλης), αλλιώς ο φάκελος με αυτό το όνομα· κρατιέται στο Script Property
+ * SWIM_FILES_FOLDER_ID. null αν δεν βρεθεί.
+ */
+function swimFilesFolder_(paths, prefix) {
+  var props = swimProps_();
+  var known = props.getProperty('SWIM_FILES_FOLDER_ID');
+  if (known) {
+    try {
+      var f0 = DriveApp.getFolderById(known);
+      if (f0 && f0.getName() === prefix) return f0;
+    } catch (e) { /* ο φάκελος άλλαξε: ξαναβρίσκεται */ }
+  }
+  var folder = null;
+  for (var i = 0; i < paths.length && i < 5 && !folder; i++) {
+    var p = String(paths[i]);
+    if (p.substring(0, p.lastIndexOf('/')) !== prefix) continue;
+    var files = DriveApp.getFilesByName(p.substring(p.lastIndexOf('/') + 1));
+    while (!folder && files.hasNext()) {
+      var parents = files.next().getParents();
+      while (parents.hasNext()) {
+        var parent = parents.next();
+        if (parent.getName() === prefix) { folder = parent; break; }
+      }
+    }
+  }
+  if (!folder) {
+    var it = DriveApp.getFoldersByName(prefix);
+    if (it.hasNext()) folder = it.next();
+  }
+  if (folder) props.setProperty('SWIM_FILES_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/**
+ * Το PDF στο «Αρχεία Αθλητών/τριων»: μία γραμμή ανά αγώνα (το unique_id της βγαίνει από το id του αγώνα, ώστε ένα νέο PDF του ίδιου
+ * αγώνα να αλλάζει την ίδια γραμμή, και τον αθλητή της αν διορθώθηκε), με profile_id = ο αριθμός μητρώου του αθλητή, την ημερομηνία
+ * εισαγωγής και την περιγραφή όπως στις άλλες γραμμές, και το αρχείο στον φάκελο των αρχείων της εφαρμογής («…_Files_/»), ώστε να
+ * ανοίγει από το KOE App όπως όσα ανεβαίνουν εκεί (χωρίς τον φάκελο: ο σύνδεσμος του PDF στο Drive). Αθλητές χωρίς αριθμό μητρώου της
+ * ΚΟΕ (π.χ. διεθνείς) δεν μπαίνουν. Δεν αποτυγχάνει ποτέ το PDF: { ok: true, id, row, updated, link } ή { ok: false, reason, message }.
+ */
+function swimArchiveReport_(raw, pdf, blob, record) {
+  try {
+    var race = swimNormalizeRace_(raw);
+    if (!blob) return { ok: false, reason: 'pdf', message: swimT_('Το PDF δεν βρέθηκε.') };
+    if (!record) {
+      return { ok: false, reason: 'registry',
+        message: swimT_('Ο αθλητής δεν είναι στο μητρώο της ΚΟΕ (αριθμός μητρώου): το PDF δεν μπήκε στο «Αρχεία Αθλητών/τριων».') };
+    }
+    var sh = swimFilesSheet_();
+    if (!sh) return { ok: false, reason: 'sheet', message: swimT_('Δεν βρέθηκε το φύλλο «Αρχεία Αθλητών/τριων» στο KOE App.') };
+    var lastCol = sh.getLastColumn(), lastRow = sh.getLastRow();
+    if (lastCol < 1) return { ok: false, reason: 'sheet', message: swimT_('Δεν βρέθηκε το φύλλο «Αρχεία Αθλητών/τριων» στο KOE App.') };
+    var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var first = Math.max(2, lastRow - SWIM_FILES_SAMPLE + 1);
+    var rows = lastRow >= 2 ? sh.getRange(first, 1, lastRow - first + 1, lastCol).getValues() : [];
+    var cols = swimFilesColumns_(header, rows);
+    if (cols.uid < 0 || cols.profile < 0 || cols.file < 0) {
+      return { ok: false, reason: 'columns', message: swimT_('Το φύλλο «Αρχεία Αθλητών/τριων» δεν έχει τις στήλες unique_id, profile_id και αρχείο.') };
+    }
+
+    var label = race.kind === 'training' ? SWIM_FILES_LABELS.training : SWIM_FILES_LABELS.race;
+    var labels = [SWIM_FILES_LABELS.race, SWIM_FILES_LABELS.training].map(swimNormText_);
+    // Η περιγραφή γραμμένη όπως στις άλλες γραμμές (π.χ. μια τιμή λίστας της εφαρμογής με άλλα κεφαλαία).
+    swimColumnSamples_(rows, cols.desc).forEach(function (v) { if (swimNormText_(v) === swimNormText_(label)) label = String(v); });
+
+    // Η γραμμή του αγώνα: όλες οι γραμμές με τα unique_id του (η πρώτη με περιγραφή αναφοράς είναι δική του).
+    var allIds = lastRow >= 2 ? sh.getRange(2, cols.uid + 1, lastRow - 1, 1).getValues() : [];
+    var descs = lastRow >= 2 && cols.desc >= 0 ? sh.getRange(2, cols.desc + 1, lastRow - 1, 1).getValues() : [];
+    var uid = null, row = null;
+    for (var n = 0; n < 4 && !uid; n++) {
+      var cand = swimFilesUid_(race.id, n), taken = false;
+      for (var i = 0; i < allIds.length; i++) {
+        if (String(allIds[i][0]).toLowerCase() !== cand) continue;
+        var ours = cols.desc < 0 || labels.indexOf(swimNormText_(descs[i][0])) >= 0;
+        if (ours) { uid = cand; row = i + 2; } else taken = true;
+        break;
+      }
+      if (!uid && !taken) uid = cand;
+    }
+    if (!uid) return { ok: false, reason: 'id', message: swimT_('Δεν βρέθηκε ελεύθερος κωδικός για τη γραμμή του αρχείου.') };
+
+    // Το αρχείο: στον φάκελο της εφαρμογής, με όνομα σαν της εφαρμογής (<unique_id>.<στήλη>.<ώρα>.pdf), αλλιώς ο σύνδεσμος στο Drive.
+    var paths = swimColumnSamples_(rows, cols.file).filter(function (v) { return typeof v === 'string' && /_Files_\//.test(v); });
+    var prefix = paths.length ? String(paths[0]).substring(0, String(paths[0]).lastIndexOf('/'))
+      : String(sh.getName()).replace(/\//g, ' ') + '_Files_';
+    var part = String(header[cols.file]).trim() || 'File';
+    if (paths.length) {
+      var m = String(paths[0]).substring(prefix.length + 1).match(/^[^.]+\.(.+)\.\d+\.[^.]+$/);
+      if (m) part = m[1];
+    }
+    var link = pdf && pdf.url ? pdf.url : '';
+    var folder = swimFilesFolder_(paths, prefix);
+    var now = new Date();
+    if (folder) {
+      var fileName = uid + '.' + part + '.' + Utilities.formatDate(now, Session.getScriptTimeZone(), 'HHmmss') + '.pdf';
+      var copy = blob.copyBlob ? blob.copyBlob() : blob;
+      folder.createFile(copy.setName(fileName));
+      link = prefix + '/' + fileName;
+    }
+    if (!link) return { ok: false, reason: 'folder', message: swimT_('Δεν βρέθηκε ο φάκελος των αρχείων του KOE App.') };
+
+    var profileSamples = swimColumnSamples_(rows, cols.profile);
+    var numeric = profileSamples.length ? typeof profileSamples[0] === 'number' : typeof record.id === 'number';
+    var profile = numeric && /^\d+$/.test(String(record.id).trim()) ? Number(record.id) : String(record.id).trim();
+    var date = swimFilesDate_(swimColumnSamples_(rows, cols.date), now);
+
+    var updated = !!row;
+    if (!row) {
+      row = Math.max(lastRow, 1) + 1;
+      // Οι στήλες με τύπους (της γραμμής από πάνω) συνεχίζουν και στη νέα γραμμή.
+      if (row > 2) {
+        try {
+          var formulas = sh.getRange(row - 1, 1, 1, lastCol).getFormulasR1C1()[0];
+          formulas.forEach(function (f, c) { if (f) sh.getRange(row, c + 1).setFormulaR1C1(f); });
+        } catch (e) { /* χωρίς τύπους */ }
+      }
+      sh.getRange(row, cols.uid + 1).setValue(uid);
+    }
+    sh.getRange(row, cols.profile + 1).setValue(profile);
+    sh.getRange(row, cols.file + 1).setValue(link);
+    if (cols.desc >= 0) sh.getRange(row, cols.desc + 1).setValue(label);
+    if (cols.name >= 0) sh.getRange(row, cols.name + 1).setValue(record.name || race.athlete);
+    if (cols.date >= 0) {
+      var cell = sh.getRange(row, cols.date + 1);
+      if (row > 2 && date instanceof Date) {
+        try { cell.setNumberFormat(sh.getRange(row - 1, cols.date + 1).getNumberFormat()); } catch (e) { /* όπως είναι */ }
+      }
+      cell.setValue(date);
+    }
+    return { ok: true, id: uid, row: row, updated: updated, inFolder: !!folder };
+  } catch (e) {
+    return { ok: false, reason: 'error', message: String(e && e.message ? e.message : e) };
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -4843,6 +5146,8 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
   while (old.hasNext()) old.next().setTrashed(true);
   var file = folder.createFile(blob.setName(fileName));
   var result = { url: file.getUrl(), name: fileName, id: file.getId() };
+  // Το ίδιο το PDF (2.10.0), για το «Αρχεία Αθλητών/τριων» και το πακέτο αποστολής: όχι στο JSON της απάντησης.
+  Object.defineProperty(result, 'blob', { value: blob, enumerable: false });
   // Για το Kinovea: η πρώτη σελίδα έγινε ή όχι (ζητήθηκε αλλά δεν έγινε: false).
   if (quick) result.quick = withQuick;
   return result;
@@ -6515,6 +6820,7 @@ function swimSelectedBulk_(pdf) {
       if (pdf) {
         var info = swimExportPdf_(reports, swimSheetById_(reports, made.sheetId), made.print, made.rebuilt, made.quick);
         swimSetSummaryPdf_(id, info.url);
+        swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
       }
       done++;
     } catch (e) {
@@ -6730,9 +7036,11 @@ function swimPdfSelected() {
   var sheet = swimSheetById_(reports, made.sheetId);
   var info = swimExportPdf_(reports, sheet, made.print, made.rebuilt, made.quick);
   swimSetSummaryPdf_(id, info.url);
+  var archived = swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
   var html = '<div style="font-family:Arial;font-size:13px"><p>Το PDF αποθηκεύτηκε στον φάκελο <b>' + SWIM_REPORT_FOLDER + '</b>.</p>' +
+    '<p>' + (archived.ok ? 'Μπήκε και στο «' + SWIM_FILES_SHEET + '» του KOE App.' : String(archived.message || '')) + '</p>' +
     '<p><a href="' + info.url + '" target="_blank">Άνοιγμα ' + info.name + '</a></p></div>';
-  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(140), 'Report PDF');
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(170), 'Report PDF');
 }
 
 /** Δοκιμαστικός αγώνας 100μ. ελεύθερο (με τεχνική ανάλυση εκκίνησης και στροφής), για να δεις το report χωρίς Kinovea. */
@@ -6798,6 +7106,14 @@ var SWIM_EN_ = {
     'The full name and the country are needed (three-letter code, e.g. ITA).',
   'Οι αθλητές της Ελλάδας είναι στο μητρώο της ΚΟΕ, με τον αριθμό μητρώου τους.':
     'The swimmers of Greece are in the KOE registry, with their registration number.',
+  'Το PDF δεν βρέθηκε.': 'The PDF was not found.',
+  'Ο αθλητής δεν είναι στο μητρώο της ΚΟΕ (αριθμός μητρώου): το PDF δεν μπήκε στο «Αρχεία Αθλητών/τριων».':
+    'The athlete is not in the KOE registry (registration number): the PDF was not added to "Αρχεία Αθλητών/τριων".',
+  'Δεν βρέθηκε το φύλλο «Αρχεία Αθλητών/τριων» στο KOE App.': 'The sheet "Αρχεία Αθλητών/τριων" was not found in the KOE App.',
+  'Το φύλλο «Αρχεία Αθλητών/τριων» δεν έχει τις στήλες unique_id, profile_id και αρχείο.':
+    'The sheet "Αρχεία Αθλητών/τριων" does not have the columns unique_id, profile_id and file.',
+  'Δεν βρέθηκε ελεύθερος κωδικός για τη γραμμή του αρχείου.': 'No free code was found for the row of the file.',
+  'Δεν βρέθηκε ο φάκελος των αρχείων του KOE App.': 'The folder of the files of the KOE App was not found.',
   'Μοιάζει με αθλητή που υπάρχει ήδη στους διεθνείς.': 'Looks like a swimmer who is already among the international swimmers.',
   'Χρειάζονται ο κωδικός του αθλητή και το όνομα.': 'The code of the swimmer and the name are needed.',
   'Λείπουν τα δεδομένα του αγώνα.': 'The data of the race are missing.',

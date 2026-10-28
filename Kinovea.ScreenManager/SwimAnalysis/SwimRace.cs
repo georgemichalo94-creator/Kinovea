@@ -652,6 +652,15 @@ namespace Kinovea.ScreenManager
         public string SheetUrl;
         public string LastPdfUrl;
 
+        /// <summary>
+        /// (2.10.0) The package for the coaches («📦 Δημιουργία αποστολής»): its folder and the name of its files (made again in place), when it
+        /// was made and when the analyst said it was sent (dd/MM/yyyy HH:mm).
+        /// </summary>
+        public string PackageFolder;
+        public string PackageBase;
+        public string PackageMade;
+        public string PackageSent;
+
         [JsonIgnore]
         public bool IsTraining
         {

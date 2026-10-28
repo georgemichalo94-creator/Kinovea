@@ -558,7 +558,7 @@ namespace Kinovea.ScreenManager
         public const string AppId = "kinovea-swim";
 
         public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
-            SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null, bool drawCharts = false)
+            SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null, bool drawCharts = false, JObject extra = null)
         {
             JObject r = new JObject();
             r["id"] = race.Id;
@@ -712,6 +712,14 @@ namespace Kinovea.ScreenManager
             body["race"] = r;
             if (drawCharts && !race.IsTraining)
                 body["drawCharts"] = true;
+
+            // (2.10.0) More for the Apps Script (the package for the coaches: the PDF itself and the coaches' emails in the answer).
+            if (extra != null)
+            {
+                foreach (JProperty p in extra.Properties())
+                    body[p.Name] = p.Value.DeepClone();
+            }
+
             return body.ToString(Newtonsoft.Json.Formatting.None);
         }
 

@@ -1065,6 +1065,11 @@
     <Compile Include="SwimAnalysis\SwimOfficialResults.cs" />
     <Compile Include="SwimAnalysis\SwimResultsPaste.cs" />
     <Compile Include="SwimAnalysis\SwimPasteDialog.cs" />
+    <Compile Include="SwimAnalysis\SwimPackage.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Package.cs" />
+    <Compile Include="SwimAnalysis\FormSwimPackage.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Paste.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Event.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Hud.cs" />

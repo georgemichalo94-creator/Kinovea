@@ -180,6 +180,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public string Language = "el";
 
+        /// <summary>
+        /// (2.10.0) The folder of the packages for the coaches (empty: «Αποστολές προπονητών» on the desktop) and the signature at the end of
+        /// their message.
+        /// </summary>
+        public string PackageFolder = "";
+        public string PackageSignature = "";
+
         [JsonIgnore]
         public bool IsConfigured
         {
