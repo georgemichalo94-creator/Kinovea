@@ -2069,6 +2069,8 @@ namespace Kinovea.ScreenManager
             { "Το πρόγραμμα μετρά μέρος του: έλεγξέ το στο καρέ. Το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου.",
                 "The program measures part of it: check it at the frame. It scores it on its own once it agrees 9 in 10 with your answers." },
             { "Το κρίνεις εσύ στο καρέ.", "You judge it at the frame." },
+            { "Μετριέται από τον σκελετό κάτω από το νερό: το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου.",
+                "Measured from the skeleton under the water: it scores it on its own once it agrees 9 in 10 with your answers." },
         };
     }
 }

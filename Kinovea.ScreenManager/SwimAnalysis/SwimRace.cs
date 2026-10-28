@@ -453,10 +453,73 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The joints at a timestamp: each the median of the images around it (±smooth) where it is seen (visibility at least
-        /// 30), its visibility the best of them. False outside the part or where the swimmer was not found.
+        /// (2.13.1) An image whose skeleton is a side view of the swimmer: the trunk (shoulders → hips) at least a fifth of the extent
+        /// of the joints seen, the two shoulders and the two hips together (within 0.6 of the trunk). In the lab's underwater turns
+        /// 4 in 10 skeletons were not (the swimmer read as standing or from the front: the trunk folded to a point, the shoulders
+        /// apart); in a demonstration of underwater kicks 97 in 100 were.
         /// </summary>
-        public bool TryGet(long timestamp, int smooth, PointF[] points, float[] visibility)
+        public bool SideView(int i)
+        {
+            if (i < 0 || i >= Count)
+                return false;
+
+            int o = i * Values;
+            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+            int seen = 0;
+            for (int j = 0; j < SwimJoints.Count; j++)
+            {
+                if (Data[o + j * 3 + 2] < 30)
+                    continue;
+                float x = Data[o + j * 3], y = Data[o + j * 3 + 1];
+                minX = Math.Min(minX, x);
+                maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+                seen++;
+            }
+
+            if (seen < 4)
+                return false;
+
+            PointF? s = Mid(o, SwimJoints.LeftShoulder), h = Mid(o, SwimJoints.LeftHip);
+            double extent = Math.Sqrt((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY));
+            if (!s.HasValue || !h.HasValue || extent < 1)
+                return false;
+
+            double trunk = Math.Sqrt((s.Value.X - h.Value.X) * (s.Value.X - h.Value.X) + (s.Value.Y - h.Value.Y) * (s.Value.Y - h.Value.Y));
+            if (trunk < 0.2 * extent)
+                return false;
+
+            foreach (int left in new[] { SwimJoints.LeftShoulder, SwimJoints.LeftHip })
+            {
+                int a = o + left * 3, b = o + (left + 1) * 3;
+                if (Data[a + 2] >= 30 && Data[b + 2] >= 30)
+                {
+                    double dx = Data[a] - Data[b], dy = Data[a + 1] - Data[b + 1];
+                    if (Math.Sqrt(dx * dx + dy * dy) > 0.6 * trunk)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        private PointF? Mid(int o, int left)
+        {
+            int a = o + left * 3, b = o + (left + 1) * 3;
+            bool l = Data[a + 2] >= 30, r = Data[b + 2] >= 30;
+            if (l && r) return new PointF(0.5f * (Data[a] + Data[b]), 0.5f * (Data[a + 1] + Data[b + 1]));
+            if (l) return new PointF(Data[a], Data[a + 1]);
+            if (r) return new PointF(Data[b], Data[b + 1]);
+            return null;
+        }
+
+        /// <summary>
+        /// The joints at a timestamp: each the median of the images around it (±smooth) where it is seen (visibility at least
+        /// 30), its visibility the best of them. False outside the part or where the swimmer was not found. sideView: only the
+        /// images whose skeleton is a side view of the swimmer (SideView), at least two of them, one next to the timestamp.
+        /// </summary>
+        public bool TryGet(long timestamp, int smooth, PointF[] points, float[] visibility, bool sideView = false)
         {
             int n = Count;
             if (n == 0 || Step <= 0 || points == null || visibility == null)
@@ -470,6 +533,27 @@ namespace Kinovea.ScreenManager
             if (!Seen(i) && !(i > 0 && Seen(i - 1) && i + 1 < n && Seen(i + 1)))
                 return false;
 
+            bool[] use = null;
+            if (sideView)
+            {
+                use = new bool[2 * smooth + 1];
+                int good = 0;
+                bool near = false;
+                for (int k = Math.Max(0, i - smooth); k <= Math.Min(n - 1, i + smooth); k++)
+                {
+                    bool ok = SideView(k);
+                    use[k - i + smooth] = ok;
+                    if (ok)
+                    {
+                        good++;
+                        near = near || Math.Abs(k - i) <= 1;
+                    }
+                }
+
+                if (good < 2 || !near)
+                    return false;
+            }
+
             List<float> xs = new List<float>(), ys = new List<float>();
             bool any = false;
             for (int j = 0; j < SwimJoints.Count; j++)
@@ -479,6 +563,8 @@ namespace Kinovea.ScreenManager
                 float best = 0;
                 for (int k = Math.Max(0, i - smooth); k <= Math.Min(n - 1, i + smooth); k++)
                 {
+                    if (use != null && !use[k - i + smooth])
+                        continue;
                     int o = k * Values + j * 3;
                     int v = Data[o + 2];
                     if (v < 30)

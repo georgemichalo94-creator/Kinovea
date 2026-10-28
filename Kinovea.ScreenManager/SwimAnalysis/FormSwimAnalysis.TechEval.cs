@@ -297,7 +297,9 @@ namespace Kinovea.ScreenManager
             if (agreement != null && agreement.Samples > 0)
                 lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text + (agreement.Reliable ? " ★" : agreement.Disagrees ? SwimLang.T(" ⚠ (δεν προτείνεται πια μόνο του)") : ""));
 
-            if (item.Criterion.Level == "A")
+            if (item.Criterion.Level == "A" && measured && check != null && SwimTechEvaluator.NeedsAgreement.Contains(check.Id))
+                lines.Add(SwimLang.T("Μετριέται από τον σκελετό κάτω από το νερό: το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου."));
+            else if (item.Criterion.Level == "A")
                 lines.Add(measured ? SwimLang.T("Το μετρά το πρόγραμμα: 🤖 ώσπου να το επιβεβαιώσεις ή να το αλλάξεις.") : SwimLang.T("Δεν το μετρά ακόμη το πρόγραμμα: το κρίνεις εσύ στο καρέ."));
             else if (item.Criterion.Level == "P")
                 lines.Add(measured ? SwimLang.T("Το πρόγραμμα μετρά μέρος του: έλεγξέ το στο καρέ. Το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου.") :
@@ -494,7 +496,7 @@ namespace Kinovea.ScreenManager
                     mark = "⚠ ";
                 else if (measured && agreement != null && agreement.Reliable)
                     mark = "★ ";
-                else if (measured && it.Criterion.Level == "A")
+                else if (measured && it.Criterion.Level == "A" && !SwimTechEvaluator.NeedsAgreement.Contains(it.Criterion.Check))
                     mark = "🤖 ";
                 else
                     mark = "◐ ";

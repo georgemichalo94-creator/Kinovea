@@ -59,6 +59,18 @@ namespace Kinovea.ScreenManager
             "legs_split_entry", "head_lift_entry", "entry_arch", "hips_peak",
         };
 
+        /// <summary>
+        /// (2.13.1) Checks of the skeleton under the water, in the bubbles of the wall or of the dolphin kicks: proposed only once the
+        /// coach's answers agree with them (★, as a criterion measured in part). At the hand-marked push-offs of the lab's underwater
+        /// turns the line of the body read 50° off the straight line (median) even on the side views: the skeleton is not reliable
+        /// there yet. Their measurement is still shown.
+        /// </summary>
+        public static readonly HashSet<string> NeedsAgreement = new HashSet<string>
+        {
+            "knee_plant", "head_feet_depth", "elbow_touch", "streamline_plant", "body_line_plant", "streamline", "body_line", "body_line_glide",
+            "push_dir", "push_dir_back", "push_dir_breast", "hips_to_wall", "legs_together", "kick_amp_growth",
+        };
+
         #region Anchors
         /// <summary>The time of a moment of the video in a phase, in seconds from its origin (null when it cannot be placed).</summary>
         public static double? AnchorSeconds(SwimTechPhase p, string anchor)
@@ -427,8 +439,9 @@ namespace Kinovea.ScreenManager
             if (s == null)
                 return null;
 
+            // (2.13.1) Only the images where the skeleton is a side view of the swimmer.
             Body b = new Body();
-            return s.TryGet(ts.Value, 2, b.P, b.V) ? b : null;
+            return s.TryGet(ts.Value, 2, b.P, b.V, true) ? b : null;
         }
 
         /// <summary>
@@ -1043,7 +1056,7 @@ namespace Kinovea.ScreenManager
                 return null;
             if (measure.Confidence < MinVisibility)
                 return null;
-            if (criterion.Level == "P" && (agreement == null || !agreement.Reliable))
+            if ((criterion.Level == "P" || NeedsAgreement.Contains(criterion.Check ?? "")) && (agreement == null || !agreement.Reliable))
                 return null;
             if (criterion.Level == "A" && agreement != null && agreement.Disagrees)
                 return null;
