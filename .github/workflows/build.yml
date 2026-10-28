@@ -104,6 +104,30 @@ jobs:
         path: Kinovea-Swim-Portable-${{env.VERSION}}.zip
         archive: false
 
+    # The checks of the swim module before the draft release below (a failure stops it): the script with its mock of Apps Script,
+    # and the technique evaluation of the built DLL on a fictional turn and start with a fictional catalogue (the coach's real
+    # sheets stay on the analysts' computers), in Windows PowerShell as Kinovea runs (.NET Framework).
+    - name: Swim script tests
+      shell: pwsh
+      run: |
+        $failed = @()
+        foreach ($t in Get-ChildItem SwimAnalysis\tests\test_*.js) {
+          $out = & node $t.FullName 2>&1
+          if ($LASTEXITCODE -ne 0) { $failed += $t.Name; $out | Select-Object -Last 25 | ForEach-Object { Write-Output $_ } }
+        }
+        if ($failed.Count -gt 0) { Write-Output ('::error title=Swim script tests::' + ($failed -join ', ')); exit 1 }
+        Write-Output '::notice title=Swim script tests::all passed'
+
+    - name: Swim technique evaluation check
+      shell: powershell
+      run: |
+        $out = & .\SwimAnalysis\tests\tech_eval\te_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -catalog SwimAnalysis\tests\tech_eval\mini_catalog.json
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim technique evaluation::' + (($bad | Select-Object -First 15) -join ' | ')); exit 1 }
+        Write-Output ('::notice title=Swim technique evaluation::' + ($out | Select-Object -Last 1))
+
     # The same zip as the asset of a draft release of the branch (drafts are not public): the update of the analysts'
     # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run. A work in
     # progress branch (swim-wip-…) built on demand gets one too, for a test on one computer before it is released.

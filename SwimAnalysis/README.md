@@ -1508,6 +1508,10 @@ INTERNATIONAL (100000) και γράφεις το όνομα στο «Όνομα
   παλιών αναλύσεων, `node tests/test_pages.js` για τις σελίδες του PDF και το τελικό καρέ, `node tests/test_strokes.js` για τις
   χεριές που επιβεβαιώνονται σε κάθε πέρασμα, `node tests/test_lang.js` για το report στα αγγλικά και το ίδιο ακριβώς στα ελληνικά,
   με φανταστικούς αθλητές, `node tests/test_techeval.js` για την αξιολόγηση τεχνικής με φανταστικό φύλλο)
+- `SwimAnalysis/tests/tech_eval/`: έλεγχος της αξιολόγησης τεχνικής του προγράμματος (μετρήσεις από σημάδια και σκελετό, προτάσεις,
+  αυτόματες λίστες λαθών, μάθηση, πλάγια όψη) σε φανταστική στροφή και εκκίνηση, με φανταστικό κατάλογο (`mini_catalog.json`· ο
+  πραγματικός κατάλογος μένει στους υπολογιστές των αναλυτών). Το build τον τρέχει μαζί με τους ελέγχους του backend, πριν από το
+  draft release: `powershell -File te_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <φάκελος> -catalog mini_catalog.json`
 - `Kinovea.ScreenManager/SwimAnalysis/SwimLang.cs`, `SwimLangEnglish.cs`, `SwimAnalysisManager.Lang.cs`: η γλώσσα (ΕΛ / EN) και τα
   αγγλικά κάθε κειμένου του προγράμματος, με κλειδί το ελληνικό (ένα νέο κείμενο χρειάζεται και τα αγγλικά του)
 - `SwimAnalysis/tests/reel_preview/`: εικόνες της τεχνικής ανάλυσης (reel) με δύο φανταστικούς αγώνες και φανταστικό σκελετό, και έλεγχος
