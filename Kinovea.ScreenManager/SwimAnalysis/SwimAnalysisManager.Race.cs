@@ -866,6 +866,7 @@ namespace Kinovea.ScreenManager
             // The breakout, when the reading has the underwater phase (it starts at the wall or the start). The next swimmer of a
             // relay dives from the block as at the start.
             bool dive = IsDive(l.LapFrom);
+            double turnBreakout = double.NaN;
             if (!double.IsNaN(lapStart) && lapStart > -1.5 * s.Fps)
             {
                 int from = (int)Math.Ceiling(Math.Max(0, lapStart + (dive ? 1.5 : 1.0) * s.Fps));
@@ -900,6 +901,8 @@ namespace Kinovea.ScreenManager
                 // (the breakout stroke), after the start the first stroke after the breakout.
                 if (!double.IsNaN(b))
                     first = Math.Max(0, (int)Math.Round((double.IsNaN(bs) ? b : bs) + (dive ? 0.1 : -0.4) * s.Fps));
+                if (!dive)
+                    turnBreakout = b;
             }
 
             double wall = GoOnSample(l);
@@ -910,8 +913,24 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimStrokeResult r = s.Detector.Finish(first, last);
-            l.Strokes.AddRange(r.Strokes);
+            double cut = TurnStrokeCut(l, style, dive, turnBreakout, lapStart, r.Period, s.Fps);
+            l.Strokes.AddRange(double.IsNaN(cut) ? r.Strokes : r.Strokes.Where(i => i >= cut));
             l.Period = r.Period;
+        }
+
+        /// <summary>
+        /// (2.11.1) After a turn in backstroke, breaststroke and butterfly the first stroke counted is the one after the breakout
+        /// stroke: the sample from which the strokes of the length count (the breakout + SwimStrokeDetector.TurnStrokeLead
+        /// strokes; without a breakout the wall + TurnStrokeFloor), NaN: all count (the start, freestyle, no period).
+        /// </summary>
+        private static double TurnStrokeCut(LengthRead l, string style, bool dive, double breakout, double lapStart, double period, double fps)
+        {
+            if (dive || l.LapFrom <= 0 || !SwimStrokeDetector.TurnStrokeCut(style) || !(period > 0) || fps <= 0)
+                return double.NaN;
+            if (!double.IsNaN(breakout))
+                return breakout + SwimStrokeDetector.TurnStrokeLead * period * fps;
+            double floor = SwimStrokeDetector.TurnStrokeFloor(style);
+            return double.IsNaN(floor) || double.IsNaN(lapStart) ? double.NaN : lapStart + floor * fps;
         }
 
         /// <summary>
@@ -1279,6 +1298,25 @@ namespace Kinovea.ScreenManager
             SwimMark wallMark = wall > 0 ? Race.GetSplit(wall) : null;
             long from = wall == 0 ? Race.StartTimestamp.Value : wallMark != null ? wallMark.Timestamp : breakout - RealSpan(8);
             long to = breakout - RealSpan(0.4);
+
+            // (2.11.1) After a turn in backstroke, breaststroke and butterfly the first stroke counted is the one after the breakout
+            // stroke (as the reading, TurnStrokeCut): the automatic strokes before the breakout + TurnStrokeLead strokes go, the
+            // stroke time from the automatic strokes after the breakout.
+            if (wall > 0 && !IsDive(wall) && SwimStrokeDetector.TurnStrokeCut(SwimPresets.StyleAt(Race, Math.Min(Race.Distance, wall + 15))))
+            {
+                List<long> after = Race.Marks.Where(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > breakout - RealSpan(0.4)
+                    && m.Timestamp < breakout + RealSpan(15)).Select(m => m.Timestamp).OrderBy(t => t).ToList();
+                List<long> gaps = new List<long>();
+                for (int i = 1; i < after.Count; i++)
+                    gaps.Add(after[i] - after[i - 1]);
+                if (gaps.Count >= 3)
+                {
+                    gaps.Sort();
+                    long period = gaps[gaps.Count / 2];
+                    to = Math.Max(to, breakout + (long)Math.Round(SwimStrokeDetector.TurnStrokeLead * period));
+                }
+            }
+
             List<SwimMark> removed = Race.Marks.Where(m => m.Type == SwimMarkType.Stroke && m.Batch != null && m.Timestamp > from && m.Timestamp < to).ToList();
             Race.Marks.RemoveAll(m => removed.Contains(m));
             if (removed.Count > 0)
