@@ -265,15 +265,18 @@ namespace Kinovea.ScreenManager
         private bool ChoosePdfParts()
         {
             Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
-            using (FormSwimPdfChoice choice = new FormSwimPdfChoice(Settings.PdfShort, Settings.PdfFull))
+            using (FormSwimPdfChoice choice = new FormSwimPdfChoice(Settings.PdfShort, Settings.PdfFull, Settings.PdfSeparate))
             {
                 DialogResult result = owner != null ? choice.ShowDialog(owner) : choice.ShowDialog();
                 if (result != DialogResult.OK || (!choice.Short && !choice.Full))
                     return false;
-                if (choice.Short != Settings.PdfShort || choice.Full != Settings.PdfFull)
+                // (2.12.0) The two files stay chosen while one part only is (they come back with both).
+                bool separate = choice.Short && choice.Full ? choice.Separate : Settings.PdfSeparate;
+                if (choice.Short != Settings.PdfShort || choice.Full != Settings.PdfFull || separate != Settings.PdfSeparate)
                 {
                     Settings.PdfShort = choice.Short;
                     Settings.PdfFull = choice.Full;
+                    Settings.PdfSeparate = separate;
                     SaveSettingsQuietly();
                 }
 
@@ -336,6 +339,24 @@ namespace Kinovea.ScreenManager
                     log.Error("Could not write the PDF of the package.", e);
                     p.PdfError = SwimLang.T("Το PDF δεν γράφτηκε στον φάκελο: ") + e.Message;
                 }
+
+                // (2.12.0) The short analysis in its own file («σε δύο αρχεία»); without it, one of an earlier package goes.
+                JObject pdfShort = result.Raw != null ? result.Raw["pdfShort"] as JObject : null;
+                string shortData = pdfShort != null ? pdfShort.Value<string>("data") : null;
+                p.PdfShortReady = false;
+                try
+                {
+                    if (!string.IsNullOrEmpty(shortData))
+                        WritePackagePdfShort(p, Convert.FromBase64String(shortData));
+                    else if (!string.IsNullOrEmpty(p.PdfShortPath) && File.Exists(p.PdfShortPath))
+                        File.Delete(p.PdfShortPath);
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not write the short PDF of the package.", e);
+                    if (!string.IsNullOrEmpty(shortData))
+                        p.PdfError = SwimLang.T("Το PDF δεν γράφτηκε στον φάκελο: ") + e.Message;
+                }
             }
             else
             {
@@ -380,6 +401,25 @@ namespace Kinovea.ScreenManager
             string target = ReplaceFile(temp, p.PdfPath);
             p.PdfPath = target;
             p.PdfReady = true;
+        }
+
+        /// <summary>(2.12.0) The short analysis in its own file in the folder of the package (as WritePackagePdf).</summary>
+        private static void WritePackagePdfShort(SwimPackage p, byte[] bytes)
+        {
+            if (bytes == null || bytes.Length < 5 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F')
+                throw new InvalidDataException(SwimLang.T("η απάντηση δεν είναι PDF"));
+
+            string temp = p.PdfShortPath + ".part";
+            File.WriteAllBytes(temp, bytes);
+            p.PdfShortPath = ReplaceFile(temp, p.PdfShortPath);
+            p.PdfShortReady = true;
+        }
+
+        /// <summary>(2.12.0) The url of the short analysis in its own file (the answer of the Apps Script: pdfShort.url), null when none.</summary>
+        private static string PdfShortUrl(SwimSheetResult result)
+        {
+            JObject pdf = result != null && result.Raw != null ? result.Raw["pdfShort"] as JObject : null;
+            return pdf != null ? pdf.Value<string>("url") : null;
         }
 
         /// <summary>A file made (temp) in place of its target; when the target is open in a program, a free name next to it. Returns where.</summary>

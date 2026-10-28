@@ -23,7 +23,7 @@
  *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
  */
 
-var SWIM_VERSION = '2.11.0';
+var SWIM_VERSION = '2.12.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -251,7 +251,11 @@ function swimHandleRequest_(req) {
       }
       if (action === 'pdf') {
         var ss = swimReportsSpreadsheet_();
-        result.pdf = swimExportPdf_(ss, swimSheetById_(ss, result.sheetId), result.print, result.rebuilt, result.quick);
+        var pdfs = swimExportPdfs_(ss, result);
+        result.pdf = pdfs.pdf;
+        // 2.12.0: η σύντομη ανάλυση σε δικό της αρχείο (με «σε δύο αρχεία»).
+        if (pdfs.short) result.pdfShort = pdfs.short;
+        if (pdfs.shortFailed) result.pdfShortFailed = true;
         swimSetSummaryPdf_(result.raceId, result.pdf.url);
         // 2.10.0: το PDF και στο «Αρχεία Αθλητών/τριων» του KOE App (εκτός αν το Kinovea ζητά archive: false), και για το πακέτο
         // αποστολής του Kinovea το ίδιο το PDF (pdfData) και τα email των προπονητών του αθλητή (coaches).
@@ -259,6 +263,7 @@ function swimHandleRequest_(req) {
         if (req.archive !== false) result.archive = swimArchiveReport_(req.race, result.pdf, result.pdf.blob, athleteRec);
         if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
         if (req.pdfData && result.pdf.blob) result.pdf.data = Utilities.base64Encode(result.pdf.blob.getBytes());
+        if (req.pdfData && result.pdfShort && result.pdfShort.blob) result.pdfShort.data = Utilities.base64Encode(result.pdfShort.blob.getBytes());
       }
       return swimJson_(result);
     }
@@ -677,9 +682,13 @@ function swimUpsertRace_(rawRace, opts) {
   var kpi = swimReadKpis_(sheet, layout, analysis);
   // Οι σελίδες του PDF: η πρώτη σελίδα «Με μια ματιά» (2.8.0), η σύντομη ανάλυση και τα σχόλια στο τέλος της πλήρους (2.11.0), μόνο για
   // τους αγώνες, με τη σελίδα της αναφοράς.
-  var quick = forPdf ? swimPdfPages_(race, analysis, extras, kpi, layout, parts) : null;
+  // 2.12.0: σε δύο αρχεία, η πλήρης ανάλυση (με την πρώτη σελίδα και τα σχόλια) και χωριστά η σύντομη.
+  var quick = forPdf ? swimPdfPages_(race, analysis, extras, kpi, layout, parts.separate ? { short: false, full: true } : parts) : null;
+  var quickShort = forPdf && parts.separate ? swimPdfPages_(race, analysis, extras, kpi, layout, { short: true, full: false }) : null;
+  if (quickShort && !quickShort.v2) quickShort = null;
   // Τα γραφήματα της σύντομης ανάλυσης: όσα δεν έχουν εικόνα του Kinovea για τις τρέχουσες τιμές τους ζητιούνται όπως της αναφοράς.
-  var v2charts = quick && quick.v2 ? quick.v2.charts : [];
+  var v2block = quickShort ? quickShort.v2 : (quick && quick.v2 ? quick.v2 : null);
+  var v2charts = v2block ? v2block.charts : [];
   var v2missing = v2charts.filter(function (c) { return !c.fileId && swimChartHasValues_(c.data); });
   var v2stale = v2missing.filter(function (c) { return !!(race.chartImages || {})[c.key]; }).map(function (c) { return c.key; });
   var sheetUrl = ss.getUrl() + '#gid=' + sheet.getSheetId();
@@ -717,6 +726,9 @@ function swimUpsertRace_(rawRace, opts) {
     chartsMissing: charts.missing.concat(v2missing.map(function (c) { return c.key; }))
   };
   Object.defineProperty(result, 'quick', { value: quick, enumerable: false });
+  // 2.12.0: η σύντομη ανάλυση του δεύτερου αρχείου (null: ένα αρχείο, ή η σύντομη δεν χωρά στις τρεις σελίδες).
+  Object.defineProperty(result, 'quickShort', { value: quickShort, enumerable: false });
+  Object.defineProperty(result, 'separate', { value: !!parts.separate, enumerable: false });
   // 2.9.5: τα γραφήματα με εικόνα του Kinovea για άλλες τιμές (το PDF τα ζητά ξανά μία φορά, swimChartsAgain_).
   Object.defineProperty(result, 'chartsStale', { value: (charts.stale || []).concat(v2stale), enumerable: false });
   return result;
@@ -5168,7 +5180,7 @@ function swimReportFolder_() {
  * πλάτος της σελίδας να είναι ακριβώς οι στήλες του report και οι σελίδες να πέφτουν εκεί που υπολογίστηκαν.
  * quick (2.8.0): η πρώτη σελίδα «Με μια ματιά» (swimBuildQuickLook_), πριν από την αναφορά, σε αντίγραφο του φύλλου.
  */
-function swimExportPdf_(ss, sheet, area, fresh, quick) {
+function swimExportPdf_(ss, sheet, area, fresh, quick, suffix, strict) {
   if (!sheet) throw new Error(swimT_('Δεν βρέθηκε το φύλλο για PDF.'));
   SpreadsheetApp.flush();
   swimPrepareCharts_(sheet, fresh);
@@ -5199,6 +5211,8 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
       }
     }
   }
+  // 2.12.0 (strict): η σύντομη ανάλυση σε δικό της αρχείο δεν γίνεται ποτέ η αναφορά.
+  if (!blob && strict) throw new Error(swimT_('Η σύντομη ανάλυση δεν έγινε.'));
   if (!blob) {
     var swapped = [];
     try {
@@ -5208,7 +5222,7 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
       swimRestoreCharts_(sheet, swapped);
     }
   }
-  var fileName = sheet.getName() + '.pdf';
+  var fileName = sheet.getName() + (suffix || '') + '.pdf';
   var folder = swimReportFolder_();
   var old = folder.getFilesByName(fileName);
   while (old.hasNext()) old.next().setTrashed(true);
@@ -5223,6 +5237,27 @@ function swimExportPdf_(ss, sheet, area, fresh, quick) {
     if (pages.notes) result.notes = made.notes;
   }
   return result;
+}
+
+/**
+ * 2.12.0: τα PDF ενός αγώνα (made: η απάντηση του swimUpsertRace_): { pdf: η πλήρης ανάλυση (ή ό,τι ζητήθηκε σε ένα αρχείο),
+ * short: με «σε δύο αρχεία» η σύντομη ανάλυση σε δικό της αρχείο (« - Σύντομη ανάλυση.pdf»), αλλιώς null· shortFailed: ζητήθηκε αλλά
+ * δεν έγινε }. Το KOE App («Αρχεία Αθλητών/τριων») και η σύνοψη παίρνουν το πρώτο.
+ */
+function swimExportPdfs_(ss, made) {
+  var sheet = swimSheetById_(ss, made.sheetId);
+  var out = { pdf: swimExportPdf_(ss, sheet, made.print, made.rebuilt, made.quick), short: null, shortFailed: false };
+  if (made.separate) {
+    if (made.quickShort) {
+      try {
+        out.short = swimExportPdf_(ss, sheet, made.print, false, made.quickShort, swimT_(' - Σύντομη ανάλυση'), true);
+      } catch (e) {
+        out.short = null;
+      }
+    }
+    out.shortFailed = !out.short;
+  }
+  return out;
 }
 
 /**
@@ -7367,16 +7402,22 @@ function swimBuildNotes_(race, analysis, extras, kpi, page) {
 // ---- PDF (2.11.0): σύντομη και πλήρης ανάλυση στο αντίγραφο του φύλλου
 
 /**
- * Τι θα έχει το PDF: { short: η σύντομη ανάλυση (οι τρεις σελίδες), full: η πλήρης (η αναφορά) }. Από το Kinovea (pdfParts, 2.11.0)·
- * αλλιώς (παλιότερο Kinovea, μενού του Sheet) το Script Property SWIM_PDF_PARTS (short / full / both), αλλιώς η πλήρης όπως πριν.
+ * Τι θα έχει το PDF: { short: η σύντομη ανάλυση (οι τρεις σελίδες), full: η πλήρης (η αναφορά), separate (2.12.0): και τα δύο σε δύο
+ * χωριστά αρχεία }. Από το Kinovea (pdfParts, 2.11.0)· αλλιώς (παλιότερο Kinovea, μενού του Sheet) το Script Property SWIM_PDF_PARTS
+ * (short / full / both / separate), αλλιώς η πλήρης όπως πριν.
  */
 function swimPdfParts_(req) {
   var p = req && req.pdfParts;
-  if (p && typeof p === 'object' && (p.short === true || p.full === true)) return { short: p.short === true, full: p.full === true };
+  if (p && typeof p === 'object' && (p.short === true || p.full === true)) {
+    var parts = { short: p.short === true, full: p.full === true };
+    if (p.separate === true && parts.short && parts.full) parts.separate = true;
+    return parts;
+  }
   var stored = '';
   try { stored = String(swimProps_().getProperty('SWIM_PDF_PARTS') || '').toLowerCase(); } catch (e) { stored = ''; }
   if (stored === 'short') return { short: true, full: false };
   if (stored === 'both') return { short: true, full: true };
+  if (stored === 'separate') return { short: true, full: true, separate: true };
   return { short: false, full: true };
 }
 
@@ -8439,7 +8480,7 @@ function swimSelectedBulk_(pdf) {
       // Το report στη γλώσσα του αγώνα όπως κρατήθηκε (2.7.7), αλλιώς στα ελληνικά.
       var made = swimWithLang_(stored.race.lang, function () { return swimUpsertRace_(stored.race); });
       if (pdf) {
-        var info = swimExportPdf_(reports, swimSheetById_(reports, made.sheetId), made.print, made.rebuilt, made.quick);
+        var info = swimExportPdfs_(reports, made).pdf;
         swimSetSummaryPdf_(id, info.url);
         swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
       }
@@ -8654,14 +8695,15 @@ function swimPdfSelected() {
   var reports = swimReportsSpreadsheet_();
   // Πρώτα το φύλλο, με τις αλλαγές σελίδας του PDF (και για αγώνα χωρίς report, π.χ. από τη βιβλιοθήκη), στη γλώσσα του αγώνα.
   var made = swimWithLang_(stored.race.lang, function () { return swimUpsertRace_(stored.race); });
-  var sheet = swimSheetById_(reports, made.sheetId);
-  var info = swimExportPdf_(reports, sheet, made.print, made.rebuilt, made.quick);
+  var pdfs = swimExportPdfs_(reports, made);
+  var info = pdfs.pdf;
   swimSetSummaryPdf_(id, info.url);
   var archived = swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
+  var link = function (f) { return '<p><a href="' + f.url + '" target="_blank">Άνοιγμα ' + f.name + '</a></p>'; };
   var html = '<div style="font-family:Arial;font-size:13px"><p>Το PDF αποθηκεύτηκε στον φάκελο <b>' + SWIM_REPORT_FOLDER + '</b>.</p>' +
     '<p>' + (archived.ok ? 'Μπήκε και στο «' + SWIM_FILES_SHEET + '» του KOE App.' : String(archived.message || '')) + '</p>' +
-    '<p><a href="' + info.url + '" target="_blank">Άνοιγμα ' + info.name + '</a></p></div>';
-  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(170), 'Report PDF');
+    link(info) + (pdfs.short ? link(pdfs.short) : '') + '</div>';
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(pdfs.short ? 200 : 170), 'Report PDF');
 }
 
 /** Δοκιμαστικός αγώνας 100μ. ελεύθερο (με τεχνική ανάλυση εκκίνησης και στροφής), για να δεις το report χωρίς Kinovea. */
@@ -9370,5 +9412,8 @@ var SWIM_EN_ = {
   'η συχνότητα των χεριών έπεσε από {0} σε {1} κύκλους/λεπτό': 'the stroke rate dropped from {0} to {1} cycles/min',
   'η συχνότητα των χεριών ανέβηκε από {0} σε {1} κύκλους/λεπτό': 'the stroke rate rose from {0} to {1} cycles/min',
   'το μήκος χεριάς έπεσε από {0} σε {1} μ.': 'the distance per stroke dropped from {0} to {1} m',
-  'το μήκος χεριάς ανέβηκε από {0} σε {1} μ.': 'the distance per stroke rose from {0} to {1} m'
+  'το μήκος χεριάς ανέβηκε από {0} σε {1} μ.': 'the distance per stroke rose from {0} to {1} m',
+  // 2.12.0: η σύντομη και η πλήρης ανάλυση σε δύο χωριστά αρχεία.
+  ' - Σύντομη ανάλυση': ' - Short analysis',
+  'Η σύντομη ανάλυση δεν έγινε.': 'The short analysis could not be made.'
 };

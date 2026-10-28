@@ -374,6 +374,8 @@ namespace Kinovea.ScreenManager
             {
                 pdfStatus.ForeColor = SwimTheme.Green;
                 pdfStatus.Text = "✓ " + package.PdfFileName + " · " + SwimPackage.SizeText(new FileInfo(package.PdfPath).Length) +
+                    (package.PdfShortReady && File.Exists(package.PdfShortPath)
+                        ? "\n✓ " + Path.GetFileName(package.PdfShortPath) + " · " + SwimPackage.SizeText(new FileInfo(package.PdfShortPath).Length) : "") +
                     (string.IsNullOrEmpty(package.ArchiveNote) ? "" : "\n" + package.ArchiveNote);
                 btnOpenPdf.Enabled = true;
                 btnRetryPdf.Visible = false;

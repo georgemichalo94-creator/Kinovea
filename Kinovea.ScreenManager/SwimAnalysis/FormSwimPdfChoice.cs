@@ -12,13 +12,14 @@ namespace Kinovea.ScreenManager
 {
     /// <summary>
     /// (2.11.0) The parts of the PDF of the report, at the PDF button: the short analysis (three pages for the coach), the full one (the
-    /// report with all its tables and comments at its end), or both (one PDF, the short first). The choice stays for the next PDF and
-    /// for the package for the coaches.
+    /// report with all its tables and comments at its end), or both (one PDF, the short first; 2.12.0: or two separate files). The
+    /// choice stays for the next PDF and for the package for the coaches.
     /// </summary>
     public class FormSwimPdfChoice : Form
     {
         private readonly CheckBox shortBox;
         private readonly CheckBox fullBox;
+        private readonly CheckBox separateBox;
         private readonly SwimButton ok;
         private readonly Label hint;
 
@@ -32,7 +33,18 @@ namespace Kinovea.ScreenManager
             get { return fullBox.Checked; }
         }
 
+        /// <summary>(2.12.0) Both parts, each in its own file (the short analysis and the full one with its comments).</summary>
+        public bool Separate
+        {
+            get { return separateBox.Checked && Short && Full; }
+        }
+
         public FormSwimPdfChoice(bool shortPart, bool fullPart)
+            : this(shortPart, fullPart, false)
+        {
+        }
+
+        public FormSwimPdfChoice(bool shortPart, bool fullPart, bool separate)
         {
             Text = SwimLang.T("PDF αναφοράς");
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -41,7 +53,7 @@ namespace Kinovea.ScreenManager
             MinimizeBox = false;
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(500, 300);
+            ClientSize = new Size(500, 340);
             BackColor = SwimTheme.Back;
             ForeColor = SwimTheme.Text;
             Font = SwimTheme.Ui(9.5f, FontStyle.Regular);
@@ -65,6 +77,10 @@ namespace Kinovea.ScreenManager
             fullBox = Box(SwimLang.T("Πλήρης ανάλυση"), fullPart);
             t.Controls.Add(fullBox);
             t.Controls.Add(Note(SwimLang.T("Όλοι οι πίνακες και τα γραφήματα του αγώνα, με σχόλια στο τέλος (τι έγινε καλά, τι να προσέξουμε, επεξήγηση).")));
+            separateBox = Box(SwimLang.T("Σε δύο ξεχωριστά αρχεία"), separate);
+            separateBox.Font = SwimTheme.Ui(9.5f, FontStyle.Regular);
+            separateBox.Margin = new Padding(0, 6, 0, 0);
+            t.Controls.Add(separateBox);
 
             hint = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(0, 6, 0, 0), MaximumSize = new Size(460, 0) };
             t.Controls.Add(hint);
@@ -91,6 +107,7 @@ namespace Kinovea.ScreenManager
 
             shortBox.CheckedChanged += (s, e) => UpdateState();
             fullBox.CheckedChanged += (s, e) => UpdateState();
+            separateBox.CheckedChanged += (s, e) => UpdateState();
             KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Escape)
@@ -130,7 +147,10 @@ namespace Kinovea.ScreenManager
         private void UpdateState()
         {
             ok.Enabled = Short || Full;
-            if (Short && Full)
+            separateBox.Enabled = Short && Full;
+            if (Short && Full && separateBox.Checked)
+                hint.Text = SwimLang.T("Δύο PDF: η σύντομη ανάλυση και η πλήρης ανάλυση (με σχόλια στο τέλος), το καθένα σε δικό του αρχείο.");
+            else if (Short && Full)
                 hint.Text = SwimLang.T("Ένα PDF: πρώτα η σύντομη και μετά η πλήρης ανάλυση.");
             else if (Short)
                 hint.Text = SwimLang.T("Ένα PDF με τις 3 σελίδες της σύντομης ανάλυσης.");

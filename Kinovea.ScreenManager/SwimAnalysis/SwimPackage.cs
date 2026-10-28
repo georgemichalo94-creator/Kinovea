@@ -32,6 +32,10 @@ namespace Kinovea.ScreenManager
         public string Folder;
         public string BaseName;
         public string PdfPath;
+
+        /// <summary>(2.12.0) The short analysis in its own file (the PDF «σε δύο αρχεία»), next to the full one.</summary>
+        public string PdfShortPath;
+        public bool PdfShortReady;
         public string VideoPath;
         public string MessagePath;
         public List<string> Recipients = new List<string>();
@@ -66,6 +70,11 @@ namespace Kinovea.ScreenManager
             get { return BaseName + ".pdf"; }
         }
 
+        public string PdfShortFileName
+        {
+            get { return BaseName + SwimLang.T(" - Σύντομη ανάλυση") + ".pdf"; }
+        }
+
         public string VideoFileName
         {
             get { return BaseName + ".mp4"; }
@@ -79,6 +88,8 @@ namespace Kinovea.ScreenManager
                 List<string> files = new List<string>();
                 if (PdfReady && !string.IsNullOrEmpty(PdfPath) && File.Exists(PdfPath))
                     files.Add(PdfPath);
+                if (PdfShortReady && !string.IsNullOrEmpty(PdfShortPath) && File.Exists(PdfShortPath))
+                    files.Add(PdfShortPath);
                 if (VideoReady && !string.IsNullOrEmpty(VideoPath) && File.Exists(VideoPath))
                     files.Add(VideoPath);
                 return files.ToArray();
@@ -175,6 +186,7 @@ namespace Kinovea.ScreenManager
 
             p.BaseName = name;
             p.PdfPath = Path.Combine(p.Folder, p.PdfFileName);
+            p.PdfShortPath = Path.Combine(p.Folder, p.PdfShortFileName);
             p.VideoPath = Path.Combine(p.Folder, p.VideoFileName);
             p.MessagePath = Path.Combine(p.Folder, name + " - " + SwimLang.T("μήνυμα") + ".txt");
             return p;
