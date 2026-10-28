@@ -397,6 +397,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public const double KickShoulders = 0.1;
         public const double KickAnkles = 0.1;
+
+        /// <summary>
+        /// (2.9.15) Under this share of the images under water with a skeleton along the swim the kicks are uncertain: a note asks to
+        /// check them (29 turns checked by eye: all 9 under 0.4 had kicks missed or the legs out of the frame; none of the 10
+        /// precisely measured turns is under it).
+        /// </summary>
+        public const double KickAlongMin = 0.4;
         public const double KickProminence = 15;
         public const double UprightShoulders = -0.25;
         public const double TouchSpeedFraction = 0.2;
@@ -592,6 +599,8 @@ namespace Kinovea.ScreenManager
 
             ev.Kicks.AddRange(dolphin.Select(q => q.Key));
             ev.LegKicks.AddRange(legs.Select(q => q.Key));
+            if (AlongFraction(s, pushoff + 0.1, kickEnd, ev.Sign) < KickAlongMin)
+                ev.Notes.Add("λίγα καρέ με καθαρό σκελετό κάτω από το νερό: έλεγξε τους δελφινισμούς");
 
             if (breakout.HasValue)
             {
@@ -1727,6 +1736,22 @@ namespace Kinovea.ScreenManager
             }
 
             return found;
+        }
+
+        /// <summary>(2.9.15) The share of the images between ta and tb with a knee angle whose skeleton lies along the swim.</summary>
+        private static double AlongFraction(Signals s, double ta, double tb, int sign)
+        {
+            int n = 0, along = 0;
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] < ta || s.T[i] > tb || !s.Present[i] || !s.InWater[i] || double.IsNaN(s.KneeAngle[i]))
+                    continue;
+                n++;
+                if ((s.ShX[i] - s.HipX[i]) * sign >= KickShoulders * s.L && (s.HipX[i] - s.AnkX[i]) * sign >= KickAnkles * s.L)
+                    along++;
+            }
+
+            return n > 0 ? (double)along / n : 0;
         }
 
         /// <summary>Furthest reach of a hand along the swimming direction (body lengths ahead of the shoulders) between ta and tb.</summary>
