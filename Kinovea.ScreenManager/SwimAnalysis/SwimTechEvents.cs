@@ -355,6 +355,24 @@ namespace Kinovea.ScreenManager
         /// background): 0.8 body lengths/s. Open turns keep 1.5 (the hips drift ~1 body length/s while the body turns).
         /// </summary>
         public const double PushoffMinSpeedFlip = 0.8;
+
+        /// <summary>
+        /// (2.9.13) The push as a model: the hips still, then a constant acceleration (the legs extend on the wall), then a
+        /// constant speed (the glide); the end of the acceleration is the feet leaving the wall. It starts within
+        /// PushoffFitStartWithin s of the closest approach (or PushoffFitBefore s before it), lasts PushoffFitMinPush to
+        /// PushoffFitMaxPush s, and is fitted (least squares) on the hips from PushoffFitBefore s before to PushoffFitAfter s
+        /// after the closest approach. The push-off is that end kept between the first images at PushoffFractionLow (70%) and
+        /// PushoffFraction (90%) of the speed of the push: a kid's push is slow and the speed still rises with the first kicks,
+        /// and the feet leave the wall well before 90% of that later peak (Heraklion, 35 turns checked by eye: the push-off
+        /// came 0.23 s late on average, a third of them more than 0.3 s; now 0.13 s, a fifth).
+        /// </summary>
+        public const double PushoffFractionLow = 0.7;
+        public const double PushoffFitBefore = 0.1;
+        public const double PushoffFitAfter = 0.9;
+        public const double PushoffFitStartWithin = 0.5;
+        public const double PushoffFitMinPush = 0.1;
+        public const double PushoffFitMaxPush = 0.7;
+        public const double PushoffFitTail = 0.1;
         public const double PlantDistance = 0.12;
         public const double PlantWindow = 1.2;
         public const double PlantBeforeTurn = 0.4;
@@ -419,8 +437,11 @@ namespace Kinovea.ScreenManager
             }
 
             ev.Extreme = s.T[i0];
-            int k = Pushoff(s, i0, ev.Sign, kind == SwimTurnKind.Flip ? PushoffMinSpeedFlip : PushoffMinSpeed);
-            double pushoff = s.T[k];
+            // (2.9.13) The push-off shown is the end of the fitted push; the plant, the kind, the kicks and the breakout keep the
+            // image at 90% of the push's speed (the push-off before 2.9.13) as their reference, so that they do not change.
+            int rise;
+            int k = Pushoff(s, i0, ev.Sign, kind == SwimTurnKind.Flip ? PushoffMinSpeedFlip : PushoffMinSpeed, out rise);
+            double pushoff = s.T[rise], feetOff = s.T[k];
             bool fromTurn;
             ev.Plant = Plant(s, ev.Sign, pushoff, i0, out fromTurn);
             if (kind == SwimTurnKind.Unknown)
@@ -429,13 +450,14 @@ namespace Kinovea.ScreenManager
                 ev.KindFromVideo = true;
                 if (kind == SwimTurnKind.Flip)
                 {
-                    k = Pushoff(s, i0, ev.Sign, PushoffMinSpeedFlip);
-                    pushoff = s.T[k];
+                    k = Pushoff(s, i0, ev.Sign, PushoffMinSpeedFlip, out rise);
+                    pushoff = s.T[rise];
+                    feetOff = s.T[k];
                     ev.Plant = Plant(s, ev.Sign, pushoff, i0, out fromTurn);
                 }
             }
 
-            ev.Pushoff = pushoff;
+            ev.Pushoff = feetOff;
             ev.PlantFromTurn = fromTurn;
 
             ev.Kind = kind;
@@ -1021,8 +1043,10 @@ namespace Kinovea.ScreenManager
         /// second: the hips also drift from the wall while an open turn rotates; and the speed drops by 3% within 0.25 s
         /// after it; else the highest speed within 1.6 s), then the first
         /// image with 90% of that speed. The first peak and not the highest: the pan of the camera can add a later one.
+        /// (2.9.13) The end of the fitted push (PushFit) when it falls between that image and the first one with 70% of the
+        /// peak, else the nearer of the two; rise: the image at 90% (the reference of the plant, the kicks and the breakout).
         /// </summary>
-        private static int Pushoff(Signals s, int i0, int sign, double minSpeed)
+        private static int Pushoff(Signals s, int i0, int sign, double minSpeed, out int rise)
         {
             double[] d = SwimSignal.SavGol(s.Xs, 9, 2, 1);
             double[] v = new double[s.N];
@@ -1053,13 +1077,104 @@ namespace Kinovea.ScreenManager
             }
 
             double vmax = v[pk];
+            int high = pk, early = pk;
             for (int i = i0; i <= pk; i++)
             {
                 if (v[i] >= PushoffFraction * vmax)
-                    return i;
+                {
+                    high = i;
+                    break;
+                }
             }
 
-            return pk;
+            for (int i = i0; i <= pk; i++)
+            {
+                if (v[i] >= PushoffFractionLow * vmax)
+                {
+                    early = i;
+                    break;
+                }
+            }
+
+            rise = high;
+            int fit = PushFit(s, i0, sign);
+            return fit < 0 ? high : Math.Min(Math.Max(fit, early), high);
+        }
+
+        /// <summary>
+        /// (2.9.13) The end of the push from the model (see PushoffFractionLow): the hips (median of 5 images, frame of the pool, in
+        /// body lengths from the closest approach) x(t) = c0 + c1 f(t) with f = 0 before the start t1, (t − t1)² up to the end t2,
+        /// then the straight line of the speed at t2; t1 and t2 on the images, the least squares (c1 > 0). −1 without enough
+        /// images.
+        /// </summary>
+        private static int PushFit(Signals s, int i0, int sign)
+        {
+            double te = s.T[i0];
+            double[] x = SwimSignal.Median(SwimSignal.Interp(s.X), 5);
+            List<double> ts = new List<double>(), xs = new List<double>();
+            for (int i = 0; i < s.N; i++)
+            {
+                if (s.T[i] >= te - PushoffFitBefore && s.T[i] <= te + PushoffFitAfter && !double.IsNaN(x[i]))
+                {
+                    ts.Add(s.T[i]);
+                    xs.Add((x[i] - s.Xs[i0]) * sign / s.L);
+                }
+            }
+
+            int n = ts.Count;
+            if (n < 10)
+                return -1;
+            double sx = 0;
+            for (int q = 0; q < n; q++)
+                sx += xs[q];
+            double[] f = new double[n];
+            double best = double.MaxValue;
+            int end = -1;
+            for (int a = 0; a < s.N; a++)
+            {
+                double t1 = s.T[a];
+                if (t1 < te - PushoffFitBefore || t1 >= te + PushoffFitStartWithin)
+                    continue;
+                for (int b = a + 1; b < s.N; b++)
+                {
+                    double t2 = s.T[b];
+                    if (t2 < t1 + PushoffFitMinPush)
+                        continue;
+                    if (t2 >= Math.Min(t1 + PushoffFitMaxPush, te + PushoffFitAfter - PushoffFitTail))
+                        break;
+                    double sf = 0, sff = 0, sfx = 0;
+                    for (int q = 0; q < n; q++)
+                    {
+                        double u = Math.Max(0, ts[q] - t1);
+                        f[q] = ts[q] <= t2 ? u * u : (t2 - t1) * (t2 - t1) + 2 * (t2 - t1) * (ts[q] - t2);
+                        sf += f[q];
+                        sff += f[q] * f[q];
+                        sfx += f[q] * xs[q];
+                    }
+
+                    double den = n * sff - sf * sf;
+                    if (den <= 1e-12)
+                        continue;
+                    double c1 = (n * sfx - sf * sx) / den;
+                    if (c1 <= 0)
+                        continue;
+                    double c0 = (sx - c1 * sf) / n;
+                    double sse = 0;
+                    for (int q = 0; q < n; q++)
+                    {
+                        double r = xs[q] - c0 - c1 * f[q];
+                        sse += r * r;
+                    }
+
+                    if (sse < best - 1e-12)
+                    {
+                        best = sse;
+                        end = b;
+                    }
+                }
+            }
+
+            return end;
         }
 
         /// <summary>
