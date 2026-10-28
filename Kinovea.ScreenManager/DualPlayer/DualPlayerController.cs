@@ -129,6 +129,27 @@ namespace Kinovea.ScreenManager
         {
             view.StopMerge();
         }
+        /// <summary>
+        /// (Swim 2.14.0) Screens changed places (one dragged onto another): the players follow the order of the screens, their
+        /// synchronisation is kept (it is by player).
+        /// </summary>
+        public void ScreenOrderChanged(List<AbstractScreen> screenList)
+        {
+            if (!active)
+                return;
+
+            List<PlayerScreen> order = screenList.OfType<PlayerScreen>().ToList();
+            if (order.Count != players.Count || order.Any(p => !players.Contains(p)))
+                return;
+
+            players.Clear();
+            players.AddRange(order);
+            List<PlayerScreen> syncedInOrder = order.Where(p => synced.Contains(p)).ToList();
+            synced.Clear();
+            synced.AddRange(syncedInOrder);
+            UpdateHairLines();
+        }
+
         public void SwapSync()
         {
             if (!synching || players.Count != 2)

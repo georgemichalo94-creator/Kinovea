@@ -39,6 +39,9 @@ namespace Kinovea.ScreenManager
         #region Events
         public event EventHandler<FileLoadAskedEventArgs> FileLoadAsked;
         public event EventHandler AutoLaunchAsked;
+
+        /// <summary>(Swim 2.14.0) A screen was dragged onto another: the two change places.</summary>
+        public event EventHandler<SwimSwapEventArgs> SwimSwapAsked;
         #endregion
         
         #region Properties
@@ -69,17 +72,18 @@ namespace Kinovea.ScreenManager
         bool initialized = false;
         private ThumbnailViewerContainer thumbnailViewerContainer = new ThumbnailViewerContainer();
 
-        // More than two screens: grid of cells (3: one row, 4: 2+2, 5: 3 on top and 2 below).
+        // More than two screens: grid of cells, in the rows that give the biggest videos (BestRows).
         private Panel pnlGrid = new Panel();
         private List<Panel> gridCells = new List<Panel>();
         private int gridCount;
         private const int gridGap = 3;
-        private static readonly int[][] gridRows = new int[][] {
-            new int[] { }, new int[] { 1 }, new int[] { 2 }, new int[] { 3 }, new int[] { 2, 2 }, new int[] { 3, 2 }, new int[] { 3, 3 } };
 
         // Full screen: only the images of the screens, joined in the grid (the row of the common controls and the borders hidden).
         private bool fullScreen;
         private bool memoCommonControlsCollapsed;
+
+        // (Swim 2.14.0) Big screens: the screens show only their images in the window (the common controls stay).
+        private bool bigScreens;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -184,6 +188,8 @@ namespace Kinovea.ScreenManager
                     pnlGrid.BringToFront();
                     LayoutGrid();
                 }
+
+                UncoverScreens();
             }
         }
         /// <summary>
@@ -202,6 +208,52 @@ namespace Kinovea.ScreenManager
             fullScreen = isFullScreen;
             splitScreensPanel.Panel2Collapsed = fullScreen || memoCommonControlsCollapsed;
             splitScreensPanel.BorderStyle = fullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
+            UncoverScreens();
+        }
+        /// <summary>
+        /// (Swim 2.14.0) Big screens on or off: the screens show only their images (set by the screen manager, which then organizes
+        /// the screens again).
+        /// </summary>
+        public void SetBigScreens(bool on)
+        {
+            bigScreens = on;
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) A bar of the main window (its toolbar) can lie over the top of the screens: the screens then start below it, so
+        /// that the top of each screen (its row with the name of the file) and the top of the videos are seen. Nothing in full screen,
+        /// where the bars of the main window are hidden.
+        /// </summary>
+        private void UncoverScreens()
+        {
+            try
+            {
+                SplitterPanel panel = splitScreensPanel.Panel1;
+                Form form = FindForm();
+                if (form == null || !panel.IsHandleCreated || !form.IsHandleCreated)
+                    return;
+
+                Rectangle own = panel.RectangleToScreen(panel.ClientRectangle);
+                int covered = 0;
+                foreach (Control c in form.Controls)
+                {
+                    ToolStrip strip = c as ToolStrip;
+                    if (strip == null || strip is StatusStrip || !strip.Visible || !strip.IsHandleCreated || strip.Contains(this))
+                        continue;
+
+                    Rectangle r = strip.RectangleToScreen(strip.ClientRectangle);
+                    if (r.Top <= own.Top && r.Bottom > own.Top && r.Right > own.Left && r.Left < own.Right)
+                        covered = Math.Max(covered, r.Bottom - own.Top);
+                }
+
+                covered = Math.Max(0, Math.Min(covered, own.Height / 4));
+                if (panel.Padding.Top != covered)
+                    panel.Padding = new Padding(0, covered, 0, 0);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while placing the screens under the bars of the window.", e);
+            }
         }
         public void ToggleDualScreenOrientation()
         {
@@ -239,6 +291,7 @@ namespace Kinovea.ScreenManager
         {
             // Reposition Common Controls panel so it doesn't take more space than necessary.
             splitScreensPanel.SplitterDistance = pnlScreens.Height - 50;
+            UncoverScreens();
         }
         
         #region Screen management
@@ -340,10 +393,9 @@ namespace Kinovea.ScreenManager
             if (gridCount < (fullScreen ? 1 : 3))
                 return;
 
-            int[] rows = gridCount == 2 && IsTopBottomLayout ? new int[] { 1, 1 } :
-                (gridCount < gridRows.Length ? gridRows[gridCount] : new int[] { (gridCount + 1) / 2, gridCount / 2 });
             int gap = fullScreen ? 0 : gridGap;
             Rectangle area = pnlGrid.ClientRectangle;
+            int[] rows = gridCount == 2 && IsTopBottomLayout ? new int[] { 1, 1 } : BestRows(gridCount, area, gap);
             int cell = 0;
             int top = area.Top;
             for (int r = 0; r < rows.Length; r++)
@@ -362,6 +414,67 @@ namespace Kinovea.ScreenManager
 
                 top = bottom;
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) The rows of the grid that give the biggest videos. For each way to put the screens in one, two or three rows
+        /// (the extra screens in the first rows), the image of each screen is fitted in its cell (its controls take their height, none
+        /// when it shows only its image; 16:9 for a screen without a video), and of these the rows whose smallest image is the biggest
+        /// (then the biggest images in all). Three 16:9 videos in a 16:9 full screen: two above and one below, each 2.25 times bigger
+        /// than in one row; in the window with the controls of each screen the single row stays.
+        /// </summary>
+        private int[] BestRows(int count, Rectangle area, int gap)
+        {
+            if (count <= 1)
+                return new int[] { Math.Max(1, count) };
+
+            int[] best = null;
+            double bestMin = -1, bestTotal = -1;
+            for (int rowCount = 1; rowCount <= Math.Min(count, 3); rowCount++)
+            {
+                int[] rows = new int[rowCount];
+                for (int r = 0; r < rowCount; r++)
+                    rows[r] = count / rowCount + (r < count % rowCount ? 1 : 0);
+
+                double smallest = double.MaxValue, total = 0;
+                int cell = 0;
+                for (int r = 0; r < rowCount; r++)
+                {
+                    double height = (double)area.Height / rowCount - (r < rowCount - 1 ? gap : 0);
+                    for (int c = 0; c < rows[r]; c++)
+                    {
+                        double width = (double)area.Width / rows[r] - (c < rows[r] - 1 ? gap : 0);
+                        double aspect = 16.0 / 9;
+                        int controls = 0;
+                        PlayerScreenUserInterface player = cell < gridCells.Count && gridCells[cell].Controls.Count > 0 ?
+                            gridCells[cell].Controls[0] as PlayerScreenUserInterface : null;
+                        if (player != null)
+                        {
+                            if (player.SwimImageAspect > 0)
+                                aspect = player.SwimImageAspect;
+                            controls = fullScreen || bigScreens ? 0 : player.SwimControlsHeight;
+                        }
+
+                        double h = Math.Max(0, height - controls);
+                        double w = Math.Min(width, h * aspect);
+                        double image = w * (w / aspect);
+                        smallest = Math.Min(smallest, image);
+                        total += image;
+                        cell++;
+                    }
+                }
+
+                // A clearly bigger smallest image, or about the same and more in all.
+                bool better = best == null || smallest > bestMin * 1.02 || (smallest >= bestMin * 0.98 && total > bestTotal * 1.02);
+                if (better)
+                {
+                    best = rows;
+                    bestMin = smallest;
+                    bestTotal = total;
+                }
+            }
+
+            return best;
         }
 
         private void ClearGrid(bool dispose)
@@ -401,6 +514,15 @@ namespace Kinovea.ScreenManager
         }
         private void Drop(DragEventArgs e, int target)
         {
+            // (Swim 2.14.0) A screen dragged onto another (by its top row or its grip): the two change places.
+            if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
+            {
+                SwimScreenDrag drag = e.Data.GetData(typeof(SwimScreenDrag)) as SwimScreenDrag;
+                if (drag != null && target >= 0 && target != drag.Index && SwimSwapAsked != null)
+                    SwimSwapAsked(this, new SwimSwapEventArgs(drag.Index, target));
+                return;
+            }
+
             if(e.Data.GetDataPresent(typeof(CameraSummary)))
             {
                 CameraSummary summary = (CameraSummary)e.Data.GetData(typeof(CameraSummary));

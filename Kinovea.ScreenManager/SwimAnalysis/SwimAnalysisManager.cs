@@ -271,6 +271,8 @@ namespace Kinovea.ScreenManager
             // The full screen of the videos: the round button instead of the bars (SwimAnalysisManager.Dial.cs). The manager lives as
             // long as Kinovea, as its handlers.
             VideoFullScreen.ActiveChanged += VideoFullScreen_ActiveChanged;
+            VideoBigScreens.ActiveChanged += VideoBigScreens_ActiveChanged;
+            VideoScreenGroup.Changed += VideoScreenGroup_Changed;
 
             saveTimer = new Timer();
             saveTimer.Interval = 800;
@@ -288,6 +290,8 @@ namespace Kinovea.ScreenManager
         #region Entry points from the player screen
         public void ShowWindow(PlayerScreenUserInterface player, FrameServerPlayer frameServer)
         {
+            long unused = 0;
+            ToGroup(ref player, ref frameServer, ref unused);
             Attach(player, frameServer);
             ShowAnalysis(true);
         }
@@ -297,6 +301,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp)
         {
+            // (2.14.0) A screen of a group of screens: the analysis of the group (the video of its lead) at the same moment.
+            ToGroup(ref player, ref frameServer, ref timestamp);
             Attach(player, frameServer);
             if (Race == null)
                 return false;

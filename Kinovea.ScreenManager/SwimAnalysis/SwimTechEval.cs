@@ -59,6 +59,18 @@ namespace Kinovea.ScreenManager
             "legs_split_entry", "head_lift_entry", "entry_arch", "hips_peak",
         };
 
+        /// <summary>
+        /// (2.13.1) Checks of the skeleton under the water, in the bubbles of the wall or of the dolphin kicks: proposed only once the
+        /// coach's answers agree with them (★, as a criterion measured in part). At the hand-marked push-offs of the lab's underwater
+        /// turns the line of the body read 50° off the straight line (median) even on the side views: the skeleton is not reliable
+        /// there yet. Their measurement is still shown.
+        /// </summary>
+        public static readonly HashSet<string> NeedsAgreement = new HashSet<string>
+        {
+            "knee_plant", "head_feet_depth", "elbow_touch", "streamline_plant", "body_line_plant", "streamline", "body_line", "body_line_glide",
+            "push_dir", "push_dir_back", "push_dir_breast", "hips_to_wall", "legs_together", "kick_amp_growth",
+        };
+
         #region Anchors
         /// <summary>The time of a moment of the video in a phase, in seconds from its origin (null when it cannot be placed).</summary>
         public static double? AnchorSeconds(SwimTechPhase p, string anchor)
@@ -427,8 +439,9 @@ namespace Kinovea.ScreenManager
             if (s == null)
                 return null;
 
+            // (2.13.1) Only the images where the skeleton is a side view of the swimmer.
             Body b = new Body();
-            return s.TryGet(ts.Value, 2, b.P, b.V) ? b : null;
+            return s.TryGet(ts.Value, 2, b.P, b.V, true) ? b : null;
         }
 
         /// <summary>
@@ -595,14 +608,15 @@ namespace Kinovea.ScreenManager
             if (dir != 0 && b.Seen(SwimJoints.Nose))
                 ahead = (b.P[w].X - b.P[SwimJoints.Nose].X) * dir > 0;
 
-            // Head between the arms: the nose near the line shoulder → wrist (within 0.8 of the upper arm: 9 in 10 frames of the glides of
-            // the lab's underwater turns with the arms straight ahead, 2026-10-28; 0.45 failed 4 in 10 of them).
+            // Head between the arms: the nose near the line shoulder → wrist, within one upper arm (a neutral head sits about 0.7 of it
+            // to the chest side: 0.69 median, 0.85 for 9 in 10 frames in a demonstration of underwater dolphin kicks; 0.45 failed 4 in
+            // 10 frames of the glides of the lab's underwater turns, 2026-10-28). A lifted head is the head angle's (HeadBelow).
             bool between = true;
             if (b.Seen(SwimJoints.Nose))
             {
                 double arm = Dist(b.P[s], b.P[e]);
                 double d = LineDistance(b.P[SwimJoints.Nose], b.P[s], b.P[w]);
-                between = arm > 0 && d <= arm * 0.8;
+                between = arm > 0 && d <= arm * 1.0;
             }
 
             bool good = elbow.Value >= 150 && ahead && between;
@@ -809,9 +823,8 @@ namespace Kinovea.ScreenManager
                     if (head.HasValue)
                     {
                         double conf = m.Confidence(SwimJoints.Nose, m.Best(SwimJoints.LeftShoulder), m.Best(SwimJoints.LeftHip));
-                        string text = Deg(head.Value) + (head.Value > 50 ? SwimLang.T(" προς το στήθος") : head.Value < 0 ? SwimLang.T(" πάνω από τη γραμμή") : SwimLang.T(" στη γραμμή"));
-                        put("head_spine_flight", head.Value, text, conf, mid);
-                        put("head_drop_flight", head.Value, text, conf, mid);
+                        put("head_spine_flight", head.Value, HeadText(head.Value), conf, mid);
+                        put("head_drop_flight", head.Value, HeadText(head.Value), conf, mid);
                     }
 
                     int sj = m.Best(SwimJoints.LeftShoulder), h = m.Best(SwimJoints.LeftHip), a = m.Best(SwimJoints.LeftAnkle);
@@ -854,8 +867,11 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The angle (degrees) of the head from the line of the trunk (hip → shoulder → on), positive down in the image (to the chest of a
-        /// swimmer facing down; the nose sits about 25° that way when the head is neutral), null when not seen.
+        /// The head as a turn around the shoulder: the angle (degrees) of shoulder → nose from the line of the trunk (hip → shoulder → on),
+        /// positive down in the image (towards the chest of a swimmer facing down). With the arms in front the shoulder sits beside the head
+        /// and the nose about level with it: a neutral head is about 75° (73° median, 52°–88° for 8 in 10 frames, in a demonstration of
+        /// underwater dolphin kicks on the front; 85° on the back), the head lifted to look forward turns it down towards 0°, the chin to
+        /// the chest turns it past 90°. Null when not seen.
         /// </summary>
         private static double? HeadBelow(Body b, int dir)
         {
@@ -863,6 +879,16 @@ namespace Kinovea.ScreenManager
             if (dir == 0 || !b.Seen(s) || !b.Seen(h) || !b.Seen(SwimJoints.Nose))
                 return null;
             return SideAngle(b.P[h], b.P[s], b.P[s], b.P[SwimJoints.Nose], dir);
+        }
+
+        /// <summary>The head angle as a text: degrees, and lifted / neutral / to the chest (neutral about 75°).</summary>
+        private static string HeadText(double v)
+        {
+            if (v < 40)
+                return Deg(v) + SwimLang.T(" · σηκωμένο") + SwimLang.T(" (ουδέτερο ~75°)");
+            if (v > 110)
+                return Deg(v) + SwimLang.T(" · προς το στήθος") + SwimLang.T(" (ουδέτερο ~75°)");
+            return Deg(v) + SwimLang.T(" · ουδέτερο");
         }
 
         /// <summary>The angle (degrees) of the legs (hip → ankle) from the line of the trunk (shoulder → hip → on), positive up in the image.</summary>
@@ -927,14 +953,16 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The entry, from the hands in to the feet in: the head at its highest from the line of the trunk (head_lift_entry, negative above
-        /// the line) and, as the hips enter, the legs above the line of the trunk (entry_arch, the "banana").
+        /// The entry, from the hands in to the feet in: the head (head_lift_entry: the middle head angle of the images of the entry where
+        /// the trunk and the head are read in proportion; neutral about 75°) and, as the hips enter, the legs above the line of the trunk
+        /// (entry_arch, the "banana"). In a demonstration of good underwater dolphin kicks, single images and the images of the swimmer
+        /// coming into the view gave "lifted" heads; with these two rules 2 in 100 windows of 0.4 s were still called lifted (5 in 100
+        /// without them), all where the swimmer came into the view.
         /// </summary>
         private static void EntryHeadAndArch(SwimRace race, SwimTechPhase p, SwimTiming timing, int dir, Action<string, double, string, double, long?> put)
         {
-            double lowest = double.MaxValue, conf = 1;
-            long? when = null;
-            int seen = 0;
+            List<double[]> heads = new List<double[]>();
+            double conf = 1;
             for (double x = p.Entry.Value; x <= p.Entry.Value + 0.4 + 1e-6; x += 0.02)
             {
                 long ts = timing.Timestamp(x, p.Origin);
@@ -944,17 +972,24 @@ namespace Kinovea.ScreenManager
                 double? head = HeadBelow(b, dir);
                 if (!head.HasValue)
                     continue;
-                seen++;
-                conf = Math.Min(conf, b.Confidence(SwimJoints.Nose, b.Best(SwimJoints.LeftShoulder), b.Best(SwimJoints.LeftHip)));
-                if (head.Value < lowest)
-                {
-                    lowest = head.Value;
-                    when = ts;
-                }
+                int sj = b.Best(SwimJoints.LeftShoulder), hj = b.Best(SwimJoints.LeftHip);
+                heads.Add(new double[] { head.Value, Dist(b.P[sj], b.P[hj]), Dist(b.P[sj], b.P[SwimJoints.Nose]), ts,
+                    b.Confidence(SwimJoints.Nose, sj, hj) });
             }
 
-            if (seen >= 4)
-                put("head_lift_entry", lowest, Deg(lowest) + (lowest < 0 ? SwimLang.T(" · πάνω από τη γραμμή του κορμού") : SwimLang.T(" · στη γραμμή ή προς το στήθος")), conf, when);
+            if (heads.Count >= 6)
+            {
+                // The trunk about as long as in the other images, the nose at a third of the trunk from the shoulder (0.15–0.6).
+                double trunk = Median(heads.Select(v => v[1]).ToList());
+                List<double[]> ok = heads.Where(v => v[1] >= 0.6 * trunk && v[1] <= 1.5 * trunk && v[2] >= 0.15 * v[1] && v[2] <= 0.6 * v[1])
+                    .OrderBy(v => v[0]).ToList();
+                if (ok.Count >= 6)
+                {
+                    double[] middle = ok[(ok.Count - 1) / 2];
+                    conf = ok.Min(v => v[4]);
+                    put("head_lift_entry", middle[0], HeadText(middle[0]), conf, (long)middle[3]);
+                }
+            }
 
             long hips = timing.Timestamp(p.Entry.Value + 0.12, p.Origin);
             Body h = BodyAt(race, hips);
@@ -1021,7 +1056,7 @@ namespace Kinovea.ScreenManager
                 return null;
             if (measure.Confidence < MinVisibility)
                 return null;
-            if (criterion.Level == "P" && (agreement == null || !agreement.Reliable))
+            if ((criterion.Level == "P" || NeedsAgreement.Contains(criterion.Check ?? "")) && (agreement == null || !agreement.Reliable))
                 return null;
             if (criterion.Level == "A" && agreement != null && agreement.Disagrees)
                 return null;

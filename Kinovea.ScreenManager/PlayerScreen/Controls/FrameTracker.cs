@@ -333,11 +333,21 @@ namespace Kinovea.ScreenManager
         }
         private void FrameTracker_DragOver(object sender, DragEventArgs e)
         {
+            // (Swim 2.14.0) A screen dragged onto another one: not dropped on the timeline (it would move the video).
+            if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
+            {
+                e.Effect = DragDropEffects.None;
+                return;
+            }
+
             e.Effect = DragDropEffects.Move;
             Scrub();
         }
         private void FrameTracker_DragDrop(object sender, DragEventArgs e)
         {
+            if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
+                return;
+
             Commit();
 
             object keyframeBox = e.Data.GetData(typeof(KeyframeBox));

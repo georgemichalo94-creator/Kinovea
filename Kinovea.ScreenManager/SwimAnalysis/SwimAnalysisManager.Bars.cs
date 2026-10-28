@@ -72,8 +72,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int LayoutVideoBars(PlayerScreenUserInterface screen, Size viewport)
         {
-            // Full screen (2.9.5): no room beside the image, the round button over it instead (SwimAnalysisManager.Dial.cs).
-            if (VideoFullScreen.Active)
+            // Full screen (2.9.5) or big screens (2.14.0): no room beside the image, the round button over it instead
+            // (SwimAnalysisManager.Dial.cs).
+            if (DialMode)
                 return LayoutFullScreen(screen, viewport);
 
             SwimVideoBar left = leftBar;
@@ -278,7 +279,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         internal bool ExecuteBarCommand(PlayerScreenCommands command)
         {
-            PlayerScreenUserInterface target = DialShown ? dialPlayer : barsPlayer;
+            PlayerScreenUserInterface target = DialShown ? player : barsPlayer;
+
+            // (2.14.0) A group of screens: from the screen of the group the analyst works on (its frame, at the same moment in the video
+            // of the analysis).
+            if (VideoScreenGroup.Contains(player))
+                target = GroupSourceOrLead() ?? target;
             if (target == null || target.IsDisposed)
                 return false;
 

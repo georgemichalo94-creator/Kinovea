@@ -310,6 +310,14 @@ namespace Kinovea.ScreenManager
             if ((key == Keys.Up || key == Keys.Down) && MoveAutoPick(screen, key == Keys.Up ? -1 : 1))
                 return true;
 
+            // (2.14.0) A screen of the group of the analysis: the same moment in the video of the analysis.
+            if (screen != player && player != null && player == VideoScreenGroup.Lead && VideoScreenGroup.Contains(screen))
+            {
+                groupSource = screen;
+                timestamp = VideoScreenGroup.LeadTimestamp(screen, timestamp);
+                screen = player;
+            }
+
             if (!Reviewing || !HasVideo || screen != player)
                 return false;
 

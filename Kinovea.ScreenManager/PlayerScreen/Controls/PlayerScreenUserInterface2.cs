@@ -1196,6 +1196,9 @@ namespace Kinovea.ScreenManager
             infobar.Visible = false;
             infobar.StopWatcherAsked += (s, e) => StopWatcherAsked?.Invoke(s, e);
             infobar.StartWatcherAsked += (s, e) => StartWatcherAsked?.Invoke(s, e);
+
+            // (Swim 2.14.0) The top row drags the screen onto another: the two videos change places.
+            HookSwimScreenDrag(panelTop);
         }
 
         private void InitializePropertiesPanel()
@@ -1638,8 +1641,9 @@ namespace Kinovea.ScreenManager
                         break;
                     if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Escape, m_iCurrentPosition))
                         break;
-                    // Full screen: Escape leaves it (a drawing being made or a drawing tool is cancelled first, as usual).
-                    if (imageOnly && m_ActiveTool == m_PointerTool && !m_FrameServer.Metadata.DrawingInitializing)
+                    // Full screen: Escape leaves it (a drawing being made or a drawing tool is cancelled first, as usual). Not with
+                    // the big screens (Swim 2.14.0), which show only the images in the window too.
+                    if (imageOnly && VideoFullScreen.Active && m_ActiveTool == m_PointerTool && !m_FrameServer.Metadata.DrawingInitializing)
                     {
                         NotificationCenter.RaiseFullScreenToggle();
                         break;
@@ -2600,6 +2604,10 @@ namespace Kinovea.ScreenManager
 
         private void PanelVideoControls_DragDrop(object sender, DragEventArgs e)
         {
+            // (Swim 2.14.0) A screen dragged onto another one: dropped on its image, not on its controls.
+            if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
+                return;
+
             // Dropping a keyframe somewhere in the bottom part.
             trkFrame.Commit();
 
@@ -2613,6 +2621,12 @@ namespace Kinovea.ScreenManager
 
         private void PanelVideoControls_DragOver(object sender, DragEventArgs e)
         {
+            if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
+            {
+                e.Effect = DragDropEffects.None;
+                return;
+            }
+
             // Dragging a keyframe anywhere on the video controls panel.
             // We turn the whole panel into a timeline.
             e.Effect = DragDropEffects.Move;
@@ -2719,6 +2733,7 @@ namespace Kinovea.ScreenManager
             pbSurfaceScreen.Size = m_viewportManipulator.RenderingSize;
             m_FrameServer.ImageTransform.Stretch = m_viewportManipulator.Stretch;
             ReplaceResizers();
+            UpdateSwimGrip();
         }
         /// <summary>
         /// Room for the image in the viewport: the viewport without the bars of the swim race analysis on its sides.
@@ -2746,6 +2761,150 @@ namespace Kinovea.ScreenManager
             RaiseSetAsActiveScreenEvent();
             panelCenter.Focus();
         }
+
+        /// <summary>(Swim 2.14.0) The frame server of this screen: the swim analysis on every screen (several cameras).</summary>
+        internal FrameServerPlayer SwimFrameServer
+        {
+            get { return m_FrameServer; }
+        }
+
+        /// <summary>(Swim 2.14.0) The number of this screen (1 for the first), set by the screen manager.</summary>
+        internal int SwimScreenNumber { get; set; }
+
+        /// <summary>(Swim 2.14.0) Width / height of the video of this screen, 0 without a video (the grid of the screens).</summary>
+        internal double SwimImageAspect
+        {
+            get
+            {
+                if (m_FrameServer == null || !m_FrameServer.Loaded)
+                    return 0;
+                Size size = m_FrameServer.VideoReader.Info.ReferenceSize;
+                return size.Width > 0 && size.Height > 0 ? (double)size.Width / size.Height : 0;
+            }
+        }
+
+        /// <summary>(Swim 2.14.0) The height of this screen that its controls take (not the image), 0 when it shows only its image.</summary>
+        internal int SwimControlsHeight
+        {
+            get { return imageOnly ? 0 : Math.Max(0, Height - panelCenter.Height); }
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) The time of a frame from the time origin of this video (the point where the screens are synchronised), in
+        /// microseconds of real time (the speed of the camera taken into account): the same moment on the screens of a group.
+        /// </summary>
+        internal long SwimTimeFromOrigin(long timestamp)
+        {
+            return TimestampToRealtime(timestamp - m_FrameServer.Metadata.TimeOrigin);
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) The timestamp of this video at a time from its time origin (microseconds of real time), within the video; not
+        /// moved to a frame (a mark from a faster camera keeps its time).
+        /// </summary>
+        internal long SwimTimestampFromOrigin(long microseconds)
+        {
+            double correctedTPS = m_FrameServer.VideoReader.Info.FrameIntervalMilliseconds * m_FrameServer.VideoReader.Info.AverageTimeStampsPerSeconds / m_FrameServer.Metadata.BaselineFrameInterval;
+            double videoSeconds = microseconds / 1000000.0 * m_FrameServer.Metadata.HighSpeedFactor;
+            long timestamp = (long)Math.Round(m_FrameServer.Metadata.TimeOrigin + videoSeconds * correctedTPS);
+            long first = m_FrameServer.VideoReader.Info.FirstTimeStamp;
+            long last = m_FrameServer.VideoReader.WorkingZone.End;
+            return last > first ? Math.Max(first, Math.Min(last, timestamp)) : timestamp;
+        }
+
+        #region Swim: a screen dragged onto another
+        // (Swim 2.14.0) By its top row, or by its grip when only its image is shown (full screen, big screens): dropped on another
+        // screen, the two change places with their videos (the screen manager, see ScreenManagerUserInterface.Drop).
+        private SwimScreenGrip swimGrip;
+        private Point swimDragDown;
+        private bool swimDragArmed;
+
+        private void HookSwimScreenDrag(Control c)
+        {
+            if (c == null || c is Button)
+                return;
+
+            c.MouseDown += SwimHeader_MouseDown;
+            c.MouseMove += SwimHeader_MouseMove;
+            c.MouseUp += (s, e) => swimDragArmed = false;
+            c.ControlAdded += (s, e) => HookSwimScreenDrag(e.Control);
+            foreach (Control child in c.Controls)
+                HookSwimScreenDrag(child);
+        }
+
+        private void SwimHeader_MouseDown(object sender, MouseEventArgs e)
+        {
+            swimDragArmed = e.Button == MouseButtons.Left && PlayerScreenCount > 1 && m_FrameServer.Loaded;
+            swimDragDown = Control.MousePosition;
+        }
+
+        private void SwimHeader_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!swimDragArmed)
+                return;
+            if ((Control.MouseButtons & MouseButtons.Left) == 0)
+            {
+                swimDragArmed = false;
+                return;
+            }
+
+            Point now = Control.MousePosition;
+            Size drag = SystemInformation.DragSize;
+            if (Math.Abs(now.X - swimDragDown.X) < drag.Width && Math.Abs(now.Y - swimDragDown.Y) < drag.Height)
+                return;
+
+            swimDragArmed = false;
+            StartSwimScreenDrag();
+        }
+
+        /// <summary>Starts dragging this screen (its index carried): dropped on another screen, they change places.</summary>
+        internal void StartSwimScreenDrag()
+        {
+            if (PlayerScreenCount < 2 || SwimScreenNumber < 1 || !m_FrameServer.Loaded)
+                return;
+
+            try
+            {
+                DataObject data = new DataObject();
+                data.SetData(typeof(SwimScreenDrag), new SwimScreenDrag(SwimScreenNumber - 1));
+                DoDragDrop(data, DragDropEffects.Move);
+            }
+            catch (Exception ex)
+            {
+                log.Error("Error while dragging a screen.", ex);
+            }
+        }
+
+        /// <summary>The grip of the screen at the top left corner of its image, when there are other screens.</summary>
+        private void UpdateSwimGrip()
+        {
+            bool want = PlayerScreenCount > 1 && m_FrameServer.Loaded && !IsDisposed;
+            if (!want)
+            {
+                if (swimGrip != null && swimGrip.Visible)
+                    swimGrip.Visible = false;
+                return;
+            }
+
+            if (swimGrip == null)
+            {
+                swimGrip = new SwimScreenGrip();
+                swimGrip.DragStarted += (s, e) => StartSwimScreenDrag();
+                swimGrip.Clicked += (s, e) => SwimBarClicked();
+                panelCenter.Controls.Add(swimGrip);
+            }
+
+            int margin = (int)Math.Round(6 * Math.Max(1f, DeviceDpi / 96f));
+            Point at = new Point(
+                Math.Max(0, Math.Min(panelCenter.Width - swimGrip.Width, pbSurfaceScreen.Left + margin)),
+                Math.Max(0, Math.Min(panelCenter.Height - swimGrip.Height, pbSurfaceScreen.Top + margin)));
+            if (swimGrip.Location != at)
+                swimGrip.Location = at;
+            if (!swimGrip.Visible)
+                swimGrip.Visible = true;
+            swimGrip.BringToFront();
+        }
+        #endregion
 
         private void ReplaceResizers()
         {
