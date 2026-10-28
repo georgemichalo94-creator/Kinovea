@@ -296,10 +296,44 @@ namespace Kinovea.ScreenManager
             if (DialOf(player) == null && !VideoScreenGroup.Contains(player))
                 AddDial(player, frameServer);
 
+            // The other screens with a video: their round buttons now (waiting), not at their next layout.
+            foreach (PlayerScreenUserInterface s in AllScreens())
+            {
+                if (s == player || s.IsDisposed || !s.Visible || VideoScreenGroup.Contains(s) || DialOf(s) != null)
+                    continue;
+                FrameServerPlayer server = s.SwimFrameServer;
+                if (server != null && server.Loaded)
+                    AddDial(s, server);
+            }
+
             foreach (DialSlot slot in dials.ToList())
             {
                 if (slot.Dial != null && !slot.Dial.IsDisposed)
                     slot.Dial.RefreshNow();
+            }
+        }
+
+        /// <summary>The player screens of the window of the screen of the analysis (all of them, that one included).</summary>
+        private List<PlayerScreenUserInterface> AllScreens()
+        {
+            List<PlayerScreenUserInterface> result = new List<PlayerScreenUserInterface>();
+            Control root = player;
+            while (root != null && !(root is ScreenManagerUserInterface))
+                root = root.Parent;
+            if (root != null)
+                CollectScreens(root, result);
+            return result;
+        }
+
+        private static void CollectScreens(Control c, List<PlayerScreenUserInterface> into)
+        {
+            foreach (Control child in c.Controls)
+            {
+                PlayerScreenUserInterface s = child as PlayerScreenUserInterface;
+                if (s != null)
+                    into.Add(s);
+                else
+                    CollectScreens(child, into);
             }
         }
 

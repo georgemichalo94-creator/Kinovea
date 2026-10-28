@@ -188,6 +188,8 @@ namespace Kinovea.ScreenManager
                     pnlGrid.BringToFront();
                     LayoutGrid();
                 }
+
+                UncoverScreens();
             }
         }
         /// <summary>
@@ -206,6 +208,7 @@ namespace Kinovea.ScreenManager
             fullScreen = isFullScreen;
             splitScreensPanel.Panel2Collapsed = fullScreen || memoCommonControlsCollapsed;
             splitScreensPanel.BorderStyle = fullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
+            UncoverScreens();
         }
         /// <summary>
         /// (Swim 2.14.0) Big screens on or off: the screens show only their images (set by the screen manager, which then organizes
@@ -214,6 +217,43 @@ namespace Kinovea.ScreenManager
         public void SetBigScreens(bool on)
         {
             bigScreens = on;
+        }
+
+        /// <summary>
+        /// (Swim 2.14.0) A bar of the main window (its toolbar) can lie over the top of the screens: the screens then start below it, so
+        /// that the top of each screen (its row with the name of the file) and the top of the videos are seen. Nothing in full screen,
+        /// where the bars of the main window are hidden.
+        /// </summary>
+        private void UncoverScreens()
+        {
+            try
+            {
+                SplitterPanel panel = splitScreensPanel.Panel1;
+                Form form = FindForm();
+                if (form == null || !panel.IsHandleCreated || !form.IsHandleCreated)
+                    return;
+
+                Rectangle own = panel.RectangleToScreen(panel.ClientRectangle);
+                int covered = 0;
+                foreach (Control c in form.Controls)
+                {
+                    ToolStrip strip = c as ToolStrip;
+                    if (strip == null || strip is StatusStrip || !strip.Visible || !strip.IsHandleCreated || strip.Contains(this))
+                        continue;
+
+                    Rectangle r = strip.RectangleToScreen(strip.ClientRectangle);
+                    if (r.Top <= own.Top && r.Bottom > own.Top && r.Right > own.Left && r.Left < own.Right)
+                        covered = Math.Max(covered, r.Bottom - own.Top);
+                }
+
+                covered = Math.Max(0, Math.Min(covered, own.Height / 4));
+                if (panel.Padding.Top != covered)
+                    panel.Padding = new Padding(0, covered, 0, 0);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while placing the screens under the bars of the window.", e);
+            }
         }
         public void ToggleDualScreenOrientation()
         {
@@ -251,6 +291,7 @@ namespace Kinovea.ScreenManager
         {
             // Reposition Common Controls panel so it doesn't take more space than necessary.
             splitScreensPanel.SplitterDistance = pnlScreens.Height - 50;
+            UncoverScreens();
         }
         
         #region Screen management

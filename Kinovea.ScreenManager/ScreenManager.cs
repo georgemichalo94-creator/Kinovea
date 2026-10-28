@@ -1500,7 +1500,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (button != null && !button.IsDisposed)
-                menu.Show(button, new Point(0, button.Height), ToolStripDropDownDirection.AboveRight);
+                menu.Show(button, new Point(button.Width, 0), ToolStripDropDownDirection.AboveLeft);
             else
                 menu.Show(Cursor.Position);
         }

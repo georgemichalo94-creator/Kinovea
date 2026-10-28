@@ -2874,10 +2874,10 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The grip of the screen at the top left corner of its image, when only the image is shown and there are other screens.</summary>
+        /// <summary>The grip of the screen at the top left corner of its image, when there are other screens.</summary>
         private void UpdateSwimGrip()
         {
-            bool want = imageOnly && PlayerScreenCount > 1 && m_FrameServer.Loaded && !IsDisposed;
+            bool want = PlayerScreenCount > 1 && m_FrameServer.Loaded && !IsDisposed;
             if (!want)
             {
                 if (swimGrip != null && swimGrip.Visible)
