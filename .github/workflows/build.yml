@@ -113,7 +113,12 @@ jobs:
         $failed = @()
         foreach ($t in Get-ChildItem SwimAnalysis\tests\test_*.js) {
           $out = & node $t.FullName 2>&1
-          if ($LASTEXITCODE -ne 0) { $failed += $t.Name; $out | Select-Object -Last 25 | ForEach-Object { Write-Output $_ } }
+          if ($LASTEXITCODE -ne 0) {
+            $failed += $t.Name
+            $tail = (($out | Select-Object -Last 25) -join "`n")
+            if ($tail.Length -gt 3500) { $tail = $tail.Substring($tail.Length - 3500) }
+            Write-Output ('::error title=' + $t.Name + '::' + $tail.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A'))
+          }
         }
         if ($failed.Count -gt 0) { Write-Output ('::error title=Swim script tests::' + ($failed -join ', ')); exit 1 }
         Write-Output '::notice title=Swim script tests::all passed'
