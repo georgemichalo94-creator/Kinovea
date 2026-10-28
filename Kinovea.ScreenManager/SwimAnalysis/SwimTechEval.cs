@@ -189,8 +189,20 @@ namespace Kinovea.ScreenManager
             if (!good.HasValue || c.Eq.HasValue)
                 return good;
 
-            // Too near the limit to say: 2 points of a percentage, 3 degrees, else 6% of the limit (at least 0.02).
-            Func<double, bool> near = limit => Math.Abs(value - limit) <= (c.Unit == "%" ? 2.0 : c.Unit == "°" ? 3.0 : Math.Max(Math.Abs(limit) * Margin, 0.02));
+            // Too near the limit to say: 2 points of a percentage, 3 degrees, else 6% of the limit (at least 0.02). A limit of the skeleton
+            // not learned yet from the coach's answers is wider (3 points, 5 degrees): the joints read on the video vary by that much
+            // (on the underwater turns of the lab, 2026-10-28).
+            bool learned = !ReferenceEquals(c, check);
+            bool pose = c.Kind == "pose";
+            double pct = pose && !learned ? 3.0 : 2.0, deg = pose && !learned ? 5.0 : 3.0;
+            if (c.Min.HasValue && c.Max.HasValue)
+            {
+                // A narrow range keeps at least half of it to say "good".
+                double quarter = (c.Max.Value - c.Min.Value) / 4;
+                pct = Math.Min(pct, quarter);
+                deg = Math.Min(deg, quarter);
+            }
+            Func<double, bool> near = limit => Math.Abs(value - limit) <= (c.Unit == "%" ? pct : c.Unit == "°" ? deg : Math.Max(Math.Abs(limit) * Margin, 0.02));
             if ((c.Min.HasValue && near(c.Min.Value)) || (c.Max.HasValue && near(c.Max.Value)))
                 return null;
             return good;
@@ -586,13 +598,14 @@ namespace Kinovea.ScreenManager
             if (dir != 0 && b.Seen(SwimJoints.Nose))
                 ahead = (b.P[w].X - b.P[SwimJoints.Nose].X) * dir > 0;
 
-            // Head between the arms: the nose near the line shoulder → wrist (within a third of the upper arm).
+            // Head between the arms: the nose near the line shoulder → wrist (within 0.8 of the upper arm: 9 in 10 frames of the glides of
+            // the lab's underwater turns with the arms straight ahead, 2026-10-28; 0.45 failed 4 in 10 of them).
             bool between = true;
             if (b.Seen(SwimJoints.Nose))
             {
                 double arm = Dist(b.P[s], b.P[e]);
                 double d = LineDistance(b.P[SwimJoints.Nose], b.P[s], b.P[w]);
-                between = arm > 0 && d <= arm * 0.45;
+                between = arm > 0 && d <= arm * 0.8;
             }
 
             bool good = elbow.Value >= 150 && ahead && between;
