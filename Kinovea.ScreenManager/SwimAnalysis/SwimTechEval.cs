@@ -233,16 +233,13 @@ namespace Kinovea.ScreenManager
                 double? t15 = Split(p, 15);
                 if (t15.HasValue)
                 {
-                    // The level tables time the start to the head at 15 m from the take-off (the release from the block).
-                    double fromTakeoff = p.Block.HasValue && p.Block.Value > 0 && p.Block.Value < t15.Value ? t15.Value - p.Block.Value : double.NaN;
-                    double value = double.IsNaN(fromTakeoff) ? t15.Value : fromTakeoff;
-                    string text = double.IsNaN(fromTakeoff)
-                        ? Sec(t15.Value) + SwimLang.T(" από το σήμα")
-                        : Sec(fromTakeoff) + SwimLang.T(" από την απογείωση · ") + Sec(t15.Value) + SwimLang.T(" από το σήμα");
+                    // The level tables time the start to the head at 15 m from the signal (the coach, 2026-10-28).
+                    double value = t15.Value;
+                    string text = Sec(value) + SwimLang.T(" από το σήμα");
                     int? level = LevelOf(catalog, "start_15", style, race.AthleteGender, value);
-                    if (level.HasValue && !double.IsNaN(fromTakeoff))
+                    if (level.HasValue)
                         text += " · " + SwimLang.T("επίπεδο ") + level.Value.ToString(CultureInfo.InvariantCulture);
-                    put("start_15", value, text, double.IsNaN(fromTakeoff) ? 0.5 : 1.0, at(t15.Value));
+                    put("start_15", value, text, 1.0, at(t15.Value));
                 }
             }
             else
