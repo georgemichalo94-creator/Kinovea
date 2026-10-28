@@ -197,6 +197,12 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.12.0) Both parts in two separate files (Apps Script 2.12.0): the short analysis and the full one with its comments.</summary>
         public bool PdfSeparate;
 
+        /// <summary>(2.13.0) The sheet of criteria last chosen for each kind of phase and style ("start|fs", "turn|br").</summary>
+        public Dictionary<string, string> TechSheetChoice = new Dictionary<string, string>();
+
+        /// <summary>(2.13.0) The program fills the criteria it measures (marked 🤖 until the coach confirms them).</summary>
+        public bool TechEvalAuto = true;
+
         [JsonIgnore]
         public bool IsConfigured
         {
@@ -216,7 +222,11 @@ namespace Kinovea.ScreenManager
                 {
                     SwimSettings settings = JsonConvert.DeserializeObject<SwimSettings>(File.ReadAllText(FilePath, Encoding.UTF8));
                     if (settings != null)
+                    {
+                        if (settings.TechSheetChoice == null)
+                            settings.TechSheetChoice = new Dictionary<string, string>();
                         return settings;
+                    }
                 }
             }
             catch (Exception e)

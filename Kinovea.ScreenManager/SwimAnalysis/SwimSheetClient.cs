@@ -869,7 +869,141 @@ namespace Kinovea.ScreenManager
             JObject extra = new JObject();
             extra["notes"] = race.TechNotes ?? "";
             tech["values"] = extra;
+            JObject sheets;
+            JArray evals = TechEvals(race, phases, timing, out sheets);
+            if (evals.Count > 0)
+            {
+                tech["evals"] = evals;
+                tech["sheets"] = sheets;
+            }
+
             return tech;
+        }
+
+        /// <summary>
+        /// (2.13.0) The evaluations with the sheets of criteria. The texts of each sheet used go once (sheets: the catalogue stays on the
+        /// computer, the texts in the language of the analysis): its phases and points with what to correct and the target of the
+        /// measurement. Each evaluation has the scores by point (v: 1 ✓, 0 ✗, -1 –; a: 🤖 auto), what the program measured (m) and the
+        /// image of an error (f), and the level of the sheet's table.
+        /// </summary>
+        private static JArray TechEvals(SwimRace race, List<SwimTechPhase> phases, SwimTiming timing, out JObject sheets)
+        {
+            JArray list = new JArray();
+            sheets = new JObject();
+            if (race.TechEvals == null || race.TechEvals.Count == 0)
+                return list;
+
+            SwimTechSheetCatalog cat = SwimTechSheetCatalog.Current;
+            string lang = SwimLang.Code;
+            Dictionary<string, Dictionary<string, SwimTechMeasure>> measured = new Dictionary<string, Dictionary<string, SwimTechMeasure>>();
+            foreach (SwimTechEval e in race.TechEvals)
+            {
+                SwimTechSheet sheet = cat.Sheet(e.SheetId);
+                SwimTechPhase phase = phases.FirstOrDefault(p => p.Id == e.PhaseId);
+                if (sheet == null || phase == null || (e.Scores.Count == 0 && string.IsNullOrEmpty(e.Notes)))
+                    continue;
+
+                if (sheets[sheet.Id] == null)
+                    sheets[sheet.Id] = SheetTexts(cat, sheet, lang);
+
+                Dictionary<string, SwimTechMeasure> m;
+                if (!measured.TryGetValue(phase.Id, out m))
+                {
+                    m = SwimTechEvaluator.Measure(race, phase, timing, cat);
+                    measured[phase.Id] = m;
+                }
+
+                JObject o = new JObject();
+                o["id"] = e.Id;
+                o["phase"] = phase.Id;
+                o["phaseLabel"] = lang == "en" ? phase.Title : (phase.TitleGreek ?? phase.Title);
+                o["phaseKind"] = phase.Kind == SwimPhaseKind.Turn ? "turn" : "start";
+                o["sheet"] = sheet.Id;
+                o["date"] = e.Date ?? "";
+                o["notes"] = e.Notes ?? "";
+
+                JObject scores = new JObject();
+                foreach (SwimTechSheetItem it in sheet.Items)
+                {
+                    JObject x = new JObject();
+                    SwimTechScore sc;
+                    if (e.Scores.TryGetValue(it.Key, out sc))
+                    {
+                        x["v"] = sc.Value;
+                        if (sc.Auto)
+                            x["a"] = 1;
+                        SwimSnapshot snap = string.IsNullOrEmpty(sc.SnapshotId) ? null : race.Snapshots.FirstOrDefault(s => s.Id == sc.SnapshotId);
+                        if (snap != null && !string.IsNullOrEmpty(snap.FileId))
+                            x["f"] = snap.FileId;
+                    }
+
+                    SwimTechMeasure me;
+                    if (it.Criterion.Check != null && m.TryGetValue(it.Criterion.Check, out me))
+                        x["m"] = me.Text;
+                    if (x.Count > 0)
+                        scores[it.Key] = x;
+                }
+
+                o["scores"] = scores;
+
+                SwimTechLevelTable table;
+                SwimTechMeasure lm;
+                if (!string.IsNullOrEmpty(sheet.Levels) && cat.Levels.TryGetValue(sheet.Levels, out table) && m.TryGetValue(sheet.Levels, out lm))
+                {
+                    JObject level = new JObject();
+                    level["label"] = table.Label.In(lang);
+                    level["value"] = Math.Round(lm.Value, 2);
+                    level["text"] = lm.Text;
+                    int? lv = SwimTechEvaluator.LevelOf(cat, sheet.Levels, race.Style, race.AthleteGender, lm.Value);
+                    if (lv.HasValue && lm.Confidence >= 1.0)
+                    {
+                        level["level"] = lv.Value;
+                        level["levels"] = table.Count(race.Style, SwimTechEvaluator.GenderCode(race.AthleteGender));
+                    }
+
+                    o["level"] = level;
+                }
+
+                list.Add(o);
+            }
+
+            return list;
+        }
+
+        /// <summary>(2.13.0) The texts of a sheet for the report: title, source, its phases and points (number, text, what to correct, target).</summary>
+        private static JObject SheetTexts(SwimTechSheetCatalog cat, SwimTechSheet sheet, string lang)
+        {
+            JObject s = new JObject();
+            s["title"] = sheet.Title.In(lang);
+            s["source"] = sheet.Source ?? "";
+            s["scored"] = sheet.Scored;
+            JArray groups = new JArray();
+            foreach (SwimTechSheetPhase ph in sheet.Phases)
+            {
+                JObject g = new JObject();
+                g["label"] = ph.Label.In(lang);
+                JArray items = new JArray();
+                foreach (SwimTechSheetItem it in ph.Items)
+                {
+                    JObject x = new JObject();
+                    x["n"] = it.N ?? "";
+                    x["key"] = it.Key;
+                    x["text"] = it.Criterion.Label.In(lang);
+                    x["level"] = it.Criterion.Level;
+                    if (it.Criterion.Cue != null && it.Criterion.Cue.In(lang).Length > 0)
+                        x["cue"] = it.Criterion.Cue.In(lang);
+                    SwimTechCheck check = cat.CheckOf(it.Criterion);
+                    if (check != null && check.GoodText.Length > 0)
+                        x["target"] = check.GoodText;
+                    items.Add(x);
+                }
+
+                g["items"] = items;
+                groups.Add(g);
+            }
+
+            s["groups"] = groups;
+            return s;
         }
 
         private static JArray Times(System.Collections.Generic.List<double> list)

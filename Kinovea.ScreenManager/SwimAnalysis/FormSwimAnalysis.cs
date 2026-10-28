@@ -274,7 +274,7 @@ namespace Kinovea.ScreenManager
 
         private SwimPage[] AllPages
         {
-            get { return new SwimPage[] { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabFinals, tabTechStart, tabTechTurns, tabTechMedia, tabConnection }; }
+            get { return new SwimPage[] { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabFinals, tabTechStart, tabTechTurns, tabTechMedia, tabConnection, tabTechEval }; }
         }
 
         /// <summary>The switch of the language as the analysis is (a change refused during a reading).</summary>
@@ -498,6 +498,7 @@ namespace Kinovea.ScreenManager
             tabs.AddPage(tabTechStart);
             tabs.AddPage(tabTechTurns);
             tabs.AddPage(tabTechMedia);
+            tabs.AddPage(tabTechEval);
             tabs.AddPage(tabConnection);
             tabs.SelectedTab = tabStart;
             tabs.SelectedIndexChanged += (s, e) => { UpdateCalibrationVisibility(); RefreshTech(); };
@@ -535,7 +536,7 @@ namespace Kinovea.ScreenManager
             modeSwitch.SetSelected(technical ? 1 : 0);
             SwimPage selected = tabs.SelectedTab;
             List<SwimPage> pages = technical
-                ? new List<SwimPage> { tabRace, tabTechStart, tabTechTurns, tabTechMedia, tabConnection }
+                ? new List<SwimPage> { tabRace, tabTechStart, tabTechTurns, tabTechMedia, tabTechEval, tabConnection }
                 : new List<SwimPage> { tabRace, tabStart, tabSwim, tabTurns, tabFinish, tabFinals, tabConnection };
             tabs.ShowPages(pages);
             if (fromUser || !pages.Contains(selected))

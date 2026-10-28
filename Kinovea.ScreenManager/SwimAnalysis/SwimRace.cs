@@ -134,6 +134,54 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
+    /// (2.13.0) The evaluation of one start or turn (an attempt, or the start / a turn of a race) with one sheet of criteria of the
+    /// catalogue (SwimTechSheets): the score of each criterion, what the program measured for it, the frames of the errors.
+    /// </summary>
+    public class SwimTechEval
+    {
+        public string Id = Guid.NewGuid().ToString("N");
+
+        /// <summary>The phase (SwimTechPhase.Id): "start"/"turn-50" in a race, the id of the mark of the attempt in a training video.</summary>
+        public string PhaseId = "";
+
+        /// <summary>The sheet of the catalogue (SwimTechSheet.Id).</summary>
+        public string SheetId = "";
+
+        /// <summary>When it was last changed (d/M/yyyy HH:mm).</summary>
+        public string Date = "";
+        public string Notes = "";
+
+        /// <summary>The scores by criterion key (SwimTechCriterion).</summary>
+        public Dictionary<string, SwimTechScore> Scores = new Dictionary<string, SwimTechScore>();
+    }
+
+    /// <summary>
+    /// (2.13.0) The score of one criterion: 1 done as described (✓), 0 not (✗), -1 not visible / not judged (–); on a list of errors 1
+    /// means the error is there. Auto: the program put it from its measurement and the coach has not confirmed it yet.
+    /// </summary>
+    public class SwimTechScore
+    {
+        public int Value;
+
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Auto;
+
+        /// <summary>The value the program measured when it was scored (for the learning of the limits), with its unit.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? Measured;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Unit;
+
+        /// <summary>The snapshot of the frame of an error (SwimSnapshot.Id), for the report.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string SnapshotId;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Comment;
+    }
+
+    /// <summary>
     /// Angle measured on the video with three clicks (end, vertex, end), in image coordinates.
     /// </summary>
     public class SwimAngle
@@ -617,6 +665,9 @@ namespace Kinovea.ScreenManager
         public List<SwimSnapshot> Snapshots = new List<SwimSnapshot>();
         public string TechNotes = "";
 
+        /// <summary>(2.13.0) Evaluations of the starts and turns with the sheets of criteria.</summary>
+        public List<SwimTechEval> TechEvals = new List<SwimTechEval>();
+
         /// <summary>Frame of the finish with the graphics of the video (final time, velocity chart), for the race report.</summary>
         public SwimSnapshot FinalFrame;
 
@@ -1000,6 +1051,19 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";
             if (TechNotes == null) TechNotes = "";
+            if (TechEvals == null) TechEvals = new List<SwimTechEval>();
+            TechEvals.RemoveAll(e => e == null || string.IsNullOrEmpty(e.PhaseId) || string.IsNullOrEmpty(e.SheetId));
+            foreach (SwimTechEval e in TechEvals)
+            {
+                if (e.Scores == null) e.Scores = new Dictionary<string, SwimTechScore>();
+                if (e.Notes == null) e.Notes = "";
+                if (e.Date == null) e.Date = "";
+            }
+        }
+
+        public bool ShouldSerializeTechEvals()
+        {
+            return TechEvals != null && TechEvals.Count > 0;
         }
 
         public bool ShouldSerializeQuietProposals()
@@ -1023,6 +1087,7 @@ namespace Kinovea.ScreenManager
             r.Reference = Reference != null ? Reference.Copy() : null;
             r.Angles = new List<SwimAngle>();
             r.Snapshots = new List<SwimSnapshot>();
+            r.TechEvals = new List<SwimTechEval>();
             r.FinalFrame = null;
             r.Graphics = new List<SwimReportGraphic>();
             r.ChartImages = new List<SwimChartImage>();

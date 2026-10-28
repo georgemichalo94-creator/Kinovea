@@ -134,6 +134,7 @@ namespace Kinovea.ScreenManager
             tabTechStart = BuildTechStartTab();
             tabTechTurns = BuildTechTurnsTab();
             tabTechMedia = BuildTechMediaTab();
+            tabTechEval = BuildTechEvalTab();
         }
 
         /// <summary>Selector of the phase: combo, go to the video, delete (training attempts).</summary>
@@ -609,6 +610,8 @@ namespace Kinovea.ScreenManager
                 RefreshTechPhasePage(SwimPhaseKind.Turn);
             else if (page == tabTechMedia)
                 RefreshTechMedia();
+            else if (page == tabTechEval)
+                RefreshTechEval();
             RefreshSkeleton();
         }
 
