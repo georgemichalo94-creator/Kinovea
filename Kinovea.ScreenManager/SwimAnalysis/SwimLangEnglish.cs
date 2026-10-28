@@ -1974,6 +1974,13 @@ namespace Kinovea.ScreenManager
             { "Από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου).", "From the stroke times (60 ÷ cycle time)." },
             { "Από τις χεριές ÷ χρόνο του τμήματος.", "From the strokes ÷ time of the segment." },
             { "τοίχος", "wall" },
+
+            // (2.12.0) The short and the full analysis in two separate files.
+            { "Σε δύο ξεχωριστά αρχεία", "In two separate files" },
+            { "Δύο PDF: η σύντομη ανάλυση και η πλήρης ανάλυση (με σχόλια στο τέλος), το καθένα σε δικό του αρχείο.", "Two PDFs: the short analysis and the full analysis (with comments at the end), each in its own file." },
+            { "Το PDF το έφτιαξε το Apps Script {0}: η σύντομη και η πλήρης ανάλυση σε ένα αρχείο. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»).", "The PDF was made by Apps Script {0}: the short and the full analysis in one file. Install version {1} (see the guide, \"Ενημέρωση του script\")." },
+            { "Η σύντομη ανάλυση δεν έγινε σε δικό της αρχείο: μόνο το PDF της πλήρους ανάλυσης.", "The short analysis could not be made in its own file: only the PDF of the full analysis." },
+            { " - Σύντομη ανάλυση", " - Short analysis" },
         };
     }
 }

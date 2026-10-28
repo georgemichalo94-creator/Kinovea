@@ -719,6 +719,9 @@ namespace Kinovea.ScreenManager
                 JObject parts = new JObject();
                 parts["short"] = settings.PdfShort;
                 parts["full"] = settings.PdfFull || !settings.PdfShort;
+                // (2.12.0) Both in two separate files (Apps Script 2.12.0; an older one makes one PDF).
+                if (settings.PdfSeparate && settings.PdfShort && settings.PdfFull)
+                    parts["separate"] = true;
                 body["pdfParts"] = parts;
             }
 

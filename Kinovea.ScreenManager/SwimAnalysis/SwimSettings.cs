@@ -194,6 +194,9 @@ namespace Kinovea.ScreenManager
         public bool PdfShort = true;
         public bool PdfFull = true;
 
+        /// <summary>(2.12.0) Both parts in two separate files (Apps Script 2.12.0): the short analysis and the full one with its comments.</summary>
+        public bool PdfSeparate;
+
         [JsonIgnore]
         public bool IsConfigured
         {

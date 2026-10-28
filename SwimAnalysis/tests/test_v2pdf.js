@@ -1,4 +1,4 @@
-// 2.11.0: τα μέρη του PDF (σύντομη / πλήρης / και οι δύο), τα σχόλια στο τέλος της πλήρους, η σύντομη και τα σχόλια στα αγγλικά,
+// 2.11.0: τα μέρη του PDF (σύντομη / πλήρης / και οι δύο· 2.12.0: και σε δύο χωριστά αρχεία), τα σχόλια στο τέλος της πλήρους, η σύντομη και τα σχόλια στα αγγλικά,
 // και η μία συχνότητα του φύλλου (η StrRate: από τους χρόνους των χεριών όπου οι χεριές είναι αυτές των χρόνων, αλλιώς χεριές ÷
 // χρόνο). Φανταστικά ονόματα παντού.
 const { makeContext } = require('./mock_gas');
@@ -139,6 +139,32 @@ try {
 } finally {
   G.SWIM_LANG_ = 'el';
 }
+
+// ---- 5) 2.12.0: η σύντομη και η πλήρης ανάλυση σε δύο χωριστά αρχεία («σε δύο αρχεία»).
+same(G.swimPdfParts_({ pdfParts: { short: true, full: true, separate: true } }), { short: true, full: true, separate: true });
+same(G.swimPdfParts_({ pdfParts: { short: true, full: false, separate: true } }), { short: true, full: false }, 'one part: one file');
+const ex0 = G._exports.length;
+const two = call({ action: 'pdf', race: main, pdfParts: { short: true, full: true, separate: true }, pdfData: true });
+assert.ok(two.ok && two.pdf && two.pdfShort, JSON.stringify(two).slice(0, 300));
+assert.strictEqual(G._exports.length, ex0 + 2, 'two PDF exports');
+const [exFull, exShort] = G._exports.slice(ex0);
+assert.ok(/ - Σύντομη ανάλυση\.pdf$/.test(two.pdfShort.name) && two.pdfShort.name !== two.pdf.name, two.pdfShort.name);
+assert.strictEqual(two.pdf.name, two.sheetName + '.pdf', 'the full analysis keeps the name of the report');
+assert.ok(two.pdfShort.url && two.pdfShort.id && two.pdfShort.url !== two.pdf.url, 'its own file');
+// The full analysis as when it is asked alone (first page, report, comments); the short alone (its three pages).
+assert.strictEqual(two.pdf.quick, true);
+assert.strictEqual(two.pdf.notes, true, 'the comments at the end of the full analysis');
+assert.ok(!('short' in two.pdf), 'no short pages in the full file');
+assert.strictEqual(two.pdfShort.short, true);
+assert.ok(!('notes' in two.pdfShort), 'no comments in the short file');
+assert.strictEqual(exShort.r2 - exShort.r1, qShort.v2.heights.length, 'the short file prints the three pages only');
+assert.ok(exFull.r2 - exFull.r1 > layout.print.rows, 'the full file prints the first page and the whole report: ' + exFull.r2 + ' / ' + layout.print.rows);
+// The package gets both files; the KOE App and the summary the full analysis.
+assert.ok(two.pdf.data && two.pdfShort.data && two.pdf.data !== two.pdfShort.data, 'the two PDFs for the package');
+assert.ok(!two.pdfShortFailed);
+const one = call({ action: 'pdf', race: main, pdfParts: { short: true, full: true }, pdfData: true });
+assert.ok(one.ok && one.pdf && !one.pdfShort, 'without «separate»: one PDF as in 2.11.0');
+assert.strictEqual(one.pdf.short, true);
 
 console.log('pages', qShort.v2.total, 'notes', notesTotal, 'rate 25', r25.sr.toFixed(2), 'corrected', fixed.sr.toFixed(2));
 console.log('ALL V2 PDF TESTS PASSED');

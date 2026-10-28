@@ -217,6 +217,10 @@ namespace Kinovea.ScreenManager
         private bool pdfPartsWarned;
         private readonly HashSet<string> pdfShortFailed = new HashSet<string>();
 
+        /// <summary>(2.12.0) The short and the full analysis in two separate files (Apps Script 2.12.0): said once when the script is older.</summary>
+        private static readonly Version pdfSeparateBackend = new Version(2, 12, 0);
+        private bool pdfSeparateWarned;
+
         /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
         private readonly HashSet<string> quickLookFailed = new HashSet<string>();
         private List<string> undoStack = new List<string>();
@@ -2911,7 +2915,13 @@ namespace Kinovea.ScreenManager
                         // (2.10.0) The PDF of a package goes into its folder (the preview shows it), else it opens as always; the line of
                         // the KOE App («Αρχεία Αθλητών/τριων») in the status.
                         if (!PackageTakesPdf(race, e.Result))
+                        {
                             OpenUrl(e.Result.PdfUrl);
+                            // (2.12.0) The short analysis in its own file: it opens too.
+                            string shortUrl = PdfShortUrl(e.Result);
+                            if (!string.IsNullOrEmpty(shortUrl))
+                                OpenUrl(shortUrl);
+                        }
                         ArchiveStatus(race, e.Result);
 
                         // An older Apps Script made the PDF with the charts of Google: they come out empty.
@@ -2945,6 +2955,19 @@ namespace Kinovea.ScreenManager
                             Status(string.Format(CultureInfo.InvariantCulture,
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς τη σύντομη ανάλυση. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
                                 version, pdfPartsBackend.ToString(3)), true);
+                        }
+                        else if (Settings.PdfSeparate && Settings.PdfShort && Settings.PdfFull && !pdfSeparateWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < pdfSeparateBackend)
+                        {
+                            // Since 2.12.0 the two parts can come in two files (Apps Script 2.12.0); an older one makes one PDF.
+                            pdfSeparateWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: η σύντομη και η πλήρης ανάλυση σε ένα αρχείο. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, pdfSeparateBackend.ToString(3)), true);
+                        }
+                        else if (e.Result.Raw != null && e.Result.Raw.Value<bool?>("pdfShortFailed") == true && pdfShortFailed.Add(race.Id ?? ""))
+                        {
+                            // The three pages did not fit (or the copy of the sheet failed): the full analysis only. Said once a race.
+                            Status(SwimLang.T("Η σύντομη ανάλυση δεν έγινε σε δικό της αρχείο: μόνο το PDF της πλήρους ανάλυσης."), true);
                         }
                         else if (Settings.PdfShort && PdfPartMade(e.Result, "short") == false && pdfShortFailed.Add(race.Id ?? ""))
                         {
