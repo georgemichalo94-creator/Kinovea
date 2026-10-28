@@ -2803,7 +2803,8 @@ namespace Kinovea.ScreenManager
             }
 
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
-            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts);
+            string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts,
+                PackageFlags(Race));
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
         }
 
@@ -2825,7 +2826,7 @@ namespace Kinovea.ScreenManager
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
-                Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts), race.Id, pdf);
+                Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts, PackageFlags(race)), race.Id, pdf);
         }
 
         public void OpenSheet()
@@ -2846,6 +2847,9 @@ namespace Kinovea.ScreenManager
         {
             SyncState = e.State;
             SyncMessage = e.Message;
+
+            // (2.10.0) The package for the coaches waits for the PDF of this race: an error of the sending is said in its window.
+            PackageSyncFailed(e);
 
             // An older Apps Script still computes the stroke rate and length in the last 5 m and over whole 50s.
             Version backend;
@@ -2898,7 +2902,12 @@ namespace Kinovea.ScreenManager
                     if (!string.IsNullOrEmpty(e.Result.PdfUrl))
                     {
                         race.LastPdfUrl = e.Result.PdfUrl;
-                        OpenUrl(e.Result.PdfUrl);
+
+                        // (2.10.0) The PDF of a package goes into its folder (the preview shows it), else it opens as always; the line of
+                        // the KOE App («Αρχεία Αθλητών/τριων») in the status.
+                        if (!PackageTakesPdf(race, e.Result))
+                            OpenUrl(e.Result.PdfUrl);
+                        ArchiveStatus(race, e.Result);
 
                         // An older Apps Script made the PDF with the charts of Google: they come out empty.
                         if (!chartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < chartsBackend)

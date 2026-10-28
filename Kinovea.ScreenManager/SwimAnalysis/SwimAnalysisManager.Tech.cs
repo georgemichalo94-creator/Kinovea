@@ -1061,8 +1061,9 @@ namespace Kinovea.ScreenManager
         public void DrawExportOverlay(PlayerScreenUserInterface screen, Graphics g, Size outputSize, long timestamp, Bitmap frame = null)
         {
             // As on the screen: only for the video of the analysis, while the analysis is on the screen (window or bars).
+            // (2.10.0) The video of the package for the coaches always with the graphics.
             if (suppressExportOverlay || screen == null || screen != player || player.IsDisposed || !Active ||
-                VideoFile == null || Race == null || Settings == null || !Settings.OverlayInExports || !Settings.VideoGraphics)
+                VideoFile == null || Race == null || Settings == null || (!packageRendering && (!Settings.OverlayInExports || !Settings.VideoGraphics)))
                 return;
 
             // The proportions of the graphics on the screen (or of a screen 1280 wide if the video was not shown).

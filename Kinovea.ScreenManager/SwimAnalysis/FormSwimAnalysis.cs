@@ -464,10 +464,16 @@ namespace Kinovea.ScreenManager
             btnOpenSheet = new SwimNoFocusButton { Text = SwimLang.T("Άνοιγμα φύλλου"), AutoSize = true, Height = 28 };
             btnOpenSheet.Click += (s, e) => manager.OpenSheet();
             btnPdf = new SwimNoFocusButton { Text = "PDF report", AutoSize = true, Height = 28 };
-            btnPdf.Click += (s, e) => manager.SendByUser(true);
+            btnPdf.Click += (s, e) => manager.PdfByUser();
+            // (2.10.0) The package for the coaches: PDF, video with the graphics, message; preview, then Smash.
+            SwimNoFocusButton btnPackage = new SwimNoFocusButton { Text = SwimLang.T("📦 Δημιουργία αποστολής"), AutoSize = true, Height = 28, Primary = true };
+            btnPackage.Click += (s, e) => manager.CreatePackage();
+            toolTip.SetToolTip(btnPackage, SwimLang.T("Η αποστολή για τους προπονητές: το PDF της αναφοράς, το βίντεο με τα γραφικά (MP4) και το μήνυμα με τα email τους από το KOE App,\n") +
+                SwimLang.T("σε φάκελο ανά αγώνα και σύλλογο. Μετά την προεπισκόπηση, OK: ανοίγει το Smash για να τα στείλεις."));
             footerButtons.Controls.Add(btnSend);
             footerButtons.Controls.Add(btnOpenSheet);
             footerButtons.Controls.Add(btnPdf);
+            footerButtons.Controls.Add(btnPackage);
             footer.Controls.Add(lblSync);
             footer.Controls.Add(footerButtons);
 

@@ -195,7 +195,8 @@ namespace Kinovea.ScreenManager
             b.Append(manager.SkeletonRunning).Append('|').Append(manager.SkeletonDescription).Append('|');
             b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
             b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "").Append('|');
-            b.Append(manager.PilotWaiting).Append('|').Append(manager.PilotDoubtful).Append('|').Append(manager.StartLightRunning);
+            b.Append(manager.PilotWaiting).Append('|').Append(manager.PilotDoubtful).Append('|').Append(manager.StartLightRunning).Append('|');
+            b.Append(manager.CanCreatePackage);
             return b.ToString();
         }
         #endregion
@@ -751,9 +752,16 @@ namespace Kinovea.ScreenManager
             DrawButton(g, list, "pdf", pdf, "PDF", null, null, Look.Normal, !configured,
                 configured ? SwimLang.T("Το PDF του report: ανοίγει μόνο του όταν είναι έτοιμο (όπως το «PDF report» του πίνακα).") :
                     SwimLang.T("Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet: καρτέλα «Σύνδεση» του πίνακα."),
-                () => manager.SendByUser(true));
+                () => manager.PdfByUser());
 
-            RectangleF panel = new RectangleF(area.Left, send.Top - S(6) - S(34), area.Width, S(34));
+            // (2.10.0) The package for the coaches: the PDF, the video with the graphics and the message, then the preview and Smash.
+            RectangleF package = new RectangleF(area.Left, send.Top - S(4) - S(30), area.Width, S(30));
+            DrawButton(g, list, "package", package, SwimLang.T("📦 Δημιουργία αποστολής"), null, null, Look.Primary, !manager.CanCreatePackage,
+                SwimLang.T("Η αποστολή για τους προπονητές: το PDF της αναφοράς, το βίντεο με τα γραφικά (MP4) και το μήνυμα με τα email τους από το KOE App,\n") +
+                SwimLang.T("σε φάκελο ανά αγώνα και σύλλογο. Μετά την προεπισκόπηση, OK: ανοίγει το Smash για να τα στείλεις."),
+                () => manager.CreatePackage());
+
+            RectangleF panel = new RectangleF(area.Left, package.Top - S(6) - S(34), area.Width, S(34));
             // The key of the window only when the bar is wide enough for it next to the text.
             SwimBarButton panelButton = PanelButton();
             Font badgeFont = SwimTheme.Ui(7f, FontStyle.Bold);
