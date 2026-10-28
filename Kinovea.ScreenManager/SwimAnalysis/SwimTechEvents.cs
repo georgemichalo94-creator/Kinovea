@@ -369,7 +369,8 @@ namespace Kinovea.ScreenManager
         public const double SurfaceMinDepth = 0.3;
         public const double BreakoutLevelWindow = 2.0;
         public const double BreakoutLevelTolerance = 0.03;
-        public const double BreakoutRise = 0.25;
+        public const double BreakoutRise = 0.2;
+        public const double BreakoutDeepWithin = 2.5;
         public const double PullDownBack = -0.2;
         public const double PullDownHold = 0.4;
         public const double BreaststrokeDolphinAfter = 1.1;
@@ -1488,11 +1489,11 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The head comes up from its deepest point after the push-off. With the surface: the head rises to the level it
-        /// keeps while swimming at the surface; the breakout is the first image within 0.03 body lengths of the level of the
-        /// next 2 s (median), once the head has risen at least 0.25 body lengths (the band must be the surface: the head at
-        /// least 0.3 body lengths under it at the deepest point). Without it: within 0.1 body lengths of the highest level
-        /// of the head.
+        /// The head comes up from its deepest point after the push-off (2.9.12: the deepest point within 2.5 s of it). With the
+        /// surface: the head rises to the level it keeps while swimming at the surface; the breakout is the first image within
+        /// 0.03 body lengths of the level of the next 2 s (median), once the head has risen at least 0.2 body lengths (the band
+        /// must be the surface: the head at least 0.3 body lengths under it at the deepest point). Without it: within 0.1 body
+        /// lengths of the highest level of the head.
         /// </summary>
         private static double? Rise(Signals s, double pushoff, double[] d, bool bySurface)
         {
@@ -1505,10 +1506,12 @@ namespace Kinovea.ScreenManager
 
             if (idx.Count < 30)
                 return null;
+            // (2.9.12) The deepest point of the glide: within BreakoutDeepWithin of the push-off (a later "deep" point was the
+            // camera tilting, someone else or the head between two strokes: breakouts found 4.5-6 s late or not at all).
             int deep = idx[0];
             foreach (int i in idx)
             {
-                if (d[i] > d[deep])
+                if (s.T[i] <= pushoff + BreakoutDeepWithin && d[i] > d[deep])
                     deep = i;
             }
 
