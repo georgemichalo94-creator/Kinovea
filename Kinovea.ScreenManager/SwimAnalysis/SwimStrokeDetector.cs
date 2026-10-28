@@ -396,6 +396,14 @@ namespace Kinovea.ScreenManager
         }
 
         #region Style
+        /// <summary>
+        /// Shortest stroke cycle (s) of backstroke and freestyle (2.11.1; before 0.7 both): a cycle of 0.7 s took the half strokes
+        /// of a length of backstroke (an arm every 0.36-0.43 s, twice the strokes) in 22 of the 72 lengths of backstroke of the
+        /// analysts' races (none of their swimmers under 1.2 s, the fastest backstroke 50 m about 1.05 s), in 2 of freestyle.
+        /// </summary>
+        internal static double CycleLoBack = 1.0;
+        internal static double CycleLoFree = 0.85;
+
         /// <summary>Plausible stroke cycle (s) of a style.</summary>
         public static void CycleRange(string style, out double lo, out double hi)
         {
@@ -403,9 +411,39 @@ namespace Kinovea.ScreenManager
             {
                 case "fly": lo = 0.6; hi = 1.6; break;
                 case "br": lo = 0.6; hi = 1.8; break;
-                case "bk": lo = 0.7; hi = 2.0; break;
-                default: lo = 0.7; hi = 1.9; break;
+                case "bk": lo = CycleLoBack; hi = 2.0; break;
+                default: lo = CycleLoFree; hi = 1.9; break;
             }
+        }
+
+        /// <summary>
+        /// (2.11.1) After a turn the analysts count the strokes from the one after the breakout stroke (backstroke, breaststroke,
+        /// butterfly): the automatic strokes before the breakout + TurnStrokeLead strokes go. 82 analysts' races, the 15 m after
+        /// the 107 turns: one stroke and a half too many before (+1.5 on average, 25% within half a stroke), with it within half a
+        /// stroke ... (see experiments.md, Phase 16). In freestyle the stroke before the head is out counts: as before.
+        /// </summary>
+        internal static double TurnStrokeLead = 0.9;
+
+        /// <summary>Without a breakout found after a turn: no stroke counted before the wall + this (s; NaN: as before).</summary>
+        internal static double TurnStrokeFloor(string style)
+        {
+            switch (style)
+            {
+                case "bk": return TurnFloorBack;
+                case "fly": return TurnFloorFly;
+                case "br": return TurnFloorBreast;
+                default: return double.NaN;
+            }
+        }
+
+        internal static double TurnFloorBack = 6.0;
+        internal static double TurnFloorFly = 7.0;
+        internal static double TurnFloorBreast = double.NaN;
+
+        /// <summary>The turn rule of the strokes applies to the style (not freestyle).</summary>
+        public static bool TurnStrokeCut(string style)
+        {
+            return style == "bk" || style == "br" || style == "fly";
         }
 
         /// <summary>Stroke marks per cycle: every arm in free and back, every cycle in fly and breast.</summary>
@@ -421,6 +459,18 @@ namespace Kinovea.ScreenManager
         public static double WallMargin(string style)
         {
             return (style == "fs" || style == "bk") ? 0.6 : 0.1;
+        }
+
+        /// <summary>
+        /// (2.11.1) No stroke is searched in this time before the finish (s; NaN: WallMargin as before the turns): there is no
+        /// turn, and the analysts count the last stroke into the wall. With 0.6 s the last 5 m of the 71 finishes of the analysts'
+        /// races came 0.7 strokes short (freestyle 1.1, backstroke 0.8; 61% within half a stroke), with 0.15 s 0.25 (79%).
+        /// </summary>
+        internal static double FinishMarginAll = 0.15;
+
+        public static double FinishMargin(string style)
+        {
+            return double.IsNaN(FinishMarginAll) ? WallMargin(style) : FinishMarginAll;
         }
         #endregion
 
