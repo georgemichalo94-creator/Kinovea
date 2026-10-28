@@ -67,7 +67,8 @@ assert.strictEqual(g.get(10, 1).wrap, true);
 const width = G.swimColumnWidth_(1) + G.swimColumnWidth_(2);
 assert.ok(G.swimRowHeight_(g, 10) >= G.swimTextHeight_('1ο 0.00 · 2ο 0.00', width, 8, false));
 assert.ok(G.swimRowHeight_(g, 10) >= G.swimTextHeight_('Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)', width, 8, false));
-assert.strictEqual(JSON.parse(layout.signature).v, 10, 'every report is rebuilt once with the new column');
+// 11 (2.11.0): και μία στήλη συχνότητας· κάθε report ξαναφτιάχνεται μία φορά.
+assert.strictEqual(JSON.parse(layout.signature).v, 11, 'every report is rebuilt once with the new columns');
 
 // ---------------------------------------------------------------------------------------------
 // 2) 200μ.: τέσσερα 50άρια κάτω από τον μέσο όρο (δύο γραμμές)· 400μ.: οκτώ, μόνο στους πίνακες· 50μ.: ένα, όπως πριν

@@ -29,7 +29,32 @@ const UW_OLD = "  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύ
 const UW_NEW = "  { key: 'uwVel', label: 'Μέση ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)', unit: 'v', kind: 'start', best: 'max' },\n" +
   "  { key: 'uwVel', label: 'Μέση ταχύτητα αποκόλληση → έξοδος', unit: 'v', kind: 'turn', best: 'max' },\n";
 assert.ok(ORIGINAL.indexOf(UW_OLD) > 0 && CURRENT.indexOf(UW_OLD) < 0, 'the 2.9.8 names of the underwater speed');
-const ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW);
+// 2.11.0: μία στήλη συχνότητας, η StrRate: από τους χρόνους των χεριών όπου οι χεριές του τμήματος είναι αυτές των χρόνων και
+// συμφωνούν μαζί τους, αλλιώς χεριές ÷ χρόνο (η «SR από χρόνους χεριών» φεύγει, το μήκος κύκλου στη θέση της). Στο script πριν
+// από τα αγγλικά: η σημείωσή της και οι συναρτήσεις που άλλαξαν όπως στο νέο, με τα swimT_ / swimTF_ στα ελληνικά και χωρίς τον
+// ΔΑΚ κάθε 50άρι (όπως το NEW εδώ).
+const SR_NOTE_OLD = "'SR από χρόνους χεριών: από τα διαστήματα των πατημάτων · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.'";
+const SR_NOTE_NEW = "'StrRate: από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου, όπως η συχνότητα του βίντεο) όπου συμφωνούν με τις χεριές του τμήματος, αλλιώς χεριές ÷ χρόνο · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.'";
+assert.ok(ORIGINAL.indexOf(SR_NOTE_OLD) > 0 && CURRENT.indexOf(SR_NOTE_OLD) < 0 && CURRENT.indexOf(SR_NOTE_NEW) > 0, 'the 2.11.0 note of the stroke rate');
+const fnOf = (src, name) => {
+  const a = src.indexOf('\nfunction ' + name + '(');
+  assert.ok(a >= 0 && src.indexOf('\nfunction ' + name + '(', a + 1) < 0, 'one function ' + name);
+  return src.slice(a + 1, src.indexOf('\n}\n', a) + 3);
+};
+const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15',
+  "cell(r, 9, '=IF(O' + tr + '=\"\",\"\",O' + tr + ')', SWIM_FMT.dps);": "cell(r, 9, '=IF(M' + tr + '=\"\",\"\",M' + tr + ')', SWIM_FMT.dps);" };
+let ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW).replace(SR_NOTE_OLD, SR_NOTE_NEW);
+['swimAnalyze_', 'swimBlocks50_', 'swimLayoutTiming_', 'swimInputPlan_', 'swimCleanFormulas_'].forEach(name => {
+  ORIGINAL_NAMED = ORIGINAL_NAMED.split(fnOf(ORIGINAL_NAMED, name)).join(fnOf(CURRENT, name));
+});
+Object.keys(SR_SAME).forEach(k => {
+  assert.ok(ORIGINAL_NAMED.split(k).length === 2 && CURRENT.indexOf(k) < 0 && CURRENT.indexOf(SR_SAME[k]) > 0, 'the 2.11.0 change ' + k);
+  ORIGINAL_NAMED = ORIGINAL_NAMED.split(k).join(SR_SAME[k]);
+});
+ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_'].map(n => fnOf(CURRENT, n)).join('\n') +
+  'function swimT_(el) { return el; }\n' +
+  'function swimTF_(el) { var a = arguments; return el.replace(/\\{(\\d+)\\}/g, function (all, n) { var i = Number(n) + 1; return i < a.length ? String(a[i]) : all; }); }\n' +
+  'var SWIM_DAK50 = false;\n';
 
 // Το mock των υπηρεσιών με άλλο script (το mock_gas διαβάζει το αρχείο όταν φορτώνεται).
 function makeContextWith(src, opts) {
@@ -290,7 +315,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.10.0');
+assert.strictEqual(vNew, '2.11.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -305,6 +330,12 @@ const withoutTimes = list => list.map(r => {
     assert.strictEqual(r.pdf.quick, false, 'no first page without copyTo');
     r = Object.assign({}, r, { pdf: Object.assign({}, r.pdf) });
     delete r.pdf.quick;
+  }
+  // 2.11.0: τα σχόλια στο τέλος της πλήρους ανάλυσης (εδώ όχι: χωρίς copyTo).
+  if (r && r.pdf && 'notes' in r.pdf) {
+    assert.strictEqual(r.pdf.notes, false, 'no comments without copyTo');
+    r = Object.assign({}, r, { pdf: Object.assign({}, r.pdf) });
+    delete r.pdf.notes;
   }
   return r && Array.isArray(r.analyses) ? Object.assign({}, r, { analyses: r.analyses.map(a => {
     assert.ok(Array.isArray(a.times) && a.times.length > 0, 'times of an analysis');
@@ -389,7 +420,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.10\.0$/, 'version line');
+like(/^Updated .* · version 2\.11\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

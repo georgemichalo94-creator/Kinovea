@@ -187,6 +187,13 @@ namespace Kinovea.ScreenManager
         public string PackageFolder = "";
         public string PackageSignature = "";
 
+        /// <summary>
+        /// (2.11.0) The parts of the PDF of the report, as chosen at the PDF button: the short analysis (three pages for the coach) and the
+        /// full one (the report with all its tables, comments at its end); both: one PDF, the short first.
+        /// </summary>
+        public bool PdfShort = true;
+        public bool PdfFull = true;
+
         [JsonIgnore]
         public bool IsConfigured
         {

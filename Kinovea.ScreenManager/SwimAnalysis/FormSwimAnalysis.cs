@@ -854,16 +854,14 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add(Column("sr", "SR", 50));
             grid.Columns.Add(Column("dps", "DPS", 50));
             grid.Columns.Add(Column("sl", "SL", 46));
-            grid.Columns.Add(Column("srx", SwimLang.T("SR χρόνων"), 64));
             grid.Columns.Add(Column("ref", SwimLang.T("Αναφορά"), 62));
             grid.Columns.Add(Column("delta", SwimLang.T("Δ"), 54));
             grid.Columns["vel"].ToolTipText = SwimLang.T("Μέση ταχύτητα του τμήματος. Πορτοκαλί: εκκίνηση, στροφή ή τελευταία 5μ. πριν τον τοίχο, όπου η ταχύτητα είναι συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι).");
             grid.Columns["strokes"].ToolTipText = SwimLang.T("Χεριές του τμήματος. ✓: επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ: διόρθωση.");
-            grid.Columns["sr"].ToolTipText = SwimLang.T("Συχνότητα (κύκλοι/λεπτό), μόνο στην καθαρή κολύμβηση: από 15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο.");
+            grid.Columns["sr"].ToolTipText = SwimLang.T("Συχνότητα (κύκλοι/λεπτό), μόνο στην καθαρή κολύμβηση: από 15μ. μετά τον τοίχο έως 5μ. πριν τον επόμενο.") +
+                SwimLang.T(" Από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου) όπου οι χεριές του τμήματος είναι αυτές των χρόνων, αλλιώς χεριές ÷ χρόνο (π.χ. όταν τις διόρθωσες).");
             grid.Columns["dps"].ToolTipText = SwimLang.T("Μέτρα ανά χεριά (ελεύθερο/ύπτιο: ανά χέρι), μόνο στην καθαρή κολύμβηση.");
             grid.Columns["sl"].ToolTipText = SwimLang.T("Μήκος κύκλου (m/κύκλο), μόνο στην καθαρή κολύμβηση. Ελεύθερο/ύπτιο: 2 × DPS.");
-            grid.Columns["srx"].ToolTipText = SwimLang.T("Συχνότητα από τα διαστήματα ανάμεσα στα πατήματα μέσα στο τμήμα (δεν επηρεάζεται από το γλίστρημα). Με λίγες χεριές είναι ενδεικτική.") +
-                SwimLang.T(" Δεν φαίνεται όταν οι χεριές του τμήματος γράφτηκαν και τα πατήματα δεν είναι όσα αυτές (π.χ. ένα πάτημα ανά κύκλο στο ελεύθερο).");
             grid.CellDoubleClick += Grid_CellDoubleClick;
             grid.KeyDown += Grid_KeyDown;
 
@@ -1784,9 +1782,11 @@ namespace Kinovea.ScreenManager
                     ? SwimLang.T("Επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ για αλλαγή.")
                     : SwimLang.T("Από τα σημάδια χεριών. Διπλό κλικ για να το επιβεβαιώσεις ή να το διορθώσεις.");
                 gr.Cells["sr"].Value = Format(row.Sr, "0.0");
+                gr.Cells["sr"].ToolTipText = !row.Sr.HasValue ? "" : row.SrFromTimes
+                    ? SwimLang.T("Από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου).")
+                    : SwimLang.T("Από τις χεριές ÷ χρόνο του τμήματος.");
                 gr.Cells["dps"].Value = Format(row.Dps);
                 gr.Cells["sl"].Value = Format(row.Sl);
-                gr.Cells["srx"].Value = Format(row.SrExact, "0.0");
                 gr.Cells["ref"].Value = Format(row.RefT);
                 DataGridViewCell deltaCell = gr.Cells["delta"];
                 deltaCell.Value = row.Delta.HasValue ? SwimReference.FormatDelta(row.Delta.Value) : "";

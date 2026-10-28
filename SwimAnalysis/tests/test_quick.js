@@ -46,10 +46,21 @@ function race100(env) {
 const pb100 = env => Object.assign({ id: 'q-pb', style: 'fly', distance: 100, pool: 50, round: 'Ημιτελικός', date: '1.6.2026', lane: 3,
   checkpoints: cps100.map((d, i) => ({ d, t: +(t100[i] * 1.02).toFixed(2) })), strokes: strokes100(1.02), reference: env.reference }, who);
 
+/** (2.11.0) Οι γραμμές των σχολίων στο τέλος της πλήρους ανάλυσης (από την κενή γραμμή πριν από τον τίτλο «Σχόλια»), 0 χωρίς αυτά. */
+function notesRows(exp) {
+  let at = 0;
+  Object.keys(exp.detail.cells).forEach(k => {
+    const [r, c] = k.split(':').map(Number), v = exp.detail.cells[k].v;
+    if (c === 1 && (v === 'Σχόλια' || v === 'Comments') && r > at) at = r;
+  });
+  return at ? exp.r2 - at + 2 : 0;
+}
+
 /** Η τελευταία εξαγωγή: η πρώτη σελίδα (γραμμές και κείμενα) και η αναφορά. */
 function lastExport(G, report) {
   const exp = G._exports[G._exports.length - 1];
-  const n = exp.r2 - report.print.rows;
+  const tail = notesRows(exp);
+  const n = exp.r2 - report.print.rows - tail;
   const texts = [];
   Object.keys(exp.detail.cells).forEach(k => {
     const r = +k.split(':')[0], v = exp.detail.cells[k].v;
@@ -57,7 +68,7 @@ function lastExport(G, report) {
   });
   let height = 0;
   for (let r = 1; r <= n; r++) height += exp.detail.rowHeights[r];
-  return { exp, n, texts, height };
+  return { exp, n, texts, height, tail };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -87,7 +98,7 @@ function lastExport(G, report) {
     const h = sheet._rowHeights[row] || 21;
     if (y > 0 && y + h > H) { starts.push(row); y = h; } else y += h;
   }
-  assert.deepStrictEqual(Array.from(q.exp.detail.pageStarts).slice(1), starts.map(s => s + q.n), 'same page breaks one page later');
+  assert.deepStrictEqual(Array.from(q.exp.detail.pageStarts).slice(1, starts.length + 1), starts.map(s => s + q.n), 'same page breaks one page later');
   // Οι εικόνες της αναφοράς κατέβηκαν (εδώ το «Google» δεν τις κατεβάζει μόνο του: τις κατεβάζει το script).
   sheet._images.forEach(im => assert.ok(q.exp.detail.images.some(x => x.row === im.row + q.n && x.col === im.col), 'image moved: ' + im.row));
   assert.ok(q.exp.detail.images.some(x => x.row <= q.n), 'the final frame on the first page');
@@ -104,7 +115,7 @@ function lastExport(G, report) {
   like(/^Στροφή \(-5\/\+15\) στα 50μ\.: /);
   has('Τελευταία 5μ.'); has('3.18'); has('11.84 · στροφή 0.88');
   like(/^=SPARKLINE\(\{[0-9.]+\},\{"charttype","bar";"max",[0-9.]+;"color1","#[0-9A-F]{6}"\}\)$/);
-  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.10\.0$/);
+  like(/^Ακολουθεί η πλήρης ανάλυση του αγώνα · Swim Analysis 2\.11\.0$/);
   ['15–25', '45–50', '95–100'].forEach(has);
   // 2.9.5: ο μέσος όρος του ΔΑΚ και από κάτω κάθε 50άρι· ο ΔΑΚ κάθε 50άρι και στον πίνακα.
   has('ΔΑΚ (μ.ο.)'); has('ΔΑΚ 50άρι'); like(/^1ο \d+\.\d\d · 2ο \d+\.\d\d$/);

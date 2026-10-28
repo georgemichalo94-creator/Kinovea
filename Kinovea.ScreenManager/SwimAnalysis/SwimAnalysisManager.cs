@@ -212,6 +212,11 @@ namespace Kinovea.ScreenManager
         private static readonly Version quickLookBackend = new Version(2, 8, 0);
         private bool quickLookWarned;
 
+        /// <summary>(2.11.0) The short analysis of the PDF (Apps Script 2.11.0): said once when the script is older or it did not fit.</summary>
+        private static readonly Version pdfPartsBackend = new Version(2, 11, 0);
+        private bool pdfPartsWarned;
+        private readonly HashSet<string> pdfShortFailed = new HashSet<string>();
+
         /// <summary>The races whose PDF came out without the first page (said once a race).</summary>
         private readonly HashSet<string> quickLookFailed = new HashSet<string>();
         private List<string> undoStack = new List<string>();
@@ -2932,6 +2937,19 @@ namespace Kinovea.ScreenManager
                             Status(string.Format(CultureInfo.InvariantCulture,
                                 SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: κάποια γραφήματα μπορεί να βγουν άδεια και ο ΔΑΚ μόνο ως μέσος όρος. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
                                 version, pdfChartsBackend.ToString(3)), true);
+                        }
+                        else if (Settings.PdfShort && !pdfPartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < pdfPartsBackend)
+                        {
+                            // Since 2.11.0 the PDF can have the short analysis (Apps Script 2.11.0).
+                            pdfPartsWarned = true;
+                            Status(string.Format(CultureInfo.InvariantCulture,
+                                SwimLang.T("Το PDF το έφτιαξε το Apps Script {0}: χωρίς τη σύντομη ανάλυση. Βάλε την έκδοση {1} (δες τον οδηγό, «Ενημέρωση του script»)."),
+                                version, pdfPartsBackend.ToString(3)), true);
+                        }
+                        else if (Settings.PdfShort && PdfPartMade(e.Result, "short") == false && pdfShortFailed.Add(race.Id ?? ""))
+                        {
+                            // The three pages could not be made (they did not fit, or the copy of the sheet): the full analysis. Said once a race.
+                            Status(SwimLang.T("Η σύντομη ανάλυση δεν έγινε: το PDF έχει την πλήρη ανάλυση."), true);
                         }
                         else if (e.Result.PdfQuick == false && quickLookFailed.Add(race.Id ?? ""))
                         {

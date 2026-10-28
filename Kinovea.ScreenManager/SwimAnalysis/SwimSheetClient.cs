@@ -713,6 +713,15 @@ namespace Kinovea.ScreenManager
             if (drawCharts && !race.IsTraining)
                 body["drawCharts"] = true;
 
+            // (2.11.0) The parts of the PDF (Apps Script 2.11.0): the short analysis, the full one, or both.
+            if (!race.IsTraining)
+            {
+                JObject parts = new JObject();
+                parts["short"] = settings.PdfShort;
+                parts["full"] = settings.PdfFull || !settings.PdfShort;
+                body["pdfParts"] = parts;
+            }
+
             // (2.10.0) More for the Apps Script (the package for the coaches: the PDF itself and the coaches' emails in the answer).
             if (extra != null)
             {

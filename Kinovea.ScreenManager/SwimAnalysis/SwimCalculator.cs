@@ -107,8 +107,17 @@ namespace Kinovea.ScreenManager
         public double? Dps;
         public double? Sl;
 
-        /// <summary>Stroke rate from the intervals between the presses inside the segment (cycles/min).</summary>
+        /// <summary>
+        /// Stroke rate from the stroke times inside the segment (cycles/min): (2.11.0) the mean time of a whole cycle, from a press to
+        /// the ppc-th next one (in freestyle and backstroke the same hand). Sr takes it where it agrees with the strokes (SrFromTimes).
+        /// </summary>
         public double? SrExact;
+
+        /// <summary>(2.11.0) The strokes of the segment from the stroke times, before a count confirmed or typed by the analyst.</summary>
+        public double? StrokesAuto;
+
+        /// <summary>(2.11.0) Sr is the rate from the stroke times (SrExact); otherwise it is strokes ÷ time.</summary>
+        public bool SrFromTimes;
         public string Style;
 
         /// <summary>Starts at least 15 m after the last wall (no start or turn underwater phase).</summary>
@@ -423,25 +432,12 @@ namespace Kinovea.ScreenManager
                     if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && result.Strokes[0] <= vRow.Value)
                         row.Strokes = Math.Max(0, row.Strokes.Value - 1);
 
-                    double sum = 0;
-                    int count = 0;
-                    for (int j = 0; j + 1 < result.Strokes.Count; j++)
-                    {
-                        double a = result.Strokes[j];
-                        double b = result.Strokes[j + 1];
-                        if (a < vPrev.Value - 1e-9)
-                            continue;
-                        if (b > vRow.Value + 1e-9)
-                            break;
-                        if (HasBarrier(barriers, a, b))
-                            continue;
-                        sum += b - a;
-                        count++;
-                    }
-
-                    if (count > 0 && sum > 0)
-                        row.SrExact = 60.0 / ((sum / count) * ppc);
+                    // (2.11.0) The rate from the stroke times with whole cycles (in freestyle and backstroke from a hand to the same
+                    // hand), so that a difference between the two arms does not change it.
+                    row.SrExact = CycleRate(result.Strokes, barriers, vPrev.Value, vRow.Value, ppc);
                 }
+
+                row.StrokesAuto = row.Strokes;
 
                 // Strokes confirmed or typed by the analyst for this segment.
                 double typed;
@@ -449,16 +445,6 @@ namespace Kinovea.ScreenManager
                 {
                     row.Strokes = typed;
                     row.StrokesTyped = true;
-
-                    // (2.9.6) The rate from the intervals of the presses only while the presses are the strokes typed: an analyst who
-                    // presses once a cycle in freestyle and types the strokes had half the rate there, and extra presses gave a rate
-                    // too high. Otherwise the column shows none.
-                    if (row.SrExact.HasValue && hasStrokes && vRow.HasValue && vPrev.HasValue)
-                    {
-                        double presses = Cumulative(result.Strokes, barriers, vRow.Value) - Cumulative(result.Strokes, barriers, vPrev.Value);
-                        if (Math.Abs(presses - typed) > 0.75)
-                            row.SrExact = null;
-                    }
                 }
 
                 // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),
@@ -470,13 +456,24 @@ namespace Kinovea.ScreenManager
                     row.Sr = cycles * 60.0 / row.SegTime.Value;
                     row.Dps = (row.D - row.PrevD) * k / row.Strokes.Value;
                     row.Sl = (row.D - row.PrevD) * k / cycles;
+
+                    // (2.11.0) One rate: from the stroke times where the strokes of the segment are those of the times (not corrected by
+                    // the analyst) and agree with them (the strokes the rate gives over the segment time within 0.75 of a stroke);
+                    // otherwise strokes ÷ time (the correction of the analyst, presses missing or double). As the Apps Script.
+                    if (RateMatches(row.SrExact, row.SegTime.Value, ppc, row.Strokes.Value, row.StrokesAuto))
+                    {
+                        row.Sr = row.SrExact;
+                        row.SrFromTimes = true;
+                    }
                 }
             }
 
             // Clean swimming averages, weighted (a mean of the segment values would give the same weight to a 5 m and a 30 m segment).
-            double sumCycles = 0, sumTime = 0, sumStrokes = 0, sumDistance = 0;
+            // (2.11.0) The rate from the rate of each segment (the one rate), the cycle length from the strokes.
+            double sumRate = 0, sumCycles = 0, sumTime = 0, sumStrokes = 0, sumDistance = 0;
             foreach (SwimRow row in result.Rows.Where(r => r.Sr.HasValue))
             {
+                sumRate += row.Sr.Value * row.SegTime.Value / 60.0;
                 sumCycles += row.Strokes.Value / SwimPresets.PressesPerCycle(row.Style);
                 sumTime += row.SegTime.Value;
                 sumStrokes += row.Strokes.Value;
@@ -484,7 +481,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (sumTime > 0)
-                result.AvgSr = sumCycles * 60.0 / sumTime;
+                result.AvgSr = sumRate * 60.0 / sumTime;
             if (sumStrokes > 0)
                 result.AvgDps = sumDistance / sumStrokes;
             if (sumCycles > 0)
@@ -700,10 +697,11 @@ namespace Kinovea.ScreenManager
                         block.DakYd = (sumStrokes + sumTime) / (sumWidth / 10.0);
                 }
 
-                // Clean swimming of the 50, weighted.
-                double cycles = 0, time = 0, strokes = 0, meters = 0;
+                // Clean swimming of the 50, weighted ((2.11.0) the rate from the rate of each segment).
+                double rate = 0, cycles = 0, time = 0, strokes = 0, meters = 0;
                 foreach (SwimRow r in inBlock.Where(x => x.Sr.HasValue))
                 {
+                    rate += r.Sr.Value * r.SegTime.Value / 60.0;
                     cycles += r.Strokes.Value / SwimPresets.PressesPerCycle(r.Style);
                     time += r.SegTime.Value;
                     strokes += r.Strokes.Value;
@@ -711,7 +709,7 @@ namespace Kinovea.ScreenManager
                 }
 
                 if (time > 0)
-                    block.Sr = cycles * 60.0 / time;
+                    block.Sr = rate * 60.0 / time;
                 if (strokes > 0)
                     block.Dps = meters / strokes;
                 if (cycles > 0)
@@ -1131,6 +1129,41 @@ namespace Kinovea.ScreenManager
             }
 
             return lo;
+        }
+
+        /// <summary>
+        /// (2.11.0) Stroke rate (cycles/min) from the stroke times in [from, to]: the mean time of a whole cycle, from a press to the
+        /// ppc-th next one (in freestyle and backstroke the same hand), with no wall in between. Null without a whole cycle.
+        /// </summary>
+        public static double? CycleRate(List<double> strokes, List<double> barriers, double from, double to, int ppc)
+        {
+            double sum = 0;
+            int count = 0;
+            for (int j = 0; j + ppc < strokes.Count; j++)
+            {
+                double a = strokes[j];
+                double b = strokes[j + ppc];
+                if (a < from - 1e-9)
+                    continue;
+                if (b > to + 1e-9)
+                    break;
+                if (HasBarrier(barriers, a, b))
+                    continue;
+                sum += b - a;
+                count++;
+            }
+
+            return count > 0 && sum > 0 ? 60.0 * count / sum : (double?)null;
+        }
+
+        /// <summary>
+        /// (2.11.0) The rate from the stroke times stands for the segment: its strokes are those of the times (auto, within 0.25: not
+        /// corrected) and the rate gives them over the segment time within 0.75 of a stroke.
+        /// </summary>
+        public static bool RateMatches(double? rate, double segTime, int ppc, double strokes, double? auto)
+        {
+            return rate.HasValue && !double.IsNaN(rate.Value) && segTime > 0 && strokes > 0 && auto.HasValue &&
+                Math.Abs(strokes - auto.Value) <= 0.25 && Math.Abs(rate.Value * segTime / 60.0 * ppc - strokes) <= 0.75;
         }
 
         private static bool HasBarrier(List<double> barriers, double a, double b)

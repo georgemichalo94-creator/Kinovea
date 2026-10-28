@@ -29,6 +29,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The values as the sheet shows them (its number format), for the labels on the chart.</summary>
         public List<string> Texts = new List<string>();
+
+        /// <summary>(2.11.0, light charts) The line: "dash", "dot" or solid; its width (0: the usual).</summary>
+        public string Dash = "";
+        public float Width;
+    }
+
+    /// <summary>(2.11.0) A group of categories named under them (a length of the pool: «1ο μήκος»).</summary>
+    public sealed class SwimChartGroup
+    {
+        public int From;
+        public int To;
+        public string Text = "";
     }
 
     /// <summary>
@@ -57,6 +69,21 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The series with their values written on the chart (the race, with few points).</summary>
         public List<int> LabelSeries = new List<int>();
+
+        /// <summary>
+        /// (2.11.0) "light": the charts of the short analysis of the PDF (white, the race blue, the PB grey and dashed, the reference
+        /// dark and dotted); else the graphics of the video.
+        /// </summary>
+        public string Theme = "";
+
+        /// <summary>(2.11.0) The walls: a dashed line before these categories, the lines of the series cut there.</summary>
+        public List<int> Breaks = new List<int>();
+
+        /// <summary>(2.11.0) The names of groups of categories under them.</summary>
+        public List<SwimChartGroup> Groups = new List<SwimChartGroup>();
+
+        /// <summary>(2.11.0) The legend of the series (light charts).</summary>
+        public bool Legend = true;
 
         public static SwimChartData FromJson(JObject o)
         {
@@ -87,6 +114,8 @@ namespace Kinovea.ScreenManager
                 x.Color = ParseColor(Text(s["color"]), SwimTheme.Amber);
                 x.Bars = Text(s["type"]) == "bars";
                 x.Axis = Integer(s["axis"], 0) == 1 ? 1 : 0;
+                x.Dash = Text(s["dash"]);
+                x.Width = Math.Max(0, Math.Min(8, Integer(s["width"], 0)));
                 foreach (JToken v in Array(s["values"]))
                     x.Values.Add(v.Type == JTokenType.Float || v.Type == JTokenType.Integer ? (double?)v.Value<double>() : null);
                 foreach (JToken t in Array(s["texts"]))
@@ -109,6 +138,23 @@ namespace Kinovea.ScreenManager
                     c.LabelSeries.Add(i);
             }
 
+            c.Theme = Text(o["theme"]);
+            foreach (JToken t in Array(o["breaks"]))
+            {
+                int i = Integer(t, -1);
+                if (i > 0 && i < c.Categories.Count && !c.Breaks.Contains(i))
+                    c.Breaks.Add(i);
+            }
+
+            c.Breaks.Sort();
+            foreach (JObject gr in Array(o["groups"]).OfType<JObject>())
+            {
+                int from = Integer(gr["from"], -1), to = Integer(gr["to"], -1);
+                if (from >= 0 && to >= from && to < c.Categories.Count)
+                    c.Groups.Add(new SwimChartGroup { From = from, To = to, Text = Text(gr["text"]) });
+            }
+
+            c.Legend = !(o["legend"] != null && o["legend"].Type == JTokenType.Boolean && !(bool)o["legend"]);
             return c;
         }
 
@@ -152,10 +198,10 @@ namespace Kinovea.ScreenManager
     /// grey and dashed, a grid that prints well. The image is twice the size of the chart on the sheet, so that it is as sharp as the
     /// text of the PDF.
     /// </summary>
-    public static class SwimChartPainter
+    public static partial class SwimChartPainter
     {
-        /// <summary>Changes when the drawing changes: the charts already on the Drive are drawn again.</summary>
-        public const string Version = "2";
+        /// <summary>Changes when the drawing changes: the charts already on the Drive are drawn again (3: 2.11.0, the light charts).</summary>
+        public const string Version = "3";
 
         /// <summary>Pixels of the image per pixel of the sheet.</summary>
         public const float Scale = 2f;
@@ -198,6 +244,12 @@ namespace Kinovea.ScreenManager
 
         public static void Paint(Graphics g, SizeF size, SwimChartData chart)
         {
+            if (chart.Theme == "light")
+            {
+                PaintLight(g, size, chart);
+                return;
+            }
+
             float W = size.Width, H = size.Height;
             RectangleF card = new RectangleF(0.5f, 0.5f, W - 1, H - 1);
             using (GraphicsPath path = SwimTheme.Rounded(card, 10))

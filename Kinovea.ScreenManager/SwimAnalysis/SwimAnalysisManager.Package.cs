@@ -248,12 +248,37 @@ namespace Kinovea.ScreenManager
             SendByUser(true);
         }
 
-        /// <summary>The PDF buttons: the PDF of the race opens as always (a package that still waited for it lets it go).</summary>
+        /// <summary>
+        /// The PDF buttons: the parts of the PDF are chosen (2.11.0: short analysis, full, both), then the PDF of the race opens as always
+        /// (a package that still waited for it lets it go).
+        /// </summary>
         public void PdfByUser()
         {
+            if (Race != null && !Race.IsTraining && Settings.IsConfigured && !ChoosePdfParts())
+                return;
             if (Race != null && packageJob == null)
                 packagePdfPending.Remove(Race.Id);
             SendByUser(true);
+        }
+
+        /// <summary>(2.11.0) The parts of the PDF chosen by the analyst, kept in the settings (the package uses them too). False: cancelled.</summary>
+        private bool ChoosePdfParts()
+        {
+            Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
+            using (FormSwimPdfChoice choice = new FormSwimPdfChoice(Settings.PdfShort, Settings.PdfFull))
+            {
+                DialogResult result = owner != null ? choice.ShowDialog(owner) : choice.ShowDialog();
+                if (result != DialogResult.OK || (!choice.Short && !choice.Full))
+                    return false;
+                if (choice.Short != Settings.PdfShort || choice.Full != Settings.PdfFull)
+                {
+                    Settings.PdfShort = choice.Short;
+                    Settings.PdfFull = choice.Full;
+                    SaveSettingsQuietly();
+                }
+
+                return true;
+            }
         }
 
         /// <summary>The package of a race that waits for its PDF (null: none, or asked too long ago).</summary>
@@ -636,6 +661,13 @@ namespace Kinovea.ScreenManager
                 OpenCvSharp.Cv2.Resize(bgr, small, new OpenCvSharp.Size(width, height), 0, 0, OpenCvSharp.InterpolationFlags.Area);
                 return OpenCvSharp.Extensions.BitmapConverter.ToBitmap(small);
             }
+        }
+
+        /// <summary>(2.11.0) A part of the PDF made or not (the answer of the Apps Script: pdf.short, pdf.notes); null when not said.</summary>
+        private static bool? PdfPartMade(SwimSheetResult result, string part)
+        {
+            JObject pdf = result != null && result.Raw != null ? result.Raw["pdf"] as JObject : null;
+            return pdf != null ? pdf.Value<bool?>(part) : null;
         }
 
         /// <summary>
