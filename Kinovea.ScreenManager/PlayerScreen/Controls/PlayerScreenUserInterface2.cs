@@ -2799,6 +2799,44 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (Swim 2.14.1) The working zone of this video in seconds of its stream clock (the clock of its sound), for the sync of the screens
+        /// by their sound. False without a video, or for a slowed-down video of a high speed camera (its sound is not in real time).
+        /// </summary>
+        internal bool SwimSoundZone(out double from, out double seconds)
+        {
+            from = 0;
+            seconds = 0;
+            if (!m_FrameServer.Loaded || m_FrameServer.VideoReader == null)
+                return false;
+            double tps = m_FrameServer.VideoReader.Info.AverageTimeStampsPerSeconds;
+            if (tps <= 0 || Math.Abs(m_FrameServer.Metadata.HighSpeedFactor - 1) > 0.01)
+                return false;
+            from = m_iSelStart / tps;
+            seconds = (m_iSelEnd - m_iSelStart) / tps;
+            return seconds > 0;
+        }
+
+        /// <summary>(Swim 2.14.1) The time origin of this video (the point where the screens are synchronised) in seconds of its stream clock.</summary>
+        internal double SwimTimeOriginSeconds
+        {
+            get
+            {
+                double tps = m_FrameServer.VideoReader.Info.AverageTimeStampsPerSeconds;
+                return tps > 0 ? m_FrameServer.Metadata.TimeOrigin / tps : 0;
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.14.1) A moment of the stream clock (seconds) as the time origin the synchronisation takes (real time from the start of
+        /// the working zone, microseconds).
+        /// </summary>
+        internal long SwimLocalTimeAtSeconds(double seconds)
+        {
+            double tps = m_FrameServer.VideoReader.Info.AverageTimeStampsPerSeconds;
+            return TimestampToRealtime((long)Math.Round(seconds * tps) - m_iSelStart);
+        }
+
+        /// <summary>
         /// (Swim 2.14.0) The timestamp of this video at a time from its time origin (microseconds of real time), within the video; not
         /// moved to a frame (a mark from a faster camera keeps its time).
         /// </summary>

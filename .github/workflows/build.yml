@@ -133,6 +133,16 @@ jobs:
         if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim technique evaluation::' + (($bad | Select-Object -First 15) -join ' | ')); exit 1 }
         Write-Output ('::notice title=Swim technique evaluation::' + ($out | Select-Object -Last 1))
 
+    - name: Swim sync of cameras by their sound
+      shell: powershell
+      run: |
+        $out = & .\SwimAnalysis\tests\sound_sync\ss_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim sync by sound::' + (($out | Select-Object -Last 12) -join ' | ')); exit 1 }
+        Write-Output ('::notice title=Swim sync by sound::' + (($out | Select-Object -First 1) -join '') + ' | ' + ($out | Select-Object -Last 1))
+
     # The same zip as the asset of a draft release of the branch (drafts are not public): the update of the analysts'
     # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run. A work in
     # progress branch (swim-wip-…) built on demand gets one too, for a test on one computer before it is released.

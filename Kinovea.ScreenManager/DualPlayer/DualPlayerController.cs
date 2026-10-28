@@ -666,6 +666,38 @@ namespace Kinovea.ScreenManager
             view.UpdateSyncPosition(currentTime); 
         }
 
+        /// <summary>
+        /// (Swim 2.14.1) The time origins of some screens set at once (the same moment in every video, found from their sound; local real
+        /// time in microseconds as LocalTimeOriginPhysical), then the synchronisation set up on them as with the sync button: every screen
+        /// goes to the moment the given one shows.
+        /// </summary>
+        public void SyncAt(IDictionary<PlayerScreen, long> origins, PlayerScreen shown)
+        {
+            if (!active || origins == null || origins.Count == 0)
+                return;
+
+            if (!synching)
+                ResetSync();
+            if (!synching)
+                return;
+
+            Pause();
+            foreach (PlayerScreen player in synced)
+            {
+                long origin;
+                if (origins.TryGetValue(player, out origin))
+                    player.LocalTimeOriginPhysical = origin;
+            }
+
+            commonTimeline.Initialize(synced);
+            PlayerScreen at = shown != null && synced.Contains(shown) ? shown : synced[0];
+            currentTime = commonTimeline.GetCommonTime(at, at.LocalTime);
+            view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
+            view.UpdateSyncPosition(currentTime);
+            GotoTime(currentTime, true);
+            UpdateTrkFrame(currentTime);
+        }
+
         private void GotoTime(long commonTime, bool allowUIUpdate)
         {
             foreach (PlayerScreen player in synced)

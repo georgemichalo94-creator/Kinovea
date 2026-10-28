@@ -1102,6 +1102,7 @@
     <Compile Include="SwimAnalysis\SwimSplitDetector.cs" />
     <Compile Include="SwimAnalysis\SwimStartLight.cs" />
     <Compile Include="SwimAnalysis\SwimStartSound.cs" />
+    <Compile Include="SwimAnalysis\SwimSoundSync.cs" />
     <Compile Include="SwimAnalysis\SwimSheetClient.cs" />
     <Compile Include="SwimAnalysis\SwimStrokeDetector.cs" />
     <Compile Include="SwimAnalysis\SwimTech.cs" />
