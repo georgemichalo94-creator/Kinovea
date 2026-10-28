@@ -1641,8 +1641,9 @@ namespace Kinovea.ScreenManager
                         break;
                     if (SwimAnalysisManager.Current != null && SwimAnalysisManager.Current.ReviewKey(this, Keys.Escape, m_iCurrentPosition))
                         break;
-                    // Full screen: Escape leaves it (a drawing being made or a drawing tool is cancelled first, as usual).
-                    if (imageOnly && m_ActiveTool == m_PointerTool && !m_FrameServer.Metadata.DrawingInitializing)
+                    // Full screen: Escape leaves it (a drawing being made or a drawing tool is cancelled first, as usual). Not with
+                    // the big screens (Swim 2.14.0), which show only the images in the window too.
+                    if (imageOnly && VideoFullScreen.Active && m_ActiveTool == m_PointerTool && !m_FrameServer.Metadata.DrawingInitializing)
                     {
                         NotificationCenter.RaiseFullScreenToggle();
                         break;

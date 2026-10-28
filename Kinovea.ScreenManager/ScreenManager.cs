@@ -1494,7 +1494,7 @@ namespace Kinovea.ScreenManager
                 leadMenu.DropDownItems.Add(new ToolStripMenuItem("…"));
                 menu.Items.Add(new ToolStripSeparator());
                 menu.Items.Add(leadMenu);
-                ToolStripLabel hint = new ToolStripLabel(SwimLang.T("Συγχρόνισε πρώτα τις οθόνες στο σήμα εκκίνησης (κουμπί συγχρονισμού)."));
+                ToolStripLabel hint = new ToolStripLabel(SwimLang.T("Πρώτα συγχρονισμός στο σήμα εκκίνησης."));
                 hint.Enabled = false;
                 menu.Items.Add(hint);
             }

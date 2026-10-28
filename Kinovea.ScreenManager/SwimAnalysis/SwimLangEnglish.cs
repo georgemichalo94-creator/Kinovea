@@ -1175,7 +1175,7 @@ namespace Kinovea.ScreenManager
             { "Όλες οι οθόνες", "All the screens" },
             { "Χωρίς ομάδα (κάθε οθόνη η δική της ανάλυση)", "No group (each screen its own analysis)" },
             { "Η ανάλυση της ομάδας στο βίντεο της", "The analysis of the group in the video of" },
-            { "Συγχρόνισε πρώτα τις οθόνες στο σήμα εκκίνησης (κουμπί συγχρονισμού).", "Synchronize the screens on the start signal first (synchronization button)." },
+            { "Πρώτα συγχρονισμός στο σήμα εκκίνησης.", "First synchronize on the start signal." },
             { "Οθόνη {0}", "Screen {0}" },
             { "η ανάλυση μένει στο βίντεο της ανάγνωσης ή του αυτόματου πιλότου μέχρι να τελειώσει.", "the analysis stays on the video of the reading or of the auto pilot until it ends." },
             { "κλικ για την ανάλυση αυτού του βίντεο (τα κουμπιά ανοίγουν γύρω του).", "click for the analysis of this video (the buttons open around it)." },
