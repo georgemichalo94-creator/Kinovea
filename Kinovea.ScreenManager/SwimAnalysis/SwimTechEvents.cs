@@ -381,10 +381,11 @@ namespace Kinovea.ScreenManager
         public const double PlantBeforeTurn = 0.4;
         public const double PlantBeforeExtreme = 0.2;
         /// <summary>
-        /// (2.9.14) The deepest bend of a dolphin kick: at most this angle of the knees (degrees). It was 148: kids bend the knees
-        /// less and their kicks were lost (Heraklion, 19 turns checked by eye).
+        /// The deepest bend of a dolphin kick: at most this angle of the knees (degrees). (2.9.14 tried 158 for kids who bend the
+        /// knees less; 2.9.16 is back to 148: on 3 more readings of every Heraklion turn 158 added more false kicks than it found,
+        /// mostly the kicks of the swim when the breakout came late.)
         /// </summary>
-        public const double DolphinMaxAngle = 158;
+        public const double DolphinMaxAngle = 148;
 
         /// <summary>The deepest bend of the breaststroke kick of a pull-out: at most this angle of the knees (degrees).</summary>
         public const double BreaststrokeKickMaxAngle = 148;
