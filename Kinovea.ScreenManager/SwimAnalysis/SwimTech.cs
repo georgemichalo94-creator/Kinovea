@@ -839,7 +839,8 @@ namespace Kinovea.ScreenManager
         /// (2.15.0) Mean speed of the underwater phase of a turn, from the push-off to the breakout. At the push-off the toes leave the
         /// wall with the body straight: the head is the body length from the wall (HeadAtPushoff); at the breakout it comes out at the
         /// distance measured where it breaks the surface (OutDist). Speed = (OutDist − body length) / (breakout − push-off). Before
-        /// 2.15.0 the whole distance from the wall was taken: 15–25% faster (more for a short underwater phase). Null, with a note,
+        /// 2.15.0 the whole distance from the wall was taken: faster by OutDist / (OutDist − body length), about 20–25% for a breakout at 9–10 m,
+        /// 60% at 4–5 m. Null, with a note,
         /// when something is missing, the distance is the estimate from the times or the result is not plausible.
         /// </summary>
         private static double? UnderwaterSpeed(SwimTechPhase p, double k)
