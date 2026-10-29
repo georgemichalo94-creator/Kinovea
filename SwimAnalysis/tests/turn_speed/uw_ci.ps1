@@ -20,7 +20,7 @@ $script:resolving = $false
 $a = [System.Reflection.Assembly]::LoadFrom($sm)
 function T($n) { return $a.GetType('Kinovea.ScreenManager.' + $n, $true) }
 $tRace = T 'SwimRace'; $tMark = T 'SwimMark'; $tType = T 'SwimMarkType'; $tTiming = T 'SwimTiming'; $tCalc = T 'SwimCalculator'
-$tTech = T 'SwimTechCalculator'; $tPresets = T 'SwimPresets'; $tClient = T 'SwimSheetClient'; $tSettings = T 'SwimSettings'
+$tTech = T 'SwimTechCalculator'; $tPresets = T 'SwimPresets'; $tClient = T 'SwimPayload'; $tSettings = T 'SwimSettings'
 $fails = 0
 function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { Write-Output ('FAIL ' + $what); $script:fails++ } }
 
