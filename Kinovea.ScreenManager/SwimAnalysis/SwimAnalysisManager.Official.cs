@@ -78,6 +78,9 @@ namespace Kinovea.ScreenManager
             public List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> Choices = new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
             public string Error;
 
+            /// <summary>(2.15.0) The event of the title of pasted results: its round, gender and competition go in with the times.</summary>
+            public SwimEventInfo TitleEvent;
+
             /// <summary>The results of the link cannot be read by the program (another site, a page that does not open, no results of the event
             /// published): the analyst pastes them (since 2.8.1).</summary>
             public bool Locked;
@@ -771,6 +774,10 @@ namespace Kinovea.ScreenManager
                 race.ResultsLink = oldLink;
                 race.Location = oldLocation;
             };
+
+            // (2.15.0) The round, the gender and the competition of the title of the pasted results, now that its times are taken.
+            if (found.TitleEvent != null)
+                ApplyEventDetails(Race, found.TitleEvent);
 
             if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 SetAthlete(athlete);

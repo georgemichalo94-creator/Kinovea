@@ -641,11 +641,39 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string AnswerKey(SwimProposal p)
         {
+            // (2.15.0) The start of the video (its light, its sound): one answer per video. Without a key every 💡 added one more
+            // (the same start taught again and again), and the races of the video share the start.
+            if (Race != null && p != null && p.Kind == KindRaceStart && !string.IsNullOrEmpty(videoPath))
+                return StartAnswerKey();
             if (Race == null || p == null || !IsWholeRaceKind(p.Kind))
                 return null;
 
             string race = Race.Id.Length > 12 ? Race.Id.Substring(0, 12) : Race.Id;
             return SwimLearning.VideoCode(videoPath) + "|" + race + "|" + p.Kind + "|" + p.Index.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>(2.15.0) The key of the answer about the start of this video (see AnswerKey).</summary>
+        private string StartAnswerKey()
+        {
+            return SwimLearning.VideoCode(videoPath) + "|" + KindRaceStart;
+        }
+
+        /// <summary>
+        /// (2.15.0) The start put again by the analyst: the answer the found start (light, sound) gave with the old one goes (it taught
+        /// the old frame); the next 💡 teaches it again with the new one.
+        /// </summary>
+        private void ForgetStartAnswer()
+        {
+            if (Learning == null || string.IsNullOrEmpty(videoPath))
+                return;
+
+            string key = StartAnswerKey();
+            if (!Learning.Records.Any(r => r.Key == key))
+                return;
+
+            Learning.Forget(key);
+            Learning.Save();
+            LearningChanged();
         }
 
         /// <summary>

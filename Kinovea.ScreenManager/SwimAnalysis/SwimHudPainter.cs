@@ -1211,7 +1211,8 @@ namespace Kinovea.ScreenManager
             Font head = Ui(10);
             Caps(g, SwimLang.T("ΑΠΟΣΤ."), head, Lbl, r.Left + 22, r.Top + 46, 0.2f);
             Caps(g, SwimLang.T("ΧΡΟΝΟΣ"), head, Lbl, r.Left + 114, r.Top + 46, 0.2f);
-            Caps(g, "M/S", head, Lbl, r.Left + 230, r.Top + 46, 0.2f);
+            // (2.15.0) In a yard pool the speeds of the rows are yd/s.
+            Caps(g, s.Race.IsYards ? "YD/S" : "M/S", head, Lbl, r.Left + 230, r.Top + 46, 0.2f);
             Caps(g, SwimLang.T("ΧΕΡ."), head, Lbl, r.Left + 312, r.Top + 46, 0.2f);
 
             // The rows that fit: around the next checkpoint in a long race.

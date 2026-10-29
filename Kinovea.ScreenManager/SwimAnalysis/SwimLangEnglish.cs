@@ -1631,7 +1631,7 @@ namespace Kinovea.ScreenManager
             { "σε κάθε πέρασμα (S) θα δεις τις χεριές του τμήματος για επιβεβαίωση.", "at each split (S) you will see the strokes of the segment to confirm." },
             { "σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο.", "over all the lengths and suggests the splits (15/25/35/45 and the walls) from the marks on the lane ropes, for review." },
             { "σημάδια στην αντίδραση, την είσοδο, το breakout και τα περάσματα, γράφημα των κύκλων του μήκους και κάρτα σύνοψης μετά τον τερματισμό.\n", "marks at the reaction, the entry, the breakout and the splits, a chart of the cycles of the length and a summary card after the finish.\n" },
-            { "σημάδια χεριών ανά τμήμα", "stroke marks per segment" },
+            { "χεριές ανά τμήμα (της ανάλυσης)", "strokes per segment (of the analysis)" },
             { "σημεία", "points" },
             { "σημείο", "point" },
             { "σκελετός: ", "skeleton: " },

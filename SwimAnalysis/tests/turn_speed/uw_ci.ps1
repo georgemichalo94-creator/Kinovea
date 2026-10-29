@@ -42,6 +42,8 @@ function Fill($race, $pushoff) {
   $splits = @{ 15 = 6.2; 25 = 11.8; 35 = 17.6; 45 = 23.4; 50 = 26.3; 65 = 33.5; 75 = 39.4; 85 = 45.3; 95 = 51.2; 100 = 54.1 }
   foreach ($d in $splits.Keys) { Mark $race 'Split' $splits[$d] $d }
   if ($pushoff) { Mark $race 'FeetOff' 26.6 $null }
+  # (2.15.0) Six dolphin kicks between the push-off and the breakout.
+  foreach ($k in @(27.0, 27.5, 28.0, 28.5, 29.0, 29.5)) { Mark $race 'Kick' $k $null }
   Mark $race 'Breakout' 30.6 $null
 }
 function TurnPhase($race) {
@@ -62,6 +64,9 @@ $v = $r.Turn.Value('uwVel')
 Check ($null -ne $v -and [Math]::Abs($v - 2.025) -lt 0.0005) ('underwater speed from the head at the push-off: ' + $v)
 Check ($null -ne $v -and [Math]::Abs($v - 2.5) -gt 0.4) 'not the distance from the wall over the time (2.50)'
 Check ([Math]::Abs($r.Turn.HeadAtPushoff - 1.9) -lt 1e-9) 'the head at the push-off is the body length'
+# (2.15.0) The distance per kick from the head at the push-off: (10.0 − 1.9) / 6 = 1.35 (from the wall 1.67).
+$kd = $r.Turn.Value('kickDist')
+Check ($null -ne $kd -and [Math]::Abs($kd - 1.35) -lt 1e-9) ('distance per kick from the head at the push-off: ' + $kd)
 
 # The Sheet: the speed of the program per turn and the body length.
 $settings = [Activator]::CreateInstance($tSettings)
@@ -75,6 +80,7 @@ Check ($null -eq $body.race.manual.turns.'50'.underwaterEstimated) 'a measured d
 $race.BodyLength = $null
 $r = TurnPhase $race
 Check ($null -eq $r.Turn.Value('uwVel')) 'no speed without the body length'
+Check ($null -eq $r.Turn.Value('kickDist')) 'no distance per kick without the body length'
 Check ("$($r.Turn.SpeedNote)" -like '*μήκος του σώματος*') ('the note asks for the body length: ' + $r.Turn.SpeedNote)
 $json = $tClient.GetMethod('Build').Invoke($null, @($race, $r.Computed, $r.Phases, $timing, [long]1000, $settings, 'demo.mp4', 'update', $null, $false, $null))
 $body = $json | ConvertFrom-Json
@@ -84,6 +90,7 @@ Check ($null -eq $body.race.manual.turns.'50'.uwSpeed) 'nothing sent without the
 $race.BodyLength = 1.9; $turn.UnderwaterEstimated = $true
 $r = TurnPhase $race
 Check ($null -eq $r.Turn.Value('uwVel')) 'no speed from an estimated distance'
+Check ($null -eq $r.Turn.Value('kickDist')) 'no distance per kick from an estimated distance'
 $json = $tClient.GetMethod('Build').Invoke($null, @($race, $r.Computed, $r.Phases, $timing, [long]1000, $settings, 'demo.mp4', 'update', $null, $false, $null))
 $body = $json | ConvertFrom-Json
 Check ($body.race.manual.turns.'50'.underwaterEstimated -eq $true) 'the estimate is said to the Sheet'

@@ -163,5 +163,47 @@ assert.strictEqual(layout.grid.get(first, 2).v, pb50An.blocks[0].time, 'the time
 assert.strictEqual(layout.grid.get(first, 5).v, '', 'no ΔΑΚ of the PB (whole 50)');
 assert.strictEqual(layout.grid.get(first, 11).v, '', 'no rate of the PB (whole 50)');
 
+// ---------------------------------------------------------------------------------------------
+// (k) Ένας πολύ μεγάλος αγώνας για ένα κελί του ευρετηρίου (1500 με τελικό και στιγμιότυπα): μικραίνει ώστε να γράφεται, οι
+// μετρήσεις του αγώνα μένουν
+// ---------------------------------------------------------------------------------------------
+const big = race50('big', 'fs', 1500, Array.from({ length: 30 }, () => 30.5), Array.from({ length: 30 }, () => 1.3));
+big.kicks = big.checkpoints.filter(c => c.d % 50 === 0).map(c => +(c.t + 1).toFixed(2));
+big.tech = { snapshots: Array.from({ length: 60 }, (_, i) => ({ id: 's' + i, t: i, phase: 'Στροφή', stage: 'Επαφή', event: 'x', comment: 'σχόλιο '.repeat(120), fileId: 'f'.repeat(33) })) };
+big.finals = { label: 'Τελικός', swimmers: Array.from({ length: 8 }, (_, i) => ({ rank: i + 1, name: 'Κολυμβητής ' + i, times: big.checkpoints.map(c => ({ d: c.d, t: c.t + i })) })),
+  metrics: Array.from({ length: 40 }, (_, i) => ({ group: 'Ομάδα', label: 'Τιμή ' + i, athlete: '1.00', rank: '1/9', winner: '0.99', mean: '1.01', values: [1, 2, 3, 4, 5, 6, 7, 8] })) };
+const bigN = G.swimNormalizeRace_(big);
+assert.ok(JSON.stringify(bigN).length > 50000, 'too big for a cell');
+const small = G.swimCompactRace_(bigN);
+assert.ok(JSON.stringify(small).length <= 49000, 'fits: ' + JSON.stringify(small).length);
+assert.strictEqual(small.kicks.length, bigN.kicks.length, 'the kicks kept');
+assert.strictEqual(small.checkpoints.length, bigN.checkpoints.length, 'the checkpoints kept');
+assert.ok(small.compacted.indexOf('tech.comments') >= 0, 'what was left out is said: ' + small.compacted);
+
+// ---------------------------------------------------------------------------------------------
+// (l) Αναφορά με χρόνους μόνο ανά 50: ο χρόνος στα 50 συγκρίνεται, το τμήμα της (0–50) όχι με το 45–50 του αγώνα
+// ---------------------------------------------------------------------------------------------
+race = G.swimNormalizeRace_(four);
+an = G.swimAnalyze_(race);
+const ref50 = G.swimNormalizeRace_({ id: 'r50', athlete: 'Αναφορά', style: 'fs', distance: 200, pool: 50,
+  checkpoints: [{ d: 50, t: 25.8 }, { d: 100, t: 53.9 }, { d: 150, t: 82.1 }, { d: 200, t: 110.4 }] });
+const lay = G.swimBuildLayout_(race, an, { elite: { race: ref50, analysis: G.swimAnalyze_(ref50), label: 'Ref' } });
+let h = null;
+Object.values(lay.grid.cells).forEach(c => { if (c.v === 'Χρόνος elite' && c.c === 4 && (!h || c.r < h.r)) h = c; });
+assert.ok(h, 'the comparison of the passes');
+const at = d => { for (let r = h.r + 1; r < h.r + 40; r++) { const x = lay.grid.get(r, 1); if (x && x.v === d) return r; } return null; };
+const r50 = at(50);
+assert.strictEqual(lay.grid.get(r50, 4).v, 25.8, 'the time at 50 compared');
+assert.strictEqual(lay.grid.get(r50, 9).v, '', 'no speed of 0–50 against 45–50');
+assert.strictEqual(lay.grid.get(r50, 12).v, '', 'no segment time of 0–50 against 45–50');
+assert.strictEqual(lay.grid.get(r50, 15).v, '', 'no speed change');
+
+// ---------------------------------------------------------------------------------------------
+// (m) Τα επίπεδα των ατομικών αγωνισμάτων όχι σε σκυταλοδρομία
+// ---------------------------------------------------------------------------------------------
+const levels = [{ kind: 'turn', style: 'fs', distance: 400, pool: 50, poolUnit: 'm', gender: '', values: [1, 2, 3] }];
+assert.ok(G.swimBenchmarksFor_(G.swimNormalizeRace_({ style: 'fs', distance: 400, pool: 50, checkpoints: [] }), levels), 'individual 400');
+assert.strictEqual(G.swimBenchmarksFor_(G.swimNormalizeRace_({ style: 'fs', distance: 400, pool: 50, relay: true, checkpoints: [] }), levels), null, 'relay');
+
 console.log('test_reports: IM per style, drops only when slower, steady only when steady, same segments and walls, units, last part, ' +
   'turn breakout, library suspect times, whole-50 strokes, no PB with DQ');

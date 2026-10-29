@@ -1159,14 +1159,10 @@ namespace Kinovea.ScreenManager
         /// <summary>"M" or "F" from the gender of the athlete ("Ανδρών", "Γυναικών", "Αγόρια", "Κορίτσια", "M", "F"), null when unknown.</summary>
         public static string GenderCode(string gender)
         {
-            string g = (gender ?? "").Trim().ToLowerInvariant();
-            if (g.Length == 0)
-                return null;
-            if (g.StartsWith("γυν") || g.StartsWith("κορ") || g.StartsWith("θηλ") || g == "f" || g.StartsWith("fem") || g.StartsWith("wom") || g == "w" || g.StartsWith("girl"))
-                return "F";
-            if (g.StartsWith("ανδ") || g.StartsWith("αγ") || g.StartsWith("αρρ") || g == "m" || g.StartsWith("mal") || g.StartsWith("men") || g.StartsWith("boy"))
-                return "M";
-            return null;
+            // (2.15.0) As the rest of the program reads it (SwimReference.NormalizeGender, without accents): the categories of age too
+            // (Νεάνιδες, Παγκορασίδες, Έφηβοι, Παίδες, Παμπαίδες had no level).
+            string g = SwimReference.NormalizeGender(gender);
+            return g == "F" || g == "M" ? g : null;
         }
 
         /// <summary>The level (1 = best) of a time in a table of the catalogue for the style and the gender of the athlete.</summary>

@@ -78,7 +78,9 @@ namespace Kinovea.ScreenManager
             }
 
             // The event in the title of the pasted results (since 2.8.2): the race's details from it (its times were read for it).
-            ApplyEvent(titleEvent, SwimLang.T("τον τίτλο των αποτελεσμάτων"));
+            // (2.15.0) Here the distance, the style and the pool (asked when the race has marks); the round, the gender and the
+            // competition when its times are taken (OfferOfficial).
+            ApplyEvent(titleEvent, SwimLang.T("τον τίτλο των αποτελεσμάτων"), false);
 
             OfficialQuery q = NewOfficialQuery(Race.ResultsLink, false);
 
@@ -98,8 +100,8 @@ namespace Kinovea.ScreenManager
                 Style = Race.Style,
                 Relay = Race.Relay,
                 Gender = q.Gender,
-                Phase = Race.Round ?? "",
-                Round = RaceRound(Race.Round),
+                Phase = titleEvent != null && titleEvent.Round.Length > 0 ? RoundName(titleEvent.Round) : Race.Round ?? "",
+                Round = titleEvent != null && titleEvent.Round.Length > 0 ? titleEvent.Round : RaceRound(Race.Round),
                 Date = q.Date
             };
 
@@ -109,7 +111,8 @@ namespace Kinovea.ScreenManager
                 Unit = unit,
                 Entry = e,
                 How = SwimLang.T("από την επικόλληση"),
-                ByAthlete = byName
+                ByAthlete = byName,
+                TitleEvent = titleEvent
             };
 
             OfferOfficialWhenFree(found, q, Race.Id);

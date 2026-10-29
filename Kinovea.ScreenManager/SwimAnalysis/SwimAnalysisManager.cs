@@ -510,6 +510,14 @@ namespace Kinovea.ScreenManager
             Status(old == null ? SwimLang.T("Σήμα εκκίνησης: t = 0 σε αυτό το καρέ.") : SwimLang.T("Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά."), false);
             if (old.HasValue && old.Value != timestamp)
                 RecheckStartLessons();
+            if (!resolvingProposal && old.HasValue && old.Value != timestamp)
+                ForgetStartAnswer();
+
+            // (2.15.0) The start events waiting for their check (first movement, release, entry: their usual times after the signal) move
+            // with the signal: they stayed at the old one (a start put again a second later left them a second early). The official
+            // release is put again just below.
+            if (old.HasValue && old.Value != timestamp)
+                ShiftStartEventProposals(timestamp - old.Value);
 
             // The official times are after the start (since 2026-10-19): the checkpoints at them not checked yet move with it.
             if (old != timestamp)

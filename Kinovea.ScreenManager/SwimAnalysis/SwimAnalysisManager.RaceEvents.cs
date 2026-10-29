@@ -263,6 +263,26 @@ namespace Kinovea.ScreenManager
             return made;
         }
 
+        /// <summary>(2.15.0) The waiting proposals of the start events moved by 'delta' (the start signal moved): their frames and cues.</summary>
+        private void ShiftStartEventProposals(long delta)
+        {
+            if (Race == null || delta == 0)
+                return;
+
+            foreach (SwimProposal p in Race.Proposals.Where(x => x.Kind == KindRaceReaction || x.Kind == KindRaceBlock || x.Kind == KindRaceEntry))
+            {
+                p.Timestamp += delta;
+                foreach (string key in p.Cues.Keys.ToList())
+                    p.Cues[key] += delta;
+                if (p.Read != null)
+                {
+                    p.Read.Timestamp += delta;
+                    foreach (string key in p.Read.Cues.Keys.ToList())
+                        p.Read.Cues[key] += delta;
+                }
+            }
+        }
+
         /// <summary>
         /// The feet off the wall after the turn at 'wall' (not at the end of a leg of a relay: the next swimmer leaves the block),
         /// from the wall marked or proposed; null if there is no wall yet or the analyst marked it already.

@@ -3032,6 +3032,16 @@ function swimLayoutCompare_(L) {
 
   var hdr = function (labels) { g.headers(cur, labels.map(swimT_)); cur++; };
   var cell = function (r, c, v, fmt, kind) { g.set(r, c, v, swimF_(fmt, kind || 'formula')); };
+  // 2.15.0: οι τιμές ενός τμήματος (χρόνος, ταχύτητα, χεριές, συχνότητα) του PB / της αναφοράς μόνο για το ίδιο τμήμα: μια αναφορά με
+  // χρόνους μόνο ανά 50 έχει στα 50 το 0–50, όχι το 45–50 του αγώνα. Οι χρόνοι στα σημεία (αθροιστικοί) συγκρίνονται πάντα.
+  var same = function (a, row) {
+    var x = swimRowAt_(a, row.d);
+    return x && Math.abs(x.prevD - row.prevD) < 1e-9 ? x : null;
+  };
+  var change = function (a, i) {
+    var x = i > 0 ? same(a, rows[i]) : null, y = i > 0 ? same(a, rows[i - 1]) : null;
+    return x && y && x.vel !== null && y.vel !== null ? x.vel - y.vel : null;
+  };
   var colors = function (r, cols, bg) { cols.forEach(function (c) { var o = g.get(r, c); if (o) o.bg = bg; }); };
 
   // 1) Περάσματα και ταχύτητα ανά τμήμα
@@ -3045,21 +3055,22 @@ function swimLayoutCompare_(L) {
   rows.forEach(function (row, i) {
     var r = cur + i, tr = T0 + i;
     var pr = swimRowAt_(pbA, row.d), er = swimRowAt_(elA, row.d);
+    var ps = same(pbA, row), es = same(elA, row);
     g.set(r, 1, row.d, swimF_(null, 'label'));
     cell(r, 2, pr ? swimV_(pr.t) : '', SWIM_FMT.time, 'auto');
     cell(r, 3, '=IF(B' + tr + '="","",B' + tr + ')', SWIM_FMT.time);
     cell(r, 4, er ? swimV_(er.t) : '', SWIM_FMT.time, 'auto');
     cell(r, 5, '=IF(OR(C' + r + '="",B' + r + '=""),"",C' + r + '-B' + r + ')', '+0.00;-0.00;0.00');
     cell(r, 6, '=IF(OR(C' + r + '="",D' + r + '=""),"",C' + r + '-D' + r + ')', '+0.00;-0.00;0.00');
-    cell(r, 7, pr ? swimV_(pr.vel) : '', SWIM_FMT.vel, 'auto');
+    cell(r, 7, ps ? swimV_(ps.vel) : '', SWIM_FMT.vel, 'auto');
     cell(r, 8, '=IF(C' + tr + '="","",C' + tr + ')', SWIM_FMT.vel);
-    cell(r, 9, er ? swimV_(er.vel) : '', SWIM_FMT.vel, 'auto');
-    cell(r, 10, pr ? swimV_(pr.segTime) : '', SWIM_FMT.time, 'auto');
+    cell(r, 9, es ? swimV_(es.vel) : '', SWIM_FMT.vel, 'auto');
+    cell(r, 10, ps ? swimV_(ps.segTime) : '', SWIM_FMT.time, 'auto');
     cell(r, 11, '=IF(K' + tr + '="","",K' + tr + ')', SWIM_FMT.time);
-    cell(r, 12, er ? swimV_(er.segTime) : '', SWIM_FMT.time, 'auto');
-    cell(r, 13, swimV_(swimVelChange_(pbA, row.d)), '+0.00;-0.00;0.00', 'auto');
+    cell(r, 12, es ? swimV_(es.segTime) : '', SWIM_FMT.time, 'auto');
+    cell(r, 13, swimV_(change(pbA, i)), '+0.00;-0.00;0.00', 'auto');
     cell(r, 14, i > 0 ? '=IF(OR(C' + tr + '="",C' + (tr - 1) + '=""),"",C' + tr + '-C' + (tr - 1) + ')' : '', '+0.00;-0.00;0.00');
-    cell(r, 15, swimV_(swimVelChange_(elA, row.d)), '+0.00;-0.00;0.00', 'auto');
+    cell(r, 15, swimV_(change(elA, i)), '+0.00;-0.00;0.00', 'auto');
     if (!row.isFree) colors(r, [7, 8, 9], SWIM_COLORS.phase);
   });
   cmp.passLast = cur + rows.length - 1;
@@ -3076,7 +3087,7 @@ function swimLayoutCompare_(L) {
   cmp.strokeFirst = cur;
   rows.forEach(function (row, i) {
     var r = cur + i, tr = T0 + i;
-    var pr = swimRowAt_(pbA, row.d), er = swimRowAt_(elA, row.d);
+    var pr = same(pbA, row), er = same(elA, row);
     g.set(r, 1, row.d, swimF_(null, 'label'));
     cell(r, 2, pr ? swimV_(pr.sr) : '', SWIM_FMT.sr, 'auto');
     cell(r, 3, '=IF(I' + tr + '="","",I' + tr + ')', SWIM_FMT.sr);
@@ -5490,7 +5501,8 @@ function swimParseBenchmarks_(values) {
 
 /** Τα επίπεδα του αγωνίσματος του αγώνα: { start, turn, im: [...] } ή null. */
 function swimBenchmarksFor_(race, list) {
-  if (!list || !list.length) return null;
+  // 2.15.0: τα επίπεδα είναι των ατομικών αγωνισμάτων: μια σκυταλοδρομία (με τις αλλαγές στον μέσο όρο των στροφών) δεν συγκρίνεται.
+  if (!list || !list.length || race.relay) return null;
   var g = swimGenderCode_(race.gender);
   var match = function (b) {
     return b.style === race.style && b.distance === race.distance && b.pool === race.pool && b.poolUnit === race.poolUnit &&
@@ -5580,9 +5592,22 @@ function swimCompactRace_(race) {
   var c = JSON.parse(JSON.stringify(race));
   var r2 = function (arr) { return (arr || []).map(function (t) { return Math.round(t * 100) / 100; }); };
   ['strokes', 'kicks', 'breakouts', 'feetOff', 'entries'].forEach(function (k) { c[k] = r2(c[k]); });
-  if (JSON.stringify(c).length > 49000) {
-    c.kicks = [];
-    if (c.tech) c.tech.snapshots = (c.tech.snapshots || []).map(function (s) { return { id: s.id, t: s.t, phase: s.phase, stage: s.stage, event: s.event, comment: String(s.comment || '').substring(0, 500), fileId: s.fileId, eliteFileId: s.eliteFileId, eliteLabel: s.eliteLabel }; });
+  if (JSON.stringify(c).length > 49000 && c.tech)
+    c.tech.snapshots = (c.tech.snapshots || []).map(function (s) { return { id: s.id, t: s.t, phase: s.phase, stage: s.stage, event: s.event, comment: String(s.comment || '').substring(0, 500), fileId: s.fileId, eliteFileId: s.eliteFileId, eliteLabel: s.eliteLabel }; });
+  // 2.15.0: ακόμα πολύ μεγάλος (π.χ. 1500μ. με τελικό, αναφορά και στιγμιότυπα): φεύγουν με τη σειρά τα λιγότερο αναγκαία για να
+  // ξαναφτιαχτεί το φύλλο, οι μετρήσεις του αγώνα (οι δελφινισμοί) στο τέλος, ώστε η καταχώριση να μη σταματά (ένα κελί πάνω από
+  // 50.000 χαρακτήρες δεν γράφεται)· ό,τι έφυγε λέγεται (compacted).
+  var drops = [
+    ['tech.comments', function () { if (c.tech && c.tech.snapshots) c.tech.snapshots.forEach(function (s) { s.comment = ''; }); }],
+    ['finals.metrics', function () { if (c.finals) delete c.finals.metrics; }],
+    ['finals', function () { delete c.finals; }],
+    ['tech.snapshots', function () { if (c.tech) c.tech.snapshots = []; }],
+    ['reference', function () { delete c.reference; }],
+    ['kicks', function () { c.kicks = []; }]
+  ];
+  for (var i = 0; i < drops.length && JSON.stringify(c).length > 49000; i++) {
+    drops[i][1]();
+    c.compacted = (c.compacted || []).concat([drops[i][0]]);
   }
   return c;
 }
