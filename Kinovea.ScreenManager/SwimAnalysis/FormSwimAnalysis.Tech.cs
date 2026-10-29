@@ -40,6 +40,9 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbTurnPhase;
         private Label lblTurnPhaseInfo;
         private Label lblTtIn, lblTtLastStroke, lblTtRotation, lblTtContact, lblTtPushoff, lblTtKicks, lblTtBreakout, lblTtSplits, lblTtFirstStroke;
+
+        /// <summary>(2.15.0) The body length in the turns of the technical analysis (the same value as in the turns of the race).</summary>
+        private TextBox tbTechBodyLength;
         private DataGridView gridTechTurns;
         private string selectedTurnId;
 
@@ -283,6 +286,31 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Το κεφάλι βγαίνει από το νερό."), lblTtBreakout,
                 TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: απόσταση από τον τοίχο."), () => SelectedPhase(cmbTurnPhase), false,
                     SwimPickTarget.TurnUnderwater, SwimPickTarget.PhaseBreakout));
+            // (2.15.0) The body length (toes → head): where the head is at the push-off, for the underwater speed of the turns.
+            tbTechBodyLength = new TextBox { Width = 52, Margin = new Padding(3, 3, 2, 3), TextAlign = HorizontalAlignment.Right };
+            tbTechBodyLength.TextChanged += (s, e) =>
+            {
+                if (updating || manager.Race == null)
+                    return;
+                manager.Race.BodyLength = ParseText(tbTechBodyLength.Text);
+
+                // The same value in the turns of the race: the next change of a value there would put back the one it shows.
+                if (tbBodyLength != null)
+                {
+                    updating = true;
+                    SetText(tbBodyLength, Format(manager.Race.BodyLength));
+                    updating = false;
+                }
+
+                manager.ManualValuesChanged();
+            };
+            toolTip.SetToolTip(tbTechBodyLength, BodyLengthHelp());
+            Button btnBodyLength = new SwimNoFocusButton { Text = SwimLang.T("📍 Μέτρηση"), AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
+            btnBodyLength.Click += (s, e) => manager.BeginMeasure(SwimPickTarget.BodyLength, 0);
+            toolTip.SetToolTip(btnBodyLength, SwimLang.T("Σε ένα καρέ της ολίσθησης μετά την αποκόλληση (σώμα τεντωμένο): κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι.") +
+                SwimLang.T(" (χρειάζεται βαθμονόμηση: δες κάτω)"));
+            techPickButtons[btnBodyLength] = new SwimPickTarget[] { SwimPickTarget.BodyLength };
+            AddEventRow(t, SwimLang.T("Μήκος σώματος (πόδια → κεφάλι)"), null, null, BodyLengthHelp(), tbTechBodyLength, DistanceUnit(), btnBodyLength);
             lblTtSplits = ValueLabel();
             AddEventRow(t, SwimLang.T("Κεφάλι στα +5 / +10 / +15"), PlayerScreenCommands.SwimTechSplit, "+5 / +10 / +15",
                 SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 από τον τοίχο."), lblTtSplits,

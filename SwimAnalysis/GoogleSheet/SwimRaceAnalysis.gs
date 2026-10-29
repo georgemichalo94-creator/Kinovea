@@ -23,7 +23,7 @@
  *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
  */
 
-var SWIM_VERSION = '2.13.0';
+var SWIM_VERSION = '2.15.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -54,6 +54,12 @@ var SWIM_DAK50 = true;
  * ζητά ξανά από το Kinovea μία φορά πριν από το PDF.
  */
 var SWIM_PDF_CHARTS = true;
+
+/**
+ * (2.15.0) Η υποβρύχια ταχύτητα των στροφών (πίνακας «Στροφές») όπως τη μετρά το Kinovea: (απόσταση εξόδου − μήκος σώματος) /
+ * (έξοδος − αποκόλληση). false: η στήλη όπως πριν (μέτρα κάτω από το νερό / χρόνος από τον τοίχο), μόνο για τη σύγκριση του test_lang.
+ */
+var SWIM_TURN_UW_SPEED = true;
 
 /** Μέτρα ανά γιάρδα (πισίνες 25yd). */
 var SWIM_YARD = 0.9144;
@@ -2731,7 +2737,7 @@ function swimLayoutTurns_(L) {
   g.section(cur, swimT_('Στροφές'), L.LAST);
   g.headers(cur + 1, [swimTF_('Τοίχος ({0})', U), swimTF_('Χρόνος προσέγγισης 5{0} (s)', U), swimTF_('Χρόνος -5/+15{0} (s)', U), swimT_('Χρόνος στροφής (s)'),
     swimTF_('Μέτρα κάτω από το νερό ({0})', U), swimT_('Χρόνος κάτω από το νερό (s)'), swimT_('Δελφινισμοί'), swimTF_('Μέση ταχύτητα -5/+15{0} (m/s)', U),
-    swimT_('Μέση ταχύτητα από στροφή έως έξοδο (m/s)'), swimT_('Ποσοστό στον τελικό χρόνο'), swimT_('Τελευταία χεριά → τοίχος (s)'),
+    swimT_(SWIM_TURN_UW_SPEED ? 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)' : 'Μέση ταχύτητα από στροφή έως έξοδο (m/s)'), swimT_('Ποσοστό στον τελικό χρόνο'), swimT_('Τελευταία χεριά → τοίχος (s)'),
     swimTF_('Τοίχος → κεφάλι στα +15{0} (s)', U), swimT_('Είδος στροφής')]);
   var rt = cur + 2;
   L.turnFirst = rt;
@@ -2750,7 +2756,11 @@ function swimLayoutTurns_(L) {
     g.set(x, 6, '', swimF_(SWIM_FMT.time, 'auto'));
     g.set(x, 7, '', swimF_(SWIM_FMT.int, 'auto'));
     g.set(x, 8, '=IF(OR(C' + x + '="",C' + x + '=0),"",20' + K + '/C' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
-    g.set(x, 9, '=IF(OR(E' + x + '="",F' + x + '="",F' + x + '=0),"",E' + x + K + '/F' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
+    // (2.15.0) Η υποβρύχια ταχύτητα όπως τη μετρά το Kinovea: (απόσταση εξόδου − μήκος σώματος) / (έξοδος − αποκόλληση). Στην
+    // αποκόλληση τα πόδια είναι ακόμη στον τοίχο, άρα το κεφάλι απέχει όσο το μήκος του σώματος· όχι πια μέτρα / χρόνος από τον
+    // τοίχο (15–25% γρηγορότερη) ούτε από απόσταση που είναι εκτίμηση από τους χρόνους.
+    if (SWIM_TURN_UW_SPEED) g.set(x, 9, '', swimF_(SWIM_FMT.vel, 'auto'));
+    else g.set(x, 9, '=IF(OR(E' + x + '="",F' + x + '="",F' + x + '=0),"",E' + x + K + '/F' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
     g.set(x, 10, '=IF(OR(C' + x + '="",' + L.FT + '=""),"",C' + x + '/' + L.FT + ')', swimF_(SWIM_FMT.pct, 'formula'));
     g.set(x, 11, '', swimF_(SWIM_FMT.time, 'auto'));
     if (rp15 !== undefined && rw !== undefined) g.set(x, 12, '=IF(OR(B' + rp15 + '="",B' + rw + '=""),"",B' + rp15 + '-B' + rw + ')', swimF_(SWIM_FMT.time, 'formula'));
@@ -4315,6 +4325,8 @@ function swimInputPlan_(race, analysis, layout) {
     if (uwTime !== null) plan.patches.push({ r: t.r, c: 6, v: swimFixed_(uwTime, 3) });
     if (kicks !== null) plan.patches.push({ r: t.r, c: 7, v: kicks });
     if (gap !== null) plan.patches.push({ r: t.r, c: 11, v: swimFixed_(gap, 3) });
+    var uwSpeed = swimNum_(mt.uwSpeed);
+    if (SWIM_TURN_UW_SPEED && uwSpeed !== null) plan.patches.push({ r: t.r, c: 9, v: swimFixed_(uwSpeed, 3) });
   });
 
   var fr = layout.inputs.finish.r;
@@ -9225,6 +9237,7 @@ var SWIM_EN_ = {
   'Δελφινισμοί': 'Dolphin kicks',
   'Μέση ταχύτητα -5/+15{0} (m/s)': 'Average speed -5/+15{0} (m/s)',
   'Μέση ταχύτητα από στροφή έως έξοδο (m/s)': 'Average speed from the turn to the breakout (m/s)',
+  'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)': 'Underwater speed: push-off → breakout (m/s)',
   'Ποσοστό στον τελικό χρόνο': 'Share of the final time',
   'Τελευταία χεριά → τοίχος (s)': 'Last stroke → wall (s)',
   'Τοίχος → κεφάλι στα +15{0} (s)': 'Wall → head at +15{0} (s)',

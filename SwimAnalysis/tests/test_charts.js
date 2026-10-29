@@ -171,7 +171,7 @@ for (let c = 2; c <= 4; c++) width += G.swimColumnWidth_(c);
 assert.ok(width >= 200, 'room for the label: ' + width);
 
 // 10) Η έκδοση στο φύλλο (στην ενημέρωση, ώστε να φαίνεται στο PDF ποιο script το έφτιαξε).
-assert.ok(/έκδοση 2\.13\.0$/.test(String(sh.getRange(2, 11).getValue())), sh.getRange(2, 11).getValue());
+assert.ok(/έκδοση 2\.15\.0$/.test(String(sh.getRange(2, 11).getValue())), sh.getRange(2, 11).getValue());
 
 console.log('test_charts: ok (' + keys.length + ' charts, finals table row ' + head + ')');
 

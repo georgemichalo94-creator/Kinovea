@@ -642,12 +642,25 @@ namespace Kinovea.ScreenManager
             manual["breakoutDist"] = race.BreakoutDist;
             manual["finishLastStrokeDist"] = race.FinishLastStrokeDist;
 
+            // (2.15.0) The body length (toes → head): where the head is at the push-off from each wall.
+            if (race.BodyLength.HasValue)
+                manual["bodyLength"] = race.BodyLength;
+
             JObject turns = new JObject();
             foreach (var pair in race.Turns)
             {
                 JObject t = new JObject();
                 t["underwaterDist"] = pair.Value.UnderwaterDist;
                 t["turnTime"] = pair.Value.TurnTime;
+
+                // (2.15.0) The estimate from the times is said (the report does not take a speed from it), and the underwater speed of
+                // the turn as the program measures it: (breakout distance − body length) / (breakout − push-off), m/s.
+                if (pair.Value.UnderwaterEstimated && pair.Value.UnderwaterDist.HasValue)
+                    t["underwaterEstimated"] = true;
+                SwimTechPhase turnPhase = tech == null ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == pair.Key);
+                double? uwSpeed = turnPhase != null ? turnPhase.Value("uwVel") : null;
+                if (uwSpeed.HasValue && !race.IsTraining)
+                    t["uwSpeed"] = Math.Round(uwSpeed.Value, 3);
                 turns[pair.Key.ToString(CultureInfo.InvariantCulture)] = t;
             }
 

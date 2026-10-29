@@ -928,7 +928,15 @@ namespace Kinovea.ScreenManager
             }
 
             int wall = 0;
-            if (target == SwimPickTarget.TurnUnderwater)
+            bodyFirst = null;
+            if (target == SwimPickTarget.BodyLength && !Race.IsTraining)
+            {
+                // (2.15.0) Near a turn of the race: the frame of the glide after its push-off (any turn: the length is the swimmer's).
+                wall = TurnWalls.Contains(wallHint) ? wallHint : CurrentTurnWall;
+                if (wall <= 0)
+                    wall = TurnWalls.FirstOrDefault();
+            }
+            else if (target == SwimPickTarget.TurnUnderwater)
             {
                 wall = TurnWalls.Contains(wallHint) && TechnicalView ? wallHint : CurrentTurnWall;
                 if (wall <= 0)
@@ -975,6 +983,7 @@ namespace Kinovea.ScreenManager
             bool pilotWaited = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
             autoPick = null;
             pendingMeasure = SwimPickTarget.None;
+            bodyFirst = null;
             calibrationClicks.Clear();
             pickForTrack = false;
             pickForRace = false;
@@ -1037,6 +1046,12 @@ namespace Kinovea.ScreenManager
             {
                 SystemSounds.Exclamation.Play();
                 Status(SwimLang.T("Το σημείο δεν μπορεί να μετρηθεί με αυτή τη βαθμονόμηση. Κάνε κλικ πάνω στο νερό."), true);
+                return;
+            }
+
+            if (PickTarget == SwimPickTarget.BodyLength)
+            {
+                BodyLengthClick(point, x, y, timestamp, calibration);
                 return;
             }
 
@@ -1250,6 +1265,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.FinishLastStroke: what = SwimLang.T("Κάνε κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά."); break;
                 case SwimPickTarget.PhaseEntry: what = SwimLang.T("Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό (απόσταση από τη γραμμή 0)."); break;
                 case SwimPickTarget.PhaseBreakout: what = SwimLang.T("Κάνε κλικ στο κεφάλι εκεί που βγαίνει από το νερό (απόσταση από τη γραμμή 0)."); break;
+                case SwimPickTarget.BodyLength: what = SwimLang.T("Μήκος σώματος: σε ένα καρέ της ολίσθησης (σώμα τεντωμένο), κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι."); break;
                 default: what = SwimLang.T("Κάνε κλικ στο βίντεο."); break;
             }
 
@@ -1268,6 +1284,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.FinishLastStroke: return SwimLang.T("Τερματισμός: απόσταση τελευταίας χεριάς");
                 case SwimPickTarget.PhaseEntry: return PendingPhaseTitle() + SwimLang.T(": απόσταση εισόδου");
                 case SwimPickTarget.PhaseBreakout: return PendingPhaseTitle() + SwimLang.T(": απόσταση εξόδου");
+                case SwimPickTarget.BodyLength: return SwimLang.T("Μήκος σώματος (πόδια → κεφάλι)");
                 default: return SwimLang.T("Απόσταση");
             }
         }
@@ -1374,6 +1391,22 @@ namespace Kinovea.ScreenManager
                         line2 = wx + dir * 5;
                         break;
                     }
+                case SwimPickTarget.BodyLength:
+                    {
+                        // (2.15.0) The glide after the push-off: the wall of the turn and its 5 (the end of the colour of the ropes).
+                        if (Race.IsTraining || wall <= 0)
+                        {
+                            line1 = CalibrationLine1;
+                            line2 = CalibrationLine2;
+                            break;
+                        }
+
+                        double wx = WallX(wall);
+                        double dir = wx == 0 ? 1 : -1;
+                        line1 = wx;
+                        line2 = wx + dir * 5;
+                        break;
+                    }
                 default:
                     line1 = CalibrationLine1;
                     line2 = CalibrationLine2;
@@ -1434,6 +1467,21 @@ namespace Kinovea.ScreenManager
 
                         return first(SwimMarkType.Breakout, split.Timestamp, next);
                     }
+                case SwimPickTarget.BodyLength:
+                    {
+                        // (2.15.0) A little after the push-off of the turn (the glide, the body straight).
+                        SwimMark split = Race.GetSplit(wall);
+                        if (split == null)
+                            return null;
+
+                        long next = walls.Where(t => t > split.Timestamp).DefaultIfEmpty(long.MaxValue).First();
+                        long? pushoff = first(SwimMarkType.FeetOff, split.Timestamp, next);
+                        if (!pushoff.HasValue)
+                            return null;
+
+                        return pushoff.Value + (long)Math.Round(GlideAfterPushoff * 1000.0 * (Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor) /
+                            Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
+                    }
                 case SwimPickTarget.FinishLastStroke:
                     {
                         SwimMark finish = Race.GetSplit(Race.Distance);
@@ -1450,6 +1498,68 @@ namespace Kinovea.ScreenManager
                 default:
                     return null;
             }
+        }
+
+        /// <summary>(2.15.0) The frame offered for the body length: this long after the push-off (s), in the glide.</summary>
+        private const double GlideAfterPushoff = 0.3;
+
+        /// <summary>(2.15.0) The first click of the body length (the toes), waiting for the head on the same frame; null when none.</summary>
+        private SwimMeasurement bodyFirst;
+
+        /// <summary>
+        /// (2.15.0) A click of the body length: the toes, then the top of the head on the same frame. The length is along the lane
+        /// (the pool x of the calibration): both points are under the water at about the same depth, so what the water shifts seen
+        /// from the stands moves both alike and cancels (one click on the head from the wall would be off by it, 0.3–0.5 m).
+        /// </summary>
+        private void BodyLengthClick(PointF point, double x, double y, long timestamp, SwimCalibration calibration)
+        {
+            if (bodyFirst == null || !SameFrame(bodyFirst.Timestamp, timestamp))
+            {
+                bodyFirst = new SwimMeasurement { Timestamp = timestamp, Image = point, PoolX = x, PoolY = y, Calibration = calibration };
+                Status(SwimLang.T("📍 Μήκος σώματος: τώρα κλικ στην κορυφή του κεφαλιού (στο ίδιο καρέ). Esc: ακύρωση."), false);
+                InvalidatePlayer();
+                return;
+            }
+
+            SwimMeasurement toes = bodyFirst;
+            bodyFirst = null;
+            double length = Math.Abs(x - toes.PoolX);
+            double meters = length * Race.K;
+            if (meters < SwimTechCalculator.BodyLengthMin || meters > SwimTechCalculator.BodyLengthMax)
+            {
+                SystemSounds.Exclamation.Play();
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    SwimLang.T("📍 Μήκος σώματος {0:0.00} {1}: δεν γίνεται (έλεγξε τα δύο κλικ και τη βαθμονόμηση). Κλικ ξανά στα δάχτυλα των ποδιών."), length, UnitLabel), true);
+                InvalidatePlayer();
+                return;
+            }
+
+            double value = Math.Round(length, 2);
+            Race.BodyLength = value;
+            lastMeasurement = new SwimMeasurement
+            {
+                Timestamp = timestamp,
+                Image = point,
+                PoolX = x,
+                PoolY = y,
+                Value = value,
+                Label = string.Format(CultureInfo.InvariantCulture, "{0:0.00} {1}", value, UnitShort),
+                Calibration = calibration,
+                From = toes.Image
+            };
+
+            pendingMeasure = SwimPickTarget.None;
+            SetPick(SwimPickTarget.None);
+            string message = string.Format(CultureInfo.InvariantCulture,
+                SwimLang.T("📍 Μήκος σώματος (πόδια → κεφάλι): {0:0.00} {1} · για την υποβρύχια ταχύτητα όλων των στροφών"), value, UnitLabel);
+            if (Settings.FixedCamera && Math.Abs(Timing.Seconds(timestamp, calibration.Timestamp)) > 0.05)
+                message += string.Format(CultureInfo.InvariantCulture, SwimLang.T("  (βαθμονόμηση {0} {1} από άλλο καρέ: σωστό μόνο αν η κάμερα δεν κινήθηκε)"), calibration.Label, UnitLabel);
+
+            Status(message, false);
+            Changed(false);
+            ScheduleSend();
+            if (form != null)
+                form.RefreshManualFields();
         }
 
         private SwimCalibration NearestCalibration(long timestamp)
@@ -1582,6 +1692,14 @@ namespace Kinovea.ScreenManager
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
 
+                // (2.15.0) The toes clicked for the body length, waiting for the head.
+                if (PickTarget == SwimPickTarget.BodyLength && bodyFirst != null && SameFrame(bodyFirst.Timestamp, timestamp))
+                {
+                    Point toesPoint = transform.Transform(bodyFirst.Image);
+                    g.FillEllipse(brushMeasure, toesPoint.X - 5, toesPoint.Y - 5, 10, 10);
+                    DrawLabel(g, SwimLang.T("πόδια"), new Point(toesPoint.X + 10, toesPoint.Y + 6), SwimTheme.AccentLight);
+                }
+
                 DrawAngles(g, transform, timestamp);
                 if (SkeletonShown)
                     DrawSkeleton(g, timestamp, p => transform.Transform(p), 1f);
@@ -1686,8 +1804,17 @@ namespace Kinovea.ScreenManager
         private void DrawMeasurement(Graphics g, ImageTransform transform, SwimMeasurement m)
         {
             Point p = transform.Transform(m.Image);
-            if (m.Calibration != null)
+            if (m.From.HasValue)
+            {
+                // (2.15.0) A length of two clicks (the body: toes → head).
+                Point a = transform.Transform(m.From.Value);
+                g.DrawLine(penMeasure, a, p);
+                g.FillEllipse(brushMeasure, a.X - 5, a.Y - 5, 10, 10);
+            }
+            else if (m.Calibration != null)
+            {
                 DrawPoolSegment(g, transform, m.Calibration, penMeasure, m.PoolX, 0, m.PoolX, m.Calibration.LaneWidth);
+            }
 
             g.FillEllipse(brushMeasure, p.X - 5, p.Y - 5, 10, 10);
             DrawLabel(g, m.Label, new Point(p.X + 10, p.Y + 6), SwimTheme.AccentLight);

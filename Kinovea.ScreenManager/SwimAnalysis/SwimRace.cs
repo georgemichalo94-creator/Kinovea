@@ -716,6 +716,15 @@ namespace Kinovea.ScreenManager
         public bool UnderwaterEstimated;
 
         /// <summary>
+        /// (2.15.0) The swimmer straight, from the toes to the top of the head (pool units): measured on the video (📍, a click on the
+        /// toes and one on the head in a frame of the glide; both under the water at the same depth, so the shift of the water cancels)
+        /// or typed. At the push-off from a wall the toes are still on it and the body is straight: the head is this far from the wall,
+        /// the start of the underwater phase of every turn of the race (SwimTechCalculator.UnderwaterSpeed). Null: not measured.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? BodyLength;
+
+        /// <summary>
         /// The official times of the results, typed by the analyst (since 2026-10-19): the final time alone, or the times at every
         /// Distance / Official.Count (the 50 m splits of the results, the last one the final time). The walls at those distances
         /// are read at them and the analysis shows them (OfficialTimes). Null: none.
