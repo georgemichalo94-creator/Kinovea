@@ -1694,6 +1694,8 @@ namespace Kinovea.ScreenManager
             }
 
             lines.Sort(StringComparer.Ordinal);
+            if (origins.Count > 0)
+                lines.Add(SwimLang.T("Ο ήχος φτάνει περίπου 3 ms αργότερα για κάθε μέτρο απόστασης: για κάμερες μακριά η μία από την άλλη, έλεγξε τη στιγμή του σήματος (το φως) και διόρθωσε με τον Συγχρονισμό."));
             MessageBox.Show(string.Join(Environment.NewLine, lines.ToArray()), title, MessageBoxButtons.OK,
                 origins.Count == jobs.Count && jobs.Count == scope.Count - 1 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }

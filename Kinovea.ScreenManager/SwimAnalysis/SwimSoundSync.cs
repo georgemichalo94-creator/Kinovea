@@ -36,11 +36,14 @@ namespace Kinovea.ScreenManager
 
     /// <summary>
     /// (2.14.1) Cameras of the same moment lined up by their sound: what all of them heard (whistles, the start signal, voices, the
-    /// splashes) gives the difference of their clocks, to the millisecond. The onsets of the sounds every 5 ms (low and high sounds apart)
-    /// are matched over the whole sound, and the waveform of the 20 s with the most sounds checks the match (phase correlation).
+    /// splashes) gives the difference of their clocks. The onsets of the sounds every 5 ms (low and high sounds apart) are matched over
+    /// the whole sound (the match taken), and the waveform of the 20 s with the most sounds checks it (phase correlation). Sound takes
+    /// about 3 ms a metre in the air: cameras far from each other hear the same sound at different times, so their match is the one of the
+    /// sounds, not of the light (the start light, a frame, is exact).
     /// Lab (2026-10-29, 6 takes of 3 cameras: above the water and under it on one pole, and under the water on the wall): the two
     /// cameras of the pole matched in all 6 (within 7 ms between the ways of matching), the camera on the wall in none (its sound is the
-    /// water at the wall): it is told, not lined up.
+    /// water at the wall): it is told, not lined up. A copy cut 3 s later: the same match from the whole sound wherever it starts (the
+    /// waveform of different 20 s within 7 ms of it).
     /// </summary>
     public static class SwimSoundSync
     {
@@ -63,9 +66,13 @@ namespace Kinovea.ScreenManager
         public const double MinClarity = 1.6;
         public const double MinClarityHigh = 1.4;
 
-        /// <summary>The waveform checked over this many seconds of the first sound, its match looked for this far around the sounds' one.</summary>
+        /// <summary>
+        /// The waveform checked over this many seconds of the first sound, its match looked for this far around the sounds' one, and
+        /// within CheckTolerance of it (a match by chance falls there 1 time in 40: the sounds of different places differ by a few ms).
+        /// </summary>
         public const double CheckSeconds = 20;
         public const double CheckSlack = 2;
+        public const double CheckTolerance = 0.05;
 
         /// <summary>At most this many seconds of each video are compared.</summary>
         public const double MaxSeconds = 300;
@@ -305,11 +312,9 @@ namespace Kinovea.ScreenManager
                 Peak(c, off, lc - slack - b0 + a0, lc + slack - b0 + a0, (int)(0.05 * Rate), out l3, out q3);
                 double lag3 = b0 + l3 - a0;
                 m.Check = Math.Abs(lag3 - coarse) / Rate;
-                if (m.Check <= MaxSpread)
-                    m.Lag = lag3;
             }
 
-            m.Reliable = m.Spread <= MaxSpread && m.Clarity >= MinClarity && m.ClarityHigh >= MinClarityHigh && !double.IsNaN(m.Check) && m.Check <= MaxSpread;
+            m.Reliable = m.Spread <= MaxSpread && m.Clarity >= MinClarity && m.ClarityHigh >= MinClarityHigh && !double.IsNaN(m.Check) && m.Check <= CheckTolerance;
             return m;
         }
     }

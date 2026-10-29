@@ -1188,6 +1188,8 @@ namespace Kinovea.ScreenManager
             { "Οθόνη {0}: ο ήχος της δεν ταιριάζει με της οθόνης {1} (π.χ. κάμερα κάτω από το νερό που ακούει μόνο το νερό): συγχρόνισέ τη με το χέρι.",
                 "Screen {0}: its sound does not match the one of screen {1} (e.g. an underwater camera that hears only the water): synchronize it by hand." },
             { "Οθόνη {0}: συγχρονίστηκε από τον ήχο (διαφορά {1} s από την οθόνη {2}).", "Screen {0}: synchronized by the sound ({1} s from screen {2})." },
+            { "Ο ήχος φτάνει περίπου 3 ms αργότερα για κάθε μέτρο απόστασης: για κάμερες μακριά η μία από την άλλη, έλεγξε τη στιγμή του σήματος (το φως) και διόρθωσε με τον Συγχρονισμό.",
+                "Sound arrives about 3 ms later for every metre of distance: for cameras far from each other, check the moment of the signal (the light) and correct it with Synchronize." },
             { "Οθόνη {0}", "Screen {0}" },
             { "η ανάλυση μένει στο βίντεο της ανάγνωσης ή του αυτόματου πιλότου μέχρι να τελειώσει.", "the analysis stays on the video of the reading or of the auto pilot until it ends." },
             { "κλικ για την ανάλυση αυτού του βίντεο (τα κουμπιά ανοίγουν γύρω του).", "click for the analysis of this video (the buttons open around it)." },

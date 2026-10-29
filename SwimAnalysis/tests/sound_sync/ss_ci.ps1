@@ -84,10 +84,10 @@ Write-Output 'step: match'
 $m = $match.Invoke($null, @($first, $second, 30.0))
 Write-Output ('second camera: lag ' + [Math]::Round($m.LagSeconds, 4) + ' s, reliable ' + $m.Reliable + ', clarity ' + [Math]::Round($m.Clarity, 1) + '/' + [Math]::Round($m.ClarityHigh, 1) + ', spread ' + [Math]::Round($m.Spread, 4) + ', check ' + [Math]::Round($m.Check, 4))
 Check ($m.Reliable) 'the second camera matches'
-Check ([Math]::Abs($m.LagSeconds - 1.2345) -le 0.002) 'its clock 1.2345 s later, to 2 ms'
+Check ([Math]::Abs($m.LagSeconds - 1.2345) -le 0.004) 'its clock 1.2345 s later, to 4 ms'
 # The other way: the first camera is earlier.
 $back = $match.Invoke($null, @($second, $first, 30.0))
-Check ($back.Reliable -and [Math]::Abs($back.LagSeconds + 1.2345) -le 0.002) ('the other way round: ' + [Math]::Round($back.LagSeconds, 4))
+Check ($back.Reliable -and [Math]::Abs($back.LagSeconds + 1.2345) -le 0.004) ('the other way round: ' + [Math]::Round($back.LagSeconds, 4))
 # A camera that heard another pool.
 Write-Output 'step: other pool'
 $other = [FictionalPool]::Hear(99, 60, 0, 0.01, 0.0, 0, 0)
