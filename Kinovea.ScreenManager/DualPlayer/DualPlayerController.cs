@@ -55,10 +55,11 @@ namespace Kinovea.ScreenManager
         private List<PlayerScreen> synced = new List<PlayerScreen>();   // The loaded ones, synchronized together.
 
         // (Swim 2.14.1) The screens whose time origins were set together, at the same moment of each video (the sync button, the
-        // sync by sound), with the video each one had then. The start marked on one of them moves the origins of the others with it
-        // (ShiftOrigins). A screen whose origin was then set on its own, or that got another video, is no longer tied: the start
-        // marked there sets its own origin, as before (that is how a camera is synchronised at its own start signal).
-        private readonly Dictionary<PlayerScreen, string> tied = new Dictionary<PlayerScreen, string>();
+        // sync by sound), with the video and the time origin (absolute timestamp) each one had then. The start marked on one of them
+        // moves the origins of the others with it (ShiftOrigins). A screen whose origin changed since in any other way (set on its
+        // own, the working zone trimmed over it, the video reloaded, annotations loaded) or that got another video is no longer tied:
+        // the start marked there sets its own origin, as before (that is how a camera is synchronised at its own start signal).
+        private readonly Dictionary<PlayerScreen, KeyValuePair<string, long>> tied = new Dictionary<PlayerScreen, KeyValuePair<string, long>>();
         private int resyncOperations = 0;
         private int maxResyncOperations = 1;
         private HotkeyCommand[] hotkeys;
@@ -675,7 +676,7 @@ namespace Kinovea.ScreenManager
                 player.LocalTimeOriginPhysical = player.LocalTime;
 
             // (Swim 2.14.1) Their origins are now the same moment.
-            Tie(synced, false);
+            Tie(synced);
 
             commonTimeline.Initialize(synced);
             currentTime = commonTimeline.GetCommonTime(synced[0], synced[0].LocalTime);
@@ -684,20 +685,37 @@ namespace Kinovea.ScreenManager
             view.UpdateSyncPosition(currentTime); 
         }
 
-        /// <summary>(Swim 2.14.1) These screens' origins are the same moment (keep: as well as the screens tied before).</summary>
-        private void Tie(IEnumerable<PlayerScreen> screens, bool keep)
+        /// <summary>(Swim 2.14.1) These screens' origins are the same moment (only these: the ties before are dropped).</summary>
+        private void Tie(IEnumerable<PlayerScreen> screens)
         {
-            if (!keep)
-                tied.Clear();
+            tied.Clear();
             foreach (PlayerScreen player in screens)
-                tied[player] = player.FilePath;
+                Stamp(player);
         }
 
-        /// <summary>(Swim 2.14.1) The screen's origin was set together with others', on the video it still has.</summary>
+        private void Stamp(PlayerScreen player)
+        {
+            long origin;
+            if (AbsoluteOrigin(player, out origin))
+                tied[player] = new KeyValuePair<string, long>(player.FilePath, origin);
+        }
+
+        private static bool AbsoluteOrigin(PlayerScreen player, out long origin)
+        {
+            origin = 0;
+            if (player == null || player.FrameServer == null || player.FrameServer.Metadata == null)
+                return false;
+            origin = player.FrameServer.Metadata.TimeOrigin;
+            return true;
+        }
+
+        /// <summary>(Swim 2.14.1) The screen's origin was set together with others' and has not changed since, on the same video.</summary>
         private bool Tied(PlayerScreen player)
         {
-            string path;
-            return player != null && tied.TryGetValue(player, out path) && path == player.FilePath;
+            KeyValuePair<string, long> tie;
+            long origin;
+            return player != null && tied.TryGetValue(player, out tie) && tie.Key == player.FilePath &&
+                AbsoluteOrigin(player, out origin) && tie.Value == origin;
         }
 
         /// <summary>
@@ -716,8 +734,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             Pause();
-            // (Swim 2.14.1) The screens set here are tied (with the ones tied to the reference before: their origins did not move).
-            bool keep = shown != null && Tied(shown);
+            // (Swim 2.14.1) The screens set here are tied, only them (a screen whose sound did not match is synchronised by hand: the
+            // start marked on it must set its own origin).
             List<PlayerScreen> set = new List<PlayerScreen>();
             foreach (PlayerScreen player in synced)
             {
@@ -730,7 +748,9 @@ namespace Kinovea.ScreenManager
             }
 
             if (set.Count >= 2)
-                Tie(set, keep);
+                Tie(set);
+            else
+                tied.Clear();
 
             commonTimeline.Initialize(synced);
             PlayerScreen at = shown != null && synced.Contains(shown) ? shown : synced[0];
@@ -780,6 +800,12 @@ namespace Kinovea.ScreenManager
 
                 throw;
             }
+
+            // The moved ones keep their tie (at their new origins); the tied screens that did not move are no longer at the same moment.
+            foreach (PlayerScreen other in tied.Keys.Where(p => !members.Contains(p)).ToList())
+                tied.Remove(other);
+            foreach (PlayerScreen player in members)
+                Stamp(player);
 
             commonTimeline.Initialize(synced);
             currentTime = commonTimeline.GetCommonTime(marked, marked.LocalTime);
