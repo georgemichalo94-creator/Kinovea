@@ -670,7 +670,9 @@ namespace Kinovea.ScreenManager
             add("Εκκίνηση", "Αποκόλληση από τον βατήρα", computed.BlockTime, s => s.BlockTime);
             add("Εκκίνηση", "15μ. εκκίνηση", computed.Start15, s => s.Start15);
             add("Εκκίνηση", "Έξοδος: χρόνος", computed.StartUnderwaterTime, s => s.StartBreakoutTime).Neutral = true;
-            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", race.UnderwaterDist, s => s.StartBreakoutDist);
+            // (2.15.0) Where the head came out (📍), else the underwater distance, but not the estimate from the times (as the turns).
+            double? startOut = race.BreakoutDist ?? (race.UnderwaterEstimated ? null : race.UnderwaterDist);
+            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", startOut, s => s.StartBreakoutDist);
             startDist.Unit = "μ.";
             startDist.Neutral = true;
 
