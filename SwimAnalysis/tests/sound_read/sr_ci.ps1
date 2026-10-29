@@ -25,14 +25,19 @@ function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('swim_sr_' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $click = "aevalsrc=exprs='if(between(t,40,40.005),0.9*sin(2*PI*1000*t),0)':s=48000:d=60"
+# ffmpeg writes its messages on stderr: not errors of this script.
+function Native($argList) {
+  $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  try { return (& $ff @argList 2>&1 | ForEach-Object { "$_" }) } finally { $ErrorActionPreference = $old }
+}
 function Make($name, $codecArgs) {
   $path = Join-Path $tmp $name
   $argList = @('-nostdin', '-v', 'error', '-f', 'lavfi', '-i', $click) + $codecArgs + @('-y', $path)
-  & $ff @argList 2>&1 | ForEach-Object { Write-Output ('  ffmpeg: ' + $_) }
+  Native $argList | ForEach-Object { Write-Host ('  ffmpeg: ' + $_) }
   return $path
 }
 function StartOf($path) {
-  $info = (& $ff -nostdin -i $path 2>&1 | Out-String)
+  $info = (Native @('-nostdin', '-i', $path)) -join "`n"
   $m = [regex]::Match($info, 'start:\s*([0-9.]+)')
   if ($m.Success) { return [double]::Parse($m.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture) }
   return 0.0

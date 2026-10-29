@@ -157,7 +157,7 @@ namespace Kinovea.ScreenManager
                 Distance = Race.Distance,
                 Style = Race.Style,
                 Relay = Race.Relay,
-                Date = ParseRaceDate(Race.Date),
+                Date = QueryRaceDate(),
                 VideoDate = VideoFileDate(),
                 Competition = Race.Competition ?? "",
                 Round = Race.Round ?? "",
@@ -720,7 +720,13 @@ namespace Kinovea.ScreenManager
             b.Append(found.Source.Length > 0 ? found.Source : SwimLang.T("Επίσημα αποτελέσματα"));
             if (found.Unit.Date.HasValue)
                 b.Append(" · ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture));
-            b.Append('\n').Append(OfficialLine(found.Unit, e, null)).Append("\n\n");
+            // (2.15.0) With the difference from the time on the video: another round of the same day (a semifinal for the final) shows
+            // seconds of difference, not hundredths.
+            double? onVideo = Computed != null ? Computed.FinalTime : null;
+            b.Append('\n').Append(OfficialLine(found.Unit, e, onVideo)).Append("\n\n");
+            if (onVideo.HasValue && e.Time.HasValue && Math.Abs(e.Time.Value - onVideo.Value) > 1.0)
+                b.Append(string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Ο τελικός χρόνος απέχει {0:0.00} s από τον χρόνο του βίντεο: μήπως είναι άλλη φάση ή άλλος αθλητής;"),
+                    Math.Abs(e.Time.Value - onVideo.Value))).Append("\n\n");
             b.Append(SwimLang.T("Επίσημοι χρόνοι: ")).Append(SwimRace.FormatOfficial(times));
             if (e.Reaction.HasValue)
                 b.Append(SwimLang.T(" · αντίδραση ")).Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
@@ -812,6 +818,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54" (and its difference from the time read).</summary>
+        /// <summary>
+        /// (2.15.0) The day of the race for the results: the date of the race, but not when it is today's (the date a new analysis gets)
+        /// and the video was made on another day: then the video's (a semifinal analysed the day after kept only the final of that day).
+        /// </summary>
+        private DateTime? QueryRaceDate()
+        {
+            DateTime? race = ParseRaceDate(Race.Date);
+            DateTime? video = VideoFileDate();
+            if (race.HasValue && video.HasValue && race.Value.Date == DateTime.Now.Date && video.Value.Date != race.Value.Date)
+                return null;
+            return race;
+        }
+
         private static string OfficialLine(SwimOfficialUnit u, SwimOfficialEntry e, double? read)
         {
             string name = e.Name.Length > 0 ? e.Name : e.NameLatin;

@@ -37,12 +37,13 @@ namespace Kinovea.ScreenManager
 
             SwimRace r = Race;
             bool styleChange = ev.Style.Length > 0 && ev.Style != r.Style;
-            bool poolChange = ev.Pool == 25 && r.Pool != 25 && !r.IsYards;
+            // (2.15.0) A long course title (LC Meter: 50) too, not only the short course: a race set to 25 m stayed so (50 m splits fit it).
+            bool poolChange = (ev.Pool == 25 || ev.Pool == 50) && r.Pool != ev.Pool && !r.IsYards;
             bool distanceChange = ev.Distance > 0 && (ev.Distance != r.Distance || ev.Relay != r.Relay);
             if ((styleChange || poolChange || distanceChange) && r.Marks.Count > 0)
             {
                 string evText = EventText(distanceChange ? ev.Distance : r.Distance, distanceChange ? ev.Relay : r.Relay,
-                    styleChange ? ev.Style : r.Style, poolChange ? 25 : r.Pool);
+                    styleChange ? ev.Style : r.Style, poolChange ? ev.Pool : r.Pool);
                 string raceText = EventText(r.Distance, r.Relay, r.Style, r.Pool);
                 string key = (r.Id ?? "") + "|" + evText + "|" + raceText;
                 bool yes = false;
@@ -63,7 +64,7 @@ namespace Kinovea.ScreenManager
             if (styleChange)
                 r.Style = ev.Style;
             if (poolChange)
-                SwimPresets.ApplyPool(r, 1);
+                SwimPresets.ApplyPool(r, ev.Pool == 25 ? 1 : 0);
             if (distanceChange)
             {
                 r.Distance = ev.Distance;

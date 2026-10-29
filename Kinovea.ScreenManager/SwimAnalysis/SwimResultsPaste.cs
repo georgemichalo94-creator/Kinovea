@@ -838,11 +838,14 @@ namespace Kinovea.ScreenManager
                 if (fits.Count > 0)
                 {
                     // The others splits of it (a length or more before it, 10 s at least); one within 10 s of it (an entry time, a
-                    // best time beside it) leaves the choice to the analyst.
+                    // best time beside it) leaves the choice to the analyst. (2.15.0) Nearer than a 50 m lap can be (0.8 of the mean lap
+                    // of the race) it is no split either: an entry time 19.5 s slower than the result of a 1500 m was taken as the final
+                    // time. A 50 m race has no split: any other time is a choice.
                     double max = fits.Max();
-                    if (fits.Any(v => max - v > 0.005 && max - v < 10))
+                    double near = distance > 50 ? Math.Max(10, 0.8 * max * 50.0 / distance) : double.MaxValue;
+                    if (fits.Any(v => max - v > 0.005 && max - v < near))
                     {
-                        r.TimeChoices = fits.Where(v => max - v < 10).Distinct().OrderBy(v => v).ToList();
+                        r.TimeChoices = fits.Where(v => max - v < near).Distinct().OrderBy(v => v).ToList();
                         return;
                     }
 
@@ -1118,7 +1121,7 @@ namespace Kinovea.ScreenManager
                     ev.Pool = d.Groups[3].Value.ToLowerInvariant() == "sc" ? 25 : 50;
                 ev.Gender = Regex.IsMatch(line, @"\b(women'?s?|girls|ladies)\b|γυναικ|κοριτσ|κορασιδ|νεανιδ") ? "F" :
                     Regex.IsMatch(line, @"\b(men'?s?|boys)\b|ανδρ|αγορι|παιδων|εφηβ") ? "M" :
-                    Regex.IsMatch(line, @"\bmixed\b") ? "X" : "";
+                    Regex.IsMatch(line, @"\bmixed\b") || (style != "im" && Regex.IsMatch(line, @"μικτ|μεικτ")) ? "X" : "";
                 ev.Round = Regex.IsMatch(line, @"semi|ημιτελικ") ? "semi" :
                     Regex.IsMatch(line, @"\bfinals?\b|τελικ") ? "final" :
                     Regex.IsMatch(line, @"\bheats?\b|prelim|προκριματικ|σειρ") ? "heats" : "";
@@ -1131,7 +1134,10 @@ namespace Kinovea.ScreenManager
         /// <summary>The style named in a line (lower case without accents); "" when none.</summary>
         private static string StyleWord(string line)
         {
-            if (Regex.IsMatch(line, @"medley|\bim\b|μικτη|μεικτη"))
+            // (2.15.0) «Μικτή» is the medley with «ατομική»/«ομαδική» or alone; with another style it is a mixed relay (men and women):
+            // «4x50μ. Ελεύθερο Μεικτή» was read as a medley (legs 2–3 breaststroke and butterfly).
+            bool mixedWord = Regex.IsMatch(line, @"μικτ|μεικτ");
+            if (Regex.IsMatch(line, @"medley|\bim\b") || (mixedWord && Regex.IsMatch(line, @"ατομικ|ομαδικ")))
                 return "im";
             if (Regex.IsMatch(line, @"backstroke|\bback\b|υπτιο"))
                 return "bk";
@@ -1141,7 +1147,7 @@ namespace Kinovea.ScreenManager
                 return "fly";
             if (Regex.IsMatch(line, @"freestyle|\bfree\b|ελευθερο"))
                 return "fs";
-            return "";
+            return mixedWord ? "im" : "";
         }
 
         /// <summary>

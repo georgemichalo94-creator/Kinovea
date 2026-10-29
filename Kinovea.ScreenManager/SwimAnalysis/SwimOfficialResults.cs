@@ -276,6 +276,13 @@ namespace Kinovea.ScreenManager
                         Time = Time(Str(t["Result"]))
                     };
 
+                    // (2.15.0) A relay is a team: not the first swimmer of it (his name, gender and year made the relay's analysis his).
+                    if (unit.Relay)
+                    {
+                        e.FamilyName = Str(t["OrganisationCode"]);
+                        a = null;
+                    }
+
                     if (a != null)
                     {
                         e.FamilyName = Str(a["FamilyName"]);
@@ -365,7 +372,10 @@ namespace Kinovea.ScreenManager
                     distance = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
             }
 
-            if (s.Contains("MEDLEY") || s.Contains("ΜΙΚΤΗ"))
+            // (2.15.0) Without the accents (ΜΙΚΤΉ); «ΜΙΚΤΗ» with another style is a mixed relay (men and women), not a medley.
+            s = RemoveAccents(s);
+            bool mixedWord = s.Contains("ΜΙΚΤ") || s.Contains("ΜΕΙΚΤ");
+            if (s.Contains("MEDLEY") || (mixedWord && (s.Contains("ΑΤΟΜΙΚ") || s.Contains("ΟΜΑΔΙΚ"))))
                 style = "im";
             else if (s.Contains("BACK") || s.Contains("ΥΠΤΙΟ"))
                 style = "bk";
@@ -375,6 +385,21 @@ namespace Kinovea.ScreenManager
                 style = "fly";
             else if (s.Contains("FREE") || s.Contains("ΕΛΕΥΘΕΡΟ"))
                 style = "fs";
+            else if (mixedWord)
+                style = "im";
+        }
+
+        private static string RemoveAccents(string text)
+        {
+            string d = (text ?? "").Normalize(System.Text.NormalizationForm.FormD);
+            System.Text.StringBuilder b = new System.Text.StringBuilder(d.Length);
+            foreach (char c in d)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                    b.Append(c);
+            }
+
+            return b.ToString().Normalize(System.Text.NormalizationForm.FormC);
         }
 
         /// <summary>The round of a phase: "heats", "semi", "final", "timed" (a final in heats, the long events).</summary>
