@@ -191,6 +191,15 @@ namespace Kinovea.ScreenManager
         /// <summary>fs, bk, br, fly, im.</summary>
         public string Style = "fs";
 
+        /// <summary>
+        /// (2.15.0) The turn of the reading touches with the hands (null: from Style). A medley ("im") is no style of a turn: its
+        /// changes of style are touches with the hands, and its breaststroke has no dolphin kicks to find.
+        /// </summary>
+        public bool? OpenTurn;
+
+        /// <summary>(2.15.0) Dolphin kicks are looked for after the turn or the start (null: from Style, none in breaststroke).</summary>
+        public bool? Kicks;
+
         public SwimMeasure Measure = Fallback;
 
         private static double Fallback(string kind, string name, double fallback, out int sameVideo)
@@ -236,7 +245,7 @@ namespace Kinovea.ScreenManager
             context = context ?? new SwimDetectorContext();
             StartInfo start = DetectStart(pose, region, context, found);
             int from = start != null ? start.EndSample : 0;
-            List<int> kicks = context.Style == "br" ? new List<int>() : DetectKicks(pose, from, found);
+            List<int> kicks = !(context.Kicks ?? context.Style != "br") ? new List<int>() : DetectKicks(pose, from, found);
             DetectBreakout(pose, kicks, found);
             if (start == null)
                 DetectTurn(pose, context, found);
@@ -1233,7 +1242,7 @@ namespace Kinovea.ScreenManager
         private static void TurnAt(SwimPoseSeries s, SwimDetectorContext context, double L, int towardWall, int approachEnd, int pushSeen, List<SwimDetection> found)
         {
             double sps = s.SamplesPerSecond;
-            bool open = context.Style == "br" || context.Style == "fly";
+            bool open = context.OpenTurn ?? (context.Style == "br" || context.Style == "fly");
             int from = Math.Max(0, approachEnd - (int)(1.5 * sps));
             int to = Math.Min(s.Count - 1, pushSeen);
 

@@ -695,6 +695,19 @@ namespace Kinovea.ScreenManager
         public List<SwimMark> Marks = new List<SwimMark>();
 
         /// <summary>
+        /// (2.15.0) Where the analyst deleted an automatic stroke (✕): no automatic stroke is placed there again, by any reading of this race
+        /// (before, the list was of the reading in progress only, and a second «Όλος ο αγώνας» put the deleted strokes back).
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<long> RemovedStrokes;
+
+        /// <summary>(2.15.0) An automatic stroke was deleted near this timestamp (within 'near').</summary>
+        public bool StrokeRemovedNear(long timestamp, long near)
+        {
+            return RemovedStrokes != null && RemovedStrokes.Any(r => Math.Abs(r - timestamp) < near);
+        }
+
+        /// <summary>
         /// Strokes of the segments confirmed or typed by the analyst (key: distance of the checkpoint at the end of the segment).
         /// They have priority over the count from the stroke marks.
         /// </summary>
@@ -1177,6 +1190,7 @@ namespace Kinovea.ScreenManager
                 Pilot = m.Pilot }).ToList();
             r.Checkpoints = new List<int>(Checkpoints);
             r.StrokeCounts = new Dictionary<int, double>(StrokeCounts);
+            r.RemovedStrokes = RemovedStrokes != null ? new List<long>(RemovedStrokes) : null;
             r.Turns = new Dictionary<int, SwimTurnManual>();
             r.PhaseValues = new Dictionary<string, SwimPhaseManual>();
             r.Reference = Reference != null ? Reference.Copy() : null;

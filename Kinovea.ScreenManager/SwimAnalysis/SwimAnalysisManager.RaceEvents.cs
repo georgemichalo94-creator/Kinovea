@@ -321,7 +321,9 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimProposal p = (pending ?? Race.Proposals).FirstOrDefault(x => x.Kind == next && x.Index == nextIndex);
-            if (p == null)
+            // (2.15.0) One at an official time stays there (the release at the official reaction time: the answer to the first movement
+            // moved it to reaction + 0.42 s, and the flight came from it).
+            if (p == null || p.Official)
                 return;
 
             string style = next == KindRacePushoff ? SwimPresets.StyleAt(Race, nextIndex) : SwimPresets.StyleAt(Race, Race.Pool);

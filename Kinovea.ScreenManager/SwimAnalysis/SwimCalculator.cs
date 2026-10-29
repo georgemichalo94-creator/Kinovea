@@ -975,6 +975,7 @@ namespace Kinovea.ScreenManager
 
             List<string> missed = new List<string>();
             List<string> doubled = new List<string>();
+            Dictionary<string, double> medians = new Dictionary<string, double>();
             foreach (IGrouping<string, StrokeInterval> group in intervals.GroupBy(x => x.Style))
             {
                 List<double> durations = group.Select(x => x.B - x.A).ToList();
@@ -984,6 +985,7 @@ namespace Kinovea.ScreenManager
                 double median = Median(durations);
                 if (median <= 0)
                     continue;
+                medians[group.Key] = median;
 
                 foreach (StrokeInterval x in group)
                 {
@@ -995,6 +997,28 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // (2.15.0) The edges of the clean swimming too: from its start (+15) to the first stroke and from the last stroke to its end
+            // (−5) no more than a stroke and a bit (strokes read from a click after the 15 m, or none placed where the image was lost,
+            // made a segment short of strokes with no warning).
+            List<string> edges = new List<string>();
+            for (int k = 0; k < windowStart.Count; k++)
+            {
+                double median;
+                if (!medians.TryGetValue(windowStyle[k], out median))
+                    continue;
+
+                List<double> inside = s.Where(t => t >= windowStart[k] - 1e-9 && t <= windowEnd[k] + 1e-9).ToList();
+                double head = inside.Count > 0 ? inside[0] - windowStart[k] : windowEnd[k] - windowStart[k];
+                double tail = inside.Count > 0 ? windowEnd[k] - inside[inside.Count - 1] : 0;
+                if (head > 1.75 * median)
+                    edges.Add(Format("{0:0.00}–{1:0.00} s", windowStart[k], inside.Count > 0 ? inside[0] : windowEnd[k]));
+                if (tail > 1.75 * median)
+                    edges.Add(Format("{0:0.00}–{1:0.00} s", inside[inside.Count - 1], windowEnd[k]));
+            }
+
+            if (edges.Count > 0)
+                result.Warnings.Add(SwimLang.T("Χεριές: χωρίς πατήματα στην αρχή ή στο τέλος της καθαρής κολύμβησης στα ") + Join(edges) +
+                    SwimLang.T(" (περισσότερο από μια χεριά): μήπως λείπουν χεριές σε αυτό το τμήμα;"));
             if (missed.Count > 0)
                 result.Warnings.Add(SwimLang.T("Χεριές: μεγάλο κενό ανάμεσα σε δύο πατήματα στα ") + Join(missed) + SwimLang.T(" (σχεδόν διπλάσιο από το συνηθισμένο): μήπως λείπει ένα πάτημα;"));
             if (doubled.Count > 0)

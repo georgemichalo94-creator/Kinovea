@@ -921,7 +921,8 @@ namespace Kinovea.ScreenManager
             {
                 SwimTurnManual turn = pilot.Wall > 0 ? Race.GetTurn(pilot.Wall, false) : null;
                 double? now = pilot.Wall > 0 ? (turn != null ? turn.UnderwaterDist : null) : Race.UnderwaterDist;
-                if (now.HasValue && Math.Abs(now.Value - pilot.Underwater.Value) < 1e-6)
+                // (2.15.0) Only while it is still an estimate (the flag): a 📍 measurement equal to it (10.20 for 10.2) is the analyst's.
+                if (now.HasValue && Math.Abs(now.Value - pilot.Underwater.Value) < 1e-6 && UnderwaterEstimatedAt(pilot.Wall))
                 {
                     if (turn != null)
                     {
@@ -950,6 +951,10 @@ namespace Kinovea.ScreenManager
             if (Race == null || Race.Pool <= 0 || distance % Race.Pool == 0)
                 return "";
 
+            // (2.15.0) The checkpoint 5 before a wall with an official time comes from the wall and the one 15 before it: placed again
+            // when that one changes (it stayed where the uncorrected 35 m put it, at 85%).
+            RederiveOfficialLast(distance);
+
             // (2.9.5b) A breakout of the pilot the times now put past the most it can be goes first.
             string gone = CheckPilotBreakouts();
             return ReestimatePilotUnderwater(distance - distance % Race.Pool) + (gone.Length > 0 ? "  " + gone : "");
@@ -962,13 +967,16 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string ReestimatePilotUnderwater(int wall)
         {
-            SwimMark breakout = Race == null ? null : Race.Marks.FirstOrDefault(m => m.Type == SwimMarkType.Breakout && m.Pilot != null &&
-                m.Pilot.Wall == wall && m.Pilot.Underwater.HasValue);
-            if (breakout == null)
+            // (2.15.0) The breakout of that length whoever put it, while its distance is still the estimate (the flag): before, only an
+            // unchecked breakout of the pilot, so after Enter on it (or a breakout answered in the check, or corrected) the estimate stayed
+            // as the uncorrected +15 gave it (README 2.9.5: "η εκτίμηση ξαναγίνεται όταν αλλάζεις ένα πέρασμα"). A value of the
+            // analyst (📍 or typed: the flag off) is never changed.
+            SwimMark breakout = BreakoutAfterWall(wall);
+            if (breakout == null || !UnderwaterEstimatedAt(wall))
                 return "";
 
             double? before = UnderwaterOf(wall);
-            if (!before.HasValue || Math.Abs(before.Value - breakout.Pilot.Underwater.Value) >= 1e-6)
+            if (!before.HasValue)
                 return "";
 
             SetUnderwater(wall, null);
@@ -980,8 +988,46 @@ namespace Kinovea.ScreenManager
                 return "";
             }
 
-            breakout.Pilot.Underwater = after;
+            if (breakout.Pilot != null && breakout.Pilot.Underwater.HasValue)
+                breakout.Pilot.Underwater = after;
             return Math.Abs(after.Value - before.Value) < 1e-6 ? "" : text;
+        }
+
+        /// <summary>(2.15.0) The underwater distance after this wall (0: the start) is the estimate from the times (not measured or typed).</summary>
+        private bool UnderwaterEstimatedAt(int wall)
+        {
+            if (Race == null)
+                return false;
+            if (wall == 0)
+                return Race.UnderwaterEstimated && Race.UnderwaterDist.HasValue;
+            SwimTurnManual turn = Race.GetTurn(wall, false);
+            return turn != null && turn.UnderwaterEstimated && turn.UnderwaterDist.HasValue;
+        }
+
+        /// <summary>(2.15.0) The first breakout of the length after this wall (0: the start), before the next wall; null if none.</summary>
+        private SwimMark BreakoutAfterWall(int wall)
+        {
+            if (Race == null)
+                return null;
+
+            long from;
+            if (wall == 0)
+            {
+                if (!Race.StartTimestamp.HasValue)
+                    return null;
+                from = Race.StartTimestamp.Value;
+            }
+            else
+            {
+                SwimMark w = Race.GetSplit(wall);
+                if (w == null)
+                    return null;
+                from = w.Timestamp;
+            }
+
+            SwimMark next = Race.Pool > 0 ? Race.GetSplit(Math.Min(wall + Race.Pool, Race.Distance)) : null;
+            long to = next != null && next.Timestamp > from ? next.Timestamp : long.MaxValue;
+            return Race.Marks.Where(m => m.Type == SwimMarkType.Breakout && m.Timestamp > from && m.Timestamp < to).OrderBy(m => m.Timestamp).FirstOrDefault();
         }
 
         /// <summary>The underwater distance after this wall (0: the start), null if none.</summary>
@@ -1064,6 +1110,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            DropForeignResume();
             if (resumeWall > 0 && Race.StartTimestamp.HasValue)
             {
                 // The swimmer lost after a wall (the camera turned fast): the next click goes on from there.

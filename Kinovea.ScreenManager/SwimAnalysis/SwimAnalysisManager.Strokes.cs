@@ -426,7 +426,7 @@ namespace Kinovea.ScreenManager
             while (last > 0 && s.Timestamps[last] > until)
                 last--;
             if (wall)
-                last -= (int)Math.Round((Race != null && s.Wall >= Race.Distance ? SwimStrokeDetector.FinishMargin(s.Style) : SwimStrokeDetector.WallMargin(s.Style)) * s.Fps);
+                last -= (int)Math.Round(StrokeMarginAt(s.Wall, s.Style) * s.Fps);
             if (last < 5)
                 return;
 
@@ -451,7 +451,7 @@ namespace Kinovea.ScreenManager
             foreach (int i in result.Strokes)
             {
                 long t = s.Timestamps[i];
-                if (kept.Any(m => Math.Abs(m - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near))
+                if (kept.Any(m => Math.Abs(m - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near) || Race.StrokeRemovedNear(t, near))
                     continue;
 
                 Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
@@ -867,6 +867,14 @@ namespace Kinovea.ScreenManager
             StrokeSession s = SessionFor(Race);
             if (s != null && mark.Timestamp > s.LapStart)
                 s.Removed.Add(mark.Timestamp);
+
+            // (2.15.0) Kept with the race: no reading puts it back (a second «Όλος ο αγώνας» did).
+            if (mark.Batch != null)
+            {
+                if (Race.RemovedStrokes == null)
+                    Race.RemovedStrokes = new List<long>();
+                Race.RemovedStrokes.Add(mark.Timestamp);
+            }
 
             Changed(true);
             InvalidatePlayer();

@@ -1822,9 +1822,19 @@ namespace Kinovea.ScreenManager
                     StopPlaying();
                     // (Swim 2.14.1) On a screen of a group the time origins of all its screens move by the same time (they stay
                     // synchronised, each at the signal); else this video's own, as before.
-                    if (SwimGroupStartAsked == null || !SwimGroupStartAsked(this, m_iCurrentPosition))
+                    bool swimGroupShifted = SwimGroupStartAsked != null && SwimGroupStartAsked(this, m_iCurrentPosition);
+                    if (!swimGroupShifted)
                         MarkTimeOrigin();
-                    SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
+                    // (Swim 2.15.0) Only this video's origin moved: on a screen of a group that is not its lead, the start of the race stays.
+                    SwimAnalysisManager.Instance.StartKeyOwnOrigin = !swimGroupShifted;
+                    try
+                    {
+                        SwimAnalysisManager.Instance.HandleCommand(this, m_FrameServer, command, m_iCurrentPosition);
+                    }
+                    finally
+                    {
+                        SwimAnalysisManager.Instance.StartKeyOwnOrigin = false;
+                    }
                     break;
                 case PlayerScreenCommands.SwimShowPanel:
                 case PlayerScreenCommands.SwimSplit:

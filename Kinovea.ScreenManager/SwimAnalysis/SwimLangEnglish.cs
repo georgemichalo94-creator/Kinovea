@@ -2141,6 +2141,28 @@ namespace Kinovea.ScreenManager
                 "the body length is needed (📍 toes → head, once in the race): at the push-off the head is that far from the wall" },
             { "{0}: η έξοδος ({1:0.0}) είναι πολύ κοντά στο μήκος του σώματος ({2:0.00})· έλεγξε τις δύο αποστάσεις",
                 "{0}: the breakout ({1:0.0}) is too close to the body length ({2:0.00}); check the two distances" },
+
+            // (2.15.0) The audit of the measurements.
+            { "⚠ Χεριές για έλεγχο στα μήκη έως τα {0}{1}: η συχνότητα έξω από τα συνηθισμένα όρια ή χάθηκε η εικόνα (μέτρησέ τες ή διόρθωσέ τες στον πίνακα).",
+                "⚠ Strokes to check in the lengths to {0}{1}: the stroke rate out of its usual range or the image lost (count them or correct them in the table)." },
+            { "Η αρχή χρόνου αυτής της κάμερας μπήκε στο σήμα της (συγχρονισμός με το χέρι)· η εκκίνηση του αγώνα δεν άλλαξε.",
+                "This camera's time origin is now at its signal (synchronised by hand); the start of the race did not change." },
+            { " Πάτα την εκκίνηση και στην κάμερα του αγώνα, στο σήμα της.",
+                " Press the start on the race's camera too, at its signal." },
+            { " (αντικατέστησε την έξοδο του πιλότου σε αυτό το μήκος)",
+                " (it replaced the pilot's breakout in this length)" },
+            { "  ⚠ δύο έξοδοι στο ίδιο μήκος: μετράει η πρώτη (σβήσε τη λάθος).",
+                "  ⚠ two breakouts in the same length: the first one counts (delete the wrong one)." },
+            { "Δεν υπάρχει κάτι για αναίρεση (για να σβήσεις ένα σημάδι, πήγαινε στο καρέ του).",
+                "Nothing to undo (to delete a mark, go to its frame)." },
+            { "  ⚠ μακριά από τις γραμμές της βαθμονόμησης ({0:0.#}–{1:0.#}): για ακρίβεια βαθμονόμησε με γραμμές γύρω από το σημείο (π.χ. 5–15) και μέτρησε ξανά.",
+                "  ⚠ far from the lines of the calibration ({0:0.#}–{1:0.#}): for accuracy calibrate with lines around the point (e.g. 5–15) and measure again." },
+            { "Χεριές: χωρίς πατήματα στην αρχή ή στο τέλος της καθαρής κολύμβησης στα ",
+                "Strokes: no presses at the beginning or the end of the clean swimming at " },
+            { " (περισσότερο από μια χεριά): μήπως λείπουν χεριές σε αυτό το τμήμα;",
+                " (more than a stroke): are strokes missing in this segment?" },
+            { "μήκος σώματος {0:0.00} μ.: δεν γίνεται (έλεγξε την τιμή)",
+                "body length {0:0.00} m: not possible (check the value)" },
         };
     }
 }

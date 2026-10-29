@@ -858,6 +858,14 @@ namespace Kinovea.ScreenManager
                 return null;
             }
 
+            // A body length typed out of the plausible range (0.85 for 1.85): no speed from it (the 📍 refuses it, typing did not).
+            double bodyMeters = p.HeadAtPushoff.Value * k;
+            if (bodyMeters < BodyLengthMin || bodyMeters > BodyLengthMax)
+            {
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("μήκος σώματος {0:0.00} μ.: δεν γίνεται (έλεγξε την τιμή)"), bodyMeters));
+                return null;
+            }
+
             double time = p.Breakout.Value - p.Pushoff.Value;
             if (time < SpeedMinTime)
                 return null;
