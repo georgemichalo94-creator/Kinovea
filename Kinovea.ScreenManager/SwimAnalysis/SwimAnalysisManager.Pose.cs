@@ -263,8 +263,13 @@ namespace Kinovea.ScreenManager
                     net.KeepMask = !capture.Done;
                     SwimPose pose = tracker.Next(part => net.Detect(bgr, part), (hip, body) => net.Landmarks(bgr, hip, body));
                     capture.Add(bgr, pose, net, frame.Timestamp);
+                    // (2.15.0) Scaled as a copy: the tracker compares the next pose with this one in the working pixels (scaled in place,
+                    // the left/right correction stopped working for videos wider than the working size, 2.7K/4K).
                     if (pose != null)
+                    {
+                        pose = pose.Copy();
                         pose.Scale(sx, sy);
+                    }
                     skeleton.Add(pose);
                 }
 

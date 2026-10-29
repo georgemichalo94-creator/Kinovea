@@ -78,6 +78,16 @@ namespace Kinovea.ScreenManager
             t = Visibility[a]; Visibility[a] = Visibility[b]; Visibility[b] = t;
         }
 
+        /// <summary>(2.15.0) A copy (the tracker keeps the pose it returned to compare the sides of the next one in the same pixels).</summary>
+        public SwimPose Copy()
+        {
+            SwimPose c = new SwimPose { Confidence = Confidence, Hip = Hip, Body = Body };
+            Array.Copy(X, c.X, X.Length);
+            Array.Copy(Y, c.Y, Y.Length);
+            Array.Copy(Visibility, c.Visibility, Visibility.Length);
+            return c;
+        }
+
         public void Scale(float sx, float sy)
         {
             for (int i = 0; i < SwimJoints.Count; i++)

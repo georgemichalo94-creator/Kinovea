@@ -254,8 +254,11 @@ namespace Kinovea.ScreenManager
         public static double Angle(double ax, double ay, double bx, double by, double cx, double cy)
         {
             double v1x = ax - bx, v1y = ay - by, v2x = cx - bx, v2y = cy - by;
-            double n = Math.Sqrt(v1x * v1x + v1y * v1y) * Math.Sqrt(v2x * v2x + v2y * v2y) + 1e-9;
-            double c = Math.Max(-1, Math.Min(1, (v1x * v2x + v1y * v2y) / n));
+            double l1 = Math.Sqrt(v1x * v1x + v1y * v1y), l2 = Math.Sqrt(v2x * v2x + v2y * v2y);
+            // (2.15.0) Two joints on one point (the model folds the hidden ones together): no angle (it read 90°, a bent knee).
+            if (!(l1 > 1e-6) || !(l2 > 1e-6))
+                return double.NaN;
+            double c = Math.Max(-1, Math.Min(1, (v1x * v2x + v1y * v2y) / (l1 * l2)));
             return Math.Acos(c) * 180 / Math.PI;
         }
     }
@@ -1739,15 +1742,21 @@ namespace Kinovea.ScreenManager
             return found;
         }
 
-        /// <summary>(2.9.15) The share of the images between ta and tb with a knee angle whose skeleton lies along the swim.</summary>
+        /// <summary>
+        /// (2.9.15) The share of the images between ta and tb with a knee angle whose skeleton lies along the swim. (2.15.0) Of all the
+        /// images between them: the ones without a skeleton count as not clean (counted only among the ones with a skeleton, two clean
+        /// images out of twenty read 100% and the note to check the kicks did not come).
+        /// </summary>
         private static double AlongFraction(Signals s, double ta, double tb, int sign)
         {
             int n = 0, along = 0;
             for (int i = 0; i < s.N; i++)
             {
-                if (s.T[i] < ta || s.T[i] > tb || !s.Present[i] || !s.InWater[i] || double.IsNaN(s.KneeAngle[i]))
+                if (s.T[i] < ta || s.T[i] > tb)
                     continue;
                 n++;
+                if (!s.Present[i] || !s.InWater[i] || double.IsNaN(s.KneeAngle[i]))
+                    continue;
                 if ((s.ShX[i] - s.HipX[i]) * sign >= KickShoulders * s.L && (s.HipX[i] - s.AnkX[i]) * sign >= KickAnkles * s.L)
                     along++;
             }

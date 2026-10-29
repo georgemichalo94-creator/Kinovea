@@ -44,7 +44,8 @@ function StartOf($path) {
 }
 function ReadZone($path, $from, $seconds) {
   $err = $null
-  $args2 = [object[]]@($ff, $path, [double]$from, [double]$seconds, [System.Threading.CancellationToken]::None, $err)
+  # Plain .NET strings: the paths from Join-Path come wrapped (PSObject), which Invoke does not convert.
+  $args2 = [object[]]@([string]$ff, [string]$path, [double]$from, [double]$seconds, [System.Threading.CancellationToken]::None, $err)
   $samples = $read.Invoke($null, $args2)
   return @{ Samples = $samples; Error = $args2[5] }
 }
