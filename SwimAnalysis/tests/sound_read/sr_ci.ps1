@@ -1,6 +1,8 @@
 ﻿# sr_ci.ps1: the CI check of the sound read with ffmpeg (SwimStartSound.Read, 2.15.0) with the ffmpeg.exe of the build: a zone after
-# the first seconds of an MP4 and of an MPEG-TS whose clock starts at 100 s comes back whole, with its first sample at 'from' (a click
-# at 40 s at its place). Fictional sounds made here by ffmpeg (a 5 ms click of 1 kHz in 60 s of silence).
+# the first seconds of an MP4 and of an MPEG-TS whose clock starts at 100 s comes back whole, with its first sample at 'from' on the
+# stream clock: a click at 40 s of the sound is at the same time of the stream clock in the zone read after a seek and in the sound read
+# from the beginning (within 1 ms), near 40 s of the clock (an MP4 keeps the sound at 0, the TS at its start; the codecs add a few ms).
+# Fictional sounds made here by ffmpeg (a 5 ms click of 1 kHz in 60 s of silence).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea). Exit code 1 when a check fails.
 #   powershell -File sr_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls and ffmpeg.exe>
 param([string]$sm, [string]$bin)
@@ -62,17 +64,20 @@ Check (Test-Path $ts) 'MPEG-TS made'
 foreach ($case in @(@{ Path = $mp4; Name = 'MP4' }, @{ Path = $ts; Name = 'TS (clock from 100 s)' })) {
   if (-not (Test-Path $case.Path)) { continue }
   $start = StartOf $case.Path
+  $clicks = @()
   foreach ($zone in @(@{ From = 35.0; Seconds = 10.0 }, @{ From = 0.0; Seconds = 50.0 })) {
     $from = $start + $zone.From
     $r = ReadZone $case.Path $from $zone.Seconds
     $n = if ($r.Samples) { $r.Samples.Length } else { 0 }
     $expected = [int][Math]::Floor($zone.Seconds * $rate)
     Check ($n -ge $expected - $rate / 50 -and $n -le $expected + 1) ($case.Name + ' from ' + $zone.From + ' s for ' + $zone.Seconds + ' s: ' + $n + ' samples of ' + $expected + ' (start ' + $start + ')' + $(if ($r.Error) { ' error: ' + $r.Error } else { '' }))
-    if ($n -gt 0) {
-      $at = PeakAt $r.Samples
-      $want = (40.0 - $zone.From) * $rate
-      Check ([Math]::Abs($at - $want) -le $rate * 0.003) ($case.Name + ': the click at sample ' + $at + ' (' + [int]$want + ' ± 3 ms)')
-    }
+    if ($n -gt 0) { $clicks += ($from + (PeakAt $r.Samples) / $rate) }
+  }
+  if ($clicks.Count -eq 2) {
+    $ms = 1000.0 * [Math]::Abs($clicks[0] - $clicks[1])
+    Check ($ms -le 1.0) ($case.Name + ': the click at ' + $clicks[0].ToString('0.0000') + ' s of the clock after the seek, ' + $clicks[1].ToString('0.0000') + ' s from the beginning (' + $ms.ToString('0.00') + ' ms)')
+    $off = [Math]::Min([Math]::Abs($clicks[0] - 40.0), [Math]::Abs($clicks[0] - 40.0 - $start))
+    Check ($off -le 0.02) ($case.Name + ': the click near 40 s of the sound (' + (1000.0 * $off).ToString('0.0') + ' ms)')
   }
 }
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
