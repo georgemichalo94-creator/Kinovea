@@ -9,7 +9,8 @@ const { makeContext } = require('./mock_gas');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FILE = 'SwimAnalysis/GoogleSheet/SwimRaceAnalysis.gs';
-const CURRENT = fs.readFileSync(path.join(ROOT, FILE), 'utf8');
+// The file as git keeps it (a Windows checkout writes CRLF; the history has LF).
+const CURRENT = fs.readFileSync(path.join(ROOT, FILE), 'utf8').replace(/\r\n/g, '\n');
 const versionOf = src => /var SWIM_VERSION = '([^']+)'/.exec(src)[1];
 
 // Το script πριν από τα αγγλικά: του HEAD ή, όταν τα αγγλικά είναι ήδη σε commit, το τελευταίο χωρίς SWIM_EN_.

@@ -1,0 +1,1439 @@
+{
+ "format": "kinovea-swim-tech-sheets",
+ "version": 1,
+ "updated": "2026-10-29",
+ "note": "Fictional catalogue for the CI check of the technique evaluation: invented sheets, labels and level tables.",
+ "anchors": {
+  "set": {
+   "el": "Θέση ετοιμότητας",
+   "en": "Set"
+  },
+  "signal": {
+   "el": "Σήμα",
+   "en": "Signal"
+  },
+  "drive": {
+   "el": "Ώθηση στον βατήρα",
+   "en": "Drive"
+  },
+  "hands_off": {
+   "el": "Χέρια από τον βατήρα",
+   "en": "Hands off"
+  },
+  "rear_off": {
+   "el": "Πίσω πόδι",
+   "en": "Rear foot off"
+  },
+  "arms_vertical": {
+   "el": "Χέρια κάθετα",
+   "en": "Arms vertical"
+  },
+  "takeoff": {
+   "el": "Αποδέσμευση",
+   "en": "Take-off"
+  },
+  "midflight": {
+   "el": "Μέση πτήσης",
+   "en": "Mid-flight"
+  },
+  "pre_entry": {
+   "el": "Πριν την είσοδο",
+   "en": "Before the entry"
+  },
+  "hand_entry": {
+   "el": "Είσοδος χεριών",
+   "en": "Hands enter"
+  },
+  "hip_entry": {
+   "el": "Είσοδος ισχίων",
+   "en": "Hips enter"
+  },
+  "feet_entry": {
+   "el": "Είσοδος ποδιών",
+   "en": "Feet enter"
+  },
+  "in5": {
+   "el": "5 μ. πριν τον τοίχο",
+   "en": "5 m in"
+  },
+  "last_stroke": {
+   "el": "Τελευταία χεριά",
+   "en": "Last stroke"
+  },
+  "rotation": {
+   "el": "Περιστροφή",
+   "en": "Rotation"
+  },
+  "touch": {
+   "el": "Επαφή",
+   "en": "Touch"
+  },
+  "release": {
+   "el": "Αφήνει τον τοίχο",
+   "en": "Release"
+  },
+  "plant": {
+   "el": "Πόδια στον τοίχο",
+   "en": "Feet on the wall"
+  },
+  "pushoff": {
+   "el": "Αποκόλληση",
+   "en": "Push-off"
+  },
+  "glide": {
+   "el": "Ολίσθηση",
+   "en": "Glide"
+  },
+  "underwater": {
+   "el": "Υποβρύχια φάση",
+   "en": "Underwater"
+  },
+  "pullout": {
+   "el": "Υποβρύχια χεριά",
+   "en": "Pull-out"
+  },
+  "breakout": {
+   "el": "Έξοδος",
+   "en": "Breakout"
+  },
+  "first_stroke": {
+   "el": "Πρώτη χεριά",
+   "en": "First stroke"
+  },
+  "out10": {
+   "el": "10 μ. έξω",
+   "en": "10 m out"
+  },
+  "t15": {
+   "el": "15 μ.",
+   "en": "15 m"
+  }
+ },
+ "checks": {
+  "start_15": {
+   "kind": "time",
+   "unit": "s",
+   "el": "Εκκίνηση ως τα 15 μ.",
+   "en": "Start to 15 m"
+  },
+  "turn_5_10": {
+   "kind": "time",
+   "unit": "s",
+   "el": "Στροφή 5 + 10 μ.",
+   "en": "Turn 5 + 10 m"
+  },
+  "turn_segments": {
+   "kind": "time",
+   "unit": "s",
+   "el": "Τμήματα στροφής",
+   "en": "Turn segments"
+  },
+  "push_time": {
+   "kind": "time",
+   "unit": "s",
+   "el": "Χρόνος ώθησης",
+   "en": "Push time",
+   "good": {
+    "max": 0.3
+   }
+  },
+  "rotation_flip": {
+   "kind": "time",
+   "unit": "%",
+   "el": "Ταχύτητα περιστροφής",
+   "en": "Rotation speed",
+   "good": {
+    "max": 115
+   }
+  },
+  "kick_count_rot": {
+   "kind": "time",
+   "unit": "",
+   "el": "Δελφινισμοί στην περιστροφή",
+   "en": "Kicks in the rotation",
+   "good": {
+    "eq": 1
+   }
+  },
+  "rotation_open": {
+   "kind": "time",
+   "unit": "s",
+   "el": "Ανοιχτή στροφή",
+   "en": "Open turn",
+   "good": {
+    "max": 1.0
+   }
+  },
+  "rate_speed_5m": {
+   "kind": "time",
+   "unit": "%",
+   "el": "Συχνότητα στα 5 μ.",
+   "en": "Rate in the last 5 m",
+   "good": {
+    "min": 97
+   }
+  },
+  "kick_rate": {
+   "kind": "time",
+   "unit": "/s",
+   "el": "Ρυθμός δελφινισμών",
+   "en": "Kick rate",
+   "good": {
+    "min": 2.0
+   }
+  },
+  "rule_15m": {
+   "kind": "rule",
+   "unit": "m",
+   "el": "Κανόνας 15 μ.",
+   "en": "15 m rule",
+   "good": {
+    "max": 15
+   }
+  },
+  "rule_one_dolphin": {
+   "kind": "rule",
+   "unit": "",
+   "el": "Ένας δελφινισμός",
+   "en": "One dolphin kick",
+   "good": {
+    "max": 1
+   }
+  },
+  "knee_plant": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Γόνατα στον τοίχο",
+   "en": "Knees on the wall",
+   "good": {
+    "min": 75,
+    "max": 110
+   }
+  },
+  "head_feet_depth": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Κεφάλι και πόδια στο ίδιο βάθος",
+   "en": "Head and feet level",
+   "good": {
+    "max": 12
+   }
+  },
+  "elbow_touch": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Αγκώνας στην επαφή",
+   "en": "Elbow at the touch",
+   "good": {
+    "min": 140
+   }
+  },
+  "streamline_plant": {
+   "kind": "pose",
+   "unit": "",
+   "el": "Streamline στον τοίχο",
+   "en": "Streamline on the wall",
+   "good": {
+    "eq": 1
+   }
+  },
+  "body_line_plant": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Γραμμή στον τοίχο",
+   "en": "Line on the wall",
+   "good": {
+    "max": 15
+   }
+  },
+  "streamline": {
+   "kind": "pose",
+   "unit": "",
+   "el": "Streamline στην αποκόλληση",
+   "en": "Streamline at the push-off",
+   "good": {
+    "eq": 1
+   }
+  },
+  "body_line": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Γραμμή στην αποκόλληση",
+   "en": "Line at the push-off",
+   "good": {
+    "max": 15
+   }
+  },
+  "body_line_glide": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Γραμμή στην ολίσθηση",
+   "en": "Line in the glide",
+   "good": {
+    "max": 15
+   }
+  },
+  "push_dir": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κατεύθυνση ώθησης",
+   "en": "Push direction",
+   "good": {
+    "min": -10,
+    "max": 5
+   }
+  },
+  "push_dir_back": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κατεύθυνση ώθησης (ύπτιο)",
+   "en": "Push direction (back)",
+   "good": {
+    "min": -25,
+    "max": -3
+   }
+  },
+  "push_dir_breast": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κατεύθυνση ώθησης (πρόσθιο)",
+   "en": "Push direction (breast)",
+   "good": {
+    "min": -15,
+    "max": 2
+   }
+  },
+  "hips_to_wall": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Ισχία στον τοίχο",
+   "en": "Hips to the wall",
+   "good": {
+    "min": -5
+   }
+  },
+  "legs_together": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Πόδια μαζί",
+   "en": "Legs together",
+   "good": {
+    "max": 10
+   }
+  },
+  "kick_amp_growth": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Πλάτος δελφινισμών",
+   "en": "Kick amplitude",
+   "good": {
+    "min": 100
+   }
+  },
+  "hips_vs_shoulders": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Ισχία ψηλά",
+   "en": "Hips high",
+   "good": {
+    "min": 0
+   }
+  },
+  "set_elbow": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Χέρια στη θέση",
+   "en": "Arms in the set",
+   "good": {
+    "min": 155
+   }
+  },
+  "front_knee_set": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Μπροστινό γόνατο",
+   "en": "Front knee",
+   "good": {
+    "min": 125
+   }
+  },
+  "set_hips_front": {
+   "kind": "pose",
+   "unit": "",
+   "el": "Ισχία μπροστά",
+   "en": "Hips forward",
+   "good": {
+    "eq": 1
+   }
+  },
+  "rear_leg_height": {
+   "kind": "pose",
+   "unit": "%",
+   "el": "Πίσω πόδι",
+   "en": "Rear leg",
+   "good": {
+    "min": 0
+   }
+  },
+  "shoulders_takeoff": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Ώμοι στην αποδέσμευση",
+   "en": "Shoulders at take-off",
+   "good": {
+    "min": -5
+   }
+  },
+  "arms_flex_takeoff": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Χέρια λυγισμένα",
+   "en": "Arms bent",
+   "good": {
+    "max": 140
+   }
+  },
+  "lead_leg_hip": {
+   "kind": "pose",
+   "unit": "s",
+   "el": "Πόδι στη γραμμή των ισχίων",
+   "en": "Lead leg at the hips",
+   "good": {
+    "max": 0.25
+   }
+  },
+  "legs_split": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Πόδια στην πτήση",
+   "en": "Legs in flight",
+   "good": {
+    "max": 25
+   }
+  },
+  "head_spine_flight": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κεφάλι στην πτήση",
+   "en": "Head in flight",
+   "good": {
+    "min": 40,
+    "max": 110
+   }
+  },
+  "head_drop_flight": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κεφάλι κάτω",
+   "en": "Head down",
+   "good": {
+    "max": 110
+   }
+  },
+  "flight_line": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Γραμμή πτήσης",
+   "en": "Flight line",
+   "good": {
+    "max": 15
+   }
+  },
+  "arms_flight": {
+   "kind": "pose",
+   "unit": "",
+   "el": "Χέρια μπροστά",
+   "en": "Arms ahead",
+   "good": {
+    "eq": 1
+   }
+  },
+  "back_arch": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Πλάτη",
+   "en": "Back"
+  },
+  "entry_streamline": {
+   "kind": "pose",
+   "unit": "",
+   "el": "Streamline στην είσοδο",
+   "en": "Streamline at the entry",
+   "good": {
+    "eq": 1
+   }
+  },
+  "legs_split_entry": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Πόδια στην είσοδο",
+   "en": "Legs at the entry",
+   "good": {
+    "max": 20
+   }
+  },
+  "head_lift_entry": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Κεφάλι στην είσοδο",
+   "en": "Head at the entry",
+   "good": {
+    "min": 40
+   }
+  },
+  "entry_arch": {
+   "kind": "pose",
+   "unit": "°",
+   "el": "Καμπύλη στην είσοδο",
+   "en": "Arch at the entry",
+   "good": {
+    "max": 15
+   }
+  },
+  "hips_peak": {
+   "kind": "pose",
+   "unit": "s",
+   "el": "Ψηλότερο σημείο ισχίων",
+   "en": "Hips at their highest"
+  }
+ },
+ "criteria": {
+  "t.wall": {
+   "el": "Βλέπει τον τοίχο",
+   "en": "Sees the wall",
+   "level": "X",
+   "anchor": "in5",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "t.rotation": {
+   "el": "Γρήγορη περιστροφή",
+   "en": "Quick rotation",
+   "level": "A",
+   "anchor": "rotation",
+   "check": "rotation_flip",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "plant.knee90": {
+   "el": "Γόνατα περίπου 90°",
+   "en": "Knees about 90°",
+   "level": "A",
+   "anchor": "plant",
+   "check": "knee_plant",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "push.short": {
+   "el": "Σύντομη ώθηση",
+   "en": "Short push",
+   "level": "A",
+   "anchor": "pushoff",
+   "check": "push_time",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "push.rigid": {
+   "el": "Σφιχτό σώμα",
+   "en": "Tight body",
+   "level": "P",
+   "anchor": "pushoff",
+   "check": "body_line",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "t.streamline": {
+   "el": "Streamline",
+   "en": "Streamline",
+   "level": "A",
+   "anchor": "pushoff",
+   "check": "streamline",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "t.kicks": {
+   "el": "Γρήγοροι δελφινισμοί",
+   "en": "Quick kicks",
+   "level": "A",
+   "anchor": "underwater",
+   "check": "kick_rate",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "t.open": {
+   "el": "Ανοιχτή στροφή γρήγορα",
+   "en": "Quick open turn",
+   "level": "A",
+   "anchor": "touch",
+   "check": "rotation_open",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "t.legs": {
+   "el": "Πόδια μαζί",
+   "en": "Legs together",
+   "level": "A",
+   "anchor": "underwater",
+   "check": "legs_together",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "s.set": {
+   "el": "Ισχία μπροστά",
+   "en": "Hips forward",
+   "level": "A",
+   "anchor": "set",
+   "check": "set_hips_front",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "s.arms": {
+   "el": "Χέρια τεντωμένα",
+   "en": "Arms long",
+   "level": "A",
+   "anchor": "set",
+   "check": "set_elbow",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "s.flight": {
+   "el": "Ίσιο σώμα",
+   "en": "Straight body",
+   "level": "A",
+   "anchor": "midflight",
+   "check": "flight_line",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "s.entry": {
+   "el": "Streamline στην είσοδο",
+   "en": "Streamline at the entry",
+   "level": "A",
+   "anchor": "pre_entry",
+   "check": "entry_streamline",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "s.look": {
+   "el": "Κοιτάζει κάτω",
+   "en": "Looks down",
+   "level": "X",
+   "anchor": "set",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "e.front_flexed": {
+   "el": "Μπροστινό γόνατο λυγισμένο πολύ",
+   "en": "Front knee too bent",
+   "level": "A",
+   "anchor": "set",
+   "check": "front_knee_set",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "e.head_up": {
+   "el": "Σηκώνει το κεφάλι",
+   "en": "Lifts the head",
+   "level": "A",
+   "anchor": "hand_entry",
+   "check": "head_lift_entry",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.rotation_slow": {
+   "el": "Αργή περιστροφή",
+   "en": "Slow rotation",
+   "level": "A",
+   "anchor": "rotation",
+   "check": "rotation_flip",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.push_slow": {
+   "el": "Αργή ώθηση",
+   "en": "Slow push",
+   "level": "A",
+   "anchor": "pushoff",
+   "check": "push_time",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.kick_slow": {
+   "el": "Αργοί δελφινισμοί",
+   "en": "Slow kicks",
+   "level": "A",
+   "anchor": "underwater",
+   "check": "kick_rate",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.rate_drop": {
+   "el": "Πέφτει η συχνότητα",
+   "en": "Rate drops",
+   "level": "A",
+   "anchor": "in5",
+   "check": "rate_speed_5m",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.knee": {
+   "el": "Γόνατα όχι στις 90°",
+   "en": "Knees not at 90°",
+   "level": "A",
+   "anchor": "plant",
+   "check": "knee_plant",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.line": {
+   "el": "Λυγισμένο σώμα",
+   "en": "Body bent",
+   "level": "A",
+   "anchor": "pushoff",
+   "check": "body_line",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.open_slow": {
+   "el": "Αργή ανοιχτή στροφή",
+   "en": "Slow open turn",
+   "level": "A",
+   "anchor": "touch",
+   "check": "rotation_open",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.head_lift": {
+   "el": "Σηκώνει νωρίς το κεφάλι",
+   "en": "Lifts the head early",
+   "level": "A",
+   "anchor": "hand_entry",
+   "check": "head_lift_entry",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.banana": {
+   "el": "Καμπύλη στην είσοδο",
+   "en": "Arched entry",
+   "level": "A",
+   "anchor": "hip_entry",
+   "check": "entry_arch",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.legs_entry": {
+   "el": "Πόδια ανοιχτά στην είσοδο",
+   "en": "Legs apart at the entry",
+   "level": "A",
+   "anchor": "hand_entry",
+   "check": "legs_split_entry",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "ka.flight_line": {
+   "el": "Λυγισμένη πτήση",
+   "en": "Bent flight",
+   "level": "A",
+   "anchor": "midflight",
+   "check": "flight_line",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "u.kicks": {
+   "el": "Ρυθμός δελφινισμών",
+   "en": "Kick rate",
+   "level": "A",
+   "anchor": "underwater",
+   "check": "kick_rate",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "u.amp": {
+   "el": "Μεγαλώνει το πλάτος",
+   "en": "Amplitude grows",
+   "level": "P",
+   "anchor": "underwater",
+   "check": "kick_amp_growth",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "u.pull": {
+   "el": "Υποβρύχια χεριά",
+   "en": "Pull-out",
+   "level": "X",
+   "anchor": "pullout",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "r.15m": {
+   "el": "Έξοδος πριν τα 15 μ.",
+   "en": "Out before 15 m",
+   "level": "A",
+   "anchor": "breakout",
+   "check": "rule_15m",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  },
+  "r.dolphin": {
+   "el": "Ένας δελφινισμός",
+   "en": "One dolphin kick",
+   "level": "A",
+   "anchor": "pullout",
+   "check": "rule_one_dolphin",
+   "cue": {
+    "el": "Δοκιμαστική διόρθωση",
+    "en": "Test cue"
+   }
+  }
+ },
+ "sheets": [
+  {
+   "id": "koe-demo-turn-fs",
+   "el": "Δοκιμαστική στροφή ελεύθερου",
+   "en": "Test freestyle turn",
+   "source": "test",
+   "kind": "turn",
+   "styles": [
+    "fs"
+   ],
+   "phases": [
+    {
+     "id": "in",
+     "el": "Προσέγγιση",
+     "en": "Approach",
+     "items": [
+      {
+       "n": "1",
+       "key": "t.wall"
+      },
+      {
+       "n": "2",
+       "key": "t.rotation"
+      }
+     ]
+    },
+    {
+     "id": "wall",
+     "el": "Τοίχος",
+     "en": "Wall",
+     "items": [
+      {
+       "n": "1",
+       "key": "plant.knee90"
+      },
+      {
+       "n": "2",
+       "key": "push.short"
+      },
+      {
+       "n": "3",
+       "key": "push.rigid"
+      },
+      {
+       "n": "4",
+       "key": "t.streamline"
+      }
+     ]
+    },
+    {
+     "id": "out",
+     "el": "Έξοδος",
+     "en": "Out",
+     "items": [
+      {
+       "n": "1",
+       "key": "t.kicks"
+      }
+     ]
+    }
+   ],
+   "scored": true,
+   "turn": "flip"
+  },
+  {
+   "id": "koe-demo-turn-br",
+   "el": "Δοκιμαστική στροφή πρόσθιου",
+   "en": "Test breaststroke turn",
+   "source": "test",
+   "kind": "turn",
+   "styles": [
+    "br"
+   ],
+   "phases": [
+    {
+     "id": "wall",
+     "el": "Τοίχος",
+     "en": "Wall",
+     "items": [
+      {
+       "n": "1",
+       "key": "t.open"
+      },
+      {
+       "n": "2",
+       "key": "push.short"
+      },
+      {
+       "n": "3",
+       "key": "t.streamline"
+      }
+     ]
+    }
+   ],
+   "scored": true,
+   "turn": "open",
+   "levels": "turn_5_10"
+  },
+  {
+   "id": "demo-start-fwd",
+   "el": "Δοκιμαστική εκκίνηση",
+   "en": "Test start",
+   "source": "test",
+   "kind": "start",
+   "styles": [
+    "fs",
+    "fly",
+    "br"
+   ],
+   "phases": [
+    {
+     "id": "set",
+     "el": "Θέση",
+     "en": "Set",
+     "items": [
+      {
+       "n": "1",
+       "key": "s.set"
+      },
+      {
+       "n": "2",
+       "key": "s.arms"
+      },
+      {
+       "n": "3",
+       "key": "s.look"
+      }
+     ]
+    },
+    {
+     "id": "air",
+     "el": "Πτήση και είσοδος",
+     "en": "Flight and entry",
+     "items": [
+      {
+       "n": "1",
+       "key": "s.flight"
+      },
+      {
+       "n": "2",
+       "key": "s.entry"
+      }
+     ]
+    }
+   ],
+   "scored": true,
+   "levels": "start_15"
+  },
+  {
+   "id": "demo-start-bk",
+   "el": "Δοκιμαστική εκκίνηση ύπτιου",
+   "en": "Test backstroke start",
+   "source": "test",
+   "kind": "start",
+   "styles": [
+    "bk"
+   ],
+   "phases": [
+    {
+     "id": "air",
+     "el": "Πτήση και είσοδος",
+     "en": "Flight and entry",
+     "items": [
+      {
+       "n": "1",
+       "key": "s.flight"
+      },
+      {
+       "n": "2",
+       "key": "s.entry"
+      }
+     ]
+    }
+   ],
+   "scored": true,
+   "levels": "start_15"
+  },
+  {
+   "id": "demo-errors-start",
+   "el": "Δοκιμαστικά λάθη εκκίνησης",
+   "en": "Test start errors",
+   "source": "test",
+   "kind": "start",
+   "styles": [
+    "fs",
+    "fly",
+    "br"
+   ],
+   "phases": [
+    {
+     "id": "e",
+     "el": "Λάθη",
+     "en": "Errors",
+     "items": [
+      {
+       "n": "1",
+       "key": "e.front_flexed"
+      },
+      {
+       "n": "2",
+       "key": "e.head_up"
+      }
+     ]
+    }
+   ],
+   "scored": false
+  },
+  {
+   "id": "kv-auto-start",
+   "el": "🤖 Αυτόματος έλεγχος (δοκιμή)",
+   "en": "🤖 Automatic check (test)",
+   "source": "test",
+   "kind": "start",
+   "styles": [
+    "fs",
+    "fly"
+   ],
+   "phases": [
+    {
+     "id": "e",
+     "el": "Λάθη",
+     "en": "Errors",
+     "items": [
+      {
+       "n": "1",
+       "key": "ka.head_lift"
+      },
+      {
+       "n": "2",
+       "key": "ka.banana"
+      },
+      {
+       "n": "3",
+       "key": "ka.legs_entry"
+      },
+      {
+       "n": "4",
+       "key": "ka.flight_line"
+      }
+     ]
+    }
+   ],
+   "scored": false,
+   "levels": "start_15"
+  },
+  {
+   "id": "kv-auto-start-bk",
+   "el": "🤖 Αυτόματος έλεγχος ύπτιου (δοκιμή)",
+   "en": "🤖 Automatic check back (test)",
+   "source": "test",
+   "kind": "start",
+   "styles": [
+    "bk"
+   ],
+   "phases": [
+    {
+     "id": "e",
+     "el": "Λάθη",
+     "en": "Errors",
+     "items": [
+      {
+       "n": "1",
+       "key": "ka.flight_line"
+      },
+      {
+       "n": "2",
+       "key": "ka.banana"
+      }
+     ]
+    }
+   ],
+   "scored": false,
+   "levels": "start_15"
+  },
+  {
+   "id": "kv-auto-turn-fs",
+   "el": "🤖 Αυτόματος έλεγχος στροφής (δοκιμή)",
+   "en": "🤖 Automatic turn check (test)",
+   "source": "test",
+   "kind": "turn",
+   "styles": [
+    "fs"
+   ],
+   "phases": [
+    {
+     "id": "e",
+     "el": "Λάθη",
+     "en": "Errors",
+     "items": [
+      {
+       "n": "1",
+       "key": "ka.rotation_slow"
+      },
+      {
+       "n": "2",
+       "key": "ka.push_slow"
+      },
+      {
+       "n": "3",
+       "key": "ka.kick_slow"
+      },
+      {
+       "n": "4",
+       "key": "ka.rate_drop"
+      },
+      {
+       "n": "5",
+       "key": "ka.knee"
+      },
+      {
+       "n": "6",
+       "key": "ka.line"
+      }
+     ]
+    }
+   ],
+   "scored": false,
+   "turn": "flip"
+  },
+  {
+   "id": "kv-auto-turn-br",
+   "el": "🤖 Αυτόματος έλεγχος στροφής πρόσθιου (δοκιμή)",
+   "en": "🤖 Automatic breaststroke turn check (test)",
+   "source": "test",
+   "kind": "turn",
+   "styles": [
+    "br"
+   ],
+   "phases": [
+    {
+     "id": "e",
+     "el": "Λάθη",
+     "en": "Errors",
+     "items": [
+      {
+       "n": "1",
+       "key": "ka.open_slow"
+      },
+      {
+       "n": "2",
+       "key": "ka.push_slow"
+      }
+     ]
+    }
+   ],
+   "scored": false,
+   "turn": "open",
+   "levels": "turn_5_10"
+  },
+  {
+   "id": "demo-uw",
+   "el": "Δοκιμαστική υποβρύχια φάση",
+   "en": "Test underwater phase",
+   "source": "test",
+   "kind": "underwater",
+   "styles": [
+    "fs",
+    "fly",
+    "bk"
+   ],
+   "phases": [
+    {
+     "id": "uw",
+     "el": "Υποβρύχια",
+     "en": "Underwater",
+     "items": [
+      {
+       "n": "1",
+       "key": "u.kicks"
+      },
+      {
+       "n": "2",
+       "key": "u.amp"
+      },
+      {
+       "n": "3",
+       "key": "t.legs"
+      }
+     ]
+    }
+   ],
+   "scored": true
+  },
+  {
+   "id": "demo-uw-br",
+   "el": "Δοκιμαστική υποβρύχια χεριά",
+   "en": "Test pull-out",
+   "source": "test",
+   "kind": "pullout",
+   "styles": [
+    "br"
+   ],
+   "phases": [
+    {
+     "id": "uw",
+     "el": "Υποβρύχια",
+     "en": "Underwater",
+     "items": [
+      {
+       "n": "1",
+       "key": "u.pull"
+      },
+      {
+       "n": "2",
+       "key": "r.dolphin"
+      }
+     ]
+    }
+   ],
+   "scored": true
+  },
+  {
+   "id": "demo-rules",
+   "el": "Δοκιμαστικοί κανονισμοί",
+   "en": "Test rules",
+   "source": "test",
+   "kind": "rules",
+   "styles": [
+    "fs",
+    "bk",
+    "br",
+    "fly",
+    "im"
+   ],
+   "phases": [
+    {
+     "id": "r",
+     "el": "Κανονισμοί",
+     "en": "Rules",
+     "items": [
+      {
+       "n": "1",
+       "key": "r.15m"
+      },
+      {
+       "n": "2",
+       "key": "r.dolphin"
+      }
+     ]
+    }
+   ],
+   "scored": true
+  }
+ ],
+ "levels": {
+  "start_15": {
+   "el": "Εκκίνηση ως τα 15 μ. (δοκιμή)",
+   "en": "Start to 15 m (test)",
+   "check": "start_15",
+   "fs": {
+    "M": [
+     5.0,
+     5.2,
+     5.4,
+     5.6,
+     5.8,
+     6.0,
+     6.2,
+     6.4
+    ],
+    "F": [
+     5.6,
+     5.8,
+     6.0,
+     6.2,
+     6.4,
+     6.6,
+     6.8,
+     7.0
+    ]
+   },
+   "fly": {
+    "M": [
+     5.2,
+     5.4,
+     5.6,
+     5.8,
+     6.0,
+     6.2,
+     6.4,
+     6.6
+    ],
+    "F": [
+     5.8,
+     6.0,
+     6.2,
+     6.4,
+     6.6,
+     6.8,
+     7.0,
+     7.2
+    ]
+   },
+   "br": {
+    "M": [
+     6.0,
+     6.25,
+     6.5,
+     6.75,
+     7.0,
+     7.25,
+     7.5,
+     7.75
+    ],
+    "F": [
+     6.6,
+     6.85,
+     7.1,
+     7.35,
+     7.6,
+     7.85,
+     8.1,
+     8.35
+    ]
+   },
+   "bk": {
+    "M": [
+     5.6,
+     5.8,
+     6.0,
+     6.2,
+     6.4,
+     6.6,
+     6.8,
+     7.0
+    ],
+    "F": [
+     6.0,
+     6.2,
+     6.4,
+     6.6,
+     6.8,
+     7.0,
+     7.2,
+     7.4
+    ]
+   }
+  },
+  "turn_5_10": {
+   "el": "Στροφή 5 + 10 μ. (δοκιμή)",
+   "en": "Turn 5 + 10 m (test)",
+   "check": "turn_5_10",
+   "br": {
+    "M": [
+     8.0,
+     8.4,
+     8.8,
+     9.2,
+     9.6,
+     10.0,
+     10.4,
+     10.8
+    ],
+    "F": [
+     8.6,
+     9.0,
+     9.4,
+     9.8,
+     10.2,
+     10.6,
+     11.0,
+     11.4
+    ]
+   },
+   "fly": {
+    "M": [
+     7.0,
+     7.4,
+     7.8,
+     8.2,
+     8.6,
+     9.0,
+     9.4,
+     9.8
+    ],
+    "F": [
+     7.6,
+     8.0,
+     8.4,
+     8.8,
+     9.2,
+     9.6,
+     10.0,
+     10.4
+    ]
+   }
+  }
+ }
+}

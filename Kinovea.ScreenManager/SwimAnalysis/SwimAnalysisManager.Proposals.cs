@@ -316,6 +316,13 @@ namespace Kinovea.ScreenManager
                 groupSource = screen;
                 timestamp = VideoScreenGroup.LeadTimestamp(screen, timestamp);
                 screen = player;
+
+                // (2.14.1) A moment the video of the analysis does not have: the proposal is not kept there.
+                if (key == Keys.Enter && Reviewing && HasVideo && !player.SwimInVideo(timestamp))
+                {
+                    NotInGroupVideo(player);
+                    return true;
+                }
             }
 
             if (!Reviewing || !HasVideo || screen != player)
@@ -429,7 +436,7 @@ namespace Kinovea.ScreenManager
                 answeringSplitKind = p.Kind == KindTechHeadStart ? SwimPhaseKind.Start : SwimPhaseKind.Turn;
                 try
                 {
-                    HandleCommand(player, frameServer, command, timestamp);
+                    HandleCommand(player, frameServer, command, timestamp, false);
                 }
                 finally
                 {

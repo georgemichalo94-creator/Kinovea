@@ -288,6 +288,14 @@ namespace Kinovea.ScreenManager
         }
 
         #region Entry points from the player screen
+        /// <summary>(2.14.1) A moment of a screen of the group that the video of the group's analysis (the lead's) does not have.</summary>
+        private void NotInGroupVideo(PlayerScreenUserInterface lead)
+        {
+            SystemSounds.Beep.Play();
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Η στιγμή αυτή δεν υπάρχει στο βίντεο της ανάλυσης της ομάδας (οθόνη {0}): διάλεξε στο μενού Ομάδα, «Η ανάλυση της ομάδας στο βίντεο της», ένα βίντεο που έχει όλο τον αγώνα."),
+                lead.SwimScreenNumber), true);
+        }
+
         public void ShowWindow(PlayerScreenUserInterface player, FrameServerPlayer frameServer)
         {
             long unused = 0;
@@ -301,11 +309,28 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp)
         {
+            return HandleCommand(player, frameServer, command, timestamp, true);
+        }
+
+        /// <summary>
+        /// A command at a timestamp of a video: from a key or a button of a screen (fromScreen: a screen of a group goes to the analysis
+        /// of the group), or the analysis's own (the pilot, the start found, an accepted proposal: on the race it works on, 2.14.1).
+        /// </summary>
+        private bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp, bool fromScreen)
+        {
             // (2.14.0) A screen of a group of screens: the analysis of the group (the video of its lead) at the same moment.
-            ToGroup(ref player, ref frameServer, ref timestamp);
+            bool inLead = !fromScreen || ToGroup(ref player, ref frameServer, ref timestamp);
             Attach(player, frameServer);
             if (Race == null)
                 return false;
+
+            // (2.14.1) A moment the video of the group's analysis does not have: no mark (it would land on its first or last frame).
+            if (!inLead && command != PlayerScreenCommands.SwimShowPanel && command != PlayerScreenCommands.SwimGraphics &&
+                command != PlayerScreenCommands.SwimDial && command != PlayerScreenCommands.SwimUndo)
+            {
+                NotInGroupVideo(player);
+                return true;
+            }
 
             bool splitAdded = false;
             int undoBefore = undoStack.Count;

@@ -53,6 +53,13 @@ namespace Kinovea.ScreenManager
         private CommonControlsPlayers view = new CommonControlsPlayers();
         private List<PlayerScreen> players = new List<PlayerScreen>();  // All the player screens, in screen order.
         private List<PlayerScreen> synced = new List<PlayerScreen>();   // The loaded ones, synchronized together.
+
+        // (Swim 2.14.1) The screens whose time origins were set together, at the same moment of each video (the sync button, the
+        // sync by sound), with the video and the time origin (absolute timestamp) each one had then. The start marked on one of them
+        // moves the origins of the others with it (ShiftOrigins). A screen whose origin changed since in any other way (set on its
+        // own, the working zone trimmed over it, the video reloaded, annotations loaded) or that got another video is no longer tied:
+        // the start marked there sets its own origin, as before (that is how a camera is synchronised at its own start signal).
+        private readonly Dictionary<PlayerScreen, KeyValuePair<string, long>> tied = new Dictionary<PlayerScreen, KeyValuePair<string, long>>();
         private int resyncOperations = 0;
         private int maxResyncOperations = 1;
         private HotkeyCommand[] hotkeys;
@@ -251,6 +258,11 @@ namespace Kinovea.ScreenManager
 
         private void Player_TimeOriginChanged(object sender, EventArgs e)
         {
+            // (Swim 2.14.1) The origin of one screen set on its own: no longer tied to the others.
+            PlayerScreen own = sender as PlayerScreen;
+            if (own != null)
+                tied.Remove(own);
+
             if (!active || !synching)
                 return;
 
@@ -529,6 +541,10 @@ namespace Kinovea.ScreenManager
             foreach (PlayerScreen player in players)
                 AddEventHandlers(player);
 
+            // (Swim 2.14.1) Ties of screens that are gone.
+            foreach (PlayerScreen gone in tied.Keys.Where(p => !players.Contains(p)).ToList())
+                tied.Remove(gone);
+
             active = true;
         }
         private void Exit()
@@ -659,11 +675,144 @@ namespace Kinovea.ScreenManager
             foreach (PlayerScreen player in synced)
                 player.LocalTimeOriginPhysical = player.LocalTime;
 
+            // (Swim 2.14.1) Their origins are now the same moment.
+            Tie(synced);
+
             commonTimeline.Initialize(synced);
             currentTime = commonTimeline.GetCommonTime(synced[0], synced[0].LocalTime);
             
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
             view.UpdateSyncPosition(currentTime); 
+        }
+
+        /// <summary>(Swim 2.14.1) These screens' origins are the same moment (only these: the ties before are dropped).</summary>
+        private void Tie(IEnumerable<PlayerScreen> screens)
+        {
+            tied.Clear();
+            foreach (PlayerScreen player in screens)
+                Stamp(player);
+        }
+
+        private void Stamp(PlayerScreen player)
+        {
+            long origin;
+            if (AbsoluteOrigin(player, out origin))
+                tied[player] = new KeyValuePair<string, long>(player.FilePath, origin);
+        }
+
+        private static bool AbsoluteOrigin(PlayerScreen player, out long origin)
+        {
+            origin = 0;
+            if (player == null || player.FrameServer == null || player.FrameServer.Metadata == null)
+                return false;
+            origin = player.FrameServer.Metadata.TimeOrigin;
+            return true;
+        }
+
+        /// <summary>(Swim 2.14.1) The screen's origin was set together with others' and has not changed since, on the same video.</summary>
+        private bool Tied(PlayerScreen player)
+        {
+            KeyValuePair<string, long> tie;
+            long origin;
+            return player != null && tied.TryGetValue(player, out tie) && tie.Key == player.FilePath &&
+                AbsoluteOrigin(player, out origin) && tie.Value == origin;
+        }
+
+        /// <summary>
+        /// (Swim 2.14.1) The time origins of some screens set at once (the same moment in every video, found from their sound; local real
+        /// time in microseconds as LocalTimeOriginPhysical), then the synchronisation set up on them as with the sync button: every screen
+        /// goes to the moment the given one shows.
+        /// </summary>
+        public void SyncAt(IDictionary<PlayerScreen, long> origins, PlayerScreen shown)
+        {
+            if (!active || origins == null || origins.Count == 0)
+                return;
+
+            if (!synching)
+                ResetSync();
+            if (!synching)
+                return;
+
+            Pause();
+            // (Swim 2.14.1) The screens set here are tied, only them (a screen whose sound did not match is synchronised by hand: the
+            // start marked on it must set its own origin).
+            List<PlayerScreen> set = new List<PlayerScreen>();
+            foreach (PlayerScreen player in synced)
+            {
+                long origin;
+                if (origins.TryGetValue(player, out origin))
+                {
+                    player.LocalTimeOriginPhysical = origin;
+                    set.Add(player);
+                }
+            }
+
+            if (set.Count >= 2)
+                Tie(set);
+            else
+                tied.Clear();
+
+            commonTimeline.Initialize(synced);
+            PlayerScreen at = shown != null && synced.Contains(shown) ? shown : synced[0];
+            currentTime = commonTimeline.GetCommonTime(at, at.LocalTime);
+            view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
+            view.UpdateSyncPosition(currentTime);
+            GotoTime(currentTime, true);
+            UpdateTrkFrame(currentTime);
+        }
+
+        /// <summary>
+        /// (Swim 2.14.1) The start signal marked on a screen of a group of cameras: the time origin of that screen goes to it and the origins
+        /// of the other screens of the group tied to it (synchronised with the sync button or by the sound) move by the same time, so
+        /// that they stay synchronised (each one at the signal). False when the screen is not tied to another one of the group: its own
+        /// origin moves then, as before (the start marked on each camera synchronises them at the signal).
+        /// </summary>
+        public bool ShiftOrigins(IList<PlayerScreen> group, PlayerScreen marked, long newOrigin)
+        {
+            if (!active || !synching || group == null || marked == null || !synced.Contains(marked) || !Tied(marked))
+                return false;
+
+            List<PlayerScreen> members = group.Where(p => p != null && synced.Contains(p) && Tied(p)).ToList();
+            if (members.Count < 2 || !members.Contains(marked))
+                return false;
+
+            long delta = newOrigin - marked.LocalTimeOriginPhysical;
+            List<KeyValuePair<PlayerScreen, long>> before = members.Select(p => new KeyValuePair<PlayerScreen, long>(p, p.LocalTimeOriginPhysical)).ToList();
+            try
+            {
+                foreach (PlayerScreen player in members)
+                    player.LocalTimeOriginPhysical = player.LocalTimeOriginPhysical + delta;
+            }
+            catch
+            {
+                // All or none: the ones already moved go back (the caller then marks the start on the screen alone).
+                foreach (KeyValuePair<PlayerScreen, long> b in before)
+                {
+                    try
+                    {
+                        b.Key.LocalTimeOriginPhysical = b.Value;
+                    }
+                    catch (Exception)
+                    {
+                        log.Error("A time origin could not be put back.");
+                    }
+                }
+
+                throw;
+            }
+
+            // The moved ones keep their tie (at their new origins); the tied screens that did not move are no longer at the same moment.
+            foreach (PlayerScreen other in tied.Keys.Where(p => !members.Contains(p)).ToList())
+                tied.Remove(other);
+            foreach (PlayerScreen player in members)
+                Stamp(player);
+
+            commonTimeline.Initialize(synced);
+            currentTime = commonTimeline.GetCommonTime(marked, marked.LocalTime);
+            view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
+            view.UpdateSyncPosition(currentTime);
+            UpdateHairLines();
+            return true;
         }
 
         private void GotoTime(long commonTime, bool allowUIUpdate)

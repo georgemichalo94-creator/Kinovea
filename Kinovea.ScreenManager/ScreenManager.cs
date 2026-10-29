@@ -219,6 +219,7 @@ namespace Kinovea.ScreenManager
             view.FileLoadAsked += View_FileLoadAsked;
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
+            PlayerScreenUserInterface.SwimGroupStartAsked = SwimGroupStart;
             AddCommonControlsEventHandlers();
 
             dualPlayer.ExportImageAsked += (s, e) => ExportImages(ImageExportFormat.SideBySide);
@@ -1497,6 +1498,19 @@ namespace Kinovea.ScreenManager
                 ToolStripLabel hint = new ToolStripLabel(SwimLang.T("Πρώτα συγχρονισμός στο σήμα εκκίνησης."));
                 hint.Enabled = false;
                 menu.Items.Add(hint);
+
+                // (2.14.1) The screens lined up by what their cameras heard.
+                ToolStripMenuItem bySound = new ToolStripMenuItem(SwimLang.T("Συγχρονισμός από τον ήχο"));
+                bySound.ToolTipText = SwimLang.T("Οι οθόνες της ομάδας (χωρίς ομάδα: όλες) ευθυγραμμίζονται με την οθόνη της ανάλυσης από όσα άκουσαν όλες οι κάμερες (σφυρίχτρες, σήμα εκκίνησης, φωνές, πιτσιλιές).");
+                bySound.Click += (s, e) =>
+                {
+                    menu.Close(ToolStripDropDownCloseReason.CloseCalled);
+                    if (view != null && view.IsHandleCreated)
+                        view.BeginInvoke((Action)SyncBySound);
+                    else
+                        SyncBySound();
+                };
+                menu.Items.Add(bySound);
             }
 
             if (button != null && !button.IsDisposed)
@@ -1517,6 +1531,202 @@ namespace Kinovea.ScreenManager
             catch (Exception e)
             {
                 log.Error("Error while closing the menu of the group of screens.", e);
+            }
+        }
+
+        #region Swim: screens synchronized by their sound
+        private sealed class SoundSyncJob
+        {
+            public PlayerScreen Screen;
+            public string Path;
+            public double From;
+            public double Seconds;
+            public SwimSoundMatch Match;
+            public bool NoSound;
+        }
+
+        /// <summary>
+        /// (Swim 2.14.1) The screens of the group (without a group: all the screens with a video) lined up by their sound with the screen
+        /// of the group's analysis (else the screen of the swim analysis, else the active screen): what every camera heard of the pool
+        /// (whistles, the start signal, voices, splashes) gives the difference of their clocks (SwimSoundSync). A screen whose sound does
+        /// not match (an underwater camera that hears only the water) is told and kept as it was.
+        /// </summary>
+        private void SyncBySound()
+        {
+            List<PlayerScreen> players = screenList.OfType<PlayerScreen>().Where(p => p.Full && p.view != null && !p.view.IsDisposed).ToList();
+            if (players.Count < 2)
+                return;
+
+            List<PlayerScreen> scope = VideoScreenGroup.Active ? players.Where(p => VideoScreenGroup.Contains(p.view)).ToList() : players;
+            if (scope.Count < 2)
+                scope = players;
+
+            PlayerScreenUserInterface analysis = SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.AnalysisScreen : null;
+            PlayerScreen reference = scope.FirstOrDefault(p => VideoScreenGroup.Active && p.view == VideoScreenGroup.Lead)
+                ?? scope.FirstOrDefault(p => analysis != null && p.view == analysis)
+                ?? scope.FirstOrDefault(p => p == activeScreen)
+                ?? scope[0];
+
+            System.Globalization.CultureInfo ci = System.Globalization.CultureInfo.InvariantCulture;
+            string title = SwimLang.T("Συγχρονισμός από τον ήχο");
+            Func<PlayerScreen, int> number = p => screenList.IndexOf(p) + 1;
+            string ffmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
+            double refFrom, refSeconds;
+            if (!File.Exists(ffmpeg) || string.IsNullOrEmpty(reference.FilePath) || !File.Exists(reference.FilePath) || !reference.view.SwimSoundZone(out refFrom, out refSeconds))
+            {
+                MessageBox.Show(string.Format(ci, SwimLang.T("Η οθόνη {0} (η αναφορά) δεν έχει ήχο σε πραγματικό χρόνο: ο συγχρονισμός από τον ήχο δεν γίνεται."), number(reference)),
+                    title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            refSeconds = Math.Min(refSeconds, SwimSoundSync.MaxSeconds);
+            string refPath = reference.FilePath;
+            List<string> lines = new List<string>();
+            List<SoundSyncJob> jobs = new List<SoundSyncJob>();
+            foreach (PlayerScreen p in scope)
+            {
+                if (p == reference)
+                    continue;
+                double from, seconds;
+                if (string.IsNullOrEmpty(p.FilePath) || !File.Exists(p.FilePath) || !p.view.SwimSoundZone(out from, out seconds))
+                {
+                    lines.Add(string.Format(ci, SwimLang.T("Οθόνη {0}: αργή κίνηση (high speed), ο ήχος της δεν είναι σε πραγματικό χρόνο: συγχρόνισέ τη με το χέρι."), number(p)));
+                    continue;
+                }
+
+                jobs.Add(new SoundSyncJob { Screen = p, Path = p.FilePath, From = from, Seconds = Math.Min(seconds, SwimSoundSync.MaxSeconds) });
+            }
+
+            bool refSilent = false, cancelled = false;
+            Exception error = null;
+            if (jobs.Count > 0)
+            {
+                using (CancellationTokenSource stop = new CancellationTokenSource())
+                using (BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true })
+                using (FormProgressBar progress = new FormProgressBar(true))
+                {
+                    progress.Text = title;
+                    progress.CancelAsked += (s, e) =>
+                    {
+                        cancelled = true;
+                        stop.Cancel();
+                    };
+                    worker.ProgressChanged += (s, e) => progress.Update(e.ProgressPercentage, 100, true);
+                    worker.DoWork += (s, e) =>
+                    {
+                        BackgroundWorker w = (BackgroundWorker)s;
+                        string err;
+                        w.ReportProgress(5);
+                        float[] a = SwimSoundSync.Half(SwimStartSound.Read(ffmpeg, refPath, refFrom, refSeconds, stop.Token, out err));
+                        if (a == null)
+                        {
+                            refSilent = !stop.IsCancellationRequested;
+                            return;
+                        }
+
+                        for (int i = 0; i < jobs.Count && !stop.IsCancellationRequested; i++)
+                        {
+                            w.ReportProgress((int)(10 + 90.0 * (i + 0.5) / jobs.Count));
+                            float[] b = SwimSoundSync.Half(SwimStartSound.Read(ffmpeg, jobs[i].Path, jobs[i].From, jobs[i].Seconds, stop.Token, out err));
+                            if (b == null)
+                            {
+                                jobs[i].NoSound = true;
+                                continue;
+                            }
+
+                            jobs[i].Match = SwimSoundSync.Match(a, b, Math.Max(refSeconds, jobs[i].Seconds));
+                            jobs[i].NoSound = jobs[i].Match == null;
+                        }
+                    };
+                    worker.RunWorkerCompleted += (s, e) =>
+                    {
+                        error = e.Error;
+                        progress.Close();
+                    };
+                    worker.RunWorkerAsync();
+                    progress.ShowDialog();
+                }
+            }
+
+            if (cancelled)
+                return;
+
+            if (error != null || refSilent)
+            {
+                if (error != null)
+                    log.Error("The screens could not be synchronized by their sound.", error);
+                MessageBox.Show(error != null ? SwimLang.T("Ο ήχος δεν διαβάστηκε: ") + error.Message :
+                    string.Format(ci, SwimLang.T("Η οθόνη {0} (η αναφορά) δεν έχει ήχο σε πραγματικό χρόνο: ο συγχρονισμός από τον ήχο δεν γίνεται."), number(reference)),
+                    title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // The time origin of the reference stays; each screen that matched gets the same moment of its own clock.
+            double refOrigin = reference.view.SwimTimeOriginSeconds;
+            Dictionary<PlayerScreen, long> origins = new Dictionary<PlayerScreen, long>();
+            foreach (SoundSyncJob job in jobs)
+            {
+                if (job.NoSound)
+                {
+                    lines.Add(string.Format(ci, SwimLang.T("Οθόνη {0}: χωρίς ήχο: συγχρόνισέ τη με το χέρι."), number(job.Screen)));
+                }
+                else if (!job.Match.Reliable)
+                {
+                    log.DebugFormat(ci, "Sound sync of screen {0}: not reliable (lag {1:0.000} s, clarity {2:0.0}/{3:0.0}, spread {4:0.000}, check {5:0.000}).",
+                        number(job.Screen), job.Match.LagSeconds, job.Match.Clarity, job.Match.ClarityHigh, job.Match.Spread, job.Match.Check);
+                    lines.Add(string.Format(ci, SwimLang.T("Οθόνη {0}: ο ήχος της δεν ταιριάζει με της οθόνης {1} (π.χ. κάμερα κάτω από το νερό που ακούει μόνο το νερό): συγχρόνισέ τη με το χέρι."),
+                        number(job.Screen), number(reference)));
+                }
+                else
+                {
+                    double offset = job.From - refFrom + job.Match.LagSeconds;
+                    origins[job.Screen] = job.Screen.view.SwimLocalTimeAtSeconds(refOrigin + offset);
+                    log.DebugFormat(ci, "Sound sync of screen {0} on screen {1}: {2:0.0000} s (clarity {3:0.0}/{4:0.0}, spread {5:0.000}, check {6:0.000}).",
+                        number(job.Screen), number(reference), offset, job.Match.Clarity, job.Match.ClarityHigh, job.Match.Spread, job.Match.Check);
+                    lines.Add(string.Format(ci, SwimLang.T("Οθόνη {0}: συγχρονίστηκε από τον ήχο (διαφορά {1} s από την οθόνη {2})."),
+                        number(job.Screen), offset.ToString("+0.000;-0.000;0.000", ci), number(reference)));
+                }
+            }
+
+            if (origins.Count > 0)
+            {
+                origins[reference] = reference.LocalTimeOriginPhysical;
+                dualPlayer.SyncAt(origins, reference);
+            }
+
+            lines.Sort(StringComparer.Ordinal);
+            if (origins.Count > 0)
+                lines.Add(SwimLang.T("Ο ήχος φτάνει περίπου 3 ms αργότερα για κάθε μέτρο απόστασης: για κάμερες μακριά η μία από την άλλη, έλεγξε τη στιγμή του σήματος (το φως) και διόρθωσε με τον Συγχρονισμό."));
+            int lined = origins.Count > 0 ? origins.Count - 1 : 0;
+            MessageBox.Show(string.Join(Environment.NewLine, lines.ToArray()), title, MessageBoxButtons.OK,
+                lined == scope.Count - 1 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        #endregion
+
+        /// <summary>
+        /// (Swim 2.14.1) The start signal marked on a screen of a synchronised group: the time origins of the group's screens move together
+        /// (see DualPlayerController.ShiftOrigins). False otherwise.
+        /// </summary>
+        private bool SwimGroupStart(PlayerScreenUserInterface screen, long timestamp)
+        {
+            try
+            {
+                if (screen == null || !VideoScreenGroup.Active || !VideoScreenGroup.Contains(screen))
+                    return false;
+
+                List<PlayerScreen> members = screenList.OfType<PlayerScreen>().Where(p => p.view != null && VideoScreenGroup.Contains(p.view)).ToList();
+                PlayerScreen marked = members.FirstOrDefault(p => p.view == screen);
+                if (marked == null || !dualPlayer.ShiftOrigins(members, marked, screen.SwimLocalTime(timestamp)))
+                    return false;
+
+                foreach (PlayerScreen p in members)
+                    p.view.SwimTimeOriginMoved();
+                return true;
+            }
+            catch (Exception e)
+            {
+                log.Error("The time origins of the group could not be moved to the start.", e);
+                return false;
             }
         }
 

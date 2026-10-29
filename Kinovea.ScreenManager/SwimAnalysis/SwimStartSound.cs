@@ -1241,8 +1241,8 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>In-place radix-2 FFT (length a power of two).</summary>
-        private static void Fft(double[] re, double[] im)
+        /// <summary>In-place radix-2 FFT (length a power of two). Also the sync of cameras by their sound (SwimSoundSync).</summary>
+        internal static void Fft(double[] re, double[] im)
         {
             int n = re.Length;
             for (int i = 1, j = 0; i < n; i++)
