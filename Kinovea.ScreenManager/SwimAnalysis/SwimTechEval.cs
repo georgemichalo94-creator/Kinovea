@@ -624,15 +624,19 @@ namespace Kinovea.ScreenManager
             put(check, good ? 1 : 0, text, b.Confidence(s, e, w), ts);
         }
 
-        /// <summary>The line hands–shoulders–hips–ankles at a moment: the largest bend of the two angles from a straight line.</summary>
+        /// <summary>
+        /// The line shoulders–hips–ankles at a moment: its bend from a straight line. (2.14.1) Without the hands: at the hand-marked
+        /// push-offs of the lab's underwater turns (side views) the trunk and the legs read 7–11° from a straight line (median), the arms
+        /// 47–128°; the arms are judged by the streamline's checks.
+        /// </summary>
         private static void BodyLine(Body b, long? ts, string check, Action<string, double, string, double, long?> put)
         {
-            int w = b.Best(SwimJoints.LeftWrist), s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip), a = b.Best(SwimJoints.LeftAnkle);
-            double? atShoulder = b.Angle(w, s, h), atHip = b.Angle(s, h, a);
-            if (!atShoulder.HasValue || !atHip.HasValue)
+            int s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip), a = b.Best(SwimJoints.LeftAnkle);
+            double? atHip = b.Angle(s, h, a);
+            if (!atHip.HasValue)
                 return;
-            double dev = Math.Max(180 - atShoulder.Value, 180 - atHip.Value);
-            put(check, dev, Deg(dev) + SwimLang.T(" από την ευθεία"), b.Confidence(w, s, h, a), ts);
+            double dev = 180 - atHip.Value;
+            put(check, dev, Deg(dev) + SwimLang.T(" από την ευθεία"), b.Confidence(s, h, a), ts);
         }
 
         /// <summary>The line hand–shoulder–hip at a moment (the legs are bent on the wall): its bend from a straight line.</summary>
