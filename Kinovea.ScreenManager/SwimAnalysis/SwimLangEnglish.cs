@@ -2163,6 +2163,8 @@ namespace Kinovea.ScreenManager
                 " (more than a stroke): are strokes missing in this segment?" },
             { "μήκος σώματος {0:0.00} μ.: δεν γίνεται (έλεγξε την τιμή)",
                 "body length {0:0.00} m: not possible (check the value)" },
+            { "⚠ Ο τελικός χρόνος απέχει {0:0.00} s από τον χρόνο του βίντεο: μήπως είναι άλλη φάση ή άλλος αθλητής;",
+                "⚠ The final time is {0:0.00} s from the time on the video: another round or another swimmer?" },
         };
     }
 }
