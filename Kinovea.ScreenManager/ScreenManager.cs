@@ -219,6 +219,7 @@ namespace Kinovea.ScreenManager
             view.FileLoadAsked += View_FileLoadAsked;
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
+            PlayerScreenUserInterface.SwimGroupStartAsked = SwimGroupStart;
             AddCommonControlsEventHandlers();
 
             dualPlayer.ExportImageAsked += (s, e) => ExportImages(ImageExportFormat.SideBySide);
@@ -1696,10 +1697,38 @@ namespace Kinovea.ScreenManager
             lines.Sort(StringComparer.Ordinal);
             if (origins.Count > 0)
                 lines.Add(SwimLang.T("Ο ήχος φτάνει περίπου 3 ms αργότερα για κάθε μέτρο απόστασης: για κάμερες μακριά η μία από την άλλη, έλεγξε τη στιγμή του σήματος (το φως) και διόρθωσε με τον Συγχρονισμό."));
+            int lined = origins.Count > 0 ? origins.Count - 1 : 0;
             MessageBox.Show(string.Join(Environment.NewLine, lines.ToArray()), title, MessageBoxButtons.OK,
-                origins.Count == jobs.Count && jobs.Count == scope.Count - 1 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                lined == scope.Count - 1 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
         #endregion
+
+        /// <summary>
+        /// (Swim 2.14.1) The start signal marked on a screen of a synchronised group: the time origins of the group's screens move together
+        /// (see DualPlayerController.ShiftOrigins). False otherwise.
+        /// </summary>
+        private bool SwimGroupStart(PlayerScreenUserInterface screen, long timestamp)
+        {
+            try
+            {
+                if (screen == null || !VideoScreenGroup.Active || !VideoScreenGroup.Contains(screen))
+                    return false;
+
+                List<PlayerScreen> members = screenList.OfType<PlayerScreen>().Where(p => p.view != null && VideoScreenGroup.Contains(p.view)).ToList();
+                PlayerScreen marked = members.FirstOrDefault(p => p.view == screen);
+                if (marked == null || !dualPlayer.ShiftOrigins(members, marked, screen.SwimLocalTime(timestamp)))
+                    return false;
+
+                foreach (PlayerScreen p in members)
+                    p.view.SwimTimeOriginMoved();
+                return true;
+            }
+            catch (Exception e)
+            {
+                log.Error("The time origins of the group could not be moved to the start.", e);
+                return false;
+            }
+        }
 
         /// <summary>The group as the menu has it (its checked screens; the lead asked for, or kept).</summary>
         private void ApplyGroupMenu(List<PlayerScreen> players, List<ToolStripMenuItem> items, PlayerScreenUserInterface lead)

@@ -695,7 +695,7 @@ namespace Kinovea.ScreenManager
             resolvingProposal = true;
             try
             {
-                HandleCommand(player, frameServer, PlayerScreenCommands.SwimStart, timestamp);
+                HandleCommand(player, frameServer, PlayerScreenCommands.SwimStart, timestamp, false);
             }
             finally
             {

@@ -150,19 +150,29 @@ namespace Kinovea.ScreenManager
         /// (2.14.0) A screen of a group of screens: its lead (the video of the race of the group) and the same moment in it, through the
         /// time origins of the videos (where the screens are synchronised). The screen is kept as the one the analyst works on.
         /// </summary>
-        private void ToGroup(ref PlayerScreenUserInterface screen, ref FrameServerPlayer server, ref long timestamp)
+        /// <returns>
+        /// False when the lead's video does not have that moment (2.14.1: another camera covers more of the race; the moment is not moved
+        /// to the first or the last frame of the lead).
+        /// </returns>
+        private bool ToGroup(ref PlayerScreenUserInterface screen, ref FrameServerPlayer server, ref long timestamp)
         {
             if (!VideoScreenGroup.Contains(screen))
-                return;
+                return true;
 
             groupSource = screen;
             PlayerScreenUserInterface lead = VideoScreenGroup.Lead;
             if (lead == null || lead == screen || lead.IsDisposed || lead.SwimFrameServer == null || !lead.SwimFrameServer.Loaded)
-                return;
+                return true;
+
+            // (2.14.1) The analysis left on a screen of the group that is not its lead while a reading or the pilot still runs there (see
+            // VideoScreenGroup_Changed): their own commands and the keys on that screen stay with it.
+            if (screen == player && HasVideo && AnalysisBusy)
+                return true;
 
             timestamp = VideoScreenGroup.LeadTimestamp(screen, timestamp);
             screen = lead;
             server = lead.SwimFrameServer;
+            return lead.SwimInVideo(timestamp);
         }
 
         /// <summary>

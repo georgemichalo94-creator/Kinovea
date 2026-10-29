@@ -164,7 +164,8 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The correlation c[l] = Σ a[t] b[t + l] for l from -maxLag to maxLag (at index l + maxLag): b later by l. Whitened (the phase only,
-        /// between lo and hi Hz at 'rate') when asked.
+        /// between lo and hi Hz at 'rate') when asked. (2.14.1) All the lags where the two overlap, -(a.Length - 1) to b.Length - 1 (the
+        /// transform is long enough for both); 0 beyond them (no overlap).
         /// </summary>
         public static double[] Correlate(double[] a, double[] b, int maxLag, bool whiten = false, double rate = 0, double lo = 0, double hi = 0)
         {
@@ -203,9 +204,10 @@ namespace Kinovea.ScreenManager
             }
 
             SwimStartSound.Fft(ar, ai);
-            maxLag = Math.Max(0, Math.Min(maxLag, m / 2 - 1));
+            maxLag = Math.Max(0, maxLag);
             double[] c = new double[2 * maxLag + 1];
-            for (int l = -maxLag; l <= maxLag; l++)
+            int first = -Math.Min(maxLag, a.Length - 1), last = Math.Min(maxLag, b.Length - 1);
+            for (int l = first; l <= last; l++)
                 c[l + maxLag] = ar[l >= 0 ? l : m + l] / m;
             return c;
         }
@@ -258,46 +260,46 @@ namespace Kinovea.ScreenManager
             int maxLag = (int)Math.Ceiling(maxSeconds / HopSeconds);
             int exclude = (int)Math.Round(0.25 / HopSeconds);
 
+            // Only the lags where the two sounds overlap.
             double[] lowA = Onsets(first, 100, 1000), lowB = Onsets(second, 100, 1000);
             double lagLow, lagHigh;
             double[] c = Correlate(lowA, lowB, maxLag);
             int off = (c.Length - 1) / 2;
-            Peak(c, off, -off, off, exclude, out lagLow, out m.Clarity);
+            Peak(c, off, -Math.Min(off, lowA.Length - 1), Math.Min(off, lowB.Length - 1), exclude, out lagLow, out m.Clarity);
 
             double[] highA = Onsets(first, 300, 3800), highB = Onsets(second, 300, 3800);
             c = Correlate(highA, highB, maxLag);
             off = (c.Length - 1) / 2;
-            Peak(c, off, -off, off, exclude, out lagHigh, out m.ClarityHigh);
+            Peak(c, off, -Math.Min(off, highA.Length - 1), Math.Min(off, highB.Length - 1), exclude, out lagHigh, out m.ClarityHigh);
 
             m.Spread = Math.Abs(lagLow - lagHigh) * HopSeconds;
             double coarse = 0.5 * (lagLow + lagHigh) * Hop;
             m.Lag = coarse;
 
-            // The waveform of the 20 s of the first sound with the most onsets, against the second around the match.
-            int w = Math.Min(first.Length, (int)(CheckSeconds * Rate)), slack = (int)(CheckSlack * Rate);
-            int hops = w / Hop;
-            int a0 = 0;
-            if (lowA.Length > hops && hops > 0)
+            // The waveform of the 20 s of the first sound with the most onsets, against the second around the match. (2.14.1) Taken within
+            // the part of the first sound that the second one has too (at the match), shorter when they share less than 20 s.
+            int lc = (int)Math.Round(coarse), slack = (int)(CheckSlack * Rate);
+            int aLo = Math.Max(0, -lc), aEnd = Math.Min(first.Length, second.Length - lc);
+            int w = Math.Min((int)(CheckSeconds * Rate), aEnd - aLo);
+            if (w > Rate)
             {
+                int aHi = aEnd - w, hops = w / Hop, a0 = aLo;
                 double run = 0, bestRun = double.MinValue;
-                for (int t = 0; t < lowA.Length; t++)
+                for (int t = 0; t < lowA.Length && hops > 0; t++)
                 {
                     run += Math.Max(0, lowA[t]);
                     if (t >= hops)
                         run -= Math.Max(0, lowA[t - hops]);
-                    if (t >= hops - 1 && run > bestRun)
+                    int start = (t - hops + 1) * Hop;
+                    if (t >= hops - 1 && start >= aLo && start <= aHi && run > bestRun)
                     {
                         bestRun = run;
-                        a0 = (t - hops + 1) * Hop;
+                        a0 = start;
                     }
                 }
-            }
 
-            a0 = Math.Max(0, Math.Min(a0, first.Length - w));
-            int lc = (int)Math.Round(coarse);
-            int b0 = Math.Max(0, a0 + lc - slack), b1 = Math.Min(second.Length, a0 + lc + w + slack);
-            if (b1 - b0 > Rate && w > Rate)
-            {
+                a0 = Math.Max(aLo, Math.Min(a0, aHi));
+                int b0 = Math.Max(0, a0 + lc - slack), b1 = Math.Min(second.Length, a0 + lc + w + slack);
                 double[] aw = new double[w], bw = new double[b1 - b0];
                 for (int i = 0; i < w; i++)
                     aw[i] = first[a0 + i];

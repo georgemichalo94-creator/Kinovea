@@ -698,6 +698,32 @@ namespace Kinovea.ScreenManager
             UpdateTrkFrame(currentTime);
         }
 
+        /// <summary>
+        /// (Swim 2.14.1) The start signal marked on a screen of a group of cameras: the time origin of that screen goes to it and the origins
+        /// of the other screens of the group move by the same time, so that they stay synchronised (each one at the signal). False when
+        /// the screen is not synchronised with another one of the group (its own origin moves then, as before).
+        /// </summary>
+        public bool ShiftOrigins(IList<PlayerScreen> group, PlayerScreen marked, long newOrigin)
+        {
+            if (!active || !synching || group == null || marked == null || !synced.Contains(marked))
+                return false;
+
+            List<PlayerScreen> members = group.Where(p => p != null && synced.Contains(p)).ToList();
+            if (members.Count < 2 || !members.Contains(marked))
+                return false;
+
+            long delta = newOrigin - marked.LocalTimeOriginPhysical;
+            foreach (PlayerScreen player in members)
+                player.LocalTimeOriginPhysical = player.LocalTimeOriginPhysical + delta;
+
+            commonTimeline.Initialize(synced);
+            currentTime = commonTimeline.GetCommonTime(marked, marked.LocalTime);
+            view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
+            view.UpdateSyncPosition(currentTime);
+            UpdateHairLines();
+            return true;
+        }
+
         private void GotoTime(long commonTime, bool allowUIUpdate)
         {
             foreach (PlayerScreen player in synced)

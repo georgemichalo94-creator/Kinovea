@@ -1,6 +1,7 @@
 ﻿# ss_ci.ps1: the CI check of the sync of cameras by their sound (SwimSoundSync, 2.14.1) on FICTIONAL sounds: a pool heard by two
 # cameras (the second later by 1.2345 s, muffled, with its own noise and sounds of its own) must line up to the millisecond; a camera
-# that heard something else must not. Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
+# that heard something else must not; a short camera far into a long one, and one that started after the busiest part of the other, must
+# line up too. Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File ss_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,28 @@ public static class FictionalPool
             double g = Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());
             y[i] = (float)(lp + noise * g);
         }
+        return y;
+    }
+
+    // A part of a sound (from 'from' s, 'seconds' long) as another camera heard it: with its own noise.
+    public static float[] Cut(float[] x, double from, double seconds, double noise, int seed)
+    {
+        int rate = 8000, s0 = (int)(from * rate), n = Math.Min((int)(seconds * rate), x.Length - s0);
+        Random r = new Random(seed);
+        float[] y = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            double g = Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());
+            y[i] = (float)(x[s0 + i] + noise * g);
+        }
+        return y;
+    }
+
+    public static float[] Join(float[] a, float[] b)
+    {
+        float[] y = new float[a.Length + b.Length];
+        Array.Copy(a, y, a.Length);
+        Array.Copy(b, 0, y, a.Length, b.Length);
         return y;
     }
 
@@ -88,6 +111,20 @@ Check ([Math]::Abs($m.LagSeconds - 1.2345) -le 0.004) 'its clock 1.2345 s later,
 # The other way: the first camera is earlier.
 $back = $match.Invoke($null, @($second, $first, 30.0))
 Check ($back.Reliable -and [Math]::Abs($back.LagSeconds + 1.2345) -le 0.004) ('the other way round: ' + [Math]::Round($back.LagSeconds, 4))
+# A camera that recorded 20 s, 200 s after a camera that recorded 4 minutes (all the lags where they overlap are looked at).
+Write-Output 'step: short and long'
+$long = [FictionalPool]::Hear(21, 240, 0, 0.01, 0.0, 22, 140)
+$clip = [FictionalPool]::Cut($long, 200, 20, 0.03, 23)
+$s = $match.Invoke($null, @($long, $clip, 300.0))
+Write-Output ('short camera: lag ' + [Math]::Round($s.LagSeconds, 4) + ' s, reliable ' + $s.Reliable + ', clarity ' + [Math]::Round($s.Clarity, 1) + '/' + [Math]::Round($s.ClarityHigh, 1) + ', check ' + [Math]::Round($s.Check, 4))
+Check ($s.Reliable -and [Math]::Abs($s.LagSeconds + 200) -le 0.004) 'a short camera 200 s into a long one'
+# The busiest 20 s of the first camera before the second one started (the check of the waveform is taken where both heard).
+Write-Output 'step: busy start'
+$busy = [FictionalPool]::Join([FictionalPool]::Hear(31, 20, 0, 0.01, 0.0, 32, 200), [FictionalPool]::Hear(41, 40, 0, 0.01, 0.0, 42, 60))
+$late = [FictionalPool]::Cut($busy, 25, 35, 0.03, 43)
+$b = $match.Invoke($null, @($busy, $late, 30.0))
+Write-Output ('late camera: lag ' + [Math]::Round($b.LagSeconds, 4) + ' s, reliable ' + $b.Reliable + ', clarity ' + [Math]::Round($b.Clarity, 1) + '/' + [Math]::Round($b.ClarityHigh, 1) + ', check ' + [Math]::Round($b.Check, 4))
+Check ($b.Reliable -and [Math]::Abs($b.LagSeconds + 25) -le 0.004) 'a camera that started after the busiest part of the other'
 # A camera that heard another pool.
 Write-Output 'step: other pool'
 $other = [FictionalPool]::Hear(99, 60, 0, 0.01, 0.0, 0, 0)

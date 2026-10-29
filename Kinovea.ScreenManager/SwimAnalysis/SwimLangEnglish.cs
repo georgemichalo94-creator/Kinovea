@@ -1191,6 +1191,8 @@ namespace Kinovea.ScreenManager
             { "Ο ήχος φτάνει περίπου 3 ms αργότερα για κάθε μέτρο απόστασης: για κάμερες μακριά η μία από την άλλη, έλεγξε τη στιγμή του σήματος (το φως) και διόρθωσε με τον Συγχρονισμό.",
                 "Sound arrives about 3 ms later for every metre of distance: for cameras far from each other, check the moment of the signal (the light) and correct it with Synchronize." },
             { "Οθόνη {0}", "Screen {0}" },
+            { "Η στιγμή αυτή δεν υπάρχει στο βίντεο της ανάλυσης της ομάδας (οθόνη {0}): διάλεξε στο μενού Ομάδα, «Η ανάλυση της ομάδας στο βίντεο της», ένα βίντεο που έχει όλο τον αγώνα.",
+                "This moment is not in the video of the group's analysis (screen {0}): choose in the Group menu, \"The analysis of the group in the video of\", a video that has the whole race." },
             { "η ανάλυση μένει στο βίντεο της ανάγνωσης ή του αυτόματου πιλότου μέχρι να τελειώσει.", "the analysis stays on the video of the reading or of the auto pilot until it ends." },
             { "κλικ για την ανάλυση αυτού του βίντεο (τα κουμπιά ανοίγουν γύρω του).", "click for the analysis of this video (the buttons open around it)." },
             { "Μεγάλες οθόνες: ενεργές. Κλικ για να ξαναφανούν τα χειριστήρια κάθε οθόνης.", "Big screens: on. Click to show the controls of each screen again." },
