@@ -57,7 +57,9 @@ ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_'].
   'function swimTF_(el) { var a = arguments; return el.replace(/\\{(\\d+)\\}/g, function (all, n) { var i = Number(n) + 1; return i < a.length ? String(a[i]) : all; }); }\n' +
   'var SWIM_DAK50 = false;\n' +
   // 2.15.0: το swimInputPlan_ του νέου script με την υποβρύχια ταχύτητα των στροφών κλειστή (όπως το NEW εδώ).
-  'var SWIM_TURN_UW_SPEED = false;\n';
+  'var SWIM_TURN_UW_SPEED = false;\n' +
+  // 2.15.0: και οι «τιμές μόνο όπου μετρήθηκαν» κλειστές (όπως το NEW εδώ)· ελέγχονται στο test_strict.
+  'var SWIM_STRICT_VALUES = false;\n';
 
 // Το mock των υπηρεσιών με άλλο script (το mock_gas διαβάζει το αρχείο όταν φορτώνεται).
 function makeContextWith(src, opts) {
@@ -314,6 +316,7 @@ NEW.SWIM_DAK50 = false;
 NEW.SWIM_PDF_CHARTS = false;
 // 2.15.0: η υποβρύχια ταχύτητα των στροφών από το Kinovea (όχι μέτρα / χρόνος) κλειστή για τη σύγκριση· ελέγχεται στο test_e2e.
 NEW.SWIM_TURN_UW_SPEED = false;
+NEW.SWIM_STRICT_VALUES = false;
 const envOld = prepare(OLD), envNew = prepare(NEW);
 assert.deepStrictEqual(envOld.files, envNew.files, 'same Drive ids in both');
 const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, envNew.reference);

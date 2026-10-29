@@ -594,6 +594,10 @@ namespace Kinovea.ScreenManager
                     JObject cp = new JObject();
                     cp["d"] = row.D;
                     cp["t"] = row.T.HasValue ? (double?)Math.Round(row.T.Value, 3) : null;
+                    // (2.15.0) The mark's time on the video where an official time stands for the checkpoint a little off its frame: the
+                    // script times what is timed on the video (strokes, turn, last stroke, kicks) from it, as SwimCalculator (2.9.5b).
+                    if (!double.IsNaN(row.OnVideo) && (!row.T.HasValue || Math.Abs(row.OnVideo - row.T.Value) > 0.0005))
+                        cp["v"] = Math.Round(row.OnVideo, 3);
                     checkpoints.Add(cp);
                 }
             }
@@ -627,6 +631,10 @@ namespace Kinovea.ScreenManager
             }
 
             r["feetOff"] = Times(feetOff);
+            // (2.15.0) The release marked on the video when the official reaction time took its place: the flight is from it (the entry is a
+            // time of the video), as in SwimCalculator.
+            if (computed.BlockOfficial && computed.BlockMarkTime.HasValue)
+                r["releaseMark"] = Math.Round(computed.BlockMarkTime.Value, 3);
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();
@@ -639,6 +647,9 @@ namespace Kinovea.ScreenManager
             manual["entryVelHips"] = race.EntryVelHips;
             manual["entryVelFeet"] = race.EntryVelFeet;
             manual["underwaterDist"] = race.UnderwaterDist;
+            // (2.15.0) The start's distance estimated from the times (not measured): the script marks it and takes no speed from it.
+            if (race.UnderwaterEstimated && race.UnderwaterDist.HasValue)
+                manual["underwaterEstimated"] = true;
             manual["breakoutDist"] = race.BreakoutDist;
             manual["finishLastStrokeDist"] = race.FinishLastStrokeDist;
 

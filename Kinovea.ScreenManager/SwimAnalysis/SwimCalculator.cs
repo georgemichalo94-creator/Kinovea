@@ -524,7 +524,9 @@ namespace Kinovea.ScreenManager
             {
                 double fromT = result.EntryTime ?? 0;
                 double to = result.StartUnderwaterTime ?? firstWallT;
-                result.StartKicks = result.Kicks.Count(t => t > fromT && t <= to);
+                int kicks = result.Kicks.Count(t => t > fromT && t <= to);
+                // (2.15.0) None there: not marked (e.g. kicks marked only in a turn), not 0.
+                result.StartKicks = kicks > 0 ? (int?)kicks : null;
             }
 
             // Turns. The events of the video (feet off, breakout, last stroke, kicks) are found and timed from the walls' frames
@@ -591,12 +593,16 @@ namespace Kinovea.ScreenManager
                         turn.TurnTime = pushoff.Value - lastStroke.Value;
                 }
 
-                if (breakout.HasValue)
-                    turn.UnderwaterTime = breakout.Value - (pushoff ?? vw);
+                // (2.15.0) B − F, as the README and the technical analysis: without the push-off none (it took B − S before, another
+                // measure, in the same column).
+                if (breakout.HasValue && pushoff.HasValue)
+                    turn.UnderwaterTime = breakout.Value - pushoff.Value;
                 if (result.Kicks.Count > 0)
                 {
                     double to = breakout ?? nextT;
-                    turn.Kicks = result.Kicks.Count(t => t > vw && t <= to);
+                    int kicks = result.Kicks.Count(t => t > vw && t <= to);
+                    // (2.15.0) None in this turn: not marked here (kicks marked only in another turn), not 0.
+                    turn.Kicks = kicks > 0 ? (int?)kicks : null;
                 }
             }
 

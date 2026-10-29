@@ -360,9 +360,12 @@ namespace Kinovea.ScreenManager
                     SwimTurnComputed turn = computed.Turns.FirstOrDefault(t => t.Wall == p.Wall);
                     if (turn != null && turn.LastStrokeGap.HasValue)
                         p.LastStroke = -turn.LastStrokeGap.Value;
+                    // (2.15.0) From the wall's mark on the video (OnVideo), as every other event of the phase: an official time of the
+                    // wall (SwimRow.T) a little off its frame made the contact, the underwater time and its speed off by that much.
                     SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == p.Wall);
-                    if (turn != null && turn.Pushoff.HasValue && wallRow != null && wallRow.T.HasValue && turn.Pushoff.Value >= wallRow.T.Value)
-                        p.Pushoff = turn.Pushoff.Value - wallRow.T.Value;
+                    double wallVideo = wallRow != null ? wallRow.OnVideo : double.NaN;
+                    if (turn != null && turn.Pushoff.HasValue && !double.IsNaN(wallVideo) && turn.Pushoff.Value >= wallVideo)
+                        p.Pushoff = turn.Pushoff.Value - wallVideo;
 
                     // (2.15.0) The head at the push-off: the body length of the swimmer (the same at every wall of the race).
                     p.HeadAtPushoff = race.BodyLength;
