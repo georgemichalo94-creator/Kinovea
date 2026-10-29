@@ -52,7 +52,7 @@ Object.keys(SR_SAME).forEach(k => {
   assert.ok(ORIGINAL_NAMED.split(k).length === 2 && CURRENT.indexOf(k) < 0 && CURRENT.indexOf(SR_SAME[k]) > 0, 'the 2.11.0 change ' + k);
   ORIGINAL_NAMED = ORIGINAL_NAMED.split(k).join(SR_SAME[k]);
 });
-ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_'].map(n => fnOf(CURRENT, n)).join('\n') +
+ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_', 'swimStrokesMissing_'].map(n => fnOf(CURRENT, n)).join('\n') +
   'function swimT_(el) { return el; }\n' +
   'function swimTF_(el) { var a = arguments; return el.replace(/\\{(\\d+)\\}/g, function (all, n) { var i = Number(n) + 1; return i < a.length ? String(a[i]) : all; }); }\n' +
   'var SWIM_DAK50 = false;\n' +

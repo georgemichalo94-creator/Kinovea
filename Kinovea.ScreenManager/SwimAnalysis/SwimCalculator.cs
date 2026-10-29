@@ -668,8 +668,10 @@ namespace Kinovea.ScreenManager
 
                 int from = b, to = e;
                 List<SwimRow> inBlock = result.Rows.Where(r => r.PrevD >= from && r.D <= to).ToList();
-                if (inBlock.Any(r => r.Strokes.HasValue))
-                    block.Strokes = inBlock.Sum(r => r.Strokes ?? 0);
+                // (2.15.0) The strokes of the 50 (and its Swolf) only when every segment of it has them: a checkpoint without a time
+                // gave half of the 50 as the whole (Swolf 62 → 43.5).
+                if (inBlock.Count > 0 && inBlock.All(r => r.Strokes.HasValue))
+                    block.Strokes = inBlock.Sum(r => r.Strokes.Value);
                 if (block.Time.HasValue && block.Strokes.HasValue)
                     block.Swolf = block.Time.Value + block.Strokes.Value;
                 if (block.Time.HasValue && block.Time.Value > 0)
@@ -694,7 +696,15 @@ namespace Kinovea.ScreenManager
                     }
 
                     int d0 = a15.D, d1 = aw.D;
-                    foreach (SwimRow r in result.Rows.Where(x => x.PrevD >= d0 && x.D <= d1))
+                    // (2.15.0) Every segment of the window with its strokes (else the ΔΑΚ of part of it).
+                    List<SwimRow> window = result.Rows.Where(x => x.PrevD >= d0 && x.D <= d1).ToList();
+                    if (window.Count == 0 || window.Any(x => !x.Strokes.HasValue))
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    foreach (SwimRow r in window)
                     {
                         if (r.Strokes.HasValue)
                         {

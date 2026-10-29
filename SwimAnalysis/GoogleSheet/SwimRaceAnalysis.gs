@@ -1789,6 +1789,8 @@ function swimAnalyze_(race) {
   if (hasStrokes || race.segmentStrokes) {
     totalStrokes = 0;
     rows.forEach(function (r) { if (r.strokes) totalStrokes += r.strokes; });
+    // 2.15.0 (SWIM_STRICT_VALUES): ένα τμήμα χωρίς χεριές (π.χ. σημείο χωρίς χρόνο) = σύνολο ελλιπές: κενό, όχι το μισό σύνολο.
+    if (SWIM_STRICT_VALUES && !race.strokesPer50 && rows.some(function (r) { return r.strokes === null; })) totalStrokes = null;
   }
   // Μέση συχνότητα της καθαρής κολύμβησης, σταθμισμένη με τον χρόνο (κύκλοι / χρόνος· 2.11.0: οι κύκλοι από τη συχνότητα κάθε
   // τμήματος, όπως η στήλη I, και το μήκος κύκλου από τις χεριές).
@@ -1817,7 +1819,8 @@ function swimAnalyze_(race) {
   summary.startTime = start.t15;
   summary.turnsTime = null;
   var inOuts = turns.filter(function (t) { return t.inOut !== null; });
-  if (inOuts.length) summary.turnsTime = inOuts.reduce(function (s, t) { return s + t.inOut; }, 0);
+  // 2.15.0 (SWIM_STRICT_VALUES): οι στροφές μόνο όταν μετρήθηκαν όλες (αλλιώς η «Κολύμβηση» = τελικός − τα υπόλοιπα έβγαινε μεγαλύτερη).
+  if (inOuts.length && (!SWIM_STRICT_VALUES || inOuts.length === turns.length)) summary.turnsTime = inOuts.reduce(function (s, t) { return s + t.inOut; }, 0);
   summary.finishTime = finish.last5 === undefined ? null : finish.last5;
 
   return { rows: rows, start: start, turns: turns, finish: finish, blocks: blocks, summary: summary, warnings: warnings, turnWalls: turnWalls };
@@ -1844,7 +1847,10 @@ function swimBlocks50_(race, rows) {
       sr: null, dps: null, sl: null, vel: null, velYd: null, style: swimStyleAt_(race, e) };
     if (re.t !== null && (b === 0 || (rs && rs.t !== null))) blk.time = re.t - (b === 0 ? 0 : rs.t);
     var inBlock = rows.filter(function (r) { return inRange(r, b, e); });
-    if (inBlock.some(function (r) { return r.strokes !== null; }))
+    // 2.15.0 (SWIM_STRICT_VALUES): οι χεριές του 50 (και το Swolf) μόνο όταν όλα τα τμήματά του έχουν χεριές· ένα σημείο χωρίς χρόνο
+    // έδινε το μισό 50 ως όλο (Swolf 62 → 43.5). Οι αναλύσεις της βιβλιοθήκης με χεριές ανά 50 όπως πριν (όλο το 50 σε ένα τμήμα).
+    var complete = function (list) { return SWIM_STRICT_VALUES && !race.strokesPer50 ? list.every(function (r) { return r.strokes !== null; }) : list.some(function (r) { return r.strokes !== null; }); };
+    if (inBlock.length && complete(inBlock))
       blk.strokes = inBlock.reduce(function (s, r) { return s + (r.strokes || 0); }, 0);
     if (blk.time !== null && blk.strokes !== null) blk.swolf = blk.time + blk.strokes;
     if (blk.time !== null && blk.time > 0) {
@@ -1857,6 +1863,7 @@ function swimBlocks50_(race, rows) {
       var a15 = byD[w + 15], aw = byD[Math.min(w + pool, e)];
       if (!a15 || !aw || a15.t === null || aw.t === null || aw.d <= a15.d) { ok = false; break; }
       var win = rows.filter(function (r) { return inRange(r, a15.d, aw.d); });
+      if (!win.length || !complete(win)) { ok = false; break; }
       win.forEach(function (r) { if (r.strokes !== null) { any = true; sumS += r.strokes; } });
       sumT += aw.t - a15.t;
       sumW += aw.d - a15.d;
@@ -2325,21 +2332,32 @@ function swimWhole50Totals_(L) {
  * ΔΑΚ ενός 50άρι ως τύπος του φύλλου: (χεριές + χρόνος από τα 15 έως τον τοίχο) / (απόσταση σε μέτρα / 10),
  * για κάθε μήκος του 50άρι (στα 50μ. /3,5 όπως στο Excel, στα 25μ. /1,0 ανά μήκος). perYard: "ανά 10yd".
  */
+/**
+ * (2.15.0) Η συνθήκη του φύλλου «λείπουν χεριές σε αυτά τα κελιά»: με SWIM_STRICT_VALUES κάθε κενό (ένα τμήμα χωρίς χρόνο), αλλιώς
+ * μόνο όταν λείπουν όλες (όπως πριν· και οι αναλύσεις της βιβλιοθήκης με χεριές ανά 50, όπου μόνο το τελευταίο τμήμα έχει χεριές).
+ */
+function swimStrokesMissing_(race, range) {
+  return SWIM_STRICT_VALUES && !race.strokesPer50 ? 'COUNT(' + range + ')<ROWS(' + range + ')' : 'COUNT(' + range + ')=0';
+}
+
 function swimDakFormula_(race, rowOf, b, perYard) {
   var pool = race.pool, e = b + 50;
-  var times = [], sums = [], counts = [], blanks = [], width = 0;
+  var times = [], sums = [], counts = [], blanks = [], missing = [], width = 0;
   for (var w = b; w < e - 1e-9; w += pool) {
     var r15 = rowOf[w + 15], rw = rowOf[Math.min(w + pool, e)];
     if (r15 === undefined || rw === undefined || rw <= r15) return '';
     times.push('(B' + rw + '-B' + r15 + ')');
     sums.push('SUM(H' + (r15 + 1) + ':H' + rw + ')');
     counts.push('COUNT(H' + (r15 + 1) + ':H' + rw + ')');
+    missing.push(swimStrokesMissing_(race, 'H' + (r15 + 1) + ':H' + rw));
     blanks.push('B' + rw + '=""', 'B' + r15 + '=""');
     width += Math.min(w + pool, e) - (w + 15);
   }
   if (!times.length || width <= 0) return '';
   var div = perYard ? width / 10 : width * race.k / 10;
   var divText = String(Math.round(div * 1e6) / 1e6);
+  if (SWIM_STRICT_VALUES && !race.strokesPer50)
+    return '=IF(OR(' + blanks.join(',') + ',' + missing.join(',') + '),"",(' + times.join('+') + '+' + sums.join('+') + ')/' + divText + ')';
   if (times.length === 1)
     return '=IF(OR(' + blanks[1] + ',' + blanks[0] + ',' + counts[0] + '=0),"",(' + times[0] + '+' + sums[0] + ')/' + divText + ')';
   return '=IF(OR(' + blanks.join(',') + ',' + counts.join('+') + '=0),"",(' + times.join('+') + '+' + sums.join('+') + ')/' + divText + ')';
@@ -2652,7 +2670,7 @@ function swimLayoutTiming_(L) {
     // Swolf / σύνολο χεριών ανά 50
     if (on50) {
       var a = prev50 === null ? T0 : prev50 + 1;
-      g.set(r, 7, '=IF(COUNT(H' + a + ':H' + r + ')=0,"",SUM(H' + a + ':H' + r + '))', swimF_(SWIM_FMT.strokes, 'formula'));
+      g.set(r, 7, '=IF(' + swimStrokesMissing_(race, 'H' + a + ':H' + r) + ',"",SUM(H' + a + ':H' + r + '))', swimF_(SWIM_FMT.strokes, 'formula'));
       if (p >= a && p >= T0) {
         g.set(p, 7, '=IF(OR(E' + r + '="",G' + r + '=""),"",E' + r + '+G' + r + ')', swimF_(SWIM_FMT.time, 'formula'));
       }
@@ -2731,7 +2749,7 @@ function swimLayoutPer50_(L) {
     else g.set(x, 2, '', swimF_(SWIM_FMT.time, 'formula'));
     g.set(x, 3, '=IF(' + Be + '="","",' + Be + ')', swimF_(SWIM_FMT.time, 'formula'));
     var a = rs === null ? T0 : (rs !== undefined ? rs + 1 : null);
-    if (a !== null) g.set(x, 4, '=IF(COUNT(H' + a + ':H' + re + ')=0,"",SUM(H' + a + ':H' + re + '))', swimF_(SWIM_FMT.strokes, 'formula'));
+    if (a !== null) g.set(x, 4, '=IF(' + swimStrokesMissing_(race, 'H' + a + ':H' + re) + ',"",SUM(H' + a + ':H' + re + '))', swimF_(SWIM_FMT.strokes, 'formula'));
     else g.set(x, 4, '', swimF_(null, 'formula'));
     // Συχνότητα / μήκος χεριάς του 50: μόνο από την καθαρή κολύμβηση (όχι από όλο το 50, που περιέχει
     // την υποβρύχια φάση της εκκίνησης ή της στροφής και θα έδινε μικρότερη συχνότητα και μεγαλύτερο DPS).
@@ -2768,8 +2786,10 @@ function swimLayoutPer50_(L) {
   var t = L.p50Last + 1, f = L.p50First, l = L.p50Last;
   var lab = swimF_(null, 'label');
   g.set(t, 1, swimT_('Σύνολο'), lab);
-  g.set(t, 2, '=IF(COUNT(B' + f + ':B' + l + ')=0,"",SUM(B' + f + ':B' + l + '))', swimF_(SWIM_FMT.time, 'formula'));
-  g.set(t, 4, '=IF(COUNT(D' + f + ':D' + l + ')=0,"",SUM(D' + f + ':D' + l + '))', swimF_(SWIM_FMT.strokes, 'formula'));
+  // 2.15.0 (SWIM_STRICT_VALUES): τα σύνολα μόνο όταν υπάρχουν όλα τα 50άρια (αλλιώς ένα μέρος του αγώνα ως σύνολο).
+  var allOf = function (rng) { return SWIM_STRICT_VALUES && !race.strokesPer50 ? 'COUNT(' + rng + ')<ROWS(' + rng + ')' : 'COUNT(' + rng + ')=0'; };
+  g.set(t, 2, '=IF(' + allOf('B' + f + ':B' + l) + ',"",SUM(B' + f + ':B' + l + '))', swimF_(SWIM_FMT.time, 'formula'));
+  g.set(t, 4, '=IF(' + allOf('D' + f + ':D' + l) + ',"",SUM(D' + f + ':D' + l + '))', swimF_(SWIM_FMT.strokes, 'formula'));
   g.set(t, 7, '=IF(COUNT(G' + f + ':G' + l + ')=0,"",AVERAGE(G' + f + ':G' + l + '))', swimF_(SWIM_FMT.time, 'formula'));
   var dakAvg = swimF_(SWIM_FMT.vel, 'formula');
   dakAvg.bg = SWIM_COLORS.kpiDak; dakAvg.bold = true; dakAvg.color = SWIM_COLORS.dakText;
@@ -2917,11 +2937,17 @@ function swimLayoutComposition_(L) {
   g.set(c1, 1, swimT_('Εκκίνηση'), swimF_(null, 'label'));
   g.set(c1, 2, r15first !== undefined ? '=IF(B' + r15first + '="","",B' + r15first + ')' : '', swimF_(SWIM_FMT.time, 'formula'));
   g.set(c1 + 1, 1, swimT_('Στροφές'), swimF_(null, 'label'));
-  g.set(c1 + 1, 2, L.turnFirst !== null ? '=IF(COUNT(C' + L.turnFirst + ':C' + L.turnLast + ')=0,"",SUM(C' + L.turnFirst + ':C' + L.turnLast + '))' : '', swimF_(SWIM_FMT.time, 'formula'));
+  var turnsRange = L.turnFirst !== null ? 'C' + L.turnFirst + ':C' + L.turnLast : null;
+  // 2.15.0 (SWIM_STRICT_VALUES): οι στροφές μόνο όταν μετρήθηκαν όλες, και η κολύμβηση μόνο όταν υπάρχουν όλα τα μέρη (αλλιώς
+  // «τελικός − ό,τι υπάρχει» έβγαζε την κολύμβηση μεγαλύτερη).
+  g.set(c1 + 1, 2, turnsRange ? '=IF(COUNT(' + turnsRange + ')' + (SWIM_STRICT_VALUES ? '<ROWS(' + turnsRange + ')' : '=0') + ',"",SUM(' + turnsRange + '))' : '', swimF_(SWIM_FMT.time, 'formula'));
   g.set(c1 + 2, 1, swimT_('Τερματισμός'), swimF_(null, 'label'));
   g.set(c1 + 2, 2, '=IF(B' + L.finishRow + '="","",B' + L.finishRow + ')', swimF_(SWIM_FMT.time, 'formula'));
   g.set(c1 + 3, 1, swimT_('Κολύμβηση'), swimF_(null, 'label'));
-  g.set(c1 + 3, 2, '=IF(' + L.FT + '="","",' + L.FT + '-SUM(B' + c1 + ':B' + (c1 + 2) + '))', swimF_(SWIM_FMT.time, 'formula'));
+  var swimCond = SWIM_STRICT_VALUES
+    ? 'OR(' + L.FT + '="",B' + c1 + '="",B' + (c1 + 2) + '=""' + (turnsRange ? ',B' + (c1 + 1) + '=""' : '') + ')'
+    : L.FT + '=""';
+  g.set(c1 + 3, 2, '=IF(' + swimCond + ',"",' + L.FT + '-SUM(B' + c1 + ':B' + (c1 + 2) + '))', swimF_(SWIM_FMT.time, 'formula'));
   for (var ci = 0; ci < 4; ci++) {
     g.set(c1 + ci, 3, '=IF(OR(B' + (c1 + ci) + '="",' + L.FT + '=""),"",B' + (c1 + ci) + '/' + L.FT + ')', swimF_(SWIM_FMT.pct, 'formula'));
   }
@@ -3174,7 +3200,8 @@ function swimLayoutCompare_(L) {
     cell(r, 8, swimV_(s.startTime), SWIM_FMT.time, 'auto');
     cell(r, 9, swimV_(s.turnsTime), SWIM_FMT.time, 'auto');
     cell(r, 10, swimV_(s.finishTime), SWIM_FMT.time, 'auto');
-    var swim = s.finalTime && s.startTime !== null && s.finishTime !== null ? s.finalTime - s.startTime - (s.turnsTime || 0) - s.finishTime : null;
+    var turnsMissing = SWIM_STRICT_VALUES && a && a.turns && a.turns.length && (s.turnsTime === null || s.turnsTime === undefined);
+    var swim = s.finalTime && s.startTime !== null && s.finishTime !== null && !turnsMissing ? s.finalTime - s.startTime - (s.turnsTime || 0) - s.finishTime : null;
     cell(r, 11, swimV_(swim), SWIM_FMT.time, 'auto');
     cell(r, 12, swimV_(s.finalTime), SWIM_FMT.time, 'auto');
   };

@@ -98,4 +98,18 @@ assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ
 assert.strictEqual(below(sh, 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)'), '', 'no speed from an estimate');
 assert.strictEqual(below(sh, 'Μέτρα κάτω από το νερό (μ.)'), '≈8.4', 'turn: the estimate marked');
 
-console.log('test_strict: video clock for video events, values only where measured, stale cells cleared, estimates marked');
+// (e) ένα 50άρι με σημείο χωρίς χρόνο (π.χ. ο πιλότος δεν το βρήκε): χωρίς χεριές, Swolf και ΔΑΚ του 50 (όχι το μισό ως όλο)
+const strokes50 = []; for (let t = 4.6; t < 30; t += 0.55) strokes50.push(+t.toFixed(2));
+const r5 = { id: 'strict5', athlete: 'ΑΛΦΑ ΔΟΚΙΜΗ', style: 'fs', distance: 50, pool: 50,
+  checkpoints: [{ d: 15, t: 6.4 }, { d: 25, t: 11.6 }, { d: 35, t: null }, { d: 45, t: 22.2 }, { d: 50, t: 25.0 }], strokes: strokes50,
+  kicks: [], breakouts: [4.4], feetOff: [], entries: [], manual: {} };
+a = G.swimAnalyze_(G.swimNormalizeRace_(r5));
+assert.strictEqual(a.blocks[0].strokes, null, 'no strokes of the 50 with a segment missing');
+assert.strictEqual(a.blocks[0].swolf, null, 'no Swolf');
+assert.strictEqual(a.blocks[0].dak, null, 'no ΔΑΚ');
+assert.strictEqual(a.summary.totalStrokes, null, 'no total strokes');
+r5.checkpoints[2].t = 16.9;
+a = G.swimAnalyze_(G.swimNormalizeRace_(r5));
+assert.ok(a.blocks[0].strokes > 30 && a.blocks[0].swolf > 50 && a.blocks[0].dak > 0, 'all segments: strokes ' + a.blocks[0].strokes + ', Swolf ' + a.blocks[0].swolf);
+
+console.log('test_strict: video clock for video events, values only where measured, stale cells cleared, estimates marked, complete 50s');
