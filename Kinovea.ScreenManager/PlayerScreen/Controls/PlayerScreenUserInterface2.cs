@@ -2852,14 +2852,16 @@ namespace Kinovea.ScreenManager
             return (long)Math.Round(m_FrameServer.Metadata.TimeOrigin + videoSeconds * correctedTPS);
         }
 
-        /// <summary>(Swim 2.14.1) The timestamp is in this video (within half a frame of its first and its last frame).</summary>
+        /// <summary>
+        /// (Swim 2.14.1) The timestamp is in this video's working zone (within half a frame of its first and its last frame). The
+        /// reader's VideoInfo.LastTimeStamp is never set: the zone's ends are the frames the player can show.
+        /// </summary>
         internal bool SwimInVideo(long timestamp)
         {
-            Kinovea.Video.VideoInfo info = m_FrameServer.VideoReader.Info;
-            if (info.LastTimeStamp <= info.FirstTimeStamp)
+            if (m_iSelEnd <= m_iSelStart)
                 return true;
-            double half = Math.Max(1, info.AverageTimeStampsPerFrame / 2);
-            return timestamp >= info.FirstTimeStamp - half && timestamp <= info.LastTimeStamp + half;
+            double half = Math.Max(1, m_FrameServer.VideoReader.Info.AverageTimeStampsPerFrame / 2);
+            return timestamp >= m_iSelStart - half && timestamp <= m_iSelEnd + half;
         }
 
         /// <summary>(Swim 2.14.1) After the time origin moved with the group's: what MarkTimeOrigin updates besides the markers and the time.</summary>
