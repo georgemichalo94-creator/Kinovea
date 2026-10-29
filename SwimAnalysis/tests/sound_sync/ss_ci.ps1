@@ -5,13 +5,6 @@
 param([string]$sm, [string]$bin)
 $ErrorActionPreference = 'Stop'
 $sm = (Resolve-Path $sm).Path; $bin = (Resolve-Path $bin).Path
-[System.AppDomain]::CurrentDomain.add_AssemblyResolve({ param($s, $e)
-  $n = (New-Object System.Reflection.AssemblyName($e.Name)).Name
-  $p = Join-Path $bin ($n + '.dll')
-  if (Test-Path $p) { return [System.Reflection.Assembly]::LoadFrom($p) }
-  return $null })
-$a = [System.Reflection.Assembly]::LoadFrom($sm)
-$sync = $a.GetType('Kinovea.ScreenManager.SwimSoundSync', $true)
 Add-Type -TypeDefinition @'
 using System;
 public static class FictionalPool
@@ -68,12 +61,26 @@ public static class FictionalPool
     }
 }
 '@
+# The other DLLs of the program from its folder. Plain string work only: in Windows PowerShell a handler that loads anything else
+# (New-Object, cmdlets) can be asked again for the resources of what it loads, and so on until the stack ends.
+$script:resolving = $false
+[System.AppDomain]::CurrentDomain.add_AssemblyResolve({ param($s, $e)
+  $n = $e.Name.Split(',')[0]
+  if ($script:resolving -or $n.EndsWith('.resources')) { return $null }
+  $p = [System.IO.Path]::Combine($bin, $n + '.dll')
+  if (-not [System.IO.File]::Exists($p)) { return $null }
+  $script:resolving = $true
+  try { return [System.Reflection.Assembly]::LoadFrom($p) } finally { $script:resolving = $false } })
+$a = [System.Reflection.Assembly]::LoadFrom($sm)
+$sync = $a.GetType('Kinovea.ScreenManager.SwimSoundSync', $true)
 $fails = 0
 function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { Write-Output ('FAIL ' + $what); $script:fails++ } }
 $match = $sync.GetMethod('Match')
+Write-Output 'step: fictional sounds'
 $first = [FictionalPool]::Hear(11, 60, 0, 0.01, 0.0, 0, 0)
 # The same pool 1.2345 s later on the second camera, muffled (as under the water), noisier, with 20 sounds of its own.
 $second = [FictionalPool]::Hear(11, 60, 1.2345, 0.03, 0.85, 5, 20)
+Write-Output 'step: match'
 $m = $match.Invoke($null, @($first, $second, 30.0))
 Write-Output ('second camera: lag ' + [Math]::Round($m.LagSeconds, 4) + ' s, reliable ' + $m.Reliable + ', clarity ' + [Math]::Round($m.Clarity, 1) + '/' + [Math]::Round($m.ClarityHigh, 1) + ', spread ' + [Math]::Round($m.Spread, 4) + ', check ' + [Math]::Round($m.Check, 4))
 Check ($m.Reliable) 'the second camera matches'
@@ -82,11 +89,13 @@ Check ([Math]::Abs($m.LagSeconds - 1.2345) -le 0.002) 'its clock 1.2345 s later,
 $back = $match.Invoke($null, @($second, $first, 30.0))
 Check ($back.Reliable -and [Math]::Abs($back.LagSeconds + 1.2345) -le 0.002) ('the other way round: ' + [Math]::Round($back.LagSeconds, 4))
 # A camera that heard another pool.
+Write-Output 'step: other pool'
 $other = [FictionalPool]::Hear(99, 60, 0, 0.01, 0.0, 0, 0)
 $o = $match.Invoke($null, @($first, $other, 30.0))
 Write-Output ('other pool: lag ' + [Math]::Round($o.LagSeconds, 3) + ' s, reliable ' + $o.Reliable + ', clarity ' + [Math]::Round($o.Clarity, 1) + '/' + [Math]::Round($o.ClarityHigh, 1) + ', spread ' + [Math]::Round($o.Spread, 3))
 Check (-not $o.Reliable) 'a camera that heard something else does not match'
 # Only noise.
+Write-Output 'step: quiet'
 $quiet = [FictionalPool]::Hear(3, 60, 0, 0.02, 0.0, 0, 0)
 for ($i = 0; $i -lt $quiet.Length; $i++) { $quiet[$i] = [float](0.02 * [Math]::Sin($i * 0.37)) }
 $q = $match.Invoke($null, @($first, $quiet, 30.0))

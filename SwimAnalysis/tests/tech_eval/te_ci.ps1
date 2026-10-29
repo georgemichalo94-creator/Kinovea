@@ -7,11 +7,16 @@ param([string]$sm, [string]$bin, [string]$catalog)
 $ErrorActionPreference = 'Stop'
 try { Add-Type -AssemblyName System.Drawing } catch { }
 $sm = (Resolve-Path $sm).Path; $bin = (Resolve-Path $bin).Path; $catalog = (Resolve-Path $catalog).Path
+# The other DLLs of the program from its folder. Plain string work only: in Windows PowerShell a handler that loads anything else
+# (New-Object, cmdlets) can be asked again for the resources of what it loads, and so on until the stack ends.
+$script:resolving = $false
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve({ param($s, $e)
-  $n = (New-Object System.Reflection.AssemblyName($e.Name)).Name
-  $p = Join-Path $bin ($n + '.dll')
-  if (Test-Path $p) { return [System.Reflection.Assembly]::LoadFrom($p) }
-  return $null })
+  $n = $e.Name.Split(',')[0]
+  if ($script:resolving -or $n.EndsWith('.resources')) { return $null }
+  $p = [System.IO.Path]::Combine($bin, $n + '.dll')
+  if (-not [System.IO.File]::Exists($p)) { return $null }
+  $script:resolving = $true
+  try { return [System.Reflection.Assembly]::LoadFrom($p) } finally { $script:resolving = $false } })
 $a = [System.Reflection.Assembly]::LoadFrom($sm)
 function T($n) { return $a.GetType('Kinovea.ScreenManager.' + $n, $true) }
 $tCat = T 'SwimTechSheetCatalog'; $tEv = T 'SwimTechEvaluator'; $tRace = T 'SwimRace'; $tMark = T 'SwimMark'; $tType = T 'SwimMarkType'
