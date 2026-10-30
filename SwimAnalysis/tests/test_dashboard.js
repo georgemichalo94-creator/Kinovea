@@ -271,6 +271,15 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   assert.ok(B.G.swimDashRaces(['dash0']).races[0].summary.finalTime > 0);
   B.who.active = '';
   assert.ok(!B.G.doGet({ parameter: {} }).file, 'option a: anonymous gets text');
+  B.who.active = 'coach@example.com';
+  // swimDashSetup (προαιρετικό): κρατά το αρχείο του project· μετά ο πίνακας το ανοίγει με το id του.
+  assert.ok(/Αγώνες|KOE App/.test(B.G.swimDashSetup()));
+  assert.strictEqual(B.G._props.SWIM_DASH_SPREADSHEET_ID, 'DATA');
+  assert.ok(B.G.swimDashList().ok, 'list with SWIM_DASH_SPREADSHEET_ID');
+  // Χωρίς το φύλλο «Αγώνες» το setup δεν γράφει τίποτα.
+  const C0 = context();
+  assert.throws(() => C0.G.swimDashSetup(), /Αγώνες/);
+  assert.ok(!C0.G._props.SWIM_DASH_SPREADSHEET_ID);
 }
 // Χωρίς ρυθμίσεις και χωρίς φύλλο «Αγώνες»: μήνυμα, όχι νέο αρχείο.
 {

@@ -63,6 +63,18 @@ function swimDashboardGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+/**
+ * Προαιρετικό, μία φορά από τον editor του Apps Script που είναι μέσα στο Google Sheet των αναλύσεων (τρόπος α), αν η σελίδα γράφει
+ * ότι δεν βρίσκει το αρχείο: κρατά αυτό το Google Sheet ως το αρχείο του πίνακα (ρύθμιση SWIM_DASH_SPREADSHEET_ID του project).
+ */
+function swimDashSetup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss || !ss.getSheetByName(SWIM_INDEX_SHEET))
+    throw new Error('Άνοιξε το Apps Script από το Google Sheet των αναλύσεων (αυτό με το φύλλο «' + SWIM_INDEX_SHEET + '»).');
+  swimProps_().setProperty('SWIM_DASH_SPREADSHEET_ID', ss.getId());
+  return 'Ο πίνακας διαβάζει το «' + ss.getName() + '».';
+}
+
 // ---------------------------------------------------------------------------------------------
 // Οι κλήσεις της σελίδας (google.script.run). Καθεμία ελέγχει ξανά τον χρήστη και την πρόσβαση στο αρχείο.
 // ---------------------------------------------------------------------------------------------
