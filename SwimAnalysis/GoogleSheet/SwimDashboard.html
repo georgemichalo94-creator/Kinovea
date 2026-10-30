@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>Swim Analytics · Κ.Ο.Ε.</title>
+<!--
+  Swim Analytics: ο κεντρικός πίνακας σύγκρισης κουρσών. Αρχείο HTML του Apps Script με όνομα «SwimDashboard», μαζί με το
+  SwimDashboard.gs (οδηγίες εγκατάστασης εκεί). Τα δεδομένα έρχονται από το Google Sheet με google.script.run· η σελίδα δεν έχει
+  δικά της δεδομένα. Οι χρωματισμοί των κουρσών (σειρά, φωτεινό / σκοτεινό θέμα) είναι ελεγμένοι για αχρωματοψία.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: εφαρμογή — σταθερή κεφαλίδα με καρτέλες, μία γραμμή φίλτρων, λίστα αγώνων, μετά πλέγμα δύο στηλών με γραφήματα που γίνεται μία στήλη στο κινητό. */
+:root {
+  --bg: #f3f5f6;
+  --surface: #fcfcfb;
+  --raised: #ffffff;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --line: rgba(11, 11, 11, 0.10);
+  --wash: rgba(14, 94, 111, 0.07);
+  --accent: #0e5e6f;
+  --accent-ink: #ffffff;
+  --good: #006300;
+  --bad: #c42f2f;
+  --water: #e8f1f3;
+  --rope: #c9dadf;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --p1: #cfe5ea; --p2: #8cc3cf; --p3: #3f93a8; --p4: #0e5e6f; --p1i: #0b0b0b; --p2i: #0b0b0b; --p3i: #ffffff; --p4i: #ffffff;
+  --font-ui: "Commissioner", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0e0e; --surface: #1a1a19; --raised: #222221; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --line: rgba(255, 255, 255, 0.10); --wash: rgba(79, 179, 198, 0.10);
+    --accent: #4fb3c6; --accent-ink: #0b0b0b; --good: #0ca30c; --bad: #e66767; --water: #14272b; --rope: #2b464d;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --p1: #23434a; --p2: #2f6976; --p3: #4b9fb3; --p4: #8fd0de; --p1i: #f0efec; --p2i: #f0efec; --p3i: #0b0b0b; --p4i: #0b0b0b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0e0e; --surface: #1a1a19; --raised: #222221; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --line: rgba(255, 255, 255, 0.10); --wash: rgba(79, 179, 198, 0.10);
+  --accent: #4fb3c6; --accent-ink: #0b0b0b; --good: #0ca30c; --bad: #e66767; --water: #14272b; --rope: #2b464d;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --p1: #23434a; --p2: #2f6976; --p3: #4b9fb3; --p4: #8fd0de; --p1i: #f0efec; --p2i: #f0efec; --p3i: #0b0b0b; --p4i: #0b0b0b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1240px; margin: 0 auto; }
+
+/* Κεφαλίδα */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px 0; }
+.brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.brand b { font-size: 17px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.brand span { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 12px; color: var(--ink-2); }
+.live { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 var(--good); animation: pulse 2.4s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, 0.45); } 70% { box-shadow: 0 0 0 7px rgba(12, 163, 12, 0); } 100% { box-shadow: 0 0 0 0 rgba(12, 163, 12, 0); } }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 11px; font-weight: 600; color: var(--ink-2); }
+.tabs { display: flex; gap: 4px; overflow-x: auto; width: 100%; margin-top: 4px; scrollbar-width: none; }
+.tabs button { appearance: none; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink-2); padding: 10px 12px 9px; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button:disabled { cursor: default; color: var(--muted); }
+.tabs small { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-left: 4px; color: var(--muted); }
+
+main.wrap { display: grid; gap: 16px; padding-block: 16px 40px; }
+h2 { font-size: 15px; font-weight: 700; margin: 0; text-wrap: balance; }
+.sub { font-size: 12px; color: var(--ink-2); margin: 2px 0 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px 16px; min-width: 0; position: relative; }
+.card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin-bottom: 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+
+/* Φίλτρα */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: end; }
+.field { display: grid; gap: 3px; min-width: 0; }
+.field label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+select, input[type="search"] { font: inherit; color: var(--ink); background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; max-width: 100%; }
+input[type="search"] { width: 190px; }
+button.btn { font: inherit; font-weight: 600; font-size: 13px; border-radius: 8px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--raised); color: var(--ink); }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button:focus-visible, select:focus-visible, input:focus-visible, svg:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Λίστα αγώνων */
+.scroll { overflow-x: auto; }
+.list { max-height: 292px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; color: var(--muted); padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--raised); position: sticky; top: 0; z-index: 1; }
+td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; }
+#summary th { white-space: normal; vertical-align: bottom; min-width: 64px; }
+#summary td:first-child { white-space: normal; min-width: 180px; max-width: 260px; }
+#start-table td:first-child, #turn-table td:first-child, #split-table td:first-child { white-space: normal; min-width: 120px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+.list tr { cursor: pointer; }
+.list tr:hover td { background: var(--wash); }
+.list tr.on td { background: var(--wash); }
+.list tr.dis { cursor: default; opacity: 0.5; }
+.list input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; vertical-align: middle; }
+.new { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--good); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; }
+.count { font-size: 12px; color: var(--ink-2); }
+
+/* Επιλεγμένες κούρσες (το υπόμνημα όλων των γραφημάτων) */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); min-width: 0; }
+.chip .key { width: 18px; height: 3px; border-radius: 2px; flex: none; }
+.chip .who { display: grid; min-width: 0; }
+.chip .who b { font-weight: 600; white-space: nowrap; }
+.chip .who span { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip .tm { font-weight: 700; font-size: 15px; }
+.chip button { font: inherit; font-size: 11px; font-weight: 600; border: 1px solid var(--line); background: none; color: var(--ink-2); border-radius: 999px; padding: 2px 8px; cursor: pointer; }
+.chip button.isref { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip .x { border: 0; font-size: 16px; line-height: 1; padding: 2px 4px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--ink-2); }
+
+/* Τιμές με διαφορά */
+.v { font-weight: 600; }
+.d { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+.d.good { color: var(--good); }
+.d.bad { color: var(--bad); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+td.best .v::after { content: " ★"; color: var(--ink-2); font-size: 10px; }
+
+/* Γραφήματα */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-ui); fill: var(--muted); font-size: 11px; }
+.chart .lbl { fill: var(--ink-2); font-size: 11px; font-weight: 600; }
+.tip { position: absolute; z-index: 3; pointer-events: none; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); min-width: 150px; }
+.tip .t { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.tip .row { display: grid; grid-template-columns: 14px auto 1fr; align-items: center; gap: 6px; white-space: nowrap; }
+.tip .row i { height: 2px; border-radius: 1px; }
+.tip .row b { font-weight: 700; }
+.tip .row span { color: var(--ink-2); }
+.note { font-size: 12px; color: var(--ink-2); margin: 8px 0 0; }
+
+/* Αναπαραγωγή */
+.pool { width: 100%; border-radius: 8px; overflow: hidden; }
+.pool svg { display: block; width: 100%; height: auto; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.controls input[type="range"] { flex: 1 1 220px; accent-color: var(--accent); min-width: 0; }
+.clock { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; min-width: 72px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12px; font-weight: 600; border: 0; background: var(--raised); color: var(--ink-2); padding: 6px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.empty { padding: 28px 16px; text-align: center; color: var(--ink-2); }
+.toast { position: fixed; z-index: 20; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: min(380px, calc(100vw - 32px)); background: var(--ink); color: var(--bg); border-radius: 10px; padding: 12px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); display: grid; gap: 8px; }
+.toast button { justify-self: start; font: inherit; font-weight: 600; font-size: 12px; border-radius: 8px; border: 0; padding: 6px 10px; background: var(--bg); color: var(--ink); cursor: pointer; }
+footer.wrap { padding-block: 0 32px; font-size: 12px; color: var(--muted); }
+.live.off { color: var(--ink-2); }
+.live.off i { background: var(--muted); animation: none; box-shadow: none; }
+.banner { border: 1px solid var(--line); border-left: 3px solid var(--bad); background: var(--surface); border-radius: var(--r); padding: 12px 14px; font-size: 13px; }
+.banner b { display: block; margin-bottom: 2px; }
+.chip .tm.wait { font-weight: 500; font-size: 12px; color: var(--muted); }
+.v.approx { color: var(--ink-2); }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { .live i { animation: none; } }
+</style>
+</head>
+<body>
+<header class="top gutter" lang="el">
+  <div class="wrap">
+    <div class="brand"><b>Swim Analytics</b><span>K.O.E. · Κέντρο αναλύσεων</span></div>
+    <div class="status">
+      <span class="live" id="live" title="Η σελίδα ελέγχει για νέους αγώνες κάθε 30 δευτερόλεπτα"><i></i>Ζωντανά</span>
+      <span id="updated"></span>
+      <span class="badge" id="badge" hidden>Πρωτότυπο · φανταστικοί αθλητές</span>
+      <button class="btn" id="simulate" type="button" hidden>Δοκιμή: έρχεται νέος αγώνας</button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Σελίδες">
+      <button role="tab" aria-selected="true" type="button">Σύγκριση κουρσών</button>
+      <button role="tab" aria-selected="false" type="button" disabled>Εκκινήσεις<small>σύντομα</small></button>
+      <button role="tab" aria-selected="false" type="button" disabled>Αθλητής<small>σύντομα</small></button>
+      <button role="tab" aria-selected="false" type="button" disabled>Διοργάνωση<small>σύντομα</small></button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap gutter" lang="el">
+  <div class="banner" id="banner" role="alert" hidden></div>
+  <section class="card" aria-labelledby="pick-title">
+    <header>
+      <div>
+        <h2 id="pick-title">Διάλεξε έως 5 κούρσες</h2>
+        <p class="sub">Από όλους τους αγώνες που έχουν σταλεί από το Kinovea. Η πρώτη που διαλέγεις είναι η αναφορά.</p>
+      </div>
+      <span class="count" id="count"></span>
+    </header>
+    <div class="filters">
+      <div class="field"><label for="f-comp">Διοργάνωση</label><select id="f-comp"></select></div>
+      <div class="field"><label for="f-event">Αγώνισμα</label><select id="f-event"></select></div>
+      <div class="field"><label for="f-gender">Φύλο</label><select id="f-gender"><option value="">Όλοι</option><option value="M">Αγόρια</option><option value="F">Κορίτσια</option></select></div>
+      <div class="field"><label for="f-round">Φάση</label><select id="f-round"></select></div>
+      <div class="field"><label for="f-q">Αθλητής ή όμιλος</label><input type="search" id="f-q" placeholder="Αναζήτηση" autocomplete="off"></div>
+    </div>
+    <div class="list scroll" style="margin-top:12px"><table id="race-list" aria-label="Αγώνες"></table></div>
+  </section>
+
+  <section aria-label="Επιλεγμένες κούρσες">
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="card" aria-labelledby="sum-title">
+    <header><div><h2 id="sum-title">Σύνοψη</h2><p class="sub">Κάτω από κάθε τιμή η διαφορά από την αναφορά. Πράσινο: καλύτερα, κόκκινο: χειρότερα.</p></div></header>
+    <div class="scroll"><table id="summary"></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <header><div><h2>Ταχύτητα ανά απόσταση</h2><p class="sub">Κουκκίδες: η μετρημένη μέση ταχύτητα κάθε τμήματος (m/s), στο μέσο του. Η καμπύλη τις ενώνει ομαλά. Τα <span style="white-space:nowrap">0–15 μ.</span> περιέχουν την εκκίνηση, τα <span style="white-space:nowrap">+15 μ.</span> μετά τον τοίχο τη στροφή.</p></div></header>
+      <div class="chart" id="ch-vel"></div>
+    </section>
+    <section class="card">
+      <header><div><h2>Διαφορά χρόνου από την αναφορά</h2><p class="sub">Σε κάθε σημείο μέτρησης (s). Πάνω από το 0: πίσω από την αναφορά.</p></div></header>
+      <div class="chart" id="ch-gap"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <header><div><h2>Ρυθμός χεριάς ανά 50 μ.</h2><p class="sub">SR σε κύκλους το λεπτό, στην καθαρή κολύμβηση κάθε 50 μ.</p></div></header>
+      <div class="chart" id="ch-sr"></div>
+    </section>
+    <section class="card">
+      <header><div><h2>Απόσταση ανά χεριά ανά 50 μ.</h2><p class="sub">DPS σε μέτρα ανά χεριά, στην καθαρή κολύμβηση κάθε 50 μ.</p></div></header>
+      <div class="chart" id="ch-dps"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <header><div><h2>Εκκίνηση: οι φάσεις στον χρόνο</h2><p class="sub">Από το σήμα ως τα 15 μ., σε s. Δείχνει σε ποια φάση κερδίζεται ή χάνεται ο χρόνος.</p></div></header>
+      <div class="chart" id="ch-phases"></div>
+    </section>
+    <section class="card">
+      <header><div><h2>Ταχύτητα μετά την είσοδο στο νερό</h2><p class="sub">Κουκκίδες: η μέση ταχύτητα της υποβρύχιας φάσης (είσοδος χεριών → έξοδος κεφαλιού), της κολύμβησης ως τα 15 μ. και των <span style="white-space:nowrap">15–25 μ.</span>, σε m/s. Η καμπύλη τις ενώνει ομαλά.</p></div></header>
+      <div class="chart" id="ch-start"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <header><div><h2>Φάσεις της εκκίνησης</h2><p class="sub">Χρόνοι σε s από το σήμα εκκίνησης, εκτός αν γράφει αλλιώς. ★ η καλύτερη τιμή.</p></div></header>
+    <div class="scroll"><table id="start-table"></table></div>
+  </section>
+
+  <section class="card">
+    <header><div><h2>Στροφές</h2><p class="sub">Ανά τοίχο. Χρόνοι σε s. Το −5 → +15 μ. είναι ο συνολικός χρόνος της στροφής, από τα 5 μ. πριν ως τα 15 μ. μετά τον τοίχο. ★ η καλύτερη τιμή.</p></div></header>
+    <div class="scroll"><table id="turn-table"></table></div>
+  </section>
+
+  <section class="card">
+    <header>
+      <div><h2>Αναπαραγωγή στην πισίνα</h2><p class="sub">Οι κούρσες κολυμπούν μαζί, η καθεμία στον χρόνο της, από τα σημεία μέτρησης της ανάλυσης.</p></div>
+    </header>
+    <div class="pool" id="pool"></div>
+    <div class="controls">
+      <button class="btn primary" id="play" type="button">Αναπαραγωγή</button>
+      <span class="clock" id="clock">0.00</span>
+      <input type="range" id="scrub" min="0" max="60" step="0.01" value="0" aria-label="Χρόνος αναπαραγωγής">
+      <span class="seg" role="group" aria-label="Ταχύτητα αναπαραγωγής">
+        <button type="button" data-speed="1" aria-pressed="false">×1</button>
+        <button type="button" data-speed="2" aria-pressed="true">×2</button>
+        <button type="button" data-speed="4" aria-pressed="false">×4</button>
+      </span>
+    </div>
+    <div class="scroll" style="margin-top:10px"><table id="replay-table"></table></div>
+  </section>
+
+  <section class="card">
+    <header>
+      <div><h2>Πίνακας ανά σημείο μέτρησης</h2><p class="sub">Όλες οι τιμές των γραφημάτων, για ανάγνωση και αντιγραφή.</p></div>
+      <div class="field"><label for="t-metric">Τιμή</label>
+        <select id="t-metric">
+          <option value="t">Χρόνος από την εκκίνηση (s)</option>
+          <option value="seg">Χρόνος τμήματος (s)</option>
+          <option value="vel">Ταχύτητα τμήματος (m/s)</option>
+          <option value="sr">SR (κύκλοι/λεπτό)</option>
+          <option value="dps">DPS (μ./χεριά)</option>
+          <option value="strokes">Χεριές τμήματος</option>
+        </select>
+      </div>
+    </header>
+    <div class="scroll"><table id="split-table"></table></div>
+  </section>
+</main>
+<footer class="wrap gutter" lang="el" id="foot"></footer>
+<div id="toast-host" aria-live="polite" lang="el"></div>
+
+<script>
+(() => {
+'use strict';
+// ---------- Πηγή δεδομένων ----------
+// Στο Google: google.script.run → swimDashList / swimDashPoll / swimDashRaces (SwimDashboard.gs), με τις ίδιες τιμές με τα φύλλα και
+// τα PDF των αναφορών. Χωρίς Google (το πρωτότυπο): οι φανταστικοί αγώνες της σελίδας (#demo-data), στο ίδιο σχήμα.
+const GAS = typeof google !== 'undefined' && google.script && google.script.run ? google.script.run : null;
+const demoEl = document.getElementById('demo-data');
+const DEMO = !GAS && demoEl ? JSON.parse(demoEl.textContent) : null;
+const LIGHT = ['id', 'athlete', 'gender', 'club', 'category', 'style', 'distance', 'distanceLabel', 'pool', 'poolUnit', 'relay', 'relayLeg',
+  'competition', 'location', 'round', 'date', 'dateText', 'lane', 'dq', 'finalTime', 'updated'];
+const toLight = r => {
+  const o = {};
+  LIGHT.forEach(k => { o[k] = r[k] === undefined ? '' : r[k]; });
+  if (!ok(o.finalTime)) o.finalTime = r.summary ? r.summary.finalTime : null;
+  return o;
+};
+const call = (fn, arg) => new Promise((resolve, reject) => {
+  const run = GAS.withSuccessHandler(resolve).withFailureHandler(reject);
+  if (arg === undefined) run[fn](); else run[fn](arg);
+});
+// Το πρωτότυπο: ένας αγώνας «έρχεται» από το Kinovea με το κουμπί της δοκιμής και τον βρίσκει ο ίδιος έλεγχος με το Google.
+const demoSource = () => {
+  const live = DEMO.races.find(r => r.id === DEMO.liveId) || null;
+  let races = DEMO.races.filter(r => r !== live), n = 1;
+  const list = () => ({ ok: true, sig: 'demo-' + n, races: races.map(toLight), version: '', analysis: '' });
+  return {
+    list: () => Promise.resolve(list()),
+    poll: sig => Promise.resolve(sig === 'demo-' + n ? { ok: true, changed: false, sig } : Object.assign(list(), { changed: true })),
+    races: ids => Promise.resolve({ ok: true, races: ids.map(id => races.find(r => r.id === id)).filter(Boolean),
+      missing: ids.filter(id => !races.some(r => r.id === id)) }),
+    arrive: () => { if (!live || races.includes(live)) return false; races = races.concat([live]); n++; return true; }
+  };
+};
+const Source = GAS ? { list: () => call('swimDashList'), poll: sig => call('swimDashPoll', sig), races: ids => call('swimDashRaces', ids) }
+  : DEMO ? demoSource() : null;
+
+// ---------- Βοηθητικά ----------
+const STYLE = { fs: 'Ελεύθερο', bk: 'Ύπτιο', br: 'Πρόσθιο', fly: 'Πεταλούδα', im: 'Μικτή ατομική' };
+const STYLES = ['fs', 'bk', 'br', 'fly', 'im'];
+const GENDER = { M: 'Αγόρια', F: 'Κορίτσια' };
+const MAX = 5, LIST_MAX = 400, POLL_MS = 30000;
+const $ = (s, el = document) => el.querySelector(s);
+const el = (tag, attrs = {}, kids = []) => {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'text') e.textContent = attrs[k];
+    else if (k === 'class') e.className = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  (Array.isArray(kids) ? kids : [kids]).forEach(c => { if (c != null) e.append(c); });
+  return e;
+};
+const NS = 'http://www.w3.org/2000/svg';
+const sv = (tag, attrs = {}) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+const ok = x => x !== null && x !== undefined && x !== '' && isFinite(x);
+// Σε εκατοστά πρώτα, ώστε π.χ. 59.996 να γράφεται 1:00.00 και όχι 0:60.00.
+const fmtTime = t => {
+  if (!ok(t)) return '–';
+  const c = Math.round(t * 100);
+  if (c < 6000) return (c / 100).toFixed(2);
+  const m = Math.floor(c / 6000), s = (c - m * 6000) / 100;
+  return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2);
+};
+const fmt = (x, n = 2) => ok(x) ? x.toFixed(n) : '–';
+// Το πρόσημο από την τιμή όπως γράφεται: −0.004 με δύο δεκαδικά είναι ±0.00, όχι −0.00.
+const sign = (x, n = 2) => { if (!ok(x)) return ''; const a = Math.abs(x).toFixed(n); return (+a === 0 ? '±' : x > 0 ? '+' : '−') + a; };
+const dateGr = s => { const p = String(s || '').split('-'); return p.length === 3 ? +p[2] + '/' + +p[1] + '/' + p[0] : (s || ''); };
+const dateOf = r => r.date ? dateGr(r.date) : String(r.dateText || '');
+const eventKey = r => [r.distance, r.style, r.pool, r.poolUnit || 'm', r.relay ? 'R' : '', r.relayLeg ? 'L' : ''].join('|');
+const eventLabel = r => {
+  const relayDist = r.relay && /^\s*\d+\s*[xX×χΧ]\s*\d+/.test(r.distanceLabel || '') ? String(r.distanceLabel).replace(/\s*[xX×χΧ]\s*/, '×').trim() : r.distance;
+  return relayDist + ' ' + (r.relay && r.style === 'im' ? 'Μικτή' : STYLE[r.style] || r.style) + (r.relay ? ' σκυταλοδρομία' : '') +
+    (r.relayLeg ? ' · σκέλος' : '') + (r.poolUnit === 'yd' ? ' (' + r.pool + ' y)' : r.pool === 25 ? ' (25άρα)' : '');
+};
+const shortName = name => {
+  const p = String(name || '').trim().split(/\s+/);
+  if (p.length > 1 && p[p.length - 1].length <= 2) return p[0].slice(0, 3) + '. ' + p[p.length - 1];
+  return p[0] || '';
+};
+const slotVar = i => 'var(--s' + (i + 1) + ')';
+const decimals = st => st >= 1 ? 0 : Math.abs(st * 10 - Math.round(st * 10)) < 1e-9 ? 1 : 2;
+const niceStep = (span, target) => {
+  const raw = span / Math.max(1, target), mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+};
+const errText = e => String(e && e.message ? e.message : e || '');
+
+// ---------- Κατάσταση ----------
+// list: οι αγώνες χωρίς μετρήσεις (για τη λίστα)· full: οι μετρήσεις όσων έχουν επιλεγεί (έρχονται όταν επιλέγονται).
+const state = { list: [], byId: new Map(), full: new Map(), loading: new Set(), sig: '', ready: false, info: null,
+  sel: [], ref: null, isNew: new Set(),
+  f: { comp: '', event: '', gender: '', round: '', q: '' }, metric: 't', replay: { t: 0, playing: false, speed: 2, last: 0, max: 60 } };
+
+function selected() {
+  return state.sel.map(s => { const f = state.full.get(s.id); return f ? Object.assign({ slot: s.slot }, f) : null; }).filter(Boolean);
+}
+function refRace() { return state.full.get(state.ref) || null; }
+// Προσθέτει ή βγάζει μια κούρσα από τη σύγκριση (χωρίς σχεδίαση). Η πρώτη που μπαίνει είναι η αναφορά.
+function pick(id) {
+  const i = state.sel.findIndex(s => s.id === id);
+  if (i >= 0) {
+    state.sel.splice(i, 1);
+    if (state.ref === id) state.ref = state.sel.length ? state.sel[0].id : null;
+    return;
+  }
+  if (state.sel.length >= MAX || !state.byId.has(id)) return;
+  const used = new Set(state.sel.map(s => s.slot));
+  let slot = 0; while (used.has(slot)) slot++;
+  state.sel.push({ id, slot });
+  if (!state.ref) state.ref = id;
+}
+function toggle(id) { pick(id); load(); renderAll(); }
+// Οι μετρήσεις των επιλεγμένων που δεν έχουν έρθει ακόμη.
+function load() {
+  const need = state.sel.map(s => s.id).filter(id => !state.full.has(id) && !state.loading.has(id));
+  if (!need.length || !Source) return;
+  need.forEach(id => state.loading.add(id));
+  Source.races(need).then(res => {
+    need.forEach(id => state.loading.delete(id));
+    if (!res || !res.ok) { problem(res ? res.error : '', res && res.denied); renderChips(); return; }
+    (res.races || []).forEach(r => state.full.set(r.id, r));
+    const gone = (res.missing || []).filter(id => state.sel.some(s => s.id === id));
+    gone.forEach(pick);
+    if (gone.length) toast(gone.length === 1 ? 'Μια ανάλυση δεν υπάρχει πια στο Google Sheet και βγήκε από τη σύγκριση.'
+      : gone.length + ' αναλύσεις δεν υπάρχουν πια στο Google Sheet και βγήκαν από τη σύγκριση.');
+    renderAll();
+  }, err => {
+    need.forEach(id => state.loading.delete(id));
+    problem(errText(err));
+    renderChips();
+  });
+}
+
+// ---------- Μηνύματα ----------
+function problem(msg, denied) {
+  const b = $('#banner');
+  b.replaceChildren(el('b', { text: denied ? 'Δεν έχεις πρόσβαση στον πίνακα' : 'Δεν ήρθαν τα δεδομένα' }),
+    el('span', { text: msg || 'Δοκίμασε να ανοίξεις ξανά τη σελίδα σε λίγο.' }));
+  b.hidden = false;
+  setLive(false);
+}
+function setLive(on) {
+  const l = $('#live');
+  l.classList.toggle('off', !on);
+  l.lastChild.textContent = on ? 'Ζωντανά' : 'Χωρίς σύνδεση';
+  if (on) $('#banner').hidden = true;
+}
+
+// ---------- Φίλτρα και λίστα ----------
+function fillFilters() {
+  const byDate = [...state.list].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const comps = [...new Map(byDate.filter(r => r.competition).map(r => [r.competition, r])).keys()];
+  const evs = [...new Map(state.list.map(r => [eventKey(r), r])).values()].sort((a, b) => a.style === b.style
+    ? (a.relay - b.relay) || (a.relayLeg ? 1 : 0) - (b.relayLeg ? 1 : 0) || a.distance - b.distance || a.pool - b.pool
+    : STYLES.indexOf(a.style) - STYLES.indexOf(b.style));
+  const rounds = [...new Set(state.list.map(r => r.round).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'el'));
+  const fill = (sel, items, all) => { sel.replaceChildren(el('option', { value: '', text: all }), ...items.map(([v, t]) => el('option', { value: v, text: t }))); };
+  fill($('#f-comp'), comps.map(c => [c, c]), 'Όλες');
+  fill($('#f-event'), evs.map(r => [eventKey(r), eventLabel(r)]), 'Όλα');
+  fill($('#f-round'), rounds.map(r => [r, r]), 'Όλες');
+  // Μια τιμή φίλτρου που δεν υπάρχει πια (σβήστηκαν οι αγώνες της) φεύγει.
+  ['comp', 'event', 'round'].forEach(k => {
+    const s = $('#f-' + k);
+    if (state.f[k] && ![...s.options].some(o => o.value === state.f[k])) state.f[k] = '';
+    s.value = state.f[k];
+  });
+  $('#f-gender').value = state.f.gender;
+}
+function filtered() {
+  const q = state.f.q.trim().toLowerCase();
+  const t = r => ok(r.finalTime) ? r.finalTime : 1e9;
+  const rows = state.list.filter(r => (!state.f.comp || r.competition === state.f.comp) && (!state.f.event || eventKey(r) === state.f.event) &&
+    (!state.f.gender || r.gender === state.f.gender) && (!state.f.round || r.round === state.f.round) &&
+    (!q || [r.athlete, r.club, r.competition, r.category].join(' ').toLowerCase().includes(q)));
+  // Σε ένα αγώνισμα: κατά φύλο και χρόνο. Χωρίς αγώνισμα: πρώτα οι πιο πρόσφατοι αγώνες.
+  return rows.sort(state.f.event
+    ? (a, b) => (a.gender === b.gender ? t(a) - t(b) : a.gender < b.gender ? -1 : 1)
+    : (a, b) => String(b.date).localeCompare(String(a.date)) || String(a.competition).localeCompare(String(b.competition), 'el') ||
+      eventKey(a).localeCompare(eventKey(b)) || (a.gender === b.gender ? 0 : a.gender < b.gender ? -1 : 1) || t(a) - t(b));
+}
+function renderList() {
+  const all = filtered(), rows = all.slice(0, LIST_MAX);
+  const full = state.sel.length >= MAX;
+  const tbl = $('#race-list');
+  const head = el('tr', {}, ['', 'Αθλητής', 'Όμιλος', 'Αγώνισμα', 'Διοργάνωση', 'Φάση', 'Ημερομηνία', 'Χρόνος'].map((h, i) => el('th', { class: i === 7 ? 'num' : '', text: h })));
+  const body = rows.map(r => {
+    const s = state.sel.find(x => x.id === r.id);
+    const dis = !s && full;
+    const cb = el('input', { type: 'checkbox', 'aria-label': 'Επιλογή: ' + r.athlete + ', ' + eventLabel(r) + ', ' + r.competition });
+    cb.checked = !!s; cb.disabled = dis;
+    cb.addEventListener('click', ev => { ev.stopPropagation(); toggle(r.id); });
+    const name = el('td', {}, [s ? el('span', { class: 'dot', style: 'background:' + slotVar(s.slot) }) : null, document.createTextNode(r.athlete),
+      state.isNew.has(r.id) ? el('span', { class: 'new', text: 'ΝΕΟ' }) : null]);
+    const tr = el('tr', { class: (s ? 'on' : '') + (dis ? ' dis' : '') }, [el('td', {}, cb), name, el('td', { text: r.club }),
+      el('td', { text: eventLabel(r) + (GENDER[r.gender] ? ' · ' + GENDER[r.gender] : '') }), el('td', { text: r.competition }),
+      el('td', { text: r.round + (r.dq ? ' (ακύρωση)' : '') }), el('td', { text: dateOf(r) }),
+      el('td', { class: 'num' }, el('span', { class: 'v', text: fmtTime(r.finalTime) }))]);
+    if (!dis) tr.addEventListener('click', () => toggle(r.id));
+    return tr;
+  });
+  const empty = !state.ready ? 'Φορτώνω τους αγώνες…' : !state.list.length
+    ? 'Δεν υπάρχουν ακόμη αγώνες. Μόλις σταλεί μια ανάλυση από το Kinovea, θα εμφανιστεί εδώ.' : 'Κανένας αγώνας με αυτά τα φίλτρα.';
+  tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, body.length ? body : el('tr', {}, el('td', { colspan: 8, class: 'empty', text: empty }))));
+  $('#count').textContent = !state.ready ? '' : all.length + ' αγώνες' + (all.length > rows.length ? ' (στη λίστα οι πρώτοι ' + rows.length + ')' : '') +
+    ' · επιλεγμένοι ' + state.sel.length + ' από ' + MAX;
+}
+
+// ---------- Επιλεγμένες (υπόμνημα) ----------
+function renderChips() {
+  const host = $('#chips');
+  if (!state.sel.length) { host.replaceChildren(el('p', { class: 'hint', text: 'Διάλεξε κούρσες από τη λίστα για να εμφανιστούν τα γραφήματα.' })); return; }
+  host.replaceChildren(...state.sel.map(s => {
+    const r = state.full.get(s.id) || state.byId.get(s.id);
+    if (!r) return null;
+    const isRef = r.id === state.ref, wait = !state.full.has(s.id);
+    const refBtn = el('button', { type: 'button', class: isRef ? 'isref' : '', 'aria-pressed': String(isRef), text: isRef ? 'Αναφορά' : 'Κάνε αναφορά' });
+    refBtn.addEventListener('click', () => { state.ref = r.id; renderAll(); });
+    const x = el('button', { type: 'button', class: 'x', 'aria-label': 'Αφαίρεση: ' + r.athlete, text: '×' });
+    x.addEventListener('click', () => toggle(r.id));
+    return el('div', { class: 'chip' }, [el('span', { class: 'key', style: 'background:' + slotVar(s.slot) }),
+      el('div', { class: 'who' }, [el('b', { text: r.athlete }), el('span', { text: [eventLabel(r), r.competition, r.round].filter(Boolean).join(' · ') })]),
+      wait ? el('span', { class: 'tm wait', text: 'φορτώνει…' }) : el('span', { class: 'tm', text: fmtTime(r.summary.finalTime) }), refBtn, x]);
+  }).filter(Boolean));
+}
+
+// ---------- Πίνακες ----------
+// better: 'low' (χρόνοι), 'high' (ταχύτητα), κανένα (ουδέτερο: SR, DPS). approx: εκτίμηση του προγράμματος (≈, χωρίς σύγκριση).
+function valueCell(v, refV, opts = {}) {
+  const n = opts.n == null ? 2 : opts.n;
+  if (opts.approx && ok(v)) return el('td', { class: 'num' }, el('span', { class: 'v approx', text: '≈' + v.toFixed(1), title: 'Εκτίμηση από τους χρόνους, όχι μέτρηση' }));
+  const td = el('td', { class: 'num' }, el('span', { class: 'v', text: opts.time ? fmtTime(v) : fmt(v, n) }));
+  if (opts.isRef || !ok(v) || !ok(refV)) return td;
+  const dlt = v - refV;
+  let cls = 'd';
+  if (opts.better && Math.abs(dlt) >= 0.005) cls += ((opts.better === 'low') === (dlt < 0)) ? ' good' : ' bad';
+  td.append(el('span', { class: cls, text: sign(dlt, n) }));
+  return td;
+}
+function renderSummary() {
+  const sel = selected(), ref = refRace(), tbl = $('#summary');
+  if (!sel.length) { tbl.replaceChildren(); return; }
+  const cols = [
+    ['Τελικός χρόνος', r => r.summary.finalTime, { time: true, better: 'low' }],
+    ['Μέση ταχύτητα (m/s)', r => r.summary.avgVel, { better: 'high' }],
+    ['SR (κ/λ)', r => r.summary.avgSr, { n: 1 }],
+    ['DPS (μ.)', r => r.summary.avgDps, {}],
+    ['Εκκίνηση ως 15 μ. (s)', r => r.summary.startTime, { better: 'low' }],
+    ['Στροφές −5 → +15 μ. (s)', r => r.summary.turnsTime, { better: 'low' }],
+    ['Τερματισμός 5 μ. (s)', r => r.summary.finishTime, { better: 'low' }]
+  ];
+  const head = el('tr', {}, [el('th', { text: 'Κούρσα' }), ...cols.map(c => el('th', { class: 'num', text: c[0] }))]);
+  const body = sel.map(r => el('tr', {}, [
+    el('td', {}, [el('span', { class: 'dot', style: 'background:' + slotVar(r.slot) }), el('b', { text: r.athlete }),
+      el('span', { class: 'd', text: [eventLabel(r), r.competition, r.round].filter(Boolean).join(' · ') + (r.id === state.ref ? ' · αναφορά' : '') })]),
+    ...cols.map(c => valueCell(c[1](r), ref ? c[1](ref) : null, Object.assign({ isRef: r.id === state.ref }, c[2])))
+  ]));
+  tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, body));
+}
+
+const startMetrics = [
+  ['Αντίδραση', r => r.manual.reaction, { better: 'low' }],
+  ['Αποκόλληση από τον βατήρα', r => r.start.blockTime, { better: 'low' }],
+  ['Πτήση (αποκόλληση → είσοδος)', r => r.start.flightTime, {}],
+  ['Είσοδος στο νερό (μ.)', r => r.manual.entryDistHands, { better: 'high' }],
+  ['Υποβρύχια φάση (είσοδος → έξοδος)', r => ok(r.start.breakout) && ok(r.start.entryTime) ? r.start.breakout - r.start.entryTime : null, {}],
+  ['Δελφινισμοί', r => r.start.kicks, { n: 0 }],
+  ['Κάτω από το νερό (μ.)', r => r.manual.underwaterDist, { better: 'high', approx: r => !!r.manual.underwaterEstimated }],
+  ['Έξοδος κεφαλιού (μ.)', r => r.manual.breakoutDist, { better: 'high' }],
+  ['Έξοδος (s από το σήμα)', r => r.start.breakout, {}],
+  ['15 μ.', r => r.start.t15, { better: 'low' }]
+];
+function metricTable(tbl, rowsDef, sel, ref, groups) {
+  const head = el('tr', {}, [el('th', { text: '' }), ...sel.map(r => el('th', { class: 'num' }, [el('span', { class: 'dot', style: 'background:' + slotVar(r.slot) }), document.createTextNode(shortName(r.athlete))]))]);
+  const body = [];
+  (groups || [{ title: null, rows: rowsDef }]).forEach(g => {
+    if (g.title) body.push(el('tr', {}, el('td', { colspan: sel.length + 1, style: 'font-weight:700;padding-top:10px', text: g.title })));
+    g.rows.forEach(([label, get, o]) => {
+      const vals = sel.map(get);
+      if (!vals.some(ok)) return;
+      const ap = sel.map(r => !!(o.approx && o.approx(r)));
+      const refV = ref && !(o.approx && o.approx(ref)) ? get(ref) : null;
+      // ★ μόνο όταν μία τιμή είναι καλύτερη από όλες (στην ακρίβεια που φαίνεται): σε ισοπαλία κανένα αστέρι.
+      let bestIdx = -1;
+      if (o.better && sel.length > 1) {
+        const okv = vals.map((v, i) => [v, i]).filter(x => ok(x[0]) && !ap[x[1]]);
+        if (okv.length > 1) {
+          const best = okv.reduce((a, b) => (o.better === 'low' ? b[0] < a[0] : b[0] > a[0]) ? b : a);
+          const shown = v => v.toFixed(o.n == null ? 2 : o.n);
+          if (okv.filter(x => shown(x[0]) === shown(best[0])).length === 1) bestIdx = best[1];
+        }
+      }
+      body.push(el('tr', {}, [el('td', { text: label }), ...sel.map((r, i) => {
+        const td = valueCell(vals[i], refV, Object.assign({ isRef: r.id === state.ref }, o, { approx: ap[i] }));
+        if (i === bestIdx) td.classList.add('best');
+        return td;
+      })]));
+    });
+  });
+  tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, body));
+}
+function renderStartTable() {
+  const sel = selected();
+  if (!sel.length) { $('#start-table').replaceChildren(); return; }
+  metricTable($('#start-table'), startMetrics, sel, refRace());
+}
+function renderTurnTable() {
+  const sel = selected(), ref = refRace();
+  if (!sel.length) { $('#turn-table').replaceChildren(); return; }
+  const walls = [...new Set(sel.flatMap(r => r.turns.map(t => t.wall)))].sort((a, b) => a - b);
+  if (!walls.length) { $('#turn-table').replaceChildren(el('tbody', {}, el('tr', {}, el('td', { class: 'empty', text: 'Οι κούρσες που διάλεξες δεν έχουν στροφές.' })))); return; }
+  const tu = (r, w) => r.turns.find(t => t.wall === w) || {};
+  const mt = (r, w) => (r.manual.turns && r.manual.turns[String(w)]) || {};
+  const groups = walls.map(w => ({ title: 'Τοίχος ' + w + ' μ.', rows: [
+    ['−5 μ. → τοίχος', r => tu(r, w).in5, { better: 'low' }],
+    ['Χρόνος στροφής (ως την αποκόλληση)', r => tu(r, w).turnTime, { better: 'low' }],
+    ['Υποβρύχια (αποκόλληση → έξοδος)', r => tu(r, w).underwaterTime, {}],
+    ['Έξοδος (μ. από τον τοίχο)', r => mt(r, w).underwaterDist, { better: 'high', approx: r => !!mt(r, w).underwaterEstimated }],
+    ['Δελφινισμοί', r => tu(r, w).kicks, { n: 0 }],
+    ['Τοίχος → +15 μ.', r => tu(r, w).out15, { better: 'low' }],
+    ['−5 → +15 μ.', r => tu(r, w).inOut, { better: 'low' }]
+  ] }));
+  metricTable($('#turn-table'), null, sel, ref, groups);
+}
+function renderSplitTable() {
+  const sel = selected(), ref = refRace(), tbl = $('#split-table');
+  if (!sel.length) { tbl.replaceChildren(); return; }
+  const m = state.metric;
+  const ds = [...new Set(sel.flatMap(r => r.rows.map(x => x.d)))].sort((a, b) => a - b);
+  const rowAt = (r, d) => r.rows.find(x => x.d === d) || {};
+  const get = (r, d) => { const x = rowAt(r, d); return m === 't' ? x.t : m === 'seg' ? x.segTime : m === 'vel' ? x.vel : m === 'sr' ? x.sr : m === 'dps' ? x.dps : x.strokes; };
+  const opt = { t: { time: true, better: 'low' }, seg: { better: 'low' }, vel: { better: 'high' }, sr: { n: 1 }, dps: {}, strokes: { n: 1 } }[m];
+  const head = el('tr', {}, [el('th', { text: 'Σημείο' }), ...sel.map(r => el('th', { class: 'num' }, [el('span', { class: 'dot', style: 'background:' + slotVar(r.slot) }), document.createTextNode(shortName(r.athlete))]))]);
+  const maxD = Math.max(...sel.map(r => r.distance));
+  const body = ds.map(d => el('tr', {}, [el('td', { text: d + ' μ.' + (d === maxD ? ' · τερματισμός' : sel.some(r => rowAt(r, d).isWall) ? ' · τοίχος' : '') }),
+    ...sel.map(r => valueCell(get(r, d), ref ? get(ref, d) : null, Object.assign({ isRef: r.id === state.ref }, opt)))]));
+  tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, body));
+}
+
+// ---------- Γραφήματα ----------
+// Ομαλή καμπύλη που περνά ακριβώς από τα σημεία, χωρίς υπερβάσεις: ανάμεσα σε δύο σημεία δεν βγαίνει
+// ποτέ πάνω ή κάτω από τις δύο τιμές (μονότονη κυβική κατά Steffen 1990). P: [[x, y], ...] σε pixels, x αύξουσα.
+function smoothPath(P) {
+  const n = P.length, f = v => v.toFixed(1);
+  if (n < 3) return P.map((q, i) => (i ? 'L' : 'M') + f(q[0]) + ' ' + f(q[1])).join('');
+  const h = [], s = [], t = [];
+  for (let i = 0; i < n - 1; i++) { h[i] = P[i + 1][0] - P[i][0]; s[i] = h[i] ? (P[i + 1][1] - P[i][1]) / h[i] : 0; }
+  for (let i = 1; i < n - 1; i++) {
+    const p = (s[i - 1] * h[i] + s[i] * h[i - 1]) / ((h[i - 1] + h[i]) || 1);
+    t[i] = s[i - 1] * s[i] <= 0 ? 0 : Math.sign(s[i]) * 2 * Math.min(Math.abs(s[i - 1]), Math.abs(s[i]), 0.5 * Math.abs(p));
+  }
+  t[0] = (3 * s[0] - t[1]) / 2;
+  t[n - 1] = (3 * s[n - 2] - t[n - 2]) / 2;
+  let d = 'M' + f(P[0][0]) + ' ' + f(P[0][1]);
+  for (let i = 0; i < n - 1; i++) {
+    const dx = h[i] / 3;
+    d += 'C' + f(P[i][0] + dx) + ' ' + f(P[i][1] + dx * t[i]) + ' ' + f(P[i + 1][0] - dx) + ' ' + f(P[i + 1][1] - dx * t[i + 1]) + ' ' + f(P[i + 1][0]) + ' ' + f(P[i + 1][1]);
+  }
+  return d;
+}
+// Γράφημα γραμμών. series: [{color, label, short, segs:[{x0,x1,y}] ή pts:[{x,y,brk}]}]. Με o.smooth τα σημεία ενώνονται με ομαλή καμπύλη,
+// με o.dots φαίνονται ως κουκκίδες. brk: η γραμμή κόβεται πριν από το σημείο (κενό στις μετρήσεις). Σταυρόνημα στη θέση x, μία ετικέτα με όλες τις κούρσες.
+function lineChart(host, o) {
+  host.replaceChildren();
+  const W = Math.max(280, host.clientWidth || 600), H = o.height || 250;
+  const m = { l: 46, r: 64, t: 14, b: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const all = o.series.flatMap(s => s.segs ? s.segs.map(g => g.y) : s.pts.map(p => p.y)).filter(ok);
+  if (!all.length) { host.append(el('p', { class: 'empty', text: o.empty || 'Δεν υπάρχουν τιμές.' })); return; }
+  let y0 = Math.min(...all), y1 = Math.max(...all);
+  if (o.zero) { y0 = Math.min(0, y0); y1 = Math.max(0, y1); }
+  const pad = (y1 - y0) * 0.08 || 0.1; y0 -= pad; y1 += pad;
+  const st = niceStep(y1 - y0, 5); y0 = Math.floor(y0 / st) * st; y1 = Math.ceil(y1 / st) * st;
+  const X = x => m.l + (x - o.x0) / (o.x1 - o.x0) * iw, Y = y => m.t + (1 - (y - y0) / (y1 - y0)) * ih;
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.aria || '' , tabindex: '0' });
+  for (let v = y0; v <= y1 + st / 2; v += st) {
+    svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: 'var(--grid)', 'stroke-width': 1 }));
+    const t = sv('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }); t.textContent = o.yFmt(v, st); svg.append(t);
+  }
+  if (o.zero) svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: Y(0), y2: Y(0), stroke: 'var(--ink-2)', 'stroke-width': 1 }));
+  (o.walls || []).forEach(w => { if (w > o.x0 && w < o.x1) svg.append(sv('line', { x1: X(w), x2: X(w), y1: m.t, y2: m.t + ih, stroke: 'var(--axis)', 'stroke-width': 1 })); });
+  svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: m.t + ih, y2: m.t + ih, stroke: 'var(--axis)', 'stroke-width': 1 }));
+  o.xTicks.forEach(v => { const t = sv('text', { x: X(v), y: H - 12, 'text-anchor': 'middle' }); t.textContent = o.xFmt(v); svg.append(t); });
+  if (o.xTitle) { const t = sv('text', { x: W - m.r, y: H - 0, 'text-anchor': 'end' }); t.textContent = o.xTitle; svg.append(t); }
+  const ends = [];
+  o.series.forEach(s => {
+    let d = '';
+    if (s.segs) {
+      s.segs.forEach((g, i) => { if (!ok(g.y)) return; d += (i && ok(s.segs[i - 1].y) && Math.abs(s.segs[i - 1].x1 - g.x0) < 1e-6 ? 'L' : 'M') + X(g.x0).toFixed(1) + ' ' + Y(g.y).toFixed(1) + 'H' + X(g.x1).toFixed(1); });
+      const last = [...s.segs].reverse().find(g => ok(g.y)); if (last) ends.push({ s, x: last.x1, y: last.y });
+    } else {
+      // Συνεχόμενα κομμάτια: η γραμμή κόβεται όπου λείπει τιμή ή όπου το σημείο έχει brk.
+      const runs = []; let cur = [];
+      s.pts.forEach(p => { const has = ok(p.y); if (!has || p.brk) { if (cur.length) runs.push(cur); cur = []; } if (has) cur.push([X(p.x), Y(p.y)]); });
+      if (cur.length) runs.push(cur);
+      d = runs.map(r => o.smooth ? smoothPath(r) : r.map((q, i) => (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('')).join('');
+      const last = [...s.pts].reverse().find(p => ok(p.y)); if (last) ends.push({ s, x: last.x, y: last.y });
+    }
+    svg.append(sv('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  });
+  // Κουκκίδες πάνω από όλες τις γραμμές, με δαχτυλίδι στο χρώμα του φόντου για να ξεχωρίζουν όταν πέφτουν η μία πάνω στην άλλη.
+  if (o.dots) o.series.forEach(s => (s.pts || []).filter(p => ok(p.y)).forEach(p => svg.append(sv('circle', { cx: X(p.x), cy: Y(p.y), r: 4, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2 }))));
+  // Ετικέτες στο τέλος κάθε γραμμής, χωρίς επικαλύψεις (με γραμμή οδηγό όταν μετακινούνται).
+  ends.sort((a, b) => Y(a.y) - Y(b.y));
+  const placed = [];
+  ends.forEach(e => { let y = Y(e.y); if (placed.length && y - placed[placed.length - 1] < 13) y = placed[placed.length - 1] + 13; placed.push(y); e.ly = y; });
+  const over = placed.length ? placed[placed.length - 1] - (m.t + ih) : 0;
+  if (over > 0) ends.forEach(e => { e.ly -= over; });
+  ends.forEach(e => {
+    const ex = X(e.x), ey = Y(e.y);
+    svg.append(sv('circle', { cx: ex, cy: ey, r: 4, fill: e.s.color, stroke: 'var(--surface)', 'stroke-width': 2 }));
+    if (Math.abs(e.ly - ey) > 2) svg.append(sv('line', { x1: ex + 5, y1: ey, x2: ex + 12, y2: e.ly, stroke: 'var(--axis)', 'stroke-width': 1 }));
+    const t = sv('text', { x: ex + 14, y: e.ly + 4, class: 'lbl' }); t.textContent = o.endLabel ? o.endLabel(e) : e.s.short; svg.append(t);
+  });
+  // Σταυρόνημα
+  const snaps = o.snaps;
+  const hair = sv('line', { y1: m.t, y2: m.t + ih, stroke: 'var(--ink-2)', 'stroke-width': 1, visibility: 'hidden' });
+  svg.append(hair);
+  const hit = sv('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' });
+  svg.append(hit);
+  host.append(svg);
+  const tip = el('div', { class: 'tip', hidden: '' });
+  host.append(tip);
+  let idx = -1;
+  const show = i => {
+    idx = Math.max(0, Math.min(snaps.length - 1, i));
+    const sx = snaps[idx];
+    hair.setAttribute('x1', X(sx.x)); hair.setAttribute('x2', X(sx.x)); hair.setAttribute('visibility', 'visible');
+    tip.replaceChildren(el('div', { class: 't', text: sx.title }), ...o.series.map(s => {
+      const v = o.valueAt(s, sx);
+      return el('div', { class: 'row' }, [el('i', { style: 'background:' + s.color }), el('b', { text: ok(v) ? o.tipFmt(v) : '–' }), el('span', { text: s.label + (o.rowNote ? o.rowNote(s, sx) : '') })]);
+    }));
+    tip.hidden = false;
+    const r = host.getBoundingClientRect(), sc = r.width / W;
+    let left = X(sx.x) * sc + 12;
+    if (left + tip.offsetWidth > r.width) left = X(sx.x) * sc - tip.offsetWidth - 12;
+    tip.style.left = Math.max(0, left) + 'px'; tip.style.top = (m.t * sc) + 'px';
+  };
+  const hide = () => { hair.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+  svg.addEventListener('pointermove', ev => {
+    const r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * W;
+    let best = 0, bd = Infinity;
+    snaps.forEach((s, i) => { const dd = Math.abs(X(s.x) - x); if (dd < bd) { bd = dd; best = i; } });
+    show(best);
+  });
+  svg.addEventListener('pointerleave', hide);
+  svg.addEventListener('focus', () => show(idx < 0 ? 0 : idx));
+  svg.addEventListener('blur', hide);
+  svg.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowRight') { show(idx + 1); ev.preventDefault(); }
+    else if (ev.key === 'ArrowLeft') { show(idx - 1); ev.preventDefault(); }
+    else if (ev.key === 'Escape') hide();
+  });
+}
+
+// Ομαδοποιημένες στήλες: groups (ετικέτες), series [{color,label,values[]}]. Κάθε στήλη έχει δική της ετικέτα στο πέρασμα του ποντικιού.
+function barChart(host, o) {
+  host.replaceChildren();
+  const W = Math.max(280, host.clientWidth || 600), H = o.height || 230;
+  const m = { l: 46, r: 12, t: 14, b: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const all = o.series.flatMap(s => s.values).filter(ok);
+  if (!all.length || !o.groups.length) { host.append(el('p', { class: 'empty', text: o.empty || 'Δεν υπάρχουν τιμές.' })); return; }
+  let y0 = o.floor != null ? o.floor : 0, y1 = Math.max(...all) * 1.08;
+  const st = niceStep(y1 - y0, 4); y1 = Math.ceil(y1 / st) * st;
+  const Y = y => m.t + (1 - (y - y0) / (y1 - y0)) * ih;
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.aria || '' });
+  for (let v = y0; v <= y1 + st / 2; v += st) {
+    svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: 'var(--grid)', 'stroke-width': 1 }));
+    const t = sv('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }); t.textContent = o.yFmt(v, st); svg.append(t);
+  }
+  const gw = iw / o.groups.length, n = o.series.length;
+  const bw = Math.min(24, (gw * 0.72 - (n - 1) * 2) / n);
+  const tip = el('div', { class: 'tip', hidden: '' });
+  o.groups.forEach((g, gi) => {
+    const cx = m.l + gw * (gi + 0.5), x0 = cx - (n * bw + (n - 1) * 2) / 2;
+    const t = sv('text', { x: cx, y: H - 12, 'text-anchor': 'middle' }); t.textContent = g; svg.append(t);
+    o.series.forEach((s, si) => {
+      const v = s.values[gi]; if (!ok(v)) return;
+      const x = x0 + si * (bw + 2), yTop = Y(v), yb = Y(y0), h = Math.max(0, yb - yTop), rr = Math.min(4, bw / 2, h);
+      const p = sv('path', { d: `M${x} ${yb}V${yTop + rr}Q${x} ${yTop} ${x + rr} ${yTop}H${x + bw - rr}Q${x + bw} ${yTop} ${x + bw} ${yTop + rr}V${yb}Z`, fill: s.color, tabindex: '0', role: 'img', 'aria-label': s.label + ', ' + g + ': ' + o.tipFmt(v) });
+      const showTip = () => {
+        tip.replaceChildren(el('div', { class: 't', text: g + ' μ.' }), el('div', { class: 'row' }, [el('i', { style: 'background:' + s.color }), el('b', { text: o.tipFmt(v) }), el('span', { text: s.label })]));
+        tip.hidden = false;
+        const r = host.getBoundingClientRect(), sc = r.width / W;
+        let left = (x + bw) * sc + 8; if (left + tip.offsetWidth > r.width) left = x * sc - tip.offsetWidth - 8;
+        tip.style.left = Math.max(0, left) + 'px'; tip.style.top = Math.max(0, yTop * sc - 10) + 'px';
+        p.setAttribute('opacity', '0.8');
+      };
+      const hideTip = () => { tip.hidden = true; p.removeAttribute('opacity'); };
+      p.addEventListener('pointerenter', showTip); p.addEventListener('pointerleave', hideTip);
+      p.addEventListener('focus', showTip); p.addEventListener('blur', hideTip);
+      svg.append(p);
+    });
+  });
+  svg.append(sv('line', { x1: m.l, x2: W - m.r, y1: Y(y0), y2: Y(y0), stroke: 'var(--axis)', 'stroke-width': 1 }));
+  host.append(svg, tip);
+}
+
+function velChart() {
+  const sel = selected(), host = $('#ch-vel');
+  if (!sel.length) { host.replaceChildren(); return; }
+  const maxD = Math.max(...sel.map(r => r.distance)), pool = sel[0].pool;
+  // Η μετρημένη τιμή είναι η μέση ταχύτητα κάθε τμήματος: κουκκίδα στο μέσο του τμήματος, ομαλή καμπύλη ανάμεσα.
+  const series = sel.map(r => {
+    const spans = r.rows.filter(x => ok(x.vel) && ok(x.prevD) && x.d > x.prevD).map(x => ({ x0: x.prevD, x1: x.d, y: x.vel }));
+    return { id: r.id, color: slotVar(r.slot), label: r.athlete, short: shortName(r.athlete), spans,
+      pts: spans.map((g, i) => ({ x: (g.x0 + g.x1) / 2, y: g.y, brk: i > 0 && Math.abs(spans[i - 1].x1 - g.x0) > 1e-6 })) };
+  });
+  const bounds = [...new Set(sel.flatMap(r => r.rows.map(x => x.prevD + '|' + x.d)))].map(s => s.split('|').map(Number)).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const snaps = bounds.map(([a, b]) => ({ x: (a + b) / 2, a, b, title: a + '–' + b + ' μ.' }));
+  const step = maxD <= 100 ? 25 : maxD <= 200 ? 50 : 100;
+  const ticks = []; for (let v = 0; v <= maxD; v += step) ticks.push(v);
+  const spanAt = (s, sx) => s.spans.find(g => Math.abs(g.x0 - sx.a) < 1e-6 && Math.abs(g.x1 - sx.b) < 1e-6) || s.spans.find(g => sx.x > g.x0 && sx.x <= g.x1);
+  lineChart(host, { series, x0: 0, x1: maxD, xTicks: ticks, xFmt: v => v + ' μ.', yFmt: (v, st) => v.toFixed(decimals(st)), tipFmt: v => v.toFixed(2) + ' m/s',
+    smooth: true, dots: true,
+    walls: Array.from({ length: Math.floor(maxD / pool) }, (_, i) => (i + 1) * pool), snaps, aria: 'Μέση ταχύτητα ανά τμήμα για τις επιλεγμένες κούρσες, ενωμένη με ομαλή καμπύλη',
+    valueAt: (s, sx) => { const g = spanAt(s, sx); return g ? g.y : null; },
+    rowNote: (s, sx) => { const g = spanAt(s, sx); return g && (g.x0 !== sx.a || g.x1 !== sx.b) ? ' · ' + g.x0 + '–' + g.x1 + ' μ.' : ''; },
+    endLabel: e => e.s.short });
+}
+function gapChart() {
+  const sel = selected(), ref = refRace(), host = $('#ch-gap');
+  if (!sel.length || !ref) { host.replaceChildren(); return; }
+  const tRef = new Map(ref.rows.filter(x => ok(x.t)).map(x => [x.d, x.t]));
+  const series = sel.map(r => ({ id: r.id, color: slotVar(r.slot), label: r.athlete + (r.id === ref.id ? ' (αναφορά)' : ''), short: shortName(r.athlete),
+    pts: r.rows.filter(x => ok(x.t) && tRef.has(x.d)).map(x => ({ x: x.d, y: x.t - tRef.get(x.d) })) }));
+  const ds = [...new Set(series.flatMap(s => s.pts.map(p => p.x)))].sort((a, b) => a - b);
+  if (!ds.length) { host.replaceChildren(el('p', { class: 'empty', text: 'Οι κούρσες δεν έχουν κοινά σημεία μέτρησης με την αναφορά.' })); return; }
+  const maxD = Math.max(...ds), step = maxD <= 100 ? 25 : maxD <= 200 ? 50 : 100;
+  const ticks = []; for (let v = 0; v <= maxD; v += step) ticks.push(v);
+  lineChart(host, { series, x0: 0, x1: maxD, xTicks: ticks, xFmt: v => v + ' μ.', yFmt: (v, st) => (v > 1e-9 ? '+' : v < -1e-9 ? '−' : '') + Math.abs(v).toFixed(decimals(st)), tipFmt: v => sign(v) + ' s', zero: true, dots: true,
+    walls: [], snaps: ds.map(d => ({ x: d, title: 'Στα ' + d + ' μ.' })), aria: 'Διαφορά χρόνου από την αναφορά σε κάθε σημείο',
+    valueAt: (s, sx) => { const p = s.pts.find(p => p.x === sx.x); return p ? p.y : null; },
+    endLabel: e => e.s.short + ' ' + sign(e.y) });
+}
+function blockChart(hostSel, key, fmtAxis, fmtTip, label) {
+  const sel = selected(), host = $(hostSel);
+  if (!sel.length) { host.replaceChildren(); return; }
+  const spans = [...new Map(sel.flatMap(r => r.blocks.map(b => [b.from + '|' + b.to, b]))).values()].sort((a, b) => a.from - b.from);
+  const series = sel.map(r => ({ id: r.id, color: slotVar(r.slot), label: r.athlete, short: shortName(r.athlete),
+    pts: spans.map(sp => { const b = r.blocks.find(b => b.from === sp.from && b.to === sp.to); return { x: (sp.from + sp.to) / 2, y: b ? b[key] : null }; }) }));
+  const maxD = Math.max(...sel.map(r => r.distance)), step = maxD <= 100 ? 25 : maxD <= 200 ? 50 : 100;
+  const ticks = []; for (let v = 0; v <= maxD; v += step) ticks.push(v);
+  lineChart(host, { series, x0: 0, x1: maxD, xTicks: ticks, xFmt: v => v + ' μ.', yFmt: fmtAxis, tipFmt: fmtTip, dots: true, height: 220,
+    snaps: spans.map(sp => ({ x: (sp.from + sp.to) / 2, title: sp.from + '–' + sp.to + ' μ.' })), aria: label,
+    valueAt: (s, sx) => { const p = s.pts.find(p => Math.abs(p.x - sx.x) < 1e-6); return p ? p.y : null; },
+    endLabel: e => e.s.short });
+}
+function startChart() {
+  const sel = selected(), host = $('#ch-start');
+  if (!sel.length) { host.replaceChildren(); return; }
+  // Τρεις φάσεις μετά την είσοδο: υποβρύχια (είσοδος χεριών → έξοδος κεφαλιού), κολύμβηση ως τα 15 μ., 15–25 μ.
+  // Η τιμή είναι η μέση ταχύτητα της φάσης, στο μέσο της απόστασής της.
+  const PH = [['uw', 'Υποβρύχια φάση'], ['sw', 'Κολύμβηση ως τα 15 μ.'], ['p25', '15–25 μ.']];
+  const phases = r => {
+    const s = r.start, m = r.manual, out = {};
+    // Η απόσταση εξόδου: του κεφαλιού, αλλιώς η απόσταση κάτω από το νερό όταν μετρήθηκε (όχι εκτίμηση από τους χρόνους).
+    const e = m.entryDistHands, b = ok(m.breakoutDist) ? m.breakoutDist : (m.underwaterEstimated ? null : m.underwaterDist);
+    if (ok(e) && ok(b) && ok(s.breakout) && ok(s.entryTime) && s.breakout > s.entryTime && b > e) out.uw = { x0: e, x1: b, y: (b - e) / (s.breakout - s.entryTime) };
+    if (ok(b) && ok(s.t15) && ok(s.breakout) && s.t15 > s.breakout && b < 15) out.sw = { x0: b, x1: 15, y: (15 - b) / (s.t15 - s.breakout) };
+    const r25 = r.rows.find(x => x.prevD === 15 && x.d === 25);
+    if (r25 && ok(r25.vel)) out.p25 = { x0: 15, x1: 25, y: r25.vel };
+    return out;
+  };
+  const series = sel.map(r => {
+    const ph = phases(r);
+    return { id: r.id, color: slotVar(r.slot), label: r.athlete, short: shortName(r.athlete),
+      pts: PH.filter(([k]) => ph[k]).map(([k]) => ({ key: k, g: ph[k], x: (ph[k].x0 + ph[k].x1) / 2, y: ph[k].y })) };
+  });
+  const xs = series.flatMap(s => s.pts.map(p => p.g.x0));
+  if (!xs.length) { host.replaceChildren(el('p', { class: 'empty', text: 'Λείπουν οι αποστάσεις εισόδου ή εξόδου.' })); return; }
+  const x0 = Math.max(0, Math.floor(Math.min(...xs)) - 1), x1 = series.some(s => s.pts.some(p => p.key === 'p25')) ? 25 : 15;
+  // Το σταυρόνημα σταματά σε κάθε φάση (στη μέση θέση της φάσης για όλες τις κούρσες) και δείχνει τη μετρημένη τιμή κάθε κούρσας.
+  const snaps = PH.map(([k, title]) => { const px = series.flatMap(s => s.pts.filter(p => p.key === k).map(p => p.x)); return px.length ? { key: k, title, x: px.reduce((a, b) => a + b, 0) / px.length } : null; }).filter(Boolean);
+  const ticks = [x0, 5, 10, 15, 20, 25].filter((v, i, a) => a.indexOf(v) === i && v >= x0 && v <= x1);
+  const dist = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+  lineChart(host, { series, x0, x1, xTicks: ticks, xFmt: v => v + ' μ.', yFmt: (v, st) => v.toFixed(decimals(st)), tipFmt: v => v.toFixed(2) + ' m/s', snaps, height: 230,
+    smooth: true, dots: true,
+    aria: 'Μέση ταχύτητα της υποβρύχιας φάσης, της κολύμβησης ως τα 15 μ. και των 15–25 μ., ενωμένη με ομαλή καμπύλη',
+    valueAt: (s, sx) => { const p = s.pts.find(p => p.key === sx.key); return p ? p.y : null; },
+    rowNote: (s, sx) => { const p = s.pts.find(p => p.key === sx.key); return p ? ' · ' + dist(p.g.x0) + '–' + dist(p.g.x1) + ' μ.' : ''; },
+    endLabel: e => e.s.short });
+}
+
+// Οι φάσεις της εκκίνησης ως τμήματα μιας μπάρας ανά κούρσα (χρόνος από το σήμα ως τα 15 μ.).
+const PHASES = [['Βατήρας', '--p1'], ['Πτήση', '--p2'], ['Υποβρύχια', '--p3'], ['Κολύμβηση', '--p4']];
+function phaseChart() {
+  const sel = selected(), ref = refRace(), host = $('#ch-phases');
+  host.replaceChildren();
+  if (!sel.length) return;
+  const parts = r => {
+    const s = r.start, p = [];
+    if (ok(s.blockTime)) p.push([0, 0, s.blockTime]);
+    if (ok(s.blockTime) && ok(s.entryTime) && s.entryTime > s.blockTime) p.push([1, s.blockTime, s.entryTime]);
+    if (ok(s.entryTime) && ok(s.breakout) && s.breakout > s.entryTime) p.push([2, s.entryTime, s.breakout]);
+    if (ok(s.breakout) && ok(s.t15) && s.t15 > s.breakout) p.push([3, s.breakout, s.t15]);
+    return p;
+  };
+  const tMax = Math.max(...sel.map(r => ok(r.start.t15) ? r.start.t15 : 0));
+  if (!tMax) { host.append(el('p', { class: 'empty', text: 'Λείπει ο χρόνος στα 15 μ.' })); return; }
+  host.append(el('div', { class: 'legend' }, PHASES.map(([n, v]) => el('span', {}, [el('i', { style: 'background:var(' + v + ')' }), document.createTextNode(n)]))));
+  const W = Math.max(280, host.clientWidth || 600), rowH = 38, top = 6, L = 64, R = 92, H = top + sel.length * rowH + 30;
+  const iw = W - L - R, X = t => L + t / tMax * iw;
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Οι φάσεις της εκκίνησης ανά κούρσα' });
+  for (let t = 0; t <= tMax + 1e-9; t += 1) {
+    svg.append(sv('line', { x1: X(t), x2: X(t), y1: top, y2: top + sel.length * rowH, stroke: 'var(--grid)', 'stroke-width': 1 }));
+    const tx = sv('text', { x: X(t), y: H - 10, 'text-anchor': 'middle' }); tx.textContent = t + ' s'; svg.append(tx);
+  }
+  const tip = el('div', { class: 'tip', hidden: '' });
+  sel.forEach((r, i) => {
+    const y = top + i * rowH + 7, h = 24;
+    const name = sv('text', { x: L - 8, y: y + 16, 'text-anchor': 'end', class: 'lbl' }); name.textContent = shortName(r.athlete); svg.append(name);
+    svg.append(sv('circle', { cx: 8, cy: y + 12, r: 4, fill: slotVar(r.slot) }));
+    parts(r).forEach(([k, a, b]) => {
+      const x = X(a) + (a > 0 ? 1 : 0), w = Math.max(1, X(b) - X(a) - (a > 0 ? 1 : 0) - 1);
+      const rect = sv('rect', { x, y, width: w, height: h, rx: Math.min(4, w / 2), fill: 'var(' + PHASES[k][1] + ')', tabindex: '0', role: 'img',
+        'aria-label': r.athlete + ', ' + PHASES[k][0] + ': ' + (b - a).toFixed(2) + ' s' });
+      svg.append(rect);
+      const label = PHASES[k][0] + ' ' + (b - a).toFixed(2);
+      if (w > label.length * 6.4 + 12) {
+        const t = sv('text', { x: x + 6, y: y + 16, style: 'fill:var(' + PHASES[k][1] + 'i);font-size:11px;font-weight:600' }); t.textContent = label; svg.append(t);
+      }
+      const show = () => {
+        tip.replaceChildren(el('div', { class: 't', text: r.athlete }), el('div', {}, [el('b', { text: PHASES[k][0] + ' ' + (b - a).toFixed(2) + ' s' })]),
+          el('div', { class: 'sub', text: 'από ' + a.toFixed(2) + ' ως ' + b.toFixed(2) + ' s μετά το σήμα' }));
+        tip.hidden = false;
+        const bb = host.getBoundingClientRect(), sc = bb.width / W;
+        let left = (x + w / 2) * sc - 80; left = Math.max(0, Math.min(bb.width - 170, left));
+        tip.style.left = left + 'px'; tip.style.top = ((y + h) * sc + 34) + 'px';
+      };
+      const hide = () => { tip.hidden = true; };
+      rect.addEventListener('pointerenter', show); rect.addEventListener('pointerleave', hide);
+      rect.addEventListener('focus', show); rect.addEventListener('blur', hide);
+    });
+    if (ok(r.start.t15)) {
+      const t = sv('text', { x: X(r.start.t15) + 8, y: y + 16, class: 'lbl' });
+      const dlt = ref && r.id !== ref.id && ok(ref.start.t15) ? '  ' + sign(r.start.t15 - ref.start.t15) : '';
+      t.textContent = r.start.t15.toFixed(2) + dlt; svg.append(t);
+    }
+  });
+  host.append(svg, tip);
+}
+
+// ---------- Αναπαραγωγή ----------
+function positionFn(r) {
+  const s = r.start, m = r.manual, pts = [[0, 0]];
+  if (ok(s.blockTime)) pts.push([s.blockTime, 0]);
+  if (ok(s.entryTime) && ok(m.entryDistHands)) pts.push([s.entryTime, m.entryDistHands]);
+  const b = ok(m.breakoutDist) ? m.breakoutDist : m.underwaterDist;
+  if (ok(s.breakout) && ok(b)) pts.push([s.breakout, b]);
+  const turns = new Map(r.turns.map(t => [t.wall, t]));
+  r.rows.forEach(x => {
+    if (!ok(x.t)) return;
+    pts.push([x.t, x.d]);
+    const t = turns.get(x.d);
+    if (t) {
+      if (ok(t.pushoff)) pts.push([t.pushoff, x.d]);
+      const ud = m.turns && m.turns[String(x.d)] ? m.turns[String(x.d)].underwaterDist : null;
+      if (ok(t.breakout) && ok(ud)) pts.push([t.breakout, x.d + ud]);
+    }
+  });
+  pts.sort((a, b) => a[0] - b[0]);
+  const clean = []; pts.forEach(p => { if (!clean.length || (p[0] > clean[clean.length - 1][0] && p[1] >= clean[clean.length - 1][1])) clean.push(p); });
+  return t => {
+    if (t <= 0) return 0;
+    for (let i = 1; i < clean.length; i++) if (t <= clean[i][0]) { const a = clean[i - 1], b2 = clean[i]; return a[1] + (b2[1] - a[1]) * (t - a[0]) / (b2[0] - a[0]); }
+    return clean[clean.length - 1][1];
+  };
+}
+let poolView = null;
+function buildPool() {
+  const sel = selected(), host = $('#pool');
+  host.replaceChildren(); poolView = null;
+  if (!sel.length) return;
+  const pool = sel[0].pool, lanes = sel.length;
+  const W = 1000, laneH = 34, top = 18, H = top + lanes * laneH + 22, L = 70, R = 18, len = W - L - R;
+  const X = d => L + d / pool * len;
+  const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Αναπαραγωγή των κουρσών σε κάτοψη πισίνας' });
+  svg.append(sv('rect', { x: L, y: top, width: len, height: lanes * laneH, fill: 'var(--water)' }));
+  for (let i = 0; i <= lanes; i++) svg.append(sv('line', { x1: L, x2: L + len, y1: top + i * laneH, y2: top + i * laneH, stroke: 'var(--rope)', 'stroke-width': i === 0 || i === lanes ? 2 : 3, 'stroke-dasharray': i === 0 || i === lanes ? '' : '2 4' }));
+  [5, 15, pool / 2, pool - 15, pool - 5].forEach(d => {
+    svg.append(sv('line', { x1: X(d), x2: X(d), y1: top, y2: top + lanes * laneH, stroke: 'var(--axis)', 'stroke-width': 1 }));
+    const t = sv('text', { x: X(d), y: top - 6, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 }); t.textContent = d + ' μ.'; svg.append(t);
+  });
+  svg.append(sv('rect', { x: L - 4, y: top, width: 4, height: lanes * laneH, fill: 'var(--ink-2)' }));
+  svg.append(sv('rect', { x: L + len, y: top, width: 4, height: lanes * laneH, fill: 'var(--ink-2)' }));
+  const dots = sel.map((r, i) => {
+    const cy = top + (i + 0.5) * laneH;
+    const name = sv('text', { x: L - 10, y: cy + 4, 'text-anchor': 'end', fill: 'var(--ink-2)', 'font-size': 12, 'font-weight': 600 }); name.textContent = shortName(r.athlete); svg.append(name);
+    const g = sv('g', {});
+    g.append(sv('circle', { cx: 0, cy, r: 8, fill: slotVar(r.slot), stroke: 'var(--surface)', 'stroke-width': 2 }));
+    svg.append(g);
+    return { r, g, pos: positionFn(r) };
+  });
+  const finish = sv('text', { x: W - R, y: H - 4, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 11 }); svg.append(finish);
+  host.append(svg);
+  poolView = { dots, pool, X, finish };
+  const ref = refRace() || sel[0];
+  state.replay.max = Math.max(...sel.map(r => r.summary.finalTime || 0)) + 0.5;
+  const firstWall = ref.turns.length ? ref.turns[0].tWall : ref.summary.finalTime;
+  if (!state.replay.playing) state.replay.t = Math.max(0, Math.min(state.replay.max, (firstWall || 20) - 1.5));
+  const sc = $('#scrub'); sc.max = state.replay.max.toFixed(2);
+  drawPool();
+}
+function drawPool() {
+  if (!poolView) return;
+  const t = state.replay.t, rows = [];
+  let lead = 0;
+  poolView.dots.forEach(d => { d.d = d.pos(t); lead = Math.max(lead, d.d); });
+  poolView.dots.forEach(d => {
+    const lap = Math.floor(d.d / poolView.pool), within = d.d - lap * poolView.pool;
+    const x = lap % 2 === 0 ? within : poolView.pool - within;
+    const xx = d.d >= d.r.distance ? (Math.floor(d.r.distance / poolView.pool) % 2 === 0 ? 0 : poolView.pool) : x;
+    d.g.setAttribute('transform', `translate(${poolView.X(xx).toFixed(1)},0)`);
+    const done = t >= d.r.summary.finalTime;
+    rows.push({ r: d.r, d: d.d, done });
+  });
+  $('#clock').textContent = fmtTime(t);
+  $('#scrub').value = t.toFixed(2);
+  const tbl = $('#replay-table');
+  const head = el('tr', {}, ['Κούρσα', 'Απόσταση', 'Από τον πρώτο', 'Κατάσταση'].map((h, i) => el('th', { class: i ? 'num' : '', text: h })));
+  tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, rows.map(x => el('tr', {}, [
+    el('td', {}, [el('span', { class: 'dot', style: 'background:' + slotVar(selected().find(s => s.id === x.r.id).slot) }), document.createTextNode(x.r.athlete)]),
+    el('td', { class: 'num', text: x.d.toFixed(1) + ' μ.' }),
+    el('td', { class: 'num', text: lead - x.d < 0.05 ? 'πρώτος' : '−' + (lead - x.d).toFixed(1) + ' μ.' }),
+    el('td', { class: 'num', text: x.done ? 'τερμάτισε σε ' + fmtTime(x.r.summary.finalTime) : '' })]))));
+}
+function tick(now) {
+  const rp = state.replay;
+  if (!rp.playing) return;
+  const dt = (now - rp.last) / 1000; rp.last = now;
+  rp.t = Math.min(rp.max, rp.t + dt * rp.speed);
+  drawPool();
+  if (rp.t >= rp.max) { rp.playing = false; $('#play').textContent = 'Αναπαραγωγή'; return; }
+  requestAnimationFrame(tick);
+}
+
+// ---------- Ζωντανή ενημέρωση ----------
+function stamp() { $('#updated').textContent = 'Έλεγχος ' + new Date().toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit', hour12: false }); }
+function toast(msg, action) {
+  const host = $('#toast-host');
+  const box = el('div', { class: 'toast', role: 'status' }, [el('span', { text: msg })]);
+  if (action) { const b = el('button', { type: 'button', text: action.label }); b.addEventListener('click', () => { action.run(); box.remove(); }); box.append(b); }
+  host.replaceChildren(box);
+  setTimeout(() => box.remove(), 12000);
+}
+// Η λίστα από το Google. live: ήρθε από τον έλεγχο για αλλαγές (νέοι αγώνες: ΝΕΟ και μήνυμα· αναλύσεις που άλλαξαν: ξανά οι μετρήσεις τους).
+function applyList(res, live) {
+  const before = state.byId;
+  state.sig = res.sig || '';
+  state.list = Array.isArray(res.races) ? res.races : [];
+  state.byId = new Map(state.list.map(r => [r.id, r]));
+  const fresh = [], changed = [];
+  if (live) state.list.forEach(r => {
+    const o = before.get(r.id);
+    if (!o) fresh.push(r);
+    else if (o.updated !== r.updated || o.finalTime !== r.finalTime) changed.push(r);
+  });
+  fresh.forEach(r => state.isNew.add(r.id));
+  changed.forEach(r => state.full.delete(r.id));
+  [...state.full.keys()].forEach(id => { if (!state.byId.has(id)) state.full.delete(id); });
+  const selBefore = state.sel.map(s => s.id).join('|');
+  state.sel = state.sel.filter(s => state.byId.has(s.id));
+  if (state.ref && !state.byId.has(state.ref)) state.ref = state.sel.length ? state.sel[0].id : null;
+  const changedSel = changed.filter(r => state.sel.some(s => s.id === r.id));
+  const touched = selBefore !== state.sel.map(s => s.id).join('|') || changedSel.length > 0;
+  fillFilters();
+  if (!live) return;
+  if (touched) { load(); renderAll(); } else { renderList(); }
+  if (fresh.length === 1) {
+    const r = fresh[0];
+    toast('Νέος αγώνας από το Kinovea: ' + [r.athlete, eventLabel(r), r.competition, fmtTime(r.finalTime)].filter(Boolean).join(' · '),
+      state.sel.length < MAX ? { label: 'Πρόσθεσέ τον στη σύγκριση', run: () => toggle(r.id) } : null);
+  } else if (fresh.length > 1) {
+    toast(fresh.length + ' νέοι αγώνες από το Kinovea. Στη λίστα έχουν την ένδειξη ΝΕΟ.');
+  } else if (changedSel.length) {
+    toast('Ενημερώθηκε η ανάλυση: ' + changedSel.map(r => r.athlete + ' · ' + eventLabel(r)).join(', ') + '. Τα γραφήματα δείχνουν τις νέες τιμές.');
+  }
+}
+// Αρχική εικόνα: ο πιο πρόσφατος αγώνας (η αναφορά) και οι δύο καλύτεροι στο ίδιο αγώνισμα, φύλο, φάση και διοργάνωση.
+function initialPick() {
+  const latest = [...state.list].sort((a, b) => String(b.updated).localeCompare(String(a.updated)) || String(b.date).localeCompare(String(a.date)))[0];
+  if (!latest) return;
+  state.f = { comp: latest.competition, event: eventKey(latest), gender: latest.gender, round: '', q: '' };
+  fillFilters();
+  const peers = state.list.filter(r => r.id !== latest.id && r.competition === latest.competition && eventKey(r) === eventKey(latest) &&
+    r.gender === latest.gender && r.round === latest.round && ok(r.finalTime)).sort((a, b) => a.finalTime - b.finalTime);
+  [latest].concat(peers.slice(0, 2)).forEach(r => pick(r.id));
+}
+function footer() {
+  const f = $('#foot');
+  if (DEMO) f.textContent = 'Πρωτότυπο με φανταστικούς αθλητές και αγώνες. Οι αριθμοί βγήκαν από την ίδια ανάλυση που κάνει το script του Google Sheet, άρα στην πραγματική εφαρμογή θα είναι ίδιοι με τις αναφορές.';
+  else if (state.info) f.textContent = 'Swim Analytics ' + state.info.version + ' · ανάλυση με το SwimRaceAnalysis ' + state.info.analysis +
+    ': ίδιες τιμές με τα φύλλα και τα PDF των αναφορών.' + (state.info.user ? ' · Λογαριασμός: ' + state.info.user : '');
+}
+function ready(res) {
+  state.ready = true;
+  state.info = { version: res.version, analysis: res.analysis, user: res.user };
+  applyList(res, false);
+  initialPick();
+  footer();
+  setLive(true);
+  load();
+  renderAll();
+}
+let pollTimer = 0;
+function schedulePoll() { clearTimeout(pollTimer); pollTimer = setTimeout(poll, POLL_MS); }
+async function poll() {
+  clearTimeout(pollTimer);
+  // Σε κρυφή καρτέλα δεν ελέγχει (ξεκινά μόλις ξαναφανεί).
+  if (document.hidden) return;
+  try {
+    const res = state.ready ? await Source.poll(state.sig) : await Source.list();
+    if (res && res.ok) {
+      if (!state.ready) ready(res);
+      else { setLive(true); if (res.changed) applyList(res, true); }
+      stamp();
+    } else {
+      problem(res ? res.error : '', res && res.denied);
+      if (res && res.denied) return;
+    }
+  } catch (e) {
+    problem(errText(e));
+  }
+  schedulePoll();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
+// ---------- Σύνδεση ----------
+function renderCharts() {
+  velChart(); gapChart(); startChart(); phaseChart();
+  blockChart('#ch-sr', 'sr', (v, st) => v.toFixed(decimals(st)), v => v.toFixed(1) + ' κ/λ', 'Ρυθμός χεριάς ανά 50 μέτρα');
+  blockChart('#ch-dps', 'dps', (v, st) => v.toFixed(decimals(st)), v => v.toFixed(2) + ' μ./χεριά', 'Απόσταση ανά χεριά ανά 50 μέτρα');
+}
+function renderAll() {
+  renderList(); renderChips(); renderSummary(); renderCharts(); renderStartTable(); renderTurnTable(); renderSplitTable(); buildPool();
+}
+['comp', 'event', 'gender', 'round'].forEach(k => $('#f-' + k).addEventListener('change', e => { state.f[k] = e.target.value; renderList(); }));
+$('#f-q').addEventListener('input', e => { state.f.q = e.target.value; renderList(); });
+$('#t-metric').addEventListener('change', e => { state.metric = e.target.value; renderSplitTable(); });
+$('#play').addEventListener('click', () => {
+  const rp = state.replay;
+  if (!poolView) return;
+  if (rp.playing) { rp.playing = false; $('#play').textContent = 'Αναπαραγωγή'; return; }
+  if (rp.t >= rp.max - 0.01) rp.t = 0;
+  rp.playing = true; rp.last = performance.now(); $('#play').textContent = 'Παύση';
+  requestAnimationFrame(tick);
+});
+$('#scrub').addEventListener('input', e => { state.replay.t = parseFloat(e.target.value) || 0; drawPool(); });
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  state.replay.speed = +b.dataset.speed;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+let rsz = 0;
+new ResizeObserver(() => { cancelAnimationFrame(rsz); rsz = requestAnimationFrame(renderCharts); }).observe($('main'));
+
+if (DEMO) {
+  $('#badge').hidden = false;
+  const btn = $('#simulate');
+  btn.hidden = false;
+  btn.addEventListener('click', () => {
+    btn.disabled = true; btn.textContent = 'Περιμένω το Kinovea…';
+    setTimeout(() => { const came = Source.arrive(); btn.textContent = came ? 'Ήρθε νέος αγώνας' : 'Ήρθαν όλοι οι αγώνες'; poll(); }, 1200);
+  });
+}
+renderList(); renderChips();
+if (Source) poll();
+else problem('Η σελίδα ανοίγει ως εφαρμογή του Google Sheet (web app του Apps Script).');
+})();
+</script>
+</body>
+</html>
