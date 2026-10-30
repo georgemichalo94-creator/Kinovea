@@ -2,6 +2,8 @@
 # the first seconds of an MP4 and of an MPEG-TS whose clock starts at 100 s comes back whole, with its first sample at 'from' on the
 # stream clock: a click at 40 s of the sound is at the same time of the stream clock in the zone read after a seek and in the sound read
 # from the beginning (within 1 ms), near 40 s of the clock (an MP4 keeps the sound at 0, the TS at its start; the codecs add a few ms).
+# The click's time is its onset (the first sample at half of its peak): the peak itself can be any of its five cycles, which a shift of
+# the resampler's grid by a sample of the 48 kHz sound (a seek that starts the decoding on another frame) moves by up to 4 ms.
 # A TS of 200 s too: the seek of a zone after its start landed inside the file but past the zone (silence, no retry).
 # Fictional sounds made here by ffmpeg (a 5 ms click of 1 kHz in 60 s, or 200 s, of silence).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea). Exit code 1 when a check fails.
@@ -59,6 +61,11 @@ function PeakAt($samples) {
   for ($i = 0; $i -lt $samples.Length; $i++) { $v = [Math]::Abs($samples[$i]); if ($v -gt $best) { $best = $v; $at = $i } }
   return $at
 }
+function OnsetAt($samples, $peak) {
+  $half = 0.5 * [Math]::Abs($samples[$peak])
+  for ($i = 0; $i -le $peak; $i++) { if ([Math]::Abs($samples[$i]) -ge $half) { return $i } }
+  return $peak
+}
 
 $mp4 = Make 'click.mp4' @('-c:a', 'aac', '-strict', '-2', '-b:a', '128k')
 $ts = Make 'click.ts' @('-c:a', 'mp2', '-b:a', '128k', '-f', 'mpegts', '-output_ts_offset', '100')
@@ -79,7 +86,7 @@ foreach ($case in @(@{ Path = $mp4; Name = 'MP4' }, @{ Path = $ts; Name = 'TS (c
     if ($n -gt 0) {
       $at = PeakAt $r.Samples
       Check ([Math]::Abs($r.Samples[$at]) -gt 0.1) ($case.Name + ' from ' + $zone.From + ' s: the click heard (peak ' + [Math]::Abs($r.Samples[$at]).ToString('0.000') + ')')
-      $clicks += ($from + $at / $rate)
+      $clicks += ($from + (OnsetAt $r.Samples $at) / $rate)
     }
   }
   if ($clicks.Count -eq 2) {

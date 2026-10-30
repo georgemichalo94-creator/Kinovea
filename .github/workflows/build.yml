@@ -153,7 +153,7 @@ jobs:
         $code = $LASTEXITCODE
         $out | ForEach-Object { Write-Output $_ }
         $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
-        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim sound read::exit ' + $code + ' | ' + (($out | Select-Object -Last 14) -join ' | ')); exit 1 }
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim sound read::exit ' + $code + ' | ' + (($bad + ($out | Select-Object -Last 6)) -join ' | ')); exit 1 }
         Write-Output ('::notice title=Swim sound read::' + ($out | Select-Object -Last 1))
 
     - name: Swim underwater speed of the turns
