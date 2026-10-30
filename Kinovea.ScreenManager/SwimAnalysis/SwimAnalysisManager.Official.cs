@@ -775,9 +775,9 @@ namespace Kinovea.ScreenManager
                 race.Location = oldLocation;
             };
 
-            // (2.15.0) The round, the gender and the competition of the title of the pasted results, now that its times are taken.
-            if (found.TitleEvent != null)
-                ApplyEventDetails(Race, found.TitleEvent);
+            // (2.15.0) The round, the gender and the competition of the title of the pasted results, now that its times are taken (the
+            // references follow the gender: below).
+            bool titleDetails = found.TitleEvent != null && ApplyEventDetails(Race, found.TitleEvent).Count > 0;
 
             if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 SetAthlete(athlete);
@@ -801,6 +801,8 @@ namespace Kinovea.ScreenManager
                     Race.Location = SwimResultsPaste.CityOf(found.Source);
             }
             OfficialChanged(times, e.Reaction, detailsBack);
+            if (titleDetails)
+                RaceInfoChanged(false);
 
             // The link of the competition, for its next races in the same days.
             string link = !string.IsNullOrWhiteSpace(q.Link) ? q.Link.Trim() : found.Competition != null ? KoeLink(found.Competition.Code) : "";

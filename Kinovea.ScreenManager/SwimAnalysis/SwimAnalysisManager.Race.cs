@@ -2717,9 +2717,14 @@ namespace Kinovea.ScreenManager
 
                 // (2.15.0) The lengths whose strokes are to be checked (a stroke rate out of the range searched, the image lost).
                 List<int> doubtful = lengths.Where(l => l.StrokesDoubtful && l.Strokes.Count > 0).Select(l => l.Session.Wall).Distinct().OrderBy(w => w).ToList();
-                if (doubtful.Count > 0 && !cancelled)
-                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Χεριές για έλεγχο στα μήκη έως τα {0}{1}: η συχνότητα έξω από τα συνηθισμένα όρια ή χάθηκε η εικόνα (μέτρησέ τες ή διόρθωσέ τες στον πίνακα)."),
-                        string.Join(", ", doubtful), Race.Unit), true);
+                string doubt = doubtful.Count > 0 && !cancelled
+                    ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Χεριές για έλεγχο στα μήκη έως τα {0}{1}: η συχνότητα έξω από τα συνηθισμένα όρια ή χάθηκε η εικόνα (μέτρησέ τες ή διόρθωσέ τες στον πίνακα)."),
+                        string.Join(", ", doubtful), Race.Unit)
+                    : null;
+                // (The status below or the pilot's report says it: a status of its own was covered by them at once.)
+                if (doubt != null && pilot)
+                    pilotDoubtful.UnionWith(doubtful);
+                string after = doubt != null && !pilot ? " " + doubt : "";
 
                 // (The auto pilot says it itself after the reading: the swimmer lost, or the report.)
                 if (!pilot && cancelled)
@@ -2729,11 +2734,13 @@ namespace Kinovea.ScreenManager
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("🤖 Στον τοίχο των {0}{1} η ανάγνωση απείχε {2:0.0} s από τον επίσημο χρόνο: δεν ακολούθησε τον αθλητή ως εκεί. Έλεγξε τις προτάσεις ") +
                         SwimLang.T("και μετά πάτα ξανά «🤖 Όλος ο αγώνας» σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."),
-                        resumeWall - Race.Pool, Race.Unit, Math.Abs(resumeGap)), true);
+                        resumeWall - Race.Pool, Race.Unit, Math.Abs(resumeGap)) + after, true);
                 else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» ") +
-                        SwimLang.T("σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."), resumeWall - Race.Pool, Race.Unit), true);
+                        SwimLang.T("σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."), resumeWall - Race.Pool, Race.Unit) + after, true);
+                else if (doubt != null && !pilot)
+                    Status(doubt, true);
             }
             finally
             {

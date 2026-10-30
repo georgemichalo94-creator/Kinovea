@@ -98,6 +98,26 @@ assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ
 assert.strictEqual(below(sh, 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)'), '', 'no speed from an estimate');
 assert.strictEqual(below(sh, 'Μέτρα κάτω από το νερό (μ.)'), '≈8.4', 'turn: the estimate marked');
 
+// (d2) μια εκτίμηση που δεν υπάρχει πια (Kinovea: underwaterDist null): το ≈ σβήνεται· ό,τι γράφτηκε με το χέρι στο φύλλο μένει
+const cellBelow = (sh2, header) => {
+  const vals = sh2.getRange(1, 1, sh2.getLastRow(), 15).getValues();
+  for (let i = 0; i < vals.length; i++) for (let j = 0; j < vals[i].length; j++) if (vals[i][j] === header) return [i + 2, j + 1];
+  return null;
+};
+const r4b = race();
+r4b.manual.underwaterDist = null;
+r4b.manual.turns['50'].underwaterDist = null;
+res = call({ token: 'tok', action: 'update', race: r4b });
+assert.ok(res.ok, JSON.stringify(res));
+sh = sheetOf(res);
+assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ.)'), '', 'the start estimate taken away: cleared');
+assert.strictEqual(below(sh, 'Μέτρα κάτω από το νερό (μ.)'), '', 'the turn estimate taken away: cleared');
+const typed = cellBelow(sh, 'Απόσταση κάτω από το νερό (μ.)');
+sh.getRange(typed[0], typed[1]).setValue(10.2);
+res = call({ token: 'tok', action: 'update', race: r4b });
+sh = sheetOf(res);
+assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ.)'), 10.2, 'a value typed in the sheet stays');
+
 // (e) ένα 50άρι με σημείο χωρίς χρόνο (π.χ. ο πιλότος δεν το βρήκε): χωρίς χεριές, Swolf και ΔΑΚ του 50 (όχι το μισό ως όλο)
 const strokes50 = []; for (let t = 4.6; t < 30; t += 0.55) strokes50.push(+t.toFixed(2));
 const r5 = { id: 'strict5', athlete: 'ΑΛΦΑ ΔΟΚΙΜΗ', style: 'fs', distance: 50, pool: 50,
@@ -111,5 +131,16 @@ assert.strictEqual(a.summary.totalStrokes, null, 'no total strokes');
 r5.checkpoints[2].t = 16.9;
 a = G.swimAnalyze_(G.swimNormalizeRace_(r5));
 assert.ok(a.blocks[0].strokes > 30 && a.blocks[0].swolf > 50 && a.blocks[0].dak > 0, 'all segments: strokes ' + a.blocks[0].strokes + ', Swolf ' + a.blocks[0].swolf);
+
+// (f) 0 δελφινισμοί σε στροφή μόνο όταν μετρήθηκαν σε άλλη στροφή (στροφή προσθίου χωρίς δελφινισμό), κενό όταν σε καμία
+const r6 = { id: 'strict6', athlete: 'ΑΛΦΑ ΔΟΚΙΜΗ', style: 'br', distance: 200, pool: 50,
+  checkpoints: [15, 25, 35, 45, 50, 65, 75, 85, 95, 100, 115, 125, 135, 145, 150, 165, 175, 185, 195, 200].map((d, i) => ({ d, t: +(d * 0.62).toFixed(2) })),
+  strokes: [], kicks: [2.0, 32.0], breakouts: [5.0, 35.0, 66.0, 97.0], feetOff: [0.64, 31.9, 62.9, 93.9], entries: [1.0], manual: {} };
+a = G.swimAnalyze_(G.swimNormalizeRace_(r6));
+assert.strictEqual(JSON.stringify(a.turns.map(t => t.kicks)), '[1,0,0]', 'kicks counted in the turns: 0 where none (a turn without a dolphin kick)');
+r6.kicks = [2.0];
+a = G.swimAnalyze_(G.swimNormalizeRace_(r6));
+assert.strictEqual(JSON.stringify(a.turns.map(t => t.kicks)), '[null,null,null]', 'kicks marked only at the start: the turns not counted');
+assert.strictEqual(a.start.kicks, 1, 'the start counted');
 
 console.log('test_strict: video clock for video events, values only where measured, stale cells cleared, estimates marked, complete 50s');

@@ -600,10 +600,16 @@ namespace Kinovea.ScreenManager
                 if (result.Kicks.Count > 0)
                 {
                     double to = breakout ?? nextT;
-                    int kicks = result.Kicks.Count(t => t > vw && t <= to);
-                    // (2.15.0) None in this turn: not marked here (kicks marked only in another turn), not 0.
-                    turn.Kicks = kicks > 0 ? (int?)kicks : null;
+                    turn.Kicks = result.Kicks.Count(t => t > vw && t <= to);
                 }
+            }
+
+            // (2.15.0) 0 kicks in a turn only when kicks are marked in another turn (the analyst counted them: a breaststroke turn
+            // without a dolphin kick); none marked in any turn (kicks marked only at the start): not counted, blank.
+            if (!result.Turns.Any(x => x.Kicks.HasValue && x.Kicks.Value > 0))
+            {
+                foreach (SwimTurnComputed noKicks in result.Turns)
+                    noKicks.Kicks = null;
             }
 
             // Finish.

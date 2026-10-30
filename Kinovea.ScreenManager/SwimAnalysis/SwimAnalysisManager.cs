@@ -498,10 +498,13 @@ namespace Kinovea.ScreenManager
                 pilotStep = PilotStep.None;
 
             // Other swimmers analysed on the same video share the same start signal (and whether the pilot put it).
+            List<SwimRace> sharing = new List<SwimRace>();
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
                 {
+                    if (other.StartTimestamp.HasValue)
+                        sharing.Add(other);
                     other.StartTimestamp = timestamp;
                     other.PilotStart = Race.PilotStart;
                 }
@@ -514,10 +517,14 @@ namespace Kinovea.ScreenManager
                 ForgetStartAnswer();
 
             // (2.15.0) The start events waiting for their check (first movement, release, entry: their usual times after the signal) move
-            // with the signal: they stayed at the old one (a start put again a second later left them a second early). The official
-            // release is put again just below.
+            // with the signal: they stayed at the old one (a start put again a second later left them a second early). Those of the
+            // other races of the video that share the start too.
             if (old.HasValue && old.Value != timestamp)
-                ShiftStartEventProposals(timestamp - old.Value);
+            {
+                ShiftStartEventProposals(Race, timestamp - old.Value);
+                foreach (SwimRace other in sharing)
+                    ShiftStartEventProposals(other, timestamp - old.Value);
+            }
 
             // The official times are after the start (since 2026-10-19): the checkpoints at them not checked yet move with it.
             if (old != timestamp)
@@ -735,7 +742,7 @@ namespace Kinovea.ScreenManager
 
             if (mark == null)
             {
-                Status(SwimLang.T("Δεν υπάρχει κάτι για αναίρεση (για να σβήσεις ένα σημάδι, πήγαινε στο καρέ του)."), true);
+                Status(SwimLang.T("Δεν υπάρχει κάτι για αναίρεση (στο καρέ του τελευταίου σημαδιού η αναίρεση σβήνει εκείνο)."), true);
                 return;
             }
 
@@ -760,17 +767,19 @@ namespace Kinovea.ScreenManager
                     LearnFromMark(back.Type, back.Timestamp);
 
                 // (2.15.0) A breakout of the pilot back: the estimate of the underwater distance from it again (it stayed the one made
-                // for the correction undone), while the distance is an estimate.
+                // for the correction undone), while the distance is an estimate, or when there is none any more (the correction's estimate
+                // failed and left none: its own estimate back, else the pilot's record of it).
                 foreach (SwimMark back in replaced.Where(m => m.Type == SwimMarkType.Breakout))
                 {
                     int wall = back.Pilot != null ? back.Pilot.Wall : SwimTechCalculator.LastWallBefore(Race, back.Timestamp, HalfFrame);
-                    if (!UnderwaterEstimatedAt(wall))
+                    bool none = !UnderwaterOf(wall).HasValue;
+                    if (!UnderwaterEstimatedAt(wall) && !none)
                         continue;
                     double? before = UnderwaterOf(wall);
                     SetUnderwater(wall, null);
                     EstimateUnderwaterDistance(wall, back.Timestamp);
                     if (!UnderwaterOf(wall).HasValue)
-                        SetUnderwater(wall, before);
+                        SetUnderwater(wall, before ?? (back.Pilot != null ? back.Pilot.Underwater : null));
                     if (back.Pilot != null)
                         back.Pilot.Underwater = UnderwaterOf(wall);
                 }
@@ -830,6 +839,10 @@ namespace Kinovea.ScreenManager
             Race.Marks.RemoveAll(m => m.Type == type);
             foreach (SwimMark old in cleared)
                 ForgetTaught(old);
+
+            // (2.15.0) All the strokes taken away: the ones deleted one by one before are not kept away from a new reading either.
+            if (type == SwimMarkType.Stroke)
+                Race.RemovedStrokes = null;
             Changed(true);
         }
 

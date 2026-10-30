@@ -770,7 +770,8 @@ namespace Kinovea.ScreenManager
                 set("underwater", diff(p.Breakout, p.Pushoff));
                 // (2.15.0) From where the head is at the push-off (the body length from the wall), as the underwater speed: from the wall
                 // the body length was counted as kicked (+25% at 6 kicks to 9 m); none from a distance estimated from the times.
-                if (p.BreakoutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && p.HeadAtPushoff.HasValue && p.HeadAtPushoff.Value > 0 &&
+                if (p.BreakoutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && p.HeadAtPushoff.HasValue &&
+                    p.HeadAtPushoff.Value * k >= BodyLengthMin && p.HeadAtPushoff.Value * k <= BodyLengthMax &&
                     p.BreakoutDist.Value - p.HeadAtPushoff.Value >= UnderwaterMinSpan)
                     set("kickDist", (p.BreakoutDist.Value - p.HeadAtPushoff.Value) / p.Kicks.Count);
                 // (2.9.8) The speed from the push-off to the breakout (the "underwater" speed of a turn) and from the breakout to the head

@@ -1922,7 +1922,8 @@ namespace Kinovea.ScreenManager
 
             Caps(g, SwimLang.T("ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ"), Ui(16), A(C2, a), cx, top, 0.5f, -1);
             Glow(g, SwimReference.FormatTime(st.Final), Thin(168), A(Color.White, a), cx, top + 14, 0, 1.4f * a);
-            double strokes = st.Rows.Where(r => r.Strokes.HasValue).Sum(r => r.Strokes.Value);
+            // (2.15.0) The total only when every segment has its strokes (as the sheet): a checkpoint without a time gave part of it.
+            double strokes = st.Rows.Count > 0 && st.Rows.All(r => r.Strokes.HasValue) ? st.Rows.Sum(r => r.Strokes.Value) : 0;
             List<string> sub = new List<string> { EventText(s.Race) };
             if (s.Race.Lane > 0)
                 sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));

@@ -176,6 +176,7 @@ namespace Kinovea.ScreenManager
             pilotRefound.Clear();
             pilotNotPut.Clear();
             pilotDropped.Clear();
+            pilotDoubtful.Clear();
             pilotRefoundPending = -1;
             pilotStartNote = Race.StartTimestamp.HasValue ? SwimLang.T("ήταν ήδη βαλμένη") : null;
             RefreshPilotUi();
@@ -684,6 +685,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>(2.9.5b) The breakouts of a reading of the pilot not put (the times put them past the most a breakout can be): for its report.</summary>
         private readonly List<string> pilotNotPut = new List<string>();
+
+        /// <summary>(2.15.0) The lengths of the pilot's readings whose strokes are to be checked (for its report).</summary>
+        private readonly SortedSet<int> pilotDoubtful = new SortedSet<int>();
 
         /// <summary>(2.9.6) The breakouts of earlier readings the times of this reading took away (DropPastPilotBreakouts): for its report.</summary>
         private readonly List<PilotBreakoutGone> pilotDropped = new List<PilotBreakoutGone>();
@@ -1224,6 +1228,9 @@ namespace Kinovea.ScreenManager
                 b.Append(SwimLang.T("• ⚠ Δεν μπήκε έξοδος από το νερό: ")).Append(notPut).Append(SwimLang.T("· περιμένει τον έλεγχό σου (στο σωστό καρέ Enter, ή Delete).\n"));
             if (pilotDropped.Count > 0)
                 b.Append("• ").Append(GoneText(pilotDropped)).Append('\n');
+            if (pilotDoubtful.Count > 0)
+                b.Append("• ").AppendFormat(CultureInfo.InvariantCulture, SwimLang.T("⚠ Χεριές για έλεγχο στα μήκη έως τα {0}{1}: η συχνότητα έξω από τα συνηθισμένα όρια ή χάθηκε η εικόνα (μέτρησέ τες ή διόρθωσέ τες στον πίνακα)."),
+                    string.Join(", ", pilotDoubtful), Race.Unit).Append('\n');
             if (raceSplits - splits == 1)
                 b.Append(SwimLang.T("• 1 πέρασμα ή τοίχος ήταν ήδη δικό σου: έμεινε όπως ήταν.\n"));
             else if (raceSplits > splits)

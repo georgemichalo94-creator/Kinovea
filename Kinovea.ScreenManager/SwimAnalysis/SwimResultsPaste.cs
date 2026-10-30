@@ -842,7 +842,13 @@ namespace Kinovea.ScreenManager
                     // of the race) it is no split either: an entry time 19.5 s slower than the result of a 1500 m was taken as the final
                     // time. A 50 m race has no split: any other time is a choice.
                     double max = fits.Max();
-                    double near = distance > 50 ? Math.Max(10, 0.8 * max * 50.0 / distance) : double.MaxValue;
+                    double lap = max * 50.0 / distance;
+                    // (2.15.0) Splits every 25 m listed with it: the lap is the smallest step between the other times (the 175 m of a 200 m
+                    // is half a 50 m lap before the final time: it made the analyst choose every time).
+                    List<double> others = fits.Where(v => max - v > 0.005).Distinct().OrderBy(v => v).ToList();
+                    for (int i = 1; i < others.Count; i++)
+                        lap = Math.Min(lap, others[i] - others[i - 1]);
+                    double near = distance > 50 ? Math.Max(10, 0.8 * lap) : double.MaxValue;
                     if (fits.Any(v => max - v > 0.005 && max - v < near))
                     {
                         r.TimeChoices = fits.Where(v => max - v < near).Distinct().OrderBy(v => v).ToList();

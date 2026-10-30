@@ -382,6 +382,18 @@ namespace Kinovea.ScreenManager
             public readonly PointF[] P = new PointF[SwimJoints.Count];
             public readonly float[] V = new float[SwimJoints.Count];
 
+            /// <summary>
+            /// (2.15.0) The reading whose camera pan was taken off (null: none): positions of two images compare only within the same
+            /// one (each reading's pan starts at its own zero; an image without a pan is in the pixels of the image).
+            /// </summary>
+            public SwimTrack PanTrack;
+
+            /// <summary>The positions of two images can be compared (the same frame of reference).</summary>
+            public bool SameFrame(Body other)
+            {
+                return other != null && ReferenceEquals(PanTrack, other.PanTrack);
+            }
+
             public bool Seen(int j)
             {
                 return V[j] >= MinVisibility;
@@ -399,13 +411,19 @@ namespace Kinovea.ScreenManager
             /// </summary>
             public int Side(params int[] lefts)
             {
+                // A side with all its joints seen first (the sum alone took a side whose ankle was not seen over a whole other side).
                 double left = 0, right = 0;
+                bool allLeft = true, allRight = true;
                 foreach (int j in lefts)
                 {
                     left += V[j];
                     right += V[j + 1];
+                    allLeft &= Seen(j);
+                    allRight &= Seen(j + 1);
                 }
 
+                if (allLeft != allRight)
+                    return allLeft ? 0 : 1;
                 return left >= right ? 0 : 1;
             }
 
@@ -468,9 +486,11 @@ namespace Kinovea.ScreenManager
             // (2.15.0) In the frame of the pool: the camera's pan of a reading of the pilot (its skeletons are in image pixels) taken off,
             // as the event reader and the technical HUD do (a camera following the push-off made it read −15° for −6°). Angles in one
             // image are the same either way.
-            double pan = PanAt(race, ts.Value);
-            if (!double.IsNaN(pan) && pan != 0)
+            SwimTrack track;
+            double pan = PanAt(race, ts.Value, out track);
+            if (!double.IsNaN(pan))
             {
+                b.PanTrack = track;
                 for (int i = 0; i < b.P.Length; i++)
                     b.P[i] = new PointF((float)(b.P[i].X - pan), b.P[i].Y);
             }
@@ -479,8 +499,9 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>(2.15.0) The camera's pan at a timestamp from the tracks of the readings with a pan; NaN when none covers it.</summary>
-        private static double PanAt(SwimRace race, long timestamp)
+        private static double PanAt(SwimRace race, long timestamp, out SwimTrack track)
         {
+            track = null;
             if (race.Tracks == null)
                 return double.NaN;
 
@@ -490,7 +511,10 @@ namespace Kinovea.ScreenManager
                     continue;
                 double q = SwimTechRun.TrackPan(t, timestamp);
                 if (!double.IsNaN(q))
+                {
+                    track = t;
                     return q;
+                }
             }
 
             return double.NaN;
@@ -503,7 +527,7 @@ namespace Kinovea.ScreenManager
         private static int Direction(SwimRace race, long? from, long? to)
         {
             Body a = BodyAt(race, from), b = BodyAt(race, to);
-            if (a == null || b == null)
+            if (a == null || b == null || !a.SameFrame(b))
                 return 0;
             PointF? ha = a.Mid(SwimJoints.LeftHip), hb = b.Mid(SwimJoints.LeftHip);
             if (!ha.HasValue || !hb.HasValue)
@@ -592,7 +616,7 @@ namespace Kinovea.ScreenManager
                     BodyLine(g, glide, "body_line_glide", put);
 
                 Body c = BodyAt(race, later);
-                if (b != null && c != null && dir != 0)
+                if (b != null && c != null && dir != 0 && b.SameFrame(c))
                 {
                     PointF? h0 = b.Mid(SwimJoints.LeftHip), h1 = c.Mid(SwimJoints.LeftHip);
                     if (h0.HasValue && h1.HasValue)
@@ -621,6 +645,7 @@ namespace Kinovea.ScreenManager
                     double worst = double.MaxValue, len = 0;
                     int seen = 0;
                     PointF? prev = null;
+                    Body prevBody = null;
                     for (double s = p.LastStroke.Value; s <= 0.001; s += 0.1)
                     {
                         Body b = BodyAt(race, timing.Timestamp(s, p.Origin));
@@ -628,12 +653,14 @@ namespace Kinovea.ScreenManager
                         if (!h.HasValue)
                             continue;
                         len = Math.Max(len, b.Length);
-                        if (prev.HasValue)
+                        // (2.15.0) Two images in the same frame of reference only (see Body.PanTrack).
+                        if (prev.HasValue && b.SameFrame(prevBody))
                         {
                             worst = Math.Min(worst, (h.Value.X - prev.Value.X) * dir);
                             seen++;
                         }
                         prev = h;
+                        prevBody = b;
                     }
 
                     if (seen >= 3 && len > 0)
@@ -714,6 +741,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The dolphin kicks marked after the push (or the entry): the feet together, the size of the kick from the first to the last.</summary>
         private static void UnderwaterKicks(SwimRace race, SwimTechPhase p, SwimTiming timing, Action<string, double, string, double, long?> put)
         {
+            // Three kicks: two whole cycles (the feet together); the growth of the kicks needs a third cycle (four kicks).
             if (p.Kicks.Count < 3)
                 return;
 

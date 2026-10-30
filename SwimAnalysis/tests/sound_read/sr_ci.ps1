@@ -2,7 +2,8 @@
 # the first seconds of an MP4 and of an MPEG-TS whose clock starts at 100 s comes back whole, with its first sample at 'from' on the
 # stream clock: a click at 40 s of the sound is at the same time of the stream clock in the zone read after a seek and in the sound read
 # from the beginning (within 1 ms), near 40 s of the clock (an MP4 keeps the sound at 0, the TS at its start; the codecs add a few ms).
-# Fictional sounds made here by ffmpeg (a 5 ms click of 1 kHz in 60 s of silence).
+# A TS of 200 s too: the seek of a zone after its start landed inside the file but past the zone (silence, no retry).
+# Fictional sounds made here by ffmpeg (a 5 ms click of 1 kHz in 60 s, or 200 s, of silence).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea). Exit code 1 when a check fails.
 #   powershell -File sr_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls and ffmpeg.exe>
 param([string]$sm, [string]$bin)
@@ -27,14 +28,16 @@ function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('swim_sr_' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $click = "aevalsrc=exprs='if(between(t,40,40.005),0.9*sin(2*PI*1000*t),0)':s=48000:d=60"
+$click200 = "aevalsrc=exprs='if(between(t,40,40.005),0.9*sin(2*PI*1000*t),0)':s=48000:d=200"
 # ffmpeg writes its messages on stderr: not errors of this script.
 function Native($argList) {
   $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
   try { return (& $ff @argList 2>&1 | ForEach-Object { "$_" }) } finally { $ErrorActionPreference = $old }
 }
-function Make($name, $codecArgs) {
+function Make($name, $codecArgs, $source) {
   $path = Join-Path $tmp $name
-  $argList = @('-nostdin', '-v', 'error', '-f', 'lavfi', '-i', $click) + $codecArgs + @('-y', $path)
+  if (-not $source) { $source = $click }
+  $argList = @('-nostdin', '-v', 'error', '-f', 'lavfi', '-i', $source) + $codecArgs + @('-y', $path)
   Native $argList | ForEach-Object { Write-Host ('  ffmpeg: ' + $_) }
   return $path
 }
@@ -59,9 +62,11 @@ function PeakAt($samples) {
 
 $mp4 = Make 'click.mp4' @('-c:a', 'aac', '-strict', '-2', '-b:a', '128k')
 $ts = Make 'click.ts' @('-c:a', 'mp2', '-b:a', '128k', '-f', 'mpegts', '-output_ts_offset', '100')
+$ts200 = Make 'click200.ts' @('-c:a', 'mp2', '-b:a', '128k', '-f', 'mpegts', '-output_ts_offset', '100') $click200
 Check (Test-Path $mp4) 'MP4 made'
 Check (Test-Path $ts) 'MPEG-TS made'
-foreach ($case in @(@{ Path = $mp4; Name = 'MP4' }, @{ Path = $ts; Name = 'TS (clock from 100 s)' })) {
+Check (Test-Path $ts200) 'MPEG-TS of 200 s made'
+foreach ($case in @(@{ Path = $mp4; Name = 'MP4' }, @{ Path = $ts; Name = 'TS (clock from 100 s)' }, @{ Path = $ts200; Name = 'TS of 200 s (clock from 100 s)' })) {
   if (-not (Test-Path $case.Path)) { continue }
   $start = StartOf $case.Path
   $clicks = @()
@@ -71,7 +76,11 @@ foreach ($case in @(@{ Path = $mp4; Name = 'MP4' }, @{ Path = $ts; Name = 'TS (c
     $n = if ($r.Samples) { $r.Samples.Length } else { 0 }
     $expected = [int][Math]::Floor($zone.Seconds * $rate)
     Check ($n -ge $expected - $rate / 50 -and $n -le $expected + 1) ($case.Name + ' from ' + $zone.From + ' s for ' + $zone.Seconds + ' s: ' + $n + ' samples of ' + $expected + ' (start ' + $start + ')' + $(if ($r.Error) { ' error: ' + $r.Error } else { '' }))
-    if ($n -gt 0) { $clicks += ($from + (PeakAt $r.Samples) / $rate) }
+    if ($n -gt 0) {
+      $at = PeakAt $r.Samples
+      Check ([Math]::Abs($r.Samples[$at]) -gt 0.1) ($case.Name + ' from ' + $zone.From + ' s: the click heard (peak ' + [Math]::Abs($r.Samples[$at]).ToString('0.000') + ')')
+      $clicks += ($from + $at / $rate)
+    }
   }
   if ($clicks.Count -eq 2) {
     $ms = 1000.0 * [Math]::Abs($clicks[0] - $clicks[1])

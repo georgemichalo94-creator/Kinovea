@@ -144,6 +144,15 @@ const rec = { id: 'lib1', style: 'fs', distance: 50, pool: 50, checkpoints: [{ d
 const lib = G.swimLibraryRace_(rec, row, { byId: {} });
 assert.deepStrictEqual(lib.checkpoints.map(c => c.d), [15, 25, 45, 50], 'the suspect time dropped');
 assert.deepStrictEqual(Object.keys(lib.segmentStrokes).map(Number).sort((a, b) => a - b), [25, 50], 'no strokes for 25–45 (10 of 19)');
+// The suspect checkpoint had no strokes of its own: the 45's 10 are still part of 25–45.
+const lib2 = G.swimLibraryRace_(Object.assign({}, rec, { segmentStrokes: { 25: 8, 45: 10, 50: 3 } }), row, { byId: {} });
+assert.deepStrictEqual(Object.keys(lib2.segmentStrokes).map(Number).sort((a, b) => a - b), [25, 50], 'no strokes for 25–45 either');
+// A fix that takes a checkpoint away: the strokes of both segments summed, none when one is unknown.
+const fixRow = new Array(19).fill(''); fixRow[1] = 'Εισαγωγή'; fixRow[17] = '35=';
+const lib3 = G.swimLibraryRace_(rec, fixRow, { byId: {} });
+assert.strictEqual(lib3.segmentStrokes[45], 19, '35 + 45 strokes');
+const lib4 = G.swimLibraryRace_(Object.assign({}, rec, { segmentStrokes: { 25: 8, 45: 10, 50: 3 } }), fixRow, { byId: {} });
+assert.strictEqual(lib4.segmentStrokes[45], undefined, 'the 25–35 count unknown: none for 25–45');
 
 // ---------------------------------------------------------------------------------------------
 // (j) Οι χεριές ανά 50 του παλιού Excel (400–1500): η συχνότητα και ο ΔΑΚ του ρεκόρ όλου του 50άρι, χωρίς σύγκριση

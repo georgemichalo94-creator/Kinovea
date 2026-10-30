@@ -83,6 +83,10 @@ namespace Kinovea.ScreenManager
             ApplyEvent(titleEvent, SwimLang.T("τον τίτλο των αποτελεσμάτων"), false);
 
             OfficialQuery q = NewOfficialQuery(Race.ResultsLink, false);
+            // (2.15.0) The gender of the title for the search (the athletes of the registry, the international ones kept) when the race
+            // has none: the race gets it when the times are taken.
+            if (q.Gender.Length == 0 && titleEvent != null && (titleEvent.Gender == "M" || titleEvent.Gender == "F"))
+                q.Gender = titleEvent.Gender;
 
             // Found by the race's athlete's name: him (another country is another swimmer of the same name); an initial for his given
             // name ("M. ROSSI") made his given name.

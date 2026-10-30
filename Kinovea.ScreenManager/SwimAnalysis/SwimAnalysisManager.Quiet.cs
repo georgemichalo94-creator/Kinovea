@@ -639,12 +639,13 @@ namespace Kinovea.ScreenManager
         /// The event of the race a proposal is about, for its answer (see SwimLearningRecord.Key): the same event answered again replaces
         /// the answer. Null for the proposals that are not one event of a race (the start light, the technical analysis).
         /// </summary>
-        private string AnswerKey(SwimProposal p)
+        private string AnswerKey(SwimProposal p, bool right = true)
         {
-            // (2.15.0) The start of the video (its light, its sound): one answer per video. Without a key every 💡 added one more
-            // (the same start taught again and again), and the races of the video share the start.
+            // (2.15.0) The start of the video (its light, its sound): one answer per video (without a key every 💡 added one more: the
+            // same start taught again and again; the races of the video share the start); a candidate deleted keeps its own (by its
+            // frame: the right one accepted after it does not take its place).
             if (Race != null && p != null && p.Kind == KindRaceStart && !string.IsNullOrEmpty(videoPath))
-                return StartAnswerKey();
+                return right ? StartAnswerKey() : StartAnswerKey() + "|" + p.Timestamp.ToString(CultureInfo.InvariantCulture);
             if (Race == null || p == null || !IsWholeRaceKind(p.Kind))
                 return null;
 

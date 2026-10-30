@@ -151,13 +151,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static float[] Read(string ffmpeg, string video, double from, double seconds, CancellationToken cancel, out string error)
         {
-            // (2.15.0) The seek before 'from' (only to save decoding) is relative to the file's own start in ffmpeg, while 'from' is on the
-            // stream clock: with a clock that does not start near 0 (MTS/TS segments) it landed after 'from' and the sound came back empty
-            // or cut. Too short a sound after a seek: read again from the beginning of the file.
+            // (2.15.0) The seek before 'from' (only to save decoding) is on the stream clock as 'from' (-seek_timestamp: ffmpeg added the
+            // file's start to it, and with a clock that does not start near 0, MTS/TS segments, it landed after 'from': the sound came back
+            // empty, or silent in a long file). Too short or silent a sound after a seek: read again from the beginning of the file.
             double seek = from > 30 ? from - 3 : 0;
             float[] samples = ReadOnce(ffmpeg, video, from, seconds, seek, cancel, out error);
             int expected = (int)Math.Floor(seconds * Rate);
-            if (seek > 0 && !cancel.IsCancellationRequested && (samples == null || samples.Length < 0.9 * expected))
+            if (seek > 0 && !cancel.IsCancellationRequested && (samples == null || samples.Length < 0.9 * expected || Silent(samples)))
             {
                 string again;
                 float[] whole = ReadOnce(ffmpeg, video, from, seconds, 0, cancel, out again);
@@ -169,6 +169,18 @@ namespace Kinovea.ScreenManager
             }
 
             return samples;
+        }
+
+        /// <summary>(2.15.0) Not a sample above the noise of the decoders: a zone read past the sound (filled with silence).</summary>
+        private static bool Silent(float[] samples)
+        {
+            for (int i = 0; i < samples.Length; i++)
+            {
+                if (Math.Abs(samples[i]) > 1e-6f)
+                    return false;
+            }
+
+            return true;
         }
 
         private static float[] ReadOnce(string ffmpeg, string video, double from, double seconds, double seek, CancellationToken cancel, out string error)
@@ -190,11 +202,13 @@ namespace Kinovea.ScreenManager
             // (its first_pts counts the samples of its input: the first resampler gives them at Rate). The seek (well before 'from')
             // only saves decoding a long beginning. (2.15.0) The end by the sound's own clock (atrim, from + seconds): with -copyts the
             // output -t is an end time in newer ffmpeg (a zone after the first seconds gave no sound); and no more is read than asked.
+            // The seek on the stream clock (-seek_timestamp) and not accurate (the accurate one cuts at the seek plus the file's start
+            // again with -copyts): the resampler trims to 'from'.
             CultureInfo ci = CultureInfo.InvariantCulture;
             long firstPts = (long)Math.Round(from * Rate);
             string args = string.Format(ci,
                 "-nostdin -v error -copyts {0}-i \"{1}\" -map 0:a:0 -vn -af \"aresample={4},aresample=async=1:min_hard_comp=0.001:first_pts={2},atrim=end={3:0.000000}\" -ac 1 -ar {4} -f f32le -",
-                seek > 0 ? string.Format(ci, "-ss {0:0.000} ", seek) : "", video, firstPts, from + seconds, Rate);
+                seek > 0 ? string.Format(ci, "-seek_timestamp 1 -noaccurate_seek -ss {0:0.000} ", seek) : "", video, firstPts, from + seconds, Rate);
             int limit = (int)Math.Ceiling(seconds * Rate);
 
             ProcessStartInfo psi = new ProcessStartInfo(ffmpeg, args)

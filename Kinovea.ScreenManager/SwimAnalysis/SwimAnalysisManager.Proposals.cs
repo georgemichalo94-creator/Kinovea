@@ -558,14 +558,16 @@ namespace Kinovea.ScreenManager
         /// A mark added by the analyst (with its key or by accepting): the proposal of the same kind near it is answered with
         /// this frame (the one being checked first).
         /// </summary>
-        private void ResolveProposalsByMark(SwimMarkType type, long timestamp)
+        private void ResolveProposalsByMark(SwimMarkType type, long timestamp, bool learn = true)
         {
             // Accepting a proposal answers that proposal only (not a neighbour of the same kind).
             if (resolvingProposal || Race == null)
                 return;
 
-            // Manual analysis: the mark teaches also when nothing was proposed for its event.
-            LearnFromMark(type, timestamp);
+            // Manual analysis: the mark teaches also when nothing was proposed for its event (once: 'learn' false for a second type of
+            // the same mark).
+            if (learn)
+                LearnFromMark(type, timestamp);
             if (Race.Proposals.Count == 0)
                 return;
 
@@ -688,7 +690,7 @@ namespace Kinovea.ScreenManager
                 Video = SwimLearning.VideoCode(videoPath),
                 Right = right,
                 Confidence = taught.Confidence,
-                Key = AnswerKey(taught)
+                Key = AnswerKey(taught, right)
             };
 
             if (record != null && right)

@@ -1759,15 +1759,16 @@ function swimAnalyze_(race) {
     // 2.15.0 (SWIM_STRICT_VALUES): ο υποβρύχιος χρόνος είναι B − F (αποκόλληση → έξοδος, όπως στο README και στην τεχνική
     // ανάλυση)· χωρίς αποκόλληση μένει κενός (πριν έπαιρνε σιωπηλά B − S, άλλον ορισμό, στον ίδιο πίνακα).
     if (res.breakout !== null && (res.pushoff !== null || !SWIM_STRICT_VALUES)) res.underwaterTime = res.breakout - (res.pushoff !== null ? res.pushoff : vw);
-    // 2.15.0 (SWIM_STRICT_VALUES): κανένας δελφινισμός ανάμεσα στον τοίχο και στην έξοδο = κενό, όχι 0 (π.χ. όταν μαρκαρίστηκαν
-    // δελφινισμοί μόνο σε άλλη στροφή)· όπως στο Kinovea.
     if (race.kicks.length) {
       var to = res.breakout !== null ? res.breakout : nextT;
-      var nk = race.kicks.filter(function (t) { return t > vw && t <= to; }).length;
-      res.kicks = nk > 0 || !SWIM_STRICT_VALUES ? nk : null;
+      res.kicks = race.kicks.filter(function (t) { return t > vw && t <= to; }).length;
     }
     return res;
   });
+  // 2.15.0 (SWIM_STRICT_VALUES): 0 δελφινισμοί σε μια στροφή μόνο όταν μαρκαρίστηκαν σε άλλη στροφή (ο αναλυτής τους μετρούσε: μια
+  // στροφή προσθίου χωρίς δελφινισμό)· σε καμία στροφή (μόνο στην εκκίνηση) δεν μετρήθηκαν: κενό, όχι 0. Όπως στο Kinovea.
+  if (SWIM_STRICT_VALUES && !turns.some(function (t) { return t.kicks !== null && t.kicks > 0; }))
+    turns.forEach(function (t) { t.kicks = null; });
 
   // ---- Τερματισμός
   var finish = { tFinish: timeAt[dist] !== undefined ? timeAt[dist] : null, lastStrokeGap: null };
@@ -4417,6 +4418,8 @@ function swimInputPlan_(race, analysis, layout) {
     }
     if (v !== null && v !== undefined) plan.patches.push({ r: s.r, c: s.c, v: swimFixed_(v, 3) });
     else if (SWIM_STRICT_VALUES && s.kind === 'auto') plan.patches.push({ r: s.r, c: s.c, v: '' });   // η τιμή δεν υπάρχει πια
+    // 2.15.0: μια εκτίμηση (≈) του προγράμματος που δεν υπάρχει πια σβήνεται· ό,τι γράφτηκε με το χέρι στο φύλλο μένει.
+    else if (SWIM_STRICT_VALUES && s.key === 'underwaterDist') plan.patches.push({ r: s.r, c: s.c, v: '', ifEstimate: true });
   });
 
   var manualTurns = m.turns || {};
@@ -4434,6 +4437,7 @@ function swimInputPlan_(race, analysis, layout) {
       // 2.15.0: κάθε κελί του προγράμματος γράφεται κάθε φορά, και κενό όταν η τιμή δεν υπάρχει πια (π.χ. διαγράφηκε η αποκόλληση).
       plan.patches.push({ r: t.r, c: 4, v: swimValueOrBlank_(turnTime, 3) });
       if (uwDist !== null) plan.patches.push({ r: t.r, c: 5, v: mt.underwaterEstimated ? '≈' + swimFixed_(uwDist, 1) : uwDist });
+      else plan.patches.push({ r: t.r, c: 5, v: '', ifEstimate: true });
       plan.patches.push({ r: t.r, c: 6, v: swimValueOrBlank_(uwTime, 3) });
       plan.patches.push({ r: t.r, c: 7, v: kicks !== null && kicks !== undefined ? kicks : '' });
       plan.patches.push({ r: t.r, c: 11, v: swimValueOrBlank_(gap, 3) });
@@ -4888,7 +4892,15 @@ function swimWriteInputs_(sheet, race, analysis, layout) {
     var formulas = rng.getFormulas()[0];
     var vals = rng.getValues()[0];
     var out = vals.map(function (v, i) { return formulas[i] ? formulas[i] : v; });
-    list.forEach(function (p) { out[p.c - c0] = p.v; });
+    list.forEach(function (p) {
+      // 2.15.0: σβήνει μόνο ό,τι έγραψε το πρόγραμμα ως εκτίμηση (≈…), όχι μια τιμή που γράφτηκε με το χέρι.
+      if (p.ifEstimate) {
+        var cur = out[p.c - c0];
+        if (typeof cur === 'string' && cur.charAt(0) === '≈') out[p.c - c0] = '';
+        return;
+      }
+      out[p.c - c0] = p.v;
+    });
     rng.setValues([out]);
   });
 
@@ -8859,11 +8871,14 @@ function swimLibraryRace_(rec, row, reg) {
     var i = find(d);
     if (i < 0) return;
     cps.splice(i, 1);
-    if (strokes[d] === undefined) return;
-    if (merge && !rec.strokesPer50 && i < cps.length) strokes[cps[i].d] = (strokes[cps[i].d] || 0) + strokes[d];
-    // 2.15.0: χωρίς τις χεριές του σημείου (ύποπτες κι αυτές) το επόμενο τμήμα μεγάλωσε και οι χεριές του είναι μέρος του: καμία, όχι
+    // 2.15.0: το επόμενο τμήμα μεγάλωσε ως το προηγούμενο σημείο. Οι χεριές του όλες μόνο όταν είναι γνωστές και των δύο τμημάτων
+    // (μια διόρθωση: άθροισμα)· χωρίς τις χεριές του σημείου (ύποπτες κι αυτές, ή καμία) οι δικές του είναι μέρος του: καμία, όχι
     // λίγες (η συχνότητα και το μήκος χεριάς του ρεκόρ έβγαιναν λάθος).
-    else if (!merge && !rec.strokesPer50 && i < cps.length) delete strokes[cps[i].d];
+    if (!rec.strokesPer50 && i < cps.length) {
+      var next = cps[i].d;
+      if (merge && strokes[d] !== undefined && strokes[next] !== undefined) strokes[next] += strokes[d];
+      else delete strokes[next];
+    }
     delete strokes[d];
   };
   // Χωρίς τους ύποπτους χρόνους: φεύγουν και οι χεριές τους (γράφτηκαν μαζί, πιθανόν από το ίδιο αντιγραμμένο φύλλο).
