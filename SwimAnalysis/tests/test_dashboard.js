@@ -4,7 +4,7 @@
 //  - δεν δίνει ποτέ αριθμό μητρώου, έτος γέννησης ή βίντεο,
 //  - οι τιμές είναι αυτές της ανάλυσης των αναφορών (swimAnalyze_), με τις τιμές του αναλυτή να υπερισχύουν όπως στο φύλλο,
 //  - ο έλεγχος για αλλαγές βλέπει νέους και ενημερωμένους αγώνες, η προσωρινή μνήμη δεν δίνει παλιές τιμές,
-//  - η σελίδα (SwimDashboard.html) καλεί μόνο συναρτήσεις που υπάρχουν και δεν φορτώνει ξένο κώδικα.
+//  - η σελίδα (SwimDashboardPage.html) καλεί μόνο συναρτήσεις που υπάρχουν και δεν φορτώνει ξένο κώδικα.
 const { makeContext } = require('./mock_gas');
 const fs = require('fs');
 const path = require('path');
@@ -16,7 +16,7 @@ const same = (a, b, msg) => assert.strictEqual(JSON.stringify(a), JSON.stringify
 const dir = path.join(__dirname, '../GoogleSheet');
 const dashSrc = fs.readFileSync(path.join(dir, 'SwimDashboard.gs'), 'utf8');
 const webSrc = fs.readFileSync(path.join(dir, 'SwimDashboardWeb.gs'), 'utf8');
-const html = fs.readFileSync(path.join(dir, 'SwimDashboard.html'), 'utf8');
+const html = fs.readFileSync(path.join(dir, 'SwimDashboardPage.html'), 'utf8');
 
 function context() {
   const G = makeContext({ cache: true });
@@ -115,10 +115,10 @@ function noPrivate(obj, where) {
 
 // ---- Πρόσβαση
 let page = G.swimDashboardGet({ parameter: {} });
-assert.strictEqual(page.file, 'SwimDashboard', 'page for the user who runs the script');
+assert.strictEqual(page.file, 'SwimDashboardPage', 'page for the user who runs the script');
 assert.ok(/Swim Analytics/.test(page.title) && /width=device-width/.test(page.meta.viewport), 'title and viewport');
 assert.strictEqual(G.swimDashTryGet({ parameter: {} }), null, 'other pages of the project untouched');
-assert.strictEqual(G.swimDashTryGet({ parameter: { page: 'dashboard' } }).file, 'SwimDashboard');
+assert.strictEqual(G.swimDashTryGet({ parameter: { page: 'dashboard' } }).file, 'SwimDashboardPage');
 who.active = '';
 page = G.swimDashboardGet({ parameter: {} });
 assert.ok(typeof page.text === 'string' && !page.file && /User accessing/.test(page.text), 'anonymous: text, no page');
@@ -265,7 +265,7 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   Object.keys(index._cells).forEach(k => { own._cells[k] = Object.assign({}, index._cells[k]); });
   delete B.G._props.SWIM_REPORTS_SPREADSHEET_ID;
   const pg = B.G.doGet({ parameter: {} });
-  assert.strictEqual(pg.file, 'SwimDashboard', 'doGet of the dashboard project');
+  assert.strictEqual(pg.file, 'SwimDashboardPage', 'doGet of the dashboard project');
   const l = B.G.swimDashList();
   assert.ok(l.ok && l.races.length === RACES.length, 'option a list: ' + (l.races || []).length);
   assert.ok(B.G.swimDashRaces(['dash0']).races[0].summary.finalTime > 0);
@@ -290,11 +290,12 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   assert.strictEqual(Object.keys(C.G._all).length, files, 'no spreadsheet created');
 }
 
-// ---- Η σελίδα
+// ---- Η σελίδα (το HTML δεν έχει το ίδιο όνομα με κανένα .gs του φακέλου: δύο αρχεία ενός project δεν έχουν ίδιο όνομα)
+fs.readdirSync(dir).filter(f => /\.gs$/.test(f)).forEach(f => assert.notStrictEqual(f.replace(/\.gs$/, ''), 'SwimDashboardPage', f));
 const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
 assert.strictEqual(scripts.length, 1, 'one inline script');
 assert.ok(!/\bsrc=/.test(scripts[0][1]), 'no external script');
-new vm.Script(scripts[0][2], { filename: 'SwimDashboard.html' });
+new vm.Script(scripts[0][2], { filename: 'SwimDashboardPage.html' });
 const calls = [...new Set([...scripts[0][2].matchAll(/call\('(\w+)'/g)].map(m => m[1]))].sort();
 same(calls, ['swimDashList', 'swimDashPoll', 'swimDashRaces'], 'server calls: ' + calls);
 calls.forEach(fn => assert.strictEqual(typeof G[fn], 'function', fn + ' exists'));

@@ -1601,7 +1601,7 @@ INTERNATIONAL (100000) και γράφεις το όνομα στο «Όνομα
 1. Άνοιξε το Google Sheet **«Αναλύσεις Αγώνων Κολύμβησης (Kinovea)»** (φάκελος *Swim Race Reports*) → **Επεκτάσεις → Apps Script**.
 2. Τρία σενάρια (+ → Σενάριο): `SwimRaceAnalysis` (το ίδιο `SwimRaceAnalysis.gs` με το KOE App), `SwimDashboard` (`SwimDashboard.gs`) και
    `SwimDashboardWeb` (`SwimDashboardWeb.gs`). Το αρχικό `Code.gs` σβήνεται.
-3. **+ → HTML**, όνομα `SwimDashboard`, επικόλληση του `SwimDashboard.html` → Αποθήκευση.
+3. **+ → HTML**, όνομα `SwimDashboardPage`, επικόλληση του `SwimDashboardPage.html` → Αποθήκευση.
 4. **Ανάπτυξη → Νέα ανάπτυξη → Εφαρμογή Ιστού**, *Εκτέλεση ως: Χρήστης που αποκτά πρόσβαση στην εφαρμογή* (User accessing the web app),
    *Πρόσβαση: Οποιοσδήποτε με Λογαριασμό Google* (Anyone with Google account) → **Ανάπτυξη** → αντέγραψε τη διεύθυνση `/exec`.
 5. Την πρώτη φορά κάθε χρήστης δίνει τις άδειες στον λογαριασμό του (το Google γράφει ότι η εφαρμογή δεν έχει επαληθευτεί:
@@ -1609,7 +1609,7 @@ INTERNATIONAL (100000) και γράφεις το όνομα στο «Όνομα
 6. Για έναν προπονητή: **Κοινοποίηση** του Google Sheet των αναλύσεων στο email του (*Προβολή*) και του στέλνεις τη διεύθυνση. Χωρίς
    κοινοποίηση η σελίδα του γράφει ότι δεν έχει πρόσβαση.
 
-Εναλλακτικά, στο project του KOE App: `SwimDashboard.gs` και το HTML `SwimDashboard`, στην αρχή του υπάρχοντος `doGet(e)` η γραμμή
+Εναλλακτικά, στο project του KOE App: `SwimDashboard.gs` και το HTML `SwimDashboardPage`, στην αρχή του υπάρχοντος `doGet(e)` η γραμμή
 `var swimPage = swimDashTryGet(e); if (swimPage) return swimPage;` και νέα ανάπτυξη όπως στο βήμα 4· η διεύθυνση τελειώνει σε
 `/exec?page=dashboard`. Ο πρώτος τρόπος είναι προτιμότερος: οι προπονητές δεν τρέχουν με τον λογαριασμό τους τον υπόλοιπο κώδικα του KOE App.
 
@@ -1632,7 +1632,7 @@ INTERNATIONAL (100000) και γράφεις το όνομα στο «Όνομα
 - `Kinovea.ScreenManager/SwimAnalysis/`: πάνελ, υπολογισμοί, αποθήκευση, αποστολή στο Google Sheet
 - `SwimAnalysis/GoogleSheet/SwimRaceAnalysis.gs`: το backend (Apps Script, ως ξεχωριστό αρχείο στο KOE App)
 - `SwimAnalysis/GoogleSheet/SwimWebApp.gs`: onOpen/doGet/doPost μόνο για νέο, άδειο Google Sheet
-- `SwimAnalysis/GoogleSheet/SwimDashboard.gs`, `SwimDashboard.html`, `SwimDashboardWeb.gs`: ο κεντρικός πίνακας σύγκρισης κουρσών
+- `SwimAnalysis/GoogleSheet/SwimDashboard.gs`, `SwimDashboardPage.html`, `SwimDashboardWeb.gs`: ο κεντρικός πίνακας σύγκρισης κουρσών
   (Swim Analytics): οι κλήσεις του με τον έλεγχο πρόσβασης, η σελίδα και το doGet για project μόνο για τον πίνακα. Έλεγχος:
   `node tests/test_dashboard.js` (φανταστικοί αγώνες: πρόσβαση, μόνο ανάγνωση, χωρίς προσωπικά στοιχεία, ίδιες τιμές με την ανάλυση)
 - `SwimAnalysis/tests/`: έλεγχοι του backend (`node tests/test_analysis.js`, `node tests/test_e2e.js`, `node tests/test_references.js`,

@@ -14,11 +14,12 @@
  * διεύθυνση του Kinovea) ανοίγει μόνο για τον ιδιοκτήτη· όποιος άλλος παίρνει απλό μήνυμα κειμένου, χωρίς σελίδα και χωρίς
  * δεδομένα, ώστε κανείς να μη διαβάζει με τα δικαιώματα του ιδιοκτήτη.
  *
- * Χρειάζεται στο ίδιο project το SwimRaceAnalysis.gs (2.15.0 ή νεότερο) και το αρχείο HTML «SwimDashboard». Εγκατάσταση:
+ * Χρειάζεται στο ίδιο project το SwimRaceAnalysis.gs (2.15.0 ή νεότερο) και το αρχείο HTML «SwimDashboardPage» (άλλο όνομα από
+ * το SwimDashboard.gs: δύο αρχεία ενός project δεν έχουν το ίδιο όνομα). Εγκατάσταση:
  *  α) (προτείνεται) νέο Apps Script μέσα στο Google Sheet των αναλύσεων «Αναλύσεις Αγώνων Κολύμβησης (Kinovea)»
- *     (Επεκτάσεις → Apps Script): SwimRaceAnalysis.gs, SwimDashboard.gs, SwimDashboardWeb.gs και το HTML SwimDashboard.
+ *     (Επεκτάσεις → Apps Script): SwimRaceAnalysis.gs, SwimDashboard.gs, SwimDashboardWeb.gs και το HTML SwimDashboardPage.
  *     Δεν αλλάζει τίποτα στο KOE App ούτε στη σύνδεση με το Kinovea.
- *  β) στο project του KOE App: SwimDashboard.gs και το HTML SwimDashboard, και στην αρχή του υπάρχοντος doGet(e):
+ *  β) στο project του KOE App: SwimDashboard.gs και το HTML SwimDashboardPage, και στην αρχή του υπάρχοντος doGet(e):
  *       var swimPage = swimDashTryGet(e); if (swimPage) return swimPage;
  *     Η διεύθυνση τότε τελειώνει σε …/exec?page=dashboard.
  *  Και στους δύο: Deploy → New deployment → Web app, Execute as: User accessing the web app, Who has access: Anyone with Google
@@ -58,7 +59,7 @@ function swimDashboardGet(e) {
   } catch (err) {
     return ContentService.createTextOutput('Swim Analytics\n\n' + swimDashError_(err)).setMimeType(ContentService.MimeType.TEXT);
   }
-  return HtmlService.createHtmlOutputFromFile('SwimDashboard')
+  return HtmlService.createHtmlOutputFromFile('SwimDashboardPage')
     .setTitle('Swim Analytics · Κ.Ο.Ε.')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
