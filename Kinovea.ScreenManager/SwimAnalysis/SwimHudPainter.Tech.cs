@@ -40,6 +40,15 @@ namespace Kinovea.ScreenManager
         /// <summary>After the last stroke measured: the card of the phase.</summary>
         public bool Card;
         public float CardFade = 1f;
+
+        /// <summary>(2.15.0) A yard pool: the distances (pool units) in yd, not «μ.».</summary>
+        public bool Yards;
+
+        /// <summary>The unit of the distances.</summary>
+        public string Unit
+        {
+            get { return Yards ? "yd" : SwimLang.T("μ."); }
+        }
     }
 
     /// <summary>The technical HUD of a training video (2.9.9): drawn with the panels, colours and letters of the HUD of the race.</summary>
@@ -171,7 +180,7 @@ namespace Kinovea.ScreenManager
 
                     string label = (run.Approach.Contains(c) ? SwimLang.T("Π") : SwimLang.T("Χ")) + c.Number.ToString(CultureInfo.InvariantCulture);
                     if (c.Distance.HasValue)
-                        label += " · " + c.Distance.Value.ToString("0.00", CultureInfo.InvariantCulture) + " " + SwimLang.T("μ.");
+                        label += " · " + c.Distance.Value.ToString("0.00", CultureInfo.InvariantCulture) + " " + s.Unit;
                     float w = Width(g, label, tag) + 18;
                     RectangleF chip = new RectangleF(x - w / 2, video.Top + video.Height * 0.12f - 32, w, 26);
                     using (SolidBrush back = new SolidBrush(A(Color.FromArgb(200, 4, 30, 48), alpha)))
@@ -403,10 +412,10 @@ namespace Kinovea.ScreenManager
             double? uwTime = p.Breakout.HasValue ? p.Breakout.Value - uw0 : (double?)null;
             double? uwMetres = p.Breakout.HasValue ? run.PositionAt(p.Breakout.Value) : null;
             row(SwimLang.T("Υποβρύχια φάση") + (p.Kicks.Count > 0 ? " · " + p.Kicks.Count + " " + SwimLang.T("δελφ.") : ""),
-                uwTime.HasValue ? Seconds2(uwTime) + " s" : "–", uwMetres.HasValue ? uwMetres.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + SwimLang.T("μ.") : "–", "–", Ice);
+                uwTime.HasValue ? Seconds2(uwTime) + " s" : "–", uwMetres.HasValue ? uwMetres.Value.ToString("0.0", CultureInfo.InvariantCulture) + " " + s.Unit : "–", "–", Ice);
             foreach (SwimTechCycle c in cycles.Take(8))
                 row(c.Number.ToString(CultureInfo.InvariantCulture), Seconds2(c.Tempo) + " s",
-                    c.Distance.HasValue ? c.Distance.Value.ToString("0.00", CultureInfo.InvariantCulture) + " " + SwimLang.T("μ.") : "–",
+                    c.Distance.HasValue ? c.Distance.Value.ToString("0.00", CultureInfo.InvariantCulture) + " " + s.Unit : "–",
                     c.Glide.HasValue ? Seconds2(c.Glide) + " s" : "–", GlideColor(SwimTechRun.Classify(c.Glide)));
 
             // Bars: metres per stroke (when known) and glides (breaststroke, butterfly) with the line of a full glide.

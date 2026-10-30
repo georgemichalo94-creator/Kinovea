@@ -747,7 +747,7 @@ namespace Kinovea.ScreenManager
                     c.EntryTime.HasValue ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("είσοδος στο νερό {0:0.00} s"), c.EntryTime.Value) : "" },
                 new[] { "BREAKOUT", hasBreakout ? (reel.BreakoutMeasured.Contains(0) ? "" : "≈") + bd.ToString("0.0", CultureInfo.InvariantCulture) + " " + unit : "–", under },
                 new[] { SwimLang.T("ΧΡΟΝΟΣ ΑΝΑ ΤΜΗΜΑ"), string.Join(" / ", reel.Parts.Select(p => p.Time.HasValue ? SwimReference.FormatTime(p.Time.Value) : "–")), partsLabel + " " + unit },
-                new[] { SwimLang.T("ΧΕΡΙΕΣ"), string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), SwimLang.T("σημάδια χεριών ανά τμήμα") },
+                new[] { SwimLang.T("ΧΕΡΙΕΣ"), string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), SwimLang.T("χεριές ανά τμήμα (της ανάλυσης)") },
                 new[] { SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), joined(p => p.Tempo.HasValue && p.Tempo.Value > 0 ? (double?)(60.0 / p.Tempo.Value) : null, "0.0"), SwimLang.T("κύκλοι ανά λεπτό") },
                 new[] { SwimLang.T("ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ"), "≈" + joined(p => p.Dps, "0.00"), SwimLang.T("μέτρα ανά κύκλο") },
                 new[] { SwimLang.T("ΤΑΧΥΤΗΤΑ"), joined(p => p.Speed, "0.00"), SwimLang.T("m/s ανά τμήμα") }

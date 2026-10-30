@@ -30,19 +30,20 @@ namespace Kinovea.ScreenManager
         /// typed (or one or two letters). What changed is said in the status. 'from': where it was read ("τον σύνδεσμο"). False when
         /// nothing changed.
         /// </summary>
-        private bool ApplyEvent(SwimEventInfo ev, string from)
+        private bool ApplyEvent(SwimEventInfo ev, string from, bool details = true)
         {
             if (Race == null || ev == null || !ev.Any)
                 return false;
 
             SwimRace r = Race;
             bool styleChange = ev.Style.Length > 0 && ev.Style != r.Style;
-            bool poolChange = ev.Pool == 25 && r.Pool != 25 && !r.IsYards;
+            // (2.15.0) A long course title (LC Meter: 50) too, not only the short course: a race set to 25 m stayed so (50 m splits fit it).
+            bool poolChange = (ev.Pool == 25 || ev.Pool == 50) && r.Pool != ev.Pool && !r.IsYards;
             bool distanceChange = ev.Distance > 0 && (ev.Distance != r.Distance || ev.Relay != r.Relay);
             if ((styleChange || poolChange || distanceChange) && r.Marks.Count > 0)
             {
                 string evText = EventText(distanceChange ? ev.Distance : r.Distance, distanceChange ? ev.Relay : r.Relay,
-                    styleChange ? ev.Style : r.Style, poolChange ? 25 : r.Pool);
+                    styleChange ? ev.Style : r.Style, poolChange ? ev.Pool : r.Pool);
                 string raceText = EventText(r.Distance, r.Relay, r.Style, r.Pool);
                 string key = (r.Id ?? "") + "|" + evText + "|" + raceText;
                 bool yes = false;
@@ -63,7 +64,7 @@ namespace Kinovea.ScreenManager
             if (styleChange)
                 r.Style = ev.Style;
             if (poolChange)
-                SwimPresets.ApplyPool(r, 1);
+                SwimPresets.ApplyPool(r, ev.Pool == 25 ? 1 : 0);
             if (distanceChange)
             {
                 r.Distance = ev.Distance;
@@ -75,6 +76,29 @@ namespace Kinovea.ScreenManager
                 r.Checkpoints = SwimPresets.DefaultCheckpoints(r.Distance, r.Pool, r.Relay);
             if (structure)
                 done.Add(EventText(r.Distance, r.Relay, r.Style, r.Pool));
+            if (details)
+                done.AddRange(ApplyEventDetails(r, ev));
+
+            if (done.Count == 0)
+                return false;
+
+            RaceInfoChanged(structure);
+            if (form != null)
+                form.RefreshAll();
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στοιχεία αγώνα από {0}: {1}."), from, string.Join(" · ", done.ToArray())), false);
+            return true;
+        }
+
+        /// <summary>
+        /// The round, the gender (when not typed), the competition and the city (when not typed, or one or two letters) of an event
+        /// into the race (see ApplyEvent): what changed. (2.15.0) Those of the title of pasted results only when its times are taken
+        /// (OfferOfficial: «Αναίρεση» puts them back with the times; a «Όχι» left the round of another race).
+        /// </summary>
+        private static List<string> ApplyEventDetails(SwimRace r, SwimEventInfo ev)
+        {
+            List<string> done = new List<string>();
+            if (r == null || ev == null || !ev.Any)
+                return done;
 
             if (ev.Round.Length > 0 && RaceRound(r.Round) != ev.Round)
             {
@@ -100,14 +124,7 @@ namespace Kinovea.ScreenManager
                 done.Add(ev.Location);
             }
 
-            if (done.Count == 0)
-                return false;
-
-            RaceInfoChanged(structure);
-            if (form != null)
-                form.RefreshAll();
-            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στοιχεία αγώνα από {0}: {1}."), from, string.Join(" · ", done.ToArray())), false);
-            return true;
+            return done;
         }
 
         /// <summary>"100μ. Ύπτιο (50μ.)", "4x100μ. Μικτή (25μ.)".</summary>

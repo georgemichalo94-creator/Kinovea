@@ -670,7 +670,9 @@ namespace Kinovea.ScreenManager
             add("Εκκίνηση", "Αποκόλληση από τον βατήρα", computed.BlockTime, s => s.BlockTime);
             add("Εκκίνηση", "15μ. εκκίνηση", computed.Start15, s => s.Start15);
             add("Εκκίνηση", "Έξοδος: χρόνος", computed.StartUnderwaterTime, s => s.StartBreakoutTime).Neutral = true;
-            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", race.UnderwaterDist, s => s.StartBreakoutDist);
+            // (2.15.0) Where the head came out (📍), else the underwater distance, but not the estimate from the times (as the turns).
+            double? startOut = race.BreakoutDist ?? (race.UnderwaterEstimated ? null : race.UnderwaterDist);
+            SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", startOut, s => s.StartBreakoutDist);
             startDist.Unit = "μ.";
             startDist.Neutral = true;
 
@@ -700,11 +702,13 @@ namespace Kinovea.ScreenManager
                 }
 
                 add(group, "5μ. πριν τον τοίχο", turn.In5, s => s.TurnAt(wall) != null ? s.TurnAt(wall).In5 : null);
-                SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall && r.T.HasValue);
-                double? breakout = turn.Breakout.HasValue && wallRow != null ? turn.Breakout - wallRow.T : null;
+                // (2.15.0) From the wall's mark on the video (the breakout is a time of the video), not from its official time.
+                SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall && !double.IsNaN(r.OnVideo));
+                double? breakout = turn.Breakout.HasValue && wallRow != null ? turn.Breakout - wallRow.OnVideo : null;
                 add(group, "Έξοδος: χρόνος από τον τοίχο", breakout, s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutTime : null).Neutral = true;
                 SwimTurnManual manual = race.GetTurn(wall, false);
-                SwimFinalsMetric dist = add(group, "Έξοδος: απόσταση", manual != null ? manual.UnderwaterDist : null,
+                // (2.15.0) Not the estimate from the times (it is not a measurement).
+                SwimFinalsMetric dist = add(group, "Έξοδος: απόσταση", manual != null && !manual.UnderwaterEstimated ? manual.UnderwaterDist : null,
                     s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutDist : null);
                 dist.Unit = "μ.";
                 dist.Neutral = true;

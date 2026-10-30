@@ -82,6 +82,15 @@ namespace Kinovea.ScreenManager
         public double Cycle;
         public double Period;
 
+        /// <summary>
+        /// (2.15.0) The cycle was not measured (no peak of the autocorrelation: the middle of the range of the style was taken) or it is at
+        /// an end of the range searched (a faster or slower cycle would be read as twice or half of it): the count is to be checked.
+        /// </summary>
+        public bool CycleDoubtful;
+
+        /// <summary>(2.15.0) Strokes the beats put where there was no stroke signal (image lost, camera turned away), left out.</summary>
+        public int Invented;
+
         /// <summary>True when the lane ropes were found, false for a band along the swimmer.</summary>
         public bool Ropes;
 
@@ -894,6 +903,7 @@ namespace Kinovea.ScreenManager
             double[] segment = new double[last - first + 1];
             Array.Copy(o, first, segment, 0, segment.Length);
             double cycle = AutocorrelationPeriod(segment, fps, lo, hi);
+            result.CycleDoubtful = double.IsNaN(cycle) || cycle <= lo * 1.03 || cycle >= hi * 0.97;
             if (double.IsNaN(cycle))
                 cycle = 0.5 * (lo + hi);
 
@@ -905,7 +915,54 @@ namespace Kinovea.ScreenManager
             result.Cycle = cycle;
             result.Period = period;
             result.Strokes = TrackBeats(clipped, fps, period, first, last, 4.0, 0.5, 2.0);
+            result.Invented = DropInventedBeats(result.Strokes, o, period * fps);
             return result;
+        }
+
+        /// <summary>
+        /// (2.15.0) The beats chain at about one period also where the stroke signal is gone (the band lost, a camera cut, still water):
+        /// a run of three or more beats in a row with almost no signal (below a tenth of the median of the beats) is not strokes and goes.
+        /// The number left out.
+        /// </summary>
+        internal static int DropInventedBeats(List<int> beats, double[] onset, double tau)
+        {
+            if (beats == null || beats.Count < 4 || onset == null)
+                return 0;
+
+            List<double> strength = beats.Select(b => b >= 0 && b < onset.Length ? onset[b] : 0).ToList();
+            List<double> sorted = strength.OrderBy(v => v).ToList();
+            double median = sorted[sorted.Count / 2];
+            if (median <= 0)
+                return 0;
+
+            double weak = 0.1 * median;
+            HashSet<int> drop = new HashSet<int>();
+            int run = 0;
+            for (int i = 0; i <= beats.Count; i++)
+            {
+                bool isWeak = i < beats.Count && strength[i] <= weak;
+                if (isWeak)
+                {
+                    run++;
+                    continue;
+                }
+
+                if (run >= 3)
+                {
+                    for (int j = i - run; j < i; j++)
+                        drop.Add(j);
+                }
+
+                run = 0;
+            }
+
+            if (drop.Count == 0)
+                return 0;
+
+            List<int> kept = beats.Where((b, i) => !drop.Contains(i)).ToList();
+            beats.Clear();
+            beats.AddRange(kept);
+            return drop.Count;
         }
 
         /// <summary>Mean camera displacement along the band (px a frame) below which the camera is fixed (tests).</summary>

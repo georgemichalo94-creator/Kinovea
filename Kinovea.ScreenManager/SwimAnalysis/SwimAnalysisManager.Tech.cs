@@ -305,7 +305,11 @@ namespace Kinovea.ScreenManager
 
             SwimMark mark = new SwimMark { Type = SwimMarkType.Split, Timestamp = timestamp, Distance = wall };
             AddReplacing(mark, m => m.Type == SwimMarkType.Split && m.Distance == wall);
-            ResolveProposalsByMark(SwimMarkType.WallContact, timestamp);
+            // (2.15.0) The mark is the split of the wall: it answers the proposal of that checkpoint (of the pilot too; with WallContact only
+            // none was found, and Enter on the proposal later replaced this mark silently), and the contact proposed by the skeleton or
+            // the technical analysis (their learning), without teaching the mark twice.
+            ResolveProposalsByMark(SwimMarkType.Split, timestamp);
+            ResolveProposalsByMark(SwimMarkType.WallContact, timestamp, false);
 
             double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
             string message = string.Format(CultureInfo.InvariantCulture, "{0} {1}{2}: {3:0.00} s", wall >= Race.Distance ? SwimLang.T("Τερματισμός") : SwimLang.T("Τοίχος"), wall, unit, t);

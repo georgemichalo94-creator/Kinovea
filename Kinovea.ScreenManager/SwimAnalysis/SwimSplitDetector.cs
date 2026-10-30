@@ -508,8 +508,15 @@ namespace Kinovea.ScreenManager
         {
             if (found == null)
                 return 0;
-            if (!CalibratedConfidence || pool != 50 || fps <= 0)
+            if (!CalibratedConfidence || fps <= 0)
                 return found.Confidence;
+            if (pool != 50)
+            {
+                // (2.15.0) 25 m pools (no data of the analysts): the pace alone of a swimmer seen from far is as doubtful as in 50 m
+                // pools (it stayed at the confidence of the marks, not orange, not counted with the doubtful ones).
+                bool paceOnly = found.Cues.Count > 0 && found.Cues.Keys.All(k => k == CuePace);
+                return paceOnly && far && FarPaceDoubtful ? Math.Min(found.Confidence, FarPaceConfidence) : found.Confidence;
+            }
 
             List<string> seen = found.Cues.Keys.Where(k => k != CuePace).ToList();
             bool last = found.LapDistance == pool - 5;
@@ -534,7 +541,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static bool FarPaceOnly(SwimSplitFound found, double fps, int pool, bool far)
         {
-            return far && FarPaceDoubtful && CalibratedConfidence && found != null && pool == 50 && fps > 0 &&
+            return far && FarPaceDoubtful && CalibratedConfidence && found != null && (pool == 50 || pool == 25) && fps > 0 &&
                 found.Cues.Count > 0 && found.Cues.Keys.All(k => k == CuePace);
         }
 

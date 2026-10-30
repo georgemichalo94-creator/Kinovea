@@ -214,6 +214,10 @@ namespace Kinovea.ScreenManager
                 pct = Math.Min(pct, quarter);
                 deg = Math.Min(deg, quarter);
             }
+            // (2.15.0) A count (the dolphin kicks) is exact: one kick with at most one is good, not "too near to say".
+            Func<double, bool> whole = v => Math.Abs(v - Math.Round(v)) < 1e-9;
+            if (string.IsNullOrEmpty(c.Unit) && whole(value) && (!c.Min.HasValue || whole(c.Min.Value)) && (!c.Max.HasValue || whole(c.Max.Value)))
+                return good;
             Func<double, bool> near = limit => Math.Abs(value - limit) <= (c.Unit == "%" ? pct : c.Unit == "°" ? deg : Math.Max(Math.Abs(limit) * Margin, 0.02));
             if ((c.Min.HasValue && near(c.Min.Value)) || (c.Max.HasValue && near(c.Max.Value)))
                 return null;
@@ -378,6 +382,18 @@ namespace Kinovea.ScreenManager
             public readonly PointF[] P = new PointF[SwimJoints.Count];
             public readonly float[] V = new float[SwimJoints.Count];
 
+            /// <summary>
+            /// (2.15.0) The reading whose camera pan was taken off (null: none): positions of two images compare only within the same
+            /// one (each reading's pan starts at its own zero; an image without a pan is in the pixels of the image).
+            /// </summary>
+            public SwimTrack PanTrack;
+
+            /// <summary>The positions of two images can be compared (the same frame of reference).</summary>
+            public bool SameFrame(Body other)
+            {
+                return other != null && ReferenceEquals(PanTrack, other.PanTrack);
+            }
+
             public bool Seen(int j)
             {
                 return V[j] >= MinVisibility;
@@ -389,6 +405,28 @@ namespace Kinovea.ScreenManager
                 return V[left] >= V[left + 1] ? left : left + 1;
             }
 
+            /// <summary>
+            /// (2.15.0) One side for a chain of joints (0: left, 1: right), the one seen better over all of them: chosen joint by joint, a
+            /// shoulder–hip–ankle line could take the ankle of the other leg (legs apart at the entry: +20° for +2°).
+            /// </summary>
+            public int Side(params int[] lefts)
+            {
+                // A side with all its joints seen first (the sum alone took a side whose ankle was not seen over a whole other side).
+                double left = 0, right = 0;
+                bool allLeft = true, allRight = true;
+                foreach (int j in lefts)
+                {
+                    left += V[j];
+                    right += V[j + 1];
+                    allLeft &= Seen(j);
+                    allRight &= Seen(j + 1);
+                }
+
+                if (allLeft != allRight)
+                    return allLeft ? 0 : 1;
+                return left >= right ? 0 : 1;
+            }
+
             public double Confidence(params int[] joints)
             {
                 return joints.Length == 0 ? 0 : joints.Min(j => V[j]);
@@ -398,7 +436,8 @@ namespace Kinovea.ScreenManager
             {
                 if (!Seen(a) || !Seen(b) || !Seen(c))
                     return null;
-                return SwimSignal.Angle(P[a].X, P[a].Y, P[b].X, P[b].Y, P[c].X, P[c].Y);
+                double angle = SwimSignal.Angle(P[a].X, P[a].Y, P[b].X, P[b].Y, P[c].X, P[c].Y);
+                return double.IsNaN(angle) ? (double?)null : angle;
             }
 
             /// <summary>Length of the body (shoulder to ankle of the side seen better), 0 when not seen.</summary>
@@ -441,7 +480,44 @@ namespace Kinovea.ScreenManager
 
             // (2.13.1) Only the images where the skeleton is a side view of the swimmer.
             Body b = new Body();
-            return s.TryGet(ts.Value, 2, b.P, b.V, true) ? b : null;
+            if (!s.TryGet(ts.Value, 2, b.P, b.V, true))
+                return null;
+
+            // (2.15.0) In the frame of the pool: the camera's pan of a reading of the pilot (its skeletons are in image pixels) taken off,
+            // as the event reader and the technical HUD do (a camera following the push-off made it read −15° for −6°). Angles in one
+            // image are the same either way.
+            SwimTrack track;
+            double pan = PanAt(race, ts.Value, out track);
+            if (!double.IsNaN(pan))
+            {
+                b.PanTrack = track;
+                for (int i = 0; i < b.P.Length; i++)
+                    b.P[i] = new PointF((float)(b.P[i].X - pan), b.P[i].Y);
+            }
+
+            return b;
+        }
+
+        /// <summary>(2.15.0) The camera's pan at a timestamp from the tracks of the readings with a pan; NaN when none covers it.</summary>
+        private static double PanAt(SwimRace race, long timestamp, out SwimTrack track)
+        {
+            track = null;
+            if (race.Tracks == null)
+                return double.NaN;
+
+            foreach (SwimTrack t in race.Tracks)
+            {
+                if (t == null || !t.HasPan)
+                    continue;
+                double q = SwimTechRun.TrackPan(t, timestamp);
+                if (!double.IsNaN(q))
+                {
+                    track = t;
+                    return q;
+                }
+            }
+
+            return double.NaN;
         }
 
         /// <summary>
@@ -451,7 +527,7 @@ namespace Kinovea.ScreenManager
         private static int Direction(SwimRace race, long? from, long? to)
         {
             Body a = BodyAt(race, from), b = BodyAt(race, to);
-            if (a == null || b == null)
+            if (a == null || b == null || !a.SameFrame(b))
                 return 0;
             PointF? ha = a.Mid(SwimJoints.LeftHip), hb = b.Mid(SwimJoints.LeftHip);
             if (!ha.HasValue || !hb.HasValue)
@@ -486,7 +562,7 @@ namespace Kinovea.ScreenManager
                 Body b = BodyAt(race, plant);
                 if (b != null)
                 {
-                    int hip = b.Best(SwimJoints.LeftHip), knee = b.Best(SwimJoints.LeftKnee), ankle = b.Best(SwimJoints.LeftAnkle);
+                    int side1 = b.Side(SwimJoints.LeftHip, SwimJoints.LeftKnee, SwimJoints.LeftAnkle); int hip = SwimJoints.LeftHip + side1, knee = SwimJoints.LeftKnee + side1, ankle = SwimJoints.LeftAnkle + side1;
                     double? kneeAngle = b.Angle(hip, knee, ankle);
                     if (kneeAngle.HasValue)
                         put("knee_plant", kneeAngle.Value, Deg(kneeAngle.Value), b.Confidence(hip, knee, ankle), plant);
@@ -508,7 +584,7 @@ namespace Kinovea.ScreenManager
                 Body b = BodyAt(race, touch);
                 if (b != null)
                 {
-                    int s = b.Best(SwimJoints.LeftShoulder), e = b.Best(SwimJoints.LeftElbow), w = b.Best(SwimJoints.LeftWrist);
+                    int side2 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftElbow, SwimJoints.LeftWrist); int s = SwimJoints.LeftShoulder + side2, e = SwimJoints.LeftElbow + side2, w = SwimJoints.LeftWrist + side2;
                     double? elbow = b.Angle(s, e, w);
                     if (elbow.HasValue)
                         put("elbow_touch", elbow.Value, Deg(elbow.Value), b.Confidence(s, e, w), touch);
@@ -540,7 +616,7 @@ namespace Kinovea.ScreenManager
                     BodyLine(g, glide, "body_line_glide", put);
 
                 Body c = BodyAt(race, later);
-                if (b != null && c != null && dir != 0)
+                if (b != null && c != null && dir != 0 && b.SameFrame(c))
                 {
                     PointF? h0 = b.Mid(SwimJoints.LeftHip), h1 = c.Mid(SwimJoints.LeftHip);
                     if (h0.HasValue && h1.HasValue)
@@ -569,6 +645,7 @@ namespace Kinovea.ScreenManager
                     double worst = double.MaxValue, len = 0;
                     int seen = 0;
                     PointF? prev = null;
+                    Body prevBody = null;
                     for (double s = p.LastStroke.Value; s <= 0.001; s += 0.1)
                     {
                         Body b = BodyAt(race, timing.Timestamp(s, p.Origin));
@@ -576,12 +653,14 @@ namespace Kinovea.ScreenManager
                         if (!h.HasValue)
                             continue;
                         len = Math.Max(len, b.Length);
-                        if (prev.HasValue)
+                        // (2.15.0) Two images in the same frame of reference only (see Body.PanTrack).
+                        if (prev.HasValue && b.SameFrame(prevBody))
                         {
                             worst = Math.Min(worst, (h.Value.X - prev.Value.X) * dir);
                             seen++;
                         }
                         prev = h;
+                        prevBody = b;
                     }
 
                     if (seen >= 3 && len > 0)
@@ -599,7 +678,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The streamline at a moment: elbows straight, the hands in front of the head, the head between the arms.</summary>
         private static void Streamline(Body b, int dir, long? ts, string check, Action<string, double, string, double, long?> put)
         {
-            int s = b.Best(SwimJoints.LeftShoulder), e = b.Best(SwimJoints.LeftElbow), w = b.Best(SwimJoints.LeftWrist);
+            int side3 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftElbow, SwimJoints.LeftWrist); int s = SwimJoints.LeftShoulder + side3, e = SwimJoints.LeftElbow + side3, w = SwimJoints.LeftWrist + side3;
             double? elbow = b.Angle(s, e, w);
             if (!elbow.HasValue)
                 return;
@@ -631,7 +710,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static void BodyLine(Body b, long? ts, string check, Action<string, double, string, double, long?> put)
         {
-            int s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip), a = b.Best(SwimJoints.LeftAnkle);
+            int side4 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftHip, SwimJoints.LeftAnkle); int s = SwimJoints.LeftShoulder + side4, h = SwimJoints.LeftHip + side4, a = SwimJoints.LeftAnkle + side4;
             double? atHip = b.Angle(s, h, a);
             if (!atHip.HasValue)
                 return;
@@ -642,7 +721,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The line hand–shoulder–hip at a moment (the legs are bent on the wall): its bend from a straight line.</summary>
         private static void ArmTrunkLine(Body b, long? ts, string check, Action<string, double, string, double, long?> put)
         {
-            int w = b.Best(SwimJoints.LeftWrist), s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip);
+            int side5 = b.Side(SwimJoints.LeftWrist, SwimJoints.LeftShoulder, SwimJoints.LeftHip); int w = SwimJoints.LeftWrist + side5, s = SwimJoints.LeftShoulder + side5, h = SwimJoints.LeftHip + side5;
             double? atShoulder = b.Angle(w, s, h);
             if (!atShoulder.HasValue)
                 return;
@@ -662,15 +741,18 @@ namespace Kinovea.ScreenManager
         /// <summary>The dolphin kicks marked after the push (or the entry): the feet together, the size of the kick from the first to the last.</summary>
         private static void UnderwaterKicks(SwimRace race, SwimTechPhase p, SwimTiming timing, Action<string, double, string, double, long?> put)
         {
+            // Three kicks: two whole cycles (the feet together); the growth of the kicks needs a third cycle (four kicks).
             if (p.Kicks.Count < 3)
                 return;
 
             List<double> gaps = new List<double>(), sizes = new List<double>();
             double conf = 1;
             int counted = 0;
-            for (int i = 0; i < p.Kicks.Count; i++)
+            // (2.15.0) Every kick over a whole cycle (from the kick before it): the first one had 0.25 s only (the first upbeat out of the
+            // glide), so the growth late / early read 160–280% with kicks of the same size (and "good" with kicks getting smaller).
+            for (int i = 1; i < p.Kicks.Count; i++)
             {
-                double from = i == 0 ? p.Kicks[0] - 0.25 : p.Kicks[i - 1], to = p.Kicks[i];
+                double from = p.Kicks[i - 1], to = p.Kicks[i];
                 double top = double.MinValue, bottom = double.MaxValue, len = 0;
                 for (double s = from; s <= to + 1e-6; s += 0.04)
                 {
@@ -735,7 +817,7 @@ namespace Kinovea.ScreenManager
                     put("hips_vs_shoulders", up, Pct(up), s.Confidence(s.Best(SwimJoints.LeftHip), s.Best(SwimJoints.LeftShoulder)), set);
                 }
 
-                int e = s.Best(SwimJoints.LeftElbow), w = s.Best(SwimJoints.LeftWrist), sj = s.Best(SwimJoints.LeftShoulder);
+                int side6 = s.Side(SwimJoints.LeftElbow, SwimJoints.LeftWrist, SwimJoints.LeftShoulder); int e = SwimJoints.LeftElbow + side6, w = SwimJoints.LeftWrist + side6, sj = SwimJoints.LeftShoulder + side6;
                 double? elbow = s.Angle(sj, e, w);
                 if (elbow.HasValue)
                     put("set_elbow", elbow.Value, Deg(elbow.Value), s.Confidence(sj, e, w), set);
@@ -795,7 +877,7 @@ namespace Kinovea.ScreenManager
                     Body b = BodyAt(race, ts);
                     if (b == null)
                         continue;
-                    int sj = b.Best(SwimJoints.LeftShoulder), e = b.Best(SwimJoints.LeftElbow), w = b.Best(SwimJoints.LeftWrist);
+                    int side7 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftElbow, SwimJoints.LeftWrist); int sj = SwimJoints.LeftShoulder + side7, e = SwimJoints.LeftElbow + side7, w = SwimJoints.LeftWrist + side7;
                     double? a = b.Angle(sj, e, w);
                     if (a.HasValue && a.Value < best)
                     {
@@ -831,7 +913,7 @@ namespace Kinovea.ScreenManager
                         put("head_drop_flight", head.Value, HeadText(head.Value), conf, mid);
                     }
 
-                    int sj = m.Best(SwimJoints.LeftShoulder), h = m.Best(SwimJoints.LeftHip), a = m.Best(SwimJoints.LeftAnkle);
+                    int side8 = m.Side(SwimJoints.LeftShoulder, SwimJoints.LeftHip, SwimJoints.LeftAnkle); int sj = SwimJoints.LeftShoulder + side8, h = SwimJoints.LeftHip + side8, a = SwimJoints.LeftAnkle + side8;
                     double? line = m.Angle(sj, h, a);
                     if (line.HasValue)
                         put("flight_line", 180 - line.Value, Deg(180 - line.Value) + SwimLang.T(" από την ευθεία"), m.Confidence(sj, h, a), mid);
@@ -879,7 +961,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static double? HeadBelow(Body b, int dir)
         {
-            int s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip);
+            int side9 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftHip); int s = SwimJoints.LeftShoulder + side9, h = SwimJoints.LeftHip + side9;
             if (dir == 0 || !b.Seen(s) || !b.Seen(h) || !b.Seen(SwimJoints.Nose))
                 return null;
             return SideAngle(b.P[h], b.P[s], b.P[s], b.P[SwimJoints.Nose], dir);
@@ -898,7 +980,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The angle (degrees) of the legs (hip → ankle) from the line of the trunk (shoulder → hip → on), positive up in the image.</summary>
         private static double? LegsUp(Body b, int dir)
         {
-            int s = b.Best(SwimJoints.LeftShoulder), h = b.Best(SwimJoints.LeftHip), a = b.Best(SwimJoints.LeftAnkle);
+            int side10 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftHip, SwimJoints.LeftAnkle); int s = SwimJoints.LeftShoulder + side10, h = SwimJoints.LeftHip + side10, a = SwimJoints.LeftAnkle + side10;
             if (dir == 0 || !b.Seen(s) || !b.Seen(h) || !b.Seen(a))
                 return null;
             return SideAngle(b.P[s], b.P[h], b.P[h], b.P[a], dir);
@@ -919,7 +1001,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The arms straight and ahead of the head (in the direction of the swimmer): 1 yes, 0 no.</summary>
         private static void ArmsAhead(Body b, int dir, long? ts, string check, Action<string, double, string, double, long?> put)
         {
-            int s = b.Best(SwimJoints.LeftShoulder), e = b.Best(SwimJoints.LeftElbow), w = b.Best(SwimJoints.LeftWrist);
+            int side11 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftElbow, SwimJoints.LeftWrist); int s = SwimJoints.LeftShoulder + side11, e = SwimJoints.LeftElbow + side11, w = SwimJoints.LeftWrist + side11;
             double? elbow = b.Angle(s, e, w);
             if (!elbow.HasValue || dir == 0)
                 return;
@@ -976,7 +1058,7 @@ namespace Kinovea.ScreenManager
                 double? head = HeadBelow(b, dir);
                 if (!head.HasValue)
                     continue;
-                int sj = b.Best(SwimJoints.LeftShoulder), hj = b.Best(SwimJoints.LeftHip);
+                int side12 = b.Side(SwimJoints.LeftShoulder, SwimJoints.LeftHip); int sj = SwimJoints.LeftShoulder + side12, hj = SwimJoints.LeftHip + side12;
                 heads.Add(new double[] { head.Value, Dist(b.P[sj], b.P[hj]), Dist(b.P[sj], b.P[SwimJoints.Nose]), ts,
                     b.Confidence(SwimJoints.Nose, sj, hj) });
             }
@@ -1105,14 +1187,10 @@ namespace Kinovea.ScreenManager
         /// <summary>"M" or "F" from the gender of the athlete ("Ανδρών", "Γυναικών", "Αγόρια", "Κορίτσια", "M", "F"), null when unknown.</summary>
         public static string GenderCode(string gender)
         {
-            string g = (gender ?? "").Trim().ToLowerInvariant();
-            if (g.Length == 0)
-                return null;
-            if (g.StartsWith("γυν") || g.StartsWith("κορ") || g.StartsWith("θηλ") || g == "f" || g.StartsWith("fem") || g.StartsWith("wom") || g == "w" || g.StartsWith("girl"))
-                return "F";
-            if (g.StartsWith("ανδ") || g.StartsWith("αγ") || g.StartsWith("αρρ") || g == "m" || g.StartsWith("mal") || g.StartsWith("men") || g.StartsWith("boy"))
-                return "M";
-            return null;
+            // (2.15.0) As the rest of the program reads it (SwimReference.NormalizeGender, without accents): the categories of age too
+            // (Νεάνιδες, Παγκορασίδες, Έφηβοι, Παίδες, Παμπαίδες had no level).
+            string g = SwimReference.NormalizeGender(gender);
+            return g == "F" || g == "M" ? g : null;
         }
 
         /// <summary>The level (1 = best) of a time in a table of the catalogue for the style and the gender of the athlete.</summary>

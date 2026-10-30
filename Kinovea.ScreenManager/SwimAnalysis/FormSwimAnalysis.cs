@@ -157,6 +157,9 @@ namespace Kinovea.ScreenManager
         private Label lblTurnKicks;
         private Label lblTurnUnderwater;
         private Label lblTurnSpeeds;
+
+        /// <summary>(2.15.0) The body length of the swimmer (toes → head), for the underwater speed of the turns.</summary>
+        private TextBox tbBodyLength;
         private DataGridView gridTurns;
         private int currentTurnWall;
 
@@ -916,6 +919,11 @@ namespace Kinovea.ScreenManager
                 lblTurnUnderwater,
                 PickButton(SwimPickTarget.TurnUnderwater, SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: μέτρα κάτω από το νερό από τον τοίχο της στροφής.")));
             lblTurnSpeeds = ValueLabel();
+            // (2.15.0) The head at the push-off: the body length, once for the race (the underwater speed of every turn).
+            tbBodyLength = NumberBox();
+            toolTip.SetToolTip(tbBodyLength, BodyLengthHelp());
+            AddEventRow(t, SwimLang.T("Μήκος σώματος (πόδια → κεφάλι)"), null, null, BodyLengthHelp(), tbBodyLength, DistanceUnit(),
+                PickButton(SwimPickTarget.BodyLength, SwimLang.T("Σε ένα καρέ της ολίσθησης μετά την αποκόλληση (σώμα τεντωμένο): κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι.")));
             AddEventRow(t, SwimLang.T("Ταχύτητες εξόδου"), null, null, BreakoutSpeedsHelp(false), lblTurnSpeeds);
 
             gridTurns = CreateGrid();
@@ -1666,6 +1674,9 @@ namespace Kinovea.ScreenManager
                 SetText(tbUnderwaterDist, Format(r.UnderwaterDist));
                 SetText(tbBreakoutDist, Format(r.BreakoutDist));
                 SetText(tbFinishDist, Format(r.FinishLastStrokeDist));
+                SetText(tbBodyLength, Format(r.BodyLength));
+                if (tbTechBodyLength != null)
+                    SetText(tbTechBodyLength, Format(r.BodyLength));
 
                 // (2.9.8) The estimate from the times apart (dim, with a tooltip): no speeds of the breakout from it.
                 if (underwaterColor == Color.Empty)
@@ -2795,6 +2806,16 @@ namespace Kinovea.ScreenManager
             r.UnderwaterDist = underwater;
             r.BreakoutDist = Parse(tbBreakoutDist);
             r.FinishLastStrokeDist = Parse(tbFinishDist);
+            r.BodyLength = Parse(tbBodyLength);
+
+            // (2.15.0) The same value in the turns of the technical analysis (else the one shown there would be put back from it).
+            if (tbTechBodyLength != null && !tbTechBodyLength.Focused)
+            {
+                updating = true;
+                SetText(tbTechBodyLength, Format(r.BodyLength));
+                updating = false;
+            }
+
             manager.ManualValuesChanged();
         }
 
@@ -3116,10 +3137,22 @@ namespace Kinovea.ScreenManager
         {
             return (start
                 ? SwimLang.T("Μέση ταχύτητα από την αποδέσμευση από τον βατήρα έως την έξοδο του κεφαλιού (απόσταση της εξόδου από τον τοίχο / χρόνος) ")
-                : SwimLang.T("Μέση ταχύτητα από την αποκόλληση από τον τοίχο έως την έξοδο του κεφαλιού (απόσταση της εξόδου από τον τοίχο / χρόνος) ")) +
-                SwimLang.T("και από την έξοδο έως το κεφάλι στα 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
+                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού: στην αποκόλληση τα πόδια είναι ακόμη στον τοίχο και το σώμα τεντωμένο, ") +
+                  SwimLang.T("άρα το κεφάλι απέχει από τον τοίχο όσο το μήκος του σώματος: (απόσταση εξόδου − μήκος σώματος) / χρόνος. ")) +
+                SwimLang.T("Και από την έξοδο έως το κεφάλι στα 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
                 SwimLang.T("Χρειάζονται η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή γραμμένη, όχι η εκτίμηση από τους χρόνους, και τα σημάδια ") +
-                (start ? SwimLang.T("της αποδέσμευσης (ή ο επίσημος χρόνος αντίδρασης), της εξόδου και των 15μ.") : SwimLang.T("της αποκόλλησης, της εξόδου και του +15."));
+                (start ? SwimLang.T("της αποδέσμευσης (ή ο επίσημος χρόνος αντίδρασης), της εξόδου και των 15μ.") :
+                    SwimLang.T("της αποκόλλησης, της εξόδου και του +15· για την υποβρύχια ταχύτητα και το μήκος του σώματος (μία φορά στον αγώνα)."));
+        }
+
+        /// <summary>(2.15.0) What the body length is and how it is measured.</summary>
+        private static string BodyLengthHelp()
+        {
+            return SwimLang.T("Ο αθλητής τεντωμένος, από τα δάχτυλα των ποδιών ως την κορυφή του κεφαλιού. Στην αποκόλληση τα πόδια είναι ακόμη στον τοίχο, ") +
+                SwimLang.T("άρα το κεφάλι απέχει από τον τοίχο τόσο: από εκεί μετράει η υποβρύχια ταχύτητα κάθε στροφής.\n") +
+                SwimLang.T("📍 Μέτρηση: σε ένα καρέ της ολίσθησης μετά την αποκόλληση, κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι. Και τα δύο ") +
+                SwimLang.T("είναι κάτω από το νερό στο ίδιο βάθος, οπότε η μετατόπιση που δείχνει το νερό από την κερκίδα δεν μπαίνει στη μέτρηση. ") +
+                SwimLang.T("Μία φορά για όλον τον αγώνα (ή γράψε την τιμή).");
         }
 
         private static string Format(double? value, string format)

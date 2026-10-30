@@ -307,6 +307,9 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Handles a Swim* command from the player screen at the given video timestamp.
         /// </summary>
+        /// <summary>(2.15.0) The start key moved only the origin of the screen it was pressed on (not tied to the others of a group).</summary>
+        internal bool StartKeyOwnOrigin;
+
         public bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp)
         {
             return HandleCommand(player, frameServer, command, timestamp, true);
@@ -319,6 +322,7 @@ namespace Kinovea.ScreenManager
         private bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp, bool fromScreen)
         {
             // (2.14.0) A screen of a group of screens: the analysis of the group (the video of its lead) at the same moment.
+            PlayerScreenUserInterface pressedOn = player;
             bool inLead = !fromScreen || ToGroup(ref player, ref frameServer, ref timestamp);
             Attach(player, frameServer);
             if (Race == null)
@@ -354,9 +358,23 @@ namespace Kinovea.ScreenManager
                     return true;
                 case PlayerScreenCommands.SwimStart:
                     if (Race.IsTraining)
+                    {
                         AddSignal(timestamp);
+                    }
+                    else if (StartKeyOwnOrigin && fromScreen && pressedOn != null && pressedOn != player && VideoScreenGroup.Contains(pressedOn) &&
+                        Race.StartTimestamp.HasValue)
+                    {
+                        // (2.15.0) The start key on a camera of the group not tied to the others (README 2.14.1: synchronised by hand, at
+                        // its own signal): only its own origin; the start of the race stays (it went to the lead's origin, often the
+                        // beginning of its video: every split moved by the time of the start).
+                        bool leadAtStart = frameServer != null && frameServer.Loaded && frameServer.Metadata.TimeOrigin == Race.StartTimestamp.Value;
+                        Status(SwimLang.T("Η αρχή χρόνου αυτής της κάμερας μπήκε στο σήμα της (συγχρονισμός με το χέρι)· η εκκίνηση του αγώνα δεν άλλαξε.") +
+                            (leadAtStart ? "" : SwimLang.T(" Πάτα την εκκίνηση και στην κάμερα του αγώνα, στο σήμα της.")), !leadAtStart);
+                    }
                     else
+                    {
                         SetStart(timestamp);
+                    }
                     break;
                 case PlayerScreenCommands.SwimSplit:
                     if (Race.IsTraining)
@@ -480,10 +498,13 @@ namespace Kinovea.ScreenManager
                 pilotStep = PilotStep.None;
 
             // Other swimmers analysed on the same video share the same start signal (and whether the pilot put it).
+            List<SwimRace> sharing = new List<SwimRace>();
             foreach (SwimRace other in VideoFile.Races)
             {
                 if (other != Race && (other.StartTimestamp == null || other.StartTimestamp == old))
                 {
+                    if (other.StartTimestamp.HasValue)
+                        sharing.Add(other);
                     other.StartTimestamp = timestamp;
                     other.PilotStart = Race.PilotStart;
                 }
@@ -492,6 +513,18 @@ namespace Kinovea.ScreenManager
             Status(old == null ? SwimLang.T("Σήμα εκκίνησης: t = 0 σε αυτό το καρέ.") : SwimLang.T("Το σήμα εκκίνησης άλλαξε. Όλοι οι χρόνοι υπολογίστηκαν ξανά."), false);
             if (old.HasValue && old.Value != timestamp)
                 RecheckStartLessons();
+            if (!resolvingProposal && old.HasValue && old.Value != timestamp)
+                ForgetStartAnswer();
+
+            // (2.15.0) The start events waiting for their check (first movement, release, entry: their usual times after the signal) move
+            // with the signal: they stayed at the old one (a start put again a second later left them a second early). Those of the
+            // other races of the video that share the start too.
+            if (old.HasValue && old.Value != timestamp)
+            {
+                ShiftStartEventProposals(Race, timestamp - old.Value);
+                foreach (SwimRace other in sharing)
+                    ShiftStartEventProposals(other, timestamp - old.Value);
+            }
 
             // The official times are after the start (since 2026-10-19): the checkpoints at them not checked yet move with it.
             if (old != timestamp)
@@ -626,11 +659,58 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.15.0) A breakout of his own in a length with an unchecked breakout of the pilot replaces it (the calculation takes the
+            // first breakout of the length: after «Αναίρεση» of a correction the pilot's was back and B at the right frame changed nothing).
+            // (The answer to a proposal of the pilot does it itself: resolvingProposal.)
+            string superseded = type == SwimMarkType.Breakout && !resolvingProposal ? SupersedePilotBreakout(mark) : "";
+
             if (hadStart)
             {
                 double t = Timing.Seconds(timestamp, Race.StartTimestamp.Value);
-                Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1:0.00} s", label, t), false);
+                Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1:0.00} s", label, t) + superseded, superseded.IndexOf('⚠') >= 0);
             }
+        }
+
+        /// <summary>
+        /// (2.15.0) A breakout the analyst marked: an unchecked breakout of the pilot in the same length goes (what it changed with it too;
+        /// «Αναίρεση» puts it back), the automatic strokes before this one are trimmed and the estimate of the underwater distance is made
+        /// from this one. Two breakouts of his own in a length: a warning (the first one counts). The text for the status.
+        /// </summary>
+        private string SupersedePilotBreakout(SwimMark mark)
+        {
+            if (Race == null || Race.IsTraining || !Race.StartTimestamp.HasValue || mark.Timestamp <= Race.StartTimestamp.Value)
+                return "";
+
+            int wall = SwimTechCalculator.LastWallBefore(Race, mark.Timestamp, HalfFrame);
+            long from = wall > 0 && Race.GetSplit(wall) != null ? Race.GetSplit(wall).Timestamp : Race.StartTimestamp.Value;
+            SwimMark nextWall = Race.Pool > 0 ? Race.GetSplit(Math.Min(wall + Race.Pool, Race.Distance)) : null;
+            long to = nextWall != null && nextWall.Timestamp > from ? nextWall.Timestamp : long.MaxValue;
+            List<SwimMark> others = Race.Marks.Where(m => m != mark && m.Type == SwimMarkType.Breakout && m.Timestamp > from && m.Timestamp < to).ToList();
+            if (others.Count == 0)
+                return "";
+
+            string text = "";
+            List<SwimMark> pilots = others.Where(m => m.Pilot != null).ToList();
+            foreach (SwimMark p in pilots)
+            {
+                foreach (SwimProposal waiting in Race.Proposals.Where(x => PilotMarkOf(x) == p).ToList())
+                    Race.Proposals.Remove(waiting);
+                ReplacePilotMark(p, mark);
+            }
+
+            if (pilots.Count > 0)
+            {
+                TrimAutoStrokesBeforeBreakout(wall, mark.Timestamp);
+                text += SwimLang.T(" (αντικατέστησε την έξοδο του πιλότου σε αυτό το μήκος)") + EstimateUnderwaterDistance(wall, mark.Timestamp);
+            }
+
+            if (others.Any(m => m.Pilot == null))
+            {
+                SystemSounds.Exclamation.Play();
+                text += SwimLang.T("  ⚠ δύο έξοδοι στο ίδιο μήκος: μετράει η πρώτη (σβήσε τη λάθος).");
+            }
+
+            return text;
         }
 
         public void Undo()
@@ -650,12 +730,19 @@ namespace Kinovea.ScreenManager
                 mark = Race.Marks.FirstOrDefault(m => m.Id == id);
             }
 
-            if (mark == null)
-                mark = Race.Marks.OrderBy(m => m.Timestamp).LastOrDefault();
+            // (2.15.0) Nothing left to undo (e.g. the analysis came back from another screen): the last mark in time only when the video is
+            // at it (it was the finish wherever the video was, with its confirmed strokes).
+            if (mark == null && HasVideo && Timing.IsValid)
+            {
+                long now = player.CurrentTimestamp;
+                SwimMark last = Race.Marks.OrderBy(m => m.Timestamp).LastOrDefault();
+                if (last != null && Math.Abs(Timing.Seconds(last.Timestamp, now)) <= 0.5)
+                    mark = last;
+            }
 
             if (mark == null)
             {
-                Status(SwimLang.T("Δεν υπάρχει κάτι για αναίρεση."), true);
+                Status(SwimLang.T("Δεν υπάρχει κάτι για αναίρεση (στο καρέ του τελευταίου σημαδιού η αναίρεση σβήνει εκείνο)."), true);
                 return;
             }
 
@@ -678,6 +765,24 @@ namespace Kinovea.ScreenManager
                 Race.Marks.AddRange(replaced);
                 foreach (SwimMark back in replaced)
                     LearnFromMark(back.Type, back.Timestamp);
+
+                // (2.15.0) A breakout of the pilot back: the estimate of the underwater distance from it again (it stayed the one made
+                // for the correction undone), while the distance is an estimate, or when there is none any more (the correction's estimate
+                // failed and left none: its own estimate back, else the pilot's record of it).
+                foreach (SwimMark back in replaced.Where(m => m.Type == SwimMarkType.Breakout))
+                {
+                    int wall = back.Pilot != null ? back.Pilot.Wall : SwimTechCalculator.LastWallBefore(Race, back.Timestamp, HalfFrame);
+                    bool none = !UnderwaterOf(wall).HasValue;
+                    if (!UnderwaterEstimatedAt(wall) && !none)
+                        continue;
+                    double? before = UnderwaterOf(wall);
+                    SetUnderwater(wall, null);
+                    EstimateUnderwaterDistance(wall, back.Timestamp);
+                    if (!UnderwaterOf(wall).HasValue)
+                        SetUnderwater(wall, before ?? (back.Pilot != null ? back.Pilot.Underwater : null));
+                    if (back.Pilot != null)
+                        back.Pilot.Underwater = UnderwaterOf(wall);
+                }
                 Status(SwimLang.T("Αναιρέθηκε: ") + MarkLabel(mark) + SwimLang.T(" (ξαναμπήκε η προηγούμενη τιμή)") + AfterSplitUndone(mark, replaced), false);
                 return;
             }
@@ -734,6 +839,10 @@ namespace Kinovea.ScreenManager
             Race.Marks.RemoveAll(m => m.Type == type);
             foreach (SwimMark old in cleared)
                 ForgetTaught(old);
+
+            // (2.15.0) All the strokes taken away: the ones deleted one by one before are not kept away from a new reading either.
+            if (type == SwimMarkType.Stroke)
+                Race.RemovedStrokes = null;
             Changed(true);
         }
 
@@ -928,7 +1037,15 @@ namespace Kinovea.ScreenManager
             }
 
             int wall = 0;
-            if (target == SwimPickTarget.TurnUnderwater)
+            bodyFirst = null;
+            if (target == SwimPickTarget.BodyLength && !Race.IsTraining)
+            {
+                // (2.15.0) Near a turn of the race: the frame of the glide after its push-off (any turn: the length is the swimmer's).
+                wall = TurnWalls.Contains(wallHint) ? wallHint : CurrentTurnWall;
+                if (wall <= 0)
+                    wall = TurnWalls.FirstOrDefault();
+            }
+            else if (target == SwimPickTarget.TurnUnderwater)
             {
                 wall = TurnWalls.Contains(wallHint) && TechnicalView ? wallHint : CurrentTurnWall;
                 if (wall <= 0)
@@ -942,7 +1059,12 @@ namespace Kinovea.ScreenManager
             }
 
             long? frame = MeasureFrame(target, wall);
-            if (frame.HasValue && Math.Abs(Timing.Seconds(frame.Value, player.CurrentTimestamp)) > 0.5)
+            // (2.15.0) To the frame of the mark itself (a distance is where the head is at that moment: 0.4 s after the breakout the
+            // click was ~0.8 m farther); the body length any frame of the glide.
+            bool atFrame = target == SwimPickTarget.BodyLength
+                ? Math.Abs(Timing.Seconds(frame ?? player.CurrentTimestamp, player.CurrentTimestamp)) <= 0.5
+                : !frame.HasValue || SameFrame(frame.Value, player.CurrentTimestamp);
+            if (frame.HasValue && !atFrame)
                 player.ForcePosition(frame.Value, true);
 
             pendingMeasure = target;
@@ -975,6 +1097,7 @@ namespace Kinovea.ScreenManager
             bool pilotWaited = PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost);
             autoPick = null;
             pendingMeasure = SwimPickTarget.None;
+            bodyFirst = null;
             calibrationClicks.Clear();
             pickForTrack = false;
             pickForRace = false;
@@ -1040,6 +1163,12 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            if (PickTarget == SwimPickTarget.BodyLength)
+            {
+                BodyLengthClick(point, x, y, timestamp, calibration);
+                return;
+            }
+
             SwimPickTarget target = PickTarget;
             int wall = pendingWall;
             double value = MeasuredValue(target, wall, x);
@@ -1071,6 +1200,15 @@ namespace Kinovea.ScreenManager
             else if (y < -1.5 || y > calibration.LaneWidth + 1.5)
             {
                 message += SwimLang.T("  ⚠ το σημείο είναι έξω από τον διάδρομο της βαθμονόμησης.");
+                warn = true;
+            }
+            else if (FarFromLines(calibration, x))
+            {
+                // (2.15.0) Far outside the two lines of the calibration (e.g. 0–5 for a breakout at 12–15 m with a fixed camera): the
+                // error grows fast out there (0.3–0.6 m at 12 m from a stand, more with a wide camera); the analyst is told.
+                message += string.Format(CultureInfo.InvariantCulture,
+                    SwimLang.T("  ⚠ μακριά από τις γραμμές της βαθμονόμησης ({0:0.#}–{1:0.#}): για ακρίβεια βαθμονόμησε με γραμμές γύρω από το σημείο (π.χ. 5–15) και μέτρησε ξανά."),
+                    Math.Min(calibration.Line1, calibration.Line2), Math.Max(calibration.Line1, calibration.Line2));
                 warn = true;
             }
 
@@ -1115,6 +1253,17 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// Calibration valid for this frame: the closest one with a fixed camera, otherwise one made on this frame.
         /// </summary>
+        /// <summary>(2.15.0) A point more than half the span between the two lines outside them (pool units along the lane).</summary>
+        private static bool FarFromLines(SwimCalibration calibration, double x)
+        {
+            double lo = Math.Min(calibration.Line1, calibration.Line2), hi = Math.Max(calibration.Line1, calibration.Line2);
+            double span = hi - lo;
+            if (span <= 0)
+                return false;
+            double outside = x < lo ? lo - x : x > hi ? x - hi : 0;
+            return outside > 0.5 * span;
+        }
+
         public SwimCalibration CalibrationFor(long timestamp)
         {
             SwimCalibration nearest = NearestCalibration(timestamp);
@@ -1250,6 +1399,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.FinishLastStroke: what = SwimLang.T("Κάνε κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά."); break;
                 case SwimPickTarget.PhaseEntry: what = SwimLang.T("Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό (απόσταση από τη γραμμή 0)."); break;
                 case SwimPickTarget.PhaseBreakout: what = SwimLang.T("Κάνε κλικ στο κεφάλι εκεί που βγαίνει από το νερό (απόσταση από τη γραμμή 0)."); break;
+                case SwimPickTarget.BodyLength: what = SwimLang.T("Μήκος σώματος: σε ένα καρέ της ολίσθησης (σώμα τεντωμένο), κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι."); break;
                 default: what = SwimLang.T("Κάνε κλικ στο βίντεο."); break;
             }
 
@@ -1268,6 +1418,7 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.FinishLastStroke: return SwimLang.T("Τερματισμός: απόσταση τελευταίας χεριάς");
                 case SwimPickTarget.PhaseEntry: return PendingPhaseTitle() + SwimLang.T(": απόσταση εισόδου");
                 case SwimPickTarget.PhaseBreakout: return PendingPhaseTitle() + SwimLang.T(": απόσταση εξόδου");
+                case SwimPickTarget.BodyLength: return SwimLang.T("Μήκος σώματος (πόδια → κεφάλι)");
                 default: return SwimLang.T("Απόσταση");
             }
         }
@@ -1374,6 +1525,22 @@ namespace Kinovea.ScreenManager
                         line2 = wx + dir * 5;
                         break;
                     }
+                case SwimPickTarget.BodyLength:
+                    {
+                        // (2.15.0) The glide after the push-off: the wall of the turn and its 5 (the end of the colour of the ropes).
+                        if (Race.IsTraining || wall <= 0)
+                        {
+                            line1 = CalibrationLine1;
+                            line2 = CalibrationLine2;
+                            break;
+                        }
+
+                        double wx = WallX(wall);
+                        double dir = wx == 0 ? 1 : -1;
+                        line1 = wx;
+                        line2 = wx + dir * 5;
+                        break;
+                    }
                 default:
                     line1 = CalibrationLine1;
                     line2 = CalibrationLine2;
@@ -1434,6 +1601,21 @@ namespace Kinovea.ScreenManager
 
                         return first(SwimMarkType.Breakout, split.Timestamp, next);
                     }
+                case SwimPickTarget.BodyLength:
+                    {
+                        // (2.15.0) A little after the push-off of the turn (the glide, the body straight).
+                        SwimMark split = Race.GetSplit(wall);
+                        if (split == null)
+                            return null;
+
+                        long next = walls.Where(t => t > split.Timestamp).DefaultIfEmpty(long.MaxValue).First();
+                        long? pushoff = first(SwimMarkType.FeetOff, split.Timestamp, next);
+                        if (!pushoff.HasValue)
+                            return null;
+
+                        return pushoff.Value + (long)Math.Round(GlideAfterPushoff * 1000.0 * (Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor) /
+                            Timing.FrameIntervalMilliseconds * Timing.AverageTimestampsPerFrame);
+                    }
                 case SwimPickTarget.FinishLastStroke:
                     {
                         SwimMark finish = Race.GetSplit(Race.Distance);
@@ -1450,6 +1632,68 @@ namespace Kinovea.ScreenManager
                 default:
                     return null;
             }
+        }
+
+        /// <summary>(2.15.0) The frame offered for the body length: this long after the push-off (s), in the glide.</summary>
+        private const double GlideAfterPushoff = 0.3;
+
+        /// <summary>(2.15.0) The first click of the body length (the toes), waiting for the head on the same frame; null when none.</summary>
+        private SwimMeasurement bodyFirst;
+
+        /// <summary>
+        /// (2.15.0) A click of the body length: the toes, then the top of the head on the same frame. The length is along the lane
+        /// (the pool x of the calibration): both points are under the water at about the same depth, so what the water shifts seen
+        /// from the stands moves both alike and cancels (one click on the head from the wall would be off by it, 0.3–0.5 m).
+        /// </summary>
+        private void BodyLengthClick(PointF point, double x, double y, long timestamp, SwimCalibration calibration)
+        {
+            if (bodyFirst == null || !SameFrame(bodyFirst.Timestamp, timestamp))
+            {
+                bodyFirst = new SwimMeasurement { Timestamp = timestamp, Image = point, PoolX = x, PoolY = y, Calibration = calibration };
+                Status(SwimLang.T("📍 Μήκος σώματος: τώρα κλικ στην κορυφή του κεφαλιού (στο ίδιο καρέ). Esc: ακύρωση."), false);
+                InvalidatePlayer();
+                return;
+            }
+
+            SwimMeasurement toes = bodyFirst;
+            bodyFirst = null;
+            double length = Math.Abs(x - toes.PoolX);
+            double meters = length * Race.K;
+            if (meters < SwimTechCalculator.BodyLengthMin || meters > SwimTechCalculator.BodyLengthMax)
+            {
+                SystemSounds.Exclamation.Play();
+                Status(string.Format(CultureInfo.InvariantCulture,
+                    SwimLang.T("📍 Μήκος σώματος {0:0.00} {1}: δεν γίνεται (έλεγξε τα δύο κλικ και τη βαθμονόμηση). Κλικ ξανά στα δάχτυλα των ποδιών."), length, UnitLabel), true);
+                InvalidatePlayer();
+                return;
+            }
+
+            double value = Math.Round(length, 2);
+            Race.BodyLength = value;
+            lastMeasurement = new SwimMeasurement
+            {
+                Timestamp = timestamp,
+                Image = point,
+                PoolX = x,
+                PoolY = y,
+                Value = value,
+                Label = string.Format(CultureInfo.InvariantCulture, "{0:0.00} {1}", value, UnitShort),
+                Calibration = calibration,
+                From = toes.Image
+            };
+
+            pendingMeasure = SwimPickTarget.None;
+            SetPick(SwimPickTarget.None);
+            string message = string.Format(CultureInfo.InvariantCulture,
+                SwimLang.T("📍 Μήκος σώματος (πόδια → κεφάλι): {0:0.00} {1} · για την υποβρύχια ταχύτητα όλων των στροφών"), value, UnitLabel);
+            if (Settings.FixedCamera && Math.Abs(Timing.Seconds(timestamp, calibration.Timestamp)) > 0.05)
+                message += string.Format(CultureInfo.InvariantCulture, SwimLang.T("  (βαθμονόμηση {0} {1} από άλλο καρέ: σωστό μόνο αν η κάμερα δεν κινήθηκε)"), calibration.Label, UnitLabel);
+
+            Status(message, false);
+            Changed(false);
+            ScheduleSend();
+            if (form != null)
+                form.RefreshManualFields();
         }
 
         private SwimCalibration NearestCalibration(long timestamp)
@@ -1535,6 +1779,9 @@ namespace Kinovea.ScreenManager
             if (screen != player || !Active || VideoFile == null || transform == null)
                 return;
 
+            // (2.15.0) The slow-motion factor changed: the times of the checkpoints on the video follow at once.
+            EnsureTimingCurrent();
+
             // The exports keep the proportions of the graphics on the screen.
             if (renderingSize.Width > 0 && renderingSize.Height > 0)
                 lastRenderingSize = renderingSize;
@@ -1581,6 +1828,14 @@ namespace Kinovea.ScreenManager
 
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
+
+                // (2.15.0) The toes clicked for the body length, waiting for the head.
+                if (PickTarget == SwimPickTarget.BodyLength && bodyFirst != null && SameFrame(bodyFirst.Timestamp, timestamp))
+                {
+                    Point toesPoint = transform.Transform(bodyFirst.Image);
+                    g.FillEllipse(brushMeasure, toesPoint.X - 5, toesPoint.Y - 5, 10, 10);
+                    DrawLabel(g, SwimLang.T("πόδια"), new Point(toesPoint.X + 10, toesPoint.Y + 6), SwimTheme.AccentLight);
+                }
 
                 DrawAngles(g, transform, timestamp);
                 if (SkeletonShown)
@@ -1686,8 +1941,17 @@ namespace Kinovea.ScreenManager
         private void DrawMeasurement(Graphics g, ImageTransform transform, SwimMeasurement m)
         {
             Point p = transform.Transform(m.Image);
-            if (m.Calibration != null)
+            if (m.From.HasValue)
+            {
+                // (2.15.0) A length of two clicks (the body: toes → head).
+                Point a = transform.Transform(m.From.Value);
+                g.DrawLine(penMeasure, a, p);
+                g.FillEllipse(brushMeasure, a.X - 5, a.Y - 5, 10, 10);
+            }
+            else if (m.Calibration != null)
+            {
                 DrawPoolSegment(g, transform, m.Calibration, penMeasure, m.PoolX, 0, m.PoolX, m.Calibration.LaneWidth);
+            }
 
             g.FillEllipse(brushMeasure, p.X - 5, p.Y - 5, 10, 10);
             DrawLabel(g, m.Label, new Point(p.X + 10, p.Y + 6), SwimTheme.AccentLight);
@@ -2833,6 +3097,9 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            // (2.15.0) The timing of the video changed since the last calculation (the slow-motion factor set in Kinovea): the times again.
+            EnsureTimingCurrent();
+
             if (!Settings.IsConfigured)
             {
                 SyncState = SwimSyncState.NotConfigured;
@@ -3120,11 +3387,41 @@ namespace Kinovea.ScreenManager
             Timing.HighSpeedFactor = frameServer.Metadata.HighSpeedFactor;
         }
 
+        /// <summary>
+        /// (2.15.0) The analysis is computed again when the timing of its video changed since the last calculation (the capture frame rate of
+        /// a slow-motion video set in Kinovea's timing dialog): until the next mark the panel, the HUD and the PDF kept the old times.
+        /// True when it changed.
+        /// </summary>
+        private bool EnsureTimingCurrent()
+        {
+            if (Race == null || frameServer == null || !frameServer.Loaded)
+                return false;
+
+            // Against the timing of the last calculation (RefreshTiming alone, as when a screen is attached again, does not compute).
+            if (computedRace == Race && computedTiming[0] == frameServer.Metadata.HighSpeedFactor &&
+                computedTiming[1] == frameServer.VideoReader.Info.AverageTimeStampsPerFrame &&
+                computedTiming[2] == frameServer.VideoReader.Info.FrameIntervalMilliseconds)
+                return false;
+
+            Recompute();
+            if (form != null && !form.IsDisposed)
+                form.RefreshData();
+            return true;
+        }
+
+        /// <summary>(2.15.0) The timing of the last calculation (slow-motion factor, timestamps per frame, frame interval) and its race.</summary>
+        private readonly double[] computedTiming = new double[3];
+        private SwimRace computedRace;
+
         private void Recompute()
         {
             RefreshTiming();
             Computed = SwimCalculator.Compute(Race, Timing, Settings.StrokeRounding);
             TechPhases = SwimTechCalculator.Compute(Race, Computed, Timing);
+            computedTiming[0] = Timing.HighSpeedFactor;
+            computedTiming[1] = Timing.AverageTimestampsPerFrame;
+            computedTiming[2] = Timing.FrameIntervalMilliseconds;
+            computedRace = Race;
             DataVersion++;
         }
 

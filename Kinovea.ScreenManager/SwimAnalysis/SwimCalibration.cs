@@ -38,7 +38,10 @@ namespace Kinovea.ScreenManager
         StrokeFeet,
 
         /// <summary>Technical analysis: the swimmer whose skeleton is found from this frame.</summary>
-        Skeleton
+        Skeleton,
+
+        /// <summary>(2.15.0) Two clicks on one frame of the glide: the toes, then the top of the head (the body length).</summary>
+        BodyLength
     }
 
     public class SwimPoint
@@ -430,5 +433,8 @@ namespace Kinovea.ScreenManager
         public double Value;
         public string Label;
         public SwimCalibration Calibration;
+
+        /// <summary>(2.15.0) A length measured with two clicks: the first point (the toes of the body length), null for one click.</summary>
+        public PointF? From;
     }
 }

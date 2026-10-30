@@ -189,7 +189,8 @@ namespace Kinovea.ScreenManager
                 Pan = pan,
                 VideoSize = frameServer != null && frameServer.VideoReader != null ? frameServer.VideoReader.Info.ReferenceSize : Size.Empty,
                 Card = card,
-                CardFade = card ? (float)Math.Min(1.0, (t - cardAt) / 0.6) : 0f
+                CardFade = card ? (float)Math.Min(1.0, (t - cardAt) / 0.6) : 0f,
+                Yards = Race.IsYards
             };
             SwimHudPainter.PaintTech(g, size, scene);
         }

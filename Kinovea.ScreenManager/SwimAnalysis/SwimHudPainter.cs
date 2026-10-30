@@ -82,7 +82,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.14.1";
+        public const string AppVersion = "2.15.0";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -1211,7 +1211,8 @@ namespace Kinovea.ScreenManager
             Font head = Ui(10);
             Caps(g, SwimLang.T("ΑΠΟΣΤ."), head, Lbl, r.Left + 22, r.Top + 46, 0.2f);
             Caps(g, SwimLang.T("ΧΡΟΝΟΣ"), head, Lbl, r.Left + 114, r.Top + 46, 0.2f);
-            Caps(g, "M/S", head, Lbl, r.Left + 230, r.Top + 46, 0.2f);
+            // (2.15.0) In a yard pool the speeds of the rows are yd/s.
+            Caps(g, s.Race.IsYards ? "YD/S" : "M/S", head, Lbl, r.Left + 230, r.Top + 46, 0.2f);
             Caps(g, SwimLang.T("ΧΕΡ."), head, Lbl, r.Left + 312, r.Top + 46, 0.2f);
 
             // The rows that fit: around the next checkpoint in a long race.
@@ -1921,7 +1922,8 @@ namespace Kinovea.ScreenManager
 
             Caps(g, SwimLang.T("ΤΕΛΙΚΟΣ ΧΡΟΝΟΣ"), Ui(16), A(C2, a), cx, top, 0.5f, -1);
             Glow(g, SwimReference.FormatTime(st.Final), Thin(168), A(Color.White, a), cx, top + 14, 0, 1.4f * a);
-            double strokes = st.Rows.Where(r => r.Strokes.HasValue).Sum(r => r.Strokes.Value);
+            // (2.15.0) The total only when every segment has its strokes (as the sheet): a checkpoint without a time gave part of it.
+            double strokes = st.Rows.Count > 0 && st.Rows.All(r => r.Strokes.HasValue) ? st.Rows.Sum(r => r.Strokes.Value) : 0;
             List<string> sub = new List<string> { EventText(s.Race) };
             if (s.Race.Lane > 0)
                 sub.Add(SwimLang.T("ΔΙΑΔΡΟΜΟΣ ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture));

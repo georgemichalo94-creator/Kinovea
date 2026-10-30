@@ -51,7 +51,9 @@ namespace Kinovea.ScreenManager
         public int From;
         public int To;
         public double? Time;
-        public int Strokes;
+
+        /// <summary>(2.15.0) The strokes of the part as the analysis counts them (the analyst's counts too), else the marks in it.</summary>
+        public double Strokes;
         public double? Tempo;
         public double? Dps;
         public double? Speed;
@@ -183,7 +185,7 @@ namespace Kinovea.ScreenManager
             reel.BuildCycles();
             reel.BuildBreakouts(race, computed);
             reel.BuildBadges(race, computed);
-            reel.BuildParts(race);
+            reel.BuildParts(race, computed);
             return reel;
         }
 
@@ -294,15 +296,20 @@ namespace Kinovea.ScreenManager
 
                 int wall = lap * Pool;
                 double? measured = null;
+                bool flagged = false;
                 if (lap == 0)
                 {
                     measured = race.BreakoutDist ?? race.UnderwaterDist;
+                    flagged = !race.BreakoutDist.HasValue && race.UnderwaterEstimated;
                 }
                 else
                 {
                     SwimTurnManual t;
                     if (race.Turns != null && race.Turns.TryGetValue(wall, out t) && t != null)
+                    {
                         measured = t.UnderwaterDist;
+                        flagged = t.UnderwaterEstimated;
+                    }
                 }
 
                 // (2.9.5b) A value far past what a breakout can be for the style (a breakout of the auto pilot near the 25 m wrote
@@ -310,8 +317,10 @@ namespace Kinovea.ScreenManager
                 // value stays in the analysis, the panel warns). A value the pilot estimated (its breakout's record) is shown with ≈.
                 double max = MaxBreakout(SwimPresets.StyleAt(race, Math.Min(race.Distance, wall + 15)));
                 double limit = (max + MeasuredSlack) / K;
-                bool pilotEstimate = measured.HasValue && race.Marks.Any(m => m.Type == SwimMarkType.Breakout && m.Pilot != null &&
-                    m.Pilot.Wall == wall && m.Pilot.Underwater.HasValue && Math.Abs(m.Pilot.Underwater.Value - measured.Value) < 1e-6);
+                // (2.15.0) The flag of the analysis (an estimate from the times, of the pilot or of the reading of the race) first: the
+                // pilot's record alone missed the estimates kept after its breakout was confirmed.
+                bool pilotEstimate = measured.HasValue && (flagged || race.Marks.Any(m => m.Type == SwimMarkType.Breakout && m.Pilot != null &&
+                    m.Pilot.Wall == wall && m.Pilot.Underwater.HasValue && Math.Abs(m.Pilot.Underwater.Value - measured.Value) < 1e-6));
                 if (measured.HasValue && measured.Value > 0 && measured.Value <= limit)
                 {
                     BreakoutDistances[lap] = measured.Value;
@@ -436,7 +445,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>Parts of the summary: the halves of a single length, each length up to four, or four parts of a long race.</summary>
-        private void BuildParts(SwimRace race)
+        private void BuildParts(SwimRace race, SwimComputed computed)
         {
             List<int> bounds = new List<int> { 0 };
             int lengths = Math.Max(1, Distance / Pool);
@@ -474,6 +483,12 @@ namespace Kinovea.ScreenManager
                 if (!double.IsNaN(a) && !double.IsNaN(b))
                 {
                     part.Strokes = lapStrokes.SelectMany(s => s).Count(s => s > a && s <= b);
+
+                    // (2.15.0) The counts of the analysis when every segment of the part has one (those the analyst confirmed or typed, the
+                    // first pull of backstroke not counted), as the sheet and the report: the marks alone left his corrections out.
+                    List<SwimRow> rows = computed != null ? computed.Rows.Where(r => r.PrevD >= part.From && r.D <= part.To).ToList() : new List<SwimRow>();
+                    if (rows.Count > 0 && rows.All(r => r.Strokes.HasValue))
+                        part.Strokes = rows.Sum(r => r.Strokes.Value);
                     List<SwimReelCycle> inside = Cycles.Where(c => c.Time > a && c.Time <= b).ToList();
                     if (inside.Count > 0)
                     {

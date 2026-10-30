@@ -264,6 +264,47 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.15.0) The start signal of a race moved by 'delta': its waiting proposals of the start events follow it where they come from
+        /// it. Only their cues from the signal move (one from a first movement or a release the analyst marked stays: they did not
+        /// move), and the frame is combined again; the one at the official reaction time (signal + reaction time) moves with it.
+        /// </summary>
+        private void ShiftStartEventProposals(SwimRace race, long delta)
+        {
+            if (race == null || delta == 0 || !Timing.IsValid)
+                return;
+
+            foreach (SwimProposal p in race.Proposals.Where(x => x.Kind == KindRaceReaction || x.Kind == KindRaceBlock || x.Kind == KindRaceEntry))
+            {
+                if (p.Read != null && ShiftStartCues(p.Read.Cues, delta) && p.Read.Cues.Keys.All(IsStartCue))
+                    p.Read.Timestamp += delta;
+                if (p.Official)
+                {
+                    p.Timestamp += delta;
+                    continue;
+                }
+
+                if (ShiftStartCues(p.Cues, delta))
+                    CombineEvent(p, EventConfidence(p.Kind));
+            }
+        }
+
+        /// <summary>The cues from the start signal moved by 'delta'; true when there was one.</summary>
+        private static bool ShiftStartCues(Dictionary<string, long> cues, long delta)
+        {
+            List<string> keys = cues.Keys.Where(IsStartCue).ToList();
+            foreach (string key in keys)
+                cues[key] += delta;
+            return keys.Count > 0;
+        }
+
+        private static bool IsStartCue(string name)
+        {
+            string cue, style, wallKind;
+            ParseEventCue(name, out cue, out style, out wallKind);
+            return cue == CueFromStart;
+        }
+
+        /// <summary>
         /// The feet off the wall after the turn at 'wall' (not at the end of a leg of a relay: the next swimmer leaves the block),
         /// from the wall marked or proposed; null if there is no wall yet or the analyst marked it already.
         /// </summary>
@@ -321,7 +362,9 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimProposal p = (pending ?? Race.Proposals).FirstOrDefault(x => x.Kind == next && x.Index == nextIndex);
-            if (p == null)
+            // (2.15.0) One at an official time stays there (the release at the official reaction time: the answer to the first movement
+            // moved it to reaction + 0.42 s, and the flight came from it).
+            if (p == null || p.Official)
                 return;
 
             string style = next == KindRacePushoff ? SwimPresets.StyleAt(Race, nextIndex) : SwimPresets.StyleAt(Race, Race.Pool);

@@ -99,7 +99,7 @@ namespace Kinovea.ScreenManager
 
             s = " " + b.ToString().Trim() + " ";
             string[,] same = {
-                { "OU", "U" }, { "Y", "I" }, { "KH", "H" }, { "CH", "H" }, { "PH", "F" }, { "TH", "T" }, { "MP", "B" }, { "NT", "D" },
+                { "OU", "U" }, { "Y", "I" }, { "KH", "H" }, { "CH", "H" }, { "PH", "F" }, { "TH", "T" }, { "MP", "B" }, { "MB", "B" }, { "NT", "D" },
                 { "GK", "G" }, { "NG", "G" }, { "KS", "X" }, { "W", "V" }, { "C", "K" }, { "J", "I" }, { "EI", "I" }, { "OI", "I" },
                 { "AI", "E" }
             };
@@ -164,6 +164,10 @@ namespace Kinovea.ScreenManager
                 return 0;
             if (ka == kb)
                 return 1;
+            // (2.15.0) A final S more or less is the other gender's form of the name (-ΗΣ/-Η, -ΑΣ/-Α: a brother and a sister), not a
+            // spelling: no match (it matched at 0.95 and could become an alias of the other person).
+            if ((ka == kb + "S") || (kb == ka + "S"))
+                return 0;
             return Math.Min(ka.Length, kb.Length) >= 7 && WithinOneEdit(ka, kb) ? 0.95 : 0;
         }
 
@@ -181,7 +185,8 @@ namespace Kinovea.ScreenManager
                 return 1;
             if (Math.Min(ga.Length, gb.Length) < 5)
                 return 0;
-            if (ga.StartsWith(gb, StringComparison.Ordinal) || gb.StartsWith(ga, StringComparison.Ordinal))
+            // (2.15.0) A stem the start of the other only as a spelling (two letters more at most): CHRISTOS is not CHRISTOFOROS.
+            if ((ga.StartsWith(gb, StringComparison.Ordinal) || gb.StartsWith(ga, StringComparison.Ordinal)) && Math.Abs(ga.Length - gb.Length) <= 2)
                 return 0.95;
             return WithinOneEdit(ga, gb) ? 0.9 : 0;
         }

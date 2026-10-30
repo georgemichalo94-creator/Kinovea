@@ -55,6 +55,23 @@ r = call({ token: 'tok', action: 'update', race });
 assert.ok(r.ok, JSON.stringify(r));
 assert.notStrictEqual(r.sheetName, firstName, 'sheet renamed after athlete name typed');
 assert.strictEqual(r.turns[0].kicks, 2); assert.ok(Math.abs(r.turns[0].turnTime - 0.41) < 1e-9);
+// (2.15.0) the underwater speed of a turn is the program's (breakout distance − body length) / (breakout − push-off), not metres / time
+const turnSpeedCell = () => {
+  const rep = G._all[Object.keys(G._all).find(k => k !== 'DATA')];
+  const sh = rep.getSheets().find(s => s.getName() === r.sheetName);
+  const vals = sh.getRange(1, 1, sh.getLastRow(), 13).getValues();
+  let hr = -1, hc = -1;
+  vals.forEach((row, i) => row.forEach((v, j) => { if (v === 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)') { hr = i; hc = j; } }));
+  assert.ok(hr >= 0, 'header of the underwater speed of the turns');
+  return vals[hr + 1][hc];
+};
+assert.strictEqual(turnSpeedCell(), '', 'no speed without the program value (8.5 m / time is not one)');
+race.manual.turns['50'].uwSpeed = 2.215;
+race.manual.bodyLength = 1.86;
+r = call({ token: 'tok', action: 'update', race });
+assert.ok(r.ok, JSON.stringify(r));
+assert.strictEqual(Number(turnSpeedCell()), 2.215, 'the underwater speed of the program');
+delete race.manual.turns['50'].uwSpeed;
 // structure change -> rebuild
 race.checkpoints = [15,25,45,50,65,75,95,100].map((d, i) => ({ d, t: [6.68,12.66,24.87,27.89,35.1,41.4,54.2,57.6][i] }));
 r = call({ token: 'tok', action: 'update', race });

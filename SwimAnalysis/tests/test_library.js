@@ -107,7 +107,8 @@ const L_ = G.SWIM_LIB;
 const recX = Object.assign({}, races[0], { drop: [35, 45, 100], action: 'dropSuspect' });
 let x = G.swimLibraryRace_(recX, rowFor('Χωρίς τους ύποπτους χρόνους', '', '910001'), reg);
 assert.strictEqual(x.checkpoints.map(p => p.d).join(','), '15,25,50,65,75,85,95,100', 'suspect points out, the finish stays');
-assert.strictEqual(x.segmentStrokes[35], undefined); assert.strictEqual(x.segmentStrokes[45], undefined); assert.strictEqual(x.segmentStrokes[50], 4);
+// 2.15.0: the 25–50 segment that the suspect 35 and 45 left has no count (its 4 strokes were those of 45–50 only).
+assert.strictEqual(x.segmentStrokes[35], undefined); assert.strictEqual(x.segmentStrokes[45], undefined); assert.strictEqual(x.segmentStrokes[50], undefined);
 assert.strictEqual(x.athlete, 'ΔΟΚΙΜΑΚΗΣ ΠΕΤΡΟΣ'); assert.strictEqual(x.athleteId, '910001'); assert.strictEqual(x.gender, 'M');
 x = G.swimLibraryRace_(recX, rowFor('Εισαγωγή', '85=; 95=51.30; 97,5=52.6', ''), reg);
 assert.strictEqual(x.checkpoints.map(p => p.d).join(','), '15,25,35,45,50,65,75,95,97.5,100');

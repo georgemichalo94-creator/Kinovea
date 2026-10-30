@@ -775,6 +775,10 @@ namespace Kinovea.ScreenManager
             public readonly List<int> Strokes = new List<int>();
             public double Period;
 
+            /// <summary>(2.15.0) The strokes of the length are to be checked (the cycle at an end of its range, or none measured; strokes
+            /// left out where there was no stroke signal).</summary>
+            public bool StrokesDoubtful;
+
             /// <summary>Frame of the click on the swimmer in the reading (0: the reading starts there; the first length can start at the start).</summary>
             public int ClickIndex;
 
@@ -906,7 +910,7 @@ namespace Kinovea.ScreenManager
             }
 
             double wall = GoOnSample(l);
-            double margin = Race != null && s.Wall >= Race.Distance ? SwimStrokeDetector.FinishMargin(s.Style) : SwimStrokeDetector.WallMargin(s.Style);
+            double margin = StrokeMarginAt(s.Wall, s.Style);
             int last = (int)Math.Round((double.IsNaN(wall) ? n - 1 : wall) - margin * s.Fps);
             last = Math.Min(n - 1, last);
             first = Math.Max(0, Math.Min(n - 1, first));
@@ -917,6 +921,10 @@ namespace Kinovea.ScreenManager
             double cut = TurnStrokeCut(l, style, dive, turnBreakout, lapStart, r.Period, s.Fps);
             l.Strokes.AddRange(double.IsNaN(cut) ? r.Strokes : r.Strokes.Where(i => i >= cut));
             l.Period = r.Period;
+            // (2.15.0) Said after the reading: the count of these lengths is to be checked.
+            l.StrokesDoubtful = r.CycleDoubtful || r.Invented > 0;
+            if (l.StrokesDoubtful)
+                log.DebugFormat("Strokes of the length to {0}: cycle {1:0.00} s{2}, {3} beats without signal left out.", s.Wall, r.Cycle, r.CycleDoubtful ? " (doubtful)" : "", r.Invented);
         }
 
         /// <summary>
@@ -1349,7 +1357,7 @@ namespace Kinovea.ScreenManager
                 if (i < 0 || i >= n)
                     continue;
                 long t = s.Timestamps[i];
-                if (kept.Any(k => Math.Abs(k - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near))
+                if (kept.Any(k => Math.Abs(k - t) < near) || s.Removed.Any(r => Math.Abs(r - t) < near) || Race.StrokeRemovedNear(t, near))
                     continue;
 
                 Race.Marks.Add(new SwimMark { Type = SwimMarkType.Stroke, Timestamp = t, Batch = s.Batch });
@@ -2130,6 +2138,34 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The frame of a checkpoint: its mark, else its proposal still waiting (null: none).</summary>
+        /// <summary>
+        /// (2.15.0) The checkpoint 5 before a wall with an official time (50 m pools: the 45 m) placed again from the wall and the checkpoint
+        /// 15 before it as it is now (as ApplyOfficial places it), while it is a proposal or a mark of the pilot not checked. Its confidence
+        /// is not above the one of the checkpoint it comes from when that one is a proposal.
+        /// </summary>
+        private void RederiveOfficialLast(int distance)
+        {
+            if (Race == null || Race.Pool != 50 || !Race.StartTimestamp.HasValue || Timing == null || !Timing.IsValid)
+                return;
+
+            int wallDistance = distance + 15;
+            double official;
+            if (wallDistance % 50 != 0 || wallDistance > Race.Distance || !Race.OfficialTimes().TryGetValue(wallDistance, out official))
+                return;
+
+            long? before = SplitStamp(distance);
+            if (!before.HasValue)
+                return;
+
+            long wall = Race.StartTimestamp.Value + RealSpan(official);
+            long from = (long)Math.Round(SwimSplitDetector.LastFromWall(wall, before.Value, WallKind(wallDistance), SwimPresets.StyleAt(Race, wallDistance)));
+            double confidence = SwimSplitDetector.OfficialLastConfidence;
+            SwimProposal source = Race.GetSplit(distance) == null ? Race.Proposals.FirstOrDefault(x => x.Kind == KindRaceSplit && x.Index == distance) : null;
+            if (source != null)
+                confidence = Math.Min(confidence, source.Confidence);
+            MoveSplitTo(wallDistance - 5, from, confidence, new OfficialUndo());
+        }
+
         private long? SplitStamp(int distance)
         {
             SwimMark mark = Race.GetSplit(distance);
@@ -2303,6 +2339,20 @@ namespace Kinovea.ScreenManager
         /// The wall at this distance: "finish" (also the end of a leg of a relay), "open" (hand touch: butterfly, breaststroke,
         /// the change of stroke of the medley) or "flip" (freestyle, backstroke).
         /// </summary>
+        /// <summary>
+        /// (2.15.0) The time before a wall where no stroke is searched (s): the finish margin at the finish, and at a touch with the hand
+        /// that is not the finish (the changeovers of a relay, the backstroke → breaststroke of the medley) not more than it (the turn
+        /// margin of a flip, 0.6 s in freestyle and backstroke, left the last stroke of those lengths out: ~1 stroke short).
+        /// </summary>
+        private double StrokeMarginAt(int wall, string style)
+        {
+            if (Race == null)
+                return SwimStrokeDetector.WallMargin(style);
+            if (wall >= Race.Distance)
+                return SwimStrokeDetector.FinishMargin(style);
+            return WallKind(wall) == "flip" ? SwimStrokeDetector.WallMargin(style) : Math.Min(SwimStrokeDetector.WallMargin(style), SwimStrokeDetector.FinishMargin(style));
+        }
+
         private string WallKind(int wall)
         {
             if (wall >= Race.Distance)
@@ -2469,6 +2519,32 @@ namespace Kinovea.ScreenManager
         private long resumeLapStart = long.MinValue;
         private long resumeAt = long.MinValue;
 
+        /// <summary>(2.15.0) The race and the video where the reading stopped (the resume is only for them).</summary>
+        private SwimRace resumeRace;
+        private string resumeVideo;
+
+        /// <summary>
+        /// (2.15.0) Where the reading stopped is forgotten when the analysis is now of another race or video (it belonged to the manager
+        /// of all the screens: a click in another video within 40 s of it read its first length as the next length of the other race).
+        /// </summary>
+        private void DropForeignResume()
+        {
+            if (resumeWall > 0 && (resumeRace != Race || resumeVideo != videoPath))
+            {
+                resumeWall = -1;
+                resumeLapStart = long.MinValue;
+                resumeAt = long.MinValue;
+                resumeGap = 0;
+            }
+        }
+
+        /// <summary>(2.15.0) The resume belongs to the race and the video read now.</summary>
+        private void OwnResume()
+        {
+            resumeRace = Race;
+            resumeVideo = videoPath;
+        }
+
         /// <summary>(2.9.7) The reading stopped because its wall was this far (s) from the official time of the wall (0: the swimmer lost).</summary>
         private double resumeGap;
 
@@ -2505,6 +2581,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            DropForeignResume();
             int keepWall = resumeWall;
             long keepLapStart = resumeLapStart, keepAt = resumeAt;
             double keepGap = resumeGap;
@@ -2638,6 +2715,17 @@ namespace Kinovea.ScreenManager
                 Changed(strokes > 0);
                 ShowSplitProposals(made, lengths.Count, strokes, pilot);
 
+                // (2.15.0) The lengths whose strokes are to be checked (a stroke rate out of the range searched, the image lost).
+                List<int> doubtful = lengths.Where(l => l.StrokesDoubtful && l.Strokes.Count > 0).Select(l => l.Session.Wall).Distinct().OrderBy(w => w).ToList();
+                string doubt = doubtful.Count > 0 && !cancelled
+                    ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Χεριές για έλεγχο στα μήκη έως τα {0}{1}: η συχνότητα έξω από τα συνηθισμένα όρια ή χάθηκε η εικόνα (μέτρησέ τες ή διόρθωσέ τες στον πίνακα)."),
+                        string.Join(", ", doubtful), Race.Unit)
+                    : null;
+                // (The status below or the pilot's report says it: a status of its own was covered by them at once.)
+                if (doubt != null && pilot)
+                    pilotDoubtful.UnionWith(doubtful);
+                string after = doubt != null && !pilot ? " " + doubt : "";
+
                 // (The auto pilot says it itself after the reading: the swimmer lost, or the report.)
                 if (!pilot && cancelled)
                     Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Η ανάγνωση σταμάτησε μετά από {0}: προτείνονται όσα βρέθηκαν."),
@@ -2646,11 +2734,13 @@ namespace Kinovea.ScreenManager
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("🤖 Στον τοίχο των {0}{1} η ανάγνωση απείχε {2:0.0} s από τον επίσημο χρόνο: δεν ακολούθησε τον αθλητή ως εκεί. Έλεγξε τις προτάσεις ") +
                         SwimLang.T("και μετά πάτα ξανά «🤖 Όλος ο αγώνας» σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."),
-                        resumeWall - Race.Pool, Race.Unit, Math.Abs(resumeGap)), true);
+                        resumeWall - Race.Pool, Race.Unit, Math.Abs(resumeGap)) + after, true);
                 else if (!pilot && resumeWall > 0)
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("🤖 Μετά τον τοίχο των {0}{1} ο αθλητής χάθηκε (η κάμερα γύρισε γρήγορα). Έλεγξε τις προτάσεις και μετά πάτα ξανά «🤖 Όλος ο αγώνας» ") +
-                        SwimLang.T("σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."), resumeWall - Race.Pool, Race.Unit), true);
+                        SwimLang.T("σε ένα καρέ μετά την έξοδο από το νερό: η ανάγνωση συνεχίζει από εκεί."), resumeWall - Race.Pool, Race.Unit) + after, true);
+                else if (doubt != null && !pilot)
+                    Status(doubt, true);
             }
             finally
             {
@@ -3033,6 +3123,7 @@ namespace Kinovea.ScreenManager
                 resumeLapStart = states[kept].Item2;
                 resumeAt = states[kept].Item3;
                 resumeGap = gaps[kept];
+                OwnResume();
                 log.DebugFormat("Proposed swimmer read {0} times, reading {1} kept.", runs.Count, kept + 1);
                 return completed;
             }
@@ -3191,6 +3282,8 @@ namespace Kinovea.ScreenManager
             // Going on after a stop (the swimmer lost after a wall): the length of the click is the one after that wall. A reading
             // in the background neither uses nor changes where the whole race stopped.
             bool background = quietThread != null;
+            if (!background)
+                DropForeignResume();
             if (!background && resumeWall > 0 && resumeAt != long.MinValue && from >= resumeAt - RealSpan(1.0) && from <= resumeAt + RealSpan(40))
             {
                 wall = resumeWall;
@@ -3335,6 +3428,7 @@ namespace Kinovea.ScreenManager
                         resumeLapStart = lapStart;
                         resumeAt = from + RealSpan(2.5);
                         resumeGap = 0;
+                        OwnResume();
                     }
 
                     s.Dispose();
@@ -3380,6 +3474,7 @@ namespace Kinovea.ScreenManager
                         resumeLapStart = official.Value;
                         resumeAt = official.Value + RealSpan(2.7);
                         resumeGap = officialGap;
+                        OwnResume();
                     }
 
                     break;

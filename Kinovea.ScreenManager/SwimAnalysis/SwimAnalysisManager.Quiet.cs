@@ -639,13 +639,42 @@ namespace Kinovea.ScreenManager
         /// The event of the race a proposal is about, for its answer (see SwimLearningRecord.Key): the same event answered again replaces
         /// the answer. Null for the proposals that are not one event of a race (the start light, the technical analysis).
         /// </summary>
-        private string AnswerKey(SwimProposal p)
+        private string AnswerKey(SwimProposal p, bool right = true)
         {
+            // (2.15.0) The start of the video (its light, its sound): one answer per video (without a key every 💡 added one more: the
+            // same start taught again and again; the races of the video share the start); a candidate deleted keeps its own (by its
+            // frame: the right one accepted after it does not take its place).
+            if (Race != null && p != null && p.Kind == KindRaceStart && !string.IsNullOrEmpty(videoPath))
+                return right ? StartAnswerKey() : StartAnswerKey() + "|" + p.Timestamp.ToString(CultureInfo.InvariantCulture);
             if (Race == null || p == null || !IsWholeRaceKind(p.Kind))
                 return null;
 
             string race = Race.Id.Length > 12 ? Race.Id.Substring(0, 12) : Race.Id;
             return SwimLearning.VideoCode(videoPath) + "|" + race + "|" + p.Kind + "|" + p.Index.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>(2.15.0) The key of the answer about the start of this video (see AnswerKey).</summary>
+        private string StartAnswerKey()
+        {
+            return SwimLearning.VideoCode(videoPath) + "|" + KindRaceStart;
+        }
+
+        /// <summary>
+        /// (2.15.0) The start put again by the analyst: the answer the found start (light, sound) gave with the old one goes (it taught
+        /// the old frame); the next 💡 teaches it again with the new one.
+        /// </summary>
+        private void ForgetStartAnswer()
+        {
+            if (Learning == null || string.IsNullOrEmpty(videoPath))
+                return;
+
+            string key = StartAnswerKey();
+            if (!Learning.Records.Any(r => r.Key == key))
+                return;
+
+            Learning.Forget(key);
+            Learning.Save();
+            LearningChanged();
         }
 
         /// <summary>

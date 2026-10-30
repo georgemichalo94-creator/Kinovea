@@ -87,6 +87,12 @@ namespace Kinovea.ScreenManager
         public double? OutDist;
         public bool OutEstimated;
 
+        /// <summary>
+        /// (2.15.0) A turn: where the head is at the push-off (pool units from the wall): the toes leave the wall with the body straight,
+        /// so the head is the body length away (SwimRace.BodyLength). Null when the body length is not known.
+        /// </summary>
+        public double? HeadAtPushoff;
+
         /// <summary>(2.9.8) Start of a race: the official reaction time (the release from the block) when the release is not marked.</summary>
         public double? OfficialRelease;
 
@@ -354,9 +360,15 @@ namespace Kinovea.ScreenManager
                     SwimTurnComputed turn = computed.Turns.FirstOrDefault(t => t.Wall == p.Wall);
                     if (turn != null && turn.LastStrokeGap.HasValue)
                         p.LastStroke = -turn.LastStrokeGap.Value;
+                    // (2.15.0) From the wall's mark on the video (OnVideo), as every other event of the phase: an official time of the
+                    // wall (SwimRow.T) a little off its frame made the contact, the underwater time and its speed off by that much.
                     SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == p.Wall);
-                    if (turn != null && turn.Pushoff.HasValue && wallRow != null && wallRow.T.HasValue && turn.Pushoff.Value >= wallRow.T.Value)
-                        p.Pushoff = turn.Pushoff.Value - wallRow.T.Value;
+                    double wallVideo = wallRow != null ? wallRow.OnVideo : double.NaN;
+                    if (turn != null && turn.Pushoff.HasValue && !double.IsNaN(wallVideo) && turn.Pushoff.Value >= wallVideo)
+                        p.Pushoff = turn.Pushoff.Value - wallVideo;
+
+                    // (2.15.0) The head at the push-off: the body length of the swimmer (the same at every wall of the race).
+                    p.HeadAtPushoff = race.BodyLength;
                 }
 
                 ApplyCheckpointSplits(race, timing, p, splitAt);
@@ -439,6 +451,10 @@ namespace Kinovea.ScreenManager
                     p.BreakoutDist = manual.BreakoutDist;
                     p.OutDist = manual.BreakoutDist;
                 }
+
+                // (2.15.0) A turn of the training video: the head at the push-off is the body length of the swimmer of the video.
+                if (p.Kind == SwimPhaseKind.Turn)
+                    p.HeadAtPushoff = race.BodyLength;
             }
 
             long frame = Frame(timing);
@@ -752,11 +768,16 @@ namespace Kinovea.ScreenManager
                 set("v5_10", vel(5, diff(o10, o5)));
                 set("v10_15", vel(5, diff(o15, o10)));
                 set("underwater", diff(p.Breakout, p.Pushoff));
-                if (p.BreakoutDist.HasValue && p.Kicks.Count > 0)
-                    set("kickDist", p.BreakoutDist.Value / p.Kicks.Count);
+                // (2.15.0) From where the head is at the push-off (the body length from the wall), as the underwater speed: from the wall
+                // the body length was counted as kicked (+25% at 6 kicks to 9 m); none from a distance estimated from the times.
+                if (p.BreakoutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && p.HeadAtPushoff.HasValue &&
+                    p.HeadAtPushoff.Value * k >= BodyLengthMin && p.HeadAtPushoff.Value * k <= BodyLengthMax &&
+                    p.BreakoutDist.Value - p.HeadAtPushoff.Value >= UnderwaterMinSpan)
+                    set("kickDist", (p.BreakoutDist.Value - p.HeadAtPushoff.Value) / p.Kicks.Count);
                 // (2.9.8) The speed from the push-off to the breakout (the "underwater" speed of a turn) and from the breakout to the head
                 // at +15; not from a distance estimated from the times (the speed after the breakout would be the one the estimate took).
-                set("uwVel", BreakoutSpeed(p, p.Pushoff, k, SwimLang.T("αποκόλληση → έξοδος")));
+                // (2.15.0) The underwater speed from where the head is at the push-off (the body length from the wall), not from the wall.
+                set("uwVel", UnderwaterSpeed(p, k));
                 set("bo15Vel", SpeedTo15(p, o15, k));
             }
 
@@ -805,6 +826,63 @@ namespace Kinovea.ScreenManager
                 return null;
 
             double speed = p.OutDist.Value * k / time;
+            if (speed >= UnderwaterSpeedMin && speed <= UnderwaterSpeedMax)
+                return speed;
+
+            Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1:0.00} m/s δεν γίνεται· έλεγξε την απόσταση της εξόδου και τα σημάδια"), name, speed));
+            return null;
+        }
+
+        /// <summary>
+        /// (2.15.0) Shortest way of the head under the water after a push-off for its speed (pool units): nearer, the clicks of the two
+        /// distances (a few tenths each) would weigh too much.
+        /// </summary>
+        internal const double UnderwaterMinSpan = 1.0;
+
+        /// <summary>(2.15.0) Plausible body lengths, toes to head (m): out of them the measurement is wrong.</summary>
+        internal const double BodyLengthMin = 0.9, BodyLengthMax = 2.6;
+
+        /// <summary>
+        /// (2.15.0) Mean speed of the underwater phase of a turn, from the push-off to the breakout. At the push-off the toes leave the
+        /// wall with the body straight: the head is the body length from the wall (HeadAtPushoff); at the breakout it comes out at the
+        /// distance measured where it breaks the surface (OutDist). Speed = (OutDist − body length) / (breakout − push-off). Before
+        /// 2.15.0 the whole distance from the wall was taken: faster by OutDist / (OutDist − body length), about 20–25% for a breakout at 9–10 m,
+        /// 60% at 4–5 m. Null, with a note,
+        /// when something is missing, the distance is the estimate from the times or the result is not plausible.
+        /// </summary>
+        private static double? UnderwaterSpeed(SwimTechPhase p, double k)
+        {
+            string name = SwimLang.T("αποκόλληση → έξοδος");
+            if (!p.Breakout.HasValue || !p.Pushoff.HasValue || !Usable(p))
+                return null;
+
+            if (!p.HeadAtPushoff.HasValue || p.HeadAtPushoff.Value <= 0)
+            {
+                Note(p, SwimLang.T("χρειάζεται το μήκος του σώματος (📍 πόδια → κεφάλι, μία φορά στον αγώνα): στην αποκόλληση το κεφάλι απέχει τόσο από τον τοίχο"));
+                return null;
+            }
+
+            // A body length typed out of the plausible range (0.85 for 1.85): no speed from it (the 📍 refuses it, typing did not).
+            double bodyMeters = p.HeadAtPushoff.Value * k;
+            if (bodyMeters < BodyLengthMin || bodyMeters > BodyLengthMax)
+            {
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("μήκος σώματος {0:0.00} μ.: δεν γίνεται (έλεγξε την τιμή)"), bodyMeters));
+                return null;
+            }
+
+            double time = p.Breakout.Value - p.Pushoff.Value;
+            if (time < SpeedMinTime)
+                return null;
+
+            double span = p.OutDist.Value - p.HeadAtPushoff.Value;
+            if (span < UnderwaterMinSpan)
+            {
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: η έξοδος ({1:0.0}) είναι πολύ κοντά στο μήκος του σώματος ({2:0.00})· έλεγξε τις δύο αποστάσεις"),
+                    name, p.OutDist.Value, p.HeadAtPushoff.Value));
+                return null;
+            }
+
+            double speed = span * k / time;
             if (speed >= UnderwaterSpeedMin && speed <= UnderwaterSpeedMax)
                 return speed;
 

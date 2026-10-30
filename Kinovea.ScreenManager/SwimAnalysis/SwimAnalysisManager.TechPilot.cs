@@ -588,7 +588,8 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            Race.Proposals.RemoveAll(p => p.Kind != null && (p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal) || p.Kind.StartsWith("tech.start.", StringComparison.Ordinal)));
+            // (2.15.0) Only the waiting proposals of this part of the video: those of the other attempts wait for their check.
+            RemoveTechProposalsIn(from, stamps);
             Race.Proposals.AddRange(made);
             Changed(false);
             RefreshProposalsUi();
@@ -694,8 +695,9 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // The proposals of an earlier reading of the pilot (not answered) go: this reading replaces them.
-            Race.Proposals.RemoveAll(p => p.Kind != null && (p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal) || p.Kind.StartsWith("tech.start.", StringComparison.Ordinal)));
+            // The proposals of an earlier reading of the pilot (not answered) go: this reading replaces them. (2.15.0) Only in this part of
+            // the video: the other attempts of a training video keep theirs (they were all deleted).
+            RemoveTechProposalsIn(from, stamps);
             Race.Proposals.AddRange(made);
             Changed(false);
             RefreshProposalsUi();
@@ -709,6 +711,15 @@ namespace Kinovea.ScreenManager
             Status(string.Format(CultureInfo.InvariantCulture,
                 SwimLang.T("🤖 Στροφή ({0}): {1} προτάσεις{2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος."),
                 kindText, made.Count, notes), ev.Notes.Count > 0);
+        }
+
+        /// <summary>(2.15.0) The waiting proposals of the technical pilot within the part read (from its first to its last frame).</summary>
+        private void RemoveTechProposalsIn(long from, List<long> stamps)
+        {
+            long lo = stamps != null && stamps.Count > 0 ? Math.Min(from, stamps[0]) : from;
+            long hi = stamps != null && stamps.Count > 0 ? stamps[stamps.Count - 1] : long.MaxValue;
+            Race.Proposals.RemoveAll(p => p.Kind != null && (p.Kind.StartsWith("tech.turn.", StringComparison.Ordinal) || p.Kind.StartsWith("tech.start.", StringComparison.Ordinal)) &&
+                p.Timestamp >= lo && p.Timestamp <= hi);
         }
 
         private void RefreshTechPilotUi()

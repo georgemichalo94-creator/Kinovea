@@ -624,13 +624,17 @@ namespace Kinovea.ScreenManager
                 spreads.Add(l.Spread * samplesPerSecond);
             }
 
-            // A cue far from the others (more than 3 of its spreads from the weighted median) does not count.
+            // A cue far from the others (more than 3 of its spreads from the weighted median) does not count. The spread is at least one
+            // sample of the reading, (2.15.0) and at most 0.04 s of video: the recombinations of the waiting proposals pass seconds
+            // (samplesPerSecond 1), where "one sample" made it 1 s, so no cue was ever left out there (a breakout moved by half the gap
+            // of its two cues after any answer, 0.5 s for cues 1 s apart).
+            double floor = Math.Min(1.0, OneFrameSeconds * samplesPerSecond);
             double median = WeightedMedian(values, weights);
             double sum = 0, total = 0;
             int kept = 0;
             for (int i = 0; i < values.Count; i++)
             {
-                if (values.Count > 1 && Math.Abs(values[i] - median) > 3 * Math.Max(1.0, spreads[i]))
+                if (values.Count > 1 && Math.Abs(values[i] - median) > 3 * Math.Max(floor, spreads[i]))
                     continue;
 
                 sum += weights[i] * values[i];
@@ -646,6 +650,9 @@ namespace Kinovea.ScreenManager
             confidence = Math.Max(0, Math.Min(1, d.Confidence * agreement * Math.Max(0.35, 1 - 0.8 * wrong)));
             return result;
         }
+
+        /// <summary>(2.15.0) The smallest spread of a cue in seconds when the samples are seconds: a frame at 25 fps.</summary>
+        public const double OneFrameSeconds = 0.04;
 
         public static double WeightedMedian(List<double> values, List<double> weights)
         {

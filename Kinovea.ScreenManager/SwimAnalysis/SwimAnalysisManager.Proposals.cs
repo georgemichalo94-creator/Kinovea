@@ -150,6 +150,28 @@ namespace Kinovea.ScreenManager
             string video = SwimLearning.VideoCode(videoPath);
             SwimLearning l = Learning;
             SwimDetectorContext context = new SwimDetectorContext { Style = Race.Style };
+
+            // (2.15.0) The turn read (the wall nearest to the middle of the skeleton): its own kind and the style after it (a medley or a
+            // relay is not one style; its changes of style and changeovers are touches with the hands).
+            if (!Race.IsTraining && Race.Pool > 0)
+            {
+                long margin = RealSpan(2.0);
+                long middle = skeleton.Start + (long)Math.Round(skeleton.Step * skeleton.Count / 2.0);
+                int wall = TurnWalls.Where(w => Race.GetSplit(w) != null && Race.GetSplit(w).Timestamp >= skeleton.Start - margin &&
+                    Race.GetSplit(w).Timestamp <= skeleton.End + margin).OrderBy(w => Math.Abs(Race.GetSplit(w).Timestamp - middle)).FirstOrDefault();
+                if (wall > 0)
+                {
+                    string styleIn = SwimPresets.StyleAt(Race, wall), styleOut = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, wall + Race.Pool));
+                    context.Style = styleIn;
+                    context.OpenTurn = WallKind(wall) != "flip";
+                    context.Kicks = styleOut != "br";
+                }
+                else if (Race.StartTimestamp.HasValue && Race.StartTimestamp.Value <= skeleton.End + margin)
+                {
+                    context.Style = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, 15));
+                    context.Kicks = context.Style != "br";
+                }
+            }
             context.Measure = delegate (string kind, string name, double fallback, out int sameVideo)
             {
                 int count;
@@ -536,14 +558,16 @@ namespace Kinovea.ScreenManager
         /// A mark added by the analyst (with its key or by accepting): the proposal of the same kind near it is answered with
         /// this frame (the one being checked first).
         /// </summary>
-        private void ResolveProposalsByMark(SwimMarkType type, long timestamp)
+        private void ResolveProposalsByMark(SwimMarkType type, long timestamp, bool learn = true)
         {
             // Accepting a proposal answers that proposal only (not a neighbour of the same kind).
             if (resolvingProposal || Race == null)
                 return;
 
-            // Manual analysis: the mark teaches also when nothing was proposed for its event.
-            LearnFromMark(type, timestamp);
+            // Manual analysis: the mark teaches also when nothing was proposed for its event (once: 'learn' false for a second type of
+            // the same mark).
+            if (learn)
+                LearnFromMark(type, timestamp);
             if (Race.Proposals.Count == 0)
                 return;
 
@@ -666,7 +690,7 @@ namespace Kinovea.ScreenManager
                 Video = SwimLearning.VideoCode(videoPath),
                 Right = right,
                 Confidence = taught.Confidence,
-                Key = AnswerKey(taught)
+                Key = AnswerKey(taught, right)
             };
 
             if (record != null && right)

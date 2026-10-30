@@ -594,6 +594,10 @@ namespace Kinovea.ScreenManager
                     JObject cp = new JObject();
                     cp["d"] = row.D;
                     cp["t"] = row.T.HasValue ? (double?)Math.Round(row.T.Value, 3) : null;
+                    // (2.15.0) The mark's time on the video where an official time stands for the checkpoint a little off its frame: the
+                    // script times what is timed on the video (strokes, turn, last stroke, kicks) from it, as SwimCalculator (2.9.5b).
+                    if (!double.IsNaN(row.OnVideo) && (!row.T.HasValue || Math.Abs(row.OnVideo - row.T.Value) > 0.0005))
+                        cp["v"] = Math.Round(row.OnVideo, 3);
                     checkpoints.Add(cp);
                 }
             }
@@ -627,6 +631,10 @@ namespace Kinovea.ScreenManager
             }
 
             r["feetOff"] = Times(feetOff);
+            // (2.15.0) The release marked on the video when the official reaction time took its place: the flight is from it (the entry is a
+            // time of the video), as in SwimCalculator.
+            if (computed.BlockOfficial && computed.BlockMarkTime.HasValue)
+                r["releaseMark"] = Math.Round(computed.BlockMarkTime.Value, 3);
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();
@@ -639,8 +647,15 @@ namespace Kinovea.ScreenManager
             manual["entryVelHips"] = race.EntryVelHips;
             manual["entryVelFeet"] = race.EntryVelFeet;
             manual["underwaterDist"] = race.UnderwaterDist;
+            // (2.15.0) The start's distance estimated from the times (not measured): the script marks it and takes no speed from it.
+            if (race.UnderwaterEstimated && race.UnderwaterDist.HasValue)
+                manual["underwaterEstimated"] = true;
             manual["breakoutDist"] = race.BreakoutDist;
             manual["finishLastStrokeDist"] = race.FinishLastStrokeDist;
+
+            // (2.15.0) The body length (toes → head): where the head is at the push-off from each wall.
+            if (race.BodyLength.HasValue)
+                manual["bodyLength"] = race.BodyLength;
 
             JObject turns = new JObject();
             foreach (var pair in race.Turns)
@@ -648,6 +663,15 @@ namespace Kinovea.ScreenManager
                 JObject t = new JObject();
                 t["underwaterDist"] = pair.Value.UnderwaterDist;
                 t["turnTime"] = pair.Value.TurnTime;
+
+                // (2.15.0) The estimate from the times is said (the report does not take a speed from it), and the underwater speed of
+                // the turn as the program measures it: (breakout distance − body length) / (breakout − push-off), m/s.
+                if (pair.Value.UnderwaterEstimated && pair.Value.UnderwaterDist.HasValue)
+                    t["underwaterEstimated"] = true;
+                SwimTechPhase turnPhase = tech == null ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == pair.Key);
+                double? uwSpeed = turnPhase != null ? turnPhase.Value("uwVel") : null;
+                if (uwSpeed.HasValue && !race.IsTraining)
+                    t["uwSpeed"] = Math.Round(uwSpeed.Value, 3);
                 turns[pair.Key.ToString(CultureInfo.InvariantCulture)] = t;
             }
 

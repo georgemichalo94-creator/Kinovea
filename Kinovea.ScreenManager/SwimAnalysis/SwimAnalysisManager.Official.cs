@@ -78,6 +78,9 @@ namespace Kinovea.ScreenManager
             public List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> Choices = new List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>>();
             public string Error;
 
+            /// <summary>(2.15.0) The event of the title of pasted results: its round, gender and competition go in with the times.</summary>
+            public SwimEventInfo TitleEvent;
+
             /// <summary>The results of the link cannot be read by the program (another site, a page that does not open, no results of the event
             /// published): the analyst pastes them (since 2.8.1).</summary>
             public bool Locked;
@@ -157,7 +160,7 @@ namespace Kinovea.ScreenManager
                 Distance = Race.Distance,
                 Style = Race.Style,
                 Relay = Race.Relay,
-                Date = ParseRaceDate(Race.Date),
+                Date = QueryRaceDate(),
                 VideoDate = VideoFileDate(),
                 Competition = Race.Competition ?? "",
                 Round = Race.Round ?? "",
@@ -720,7 +723,13 @@ namespace Kinovea.ScreenManager
             b.Append(found.Source.Length > 0 ? found.Source : SwimLang.T("Επίσημα αποτελέσματα"));
             if (found.Unit.Date.HasValue)
                 b.Append(" · ").Append(found.Unit.Date.Value.ToString("d/M/yyyy", CultureInfo.InvariantCulture));
-            b.Append('\n').Append(OfficialLine(found.Unit, e, null)).Append("\n\n");
+            // (2.15.0) With the difference from the time on the video: another round of the same day (a semifinal for the final) shows
+            // seconds of difference, not hundredths.
+            double? onVideo = Computed != null ? Computed.FinalTime : null;
+            b.Append('\n').Append(OfficialLine(found.Unit, e, onVideo)).Append("\n\n");
+            if (onVideo.HasValue && e.Time.HasValue && Math.Abs(e.Time.Value - onVideo.Value) > 1.0)
+                b.Append(string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Ο τελικός χρόνος απέχει {0:0.00} s από τον χρόνο του βίντεο: μήπως είναι άλλη φάση ή άλλος αθλητής;"),
+                    Math.Abs(e.Time.Value - onVideo.Value))).Append("\n\n");
             b.Append(SwimLang.T("Επίσημοι χρόνοι: ")).Append(SwimRace.FormatOfficial(times));
             if (e.Reaction.HasValue)
                 b.Append(SwimLang.T(" · αντίδραση ")).Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
@@ -766,6 +775,10 @@ namespace Kinovea.ScreenManager
                 race.Location = oldLocation;
             };
 
+            // (2.15.0) The round, the gender and the competition of the title of the pasted results, now that its times are taken (the
+            // references follow the gender: below).
+            bool titleDetails = found.TitleEvent != null && ApplyEventDetails(Race, found.TitleEvent).Count > 0;
+
             if (!keepAthlete && athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 SetAthlete(athlete);
             if (e.Lane > 0)
@@ -788,6 +801,8 @@ namespace Kinovea.ScreenManager
                     Race.Location = SwimResultsPaste.CityOf(found.Source);
             }
             OfficialChanged(times, e.Reaction, detailsBack);
+            if (titleDetails)
+                RaceInfoChanged(false);
 
             // The link of the competition, for its next races in the same days.
             string link = !string.IsNullOrWhiteSpace(q.Link) ? q.Link.Trim() : found.Competition != null ? KoeLink(found.Competition.Code) : "";
@@ -812,6 +827,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>"100μ. fs · QUALIFIERS 3 · διάδρομος 4 · ΟΝΟΜΑ (σωματείο, 2009) · 54.54" (and its difference from the time read).</summary>
+        /// <summary>
+        /// (2.15.0) The day of the race for the results: the date of the race, but not when it is today's (the date a new analysis gets)
+        /// and the video was made on another day: then the video's (a semifinal analysed the day after kept only the final of that day).
+        /// </summary>
+        private DateTime? QueryRaceDate()
+        {
+            DateTime? race = ParseRaceDate(Race.Date);
+            DateTime? video = VideoFileDate();
+            if (race.HasValue && video.HasValue && race.Value.Date == DateTime.Now.Date && video.Value.Date != race.Value.Date)
+                return null;
+            return race;
+        }
+
         private static string OfficialLine(SwimOfficialUnit u, SwimOfficialEntry e, double? read)
         {
             string name = e.Name.Length > 0 ? e.Name : e.NameLatin;

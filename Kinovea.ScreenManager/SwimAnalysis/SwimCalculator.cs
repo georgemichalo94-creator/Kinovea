@@ -524,7 +524,9 @@ namespace Kinovea.ScreenManager
             {
                 double fromT = result.EntryTime ?? 0;
                 double to = result.StartUnderwaterTime ?? firstWallT;
-                result.StartKicks = result.Kicks.Count(t => t > fromT && t <= to);
+                int kicks = result.Kicks.Count(t => t > fromT && t <= to);
+                // (2.15.0) None there: not marked (e.g. kicks marked only in a turn), not 0.
+                result.StartKicks = kicks > 0 ? (int?)kicks : null;
             }
 
             // Turns. The events of the video (feet off, breakout, last stroke, kicks) are found and timed from the walls' frames
@@ -591,13 +593,23 @@ namespace Kinovea.ScreenManager
                         turn.TurnTime = pushoff.Value - lastStroke.Value;
                 }
 
-                if (breakout.HasValue)
-                    turn.UnderwaterTime = breakout.Value - (pushoff ?? vw);
+                // (2.15.0) B − F, as the README and the technical analysis: without the push-off none (it took B − S before, another
+                // measure, in the same column).
+                if (breakout.HasValue && pushoff.HasValue)
+                    turn.UnderwaterTime = breakout.Value - pushoff.Value;
                 if (result.Kicks.Count > 0)
                 {
                     double to = breakout ?? nextT;
                     turn.Kicks = result.Kicks.Count(t => t > vw && t <= to);
                 }
+            }
+
+            // (2.15.0) 0 kicks in a turn only when kicks are marked in another turn (the analyst counted them: a breaststroke turn
+            // without a dolphin kick); none marked in any turn (kicks marked only at the start): not counted, blank.
+            if (!result.Turns.Any(x => x.Kicks.HasValue && x.Kicks.Value > 0))
+            {
+                foreach (SwimTurnComputed noKicks in result.Turns)
+                    noKicks.Kicks = null;
             }
 
             // Finish.
@@ -662,8 +674,10 @@ namespace Kinovea.ScreenManager
 
                 int from = b, to = e;
                 List<SwimRow> inBlock = result.Rows.Where(r => r.PrevD >= from && r.D <= to).ToList();
-                if (inBlock.Any(r => r.Strokes.HasValue))
-                    block.Strokes = inBlock.Sum(r => r.Strokes ?? 0);
+                // (2.15.0) The strokes of the 50 (and its Swolf) only when every segment of it has them: a checkpoint without a time
+                // gave half of the 50 as the whole (Swolf 62 → 43.5).
+                if (inBlock.Count > 0 && inBlock.All(r => r.Strokes.HasValue))
+                    block.Strokes = inBlock.Sum(r => r.Strokes.Value);
                 if (block.Time.HasValue && block.Strokes.HasValue)
                     block.Swolf = block.Time.Value + block.Strokes.Value;
                 if (block.Time.HasValue && block.Time.Value > 0)
@@ -688,7 +702,15 @@ namespace Kinovea.ScreenManager
                     }
 
                     int d0 = a15.D, d1 = aw.D;
-                    foreach (SwimRow r in result.Rows.Where(x => x.PrevD >= d0 && x.D <= d1))
+                    // (2.15.0) Every segment of the window with its strokes (else the ΔΑΚ of part of it).
+                    List<SwimRow> window = result.Rows.Where(x => x.PrevD >= d0 && x.D <= d1).ToList();
+                    if (window.Count == 0 || window.Any(x => !x.Strokes.HasValue))
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    foreach (SwimRow r in window)
                     {
                         if (r.Strokes.HasValue)
                         {
@@ -959,6 +981,7 @@ namespace Kinovea.ScreenManager
 
             List<string> missed = new List<string>();
             List<string> doubled = new List<string>();
+            Dictionary<string, double> medians = new Dictionary<string, double>();
             foreach (IGrouping<string, StrokeInterval> group in intervals.GroupBy(x => x.Style))
             {
                 List<double> durations = group.Select(x => x.B - x.A).ToList();
@@ -968,6 +991,7 @@ namespace Kinovea.ScreenManager
                 double median = Median(durations);
                 if (median <= 0)
                     continue;
+                medians[group.Key] = median;
 
                 foreach (StrokeInterval x in group)
                 {
@@ -979,6 +1003,28 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // (2.15.0) The edges of the clean swimming too: from its start (+15) to the first stroke and from the last stroke to its end
+            // (−5) no more than a stroke and a bit (strokes read from a click after the 15 m, or none placed where the image was lost,
+            // made a segment short of strokes with no warning).
+            List<string> edges = new List<string>();
+            for (int k = 0; k < windowStart.Count; k++)
+            {
+                double median;
+                if (!medians.TryGetValue(windowStyle[k], out median))
+                    continue;
+
+                List<double> inside = s.Where(t => t >= windowStart[k] - 1e-9 && t <= windowEnd[k] + 1e-9).ToList();
+                double head = inside.Count > 0 ? inside[0] - windowStart[k] : windowEnd[k] - windowStart[k];
+                double tail = inside.Count > 0 ? windowEnd[k] - inside[inside.Count - 1] : 0;
+                if (head > 1.75 * median)
+                    edges.Add(Format("{0:0.00}–{1:0.00} s", windowStart[k], inside.Count > 0 ? inside[0] : windowEnd[k]));
+                if (tail > 1.75 * median)
+                    edges.Add(Format("{0:0.00}–{1:0.00} s", inside[inside.Count - 1], windowEnd[k]));
+            }
+
+            if (edges.Count > 0)
+                result.Warnings.Add(SwimLang.T("Χεριές: χωρίς πατήματα στην αρχή ή στο τέλος της καθαρής κολύμβησης στα ") + Join(edges) +
+                    SwimLang.T(" (περισσότερο από μια χεριά): μήπως λείπουν χεριές σε αυτό το τμήμα;"));
             if (missed.Count > 0)
                 result.Warnings.Add(SwimLang.T("Χεριές: μεγάλο κενό ανάμεσα σε δύο πατήματα στα ") + Join(missed) + SwimLang.T(" (σχεδόν διπλάσιο από το συνηθισμένο): μήπως λείπει ένα πάτημα;"));
             if (doubled.Count > 0)
