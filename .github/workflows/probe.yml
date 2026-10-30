@@ -1,0 +1,22 @@
+name: Swim sound probe
+
+on:
+  push:
+    branches: [ "swim-probe-sound" ]
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        sparse-checkout: |
+          Refs/FFmpeg/bin/x64
+          SwimAnalysis/tests/sound_read
+    - name: Sound read probe with the ffmpeg of the build
+      shell: pwsh
+      run: |
+        & powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\sound_read\sr_probe.ps1 -ff Refs\FFmpeg\bin\x64\ffmpeg.exe 2>&1 | ForEach-Object { Write-Output "$_" }
