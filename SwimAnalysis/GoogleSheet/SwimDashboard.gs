@@ -36,7 +36,9 @@ var SWIM_DASH_MSG = {
   signIn: 'Ο πίνακας ανοίγει μόνο από τη διεύθυνση που εκτελείται με τον λογαριασμό Google αυτού που τον ανοίγει ' +
     '(Deploy → Web app → Execute as: User accessing the web app). Άνοιξε αυτή τη διεύθυνση, συνδεδεμένος στον λογαριασμό σου.',
   noAccess: 'Δεν βρέθηκε το Google Sheet των αναλύσεων ή δεν έχεις πρόσβαση σε αυτό. Ζήτα από τον διαχειριστή να σου μοιραστεί ' +
-    'το αρχείο «Αναλύσεις Αγώνων Κολύμβησης (Kinovea)» και άνοιξε ξανά τη σελίδα.'
+    'το αρχείο «Αναλύσεις Αγώνων Κολύμβησης (Kinovea)» και άνοιξε ξανά τη σελίδα.',
+  setup: 'Ο πίνακας δεν ξέρει ακόμη σε ποιο Google Sheet είναι οι αναλύσεις. Ο διαχειριστής, μία φορά: στο Apps Script του πίνακα, ' +
+    'αρχείο SwimDashboard → συνάρτηση swimDashSetup → Εκτέλεση· μετά άνοιξε ξανά τη σελίδα.'
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -65,15 +67,41 @@ function swimDashboardGet(e) {
 }
 
 /**
- * Προαιρετικό, μία φορά από τον editor του Apps Script που είναι μέσα στο Google Sheet των αναλύσεων (τρόπος α), αν η σελίδα γράφει
- * ότι δεν βρίσκει το αρχείο: κρατά αυτό το Google Sheet ως το αρχείο του πίνακα (ρύθμιση SWIM_DASH_SPREADSHEET_ID του project).
+ * Μία φορά από τον editor του Apps Script του πίνακα (ο διαχειριστής): βρίσκει το Google Sheet των αναλύσεων και το κρατά στη ρύθμιση
+ * SWIM_DASH_SPREADSHEET_ID του project (η σελίδα δεν το βρίσκει μόνη της: σε εφαρμογή ιστού το Google δεν δίνει πάντα το «ενεργό»
+ * αρχείο). Πρώτα το αρχείο του project (όταν το Apps Script ανοίχτηκε από αυτό), αλλιώς από τον Drive το «Αναλύσεις Αγώνων
+ * Κολύμβησης (Kinovea)» με το φύλλο «Αγώνες» (αν είναι πολλά, αυτό με τις περισσότερες αναλύσεις). Ό,τι βρήκε γράφεται στο αρχείο
+ * καταγραφής της εκτέλεσης. Η ρύθμιση ισχύει αμέσως και για την ανάπτυξη που υπάρχει ήδη (χωρίς νέα έκδοση).
  */
 function swimDashSetup() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss || !ss.getSheetByName(SWIM_INDEX_SHEET))
-    throw new Error('Άνοιξε το Apps Script από το Google Sheet των αναλύσεων (αυτό με το φύλλο «' + SWIM_INDEX_SHEET + '»).');
-  swimProps_().setProperty('SWIM_DASH_SPREADSHEET_ID', ss.getId());
-  return 'Ο πίνακας διαβάζει το «' + ss.getName() + '».';
+  var found = null;
+  var take = function (ss, how) {
+    var index = ss ? ss.getSheetByName(SWIM_INDEX_SHEET) : null;
+    if (!index) return;
+    var n = Math.max(0, index.getLastRow() - 1);
+    if (!found || n > found.n) found = { ss: ss, n: n, how: how };
+  };
+  var active = null;
+  try { active = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { active = null; }
+  take(active, '');
+  if (!found) {
+    var files = DriveApp.getFilesByName(SWIM_REPORTS_TITLE);
+    while (files.hasNext()) {
+      var file = files.next();
+      try {
+        if (file.isTrashed && file.isTrashed()) continue;
+        take(SpreadsheetApp.openById(file.getId()), ', βρέθηκε στον Drive');
+      } catch (e2) { /* δεν είναι Google Sheet ή δεν ανοίγει */ }
+    }
+  }
+  if (!found)
+    throw new Error('Δεν βρέθηκε Google Sheet με το φύλλο «' + SWIM_INDEX_SHEET + '». Άνοιξε το Apps Script του πίνακα από το Google Sheet «' +
+      SWIM_REPORTS_TITLE + '» (Επεκτάσεις → Apps Script) και τρέξε ξανά τη swimDashSetup.');
+  swimProps_().setProperty('SWIM_DASH_SPREADSHEET_ID', found.ss.getId());
+  var msg = 'Έτοιμο: ο πίνακας διαβάζει το «' + found.ss.getName() + '» (' + found.n + ' αναλύσεις' + found.how + '). ' +
+    'Ξαναφόρτωσε τη σελίδα του πίνακα.';
+  console.log(msg);
+  return msg;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -196,8 +224,10 @@ function swimDashSpreadsheet_() {
   if (reportsId) {
     var r = open(reportsId);
     if (r) return r;
+    throw new Error(SWIM_DASH_MSG.noAccess);
   }
-  throw new Error(SWIM_DASH_MSG.noAccess);
+  // Καμία ρύθμιση και το αρχείο του project δεν δόθηκε (ή δεν έχει το φύλλο): χρειάζεται η swimDashSetup μία φορά.
+  throw new Error(SWIM_DASH_MSG.setup);
 }
 
 function swimDashCache_() {

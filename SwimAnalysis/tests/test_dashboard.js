@@ -284,6 +284,37 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   assert.throws(() => C0.G.swimDashSetup(), /Αγώνες/);
   assert.ok(!C0.G._props.SWIM_DASH_SPREADSHEET_ID);
 }
+// Το Apps Script του πίνακα έξω από το αρχείο (το Google δεν δίνει «ενεργό» αρχείο, π.χ. σε εφαρμογή ιστού ή σε project χωρίς αρχείο):
+// πριν από τη ρύθμιση, μήνυμα για τη swimDashSetup· η swimDashSetup βρίσκει το αρχείο στον Drive με το όνομά του (αυτό με τις
+// περισσότερες αναλύσεις, όχι ένα αντίγραφο ή κάτι που δεν ανοίγει) και μετά ο πίνακας δουλεύει.
+{
+  const D = context();
+  const real = D.G.SpreadsheetApp.create('Αναλύσεις Αγώνων Κολύμβησης (Kinovea)');
+  const realIdx = real.insertSheet('Αγώνες');
+  Object.keys(index._cells).forEach(k => { realIdx._cells[k] = Object.assign({}, index._cells[k]); });
+  const copy = D.G.SpreadsheetApp.create('Αναλύσεις Αγώνων Κολύμβησης (Kinovea)');
+  copy.insertSheet('Αγώνες').getRange(1, 1, 2, 2).setValues([['Race ID', 'Φύλλο'], ['x1', '']]);
+  D.G.SpreadsheetApp.getActiveSpreadsheet = () => null;
+  D.G.DriveApp.getFilesByName = name => {
+    assert.strictEqual(name, D.G.SWIM_REPORTS_TITLE);
+    const list = [{ getId: () => copy.getId(), isTrashed: () => false }, { getId: () => 'gone', isTrashed: () => false },
+      { getId: () => real.getId(), isTrashed: () => false }, { getId: () => real.getId(), isTrashed: () => true }];
+    let i = 0;
+    return { hasNext: () => i < list.length, next: () => list[i++] };
+  };
+  const before = D.G.swimDashList();
+  assert.ok(!before.ok && before.denied && /swimDashSetup/.test(before.error), 'before setup: ' + before.error);
+  assert.ok(/Έτοιμο/.test(D.G.swimDashSetup()));
+  assert.strictEqual(D.G._props.SWIM_DASH_SPREADSHEET_ID, real.getId(), 'the one with the most analyses');
+  const l = D.G.swimDashList();
+  assert.ok(l.ok && l.races.length === RACES.length, 'list after setup');
+  // Χωρίς πρόσβαση στο αρχείο της ρύθμισης: το μήνυμα της πρόσβασης, όχι της ρύθμισης.
+  const ob = D.G.SpreadsheetApp.openById;
+  D.G.SpreadsheetApp.openById = () => { throw new Error('You do not have permission'); };
+  const na = D.G.swimDashList();
+  assert.ok(!na.ok && /πρόσβαση/.test(na.error) && !/swimDashSetup/.test(na.error), 'no access after setup: ' + na.error);
+  D.G.SpreadsheetApp.openById = ob;
+}
 // Χωρίς ρυθμίσεις και χωρίς φύλλο «Αγώνες»: μήνυμα, όχι νέο αρχείο.
 {
   const C = context();
