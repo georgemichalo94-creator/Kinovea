@@ -168,23 +168,24 @@ function swimDashOpen_() {
 
 /**
  * Το Google Sheet με το φύλλο «Αγώνες», χωρίς να φτιάχνεται τίποτα (το swimReportsSpreadsheet_ φτιάχνει νέο αρχείο όταν δεν βρίσκει
- * το παλιό· εδώ ένας χρήστης χωρίς πρόσβαση παίρνει μόνο μήνυμα). Με τη σειρά: η ρύθμιση SWIM_DASH_SPREADSHEET_ID, το αρχείο του
- * project όταν έχει το φύλλο «Αγώνες» (τρόπος α), οι ρυθμίσεις του KOE App (τρόπος β: SWIM_REPORTS_MODE / SWIM_REPORTS_SPREADSHEET_ID).
+ * το παλιό· εδώ ένας χρήστης χωρίς πρόσβαση παίρνει μόνο μήνυμα). Με τη σειρά: το αρχείο του project όταν έχει το φύλλο «Αγώνες»
+ * (τρόπος α· πρώτο, ώστε να αρκεί και η άδεια «μόνο αυτό το αρχείο»), η ρύθμιση SWIM_DASH_SPREADSHEET_ID (swimDashSetup), οι
+ * ρυθμίσεις του KOE App (τρόπος β: SWIM_REPORTS_MODE / SWIM_REPORTS_SPREADSHEET_ID).
  */
 function swimDashSpreadsheet_() {
   var props = swimProps_();
   var open = function (id) {
     try { return SpreadsheetApp.openById(id); } catch (e) { return null; }
   };
+  var active = null;
+  try { active = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { active = null; }
+  if (active && active.getSheetByName(SWIM_INDEX_SHEET)) return active;
   var fixed = props.getProperty('SWIM_DASH_SPREADSHEET_ID');
   if (fixed) {
     var f = open(fixed);
     if (f) return f;
     throw new Error(SWIM_DASH_MSG.noAccess);
   }
-  var active = null;
-  try { active = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { active = null; }
-  if (active && active.getSheetByName(SWIM_INDEX_SHEET)) return active;
   if (props.getProperty('SWIM_REPORTS_MODE') === 'same') {
     var dataId = props.getProperty('SWIM_DATA_SPREADSHEET_ID');
     var d = dataId ? open(dataId) : active;

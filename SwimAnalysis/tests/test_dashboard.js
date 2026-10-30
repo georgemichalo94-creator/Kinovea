@@ -276,6 +276,9 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   assert.ok(/Αγώνες|KOE App/.test(B.G.swimDashSetup()));
   assert.strictEqual(B.G._props.SWIM_DASH_SPREADSHEET_ID, 'DATA');
   assert.ok(B.G.swimDashList().ok, 'list with SWIM_DASH_SPREADSHEET_ID');
+  // Το αρχείο του project πρώτα (αρκεί η άδεια «μόνο αυτό το αρχείο»): μια ρύθμιση σε αρχείο που δεν ανοίγει δεν το εμποδίζει.
+  B.G._props.SWIM_DASH_SPREADSHEET_ID = 'GONE';
+  assert.ok(B.G.swimDashList().ok, 'own spreadsheet first');
   // Χωρίς το φύλλο «Αγώνες» το setup δεν γράφει τίποτα.
   const C0 = context();
   assert.throws(() => C0.G.swimDashSetup(), /Αγώνες/);
