@@ -256,6 +256,10 @@ namespace Kinovea.ScreenManager
                 Show(owner);
             else
                 Show();
+
+            // (2.16.0) Beside the screens as it was left.
+            if (owner != null && manager.Settings.PanelDocked)
+                DockBesideScreens(true);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -301,8 +305,8 @@ namespace Kinovea.ScreenManager
             CommitCheckpoints(true);
             CommitOfficial();
 
-            // The window opens again where the analyst left it.
-            if (WindowState == FormWindowState.Normal)
+            // The window opens again where the analyst left it (beside the screens it goes there again).
+            if (WindowState == FormWindowState.Normal && !dockedBeside)
                 manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
 
             base.OnFormClosing(e);

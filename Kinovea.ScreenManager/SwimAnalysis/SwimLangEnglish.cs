@@ -2170,6 +2170,12 @@ namespace Kinovea.ScreenManager
             { "Με σταθερή κάμερα: οι γραμμές 5, 10 και 15 από τον τοίχο μένουν πάνω στη διαδρομή σε όλο το βίντεο. Όταν το κεφάλι περάσει μια γραμμή (πλήκτρο T), γράφει τον χρόνο και την ταχύτητα του τμήματος.",
                 "With a fixed camera: the lines 5, 10 and 15 from the wall stay on the lane for the whole video. When the head passes a line (key T), it shows the time and the speed of the segment." },
             { "ΤΑΧΥΤΗΤΑ ΑΝΑ ΤΜΗΜΑ (m/s)", "SPEED PER SEGMENT (m/s)" },
+            // (2.16.0) The single lists of the evaluation and the window beside the screens.
+            { " (παλιά λίστα)", " (older list)" },
+            { "Δίπλα στις οθόνες", "Beside the screens" },
+            { "Το κυρίως παράθυρο του Kinovea στο αριστερό μέρος της οθόνης και η ανάλυση σε όλο το ύψος δεξιά: βλέπεις τα καρέ των οθονών και βαθμολογείς μαζί. Ξανά: όπως ήταν.",
+                "Kinovea's main window on the left of the screen and the analysis on the right, full height: you see the frames of the screens and score together. Again: as they were." },
+            { "Τα παράθυρα δεν μπήκαν δίπλα-δίπλα: ", "The windows could not be put side by side: " },
         };
     }
 }

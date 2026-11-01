@@ -13,9 +13,10 @@ using System.Linq;
 namespace Kinovea.ScreenManager
 {
     /// <summary>
-    /// (2.13.0) The technique evaluation: each start or turn scored with a sheet of criteria of the catalogue (KOE checklists, British
-    /// Swimming sheets…). The program measures what it can (times of the marks, angles of the skeleton) and fills those criteria
-    /// (🤖, until the coach confirms them); the coach scores the rest at their frames. An error keeps its frame for the report.
+    /// (2.13.0) The technique evaluation: each start or turn scored with a sheet of criteria of the catalogue ((2.16.0) one single list
+    /// for the start and one for the turn of each style). The program measures what it can (times of the marks, angles of the skeleton)
+    /// and fills those criteria (🤖, until the coach confirms them); the coach scores the rest at their frames. An error keeps its frame
+    /// for the report.
     /// </summary>
     public partial class SwimAnalysisManager
     {
@@ -25,14 +26,42 @@ namespace Kinovea.ScreenManager
             get { return SwimTechSheetCatalog.Current; }
         }
 
-        private static string ChoiceKey(SwimTechPhase phase, string style)
+        private string ChoiceKey(SwimTechPhase phase)
         {
-            return (phase.Kind == SwimPhaseKind.Start ? "start|" : "turn|") + (style ?? "");
+            return (phase.Kind == SwimPhaseKind.Start ? "start|" : "turn|") + TechStyle(phase);
+        }
+
+        /// <summary>
+        /// (2.16.0) The style of the lists of a phase: the race's. In a medley with lists for its changes of stroke, a turn where the stroke
+        /// changes is that change ("im-fly-bk", "im-bk-br", "im-br-fs") and a turn inside a stroke is of that stroke (the start stays "im":
+        /// the butterfly start has it).
+        /// </summary>
+        public string TechStyle(SwimTechPhase phase)
+        {
+            string style = Race != null ? Race.Style ?? "" : "";
+            if (style != "im" || phase == null || phase.Kind != SwimPhaseKind.Turn || phase.Wall <= 0 || Race.Pool <= 0 || !TechCatalog.HasTransitions)
+                return style;
+
+            string before = SwimPresets.StyleAt(Race, phase.Wall);
+            string after = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, phase.Wall + Race.Pool));
+            if (string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after))
+                return style;
+            if (before == after || Race.Relay)
+                return after;
+
+            string change = "im-" + before + "-" + after;
+            return TechCatalog.SheetsFor(SwimPhaseKind.Turn, change).Count > 0 ? change : after;
+        }
+
+        private static bool Offered(SwimTechSheet sheet)
+        {
+            return sheet != null && !sheet.Hidden;
         }
 
         /// <summary>
         /// The sheet shown for a phase: the coach's last choice when the phase was evaluated with it, else the sheet the coach evaluated it
-        /// with last (not the program's automatic list), else his last choice, else the KOE checklist.
+        /// with last (not the program's automatic list), else his last choice, else the KOE checklist. (2.16.0) Never an older sheet of a
+        /// catalogue with single lists, unless no list fits the phase (its evaluations move to the single list).
         /// </summary>
         public SwimTechSheet TechSheetFor(SwimTechPhase phase)
         {
@@ -41,15 +70,20 @@ namespace Kinovea.ScreenManager
                 return null;
 
             string choice;
-            Settings.TechSheetChoice.TryGetValue(ChoiceKey(phase, Race.Style), out choice);
-            if (choice != null && Race.TechEvals.Any(e => e.PhaseId == phase.Id && e.SheetId == choice) && cat.Sheet(choice) != null)
+            Settings.TechSheetChoice.TryGetValue(ChoiceKey(phase), out choice);
+            if (choice != null && Race.TechEvals.Any(e => e.PhaseId == phase.Id && e.SheetId == choice) && Offered(cat.Sheet(choice)))
                 return cat.Sheet(choice);
 
-            SwimTechEval last = Race.TechEvals.LastOrDefault(e => e.PhaseId == phase.Id && cat.Sheet(e.SheetId) != null && !SwimTechSheetCatalog.IsAuto(e.SheetId));
+            SwimTechEval last = Race.TechEvals.LastOrDefault(e => e.PhaseId == phase.Id && Offered(cat.Sheet(e.SheetId)) && !SwimTechSheetCatalog.IsAuto(e.SheetId));
             if (last != null)
                 return cat.Sheet(last.SheetId);
 
-            return cat.DefaultFor(phase.Kind, Race.Style, phase.Flip, choice);
+            SwimTechSheet def = cat.DefaultFor(phase.Kind, TechStyle(phase), phase.Flip, choice);
+            if (def != null)
+                return def;
+
+            last = Race.TechEvals.LastOrDefault(e => e.PhaseId == phase.Id && cat.Sheet(e.SheetId) != null);
+            return last != null ? cat.Sheet(last.SheetId) : null;
         }
 
         public void ChooseTechSheet(SwimTechPhase phase, SwimTechSheet sheet)
@@ -57,8 +91,83 @@ namespace Kinovea.ScreenManager
             if (phase == null || sheet == null || Race == null)
                 return;
 
-            Settings.TechSheetChoice[ChoiceKey(phase, Race.Style)] = sheet.Id;
+            Settings.TechSheetChoice[ChoiceKey(phase)] = sheet.Id;
             Settings.Save();
+        }
+
+        /// <summary>(2.16.0) The evaluations with the older lists of every phase in the single lists (before each send). Returns how many scores moved.</summary>
+        private int MergeOldTechEvals()
+        {
+            if (Race == null || TechPhases == null || Race.TechEvals.Count == 0 || !TechCatalog.SingleLists)
+                return 0;
+
+            int moved = 0;
+            try
+            {
+                foreach (SwimTechPhase p in TechPhases)
+                    moved += MergeOldEvals(p);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not move the evaluations of the older lists.", e);
+            }
+
+            return moved;
+        }
+
+        /// <summary>(2.16.0) The evaluations of a phase with the older lists in its single list (when the page shows it).</summary>
+        public int MergeOldTechEvals(SwimTechPhase phase)
+        {
+            int moved = 0;
+            try
+            {
+                moved = MergeOldEvals(phase);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not move the evaluations of the older lists.", e);
+            }
+
+            if (moved > 0)
+            {
+                Changed(false);
+                ScheduleSend();
+            }
+
+            return moved;
+        }
+
+        /// <summary>
+        /// (2.16.0) The evaluations of a phase made with the older lists move to its single list (SwimTechSheetCatalog.MergeOld); a frame of
+        /// a score that did not move (the point had the coach's own score) goes when no other score keeps it. Returns how many moved.
+        /// </summary>
+        private int MergeOldEvals(SwimTechPhase phase)
+        {
+            SwimTechSheetCatalog cat = TechCatalog;
+            if (Race == null || phase == null || Race.TechEvals.Count == 0 || !cat.SingleLists)
+                return 0;
+            if (!Race.TechEvals.Any(e => e.PhaseId == phase.Id && cat.Sheet(e.SheetId) != null && cat.Sheet(e.SheetId).Hidden))
+                return 0;
+
+            SwimTechSheet single = cat.DefaultFor(phase.Kind, TechStyle(phase), phase.Flip, null);
+            if (!Offered(single))
+                return 0;
+
+            List<SwimTechScore> dropped = new List<SwimTechScore>();
+            int moved = cat.MergeOld(Race.TechEvals, phase.Id, single, dropped, DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture));
+            foreach (SwimTechScore s in dropped)
+            {
+                if (!SnapshotOfScores(s.SnapshotId))
+                    RemoveEvalSnapshot(s);
+            }
+
+            return moved;
+        }
+
+        /// <summary>A frame some score of an evaluation of the analysis keeps.</summary>
+        private bool SnapshotOfScores(string snapshotId)
+        {
+            return !string.IsNullOrEmpty(snapshotId) && Race != null && Race.TechEvals.Any(e => e.Scores.Values.Any(s => s.SnapshotId == snapshotId));
         }
 
         /// <summary>The evaluation of a phase with a sheet (null when there is none and create is false).</summary>
@@ -102,7 +211,7 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The program's automatic error list (🤖) of each start and turn of a training analysis kept up to date before each send, so that
         /// the report has it without the page being opened (the coach confirms or corrects it there; that is how the program learns).
-        /// Returns how many scores changed.
+        /// (2.16.0) With the single lists: the list of the phase, whose points include the errors. Returns how many scores changed.
         /// </summary>
         private int UpdateAutoEvals()
         {
@@ -115,8 +224,8 @@ namespace Kinovea.ScreenManager
                 SwimTechSheetCatalog cat = TechCatalog;
                 foreach (SwimTechPhase p in TechPhases)
                 {
-                    SwimTechSheet auto = cat.AutoFor(p.Kind, Race.Style, p.Flip);
-                    if (auto != null)
+                    SwimTechSheet auto = cat.SingleLists ? TechSheetFor(p) : cat.AutoFor(p.Kind, Race.Style, p.Flip);
+                    if (Offered(auto))
                         changed += ApplyProposals(p, auto, TechMeasures(p));
                 }
             }
@@ -138,6 +247,16 @@ namespace Kinovea.ScreenManager
             return learning.AgreementOf(criterion.Key, check);
         }
 
+        /// <summary>(2.16.0) The same for a point of a sheet: with the answers on the older points it stands for.</summary>
+        public SwimTechAgreement TechAgreement(SwimTechSheetItem item)
+        {
+            SwimTechLearning learning = SwimTechLearning.Current;
+            SwimTechCheck check = item != null ? TechCatalog.CheckOf(item.Criterion) : null;
+            if (learning == null || check == null)
+                return null;
+            return learning.AgreementOf(new[] { item.Key }.Concat(item.Same), check);
+        }
+
         private int ApplyProposals(SwimTechPhase phase, SwimTechSheet sheet, Dictionary<string, SwimTechMeasure> measures)
         {
             if (Settings == null || !Settings.TechEvalAuto || phase == null || sheet == null || measures == null)
@@ -151,7 +270,7 @@ namespace Kinovea.ScreenManager
                 if (it.Criterion.Check == null || !measures.TryGetValue(it.Criterion.Check, out m))
                     continue;
 
-                int? proposal = SwimTechEvaluator.Proposal(it.Criterion, m, !sheet.Scored, TechAgreement(it.Criterion));
+                int? proposal = SwimTechEvaluator.Proposal(it.Criterion, m, !sheet.Scored, TechAgreement(it));
                 SwimTechScore score = null;
                 if (eval != null)
                     eval.Scores.TryGetValue(it.Key, out score);

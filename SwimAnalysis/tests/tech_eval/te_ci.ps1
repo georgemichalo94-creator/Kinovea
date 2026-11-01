@@ -317,6 +317,71 @@ $pp = New-Object 'System.Drawing.PointF[]' 17; $vv = New-Object 'float[]' 17
 Check ($front.TryGet(40, 2, $pp, $vv, $false)) 'a skeleton read from the front: read as before'
 Check (-not $front.TryGet(40, 2, $pp, $vv, $true)) 'a skeleton read from the front: not a side view'
 Check ($skel.TryGet(10300, 2, $pp, $vv, $true)) 'the synthetic turn: a side view'
+# ---------------------------------------------------------------------------------------------------------------------------------
+# (2.16.0) The single lists (a fictional catalogue made from the one above): one list for the start and one for the turn of a style,
+# one for a change of stroke of a medley; the older sheets hidden, their evaluations moved into the single list.
+$singlePath = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($catalog), 'mini_single.json')
+$one = $tCat.GetMethod('Parse').Invoke($null, @([System.IO.File]::ReadAllText($singlePath)))
+Check ($one.SingleLists -and $one.HasTransitions -and -not $cat.SingleLists -and -not $cat.HasTransitions) 'single lists and medley changes known'
+$oneFor = @($one.SheetsFor($turnKind, 'fs')) | ForEach-Object { $_.Id }
+Check (($oneFor -join ',') -eq 'kv-turn-fs') ('a freestyle turn: only its single list (' + ($oneFor -join ',') + ')')
+$oneStart = @($one.SheetsFor($startKind, 'fs')) | ForEach-Object { $_.Id }
+Check (($oneStart -join ',') -eq 'kv-start-fs') ('a freestyle start: only its single list (' + ($oneStart -join ',') + ')')
+$imChange = @($one.SheetsFor($turnKind, 'im-fly-bk')) | ForEach-Object { $_.Id }
+Check (($imChange -join ',') -eq 'kv-turn-im-fly-bk') ('the medley turn butterfly to backstroke: its list (' + ($imChange -join ',') + ')')
+Check (@($one.SheetsFor($turnKind, 'im-bk-br')).Count -eq 0 -and @($one.SheetsFor($startKind, 'im-fly-bk')).Count -eq 0) 'no list for a change without one, nor for a start'
+Check ((@($one.SheetsFor($turnKind, 'im')) | ForEach-Object { $_.Id }) -contains 'kv-turn-im-fly-bk') 'a medley training turn: the lists of the changes'
+Check (($def.Invoke($one, @($turnKind, 'fs', $true, 'koe-demo-turn-fs'))).Id -eq 'kv-turn-fs') 'an older last choice is not kept'
+Check ($one.Sheet('koe-demo-turn-fs').Hidden -and $null -ne $one.Sheet('kv-auto-turn-fs')) 'the older sheets still read (hidden)'
+$tf = $one.Sheet('kv-turn-fs')
+$rq = @($tf.Items) | Where-Object { $_.Key -eq 'ok.rotation_quick' }
+Check ($null -ne $rq -and $rq.StandsFor('ka.rotation_slow') -and $rq.StandsFor('ok.rotation_quick') -and -not $rq.StandsFor('ka.push_slow')) 'a point of the single list stands for the error of the older list'
+
+# Older evaluations of a turn move into its single list.
+$tEval = T 'SwimTechEval'; $tScore = T 'SwimTechScore'
+function Score($v, $auto, $snap) { $s = [Activator]::CreateInstance($tScore); $s.Value = $v; $s.Auto = $auto; $s.SnapshotId = $snap; return $s }
+$evals = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tEval))
+$dropped = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tScore))
+$target = [Activator]::CreateInstance($tEval); $target.PhaseId = 'turn-x'; $target.SheetId = 'kv-turn-fs'
+$target.Scores.Add('push.short', (Score 0 $false 'snapT'))
+$oldA = [Activator]::CreateInstance($tEval); $oldA.PhaseId = 'turn-x'; $oldA.SheetId = 'kv-auto-turn-fs'
+$oldA.Scores.Add('ka.rotation_slow', (Score 1 $false 'snapA')); $oldA.Scores.Add('ka.push_slow', (Score 0 $true $null)); $oldA.Scores.Add('ka.line', (Score 1 $true $null))
+$oldB = [Activator]::CreateInstance($tEval); $oldB.PhaseId = 'turn-x'; $oldB.SheetId = 'koe-demo-turn-fs'; $oldB.Notes = 'Σημείωση Β'
+$oldB.Scores.Add('t.streamline', (Score 1 $false $null)); $oldB.Scores.Add('t.kicks', (Score 0 $false 'snapB'))
+$other = [Activator]::CreateInstance($tEval); $other.PhaseId = 'turn-y'; $other.SheetId = 'kv-auto-turn-fs'; $other.Scores.Add('ka.rotation_slow', (Score 0 $true $null))
+$evals.Add($target); $evals.Add($oldA); $evals.Add($oldB); $evals.Add($other)
+$moved = $one.MergeOld($evals, 'turn-x', $tf, $dropped, '1/11/2026 08:00')
+$sc = $target.Scores
+Write-Output ('merge: moved ' + $moved + ', evaluations ' + $evals.Count + ', single list ' + (($sc.Keys | Sort-Object) -join ','))
+Check ($sc['ok.rotation_quick'].Value -eq 0 -and -not $sc['ok.rotation_quick'].Auto -and $sc['ok.rotation_quick'].SnapshotId -eq 'snapA') 'an error of the older list: ✗ in the single list, with its frame'
+Check ($sc['push.short'].Value -eq 0 -and $sc['push.short'].SnapshotId -eq 'snapT') 'the coach''s own score of a point stays'
+Check ($sc['t.streamline'].Value -eq 1 -and -not $sc.ContainsKey('ka.line') -and -not $sc.ContainsKey('t.kicks')) 'the same point moved; a point the list has not did not'
+Check (-not $evals.Contains($oldA) -and $evals.Contains($oldB) -and $oldB.Scores.Count -eq 1 -and $oldB.Scores.ContainsKey('t.kicks')) 'the automatic older list went; the one with a score of the coach not moved stays with it'
+Check ($target.Notes -eq 'Σημείωση Β' -and $target.Date -eq '1/11/2026 08:00') 'the notes moved'
+Check ($evals.Contains($other) -and $other.Scores.Count -eq 1) 'another phase as it was'
+Check ($dropped.Count -eq 0) 'no frame to drop'
+Check ($moved -ge 3) ('changes counted: ' + $moved)
+$again = $one.MergeOld($evals, 'turn-x', $tf, $dropped, '1/11/2026 09:00')
+Check ($again -eq 0 -and $target.Date -eq '1/11/2026 08:00') ('nothing moves twice: ' + $again)
+# A single list's point overrides an automatic score with the coach's older answer (and the older frame goes with the new one).
+$e2 = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tEval))
+$t2 = [Activator]::CreateInstance($tEval); $t2.PhaseId = 'p'; $t2.SheetId = 'kv-turn-fs'; $t2.Scores.Add('ok.rotation_quick', (Score 1 $true 'snapAuto'))
+$o2 = [Activator]::CreateInstance($tEval); $o2.PhaseId = 'p'; $o2.SheetId = 'kv-auto-turn-fs'; $o2.Scores.Add('ka.rotation_slow', (Score 1 $false 'snapCoach'))
+$e2.Add($t2); $e2.Add($o2)
+$d2 = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tScore))
+$null = $one.MergeOld($e2, 'p', $tf, $d2, 'x')
+Check ($t2.Scores['ok.rotation_quick'].Value -eq 0 -and -not $t2.Scores['ok.rotation_quick'].Auto -and $t2.Scores['ok.rotation_quick'].SnapshotId -eq 'snapCoach' -and $d2.Count -eq 1 -and $d2[0].SnapshotId -eq 'snapAuto' -and $e2.Count -eq 1) 'the coach''s older answer over an automatic one'
+
+# The learning of a point of a single list counts the answers on the older points it stands for.
+$learn2 = [Activator]::CreateInstance($tLearn)
+$i = 0
+foreach ($v in @(0.5, 0.55, 0.6, 1.2, 1.3)) { $x = [Activator]::CreateInstance($tSample); $x.Key = 'r' + $i; $i++; $x.Check = 'rotation_flip'; $x.Criterion = 'ka.rotation_slow'; $x.Measured = 100 * $v / 0.6; $x.Good = ($v -lt 1); $learn2.Put($x) }
+$x = [Activator]::CreateInstance($tSample); $x.Key = 'r9'; $x.Check = 'rotation_flip'; $x.Criterion = 'ok.rotation_quick'; $x.Measured = 90; $x.Good = $true; $learn2.Put($x)
+$keys = [string[]]@('ok.rotation_quick', 'ka.rotation_slow')
+$both = $learn2.AgreementOf([System.Collections.Generic.IEnumerable[string]]$keys, $one.Checks['rotation_flip'])
+$alone = $learn2.AgreementOf('ok.rotation_quick', $one.Checks['rotation_flip'])
+Check ($both.Samples -eq 6 -and $alone.Samples -eq 1) ('answers of the older point count: ' + $both.Samples + ' with, ' + $alone.Samples + ' without')
+
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0

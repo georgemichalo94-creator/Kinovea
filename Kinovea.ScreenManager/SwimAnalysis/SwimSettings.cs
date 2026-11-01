@@ -120,6 +120,14 @@ namespace Kinovea.ScreenManager
         public string PanelBounds = "";
 
         /// <summary>
+        /// (2.16.0) The window of the analysis beside the screens: the main window of Kinovea on the left of its screen, the analysis in the
+        /// strip on the right (the frames and the evaluation together). OwnerBoundsBeforeDock: where the main window was before
+        /// ("x,y,width,height,max"), for going back.
+        /// </summary>
+        public bool PanelDocked = false;
+        public string OwnerBoundsBeforeDock = "";
+
+        /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
         /// area ("x,y"), empty for the default place (bottom right).
         /// </summary>

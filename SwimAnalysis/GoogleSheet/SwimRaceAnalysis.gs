@@ -1460,7 +1460,7 @@ function swimNormalizeTech_(raw) {
         });
         if (items.length) groups.push({ label: String(gr.label || ''), items: items });
       });
-      if (groups.length) sheets[String(id)] = { title: String(sh.title || ''), source: String(sh.source || ''), scored: sh.scored !== false, groups: groups };
+      if (groups.length) sheets[String(id)] = { title: swimNoBrand_(sh.title), source: swimNoBrand_(sh.source), scored: sh.scored !== false, groups: groups };
     });
   }
   var evals = [];
@@ -3928,10 +3928,20 @@ function swimTechEvalList_(race) {
       good += gGood; scored += gScored; total += items.length;
       return { label: gr.label, items: items, good: gGood, scored: gScored, total: items.length };
     });
-    return { id: e.id, phase: e.phase, phaseLabel: e.phaseLabel, phaseKind: e.phaseKind, sheet: e.sheet, title: sh.title, source: sh.source,
+    return { id: e.id, phase: e.phase, phaseLabel: e.phaseLabel, phaseKind: e.phaseKind, sheet: e.sheet, title: swimNoBrand_(sh.title), source: swimNoBrand_(sh.source),
       scored: sh.scored, date: e.date, notes: e.notes, level: e.level, groups: groups, good: good, scoredCount: scored, total: total,
       auto: auto, errors: errors, frames: frames };
   }).filter(function (e) { return e; });
+}
+
+/**
+ * 2.16.0: οι τίτλοι και οι πηγές των φύλλων χωρίς το όνομα του οργανισμού των παλιών φύλλων (και στις αναλύσεις που στάλθηκαν πριν τις
+ * ενιαίες λίστες): στα reports μόνο τα δικά μας ονόματα.
+ */
+function swimNoBrand_(s) {
+  return String(s || '').replace(/\s*\(British Swimming(?:,\s*([^)]*))?\)/g, function (m, rest) { return rest ? ' (' + rest + ')' : ''; })
+    .replace(/British Swimming\s*[–-]\s*/g, '').replace(/\s*[–-]\s*British Swimming/g, '').replace(/British Swimming/g, '')
+    .replace(/\s{2,}/g, ' ').trim();
 }
 
 /** Το κελί του αποτελέσματος ενός σημείου: κείμενο και χρώματα (✓ πράσινο, ✗ κόκκινο, – γκρι, 🤖 όταν το έβαλε το πρόγραμμα). */

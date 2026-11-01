@@ -3117,8 +3117,9 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // (2.13.0) The program's automatic error lists of a training, up to date in the report.
-            if (UpdateAutoEvals() > 0)
+            // (2.13.0) The program's automatic error lists of a training, up to date in the report. (2.16.0) The evaluations made with the
+            // older lists in the single lists first.
+            if (MergeOldTechEvals() + UpdateAutoEvals() > 0)
             {
                 MarkDirty();
                 if (form != null)
