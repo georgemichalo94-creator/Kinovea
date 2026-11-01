@@ -466,6 +466,7 @@ namespace Kinovea.ScreenManager
 
             List<double> aspects = new List<double>();
             List<int> controls = new List<int>();
+            List<int> minimums = new List<int>();
             double first = 0;
             for (int i = 0; i < gridCount; i++)
             {
@@ -477,6 +478,7 @@ namespace Kinovea.ScreenManager
                         return false;
                     aspects.Add(player.SwimImageAspect);
                     controls.Add(fullScreen || bigScreens ? 0 : player.SwimControlsHeight);
+                    minimums.Add(fullScreen || bigScreens ? 0 : player.SwimMinimumHeight);
                     if (first <= 0)
                         first = player.SwimImageAspect;
                 }
@@ -484,6 +486,7 @@ namespace Kinovea.ScreenManager
                 {
                     aspects.Add(0);
                     controls.Add(0);
+                    minimums.Add(0);
                 }
                 else
                 {
@@ -551,11 +554,18 @@ namespace Kinovea.ScreenManager
             int total = gap * (bestRows.Length - 1);
             for (int r = 0; r < bestRows.Length; r++)
             {
-                int most = 0;
+                // At least the height of its screens (their keyframes and controls are laid out in it): a lower row would push the
+                // bottom of a screen out of its cell. The image then has a little room above and below it, never cut.
+                int most = 0, least = 0;
                 for (int c = 0; c < bestRows[r]; c++, index++)
+                {
                     most = Math.Max(most, controls[index]);
-                rowHeights.Add(image + most);
-                total += image + most;
+                    least = Math.Max(least, minimums[index]);
+                }
+
+                int rowHeight = Math.Max(image + most, least);
+                rowHeights.Add(rowHeight);
+                total += rowHeight;
             }
 
             int top = area.Top + Math.Max(0, (area.Height - total) / 2);
