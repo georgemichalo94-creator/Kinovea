@@ -33,12 +33,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.16.0) The style of the lists of a phase: the race's. In a medley with lists for its changes of stroke, a turn where the stroke
-        /// changes is that change ("im-fly-bk", "im-bk-br", "im-br-fs") and a turn inside a stroke is of that stroke (the start stays "im":
-        /// the butterfly start has it).
+        /// changes is that change ("im-fly-bk", "im-bk-br", "im-br-fs") and a turn inside a stroke is of that stroke; its start is of the
+        /// stroke of its first length (butterfly, backstroke in a medley relay).
         /// </summary>
         public string TechStyle(SwimTechPhase phase)
         {
             string style = Race != null ? Race.Style ?? "" : "";
+            if (style == "im" && phase != null && phase.Kind == SwimPhaseKind.Start && Race.Pool > 0 && TechCatalog.HasTransitions)
+            {
+                string first = SwimPresets.StyleAt(Race, Math.Min(Race.Distance, Race.Pool));
+                return string.IsNullOrEmpty(first) ? style : first;
+            }
+
             if (style != "im" || phase == null || phase.Kind != SwimPhaseKind.Turn || phase.Wall <= 0 || Race.Pool <= 0 || !TechCatalog.HasTransitions)
                 return style;
 
