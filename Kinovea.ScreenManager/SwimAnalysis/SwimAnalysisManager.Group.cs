@@ -598,11 +598,16 @@ namespace Kinovea.ScreenManager
             bool panel = GroupPanelShown;
             bool graphics = Settings == null || Settings.VideoGraphics;
 
-            // The places of the images: the video of the analysis, the other screens, the panel (the shape of the first video).
-            List<double> aspects = new List<double> { AspectOf(reader.Info.ReferenceSize) };
-            aspects.AddRange(others.Select(s => AspectOf(s.SwimFrameServer.VideoReader.Info.ReferenceSize)));
+            // The places of the images in the order of the screens (as in the grid and the snapshots of the group), the panel last in the
+            // shape of the first video. The images are read as the video of the analysis, then the others: each goes to its place.
+            List<PlayerScreenUserInterface> order = screens.Contains(player) ? screens : new[] { player }.Concat(others).ToList();
+            List<double> aspects = order.Select(s => AspectOf(s == player ? reader.Info.ReferenceSize : s.SwimFrameServer.VideoReader.Info.ReferenceSize)).ToList();
             if (panel)
                 aspects.Add(aspects[0]);
+            List<int> slots = new List<int> { order.IndexOf(player) };
+            slots.AddRange(others.Select(s => order.IndexOf(s)));
+            if (panel)
+                slots.Add(order.Count);
             double lw, lh;
             List<RectangleF> places = SwimTiles.Layout(aspects, 1920, 1080, out lw, out lh);
             int width = Math.Max(2, (int)Math.Floor(lw) & ~1), height = Math.Max(2, (int)Math.Floor(lh) & ~1);
@@ -684,10 +689,10 @@ namespace Kinovea.ScreenManager
                             g.Clear(Color.Black);
                             g.InterpolationMode = InterpolationMode.HighQualityBilinear;
                             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                            for (int i = 0; i < flushed.Count && i < rects.Count; i++)
+                            for (int i = 0; i < flushed.Count && i < slots.Count; i++)
                             {
-                                if (flushed[i] != null)
-                                    g.DrawImage(flushed[i], rects[i]);
+                                if (flushed[i] != null && slots[i] >= 0 && slots[i] < rects.Count)
+                                    g.DrawImage(flushed[i], rects[slots[i]]);
                             }
                         }
 
