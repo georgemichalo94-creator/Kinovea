@@ -311,6 +311,11 @@ namespace Kinovea.ScreenManager
             if (screenUI == null)
                 return;
 
+            // (Swim 2.16.0) Out of the grid the screen has its minimum size again.
+            PlayerScreenUserInterface player = screenUI as PlayerScreenUserInterface;
+            if (player != null)
+                player.SwimInGrid(false);
+
             splitScreens.Panel1Collapsed = false;
             splitScreens.Panel1.AllowDrop = true;
             splitScreens.Panel1.Controls.Add(screenUI);
@@ -320,6 +325,10 @@ namespace Kinovea.ScreenManager
         {
             if (screenUI == null)
                 return;
+
+            PlayerScreenUserInterface player = screenUI as PlayerScreenUserInterface;
+            if (player != null)
+                player.SwimInGrid(false);
 
             splitScreens.Panel2Collapsed = false;
             splitScreens.Panel2.AllowDrop = true;
@@ -386,6 +395,11 @@ namespace Kinovea.ScreenManager
                 if (screenUI == null)
                     continue;
 
+                // (Swim 2.16.0) The screen takes the size of its cell: nothing of its image cut by its minimum width.
+                PlayerScreenUserInterface player = screenUI as PlayerScreenUserInterface;
+                if (player != null)
+                    player.SwimInGrid(true);
+
                 screenUI.Dock = DockStyle.Fill;
                 gridCells[i].Controls.Add(screenUI);
             }
@@ -411,7 +425,8 @@ namespace Kinovea.ScreenManager
             if (gridCount < (fullScreen ? 1 : 3))
                 return;
 
-            int gap = fullScreen ? 0 : gridGap;
+            // (Swim 2.16.0) Big screens too: the images joined, nothing between them.
+            int gap = fullScreen || bigScreens ? 0 : gridGap;
             Rectangle area = pnlGrid.ClientRectangle;
             if (LayoutGridFitted(area, gap))
                 return;

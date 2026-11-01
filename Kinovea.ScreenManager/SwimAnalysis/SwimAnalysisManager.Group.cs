@@ -250,10 +250,14 @@ namespace Kinovea.ScreenManager
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                    float scale = Math.Min(size.Width / 1280f, size.Height / 720f);
-                    g.TranslateTransform((size.Width - 1280f * scale) / 2f, (size.Height - 720f * scale) / 2f);
+                    // In the shape of its place: 16:9 beside 16:9 videos, taller beside 4:3 ones or in a narrow cell (fewer columns).
+                    float aspect = size.Width / (float)size.Height;
+                    float width = aspect >= 1.5f ? 1280f : aspect >= 1.1f ? 1100f : 860f;
+                    float height = Math.Max(560f, width / aspect);
+                    float scale = Math.Min(size.Width / width, size.Height / height);
+                    g.TranslateTransform((size.Width - width * scale) / 2f, (size.Height - height * scale) / 2f);
                     g.ScaleTransform(scale, scale);
-                    PaintDashboard(g, at);
+                    PaintDashboard(g, at, width, height);
                 }
                 catch (Exception e)
                 {
@@ -266,9 +270,9 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private void PaintDashboard(Graphics g, long at)
+        private void PaintDashboard(Graphics g, long at, float width, float height)
         {
-            RectangleF frame = new RectangleF(16, 16, 1248, 688);
+            RectangleF frame = new RectangleF(16, 16, width - 32, height - 32);
             SwimTheme.HudPanel(g, frame, SwimTheme.Accent, 1f, false);
             Font wordmark = SwimTheme.DisplayLight(15f);
             Font title = SwimTheme.Ui(17f, FontStyle.Bold);
@@ -309,10 +313,11 @@ namespace Kinovea.ScreenManager
             using (Pen line = new Pen(Color.FromArgb(70, SwimTheme.Accent), 1.5f))
                 g.DrawLine(line, 40, 118, frame.Right - 24, 118);
 
-            // The values as they pass, in cells of five columns (the speeds of the segments below them when there are some).
+            // The values as they pass, in cells of five columns (four or three in a narrower panel), the speeds of the segments below them
+            // when there are some.
             bool chart = phase != null && SegmentSpeedsAt(phase, now) > 0;
-            float gridBottom = chart ? 420 : 680;
-            const int cols = 5;
+            float gridBottom = chart ? Math.Max(228f, height * 0.58f) : height - 40;
+            int cols = width >= 1200 ? 5 : width >= 1000 ? 4 : 3;
             float cellW = (frame.Width - 48) / cols, cellH = 92;
             int rows = Math.Max(1, (int)((gridBottom - 136) / cellH));
             int shown = Math.Min(items.Count, cols * rows);
@@ -330,13 +335,15 @@ namespace Kinovea.ScreenManager
 
                 if (phase != null && items.Count == 0)
                     g.DrawString(SwimLang.T("Οι χρόνοι μπαίνουν εδώ καθώς περνούν."), small, dim, 40, 140);
+                else if (phase == null)
+                    g.DrawString(SwimLang.T("Τα δεδομένα της εκκίνησης ή της στροφής φαίνονται εδώ, όταν το βίντεο φτάσει σε αυτήν."), small, dim, 40, 140);
             }
 
             if (chart)
             {
                 // The chart of the speeds of the segments across the panel under the values.
-                RectangleF place = new RectangleF(40, 424, frame.Width - 48, frame.Bottom - 24 - 424);
-                DrawSegmentSpeedChart(g, phase, now, new Size(1280, 720), 1.9f, place);
+                RectangleF place = new RectangleF(40, gridBottom + 4, frame.Width - 48, frame.Bottom - 24 - (gridBottom + 4));
+                DrawSegmentSpeedChart(g, phase, now, new Size((int)width, (int)height), 1.9f, place);
             }
         }
 

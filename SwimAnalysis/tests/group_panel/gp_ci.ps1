@@ -118,13 +118,20 @@ foreach ($at in @(9500, 10900, 13500, 16200, 30000)) {
     Check $false ('panel at ' + $at + ' ms: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)
   } finally { $g.Dispose(); $b.Dispose() }
 }
-# A wide panel (in the place of a screen of another shape) and a small one: fitted, nothing outside.
-foreach ($sz in @(@(1920, 600), @(480, 270))) {
+# A wide panel (in the place of a screen of another shape) and a small one: fitted, nothing outside. (2.16.0) In the shape of a 4:3
+# video and of a narrow cell: the panel takes the height of its place (its values and chart below each other), not a 16:9 strip.
+foreach ($sz in @(@(1920, 600), @(480, 270), @(960, 720), @(420, 560))) {
   $b = New-Object System.Drawing.Bitmap $sz[0], $sz[1]
   $g = [System.Drawing.Graphics]::FromImage($b)
   try {
     $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new([int]$sz[0], [int]$sz[1]), [long]13500))
     $b.Save([System.IO.Path]::Combine($out, ('panel-' + $sz[0] + 'x' + $sz[1] + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+    if ($sz[0] -eq 960) {
+      # The lowest fifth of a 4:3 panel has the chart (the 16:9 drawing left it empty).
+      $low = 0
+      for ($y = 560; $y -lt 690; $y += 9) { for ($xx = 40; $xx -lt 920; $xx += 17) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 80 -or $c.G -gt 120) { $low++ } } }
+      Check ($low -gt 10) ('panel 960x720 uses its height (' + $low + ' bright samples in its lowest part)')
+    }
     Check $true ('panel ' + $sz[0] + 'x' + $sz[1])
   } catch {
     $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }

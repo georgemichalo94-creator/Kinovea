@@ -2802,6 +2802,30 @@ namespace Kinovea.ScreenManager
             get { return imageOnly ? 0 : Math.Max(0, Height - panelCenter.Height); }
         }
 
+        // (Swim 2.16.0) The minimum size of the screen out of the grid (as designed), kept while it is in a cell of the grid.
+        private bool swimMinimumKnown;
+        private Size swimMinimum;
+
+        /// <summary>
+        /// (Swim 2.16.0) In a cell of the grid of the screens the screen takes the size of its cell (the cell is in the shape of its video
+        /// with its controls under it): its own minimum width would push its right side out of a narrower cell and cut its image there.
+        /// Out of the grid (one or two screens) its minimum size comes back.
+        /// </summary>
+        internal void SwimInGrid(bool inGrid)
+        {
+            if (!swimMinimumKnown)
+            {
+                swimMinimum = imageOnly ? memoMinimumSize : MinimumSize;
+                swimMinimumKnown = true;
+            }
+
+            Size wanted = inGrid ? new Size(Math.Min(160, swimMinimum.Width), Math.Min(120, swimMinimum.Height)) : swimMinimum;
+            if (imageOnly)
+                memoMinimumSize = wanted;
+            else if (MinimumSize != wanted)
+                MinimumSize = wanted;
+        }
+
         /// <summary>
         /// (Swim 2.14.0) The time of a frame from the time origin of this video (the point where the screens are synchronised), in
         /// microseconds of real time (the speed of the camera taken into account): the same moment on the screens of a group.

@@ -2179,6 +2179,7 @@ namespace Kinovea.ScreenManager
             // (2.16.0) A group of screens: its graphics, its panel, its snapshots and its video.
             { "Η ανάλυση της ομάδας δεν είναι ανοιχτή.", "The analysis of the group is not open." },
             { "Οι χρόνοι μπαίνουν εδώ καθώς περνούν.", "The times come here as they pass." },
+            { "Τα δεδομένα της εκκίνησης ή της στροφής φαίνονται εδώ, όταν το βίντεο φτάσει σε αυτήν.", "The data of the start or the turn show here when the video reaches it." },
             { "Το βίντεο όλων των οθονών θέλει μια ομάδα οθονών με βίντεο (κουμπί «Ομάδα»).", "The video of all the screens needs a group of screens with videos (button «Group»)." },
             { "όλες οι οθόνες", "all screens" },
             { "Βίντεο όλων των οθονών", "Video of all the screens" },
@@ -2194,7 +2195,7 @@ namespace Kinovea.ScreenManager
                 "or on a panel in the place of one more screen with only the graphics and the data of the start or the turn.\n" },
             { "Τα στιγμιότυπα με ομάδα: όλες οι οθόνες μαζί, κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ.",
                 "The snapshots of a group: all the screens together, joined in the shape of their videos, with the graphics as here." },
-            { "🎞 Βίντεο όλων των οθονών", "🎞 Video of all the screens" },
+            { "🎬 Βίντεο όλων των οθονών", "🎬 Video of all the screens" },
             { "Ένα βίντεο με όλες τις οθόνες της ομάδας μαζί (όπως τα στιγμιότυπα της ομάδας), της εκκίνησης ή της στροφής που βλέπεις, αλλιώς όλης της ανάλυσης.",
                 "One video with all the screens of the group together (as the snapshots of the group), of the start or the turn you are on, else of the whole analysis." },
             { "Ομάδα οθονών · γραφικά:", "Group of screens · graphics:" },
