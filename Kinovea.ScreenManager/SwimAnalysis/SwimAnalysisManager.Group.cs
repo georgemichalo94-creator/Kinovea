@@ -309,10 +309,10 @@ namespace Kinovea.ScreenManager
             using (Pen line = new Pen(Color.FromArgb(70, SwimTheme.Accent), 1.5f))
                 g.DrawLine(line, 40, 118, frame.Right - 24, 118);
 
-            // The values as they pass, in cells of three columns (the speeds of the segments below them when there are some).
+            // The values as they pass, in cells of five columns (the speeds of the segments below them when there are some).
             bool chart = phase != null && SegmentSpeedsAt(phase, now) > 0;
             float gridBottom = chart ? 420 : 680;
-            const int cols = 4;
+            const int cols = 5;
             float cellW = (frame.Width - 48) / cols, cellH = 92;
             int rows = Math.Max(1, (int)((gridBottom - 136) / cellH));
             int shown = Math.Min(items.Count, cols * rows);
@@ -334,11 +334,9 @@ namespace Kinovea.ScreenManager
 
             if (chart)
             {
-                // The chart of the speeds of the segments, wide under the values (its panel ends 10 units inside the size given).
-                float s = 2.6f;
-                RectangleF place = new RectangleF(40, 440, 236 * s, 132 * s * 0.56f);
-                float k = Math.Min(place.Width / 236f, (frame.Bottom - 24 - place.Top) / 132f);
-                DrawSegmentSpeedChart(g, phase, now, new Size((int)Math.Round(place.Left + 246 * k), (int)Math.Round(place.Top + 142 * k)), k);
+                // The chart of the speeds of the segments across the panel under the values.
+                RectangleF place = new RectangleF(40, 424, frame.Width - 48, frame.Bottom - 24 - 424);
+                DrawSegmentSpeedChart(g, phase, now, new Size(1280, 720), 1.9f, place);
             }
         }
 

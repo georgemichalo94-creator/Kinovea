@@ -183,7 +183,7 @@ namespace Kinovea.ScreenManager
         /// The speeds of the segments of the phase passed so far (0–5, 5–10, 10–15: after the contact for a turn): a bar for each, its value
         /// above it and a line through their tops, at the bottom right. Nothing before the first one.
         /// </summary>
-        private void DrawSegmentSpeedChart(Graphics g, SwimTechPhase phase, double now, Size size, float scale)
+        private void DrawSegmentSpeedChart(Graphics g, SwimTechPhase phase, double now, Size size, float scale, RectangleF? place = null)
         {
             if (phase == null || size.Width < 360 || size.Height < 240)
                 return;
@@ -205,8 +205,9 @@ namespace Kinovea.ScreenManager
             if (bars.Count == 0)
                 return;
 
+            // (The panel of a group of screens gives its own place: wide under its values.)
             float w = 236 * scale, h = 132 * scale;
-            RectangleF panel = new RectangleF(size.Width - w - 10 * scale, size.Height - h - 10 * scale, w, h);
+            RectangleF panel = place ?? new RectangleF(size.Width - w - 10 * scale, size.Height - h - 10 * scale, w, h);
             SwimTheme.HudPanel(g, panel, SwimTheme.Accent);
             Font title = LinesFont(7f, scale, FontStyle.Bold);
             Font value = LinesFont(8f, scale, FontStyle.Bold);
