@@ -278,7 +278,7 @@ namespace Kinovea.ScreenManager
             Font small = SwimTheme.Ui(12f, FontStyle.Regular);
 
             SwimTheme.CapsIn(g, "SWIM ANALYTICS", wordmark, SwimTheme.AccentPale, new RectangleF(40, 34, 400, 30), StringAlignment.Near, 0.2f);
-            if (!Active || Race == null || TechPhases == null || !Timing.IsValid)
+            if (Race == null || TechPhases == null || Timing == null || !Timing.IsValid)
             {
                 using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
                     g.DrawString(SwimLang.T("Η ανάλυση της ομάδας δεν είναι ανοιχτή."), small, dim, 40, 100);
