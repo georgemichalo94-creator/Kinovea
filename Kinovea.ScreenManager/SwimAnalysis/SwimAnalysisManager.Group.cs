@@ -302,8 +302,9 @@ namespace Kinovea.ScreenManager
             {
                 // Between the start and the turns: the race clock from the start signal.
                 SwimTechPhase start = TechPhases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start);
-                head = SwimLang.T("ΚΟΛΥΜΒΗΣΗ");
-                clock = start != null ? Timing.Seconds(at, start.Origin).ToString("0.00", CultureInfo.InvariantCulture) + " s" : "";
+                double sinceStart = start != null ? Timing.Seconds(at, start.Origin) : 0;
+                head = start != null && sinceStart < 0 ? SwimLang.T("ΠΡΙΝ ΤΗΝ ΕΚΚΙΝΗΣΗ") : SwimLang.T("ΚΟΛΥΜΒΗΣΗ");
+                clock = start != null ? sinceStart.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "";
                 items = new List<KeyValuePair<string, string>>();
             }
 

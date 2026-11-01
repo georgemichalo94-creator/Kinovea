@@ -2179,6 +2179,7 @@ namespace Kinovea.ScreenManager
             // (2.16.0) A group of screens: its graphics, its panel, its snapshots and its video.
             { "Η ανάλυση της ομάδας δεν είναι ανοιχτή.", "The analysis of the group is not open." },
             { "Οι χρόνοι μπαίνουν εδώ καθώς περνούν.", "The times come here as they pass." },
+            { "ΠΡΙΝ ΤΗΝ ΕΚΚΙΝΗΣΗ", "BEFORE THE START" },
             { "Τα δεδομένα της εκκίνησης ή της στροφής φαίνονται εδώ, όταν το βίντεο φτάσει σε αυτήν.", "The data of the start or the turn show here when the video reaches it." },
             { "Το βίντεο όλων των οθονών θέλει μια ομάδα οθονών με βίντεο (κουμπί «Ομάδα»).", "The video of all the screens needs a group of screens with videos (button «Group»)." },
             { "όλες οι οθόνες", "all screens" },

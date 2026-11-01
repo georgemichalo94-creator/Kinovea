@@ -283,6 +283,10 @@ namespace Kinovea.ScreenManager
                             owner.WindowState == FormWindowState.Maximized ? "max" : "");
                     }
 
+                    // This window where it was, to go back there afterwards.
+                    if (!dockedBeside && WindowState == FormWindowState.Normal)
+                        manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
+
                     int width = Math.Max(Math.Min(MinimumSize.Width, area.Width / 2), Math.Min(Width, area.Width / 2));
                     if (WindowState != FormWindowState.Normal)
                         WindowState = FormWindowState.Normal;
@@ -303,10 +307,18 @@ namespace Kinovea.ScreenManager
                         max = true;
                     owner.WindowState = max ? FormWindowState.Maximized : FormWindowState.Normal;
 
-                    // This window as it opens: near the right edge of the main window.
-                    Rectangle area = Screen.FromControl(owner).WorkingArea;
-                    int height = Math.Min(Math.Max(MinimumSize.Height, 900), area.Height);
-                    Bounds = new Rectangle(Math.Max(area.Left, area.Right - Width - 16), Math.Max(area.Top, Math.Min(area.Top + 90, area.Bottom - height)), Width, height);
+                    // This window where it was before (else as it opens: near the right edge of the main window).
+                    Rectangle panelWas;
+                    if (TryParseBounds(manager.Settings.PanelBounds, out panelWas) && TitleOnScreen(panelWas))
+                    {
+                        Bounds = panelWas;
+                    }
+                    else
+                    {
+                        Rectangle area = Screen.FromControl(owner).WorkingArea;
+                        int height = Math.Min(Math.Max(MinimumSize.Height, 900), area.Height);
+                        Bounds = new Rectangle(Math.Max(area.Left, area.Right - Width - 16), Math.Max(area.Top, Math.Min(area.Top + 90, area.Bottom - height)), Width, height);
+                    }
                     manager.Settings.OwnerBoundsBeforeDock = "";
                     dockedBeside = false;
                 }

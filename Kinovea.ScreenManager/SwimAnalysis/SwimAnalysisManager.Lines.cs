@@ -123,6 +123,7 @@ namespace Kinovea.ScreenManager
             double now = phase != null ? Timing.Seconds(timestamp, phase.Origin) : 0;
             string unit = UnitShort;
             Font font = LinesFont(8.5f, scale, FontStyle.Bold);
+            List<RectangleF> placed = new List<RectangleF>();
             foreach (KeyValuePair<int, double> line in lines)
             {
                 PointF a, b;
@@ -158,7 +159,26 @@ namespace Kinovea.ScreenManager
                 RectangleF chip = new RectangleF(at.X - ts.Width / 2 - 4 * scale, at.Y - ts.Height - 8 * scale, ts.Width + 8 * scale, ts.Height + 3 * scale);
                 if (chip.Left < 2) chip.X = 2;
                 if (chip.Right > size.Width - 2) chip.X = Math.Max(2, size.Width - 2 - chip.Width);
+
+                // (2.16.0) The labels of lines close together (far from the camera) one above the other, not over each other.
+                for (int pass = 0; pass < placed.Count; pass++)
+                {
+                    bool moved = false;
+                    foreach (RectangleF other in placed)
+                    {
+                        if (other.IntersectsWith(chip))
+                        {
+                            chip.Y = other.Top - chip.Height - 2 * scale;
+                            moved = true;
+                        }
+                    }
+
+                    if (!moved)
+                        break;
+                }
+
                 if (chip.Top < 2) chip.Y = 2;
+                placed.Add(chip);
                 SwimTheme.HudChip(g, chip, color, 1f, 3f * scale, 205);
                 using (SolidBrush brush = new SolidBrush(passed ? SwimTheme.Text : SwimTheme.AccentPale))
                     g.DrawString(text, font, brush, chip.X + 4 * scale, chip.Y + 1.5f * scale);
