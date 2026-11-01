@@ -1757,6 +1757,13 @@ namespace Kinovea.ScreenManager
         {
             if (player != null && !player.IsDisposed)
                 player.DoInvalidate();
+
+            // (2.16.0) The screen of a group that shows the panels of the analysis, and the panel of the group.
+            PlayerScreenUserInterface graphics = InGroup ? GroupGraphicsScreen : null;
+            if (graphics != null && graphics != player && !graphics.IsDisposed)
+                graphics.DoInvalidate();
+            if (groupDashboard != null && !groupDashboard.IsDisposed && groupDashboard.Visible)
+                groupDashboard.Invalidate();
         }
         #endregion
 
