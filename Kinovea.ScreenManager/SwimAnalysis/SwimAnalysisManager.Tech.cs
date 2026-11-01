@@ -999,6 +999,14 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private Bitmap CaptureFrame(long timestamp, bool graphics, bool finalFrame, bool live = false)
         {
+            // (2.16.0) A group of screens: the images of all its screens together (the final frame of the report stays the one video).
+            if (!finalFrame && InGroup)
+            {
+                Bitmap joined = CaptureGroupFrame(timestamp, graphics, false, live);
+                if (joined != null)
+                    return joined;
+            }
+
             Size size = frameServer.VideoReader.Info.ReferenceSize;
             if (size.Width <= 0 || size.Height <= 0)
                 return null;

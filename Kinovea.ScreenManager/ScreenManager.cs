@@ -220,6 +220,9 @@ namespace Kinovea.ScreenManager
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
             PlayerScreenUserInterface.SwimGroupStartAsked = SwimGroupStart;
+
+            // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
+            SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
             AddCommonControlsEventHandlers();
 
             dualPlayer.ExportImageAsked += (s, e) => ExportImages(ImageExportFormat.SideBySide);
@@ -1271,6 +1274,8 @@ namespace Kinovea.ScreenManager
                     screen.FullScreen(true);
             }
 
+            // (Swim 2.16.0) The panel of a group of screens in one more cell of the grid, when its graphics are shown there.
+            view.SetSwimExtraCell(SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.GroupDashboardCell : null);
             view.OrganizeScreens(screenList);
             UpdateVideoFullScreen();
             UpdateVideoBigScreens();

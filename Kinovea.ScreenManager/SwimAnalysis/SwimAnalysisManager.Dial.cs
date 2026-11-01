@@ -239,6 +239,11 @@ namespace Kinovea.ScreenManager
                         SwimLang.T("Ομάδα οθονών {0}: μία ανάλυση, στο βίντεο της οθόνης {1}. Ένα σημάδι από όποια οθόνη της ομάδας μπαίνει στην ίδια στιγμή μέσω του συγχρονισμού: συγχρόνισε πρώτα τις οθόνες στο σήμα εκκίνησης."),
                         GroupNumbers(", "), lead.SwimScreenNumber), false);
                 }
+
+                // (2.16.0) The panel of the group comes or goes with the group; the page of the snapshots shows its choices.
+                RequestGroupLayout();
+                if (form != null && !form.IsDisposed)
+                    form.RefreshGroupChoices();
             }
             catch (Exception ex)
             {

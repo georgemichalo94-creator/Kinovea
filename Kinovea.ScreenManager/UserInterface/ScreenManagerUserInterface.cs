@@ -78,6 +78,9 @@ namespace Kinovea.ScreenManager
         private int gridCount;
         private const int gridGap = 3;
 
+        // (Swim 2.16.0) The panel of a group of screens: one more cell of the grid after the screens (null without one).
+        private Control swimExtraCell;
+
         // Full screen: only the images of the screens, joined in the grid (the row of the common controls and the borders hidden).
         private bool fullScreen;
         private bool memoCommonControlsCollapsed;
@@ -166,8 +169,10 @@ namespace Kinovea.ScreenManager
                 splitScreens.Panel1.Controls.Clear();
                 splitScreens.Panel2.Controls.Clear();
 
-                // Full screen: the grid also for one or two screens, the images joined without gaps.
-                if (screenList.Count <= 2 && !fullScreen)
+                // Full screen: the grid also for one or two screens, the images joined without gaps. (Swim 2.16.0) The panel of a
+                // group of screens is one more cell of the grid.
+                int cells = screenList.Count + (swimExtraCell != null ? 1 : 0);
+                if (cells <= 2 && !fullScreen)
                 {
                     ClearGrid(false);
                     pnlGrid.Visible = false;
@@ -217,6 +222,12 @@ namespace Kinovea.ScreenManager
         public void SetBigScreens(bool on)
         {
             bigScreens = on;
+        }
+
+        /// <summary>(Swim 2.16.0) The panel of a group of screens in one more cell of the grid (null: none); OrganizeScreens places it.</summary>
+        public void SetSwimExtraCell(Control cell)
+        {
+            swimExtraCell = cell;
         }
 
         /// <summary>
@@ -349,8 +360,9 @@ namespace Kinovea.ScreenManager
         private void PrepareGrid(List<AbstractScreen> screenList)
         {
             pnlGrid.SuspendLayout();
+            int total = screenList.Count + (swimExtraCell != null ? 1 : 0);
 
-            while (gridCells.Count < screenList.Count)
+            while (gridCells.Count < total)
             {
                 int index = gridCells.Count;
                 Panel cell = new Panel();
@@ -365,7 +377,7 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < gridCells.Count; i++)
             {
                 gridCells[i].Controls.Clear();
-                gridCells[i].Visible = i < screenList.Count;
+                gridCells[i].Visible = i < total;
             }
 
             for (int i = 0; i < screenList.Count; i++)
@@ -378,7 +390,13 @@ namespace Kinovea.ScreenManager
                 gridCells[i].Controls.Add(screenUI);
             }
 
-            gridCount = screenList.Count;
+            if (swimExtraCell != null)
+            {
+                swimExtraCell.Dock = DockStyle.Fill;
+                gridCells[screenList.Count].Controls.Add(swimExtraCell);
+            }
+
+            gridCount = total;
             LayoutGrid();
             pnlGrid.ResumeLayout();
         }
@@ -395,6 +413,9 @@ namespace Kinovea.ScreenManager
 
             int gap = fullScreen ? 0 : gridGap;
             Rectangle area = pnlGrid.ClientRectangle;
+            if (LayoutGridFitted(area, gap))
+                return;
+
             int[] rows = gridCount == 2 && IsTopBottomLayout ? new int[] { 1, 1 } : BestRows(gridCount, area, gap);
             int cell = 0;
             int top = area.Top;
@@ -414,6 +435,157 @@ namespace Kinovea.ScreenManager
 
                 top = bottom;
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.16.0) The cells in the shape of their videos (the controls of a screen under its image), joined: the screens of a row the
+        /// same height, each row as wide as it can be, all of them in the middle of the window; no black between the images and nothing cut
+        /// (the panel of a group of screens in the shape of the first video). Of one, two or three rows the one whose smallest image is the
+        /// biggest. Not for two screens one above the other, nor with a screen without a video (the cells of equal size then).
+        /// </summary>
+        private bool LayoutGridFitted(Rectangle area, int gap)
+        {
+            if (gridCount < 1 || (gridCount == 2 && IsTopBottomLayout) || area.Width < 20 || area.Height < 20)
+                return false;
+
+            List<double> aspects = new List<double>();
+            List<int> controls = new List<int>();
+            double first = 0;
+            for (int i = 0; i < gridCount; i++)
+            {
+                Control c = gridCells[i].Controls.Count > 0 ? gridCells[i].Controls[0] : null;
+                PlayerScreenUserInterface player = c as PlayerScreenUserInterface;
+                if (player != null)
+                {
+                    if (player.SwimImageAspect <= 0)
+                        return false;
+                    aspects.Add(player.SwimImageAspect);
+                    controls.Add(fullScreen || bigScreens ? 0 : player.SwimControlsHeight);
+                    if (first <= 0)
+                        first = player.SwimImageAspect;
+                }
+                else if (c != null && c == swimExtraCell)
+                {
+                    aspects.Add(0);
+                    controls.Add(0);
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < aspects.Count; i++)
+            {
+                if (aspects[i] <= 0)
+                    aspects[i] = first > 0 ? first : 16.0 / 9;
+            }
+
+            int[] bestRows = null;
+            double bestFactor = 0, bestMin = -1;
+            for (int rowCount = 1; rowCount <= Math.Min(gridCount, 3); rowCount++)
+            {
+                int[] rows = new int[rowCount];
+                for (int r = 0; r < rowCount; r++)
+                    rows[r] = gridCount / rowCount + (r < gridCount % rowCount ? 1 : 0);
+
+                // Each row the whole width: its images (width - gaps) / (sum of their aspects) high; then all of them smaller (the same
+                // factor) when the rows with their controls are higher than the window.
+                double images = 0, fixedHeight = gap * (rowCount - 1), smallest = double.MaxValue;
+                List<double> heights = new List<double>();
+                int cell = 0;
+                for (int r = 0; r < rowCount; r++)
+                {
+                    double sum = 0;
+                    int most = 0;
+                    for (int c = 0; c < rows[r]; c++, cell++)
+                    {
+                        sum += aspects[cell];
+                        most = Math.Max(most, controls[cell]);
+                    }
+
+                    double h = (area.Width - gap * (rows[r] - 1)) / Math.Max(0.1, sum);
+                    heights.Add(h);
+                    images += h;
+                    fixedHeight += most;
+                }
+
+                double factor = Math.Min(1.0, (area.Height - fixedHeight) / Math.Max(1.0, images));
+                if (factor <= 0.05)
+                    continue;
+
+                cell = 0;
+                for (int r = 0; r < rowCount; r++)
+                {
+                    for (int c = 0; c < rows[r]; c++, cell++)
+                    {
+                        double h = heights[r] * factor;
+                        smallest = Math.Min(smallest, h * h * aspects[cell]);
+                    }
+                }
+
+                if (bestRows == null || smallest > bestMin * 1.02)
+                {
+                    bestRows = rows;
+                    bestFactor = factor;
+                    bestMin = smallest;
+                }
+            }
+
+            if (bestRows == null)
+                return false;
+
+            // Around the joined images: black when only the images are shown, the colour of the window else.
+            pnlGrid.BackColor = fullScreen || bigScreens ? Color.Black : SystemColors.ControlDark;
+
+            // The rows with their heights, all of them in the middle of the window.
+            List<int> rowHeights = new List<int>(), rowImages = new List<int>();
+            int index = 0;
+            int total = gap * (bestRows.Length - 1);
+            for (int r = 0; r < bestRows.Length; r++)
+            {
+                double sum = 0;
+                int most = 0;
+                for (int c = 0; c < bestRows[r]; c++, index++)
+                {
+                    sum += aspects[index];
+                    most = Math.Max(most, controls[index]);
+                }
+
+                int image = Math.Max(1, (int)Math.Floor((area.Width - gap * (bestRows[r] - 1)) / Math.Max(0.1, sum) * bestFactor));
+                rowImages.Add(image);
+                rowHeights.Add(image + most);
+                total += image + most;
+            }
+
+            int top = area.Top + Math.Max(0, (area.Height - total) / 2);
+            index = 0;
+            for (int r = 0; r < bestRows.Length; r++)
+            {
+                int image = rowImages[r];
+                List<int> widths = new List<int>();
+                double x = 0;
+                int previous = 0;
+                for (int c = 0; c < bestRows[r]; c++)
+                {
+                    x += image * aspects[index + c];
+                    int edge = (int)Math.Round(x);
+                    widths.Add(Math.Max(1, edge - previous));
+                    previous = edge;
+                }
+
+                int rowWidth = widths.Sum() + gap * (bestRows[r] - 1);
+                int left = area.Left + Math.Max(0, (area.Width - rowWidth) / 2);
+                for (int c = 0; c < bestRows[r]; c++, index++)
+                {
+                    gridCells[index].Bounds = new Rectangle(left, top, widths[c], rowHeights[r]);
+                    left += widths[c] + gap;
+                }
+
+                top += rowHeights[r] + gap;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -517,6 +689,10 @@ namespace Kinovea.ScreenManager
             // (Swim 2.14.0) A screen dragged onto another (by its top row or its grip): the two change places.
             if (e.Data.GetDataPresent(typeof(SwimScreenDrag)))
             {
+                // (Swim 2.16.0) Not onto the panel of a group of screens.
+                if (swimExtraCell != null && target >= 0 && target < gridCells.Count && gridCells[target].Controls.Contains(swimExtraCell))
+                    return;
+
                 SwimScreenDrag drag = e.Data.GetData(typeof(SwimScreenDrag)) as SwimScreenDrag;
                 if (drag != null && target >= 0 && target != drag.Index && SwimSwapAsked != null)
                     SwimSwapAsked(this, new SwimSwapEventArgs(drag.Index, target));

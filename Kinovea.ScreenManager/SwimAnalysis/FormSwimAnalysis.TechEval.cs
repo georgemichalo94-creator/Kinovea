@@ -191,6 +191,76 @@ namespace Kinovea.ScreenManager
 
         private bool dockedBeside;
 
+        // (2.16.0) The choices of a group of screens (page of the snapshots).
+        private FlowLayoutPanel groupBar;
+        private ComboBox cmbGroupGraphics;
+
+        private class GroupChoice
+        {
+            public readonly int Value;
+            private readonly string text;
+
+            public GroupChoice(int value, string text)
+            {
+                Value = value;
+                this.text = text;
+            }
+
+            public override string ToString()
+            {
+                return text;
+            }
+        }
+
+        /// <summary>(2.16.0) The choices of a group of screens: shown with a group, its screens and the panel, the one of the settings selected.</summary>
+        public void RefreshGroupChoices()
+        {
+            if (IsDisposed || groupBar == null)
+                return;
+
+            List<PlayerScreenUserInterface> screens = manager.GroupScreens;
+            bool group = manager.InGroup && screens.Count >= 2;
+            groupBar.Visible = group;
+            if (!group)
+                return;
+
+            PlayerScreenUserInterface analysis = manager.AnalysisScreen;
+            List<GroupChoice> choices = new List<GroupChoice>
+            {
+                new GroupChoice(0, string.Format(CultureInfo.InvariantCulture, SwimLang.T("στην οθόνη της ανάλυσης ({0})"), analysis != null ? analysis.SwimScreenNumber : 1))
+            };
+            foreach (PlayerScreenUserInterface s in screens.Where(x => x != analysis).OrderBy(x => x.SwimScreenNumber))
+                choices.Add(new GroupChoice(s.SwimScreenNumber, string.Format(CultureInfo.InvariantCulture, SwimLang.T("στην οθόνη {0}"), s.SwimScreenNumber)));
+            choices.Add(new GroupChoice(SwimAnalysisManager.GroupGraphicsPanel, SwimLang.T("σε πίνακα στη θέση μιας οθόνης")));
+
+            int current = manager.Settings != null ? manager.Settings.GroupGraphics : 0;
+            if (!choices.Any(c => c.Value == current))
+                current = 0;
+            bool was = updating;
+            updating = true;
+            try
+            {
+                string sig = string.Join("|", choices.Select(c => c.Value + ":" + c).ToArray());
+                string have = string.Join("|", cmbGroupGraphics.Items.Cast<object>().OfType<GroupChoice>().Select(c => c.Value + ":" + c).ToArray());
+                if (sig != have)
+                {
+                    cmbGroupGraphics.BeginUpdate();
+                    cmbGroupGraphics.Items.Clear();
+                    foreach (GroupChoice c in choices)
+                        cmbGroupGraphics.Items.Add(c);
+                    cmbGroupGraphics.EndUpdate();
+                }
+
+                int index = choices.FindIndex(c => c.Value == current);
+                if (cmbGroupGraphics.SelectedIndex != index)
+                    cmbGroupGraphics.SelectedIndex = index;
+            }
+            finally
+            {
+                updating = was;
+            }
+        }
+
         /// <summary>
         /// (2.16.0) The window beside the screens: the main window of Kinovea takes its screen but a strip on the right, where this window
         /// goes for the whole height, so that the frames of the screens and the evaluation are seen together. Off: both as they were.

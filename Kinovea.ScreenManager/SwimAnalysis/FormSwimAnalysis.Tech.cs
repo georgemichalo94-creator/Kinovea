@@ -598,12 +598,37 @@ namespace Kinovea.ScreenManager
                 manager.ManualValuesChanged();
             };
 
+            // (2.16.0) A group of screens: where its graphics are (a screen of it, or a panel in the place of one more screen; the
+            // snapshots of all its screens together the same way) and the video of all its screens.
+            groupBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 4), Visible = false };
+            cmbGroupGraphics = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250, Margin = new Padding(6, 6, 3, 3) };
+            cmbGroupGraphics.SelectedIndexChanged += (s, e) =>
+            {
+                if (updating)
+                    return;
+                GroupChoice choice = cmbGroupGraphics.SelectedItem as GroupChoice;
+                if (choice != null)
+                    manager.SetGroupGraphics(choice.Value);
+            };
+            toolTip.SetToolTip(cmbGroupGraphics, SwimLang.T("Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),
+") +
+                SwimLang.T("ή σε πίνακα στη θέση μιας ακόμη οθόνης μόνο με τα γραφικά και τα δεδομένα της εκκίνησης ή της στροφής.
+") +
+                SwimLang.T("Τα στιγμιότυπα με ομάδα: όλες οι οθόνες μαζί, κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ."));
+            Button btnGroupVideo = new SwimNoFocusButton { Text = SwimLang.T("🎞 Βίντεο όλων των οθονών"), AutoSize = true, Height = 32, Margin = new Padding(8, 2, 4, 2) };
+            btnGroupVideo.Click += (s, e) => manager.ExportGroupVideo();
+            toolTip.SetToolTip(btnGroupVideo, SwimLang.T("Ένα βίντεο με όλες τις οθόνες της ομάδας μαζί (όπως τα στιγμιότυπα της ομάδας), της εκκίνησης ή της στροφής που βλέπεις, αλλιώς όλης της ανάλυσης."));
+            groupBar.Controls.Add(Caption(SwimLang.T("Ομάδα οθονών · γραφικά:")));
+            groupBar.Controls.Add(cmbGroupGraphics);
+            groupBar.Controls.Add(btnGroupVideo);
+
             page.Controls.Add(gridAngles);
             page.Controls.Add(lblAngles);
             page.Controls.Add(lblNotes);
             page.Controls.Add(tbNotes);
             page.Controls.Add(snaps);
             page.Controls.Add(tools);
+            page.Controls.Add(groupBar);
             return page;
         }
         #endregion

@@ -1581,6 +1581,7 @@ namespace Kinovea.ScreenManager
             RefreshCalibration();
             RefreshPick();
             RefreshPilot();
+            RefreshGroupChoices();
             if (!string.IsNullOrEmpty(manager.LastStatus))
                 ShowStatus(manager.LastStatus, manager.LastStatusIsWarning);
         }

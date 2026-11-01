@@ -128,6 +128,13 @@ namespace Kinovea.ScreenManager
         public string OwnerBoundsBeforeDock = "";
 
         /// <summary>
+        /// (2.16.0) A group of screens: where the graphics of the analysis are, 0 on the screen of the analysis, N on screen N of the group
+        /// (its panels; what lies on the water stays on the video of the analysis), -1 on the panel of the group in the place of one more
+        /// screen (the data of the start or the turn). The snapshots and the video of the group the same way.
+        /// </summary>
+        public int GroupGraphics = 0;
+
+        /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
         /// area ("x,y"), empty for the default place (bottom right).
         /// </summary>
