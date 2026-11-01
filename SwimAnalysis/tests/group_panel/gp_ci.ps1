@@ -110,7 +110,9 @@ foreach ($at in @(9500, 10900, 13500, 16200, 30000)) {
     $drawn = 0
     for ($y = 40; $y -lt 700; $y += 23) { for ($xx = 40; $xx -lt 1240; $xx += 31) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 80 -or $c.G -gt 120) { $drawn++ } } }
     $b.Save([System.IO.Path]::Combine($out, ('panel-' + $at + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
-    Check ($drawn -gt 20) ('panel at ' + $at + ' ms drawn (' + $drawn + ' bright samples)')
+    # Before the first times only the title and the clock; then the values and the chart.
+    $least = 20; if ($at -lt 11000) { $least = 5 }
+    Check ($drawn -gt $least) ('panel at ' + $at + ' ms drawn (' + $drawn + ' bright samples)')
   } catch {
     $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
     Check $false ('panel at ' + $at + ' ms: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)

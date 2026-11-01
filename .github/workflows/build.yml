@@ -168,6 +168,7 @@ jobs:
         Write-Output ('::notice title=Swim underwater speed::' + ($out | Select-Object -Last 1))
 
     - name: Swim group of screens
+      continue-on-error: true
       shell: pwsh
       run: |
         # (2.16.0) The joined images of a group of screens and its panel, drawn on a fictional start; the images as an artifact.
@@ -220,6 +221,16 @@ jobs:
           $upload = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=$zip"
           $asset = Invoke-RestMethod $upload -Method Post -Headers $headers -InFile $zip -ContentType "application/zip"
           Write-Output "::notice title=Draft release::$tag $($asset.name) $($asset.size) bytes"
+          # (2.16.0) The images of the check of the group of screens beside it (drawn on fictional data), for a look.
+          if (Test-Path group-panel) {
+            Compress-Archive -Path group-panel\* -DestinationPath group-panel.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'group-panel.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up2 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=group-panel.zip"
+            $a2 = Invoke-RestMethod $up2 -Method Post -Headers $headers -InFile group-panel.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release images::$($a2.name) $($a2.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
