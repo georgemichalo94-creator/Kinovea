@@ -1829,6 +1829,10 @@ namespace Kinovea.ScreenManager
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
 
+                // (2.16.0) The lines 5/10/15 of a fixed camera, on the water, under the panels (a tool as the calibration: also with V).
+                if (PickTarget != SwimPickTarget.Calibration)
+                    DrawDistanceLines(g, timestamp, p => transform.Transform(p), renderingSize, 1f);
+
                 // (2.15.0) The toes clicked for the body length, waiting for the head.
                 if (PickTarget == SwimPickTarget.BodyLength && bodyFirst != null && SameFrame(bodyFirst.Timestamp, timestamp))
                 {
@@ -1870,6 +1874,10 @@ namespace Kinovea.ScreenManager
                 }
 
                 DrawStrokeOverlay(g, transform, timestamp, renderingSize);
+
+                // (2.16.0) The speeds of the segments 0–5–10–15, over the panels.
+                if (hud)
+                    DrawDistanceChart(g, timestamp, renderingSize, 1f);
 
                 // The proposal being checked, on top of everything (screen only).
                 DrawProposalPrompt(g, timestamp, renderingSize);

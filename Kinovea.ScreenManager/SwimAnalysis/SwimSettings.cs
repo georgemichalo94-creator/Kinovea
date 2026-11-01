@@ -44,6 +44,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool FixedCamera = false;
 
+        /// <summary>
+        /// (2.16.0) With a fixed camera and its calibration: the lines 5, 10 and 15 (pool units from the wall of the start or turn) stay
+        /// on the lane in every frame, with the time and the speed of each segment once the head passed it (key T).
+        /// </summary>
+        public bool DistanceLines = false;
+
         /// <summary>Distance between the lane ropes (m) used for new calibrations.</summary>
         public double LaneWidth = 2.5;
 

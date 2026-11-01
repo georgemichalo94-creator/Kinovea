@@ -1060,6 +1060,7 @@
     <Compile Include="SwimAnalysis\SwimChartPainter.Light.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Reel.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Strokes.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Lines.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimAthletes.cs" />
     <Compile Include="SwimAnalysis\SwimNameMatch.cs" />

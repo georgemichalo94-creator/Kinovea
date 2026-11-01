@@ -2165,6 +2165,11 @@ namespace Kinovea.ScreenManager
                 "body length {0:0.00} m: not possible (check the value)" },
             { "⚠ Ο τελικός χρόνος απέχει {0:0.00} s από τον χρόνο του βίντεο: μήπως είναι άλλη φάση ή άλλος αθλητής;",
                 "⚠ The final time is {0:0.00} s from the time on the video: another round or another swimmer?" },
+            // (2.16.0) The lines 5/10/15 of a fixed camera and the speeds of the segments.
+            { "Γραμμές 5/10/15", "Lines 5/10/15" },
+            { "Με σταθερή κάμερα: οι γραμμές 5, 10 και 15 από τον τοίχο μένουν πάνω στη διαδρομή σε όλο το βίντεο. Όταν το κεφάλι περάσει μια γραμμή (πλήκτρο T), γράφει τον χρόνο και την ταχύτητα του τμήματος.",
+                "With a fixed camera: the lines 5, 10 and 15 from the wall stay on the lane for the whole video. When the head passes a line (key T), it shows the time and the speed of the segment." },
+            { "ΤΑΧΥΤΗΤΑ ΑΝΑ ΤΜΗΜΑ (m/s)", "SPEED PER SEGMENT (m/s)" },
         };
     }
 }
