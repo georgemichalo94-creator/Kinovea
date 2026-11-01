@@ -234,6 +234,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Google Drive file of the uploaded image (empty until it is uploaded).</summary>
         public string FileId = "";
+
+        /// <summary>(2.16.0) The size of the image (the snapshot of a group of screens is not 16:9): its shape in the report. 0: not known.</summary>
+        public int Width;
+        public int Height;
         public string EliteFileId = "";
         public string EliteLabel = "";
         public string EliteComment = "";

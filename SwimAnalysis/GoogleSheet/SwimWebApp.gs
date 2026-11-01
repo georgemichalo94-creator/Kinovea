@@ -14,6 +14,11 @@ function onOpen(e) {
 }
 
 function doGet(e) {
+  // Ο κεντρικός πίνακας (SwimDashboard.gs), όταν υπάρχει στο project: …/exec?page=dashboard
+  if (typeof swimDashTryGet === 'function') {
+    var swimPage = swimDashTryGet(e);
+    if (swimPage) return swimPage;
+  }
   return swimDoGet(e);
 }
 

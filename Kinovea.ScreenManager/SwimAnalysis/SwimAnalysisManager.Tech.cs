@@ -644,7 +644,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The image as a snapshot of the race (saved next to the video), null if it could not be saved.</summary>
         private SwimSnapshot AddSnapshot(Bitmap image, long timestamp, string autoEvent, string markId)
         {
-            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "" };
+            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "", Width = image.Width, Height = image.Height };
             snapshot.Stage = SuggestStage(PhaseOf(timestamp), timestamp);
             try
             {
@@ -999,6 +999,14 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private Bitmap CaptureFrame(long timestamp, bool graphics, bool finalFrame, bool live = false)
         {
+            // (2.16.0) A group of screens: the images of all its screens together (the final frame of the report stays the one video).
+            if (!finalFrame && InGroup)
+            {
+                Bitmap joined = CaptureGroupFrame(timestamp, graphics, false, live);
+                if (joined != null)
+                    return joined;
+            }
+
             Size size = frameServer.VideoReader.Info.ReferenceSize;
             if (size.Width <= 0 || size.Height <= 0)
                 return null;
@@ -1132,6 +1140,14 @@ namespace Kinovea.ScreenManager
 
                     if (panels && size.Width > 0 && size.Height > 0)
                     {
+                        // (2.16.0) The lines 5/10/15 of a fixed camera, as on the screen. Reference image pixels → pixels of the image.
+                        Size reference = frameServer.VideoReader.Info.ReferenceSize;
+                        float kx = size.Width / (float)Math.Max(1, reference.Width), ky = size.Height / (float)Math.Max(1, reference.Height);
+                        DrawDistanceLines(g, timestamp, p => new PointF(p.X * kx, p.Y * ky), size, Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth)));
+                    }
+
+                    if (panels && size.Width > 0 && size.Height > 0)
+                    {
                         float scale = Math.Max(0.25f, size.Width / Math.Max(1f, referenceWidth));
                         Size logical = new Size((int)Math.Round(size.Width / scale), (int)Math.Round(size.Height / scale));
                         g.ScaleTransform(scale, scale);
@@ -1179,6 +1195,10 @@ namespace Kinovea.ScreenManager
                                 DrawRaceOverlay(g, timestamp, logical, allRace, !compare, swimmer);
                             }
                         }
+
+                        // (2.16.0) The speeds of the segments 0–5–10–15, over the panels (logical units of the image).
+                        if (!allRace)
+                            DrawDistanceChart(g, timestamp, logical, 1f);
                     }
                 }
                 catch (Exception e)

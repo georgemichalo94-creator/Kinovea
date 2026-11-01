@@ -120,6 +120,18 @@ namespace Kinovea.ScreenManager
         public string N = "";
         public string Key = "";
         public SwimTechCriterion Criterion;
+
+        /// <summary>
+        /// (2.16.0) The points of the older lists this point of a single list stands for (the same point said by several sheets, an error of
+        /// a list of errors said as what is done well): their scores move here and the coach's answers on them count for its learning.
+        /// </summary>
+        public List<string> Same = new List<string>();
+
+        /// <summary>This point, or one of the older points it stands for.</summary>
+        public bool StandsFor(string key)
+        {
+            return key == Key || Same.Contains(key);
+        }
     }
 
     public class SwimTechSheetPhase
@@ -130,8 +142,9 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
-    /// (2.13.0) A sheet of the catalogue: a checklist of a start or a turn (KOE, British Swimming, the modelling sheets), a list of
-    /// common errors (Scored false: a mark means the error is there), the underwater phase, or the rules.
+    /// (2.13.0) A sheet of the catalogue: a checklist of a start or a turn, a list of common errors (Scored false: a mark means the error
+    /// is there), the underwater phase, or the rules. (2.16.0) The single lists: one for the start and one for the turn of each style (and
+    /// one for each change of stroke of a medley) with everything in it; the older sheets stay Hidden, for the evaluations made with them.
     /// </summary>
     public class SwimTechSheet
     {
@@ -150,6 +163,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The level table of the sheet ("start_15", "turn_5_10"), null without one.</summary>
         public string Levels;
         public SwimTechText Note;
+
+        /// <summary>(2.16.0) An older sheet: not offered any more, read for the evaluations made with it (they move to the single list).</summary>
+        public bool Hidden;
+
+        /// <summary>(2.16.0) The turn of a medley from one stroke to the next it is for ("fly-bk", "bk-br", "br-fs"), null for the others.</summary>
+        public string Transition;
         public List<SwimTechSheetPhase> Phases = new List<SwimTechSheetPhase>();
 
         public IEnumerable<SwimTechSheetItem> Items
@@ -157,7 +176,10 @@ namespace Kinovea.ScreenManager
             get { return Phases.SelectMany(p => p.Items); }
         }
 
-        /// <summary>The sheet fits a start or a turn of this style ("fs", "bk", "br", "fly", "im").</summary>
+        /// <summary>
+        /// The sheet fits a start or a turn of this style ("fs", "bk", "br", "fly", "im"; (2.16.0) "im-fly-bk", "im-bk-br", "im-br-fs": the
+        /// turn of a medley where the stroke changes, which only the list of that change fits).
+        /// </summary>
         public bool Fits(SwimPhaseKind kind, string style)
         {
             // The pull-out of breaststroke follows the dive as it follows the push from the wall (its sheets are for breaststroke only).
@@ -166,7 +188,10 @@ namespace Kinovea.ScreenManager
                 : Kind == "turn" || Kind == "pullout" || Kind == "underwater" || Kind == "rules";
             if (!kindOk)
                 return false;
-            return Styles.Count == 0 || Styles.Contains(style ?? "");
+            style = style ?? "";
+            if (style.StartsWith("im-", StringComparison.Ordinal))
+                return kind == SwimPhaseKind.Turn && Transition == style.Substring(3);
+            return Styles.Count == 0 || Styles.Contains(style);
         }
     }
 
@@ -341,6 +366,8 @@ namespace Kinovea.ScreenManager
                         Scored = (bool?)s["scored"] ?? true,
                         Levels = (string)s["levels"],
                         Note = s["note"] != null && s["note"].Type == JTokenType.Object ? SwimTechText.Of(s["note"]) : null,
+                        Hidden = (bool?)s["hidden"] ?? false,
+                        Transition = string.IsNullOrEmpty((string)s["transition"]) ? null : (string)s["transition"],
                     };
                     JArray styles = s["styles"] as JArray;
                     if (styles != null)
@@ -361,7 +388,11 @@ namespace Kinovea.ScreenManager
                                     SwimTechCriterion crit;
                                     if (!c.Criteria.TryGetValue(key, out crit))
                                         continue;
-                                    phase.Items.Add(new SwimTechSheetItem { N = (string)it["n"] ?? "", Key = key, Criterion = crit });
+                                    SwimTechSheetItem item = new SwimTechSheetItem { N = (string)it["n"] ?? "", Key = key, Criterion = crit };
+                                    JArray same = it["same"] as JArray;
+                                    if (same != null)
+                                        item.Same = same.Select(x => (string)x ?? "").Where(x => x.Length > 0 && x != key).Distinct().ToList();
+                                    phase.Items.Add(item);
                                 }
                             }
 
@@ -433,16 +464,115 @@ namespace Kinovea.ScreenManager
             return anchor != null && Anchors.TryGetValue(anchor, out t) ? t.Text : "";
         }
 
-        /// <summary>The sheets that fit a start or a turn of this style, the checklists first.</summary>
+        /// <summary>The sheets offered for a start or a turn of this style (not the older ones of a catalogue with single lists).</summary>
         public List<SwimTechSheet> SheetsFor(SwimPhaseKind kind, string style)
         {
-            return Sheets.Where(s => s.Fits(kind, style)).ToList();
+            return Sheets.Where(s => !s.Hidden && s.Fits(kind, style)).ToList();
+        }
+
+        /// <summary>(2.16.0) The catalogue has the single lists (the older sheets hidden): the evaluations of those move to them.</summary>
+        public bool SingleLists
+        {
+            get { return Sheets.Any(s => s.Hidden) && Sheets.Any(s => !s.Hidden); }
         }
 
         /// <summary>
-        /// The sheet proposed for a phase: the coach's last choice for this kind and style when it still fits, else the first checklist of
-        /// the KOE for the style, else the first sheet that fits.
+        /// (2.16.0) The evaluations of a phase made with the older lists move to its single list: each score to the point that stands for it
+        /// (the same point, or an error of a list of errors as what is done well: its answer turned over), with its frame, unless the point
+        /// has the coach's own score there already (the score that did not move goes to dropped, for its frame). The notes go along. An
+        /// older evaluation goes when nothing of the coach's is left in it (an automatic score of a point the single list has not is made
+        /// again by the program). Returns how many scores and notes moved.
         /// </summary>
+        public int MergeOld(List<SwimTechEval> evals, string phaseId, SwimTechSheet single, List<SwimTechScore> dropped, string date)
+        {
+            if (evals == null || single == null || single.Hidden)
+                return 0;
+
+            List<SwimTechEval> olds = evals.Where(e => e.PhaseId == phaseId && e.SheetId != single.Id && Sheet(e.SheetId) != null && Sheet(e.SheetId).Hidden).ToList();
+            if (olds.Count == 0)
+                return 0;
+
+            int moved = 0;
+            SwimTechEval target = evals.FirstOrDefault(e => e.PhaseId == phaseId && e.SheetId == single.Id);
+            foreach (SwimTechEval old in olds)
+            {
+                SwimTechSheet from = Sheet(old.SheetId);
+                bool keep = false;
+                foreach (KeyValuePair<string, SwimTechScore> kv in old.Scores.ToList())
+                {
+                    SwimTechScore s = kv.Value;
+                    SwimTechSheetItem item = single.Items.FirstOrDefault(i => i.Key == kv.Key) ?? single.Items.FirstOrDefault(i => i.StandsFor(kv.Key));
+                    if (item == null)
+                    {
+                        if (s.Auto)
+                            old.Scores.Remove(kv.Key);
+                        else
+                            keep = true;
+                        continue;
+                    }
+
+                    if (target == null)
+                    {
+                        target = new SwimTechEval { PhaseId = phaseId, SheetId = single.Id };
+                        evals.Add(target);
+                    }
+
+                    old.Scores.Remove(kv.Key);
+                    SwimTechScore have;
+                    target.Scores.TryGetValue(item.Key, out have);
+                    if (have != null && !(have.Auto && !s.Auto))
+                    {
+                        if (dropped != null && !string.IsNullOrEmpty(s.SnapshotId) && s.SnapshotId != have.SnapshotId)
+                            dropped.Add(s);
+                        continue;
+                    }
+
+                    if (have != null && dropped != null && !string.IsNullOrEmpty(have.SnapshotId) && have.SnapshotId != s.SnapshotId)
+                        dropped.Add(have);
+
+                    int value = s.Value;
+                    if (value >= 0 && from.Scored != single.Scored)
+                        value = value == 1 ? 0 : 1;
+                    target.Scores[item.Key] = new SwimTechScore { Value = value, Auto = s.Auto, Measured = s.Measured, Unit = s.Unit, SnapshotId = s.SnapshotId, Comment = s.Comment };
+                    moved++;
+                }
+
+                string notes = (old.Notes ?? "").Trim();
+                if (notes.Length > 0)
+                {
+                    if (target == null)
+                    {
+                        target = new SwimTechEval { PhaseId = phaseId, SheetId = single.Id };
+                        evals.Add(target);
+                    }
+
+                    string had = (target.Notes ?? "").Trim();
+                    if (had.IndexOf(notes, StringComparison.Ordinal) < 0)
+                    {
+                        target.Notes = had.Length > 0 ? had + Environment.NewLine + notes : notes;
+                        moved++;
+                    }
+                }
+
+                // An older evaluation with nothing of the coach's left goes (a change too); one that keeps a score stays as it is.
+                if (!keep)
+                {
+                    evals.Remove(old);
+                    moved++;
+                }
+            }
+
+            if (moved > 0 && target != null && !string.IsNullOrEmpty(date))
+                target.Date = date;
+            return moved;
+        }
+
+        /// <summary>(2.16.0) The catalogue has lists for the turns of a medley where the stroke changes.</summary>
+        public bool HasTransitions
+        {
+            get { return Sheets.Any(s => !s.Hidden && s.Transition != null); }
+        }
+
         /// <summary>A sheet of the program's automatic error lists (🤖, kv-auto-…).</summary>
         public static bool IsAuto(string sheetId)
         {
@@ -456,6 +586,10 @@ namespace Kinovea.ScreenManager
             return SheetsFor(kind, style).FirstOrDefault(s => IsAuto(s.Id) && (kind == SwimPhaseKind.Start || s.Turn == null || s.Turn == turn));
         }
 
+        /// <summary>
+        /// The sheet proposed for a phase: the coach's last choice for this kind and style when it still fits, else the first checklist of
+        /// the KOE for the style, else the first sheet that fits (with the single lists: the one of the style).
+        /// </summary>
         public SwimTechSheet DefaultFor(SwimPhaseKind kind, string style, bool flip, string lastChoice)
         {
             List<SwimTechSheet> fit = SheetsFor(kind, style);

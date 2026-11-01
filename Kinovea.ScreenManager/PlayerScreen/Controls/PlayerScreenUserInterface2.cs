@@ -2802,6 +2802,42 @@ namespace Kinovea.ScreenManager
             get { return imageOnly ? 0 : Math.Max(0, Height - panelCenter.Height); }
         }
 
+        // (Swim 2.16.0) The minimum sizes of the screen and of its image out of the grid (as designed), kept while it is in the grid.
+        private bool swimMinimumKnown;
+        private Size swimMinimum;
+        private Size swimCenterMinimum;
+
+        /// <summary>
+        /// (Swim 2.16.0) In a cell of the grid of the screens the screen takes the width of its cell (the cell is in the shape of its video
+        /// with its controls under it): its own minimum width (and that of its image) would push its right side out of a narrower cell and
+        /// cut its image there. The height keeps its minimum (the grid gives a row at least that). Out of the grid both come back.
+        /// </summary>
+        internal void SwimInGrid(bool inGrid)
+        {
+            if (!swimMinimumKnown)
+            {
+                swimMinimum = imageOnly ? memoMinimumSize : MinimumSize;
+                swimCenterMinimum = panelCenter.MinimumSize;
+                swimMinimumKnown = true;
+            }
+
+            Size wanted = inGrid ? new Size(Math.Min(200, swimMinimum.Width), swimMinimum.Height) : swimMinimum;
+            if (imageOnly)
+                memoMinimumSize = wanted;
+            else if (MinimumSize != wanted)
+                MinimumSize = wanted;
+
+            Size center = inGrid ? new Size(Math.Min(100, swimCenterMinimum.Width), swimCenterMinimum.Height) : swimCenterMinimum;
+            if (panelCenter.MinimumSize != center)
+                panelCenter.MinimumSize = center;
+        }
+
+        /// <summary>(Swim 2.16.0) The height a cell of the grid gives this screen at least (its minimum; none when it shows only its image).</summary>
+        internal int SwimMinimumHeight
+        {
+            get { return imageOnly ? 0 : MinimumSize.Height; }
+        }
+
         /// <summary>
         /// (Swim 2.14.0) The time of a frame from the time origin of this video (the point where the screens are synchronised), in
         /// microseconds of real time (the speed of the camera taken into account): the same moment on the screens of a group.
@@ -5483,17 +5519,21 @@ namespace Kinovea.ScreenManager
         }
         private void CollapseKeyframePanel(bool collapse)
         {
+            // (Swim 2.16.0) Not while the screen is lower than that for a moment (it is placed again when it is resized).
+            int distance = splitKeyframes.Height - (collapse ? 25 : 140);
             if (collapse)
             {
                 // hide the keyframes, change image.
-                splitKeyframes.SplitterDistance = splitKeyframes.Height - 25;
+                if (distance > 0)
+                    splitKeyframes.SplitterDistance = distance;
                 btnDockBottom.BackgroundImage = Resources.undock16x16;
                 btnDockBottom.Visible = m_FrameServer.Metadata.Count > 0;
             }
             else
             {
                 // show the keyframes, change image.
-                splitKeyframes.SplitterDistance = splitKeyframes.Height - 140;
+                if (distance > 0)
+                    splitKeyframes.SplitterDistance = distance;
                 btnDockBottom.BackgroundImage = Resources.dock16x16;
                 btnDockBottom.Visible = true;
             }

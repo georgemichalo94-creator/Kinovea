@@ -44,6 +44,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool FixedCamera = false;
 
+        /// <summary>
+        /// (2.16.0) With a fixed camera and its calibration: the lines 5, 10 and 15 (pool units from the wall of the start or turn) stay
+        /// on the lane in every frame, with the time and the speed of each segment once the head passed it (key T).
+        /// </summary>
+        public bool DistanceLines = false;
+
         /// <summary>Distance between the lane ropes (m) used for new calibrations.</summary>
         public double LaneWidth = 2.5;
 
@@ -112,6 +118,21 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Place of the window of the analysis when it was last closed ("x,y,width,height"), empty for the default place.</summary>
         public string PanelBounds = "";
+
+        /// <summary>
+        /// (2.16.0) The window of the analysis beside the screens: the main window of Kinovea on the left of its screen, the analysis in the
+        /// strip on the right (the frames and the evaluation together). OwnerBoundsBeforeDock: where the main window was before
+        /// ("x,y,width,height,max"), for going back.
+        /// </summary>
+        public bool PanelDocked = false;
+        public string OwnerBoundsBeforeDock = "";
+
+        /// <summary>
+        /// (2.16.0) A group of screens: where the graphics of the analysis are, 0 on the screen of the analysis, N on screen N of the group
+        /// (its panels; what lies on the water stays on the video of the analysis), -1 on the panel of the group in the place of one more
+        /// screen (the data of the start or the turn). The snapshots and the video of the group the same way.
+        /// </summary>
+        public int GroupGraphics = 0;
 
         /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video

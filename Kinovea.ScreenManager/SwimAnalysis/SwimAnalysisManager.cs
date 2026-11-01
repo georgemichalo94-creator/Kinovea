@@ -1757,6 +1757,13 @@ namespace Kinovea.ScreenManager
         {
             if (player != null && !player.IsDisposed)
                 player.DoInvalidate();
+
+            // (2.16.0) The screen of a group that shows the panels of the analysis, and the panel of the group.
+            PlayerScreenUserInterface graphics = InGroup ? GroupGraphicsScreen : null;
+            if (graphics != null && graphics != player && !graphics.IsDisposed)
+                graphics.DoInvalidate();
+            if (groupDashboard != null && !groupDashboard.IsDisposed && groupDashboard.Visible)
+                groupDashboard.Invalidate();
         }
         #endregion
 
@@ -1776,6 +1783,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize, Bitmap frame = null)
         {
+            // (2.16.0) Another screen of a group that shows the graphics of the group: the panels, at the same moment of the analysis.
+            if (screen != null && screen != player && Active && VideoFile != null && InGroup && GroupGraphicsScreen == screen)
+            {
+                DrawGroupPanels(screen, g, timestamp, renderingSize);
+                return;
+            }
+
             if (screen != player || !Active || VideoFile == null || transform == null)
                 return;
 
@@ -1797,6 +1811,9 @@ namespace Kinovea.ScreenManager
                 // The graphics of the analysis can be put off (key V, 2.9.0): the tools (calibration, angles, skeleton, the
                 // automatic strokes and the proposal being checked) stay.
                 bool hud = Settings == null || Settings.VideoGraphics;
+
+                // (2.16.0) The panels of a group on another of its screens or on its panel: here only what lies on the water.
+                bool panels = hud && PanelsOnAnalysisScreen;
 
                 // The ghost and the line of the reference, on the water under everything else.
                 if (hud && Race != null && !Race.IsTraining && CompareShown)
@@ -1829,6 +1846,10 @@ namespace Kinovea.ScreenManager
                 if (lastMeasurement != null && SameFrame(lastMeasurement.Timestamp, timestamp))
                     DrawMeasurement(g, transform, lastMeasurement);
 
+                // (2.16.0) The lines 5/10/15 of a fixed camera, on the water, under the panels (a tool as the calibration: also with V).
+                if (PickTarget != SwimPickTarget.Calibration)
+                    DrawDistanceLines(g, timestamp, p => transform.Transform(p), renderingSize, 1f);
+
                 // (2.15.0) The toes clicked for the body length, waiting for the head.
                 if (PickTarget == SwimPickTarget.BodyLength && bodyFirst != null && SameFrame(bodyFirst.Timestamp, timestamp))
                 {
@@ -1841,9 +1862,9 @@ namespace Kinovea.ScreenManager
                 if (SkeletonShown)
                     DrawSkeleton(g, timestamp, p => transform.Transform(p), 1f);
                 DrawSkeletonPrompt(g);
-                if (!hud)
+                if (!panels)
                 {
-                    // Off: nothing of the graphics.
+                    // Off (or on another screen of the group): nothing of the panels.
                 }
                 else if (HudReady(renderingSize))
                 {
@@ -1871,8 +1892,15 @@ namespace Kinovea.ScreenManager
 
                 DrawStrokeOverlay(g, transform, timestamp, renderingSize);
 
+                // (2.16.0) The speeds of the segments 0–5–10–15, over the panels.
+                if (panels)
+                    DrawDistanceChart(g, timestamp, renderingSize, 1f);
+
                 // The proposal being checked, on top of everything (screen only).
                 DrawProposalPrompt(g, timestamp, renderingSize);
+
+                // (2.16.0) The panel of the group follows the frame.
+                GroupFramePainted(timestamp);
 
                 g.SmoothingMode = smoothing;
                 g.TextRenderingHint = textHint;
@@ -3109,8 +3137,9 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // (2.13.0) The program's automatic error lists of a training, up to date in the report.
-            if (UpdateAutoEvals() > 0)
+            // (2.13.0) The program's automatic error lists of a training, up to date in the report. (2.16.0) The evaluations made with the
+            // older lists in the single lists first.
+            if (MergeOldTechEvals() + UpdateAutoEvals() > 0)
             {
                 MarkDirty();
                 if (form != null)

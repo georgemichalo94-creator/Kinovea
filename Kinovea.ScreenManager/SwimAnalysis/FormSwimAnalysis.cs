@@ -197,6 +197,7 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbLine2;
         private TextBox tbLaneWidth;
         private CheckBox chkFixedCamera;
+        private CheckBox chkDistanceLines;
         private Button btnCalibrate;
         private Button btnDeleteCalibration;
         private Label lblCalibration;
@@ -255,6 +256,10 @@ namespace Kinovea.ScreenManager
                 Show(owner);
             else
                 Show();
+
+            // (2.16.0) Beside the screens as it was left.
+            if (owner != null && manager.Settings.PanelDocked)
+                DockBesideScreens(true);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -300,8 +305,8 @@ namespace Kinovea.ScreenManager
             CommitCheckpoints(true);
             CommitOfficial();
 
-            // The window opens again where the analyst left it.
-            if (WindowState == FormWindowState.Normal)
+            // The window opens again where the analyst left it (beside the screens it goes there again).
+            if (WindowState == FormWindowState.Normal && !dockedBeside)
                 manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
 
             base.OnFormClosing(e);
@@ -1102,12 +1107,26 @@ namespace Kinovea.ScreenManager
                     return;
                 manager.Settings.FixedCamera = chkFixedCamera.Checked;
                 manager.Settings.Save();
+                chkDistanceLines.Enabled = chkFixedCamera.Checked;
                 RefreshCalibrationLabel();
+                manager.RedrawVideo();
             };
             toolTip.SetToolTip(chkFixedCamera, SwimLang.T("Σταθερή κάμερα: μία βαθμονόμηση για όλο το βίντεο. Αν η κάμερα ακολουθεί τον αθλητή, άφησέ το κενό: κάθε απόσταση μετριέται σε καρέ με δική του βαθμονόμηση."));
+            // (2.16.0) The lines 5/10/15 on the lane in every frame (fixed camera).
+            chkDistanceLines = new CheckBox { Text = SwimLang.T("Γραμμές 5/10/15"), AutoSize = true, Margin = new Padding(10, 6, 3, 3) };
+            chkDistanceLines.CheckedChanged += (s, e) =>
+            {
+                if (updating)
+                    return;
+                manager.Settings.DistanceLines = chkDistanceLines.Checked;
+                manager.Settings.Save();
+                manager.RedrawVideo();
+            };
+            toolTip.SetToolTip(chkDistanceLines, SwimLang.T("Με σταθερή κάμερα: οι γραμμές 5, 10 και 15 από τον τοίχο μένουν πάνω στη διαδρομή σε όλο το βίντεο. Όταν το κεφάλι περάσει μια γραμμή (πλήκτρο T), γράφει τον χρόνο και την ταχύτητα του τμήματος."));
             row2.Controls.Add(btnCalibrate);
             row2.Controls.Add(btnDeleteCalibration);
             row2.Controls.Add(chkFixedCamera);
+            row2.Controls.Add(chkDistanceLines);
 
             lblCalibration = new Label { Dock = DockStyle.Fill, ForeColor = SwimTheme.Dim, AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft };
 
@@ -1562,6 +1581,7 @@ namespace Kinovea.ScreenManager
             RefreshCalibration();
             RefreshPick();
             RefreshPilot();
+            RefreshGroupChoices();
             if (!string.IsNullOrEmpty(manager.LastStatus))
                 ShowStatus(manager.LastStatus, manager.LastStatusIsWarning);
         }
@@ -2155,6 +2175,8 @@ namespace Kinovea.ScreenManager
                 if (!tbLaneWidth.Focused)
                     tbLaneWidth.Text = manager.Settings.LaneWidth.ToString("0.##", CultureInfo.InvariantCulture);
                 chkFixedCamera.Checked = manager.Settings.FixedCamera;
+                chkDistanceLines.Checked = manager.Settings.DistanceLines;
+                chkDistanceLines.Enabled = manager.Settings.FixedCamera;
             }
             finally
             {

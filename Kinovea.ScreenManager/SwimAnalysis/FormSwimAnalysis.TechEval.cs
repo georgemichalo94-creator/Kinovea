@@ -28,6 +28,7 @@ namespace Kinovea.ScreenManager
         private DataGridView gridEval;
         private TextBox tbEvalNotes;
         private CheckBox chkEvalAuto;
+        private CheckBox chkEvalDock;
         private Button btnEvalConfirm;
         private string selectedEvalPhaseId;
         private string videoEvalPhaseId;
@@ -48,7 +49,7 @@ namespace Kinovea.ScreenManager
 
             public override string ToString()
             {
-                return Sheet.Title.Text;
+                return Sheet.Title.Text + (Sheet.Hidden ? SwimLang.T(" (παλιά λίστα)") : "");
             }
         }
 
@@ -112,6 +113,15 @@ namespace Kinovea.ScreenManager
                 RefreshTechEval();
             };
             toolTip.SetToolTip(chkEvalAuto, SwimLang.T("Το πρόγραμμα βάζει ✓ ή ✗ στα σημεία που μετρά (🤖) ώσπου να τα επιβεβαιώσεις ή να τα αλλάξεις."));
+            // (2.16.0) The frames of the screens and the list together: the window beside the screens.
+            chkEvalDock = new CheckBox { Text = SwimLang.T("Δίπλα στις οθόνες"), AutoSize = true, ForeColor = SwimTheme.Text, Margin = new Padding(6, 7, 4, 2) };
+            chkEvalDock.CheckedChanged += (s, e) =>
+            {
+                if (updating)
+                    return;
+                DockBesideScreens(chkEvalDock.Checked);
+            };
+            toolTip.SetToolTip(chkEvalDock, SwimLang.T("Το κυρίως παράθυρο του Kinovea στο αριστερό μέρος της οθόνης και η ανάλυση σε όλο το ύψος δεξιά: βλέπεις τα καρέ των οθονών και βαθμολογείς μαζί. Ξανά: όπως ήταν."));
             Button btnDelete = new SwimNoFocusButton { Text = SwimLang.T("Διαγραφή αξιολόγησης"), AutoSize = true, Height = 28, Margin = new Padding(6, 2, 0, 2), Accent = SwimTheme.Red };
             btnDelete.Click += (s, e) =>
             {
@@ -128,6 +138,7 @@ namespace Kinovea.ScreenManager
             tools.Controls.Add(btnMeasure);
             tools.Controls.Add(btnEvalConfirm);
             tools.Controls.Add(chkEvalAuto);
+            tools.Controls.Add(chkEvalDock);
             tools.Controls.Add(btnDelete);
 
             gridEval = CreateGrid();
@@ -176,6 +187,157 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(sheetBar);
             page.Controls.Add(bar);
             return page;
+        }
+
+        private bool dockedBeside;
+
+        // (2.16.0) The choices of a group of screens (page of the snapshots).
+        private FlowLayoutPanel groupBar;
+        private ComboBox cmbGroupGraphics;
+
+        private class GroupChoice
+        {
+            public readonly int Value;
+            private readonly string text;
+
+            public GroupChoice(int value, string text)
+            {
+                Value = value;
+                this.text = text;
+            }
+
+            public override string ToString()
+            {
+                return text;
+            }
+        }
+
+        /// <summary>(2.16.0) The choices of a group of screens: shown with a group, its screens and the panel, the one of the settings selected.</summary>
+        public void RefreshGroupChoices()
+        {
+            if (IsDisposed || groupBar == null)
+                return;
+
+            List<PlayerScreenUserInterface> screens = manager.GroupScreens;
+            bool group = manager.InGroup && screens.Count >= 2;
+            groupBar.Visible = group;
+            if (!group)
+                return;
+
+            PlayerScreenUserInterface analysis = manager.AnalysisScreen;
+            List<GroupChoice> choices = new List<GroupChoice>
+            {
+                new GroupChoice(0, string.Format(CultureInfo.InvariantCulture, SwimLang.T("στην οθόνη της ανάλυσης ({0})"), analysis != null ? analysis.SwimScreenNumber : 1))
+            };
+            foreach (PlayerScreenUserInterface s in screens.Where(x => x != analysis).OrderBy(x => x.SwimScreenNumber))
+                choices.Add(new GroupChoice(s.SwimScreenNumber, string.Format(CultureInfo.InvariantCulture, SwimLang.T("στην οθόνη {0}"), s.SwimScreenNumber)));
+            choices.Add(new GroupChoice(SwimAnalysisManager.GroupGraphicsPanel, SwimLang.T("σε πίνακα στη θέση μιας οθόνης")));
+
+            int current = manager.Settings != null ? manager.Settings.GroupGraphics : 0;
+            if (!choices.Any(c => c.Value == current))
+                current = 0;
+            bool was = updating;
+            updating = true;
+            try
+            {
+                string sig = string.Join("|", choices.Select(c => c.Value + ":" + c).ToArray());
+                string have = string.Join("|", cmbGroupGraphics.Items.Cast<object>().OfType<GroupChoice>().Select(c => c.Value + ":" + c).ToArray());
+                if (sig != have)
+                {
+                    cmbGroupGraphics.BeginUpdate();
+                    cmbGroupGraphics.Items.Clear();
+                    foreach (GroupChoice c in choices)
+                        cmbGroupGraphics.Items.Add(c);
+                    cmbGroupGraphics.EndUpdate();
+                }
+
+                int index = choices.FindIndex(c => c.Value == current);
+                if (cmbGroupGraphics.SelectedIndex != index)
+                    cmbGroupGraphics.SelectedIndex = index;
+            }
+            finally
+            {
+                updating = was;
+            }
+        }
+
+        /// <summary>
+        /// (2.16.0) The window beside the screens: the main window of Kinovea takes its screen but a strip on the right, where this window
+        /// goes for the whole height, so that the frames of the screens and the evaluation are seen together. Off: both as they were.
+        /// </summary>
+        public void DockBesideScreens(bool on)
+        {
+            Form owner = Owner;
+            if (owner == null || owner.IsDisposed || manager.Settings == null)
+                return;
+
+            try
+            {
+                if (on)
+                {
+                    Rectangle area = Screen.FromControl(owner).WorkingArea;
+                    if (string.IsNullOrEmpty(manager.Settings.OwnerBoundsBeforeDock))
+                    {
+                        Rectangle was = owner.WindowState == FormWindowState.Normal ? owner.Bounds : owner.RestoreBounds;
+                        manager.Settings.OwnerBoundsBeforeDock = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3},{4}", was.Left, was.Top, was.Width, was.Height,
+                            owner.WindowState == FormWindowState.Maximized ? "max" : "");
+                    }
+
+                    // This window where it was, to go back there afterwards.
+                    if (!dockedBeside && WindowState == FormWindowState.Normal)
+                        manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
+
+                    int width = Math.Max(Math.Min(MinimumSize.Width, area.Width / 2), Math.Min(Width, area.Width / 2));
+                    if (WindowState != FormWindowState.Normal)
+                        WindowState = FormWindowState.Normal;
+                    if (owner.WindowState != FormWindowState.Normal)
+                        owner.WindowState = FormWindowState.Normal;
+                    owner.Bounds = new Rectangle(area.Left, area.Top, area.Width - width, area.Height);
+                    Bounds = new Rectangle(area.Right - width, area.Top, width, area.Height);
+                    dockedBeside = true;
+                }
+                else
+                {
+                    string[] parts = (manager.Settings.OwnerBoundsBeforeDock ?? "").Split(',');
+                    Rectangle was;
+                    bool max = parts.Length == 5 && parts[4] == "max";
+                    if (parts.Length == 5 && TryParseBounds(string.Join(",", parts, 0, 4), out was) && TitleOnScreen(was))
+                        owner.Bounds = was;
+                    else
+                        max = true;
+                    owner.WindowState = max ? FormWindowState.Maximized : FormWindowState.Normal;
+
+                    // This window where it was before (else as it opens: near the right edge of the main window).
+                    Rectangle panelWas;
+                    if (TryParseBounds(manager.Settings.PanelBounds, out panelWas) && TitleOnScreen(panelWas))
+                    {
+                        Bounds = panelWas;
+                    }
+                    else
+                    {
+                        Rectangle area = Screen.FromControl(owner).WorkingArea;
+                        int height = Math.Min(Math.Max(MinimumSize.Height, 900), area.Height);
+                        Bounds = new Rectangle(Math.Max(area.Left, area.Right - Width - 16), Math.Max(area.Top, Math.Min(area.Top + 90, area.Bottom - height)), Width, height);
+                    }
+                    manager.Settings.OwnerBoundsBeforeDock = "";
+                    dockedBeside = false;
+                }
+            }
+            catch (Exception e)
+            {
+                ShowStatus(SwimLang.T("Τα παράθυρα δεν μπήκαν δίπλα-δίπλα: ") + e.Message, true);
+                dockedBeside = false;
+            }
+
+            manager.Settings.PanelDocked = dockedBeside;
+            manager.Settings.Save();
+            if (chkEvalDock != null && chkEvalDock.Checked != dockedBeside)
+            {
+                bool was = updating;
+                updating = true;
+                chkEvalDock.Checked = dockedBeside;
+                updating = was;
+            }
         }
 
         private void SaveEvalNotes()
@@ -293,7 +455,7 @@ namespace Kinovea.ScreenManager
                 lines.Add(SwimLang.T("Μέτρηση: ") + check.Label.Text + (target.Length > 0 ? SwimLang.T(" · στόχος ") + target : ""));
             }
 
-            SwimTechAgreement agreement = manager.TechAgreement(item.Criterion);
+            SwimTechAgreement agreement = manager.TechAgreement(item);
             if (agreement != null && agreement.Samples > 0)
                 lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text + (agreement.Reliable ? " ★" : agreement.Disagrees ? SwimLang.T(" ⚠ (δεν προτείνεται πια μόνο του)") : ""));
 
@@ -345,6 +507,7 @@ namespace Kinovea.ScreenManager
                 if (cmbEvalPhase.SelectedIndex != index)
                     cmbEvalPhase.SelectedIndex = index;
                 chkEvalAuto.Checked = manager.Settings == null || manager.Settings.TechEvalAuto;
+                chkEvalDock.Checked = dockedBeside;
             }
             finally
             {
@@ -354,8 +517,22 @@ namespace Kinovea.ScreenManager
             SwimTechPhase phase = SelectedPhase(cmbEvalPhase);
             selectedEvalPhaseId = phase != null ? phase.Id : null;
 
+            // (2.16.0) What was evaluated with the older lists goes into the single list of the phase.
+            if (phase != null && !evalApplying)
+            {
+                evalApplying = true;
+                try
+                {
+                    manager.MergeOldTechEvals(phase);
+                }
+                finally
+                {
+                    evalApplying = false;
+                }
+            }
+
             // The sheets of the phase.
-            List<SwimTechSheet> sheets = phase != null ? cat.SheetsFor(phase.Kind, manager.Race.Style) : new List<SwimTechSheet>();
+            List<SwimTechSheet> sheets = phase != null ? cat.SheetsFor(phase.Kind, manager.TechStyle(phase)) : new List<SwimTechSheet>();
             SwimTechSheet sheet = phase != null ? manager.TechSheetFor(phase) : null;
             if (sheet != null && !sheets.Contains(sheet))
                 sheets.Insert(0, sheet);
@@ -487,7 +664,7 @@ namespace Kinovea.ScreenManager
                 // 🤖 the program measures it, ★ and agrees with the coach's answers (9 in 10), ⚠ it does not (no proposal any more),
                 // (symbols, not colours: the lists of the program draw the emoji without their colours),
                 // ◐ it measures a part of it, 👁 the coach judges it.
-                SwimTechAgreement agreement = manager.TechAgreement(it.Criterion);
+                SwimTechAgreement agreement = manager.TechAgreement(it);
                 bool measured = it.Criterion.Check != null && SwimTechEvaluator.MeasuredChecks.Contains(it.Criterion.Check);
                 string mark;
                 if (it.Criterion.Level == "X" || it.Criterion.Check == null)

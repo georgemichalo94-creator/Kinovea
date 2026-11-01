@@ -598,12 +598,59 @@ namespace Kinovea.ScreenManager
                 manager.ManualValuesChanged();
             };
 
+            // (2.16.0) A group of screens: where its graphics are (a screen of it, or a panel in the place of one more screen; the
+            // snapshots of all its screens together the same way) and the video of all its screens.
+            groupBar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(0, 0, 0, 4), Visible = false };
+            cmbGroupGraphics = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250, Margin = new Padding(6, 6, 3, 3) };
+            cmbGroupGraphics.SelectedIndexChanged += (s, e) =>
+            {
+                if (updating)
+                    return;
+                GroupChoice choice = cmbGroupGraphics.SelectedItem as GroupChoice;
+                if (choice != null)
+                    manager.SetGroupGraphics(choice.Value);
+            };
+            toolTip.SetToolTip(cmbGroupGraphics, SwimLang.T("Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),\n") +
+                SwimLang.T("ή σε πίνακα στη θέση μιας ακόμη οθόνης μόνο με τα γραφικά και τα δεδομένα της εκκίνησης ή της στροφής.\n") +
+                SwimLang.T("Τα στιγμιότυπα με ομάδα: όλες οι οθόνες μαζί, κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ."));
+            Button btnGroupVideo = new SwimNoFocusButton { Text = SwimLang.T("🎬 Βίντεο όλων των οθονών"), AutoSize = true, Height = 32, Margin = new Padding(8, 2, 4, 2) };
+            btnGroupVideo.Click += (s, e) => manager.ExportGroupVideo();
+            toolTip.SetToolTip(btnGroupVideo, SwimLang.T("Ένα βίντεο με όλες τις οθόνες της ομάδας μαζί (όπως τα στιγμιότυπα της ομάδας), της εκκίνησης ή της στροφής που βλέπεις, αλλιώς όλης της ανάλυσης."));
+            groupBar.Controls.Add(Caption(SwimLang.T("Ομάδα οθονών · γραφικά:")));
+            groupBar.Controls.Add(cmbGroupGraphics);
+            groupBar.Controls.Add(btnGroupVideo);
+
             page.Controls.Add(gridAngles);
             page.Controls.Add(lblAngles);
             page.Controls.Add(lblNotes);
             page.Controls.Add(tbNotes);
             page.Controls.Add(snaps);
             page.Controls.Add(tools);
+            page.Controls.Add(groupBar);
+
+            // (2.16.0) The snapshots take the height the page leaves them (with a group its bar takes one more row): their buttons are
+            // never under the notes. On a short page their picture is smaller and the angles show only when they have room.
+            EventHandler fit = (s, e) =>
+            {
+                int room = page.ClientSize.Height - page.Padding.Vertical - tools.Height - (groupBar.Visible ? groupBar.Height : 0) - lblNotes.Height - tbNotes.Height;
+                if (room <= 0)
+                    return;
+                int height = Math.Max(236, Math.Min(330, room - lblAngles.Height - 70));
+                if (snaps.Height != height)
+                    snaps.Height = height;
+                float picture = Math.Max(72, Math.Min(132, height - 198));
+                if (Math.Abs(details.RowStyles[0].Height - picture) > 0.5f)
+                    details.RowStyles[0].Height = picture;
+                bool angles = room - height >= lblAngles.Height + 40;
+                if (lblAngles.Visible != angles)
+                    lblAngles.Visible = angles;
+                if (gridAngles.Visible != angles)
+                    gridAngles.Visible = angles;
+            };
+            page.Resize += fit;
+            tools.SizeChanged += fit;
+            groupBar.SizeChanged += fit;
+            groupBar.VisibleChanged += fit;
             return page;
         }
         #endregion

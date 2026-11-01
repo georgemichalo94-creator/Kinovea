@@ -337,13 +337,23 @@ namespace Kinovea.ScreenManager
         /// <summary>How often the program agrees with the coach's answers on a criterion (with the limit it judges with now).</summary>
         public SwimTechAgreement AgreementOf(string criterion, SwimTechCheck check)
         {
+            return AgreementOf(new[] { criterion }, check);
+        }
+
+        /// <summary>
+        /// (2.16.0) The same for a point of a single list: the coach's answers on it and on the points of the older lists it stands for (an
+        /// answer keeps whether the technique was good, whatever the list said it as).
+        /// </summary>
+        public SwimTechAgreement AgreementOf(IEnumerable<string> criteria, SwimTechCheck check)
+        {
             SwimTechAgreement a = new SwimTechAgreement();
-            if (string.IsNullOrEmpty(criterion) || check == null)
+            HashSet<string> keys = criteria != null ? new HashSet<string>(criteria.Where(k => !string.IsNullOrEmpty(k))) : new HashSet<string>();
+            if (keys.Count == 0 || check == null)
                 return a;
 
             foreach (SwimTechSample s in Samples)
             {
-                if (s.Criterion != criterion || s.Check != check.Id)
+                if (s.Criterion == null || !keys.Contains(s.Criterion) || s.Check != check.Id)
                     continue;
                 bool? judged = SwimTechEvaluator.Judge(check, s.Measured);
                 if (!judged.HasValue)
