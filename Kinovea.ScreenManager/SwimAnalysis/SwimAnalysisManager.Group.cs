@@ -16,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Kinovea.Services;
 using Kinovea.Video;
 
 namespace Kinovea.ScreenManager
