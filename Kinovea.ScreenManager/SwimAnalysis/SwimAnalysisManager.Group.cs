@@ -868,13 +868,13 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
-    /// (2.16.0) Images joined in rows, each in the shape of its image (the images of a row the same height, every row the whole width):
-    /// no black between them and nothing cut. Of the ways to put them in one, two or three rows (the extra ones in the first rows) the one
-    /// whose smallest image is the biggest in the size allowed (as the grid of the screens).
+    /// (2.16.0) Images joined in rows, each in the shape of its image, all of them the same height (the rows in the middle, the shorter
+    /// ones with black at their sides): nothing cut and no black between them. Of the ways to put them in one, two or three rows (the
+    /// extra ones in the first rows) the one whose smallest image is the biggest in the size allowed (as the grid of the screens).
     /// </summary>
     public static class SwimTiles
     {
-        /// <summary>The rows of the images and the place of each in the joined image (its size: Width x Height).</summary>
+        /// <summary>The place of each image in the joined image (its size: Width x Height).</summary>
         public static List<RectangleF> Layout(IList<double> aspects, double maxWidth, double maxHeight, out double width, out double height)
         {
             width = height = 0;
@@ -890,8 +890,8 @@ namespace Kinovea.ScreenManager
                 for (int r = 0; r < rowCount; r++)
                     rows[r] = count / rowCount + (r < count % rowCount ? 1 : 0);
 
-                // At a width of 1 each row is 1 / (sum of its aspects) high: the whole is W wide and W x (sum of those) high.
-                double unitHeight = 0;
+                // The height of the images: the widest row fits the width, the rows fit the height.
+                double h = maxHeight / rowCount;
                 int index = 0;
                 List<double> sums = new List<double>();
                 for (int r = 0; r < rowCount; r++)
@@ -900,25 +900,22 @@ namespace Kinovea.ScreenManager
                     for (int c = 0; c < rows[r]; c++)
                         sum += Math.Max(0.1, aspects[index++]);
                     sums.Add(sum);
-                    unitHeight += 1.0 / sum;
+                    h = Math.Min(h, maxWidth / sum);
                 }
 
-                double w = Math.Min(maxWidth, maxHeight / unitHeight);
+                double w = sums.Max() * h, smallest = double.MaxValue;
                 List<RectangleF> places = new List<RectangleF>();
-                double y = 0, smallest = double.MaxValue;
                 index = 0;
                 for (int r = 0; r < rowCount; r++)
                 {
-                    double h = w / sums[r], x = 0;
+                    double x = (w - sums[r] * h) / 2;
                     for (int c = 0; c < rows[r]; c++)
                     {
                         double tw = h * Math.Max(0.1, aspects[index++]);
-                        places.Add(new RectangleF((float)x, (float)y, (float)tw, (float)h));
+                        places.Add(new RectangleF((float)x, (float)(r * h), (float)tw, (float)h));
                         smallest = Math.Min(smallest, tw * h);
                         x += tw;
                     }
-
-                    y += h;
                 }
 
                 if (best == null || smallest > bestMin * 1.02)
@@ -926,7 +923,7 @@ namespace Kinovea.ScreenManager
                     best = places;
                     bestMin = smallest;
                     width = w;
-                    height = y;
+                    height = rowCount * h;
                 }
             }
 

@@ -438,10 +438,11 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (Swim 2.16.0) The cells in the shape of their videos (the controls of a screen under its image), joined: the screens of a row the
-        /// same height, each row as wide as it can be, all of them in the middle of the window; no black between the images and nothing cut
-        /// (the panel of a group of screens in the shape of the first video). Of one, two or three rows the one whose smallest image is the
-        /// biggest. Not for two screens one above the other, nor with a screen without a video (the cells of equal size then).
+        /// (Swim 2.16.0) The cells in the shape of their videos (the controls of a screen under its image), joined: the images of all the
+        /// rows the same height, the rows in the middle of the window; no black between the images and nothing cut (the panel of a group
+        /// of screens in the shape of the first video). Of one, two or three rows the one whose smallest image is the biggest (three 16:9
+        /// videos in a 16:9 window: two above and one below, the panel of a group beside it). Not for two screens one above the other, nor
+        /// with a screen without a video (the cells of equal size then).
         /// </summary>
         private bool LayoutGridFitted(Rectangle area, int gap)
         {
@@ -481,18 +482,17 @@ namespace Kinovea.ScreenManager
                     aspects[i] = first > 0 ? first : 16.0 / 9;
             }
 
+            // The images of every row the same height (the rows in the middle of the window, the shorter ones with room at their sides):
+            // as high as the widest row and the height of the window allow.
             int[] bestRows = null;
-            double bestFactor = 0, bestMin = -1;
+            double bestHeight = 0, bestMin = -1;
             for (int rowCount = 1; rowCount <= Math.Min(gridCount, 3); rowCount++)
             {
                 int[] rows = new int[rowCount];
                 for (int r = 0; r < rowCount; r++)
                     rows[r] = gridCount / rowCount + (r < gridCount % rowCount ? 1 : 0);
 
-                // Each row the whole width: its images (width - gaps) / (sum of their aspects) high; then all of them smaller (the same
-                // factor) when the rows with their controls are higher than the window.
-                double images = 0, fixedHeight = gap * (rowCount - 1), smallest = double.MaxValue;
-                List<double> heights = new List<double>();
+                double fixedHeight = gap * (rowCount - 1), height = double.MaxValue, smallest = double.MaxValue;
                 int cell = 0;
                 for (int r = 0; r < rowCount; r++)
                 {
@@ -504,30 +504,21 @@ namespace Kinovea.ScreenManager
                         most = Math.Max(most, controls[cell]);
                     }
 
-                    double h = (area.Width - gap * (rows[r] - 1)) / Math.Max(0.1, sum);
-                    heights.Add(h);
-                    images += h;
                     fixedHeight += most;
+                    height = Math.Min(height, (area.Width - gap * (rows[r] - 1)) / Math.Max(0.1, sum));
                 }
 
-                double factor = Math.Min(1.0, (area.Height - fixedHeight) / Math.Max(1.0, images));
-                if (factor <= 0.05)
+                height = Math.Min(height, (area.Height - fixedHeight) / rowCount);
+                if (height < 10)
                     continue;
 
-                cell = 0;
-                for (int r = 0; r < rowCount; r++)
-                {
-                    for (int c = 0; c < rows[r]; c++, cell++)
-                    {
-                        double h = heights[r] * factor;
-                        smallest = Math.Min(smallest, h * h * aspects[cell]);
-                    }
-                }
+                for (int i = 0; i < gridCount; i++)
+                    smallest = Math.Min(smallest, height * height * aspects[i]);
 
                 if (bestRows == null || smallest > bestMin * 1.02)
                 {
                     bestRows = rows;
-                    bestFactor = factor;
+                    bestHeight = height;
                     bestMin = smallest;
                 }
             }
@@ -539,21 +530,15 @@ namespace Kinovea.ScreenManager
             pnlGrid.BackColor = fullScreen || bigScreens ? Color.Black : SystemColors.ControlDark;
 
             // The rows with their heights, all of them in the middle of the window.
-            List<int> rowHeights = new List<int>(), rowImages = new List<int>();
+            int image = Math.Max(1, (int)Math.Floor(bestHeight));
+            List<int> rowHeights = new List<int>();
             int index = 0;
             int total = gap * (bestRows.Length - 1);
             for (int r = 0; r < bestRows.Length; r++)
             {
-                double sum = 0;
                 int most = 0;
                 for (int c = 0; c < bestRows[r]; c++, index++)
-                {
-                    sum += aspects[index];
                     most = Math.Max(most, controls[index]);
-                }
-
-                int image = Math.Max(1, (int)Math.Floor((area.Width - gap * (bestRows[r] - 1)) / Math.Max(0.1, sum) * bestFactor));
-                rowImages.Add(image);
                 rowHeights.Add(image + most);
                 total += image + most;
             }
@@ -562,7 +547,6 @@ namespace Kinovea.ScreenManager
             index = 0;
             for (int r = 0; r < bestRows.Length; r++)
             {
-                int image = rowImages[r];
                 List<int> widths = new List<int>();
                 double x = 0;
                 int previous = 0;
