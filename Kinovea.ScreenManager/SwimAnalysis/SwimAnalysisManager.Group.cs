@@ -600,11 +600,12 @@ namespace Kinovea.ScreenManager
             bool graphics = Settings == null || Settings.VideoGraphics;
 
             // The places of the images in the order of the screens (as in the grid and the snapshots of the group), the panel last in the
-            // shape of the first video. The images are read as the video of the analysis, then the others: each goes to its place.
+            // shape of the video of the analysis (it is drawn at its size). The images are read as the video of the analysis, then the
+            // others: each goes to its place.
             List<PlayerScreenUserInterface> order = screens.Contains(player) ? screens : new[] { player }.Concat(others).ToList();
             List<double> aspects = order.Select(s => AspectOf(s == player ? reader.Info.ReferenceSize : s.SwimFrameServer.VideoReader.Info.ReferenceSize)).ToList();
             if (panel)
-                aspects.Add(aspects[0]);
+                aspects.Add(AspectOf(reader.Info.ReferenceSize));
             List<int> slots = new List<int> { order.IndexOf(player) };
             slots.AddRange(others.Select(s => order.IndexOf(s)));
             if (panel)
