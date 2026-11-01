@@ -30,7 +30,8 @@ $layout = $tiles.GetMethod('Layout')
 function Places($aspects, $w, $h) {
   $list = New-Object 'System.Collections.Generic.List[double]'
   foreach ($x in $aspects) { $list.Add([double]$x) }
-  $inv = [object[]]@($list, [double]$w, [double]$h, [double]0, [double]0)
+  # Reflection gets the objects themselves, not their PowerShell wrappers.
+  $inv = [object[]]@($list.psobject.BaseObject, [double]$w, [double]$h, [double]0, [double]0)
   $p = $layout.Invoke($null, $inv)
   return @{ places = @($p); width = $inv[3]; height = $inv[4] }
 }
@@ -62,7 +63,7 @@ for ($i = 0; $i -lt 4; $i++) {
 }
 $compose = $tiles.GetMethod('Compose')
 $three = New-Object 'System.Collections.Generic.List[System.Drawing.Bitmap]'; $three.Add($imgs[0]); $three.Add($imgs[1]); $three.Add($imgs[2])
-$j3 = $compose.Invoke($null, @($three, 1280, 720, [System.Drawing.Color]::Black))
+$j3 = $compose.Invoke($null, [object[]]@($three.psobject.BaseObject, [int]1280, [int]720, [System.Drawing.Color]::Black))
 $j3.Save([System.IO.Path]::Combine($out, 'joined-3.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 Check ($j3.Width -eq 1280 -and $j3.Height -eq 720) ('joined image of three: ' + $j3.Width + 'x' + $j3.Height)
 $px = $j3.GetPixel(700, 200)
@@ -71,7 +72,7 @@ $px = $j3.GetPixel(640, 540)
 Check ($px.R -eq 130 -and $px.G -eq 70) ('the third screen in the middle below: ' + $px)
 $px = $j3.GetPixel(100, 540)
 Check ($px.R -eq 0 -and $px.G -eq 0 -and $px.B -eq 0) 'black only beside the row below'
-$j4 = $compose.Invoke($null, @($imgs, 1280, 720, [System.Drawing.Color]::Black))
+$j4 = $compose.Invoke($null, [object[]]@($imgs.psobject.BaseObject, [int]1280, [int]720, [System.Drawing.Color]::Black))
 $j4.Save([System.IO.Path]::Combine($out, 'joined-4.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 Check ($j4.GetPixel(100, 540).R -eq 130 -and $j4.GetPixel(1200, 700).B -eq 23) 'four joined: the third below left, the panel below right'
 
@@ -97,15 +98,15 @@ Check ($null -ne $ph.Value('v0_5') -and $null -ne $ph.Value('v10_15')) 'speeds o
 $mt = T 'SwimAnalysisManager'
 $m = [System.Runtime.Serialization.FormatterServices]::GetUninitializedObject($mt)
 [GC]::SuppressFinalize($m)
-$mt.GetField('currentRace', $all).SetValue($m, $race)
-$mt.GetField('currentTiming', $all).SetValue($m, $timing)
-$mt.GetProperty('TechPhases', $all).GetSetMethod($true).Invoke($m, @(,$phases))
+$mt.GetField('currentRace', $all).SetValue($m, $race.psobject.BaseObject)
+$mt.GetField('currentTiming', $all).SetValue($m, $timing.psobject.BaseObject)
+$mt.GetProperty('TechPhases', $all).GetSetMethod($true).Invoke($m, [object[]]@(,$phases.psobject.BaseObject))
 $paint = $mt.GetMethod('PaintGroupDashboard', $all)
 foreach ($at in @(9500, 10900, 13500, 16200, 30000)) {
   $b = New-Object System.Drawing.Bitmap 1280, 720
   $g = [System.Drawing.Graphics]::FromImage($b)
   try {
-    $paint.Invoke($m, @($g, (New-Object System.Drawing.Size 1280, 720), [long]$at))
+    $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), [long]$at))
     $drawn = 0
     for ($y = 40; $y -lt 700; $y += 23) { for ($xx = 40; $xx -lt 1240; $xx += 31) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 80 -or $c.G -gt 120) { $drawn++ } } }
     $b.Save([System.IO.Path]::Combine($out, ('panel-' + $at + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
@@ -120,7 +121,7 @@ foreach ($sz in @(@(1920, 600), @(480, 270))) {
   $b = New-Object System.Drawing.Bitmap $sz[0], $sz[1]
   $g = [System.Drawing.Graphics]::FromImage($b)
   try {
-    $paint.Invoke($m, @($g, (New-Object System.Drawing.Size $sz[0], $sz[1]), [long]13500))
+    $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new([int]$sz[0], [int]$sz[1]), [long]13500))
     $b.Save([System.IO.Path]::Combine($out, ('panel-' + $sz[0] + 'x' + $sz[1] + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
     Check $true ('panel ' + $sz[0] + 'x' + $sz[1])
   } catch {
