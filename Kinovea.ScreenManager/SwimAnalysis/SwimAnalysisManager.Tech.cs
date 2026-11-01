@@ -644,7 +644,7 @@ namespace Kinovea.ScreenManager
         /// <summary>The image as a snapshot of the race (saved next to the video), null if it could not be saved.</summary>
         private SwimSnapshot AddSnapshot(Bitmap image, long timestamp, string autoEvent, string markId)
         {
-            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "" };
+            SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "", Width = image.Width, Height = image.Height };
             snapshot.Stage = SuggestStage(PhaseOf(timestamp), timestamp);
             try
             {

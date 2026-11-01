@@ -610,10 +610,8 @@ namespace Kinovea.ScreenManager
                 if (choice != null)
                     manager.SetGroupGraphics(choice.Value);
             };
-            toolTip.SetToolTip(cmbGroupGraphics, SwimLang.T("Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),
-") +
-                SwimLang.T("ή σε πίνακα στη θέση μιας ακόμη οθόνης μόνο με τα γραφικά και τα δεδομένα της εκκίνησης ή της στροφής.
-") +
+            toolTip.SetToolTip(cmbGroupGraphics, SwimLang.T("Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),\n") +
+                SwimLang.T("ή σε πίνακα στη θέση μιας ακόμη οθόνης μόνο με τα γραφικά και τα δεδομένα της εκκίνησης ή της στροφής.\n") +
                 SwimLang.T("Τα στιγμιότυπα με ομάδα: όλες οι οθόνες μαζί, κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ."));
             Button btnGroupVideo = new SwimNoFocusButton { Text = SwimLang.T("🎞 Βίντεο όλων των οθονών"), AutoSize = true, Height = 32, Margin = new Padding(8, 2, 4, 2) };
             btnGroupVideo.Click += (s, e) => manager.ExportGroupVideo();

@@ -886,6 +886,12 @@ namespace Kinovea.ScreenManager
                 o["eliteFileId"] = s.EliteFileId ?? "";
                 o["eliteLabel"] = s.EliteLabel ?? "";
                 o["eliteComment"] = s.EliteComment ?? "";
+                if (s.Width > 0 && s.Height > 0)
+                {
+                    o["w"] = s.Width;
+                    o["h"] = s.Height;
+                }
+
                 snapshots.Add(o);
             }
 
