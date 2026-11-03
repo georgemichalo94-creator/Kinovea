@@ -107,6 +107,22 @@ namespace Kinovea.ScreenManager
             return syncInfos[player.Id].Offset + ((long)(localTime / syncInfos[player.Id].Scale));
         }
 
+        /// <summary>(Swim 2.16.1) The place of a player on the common timeline: common = offset + local / scale. False when it is not in it.</summary>
+        public bool SwimPlace(PlayerScreen player, out long offset, out double scale)
+        {
+            PlayerSyncInfo info;
+            if (player == null || !syncInfos.TryGetValue(player.Id, out info))
+            {
+                offset = 0;
+                scale = 1;
+                return false;
+            }
+
+            offset = info.Offset;
+            scale = info.Scale;
+            return true;
+        }
+
         /// <summary>
         /// Test whether a given common time is outside the range of the player.
         /// </summary>

@@ -880,6 +880,136 @@ namespace Kinovea.ScreenManager
 
         #endregion
 
+        #region Swim: the playback bar of the full screen, the wheel of a group (2.16.1)
+        /// <summary>(Swim 2.16.1) Two screens or more synchronised together: the common controls drive them.</summary>
+        public bool SwimSynching
+        {
+            get { return active && synching && synced.Count >= 2; }
+        }
+
+        /// <summary>(Swim 2.16.1) The end of the common timeline (microseconds).</summary>
+        public long SwimLastTime
+        {
+            get { return SwimSynching ? commonTimeline.LastTime : 0; }
+        }
+
+        /// <summary>(Swim 2.16.1) The moment shown on the common timeline: the latest of the frames of the screens.</summary>
+        public long SwimShownTime
+        {
+            get { return SwimSynching ? synced.Max(p => commonTimeline.GetCommonTime(p, p.LocalTime)) : 0; }
+        }
+
+        /// <summary>(Swim 2.16.1) The time origin of the screens (where they are synchronised) on the common timeline; -1 without.</summary>
+        public long SwimOriginTime
+        {
+            get { return SwimSynching ? commonTimeline.GetCommonTime(synced[0], synced[0].LocalTimeOriginPhysical) : -1; }
+        }
+
+        /// <summary>
+        /// (Swim 2.16.1) The time of the frame as the timeline of a screen writes it: the screen of the group that keeps the race, else
+        /// the first one (the screens are synchronised on their time origins).
+        /// </summary>
+        public string SwimTimecode
+        {
+            get
+            {
+                if (!SwimSynching)
+                    return "";
+
+                PlayerScreen shown = synced.FirstOrDefault(p => p.view != null && p.view == VideoScreenGroup.Lead) ?? synced[0];
+                return shown.view != null && !shown.view.IsDisposed ? shown.view.SwimTimecode : "";
+            }
+        }
+
+        /// <summary>(Swim 2.16.1) The playback speed of the screens, in percent of real time (of the first one).</summary>
+        public double SwimSpeed
+        {
+            get { return SwimSynching ? synced[0].RealtimePercentage : 100; }
+        }
+
+        /// <summary>(Swim 2.16.1) The highest speed all the screens can play at (percent of real time).</summary>
+        public double SwimSpeedMax
+        {
+            get { return SwimSynching ? synced.Where(p => p.view != null).Select(p => p.view.SwimSpeedMax).DefaultIfEmpty(200).Min() : 200; }
+        }
+
+        /// <summary>(Swim 2.16.1) The normal speed of the screens: the slowest of their normal speeds (percent of real time).</summary>
+        public double SwimSpeedNormal
+        {
+            get { return SwimSynching ? synced.Where(p => p.view != null).Select(p => p.view.SwimSpeedNormal).DefaultIfEmpty(100).Min() : 100; }
+        }
+
+        /// <summary>(Swim 2.16.1) The screens to a moment of the common timeline, as the timeline of the common controls.</summary>
+        public void SwimSeek(long time)
+        {
+            if (!SwimSynching)
+                return;
+
+            Pause();
+            currentTime = Math.Max(0, Math.Min(commonTimeline.LastTime, time));
+            GotoTime(currentTime, true);
+            UpdateTrkFrame(currentTime);
+        }
+
+        /// <summary>(Swim 2.16.1) The same playback speed for all the screens, in percent of real time: they keep together.</summary>
+        public void SwimSetSpeed(double percent)
+        {
+            if (!SwimSynching)
+                return;
+
+            double max = SwimSpeedMax;
+            double value = Math.Max(max / 1000, Math.Min(max, percent));
+            foreach (PlayerScreen player in synced)
+                player.RealtimePercentage = value;
+        }
+
+        /// <summary>
+        /// (Swim 2.16.1) The wheel on a screen of a group of screens: the screens of the group one frame forward (1) or back (-1) together,
+        /// on the common timeline (SwimFrameStep.Plan: to the next moment where one of their videos has a frame, each screen to its frame
+        /// then); the other screens stay. False when the screens are not synchronised: each screen of the group then moves one frame of
+        /// its own (the screen manager).
+        /// </summary>
+        public bool StepGroup(IList<PlayerScreen> members, int direction)
+        {
+            if (!SwimSynching || members == null || direction == 0)
+                return false;
+
+            List<PlayerScreen> group = synced.Where(p => members.Contains(p)).ToList();
+            if (group.Count < 2)
+                return false;
+
+            Pause();
+
+            int n = group.Count;
+            long[] now = new long[n], frame = new long[n], last = new long[n], offset = new long[n];
+            double[] scale = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                PlayerScreen player = group[i];
+                now[i] = player.LocalTime;
+                frame[i] = player.LocalFrameTime;
+                last[i] = player.LocalLastTime;
+                commonTimeline.SwimPlace(player, out offset[i], out scale[i]);
+            }
+
+            long moment;
+            long[] aims = SwimFrameStep.Plan(now, frame, last, offset, scale, direction, out moment);
+            if (aims == null)
+                return true;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (aims[i] >= 0)
+                    group[i].GotoTime(aims[i], true);
+            }
+
+            currentTime = Math.Max(0, Math.Min(commonTimeline.LastTime, moment));
+            UpdateTrkFrame(currentTime);
+            UpdateHairLines();
+            return true;
+        }
+        #endregion
+
         private int GetPlayerIndex(PlayerScreen player)
         {
             return players.IndexOf(player);

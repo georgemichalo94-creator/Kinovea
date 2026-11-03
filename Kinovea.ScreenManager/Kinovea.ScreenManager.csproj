@@ -1114,6 +1114,7 @@
     <Compile Include="SwimAnalysis\SwimTechLearning.cs" />
     <Compile Include="SwimAnalysis\SwimScreensIcons.cs" />
     <Compile Include="SwimAnalysis\SwimScreenGrip.cs" />
+    <Compile Include="SwimAnalysis\SwimPlaybackBar.cs" />
     <Compile Include="SwimAnalysis\SwimTechEval.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.TechEval.cs" />
     <Compile Include="SwimAnalysis\SwimUi.cs" />
