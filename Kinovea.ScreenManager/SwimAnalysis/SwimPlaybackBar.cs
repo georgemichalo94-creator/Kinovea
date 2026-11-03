@@ -64,6 +64,8 @@ namespace Kinovea.ScreenManager
             PartSpeedLabel = 7, PartSpeed = 8, PartSpeedValue = 9, PartCount = 10;
 
         private const int TickMilliseconds = 100;
+        private const int LateTickMilliseconds = 400;
+        private const int CalmTicksToSettle = 5;
         private const int SeekEveryMilliseconds = 60;
         private static readonly Stopwatch clock = Stopwatch.StartNew();
 
@@ -82,6 +84,9 @@ namespace Kinovea.ScreenManager
         private long settleUntil = long.MinValue / 2;
         private Size lastHost;
         private bool keptLogged;
+        private long lastDrawn = long.MinValue / 2;
+        private long lastTick;
+        private int calmTicks = CalmTicksToSettle;
         private string tip;
 
         // What the bar shows (read from what it drives at each tick, and while dragging what the mouse asks).
@@ -150,6 +155,8 @@ namespace Kinovea.ScreenManager
                 {
                     lastCursor = Control.MousePosition;
                     lastMove = clock.ElapsedMilliseconds;
+                    lastTick = lastMove;
+                    calmTicks = 0;
                     timer.Start();
                     Tick();
                 }
@@ -198,6 +205,7 @@ namespace Kinovea.ScreenManager
                     return;
 
                 long now = clock.ElapsedMilliseconds;
+                Settle(now);
                 Point cursor = Control.MousePosition;
                 Control host = Parent;
                 bool inside = host != null && host.IsHandleCreated && host.Visible && host.RectangleToScreen(host.ClientRectangle).Contains(cursor);
@@ -231,6 +239,30 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// While the full screen starts the screens are busy (their images placed and read again: seconds with three 4K videos) and
+        /// the ticks wait. Until the ticks come on time again, that time does not count in the 5 s of the bar, which are meant once the
+        /// screens are in place, and the bar is drawn again for 1.5 s after each wait.
+        /// </summary>
+        private void Settle(long now)
+        {
+            long late = now - lastTick;
+            lastTick = now;
+            if (calmTicks >= CalmTicksToSettle)
+                return;
+
+            if (late > LateTickMilliseconds)
+            {
+                lastMove = Math.Min(now, lastMove + late);
+                settleUntil = Math.Max(settleUntil, now + 1500);
+                calmTicks = 0;
+            }
+            else
+            {
+                calmTicks++;
+            }
+        }
+
         private void ShowBar()
         {
             if (Parent != null)
@@ -244,8 +276,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// While the full screen starts the screens around the bar change (the window, their grid, their sizes, their images drawn
-        /// again): the bar keeps its place across the bottom and stays in front of them, and it is drawn again at each tick for 3 s
-        /// after it shows and for 1.5 s after the place of the screens last changed, so that it is not left under them.
+        /// again): the bar keeps its place across the bottom and stays in front of them, and it is drawn again at each tick for 6 s
+        /// after it shows and for 1.5 s after the place of the screens last changed, then every half second, so that it is never left
+        /// under the images of the screens (tested: once the full screen had started, the bar could stay unseen until drawn again).
         /// </summary>
         private void Keep(long now)
         {
@@ -282,8 +315,11 @@ namespace Kinovea.ScreenManager
                 log.WarnFormat("Playback bar of the full screen put back: bounds {0} -> {1}, order {2} -> 0, {3} ms after it showed.", was, place, index, now - shownAt);
             }
 
-            if (changed || now - shownAt < 3000 || now < settleUntil)
+            if (changed || now - shownAt < 6000 || now < settleUntil || now - lastDrawn >= 500)
+            {
+                lastDrawn = now;
                 Invalidate();
+            }
         }
 
         private void HideBar()
