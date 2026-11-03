@@ -389,9 +389,7 @@ namespace Kinovea.ScreenManager
         /// <summary>(Swim 2.16.1) The playback bar across the bottom of the screens.</summary>
         private void PlacePlaybackBar()
         {
-            Control host = splitScreensPanel.Panel1;
-            int height = playbackBar.BarHeight;
-            Rectangle place = new Rectangle(0, Math.Max(0, host.ClientSize.Height - height), host.ClientSize.Width, Math.Min(height, host.ClientSize.Height));
+            Rectangle place = playbackBar.PlaceIn(splitScreensPanel.Panel1.ClientSize);
             if (playbackBar.Bounds != place)
                 playbackBar.Bounds = place;
         }

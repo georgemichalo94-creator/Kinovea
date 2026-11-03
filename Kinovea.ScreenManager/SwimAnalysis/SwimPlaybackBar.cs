@@ -78,6 +78,10 @@ namespace Kinovea.ScreenManager
         private int dragging = -1;
         private long lastSeek = long.MinValue / 2;
         private long pendingSeek = -1;
+        private long shownAt = long.MinValue / 2;
+        private long settleUntil = long.MinValue / 2;
+        private Size lastHost;
+        private bool keptLogged;
         private string tip;
 
         // What the bar shows (read from what it drives at each tick, and while dragging what the mouse asks).
@@ -115,6 +119,13 @@ namespace Kinovea.ScreenManager
             get { return (int)Math.Round(Height96 * Scale96); }
         }
 
+        /// <summary>The place of the bar in its parent: across the bottom, over the screens.</summary>
+        public Rectangle PlaceIn(Size host)
+        {
+            int height = Math.Min(BarHeight, Math.Max(0, host.Height));
+            return new Rectangle(0, Math.Max(0, host.Height - height), Math.Max(0, host.Width), height);
+        }
+
         /// <summary>What the bar drives, asked at each tick (null: nothing to drive, the bar stays hidden).</summary>
         public void SetProvider(Func<ISwimPlayback> provider)
         {
@@ -134,6 +145,7 @@ namespace Kinovea.ScreenManager
                     return;
 
                 armed = value;
+                keptLogged = false;
                 if (armed)
                 {
                     lastCursor = Control.MousePosition;
@@ -207,6 +219,7 @@ namespace Kinovea.ScreenManager
                 if (!Visible)
                     return;
 
+                Keep(now);
                 if (dragging == PartTimeline && pendingSeek >= 0 && now - lastSeek >= SeekEveryMilliseconds)
                     SeekNow(pendingSeek);
 
@@ -220,10 +233,57 @@ namespace Kinovea.ScreenManager
 
         private void ShowBar()
         {
+            if (Parent != null)
+                Bounds = PlaceIn(Parent.ClientSize);
             Visible = true;
             BringToFront();
+            shownAt = clock.ElapsedMilliseconds;
             ReadSource();
             Invalidate();
+        }
+
+        /// <summary>
+        /// While the full screen starts the screens around the bar change (the window, their grid, their sizes, their images drawn
+        /// again): the bar keeps its place across the bottom and stays in front of them, and it is drawn again at each tick for 3 s
+        /// after it shows and for 1.5 s after the place of the screens last changed, so that it is not left under them.
+        /// </summary>
+        private void Keep(long now)
+        {
+            Control host = Parent;
+            if (host == null)
+                return;
+
+            if (host.ClientSize != lastHost)
+            {
+                lastHost = host.ClientSize;
+                settleUntil = now + 1500;
+            }
+
+            bool changed = false;
+            Rectangle place = PlaceIn(host.ClientSize);
+            Rectangle was = Bounds;
+            if (was != place)
+            {
+                Bounds = place;
+                changed = true;
+            }
+
+            int index = host.Controls.GetChildIndex(this);
+            if (index != 0)
+            {
+                BringToFront();
+                changed = true;
+            }
+
+            // Once a full screen: what had to be put back (to know what moves the bar while the full screen starts).
+            if (changed && !keptLogged)
+            {
+                keptLogged = true;
+                log.WarnFormat("Playback bar of the full screen put back: bounds {0} -> {1}, order {2} -> 0, {3} ms after it showed.", was, place, index, now - shownAt);
+            }
+
+            if (changed || now - shownAt < 3000 || now < settleUntil)
+                Invalidate();
         }
 
         private void HideBar()
