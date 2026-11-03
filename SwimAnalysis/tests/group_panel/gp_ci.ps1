@@ -138,6 +138,74 @@ foreach ($sz in @(@(1920, 600), @(480, 270), @(960, 720), @(420, 560))) {
     Check $false ('panel ' + $sz[0] + 'x' + $sz[1] + ': ' + $e.Message)
   } finally { $g.Dispose(); $b.Dispose() }
 }
+# ---- (2.16.1) The wheel on a screen of a group: the screens one frame forward or back together (SwimFrameStep.Plan, pure).
+$plan = (T 'SwimFrameStep').GetMethod('Plan')
+function Step($now, $frame, $last, $offset, $scale, $dir) {
+  $inv = [object[]]@([long[]]$now, [long[]]$frame, [long[]]$last, [long[]]$offset, [double[]]$scale, [int]$dir, [long]0)
+  $aims = $plan.Invoke($null, $inv)
+  return @{ aims = $aims; moment = $inv[6] }
+}
+function Same($a, $b) { if ($null -eq $a -or $a.Count -ne $b.Count) { return $false }; for ($i = 0; $i -lt $b.Count; $i++) { if ($a[$i] -ne $b[$i]) { return $false } }; return $true }
+$r = Step @(1000000, 1000000) @(20000, 20000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(1010000, 1010000)) -and $r.moment -eq 1020000) ('two 50 fps forward: ' + ($r.aims -join ',') + ' at ' + $r.moment)
+$r = Step @(1000000, 1000000) @(20000, 20000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) -1
+Check ((Same $r.aims @(970000, 970000)) -and $r.moment -eq 980000) ('two 50 fps back: ' + ($r.aims -join ',') + ' at ' + $r.moment)
+$r = Step @(1000000, 1000000) @(20000, 40000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(1010000, -1)) -and $r.moment -eq 1020000) ('50 and 25 fps forward: the 25 fps keeps its frame (' + ($r.aims -join ',') + ')')
+$r = Step @(1020000, 1000000) @(20000, 40000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(1030000, 1020000)) -and $r.moment -eq 1040000) ('50 and 25 fps forward again: both to 1.04 s (' + ($r.aims -join ',') + ')')
+$r = Step @(1020000, 1000000) @(20000, 40000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) -1
+Check ((Same $r.aims @(990000, -1)) -and $r.moment -eq 1000000) ('50 and 25 fps back: to 1.00 s (' + ($r.aims -join ',') + ')')
+$r = Step @(1000000, 1200000) @(20000, 20000) @(10000000, 10000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(1210000, 1210000)) -and $r.moment -eq 1220000) ('screens apart: the one behind comes to the other (' + ($r.aims -join ',') + ')')
+$r = Step @(1000000, 500000) @(20000, 20000) @(10000000, 10000000) @(0, 500000) @(1.0, 1.0) 1
+Check ((Same $r.aims @(1010000, 510000)) -and $r.moment -eq 1020000) ('synchronised with an offset (' + ($r.aims -join ',') + ')')
+$r = Step @(2000000, 2000000) @(20000, 20000) @(2000000, 5000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(-1, 2010000)) -and $r.moment -eq 2020000) ('one video at its end stays, the other goes on (' + ($r.aims -join ',') + ')')
+$r = Step @(2000000, 5000000) @(20000, 20000) @(2000000, 5000000) @(0, 0) @(1.0, 1.0) 1
+Check ($null -eq $r.aims) 'all at their end: nothing moves'
+$r = Step @(0, 0) @(20000, 20000) @(2000000, 5000000) @(0, 0) @(1.0, 1.0) -1
+Check ($null -eq $r.aims) 'all at their start: nothing moves back'
+$r = Step @(19999, 20000) @(20000, 20000) @(2000000, 2000000) @(0, 0) @(1.0, 1.0) 1
+Check ((Same $r.aims @(29999, 30000)) -and [Math]::Abs($r.moment - 40000) -le 1) ('a microsecond apart is the same frame (' + ($r.aims -join ',') + ' at ' + $r.moment + ')')
+
+# ---- (2.16.1) The playback bar of the full screen: its parts in their places, drawn for a look.
+$bar = T 'SwimPlaybackBar'
+$places = $bar.GetMethod('Places')
+foreach ($case in @(@(1920, 1.0), @(1280, 1.0), @(800, 1.0), @(600, 1.0), @(1920, 1.5), @(1280, 1.5))) {
+  $s = [single]$case[1]; $h = [int][Math]::Round(46 * $s)
+  $p = $places.Invoke($null, [object[]]@([System.Drawing.Size]::new([int]$case[0], $h), $s))
+  $ok = $true; $why = ''
+  for ($i = 0; $i -lt $p.Count; $i++) {
+    if ($p[$i].IsEmpty) { continue }
+    if ($p[$i].Left -lt -0.01 -or $p[$i].Right -gt $case[0] + 0.01 -or $p[$i].Top -lt -0.01 -or $p[$i].Bottom -gt $h + 0.01) { $ok = $false; $why += ' out:' + $i }
+    for ($j = $i + 1; $j -lt $p.Count; $j++) {
+      if ($p[$j].IsEmpty) { continue }
+      if ($p[$i].Right -gt $p[$j].Left + 0.01 -and $p[$j].Right -gt $p[$i].Left + 0.01) { $ok = $false; $why += ' ' + $i + '/' + $j }
+    }
+  }
+  $line = $p[6].Width
+  $enough = ($case[0] -lt 800) -or ($line -ge 120 * $s - 0.01)
+  Check ($ok -and $enough -and -not $p[8].IsEmpty) ('bar ' + $case[0] + ' px at ' + $case[1] + 'x: the parts apart, the timeline ' + [int]$line + ' px' + $why)
+}
+$speedText = $bar.GetMethod('SpeedText')
+Check ($speedText.Invoke($null, @([double]50)) -eq '50%' -and $speedText.Invoke($null, @([double]100)) -eq '1x' -and $speedText.Invoke($null, @([double]200)) -eq '2x') 'the speed written as the speed of a screen (50%, 1x, 2x)'
+$draw = $bar.GetMethod('Draw')
+foreach ($case in @(@(1920, 1.0, $true, 37.5, 2, 'playing'), @(1280, 1.0, $false, 100, 6, 'paused'), @(800, 1.0, $false, 12.5, 8, 'slow'), @(1920, 1.5, $true, 50, -1, 'hidpi'))) {
+  $s = [single]$case[1]; $h = [int][Math]::Round(46 * $s)
+  $b = New-Object System.Drawing.Bitmap ([int]$case[0]), $h
+  $g = [System.Drawing.Graphics]::FromImage($b)
+  try {
+    $draw.Invoke($null, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new([int]$case[0], $h), $s, [bool]$case[2], [long]62000000, [long]23400000, [long]10000000, '00:00:13.40', [double]$case[3], [double]200, [int]$case[4]))
+    $b.Save([System.IO.Path]::Combine($out, ('bar-' + $case[5] + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+    $lit = 0
+    for ($xx = 2; $xx -lt $case[0]; $xx += 3) { $c = $b.GetPixel($xx, [int]($h / 2)); if ($c.R -gt 150 -and $c.G -gt 150) { $lit++ } }
+    Check ($lit -gt 20) ('bar ' + $case[5] + ' drawn (' + $lit + ' bright samples across its middle)')
+  } catch {
+    $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+    Check $false ('bar ' + $case[5] + ': ' + $e.Message)
+  } finally { $g.Dispose(); $b.Dispose() }
+}
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0

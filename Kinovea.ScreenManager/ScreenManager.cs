@@ -220,6 +220,8 @@ namespace Kinovea.ScreenManager
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
             PlayerScreenUserInterface.SwimGroupStartAsked = SwimGroupStart;
+            PlayerScreenUserInterface.SwimGroupStepAsked = SwimGroupStep;
+            view.SetSwimPlayback(SwimPlaybackNow);
 
             // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
             SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
@@ -1733,6 +1735,70 @@ namespace Kinovea.ScreenManager
                 log.Error("The time origins of the group could not be moved to the start.", e);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.16.1) The wheel on a screen of a group of screens: the screens of the group move together one frame forward (1) or back
+        /// (-1), on the time of their synchronisation (DualPlayerController.StepGroup); not synchronised, each one frame of its own.
+        /// False when the screen is not in a group (the wheel then moves that screen alone, as before).
+        /// </summary>
+        private bool SwimGroupStep(PlayerScreenUserInterface screen, int direction)
+        {
+            try
+            {
+                if (screen == null || direction == 0 || !VideoScreenGroup.Active || !VideoScreenGroup.Contains(screen))
+                    return false;
+
+                List<PlayerScreen> members = screenList.OfType<PlayerScreen>().Where(p => p.Full && p.view != null && !p.view.IsDisposed && VideoScreenGroup.Contains(p.view)).ToList();
+                if (members.Count < 2 || !members.Any(p => p.view == screen))
+                    return false;
+
+                if (dualPlayer.StepGroup(members, direction))
+                    return true;
+
+                foreach (PlayerScreen p in members)
+                {
+                    if (direction > 0)
+                        p.view.buttonGotoNext_Click(null, EventArgs.Empty);
+                    else
+                        p.view.buttonGotoPrevious_Click(null, EventArgs.Empty);
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                log.Error("The screens of the group could not move together.", e);
+                return false;
+            }
+        }
+
+        // (Swim 2.16.1) What the playback bar of the full screen drives (kept while it is the same).
+        private SwimPlaybackScreens swimPlaybackScreens;
+        private SwimPlaybackScreen swimPlaybackScreen;
+
+        /// <summary>
+        /// (Swim 2.16.1) What the playback bar of the full screen drives now: the screens together when two or more are synchronised (as
+        /// the common controls), else the screen with a video (the active one when there are more); null without a video.
+        /// </summary>
+        private ISwimPlayback SwimPlaybackNow()
+        {
+            if (dualPlayer.Active && dualPlayer.SwimSynching)
+            {
+                if (swimPlaybackScreens == null)
+                    swimPlaybackScreens = new SwimPlaybackScreens(dualPlayer);
+                return swimPlaybackScreens;
+            }
+
+            List<PlayerScreen> loaded = screenList.OfType<PlayerScreen>().Where(p => p.Full && p.view != null && !p.view.IsDisposed).ToList();
+            if (loaded.Count == 0)
+                return null;
+
+            PlayerScreen active = activeScreen as PlayerScreen;
+            PlayerScreen player = active != null && loaded.Contains(active) ? active : loaded[0];
+            if (swimPlaybackScreen == null || swimPlaybackScreen.Player != player)
+                swimPlaybackScreen = new SwimPlaybackScreen(player);
+            return swimPlaybackScreen;
         }
 
         /// <summary>The group as the menu has it (its checked screens; the lead asked for, or kept).</summary>

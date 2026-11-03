@@ -87,6 +87,9 @@ namespace Kinovea.ScreenManager
 
         // (Swim 2.14.0) Big screens: the screens show only their images in the window (the common controls stay).
         private bool bigScreens;
+
+        // (Swim 2.16.1) The playback bar of the full screen, at the bottom over the screens (shown when the mouse moves).
+        private readonly SwimPlaybackBar playbackBar = new SwimPlaybackBar();
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -109,6 +112,7 @@ namespace Kinovea.ScreenManager
             splitScreens.SplitterDistance = (int)(num * WindowManager.ActiveWindow.DualScreenSplitterRatio);
 
             InitializeGrid();
+            InitializePlaybackBar();
 
             initialized = true;
         }
@@ -194,6 +198,8 @@ namespace Kinovea.ScreenManager
                     LayoutGrid();
                 }
 
+                // (Swim 2.16.1) The playback bar of the full screen stays over the screens.
+                playbackBar.BringToFront();
                 UncoverScreens();
             }
         }
@@ -214,6 +220,15 @@ namespace Kinovea.ScreenManager
             splitScreensPanel.Panel2Collapsed = fullScreen || memoCommonControlsCollapsed;
             splitScreensPanel.BorderStyle = fullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
             UncoverScreens();
+
+            // (Swim 2.16.1) The playback bar at the bottom: shown now and when the mouse moves, hidden 5 s after it stopped.
+            ArmPlaybackBar();
+        }
+
+        /// <summary>(Swim 2.16.1) What the playback bar drives (asked by the bar as it goes; null: nothing).</summary>
+        public void SetSwimPlayback(Func<ISwimPlayback> provider)
+        {
+            playbackBar.SetProvider(provider);
         }
         /// <summary>
         /// (Swim 2.14.0) Big screens on or off: the screens show only their images (set by the screen manager, which then organizes
@@ -221,7 +236,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void SetBigScreens(bool on)
         {
+            if (on == bigScreens)
+                return;
+
             bigScreens = on;
+
+            // (Swim 2.16.1) The playback bar is there with the big screens too.
+            ArmPlaybackBar();
         }
 
         /// <summary>(Swim 2.16.0) The panel of a group of screens in one more cell of the grid (null: none); OrganizeScreens places it.</summary>
@@ -352,6 +373,40 @@ namespace Kinovea.ScreenManager
             splitScreens.Panel2.Controls.Clear();
             splitScreens.Panel2Collapsed = true;
             splitScreens.Panel2.AllowDrop = false;
+        }
+
+        /// <summary>(Swim 2.16.1) The playback bar of the full screen, over the screens in their part of the window.</summary>
+        private void InitializePlaybackBar()
+        {
+            splitScreensPanel.Panel1.Controls.Add(playbackBar);
+            playbackBar.BringToFront();
+            splitScreensPanel.Panel1.Resize += (s, e) => PlacePlaybackBar();
+            playbackBar.VisibleChanged += (s, e) =>
+            {
+                if (!playbackBar.Visible)
+                    return;
+
+                PlacePlaybackBar();
+                playbackBar.BringToFront();
+            };
+        }
+
+        /// <summary>
+        /// (Swim 2.16.1) The playback bar (its speed of playback, its timeline) in full screen and with the big screens: shown when the
+        /// mode starts and when the mouse moves over the screens, hidden 5 s after it stopped. Each change of the mode shows it again.
+        /// </summary>
+        private void ArmPlaybackBar()
+        {
+            PlacePlaybackBar();
+            playbackBar.Armed = fullScreen || bigScreens;
+        }
+
+        /// <summary>(Swim 2.16.1) The playback bar across the bottom of the screens.</summary>
+        private void PlacePlaybackBar()
+        {
+            Rectangle place = playbackBar.PlaceIn(splitScreensPanel.Panel1.ClientSize);
+            if (playbackBar.Bounds != place)
+                playbackBar.Bounds = place;
         }
 
         private void InitializeGrid()

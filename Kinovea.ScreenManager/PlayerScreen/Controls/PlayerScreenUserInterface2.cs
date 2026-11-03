@@ -2283,6 +2283,10 @@ namespace Kinovea.ScreenManager
             }
             else
             {
+                // (Swim 2.16.1) A screen of a group of screens: the wheel moves all the screens of the group together, one frame.
+                if (e.Delta != 0 && SwimGroupStepAsked != null && VideoScreenGroup.Contains(this) && SwimGroupStepAsked(this, e.Delta > 0 ? 1 : -1))
+                    return;
+
                 if (steps > 0)
                 {
                     buttonGotoNext_Click(null, EventArgs.Empty);
@@ -2931,6 +2935,30 @@ namespace Kinovea.ScreenManager
         /// screens of its group by the same time; false when the screen is not in a synchronised group (its own origin moves then).
         /// </summary>
         internal static Func<PlayerScreenUserInterface, long, bool> SwimGroupStartAsked;
+
+        /// <summary>
+        /// (Swim 2.16.1) Set by the screen manager: the wheel on a screen of a group of screens (1 forward, -1 back) moves all the screens
+        /// of the group together one frame; false when the screen is not in a group (the wheel moves this screen alone, as before).
+        /// </summary>
+        internal static Func<PlayerScreenUserInterface, int, bool> SwimGroupStepAsked;
+
+        /// <summary>(Swim 2.16.1) The time of the frame shown as the label under the timeline writes it (from the time origin).</summary>
+        internal string SwimTimecode
+        {
+            get { return m_FrameServer.Loaded ? m_FrameServer.TimeStampsToTimecode(m_iCurrentPosition, TimeType.UserOrigin, timecodeFormat, true) : ""; }
+        }
+
+        /// <summary>(Swim 2.16.1) The highest playback speed of the speed slider, in percent of real time.</summary>
+        internal double SwimSpeedMax
+        {
+            get { return timeMapper.GetRealtimeMultiplier(sldrSpeed.Maximum) * 100; }
+        }
+
+        /// <summary>(Swim 2.16.1) The normal playback speed (the video at its own frame rate, the double click on the speed), in percent of real time.</summary>
+        internal double SwimSpeedNormal
+        {
+            get { return timeMapper.GetRealtimeMultiplier(timeMapper.GetInputFromSlowMotion(1)) * 100; }
+        }
 
         #region Swim: a screen dragged onto another
         // (Swim 2.14.0) By its top row, or by its grip when only its image is shown (full screen, big screens): dropped on another
