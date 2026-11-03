@@ -25,7 +25,7 @@
  *      αρχείο)· όσα έγιναν ήδη δύο τα ενώνουν οι swimReportsFilesCheck (έλεγχος) και swimReportsFilesMerge (συγχώνευση).
  */
 
-var SWIM_VERSION = '2.16.2';
+var SWIM_VERSION = '2.16.3';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -395,6 +395,7 @@ function swimReportsSpreadsheet_() {
     swimNoteReportsChange_('', ss.getId(), 'βρέθηκε στον Drive (' + found.list[0].count + ' αναλύσεις)');
   } else {
     ss = SpreadsheetApp.create(SWIM_REPORTS_TITLE);
+    swimSetFormulaLocale_(ss);
     try { DriveApp.getFileById(ss.getId()).moveTo(swimReportFolder_()); } catch (e) { /* μένει στο My Drive */ }
     var first = ss.getSheets()[0];
     var index = swimIndexSheet_(ss);
@@ -404,6 +405,27 @@ function swimReportsSpreadsheet_() {
   props.setProperty('SWIM_REPORTS_SPREADSHEET_ID', ss.getId());
   SWIM_REPORTS_OPEN_ = { id: ss.getId(), ss: ss };
   return ss;
+}
+
+/**
+ * (2.16.3) Οι τύποι του script γράφονται με «,» ανάμεσα στα ορίσματα (π.χ. =IF(A1="","",A1)). Σε αρχείο με ρυθμίσεις όπου οι τύποι
+ * θέλουν «;» (π.χ. ελληνικές, με κόμμα στους δεκαδικούς) βγαίνουν #ERROR!. Ένα νέο αρχείο αναφορών παίρνει τις ρυθμίσεις του KOE App
+ * όταν είναι αγγλικές, αλλιώς en_GB (ημερομηνίες ημέρα/μήνας/έτος), και τη ζώνη ώρας του script.
+ */
+function swimCommaLocale_(locale) {
+  var loc = String(locale || '');
+  return /^en([_-]|$)/i.test(loc) && !/^en[_-]ZA$/i.test(loc);
+}
+
+function swimFormulaLocale_() {
+  var loc = '';
+  try { loc = String(swimDataSpreadsheet_().getSpreadsheetLocale() || ''); } catch (e) { loc = ''; }
+  return swimCommaLocale_(loc) ? loc : 'en_GB';
+}
+
+function swimSetFormulaLocale_(ss) {
+  try { ss.setSpreadsheetLocale(swimFormulaLocale_()); } catch (e) { /* μένουν οι ρυθμίσεις του Google */ }
+  try { ss.setSpreadsheetTimeZone(Session.getScriptTimeZone()); } catch (e2) { /* ίδια ζώνη */ }
 }
 
 /** Το μήνυμα όταν το αρχείο της ρύθμισης δεν ανοίγει: στον κάδο του Drive, αλλιώς το Google δεν απάντησε. */
@@ -459,8 +481,9 @@ function swimSortReportsFiles_(list) {
 /** Τι έχει ένα αρχείο αναφορών: πόσες αναλύσεις (αγώνες, τεχνικές), από πότε ως πότε ενημερώθηκαν, πότε φτιάχτηκε. */
 function swimReportsFileInfo_(ss, file) {
   var info = { id: ss.getId(), ss: ss, file: file || null, url: ss.getUrl(), name: ss.getName(), count: 0, races: 0, trainings: 0,
-    noSheet: 0, first: '', last: '', created: 0, updated: 0, sheets: 0 };
+    noSheet: 0, first: '', last: '', created: 0, updated: 0, sheets: 0, locale: '' };
   try { info.sheets = ss.getSheets().length; } catch (e) { info.sheets = 0; }
+  try { info.locale = String(ss.getSpreadsheetLocale() || ''); } catch (e4) { info.locale = ''; }
   try { if (file && file.getDateCreated) info.created = file.getDateCreated().getTime(); } catch (e2) { info.created = 0; }
   try { if (file && file.getLastUpdated) info.updated = file.getLastUpdated().getTime(); } catch (e3) { info.updated = 0; }
   var rows = swimIndexRows_(ss);
@@ -9582,7 +9605,10 @@ function swimMergeItemLabel_(item) {
   var name = String(link === null || link === undefined ? '' : link);
   var m = /HYPERLINK\("[^"]*"\s*[,;]\s*"((?:[^"]|"")*)"\)/i.exec(name);
   if (m) name = m[1].replace(/""/g, '"');
-  if (!name || name === '0') name = String(item.values ? item.values[4] || '' : '');
+  // Ο σύνδεσμος δείχνει σφάλμα (#ERROR!: ρυθμίσεις με «;») ή δεν υπάρχει: ο αθλητής και το αγώνισμα.
+  if (!name || name === '0' || /^#/.test(name) || name === 'χωρίς report')
+    name = item.values ? [item.values[2], item.values[SWIM_IDX.event]].map(function (v) { return String(v === null || v === undefined ? '' : v).trim(); })
+      .filter(function (v) { return v; }).join(' – ') : '';
   return (name ? name + ' ' : '') + '(' + item.id + ', ' + (item.stamp || 'χωρίς ημερομηνία') + ')';
 }
 
@@ -9766,8 +9792,10 @@ function swimMergePlanText_(plan) {
     lines.push((i + 1) + ') ' + swimCount_(f.count, 'ανάλυση', 'αναλύσεις') + ' (' + swimCount_(f.races, 'αγώνας', 'αγώνες') + ', ' +
       swimCount_(f.trainings, 'τεχνική', 'τεχνικές') + (f.noSheet ? ', ' + f.noSheet + ' χωρίς φύλλο' : '') + '), ' + swimCount_(f.sheets, 'φύλλο', 'φύλλα') +
       '· ενημερώσεις ' + (f.first || '–') + ' έως ' + (f.last || '–') +
-      '· φτιάχτηκε ' + date(f.created) + (f.name !== SWIM_REPORTS_TITLE ? '· όνομα «' + f.name + '»' : ''));
+      '· φτιάχτηκε ' + date(f.created) + (f.locale ? '· ρυθμίσεις ' + f.locale : '') + (f.name !== SWIM_REPORTS_TITLE ? '· όνομα «' + f.name + '»' : ''));
     lines.push('   ' + f.url);
+    if (f.locale && !swimCommaLocale_(f.locale))
+      lines.push('   ⚠ Με τις ρυθμίσεις ' + f.locale + ' οι τύποι του script βγαίνουν #ERROR! (θέλουν «;»): Αρχείο → Ρυθμίσεις → Τοπικές ρυθμίσεις, π.χ. Ηνωμένο Βασίλειο.');
     var tags = [];
     if (f.id === plan.current) tags.push('ΕΔΩ γράφει τώρα το Kinovea');
     if (plan.target && f.id === plan.target.id) tags.push(plan.sources.length ? 'ΜΕΝΕΙ: εδώ θα μαζευτούν όλα' : 'το αρχείο των αναλύσεων');
@@ -9815,13 +9843,21 @@ function swimCount_(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
 }
 
-/** Ένα μήνυμα στο αρχείο καταγραφής (εκτέλεση από το Apps Script) και, από το μενού του φύλλου, σε παράθυρο. */
+/**
+ * Ένα μήνυμα στο αρχείο καταγραφής και, όταν το φύλλο είναι ανοιχτό, σε παράθυρο που δεν περιμένει OK (2.16.3: ένα alert κρατούσε την
+ * εκτέλεση ανοιχτή ως το όριο των 6 λεπτών, αφού είχε τελειώσει η δουλειά).
+ */
 function swimSay_(title, text) {
   Logger.log(title + '\n' + text);
   try {
-    var ui = SpreadsheetApp.getUi();
-    ui.alert(title, text, ui.ButtonSet.OK);
-  } catch (e2) { /* από τον editor δεν υπάρχει παράθυρο: το κείμενο είναι στο αρχείο καταγραφής */ }
+    var html = HtmlService.createHtmlOutput('<pre style="white-space:pre-wrap;font:13px/1.45 Arial,sans-serif;margin:0">' +
+      swimHtmlText_(text) + '</pre>').setWidth(700).setHeight(480);
+    SpreadsheetApp.getUi().showModelessDialog(html, title);
+  } catch (e2) { /* χωρίς ανοιχτό φύλλο: το κείμενο είναι στο αρχείο καταγραφής */ }
+}
+
+function swimHtmlText_(text) {
+  return String(text === null || text === undefined ? '' : text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ---------------------------------------------------------------------------------------------

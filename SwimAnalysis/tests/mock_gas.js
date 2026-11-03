@@ -275,8 +275,11 @@ function makeSpreadsheet(name, id, opts) {
   opts = opts || {};
   const sheets = [];
   const ss = {
-    _name: name,
+    _name: name, _locale: opts.locale || 'en_US', _timeZone: 'Europe/Athens',
     getName: () => ss._name, rename: n => { ss._name = String(n); }, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getId: () => id,
+    // Οι ρυθμίσεις του αρχείου (2.16.3): γλώσσα/χώρα και ζώνη ώρας.
+    getSpreadsheetLocale: () => ss._locale, setSpreadsheetLocale: l => { if (!/^[a-z]{2}(_[A-Z]{2})?$/.test(String(l))) throw new Error('bad locale ' + l); ss._locale = l; },
+    getSpreadsheetTimeZone: () => ss._timeZone, setSpreadsheetTimeZone: z => { ss._timeZone = z; },
     getSheetByName: n => sheets.find(s => s.getName() === n) || null,
     insertSheet: (n, idx) => {
       if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n);
@@ -319,6 +322,7 @@ function makeContext(opts) {
     alert: (...a) => { ui._alerts.push(a.length > 1 ? a.slice(0, 2).join(': ') : String(a[0])); return 'OK'; },
     prompt: () => ({ getSelectedButton: () => (ui._answer === null ? 'CANCEL' : 'OK'), getResponseText: () => String(ui._answer || '') }),
     showModalDialog: (html, title) => { ui._dialogs.push({ title, html: html._html }); },
+    showModelessDialog: (html, title) => { ui._dialogs.push({ title, html: html._html, modeless: true }); },
     createMenu: makeMenu,
   };
   let uuidSeq = 0;

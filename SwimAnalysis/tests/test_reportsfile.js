@@ -139,10 +139,18 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   r = call({ action: 'update', race: race(5) });
   assert.ok(r.ok && G._props.SWIM_REPORTS_SPREADSHEET_ID === empty.getId(), 'not the one in the trash');
   G._drive._files[id]._trashed = false;
-  // A first setup without any file: a new one (as before).
+  // A first setup without any file: a new one (as before), with the settings of the KOE App when they write formulas with «,».
   const F = ctx();
   F.swimSetup();
   assert.ok(F._props.SWIM_REPORTS_SPREADSHEET_ID && Object.keys(F._all).length === 2, 'first setup: one new file');
+  assert.strictEqual(F._all[F._props.SWIM_REPORTS_SPREADSHEET_ID].getSpreadsheetLocale(), 'en_US', 'the locale of the KOE App');
+  // With a KOE App in Greek settings (formulas with «;»), en_GB: the formulas of the script work, the dates stay day/month.
+  const F2 = ctx();
+  F2._ss._locale = 'el_GR';
+  F2.swimSetup();
+  assert.strictEqual(F2._all[F2._props.SWIM_REPORTS_SPREADSHEET_ID].getSpreadsheetLocale(), 'en_GB', 'not a locale with «;»');
+  assert.ok(F2.swimCommaLocale_('en_US') && F2.swimCommaLocale_('en_GB') && F2.swimCommaLocale_('en') && !F2.swimCommaLocale_('el_GR') &&
+    !F2.swimCommaLocale_('de_DE') && !F2.swimCommaLocale_('en_ZA') && !F2.swimCommaLocale_(''), 'locales with «,»');
   console.log('test_reportsfile (a): no second file ok');
 }
 
@@ -186,6 +194,8 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   const reportOf = raceId => { const r = summary.getRange(2, 1, summary.getLastRow() - 1, 23).getValues().find(x => String(x[21]) === raceId); return r ? String(r[19]) : null; };
   assert.ok(reportOf('race4').indexOf(NEW.getId()) > 0, 'before: race 4 links to the new file');
 
+  // The new file in Greek settings (as the one of 31/10): the check says why its formulas show #ERROR!.
+  NEW._locale = 'el_GR';
   // The check only reads.
   const snapshot = () => JSON.stringify({ props: G._props, files: Object.keys(G._all).sort().map(k => [k, G._all[k].getName()]),
     sheets: Object.keys(G._all).sort().map(k => G._all[k].getSheets().map(s => [s.getName(), s._cells])) });
@@ -203,6 +213,12 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   assert.ok(/Δεν διαβάζεται \(θα μείνει στο άλλο αρχείο\): .*broken1/.test(text), 'the broken row');
   assert.ok(/μάθηση Kinovea \+1, elite αναφορές \+1/.test(text), 'the other sheets: ' + text);
   assert.ok(/δεν μεταφέρονται \(μένουν εκεί\): Σημειώσεις\./.test(text), 'a sheet of notes stays');
+  assert.ok(/· ρυθμίσεις en_US/.test(text) && /⚠ Με τις ρυθμίσεις el_GR οι τύποι του script βγαίνουν #ERROR!/.test(text), 'the locale of each file: ' + text);
+  assert.strictEqual(text.split('⚠').length, 2, 'the warning only for the file with «;»');
+  // The labels: athlete and event when the link shows an error.
+  assert.strictEqual(G.swimMergeItemLabel_({ id: 'x1', stamp: '01/11/2026 9:00', values: ['x1', '#ERROR!', 'Κολυμβητής Δοκιμής', '', 'τεχνική fs'] }),
+    'Κολυμβητής Δοκιμής – τεχνική fs (x1, 01/11/2026 9:00)');
+  assert.strictEqual(G.swimMergeItemLabel_({ id: 'x2', stamp: '', values: ['x2', 'Όνομα φύλλου', '', '', 'fs'] }), 'Όνομα φύλλου (x2, χωρίς ημερομηνία)');
   // The order: as they were made.
   const order = lines.filter(l => /^ {2}.*\((race|tech)\d, /.test(l)).map(l => /\(((?:race|tech)\d), /.exec(l)[1]);
   assert.deepStrictEqual(order, ['race2', 'race4', 'tech2', 'race5'], 'in the order they were made');
@@ -280,7 +296,9 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   const m = G.swimReportsFilesMerge();
   assert.ok(/Δεν άνοιξαν αυτή τη στιγμή: R\d+ \(Service Spreadsheets timed out/.test(m) && /Ξανατρέξε σε λίγο/.test(m), m);
   assert.strictEqual(G._props.SWIM_REPORTS_SPREADSHEET_ID, a, 'nothing changed');
-  assert.ok(G._ui._alerts.some(x => /^Αρχείο αναλύσεων: συγχώνευση: /.test(x)), 'a window from the menu');
+  assert.ok(G._ui._dialogs.some(d => d.title === 'Αρχείο αναλύσεων: συγχώνευση' && d.modeless && /Δεν άνοιξαν αυτή τη στιγμή/.test(d.html)),
+    'a window that does not wait for OK');
+  assert.strictEqual(G._ui._alerts.length, 0, 'no alert');
   // Only from the project of the Kinovea connection (the dashboard project has its own settings, without the token).
   const D = ctx();
   delete D._props.SWIM_TOKEN;
