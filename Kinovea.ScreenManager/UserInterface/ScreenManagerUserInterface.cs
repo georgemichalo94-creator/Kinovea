@@ -222,11 +222,10 @@ namespace Kinovea.ScreenManager
             UncoverScreens();
 
             // (Swim 2.16.1) The playback bar at the bottom: shown now and when the mouse moves, hidden 5 s after it stopped.
-            PlacePlaybackBar();
-            playbackBar.Armed = fullScreen;
+            ArmPlaybackBar();
         }
 
-        /// <summary>(Swim 2.16.1) What the playback bar of the full screen drives (asked by the bar as it goes; null: nothing).</summary>
+        /// <summary>(Swim 2.16.1) What the playback bar drives (asked by the bar as it goes; null: nothing).</summary>
         public void SetSwimPlayback(Func<ISwimPlayback> provider)
         {
             playbackBar.SetProvider(provider);
@@ -237,7 +236,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void SetBigScreens(bool on)
         {
+            if (on == bigScreens)
+                return;
+
             bigScreens = on;
+
+            // (Swim 2.16.1) The playback bar is there with the big screens too.
+            ArmPlaybackBar();
         }
 
         /// <summary>(Swim 2.16.0) The panel of a group of screens in one more cell of the grid (null: none); OrganizeScreens places it.</summary>
@@ -384,6 +389,16 @@ namespace Kinovea.ScreenManager
                 PlacePlaybackBar();
                 playbackBar.BringToFront();
             };
+        }
+
+        /// <summary>
+        /// (Swim 2.16.1) The playback bar (its speed of playback, its timeline) in full screen and with the big screens: shown when the
+        /// mode starts and when the mouse moves over the screens, hidden 5 s after it stopped. Each change of the mode shows it again.
+        /// </summary>
+        private void ArmPlaybackBar()
+        {
+            PlacePlaybackBar();
+            playbackBar.Armed = fullScreen || bigScreens;
         }
 
         /// <summary>(Swim 2.16.1) The playback bar across the bottom of the screens.</summary>

@@ -138,17 +138,18 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The full screen is on: the bar shows now (for 5 s, as after a move of the mouse) and follows the mouse; off: it hides and
-        /// waits.
+        /// The full screen or the big screens are on: the bar shows now (for 5 s, as after a move of the mouse) and follows the mouse;
+        /// off: it hides and waits. Armed again while armed (from the big screens to the full screen and back): it shows again.
         /// </summary>
         public bool Armed
         {
             get { return armed; }
             set
             {
-                if (armed == value)
+                if (!value && !armed)
                     return;
 
+                bool was = armed;
                 armed = value;
                 keptLogged = false;
                 if (armed)
@@ -157,7 +158,8 @@ namespace Kinovea.ScreenManager
                     lastMove = clock.ElapsedMilliseconds;
                     lastTick = lastMove;
                     calmTicks = 0;
-                    timer.Start();
+                    if (!was)
+                        timer.Start();
                     Tick();
                 }
                 else
