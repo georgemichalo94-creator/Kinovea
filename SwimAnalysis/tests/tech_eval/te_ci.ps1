@@ -372,6 +372,19 @@ $d2 = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGener
 $null = $one.MergeOld($e2, 'p', $tf, $d2, 'x')
 Check ($t2.Scores['ok.rotation_quick'].Value -eq 0 -and -not $t2.Scores['ok.rotation_quick'].Auto -and $t2.Scores['ok.rotation_quick'].SnapshotId -eq 'snapCoach' -and $d2.Count -eq 1 -and $d2[0].SnapshotId -eq 'snapAuto' -and $e2.Count -eq 1) 'the coach''s older answer over an automatic one'
 
+# (2.16.1) A point of a single list whose words changed (a new key, the old one in its "same"): its scores under the old key move to it.
+$moveRenamed = $tCat.GetMethod('MoveRenamed')
+$t3 = [Activator]::CreateInstance($tEval); $t3.PhaseId = 'q'; $t3.SheetId = 'kv-turn-fs'
+$t3.Scores.Add('ka.rotation_slow', (Score 0 $false 'snapOld')); $t3.Scores.Add('push.short', (Score 1 $false $null)); $t3.Scores.Add('zz.unknown', (Score 1 $false $null))
+$d3 = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tScore))
+$m3 = $moveRenamed.Invoke($null, [object[]]@($t3.psobject.BaseObject, $tf.psobject.BaseObject, $d3.psobject.BaseObject))
+Check ($m3 -eq 1 -and $t3.Scores['ok.rotation_quick'].Value -eq 0 -and $t3.Scores['ok.rotation_quick'].SnapshotId -eq 'snapOld' -and -not $t3.Scores.ContainsKey('ka.rotation_slow') -and $t3.Scores.ContainsKey('push.short') -and $t3.Scores.ContainsKey('zz.unknown')) ('a renamed point keeps its score (' + $m3 + ')')
+$t3.Scores.Add('ka.rotation_slow', (Score 1 $false 'snapOlder'))
+$m4 = $moveRenamed.Invoke($null, [object[]]@($t3.psobject.BaseObject, $tf.psobject.BaseObject, $d3.psobject.BaseObject))
+Check ($m4 -eq 1 -and $t3.Scores['ok.rotation_quick'].SnapshotId -eq 'snapOld' -and -not $t3.Scores.ContainsKey('ka.rotation_slow') -and $d3.Count -eq 1 -and $d3[0].SnapshotId -eq 'snapOlder') 'the coach''s score of the new point stays; the older one goes with its frame'
+$m5 = $moveRenamed.Invoke($null, [object[]]@($t3.psobject.BaseObject, $tf.psobject.BaseObject, $d3.psobject.BaseObject))
+Check ($m5 -eq 0) 'nothing moves twice'
+
 # The learning of a point of a single list counts the answers on the older points it stands for.
 $learn2 = [Activator]::CreateInstance($tLearn)
 $i = 0

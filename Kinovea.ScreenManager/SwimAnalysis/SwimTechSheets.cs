@@ -567,6 +567,48 @@ namespace Kinovea.ScreenManager
             return moved;
         }
 
+        /// <summary>
+        /// (2.16.1) A point of a single list whose words changed got a new key (the old key in its "same"): the scores of the evaluation of
+        /// the list under the old key move to the point, unless the point has the coach's own score there already (the score that did not
+        /// move goes to dropped, for its frame, and is removed: nothing shows it any more). Returns how many scores moved or went.
+        /// </summary>
+        public static int MoveRenamed(SwimTechEval eval, SwimTechSheet single, List<SwimTechScore> dropped)
+        {
+            if (eval == null || single == null || eval.SheetId != single.Id)
+                return 0;
+
+            int moved = 0;
+            foreach (KeyValuePair<string, SwimTechScore> kv in eval.Scores.ToList())
+            {
+                if (single.Items.Any(i => i.Key == kv.Key))
+                    continue;
+
+                SwimTechSheetItem item = single.Items.FirstOrDefault(i => i.StandsFor(kv.Key));
+                if (item == null)
+                    continue;
+
+                SwimTechScore s = kv.Value;
+                eval.Scores.Remove(kv.Key);
+                moved++;
+                SwimTechScore have;
+                eval.Scores.TryGetValue(item.Key, out have);
+                if (have != null && !(have.Auto && !s.Auto))
+                {
+                    if (dropped != null && s != null && !string.IsNullOrEmpty(s.SnapshotId) && s.SnapshotId != have.SnapshotId)
+                        dropped.Add(s);
+                    continue;
+                }
+
+                if (have != null && dropped != null && s != null && !string.IsNullOrEmpty(have.SnapshotId) && have.SnapshotId != s.SnapshotId)
+                    dropped.Add(have);
+
+                if (s != null)
+                    eval.Scores[item.Key] = s;
+            }
+
+            return moved;
+        }
+
         /// <summary>(2.16.0) The catalogue has lists for the turns of a medley where the stroke changes.</summary>
         public bool HasTransitions
         {

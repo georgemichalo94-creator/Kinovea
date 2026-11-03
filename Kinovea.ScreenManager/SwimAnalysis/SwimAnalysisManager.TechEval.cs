@@ -145,22 +145,30 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.16.0) The evaluations of a phase made with the older lists move to its single list (SwimTechSheetCatalog.MergeOld); a frame of
-        /// a score that did not move (the point had the coach's own score) goes when no other score keeps it. Returns how many moved.
+        /// a score that did not move (the point had the coach's own score) goes when no other score keeps it. (2.16.1) The scores of the
+        /// single list under the old key of a point whose words changed move to the point (SwimTechSheetCatalog.MoveRenamed). Returns how
+        /// many moved.
         /// </summary>
         private int MergeOldEvals(SwimTechPhase phase)
         {
             SwimTechSheetCatalog cat = TechCatalog;
             if (Race == null || phase == null || Race.TechEvals.Count == 0 || !cat.SingleLists)
                 return 0;
-            if (!Race.TechEvals.Any(e => e.PhaseId == phase.Id && cat.Sheet(e.SheetId) != null && cat.Sheet(e.SheetId).Hidden))
-                return 0;
+            bool older = Race.TechEvals.Any(e => e.PhaseId == phase.Id && cat.Sheet(e.SheetId) != null && cat.Sheet(e.SheetId).Hidden);
 
             SwimTechSheet single = cat.DefaultFor(phase.Kind, TechStyle(phase), phase.Flip, null);
             if (!Offered(single))
                 return 0;
 
+            SwimTechEval own = Race.TechEvals.FirstOrDefault(e => e.PhaseId == phase.Id && e.SheetId == single.Id);
+            bool renamed = own != null && own.Scores.Keys.Any(k => !single.Items.Any(i => i.Key == k) && single.Items.Any(i => i.StandsFor(k)));
+            if (!older && !renamed)
+                return 0;
+
             List<SwimTechScore> dropped = new List<SwimTechScore>();
-            int moved = cat.MergeOld(Race.TechEvals, phase.Id, single, dropped, DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture));
+            int moved = SwimTechSheetCatalog.MoveRenamed(own, single, dropped);
+            if (older)
+                moved += cat.MergeOld(Race.TechEvals, phase.Id, single, dropped, DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture));
             foreach (SwimTechScore s in dropped)
             {
                 if (!SnapshotOfScores(s.SnapshotId))
