@@ -217,8 +217,20 @@ function makeDrive() {
     return folder;
   }
   const root = makeFolder('root', null);
+  // Τα Google Sheet ως αρχεία του Drive (2.16.2): με το id τους, όνομα, κάδο, τύπο και ημερομηνίες (φτιάχτηκε ανά λεπτό, με τη σειρά).
+  let sheetSeq = 0;
+  const addSpreadsheet = ss => {
+    const f = { _ss: ss, _trashed: false, _created: Date.UTC(2026, 9, 1) + (++sheetSeq) * 60000,
+      getId: () => ss.getId(), getName: () => ss.getName(), setName: n => { ss.rename(n); return f; }, getUrl: () => ss.getUrl(),
+      isTrashed: () => f._trashed, setTrashed: v => { f._trashed = v; return f; },
+      getMimeType: () => 'application/vnd.google-apps.spreadsheet',
+      getDateCreated: () => new Date(f._created), getLastUpdated: () => new Date(f._created),
+      getParents: () => iter([root]), moveTo: () => f };
+    files[ss.getId()] = f;
+    return f;
+  };
   const drive = {
-    _files: files, _root: root,
+    _files: files, _root: root, _addSpreadsheet: addSpreadsheet,
     getFileById: id => { if (files[id]) return files[id]; return { moveTo: () => {}, getId: () => id, getParents: () => iter([]), getBlob: () => makeBlob([1, 2, 3], 'image/jpeg', 'x'), getName: () => 'x' }; },
     getFoldersByName: n => iter(allFolders().filter(f => f._name === n)),
     createFolder: n => root.createFolder(n),
@@ -263,7 +275,8 @@ function makeSpreadsheet(name, id, opts) {
   opts = opts || {};
   const sheets = [];
   const ss = {
-    getName: () => name, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getId: () => id,
+    _name: name,
+    getName: () => ss._name, rename: n => { ss._name = String(n); }, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getId: () => id,
     getSheetByName: n => sheets.find(s => s.getName() === n) || null,
     insertSheet: (n, idx) => {
       if (sheets.find(s => s.getName() === n)) throw new Error('dup sheet ' + n);
@@ -310,6 +323,9 @@ function makeContext(opts) {
   };
   let uuidSeq = 0;
   const drive = makeDrive();
+  drive._addSpreadsheet(ss);
+  // Ανοίγματα που αποτυγχάνουν (όπως όταν το Google δεν απαντά): id → πόσες φορές ακόμη (Infinity: πάντα).
+  const openFails = {}, opens = [];
   const sleeps = [], exports = [], cacheStore = {}, cacheLog = [];
   // Εξαγωγή PDF όπως του Google Sheets: πλάτος = στήλες + 1 px η καθεμία, fit to width, ο αριθμός σελίδας κρατά
   // pdfFooter ίντσες, οι γραμμές δεν κόβονται. Επιστρέφει PDF με το πλήθος των σελίδων.
@@ -371,8 +387,13 @@ function makeContext(opts) {
           build: () => { if (!r.formula || !r.ranges) throw new Error('incomplete rule'); r._built = true; return r; } };
         return api;
       },
-      openById: id => { if (!all[id]) throw new Error('no ss ' + id); return all[id]; },
-      create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length, opts); n.insertSheet('Sheet1'); all[n.getId()] = n; return n; } },
+      openById: id => {
+        opens.push(id);
+        if (openFails[id] > 0) { openFails[id]--; throw new Error('Service Spreadsheets timed out while accessing document with id ' + id + '.'); }
+        if (!all[id]) throw new Error('no ss ' + id);
+        return all[id];
+      },
+      create: name => { const n = makeSpreadsheet(name, 'R' + Object.keys(all).length, opts); n.insertSheet('Sheet1'); all[n.getId()] = n; drive._addSpreadsheet(n); return n; } },
     Logger: { log: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
@@ -416,6 +437,7 @@ function makeContext(opts) {
   vm.runInContext(src, ctx);
   ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
   ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf; ctx._cache = { store: cacheStore, log: cacheLog };
+  ctx._openFails = openFails; ctx._opens = opens;
   return ctx;
 }
 module.exports = { makeContext };

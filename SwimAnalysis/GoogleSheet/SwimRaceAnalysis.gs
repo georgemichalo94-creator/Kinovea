@@ -21,9 +21,11 @@
  *   9. Βάζει κάθε PDF αναφοράς στο φύλλο "Αρχεία Αθλητών/τριων" του KOE App (2.10.0), με τον αριθμό μητρώου του αθλητή (profile_id),
  *      μία γραμμή ανά αγώνα, και το αρχείο στον φάκελο των αρχείων της εφαρμογής ώστε να ανοίγει από το KOE App. Για το πακέτο
  *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
+ *  10. Κρατά ένα μόνο αρχείο αναλύσεων (2.16.2): αν το Google δεν το ανοίξει για λίγο, ξαναδοκιμάζει και δίνει μήνυμα (ποτέ δεύτερο
+ *      αρχείο)· όσα έγιναν ήδη δύο τα ενώνουν οι swimReportsFilesCheck (έλεγχος) και swimReportsFilesMerge (συγχώνευση).
  */
 
-var SWIM_VERSION = '2.16.0';
+var SWIM_VERSION = '2.16.2';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -165,6 +167,9 @@ function swimParseRequest_(e) {
 function swimHandle_(req) {
   // Η γλώσσα του report και των μηνυμάτων προς το Kinovea (2.7.7): μόνο για αυτό το αίτημα· μετά ξανά ελληνικά (μενού).
   SWIM_LANG_ = swimLangOf_(req);
+  // Κάθε αίτημα ανοίγει ξανά τα αρχεία (όπως κάθε εκτέλεση του Apps Script).
+  SWIM_DATA_OPEN_ = null;
+  SWIM_REPORTS_OPEN_ = null;
   try {
     return swimHandleRequest_(req);
   } finally {
@@ -178,7 +183,7 @@ function swimHandleRequest_(req) {
     return swimJson_({ ok: false, error: swimT_('Λάθος token. Αντέγραψε ξανά το token από το μενού Swim Analysis → Στοιχεία σύνδεσης.') });
 
   var action = String(req.action || 'update');
-  var fail = function (err) { return swimJson_({ ok: false, error: String(err && err.message ? err.message : err) }); };
+  var fail = function (err) { return swimJson_(swimErrorAnswer_(err, false)); };
 
   // Ενέργειες που μόνο διαβάζουν ή γράφουν μόνο στο Drive: χωρίς κλείδωμα, ώστε να μην περιμένουν τις ενημερώσεις.
   var unlocked = {
@@ -285,12 +290,20 @@ function swimHandleRequest_(req) {
     // Ελληνικά και στα δύο: το Kinovea αναγνωρίζει το «Άγνωστη ενέργεια» (παλιότερο script).
     return swimJson_({ ok: false, error: 'Άγνωστη ενέργεια: ' + action });
   } catch (err) {
-    return swimJson_({ ok: false, error: String(err && err.message ? err.message : err), stack: String(err && err.stack ? err.stack : '') });
+    return swimJson_(swimErrorAnswer_(err, true));
   } finally {
     // Οι αλλαγές γράφονται πριν αφεθεί το κλείδωμα: το επόμενο αίτημα (π.χ. ένας ακόμη διεθνής αθλητής) τις βλέπει (2.7.6).
     try { SpreadsheetApp.flush(); } catch (e) { /* τίποτα να γραφτεί */ }
     lock.releaseLock();
   }
+}
+
+/** Η απάντηση ενός σφάλματος: retry όταν το Kinovea πρέπει να ξαναδοκιμάσει μόνο του (2.16.2: το Google Sheet δεν άνοιξε). */
+function swimErrorAnswer_(err, stack) {
+  var out = { ok: false, error: String(err && err.message ? err.message : err) };
+  if (stack) out.stack = String(err && err.stack ? err.stack : '');
+  if (err && err.swimRetry) out.retry = true;
+  return out;
 }
 
 function swimJson_(obj) {
@@ -308,15 +321,59 @@ function swimGetToken_() {
 /** Το κύριο αρχείο (π.χ. KOE App): λίστα αθλητών και πίνακας "Αναλύσεις Αγώνων". */
 function swimDataSpreadsheet_() {
   var id = swimProps_().getProperty('SWIM_DATA_SPREADSHEET_ID');
-  if (id) return SpreadsheetApp.openById(id);
+  if (id) {
+    if (SWIM_DATA_OPEN_ && SWIM_DATA_OPEN_.id === id) return SWIM_DATA_OPEN_.ss;
+    var opened = swimTryOpen_(id);
+    if (!opened.ss) throw swimRetryError_(swimT_('Το Google Sheet (KOE App) δεν άνοιξε αυτή τη στιγμή (το Google δεν απάντησε)· το Kinovea θα ξαναδοκιμάσει μόνο του.'), opened.error);
+    SWIM_DATA_OPEN_ = { id: id, ss: opened.ss };
+    return opened.ss;
+  }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (ss) return ss;
   throw new Error(swimT_('Δεν βρέθηκε το Google Sheet. Τρέξε πρώτα τη συνάρτηση swimSetup από το Apps Script.'));
 }
 
 /**
- * Το spreadsheet των αναφορών (ένα φύλλο ανά αγώνα). Δημιουργείται αυτόματα την πρώτη φορά.
+ * (2.16.2) Πόσες φορές δοκιμάζει να ανοίξει ένα Google Sheet (με αναμονή ανάμεσα, σε ms) πριν από το μήνυμα: το Google καμιά φορά
+ * δεν απαντά για λίγο, ειδικά σε μεγάλα αρχεία.
+ */
+var SWIM_OPEN_TRIES = 3;
+var SWIM_OPEN_WAITS = [1000, 3000];
+
+/** Τα αρχεία που άνοιξαν σε αυτή την εκτέλεση (ένα άνοιγμα το καθένα): { id, ss } ή null. */
+var SWIM_DATA_OPEN_ = null;
+var SWIM_REPORTS_OPEN_ = null;
+
+/** Ένα Google Sheet με το id του, με ξαναδοκιμές: { ss } ή { ss: null, error } όταν δεν άνοιξε. */
+function swimTryOpen_(id) {
+  var error = '';
+  for (var i = 0; i < SWIM_OPEN_TRIES; i++) {
+    if (i > 0) Utilities.sleep(SWIM_OPEN_WAITS[Math.min(i - 1, SWIM_OPEN_WAITS.length - 1)]);
+    try {
+      return { ss: SpreadsheetApp.openById(id), error: '' };
+    } catch (e) {
+      error = String(e && e.message ? e.message : e);
+    }
+  }
+  return { ss: null, error: error };
+}
+
+/** Σφάλμα για το οποίο το Kinovea ξαναδοκιμάζει μόνο του (retry στην απάντηση), με το μήνυμα του Google σε παρένθεση. */
+function swimRetryError_(message, detail) {
+  var text = String(detail || '').replace(/\s+/g, ' ').trim();
+  var err = new Error(message + (text ? ' (' + (text.length > 160 ? text.substring(0, 160) + '…' : text) + ')' : ''));
+  err.swimRetry = true;
+  return err;
+}
+
+/**
+ * Το spreadsheet των αναφορών (ένα φύλλο ανά αγώνα), το αρχείο της ρύθμισης SWIM_REPORTS_SPREADSHEET_ID.
  * Με το Script Property SWIM_REPORTS_MODE = same, οι αναφορές μπαίνουν στο κύριο αρχείο.
+ *
+ * 2.16.2: ποτέ δεύτερο αρχείο. Ως την 2.16.1 ένα άνοιγμα που αποτύγχανε (το Google δεν απάντησε για λίγο) έφτιαχνε νέο αρχείο με το
+ * ίδιο όνομα και η ρύθμιση πήγαινε εκεί: οι επόμενες αναλύσεις χωριστά από τις παλιές. Τώρα: ξαναδοκιμές και, αν δεν ανοίξει, μήνυμα
+ * (το Kinovea ξαναστέλνει μόνο του). Χωρίς ρύθμιση (πρώτη φορά, ή σβήστηκε): πρώτα ένα υπάρχον αρχείο με το όνομα των αναφορών (το
+ * πρώτο που φτιάχτηκε, από όσα έχουν αναλύσεις) και μόνο αν δεν υπάρχει κανένα, νέο. Κάθε αλλαγή του αρχείου γράφεται στο SWIM_REPORTS_LOG.
  */
 function swimReportsSpreadsheet_() {
   var props = swimProps_();
@@ -324,20 +381,165 @@ function swimReportsSpreadsheet_() {
 
   var id = props.getProperty('SWIM_REPORTS_SPREADSHEET_ID');
   if (id) {
-    try {
-      return SpreadsheetApp.openById(id);
-    } catch (e) {
-      // Διαγράφηκε ή δεν είναι προσβάσιμο: φτιάχνουμε νέο.
-    }
+    if (SWIM_REPORTS_OPEN_ && SWIM_REPORTS_OPEN_.id === id) return SWIM_REPORTS_OPEN_.ss;
+    var opened = swimTryOpen_(id);
+    if (!opened.ss) throw swimRetryError_(swimReportsUnopenedText_(id), opened.error);
+    SWIM_REPORTS_OPEN_ = { id: id, ss: opened.ss };
+    return opened.ss;
   }
 
-  var ss = SpreadsheetApp.create(SWIM_REPORTS_TITLE);
-  try { DriveApp.getFileById(ss.getId()).moveTo(swimReportFolder_()); } catch (e) { /* μένει στο My Drive */ }
-  var first = ss.getSheets()[0];
-  var index = swimIndexSheet_(ss);
-  if (first.getSheetId() !== index.getSheetId()) ss.deleteSheet(first);
+  var found = swimReportsFiles_();
+  if (found.unopened.length) throw swimRetryError_(swimT_('Το Google Sheet των αναλύσεων δεν άνοιξε αυτή τη στιγμή (το Google δεν απάντησε)· το Kinovea θα ξαναδοκιμάσει μόνο του.'), found.unopened[0].error);
+  var ss = found.list.length ? found.list[0].ss : null;
+  if (ss) {
+    swimNoteReportsChange_('', ss.getId(), 'βρέθηκε στον Drive (' + found.list[0].count + ' αναλύσεις)');
+  } else {
+    ss = SpreadsheetApp.create(SWIM_REPORTS_TITLE);
+    try { DriveApp.getFileById(ss.getId()).moveTo(swimReportFolder_()); } catch (e) { /* μένει στο My Drive */ }
+    var first = ss.getSheets()[0];
+    var index = swimIndexSheet_(ss);
+    if (first.getSheetId() !== index.getSheetId()) ss.deleteSheet(first);
+    swimNoteReportsChange_('', ss.getId(), 'νέο αρχείο');
+  }
   props.setProperty('SWIM_REPORTS_SPREADSHEET_ID', ss.getId());
+  SWIM_REPORTS_OPEN_ = { id: ss.getId(), ss: ss };
   return ss;
+}
+
+/** Το μήνυμα όταν το αρχείο της ρύθμισης δεν ανοίγει: στον κάδο του Drive, αλλιώς το Google δεν απάντησε. */
+function swimReportsUnopenedText_(id) {
+  var trashed = false;
+  try {
+    var file = DriveApp.getFileById(id);
+    trashed = !!(file && file.isTrashed && file.isTrashed());
+  } catch (e) {
+    trashed = false;
+  }
+  return trashed
+    ? swimT_('Το Google Sheet των αναλύσεων είναι στον κάδο του Drive: επανέφερέ το (Drive → Κάδος → Επαναφορά) και το Kinovea θα ξαναδοκιμάσει μόνο του.')
+    : swimT_('Το Google Sheet των αναλύσεων δεν άνοιξε αυτή τη στιγμή (το Google δεν απάντησε)· το Kinovea θα ξαναδοκιμάσει μόνο του.');
+}
+
+/**
+ * Τα Google Sheet με το όνομα των αναφορών στον Drive (όχι στον κάδο): list [{ id, ss, file, count, ... }] με τη σειρά του
+ * swimSortReportsFiles_ (πρώτο αυτό που μένει), unopened [{ id, error }] όσα δεν άνοιξαν αυτή τη στιγμή.
+ */
+function swimReportsFiles_() {
+  var out = { list: [], unopened: [] }, seen = {};
+  var files = DriveApp.getFilesByName(SWIM_REPORTS_TITLE);
+  while (files.hasNext()) {
+    var file = files.next();
+    var id = file.getId();
+    if (seen[id]) continue;
+    seen[id] = true;
+    try { if (file.isTrashed && file.isTrashed()) continue; } catch (e) { /* χωρίς κάδο: μετρά */ }
+    try { if (file.getMimeType && file.getMimeType() !== 'application/vnd.google-apps.spreadsheet') continue; } catch (e2) { /* μετρά */ }
+    var opened = swimTryOpen_(id);
+    if (opened.ss) out.list.push(swimReportsFileInfo_(opened.ss, file));
+    else out.unopened.push({ id: id, error: opened.error });
+  }
+  swimSortReportsFiles_(out.list);
+  return out;
+}
+
+/**
+ * Ποιο αρχείο μένει: το πρώτο που φτιάχτηκε (το αρχικό, με τις elite αναφορές, τα επίπεδα, τη βιβλιοθήκη και το Swim Analytics) από
+ * όσα έχουν αναλύσεις· χωρίς ημερομηνία, αυτό με τις περισσότερες. Τα άδεια στο τέλος.
+ */
+function swimSortReportsFiles_(list) {
+  list.sort(function (a, b) {
+    var ea = a.count > 0 ? 0 : 1, eb = b.count > 0 ? 0 : 1;
+    if (ea !== eb) return ea - eb;
+    if (a.created && b.created && a.created !== b.created) return a.created - b.created;
+    return b.count - a.count;
+  });
+  return list;
+}
+
+/** Τι έχει ένα αρχείο αναφορών: πόσες αναλύσεις (αγώνες, τεχνικές), από πότε ως πότε ενημερώθηκαν, πότε φτιάχτηκε. */
+function swimReportsFileInfo_(ss, file) {
+  var info = { id: ss.getId(), ss: ss, file: file || null, url: ss.getUrl(), name: ss.getName(), count: 0, races: 0, trainings: 0,
+    noSheet: 0, first: '', last: '', created: 0, updated: 0, sheets: 0 };
+  try { info.sheets = ss.getSheets().length; } catch (e) { info.sheets = 0; }
+  try { if (file && file.getDateCreated) info.created = file.getDateCreated().getTime(); } catch (e2) { info.created = 0; }
+  try { if (file && file.getLastUpdated) info.updated = file.getLastUpdated().getTime(); } catch (e3) { info.updated = 0; }
+  var rows = swimIndexRows_(ss);
+  Object.defineProperty(info, 'rows', { value: rows, enumerable: false });
+  var lo = null, hi = null;
+  rows.forEach(function (r) {
+    info.count++;
+    if (r.training) info.trainings++; else info.races++;
+    if (!r.hasSheet) info.noSheet++;
+    if (r.key && (!lo || r.key < lo.key)) lo = r;
+    if (r.key && (!hi || r.key > hi.key)) hi = r;
+  });
+  info.first = lo ? lo.stamp : '';
+  info.last = hi ? hi.stamp : '';
+  return info;
+}
+
+/**
+ * Οι γραμμές του ευρετηρίου ενός αρχείου αναφορών: [{ row, id, values, stamp (η «Ενημέρωση» όπως φαίνεται), key (αριθμός για
+ * σύγκριση), hasSheet, training }].
+ */
+function swimIndexRows_(ss) {
+  var index = ss.getSheetByName(SWIM_INDEX_SHEET);
+  var last = index ? index.getLastRow() : 0;
+  if (last < 2) return [];
+  var values = index.getRange(2, 1, last - 1, SWIM_INDEX_HEADERS.length).getValues();
+  // Η «Ενημέρωση» γράφεται ως κείμενο dd/MM/yyyy HH:mm και το Sheets τη κάνει ημερομηνία με τη σειρά της γλώσσας του αρχείου: όπως
+  // φαίνεται, με την ίδια σειρά, διαβάζεται ξανά όπως γράφτηκε.
+  var shown = index.getRange(2, SWIM_IDX.updated + 1, last - 1, 1).getDisplayValues();
+  var out = [];
+  values.forEach(function (row, i) {
+    var id = String(row[SWIM_IDX.id] === null || row[SWIM_IDX.id] === undefined ? '' : row[SWIM_IDX.id]).trim();
+    if (!id) return;
+    var stamp = String(shown[i] ? shown[i][0] : '').trim();
+    out.push({ row: i + 2, id: id, values: row, stamp: stamp, key: swimStampKey_(stamp),
+      hasSheet: String(row[SWIM_IDX.sheetId] === null || row[SWIM_IDX.sheetId] === undefined ? '' : row[SWIM_IDX.sheetId]).trim() !== '',
+      training: /^τεχνική /.test(String(row[SWIM_IDX.event] || '')) });
+  });
+  return out;
+}
+
+/**
+ * Η «Ενημέρωση» όπως φαίνεται (d/M/yyyy H:mm[:ss] με / . ή -, ή yyyy-MM-dd H:mm, με π.μ./μ.μ. ή AM/PM) ως αριθμός yyyyMMddHHmm για
+ * σύγκριση· 0 όταν δεν διαβάζεται.
+ */
+function swimStampKey_(text) {
+  var s = String(text === null || text === undefined ? '' : text).trim();
+  var y, mo, d;
+  var m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?:[\sT,]+(\d{1,2}):(\d{2}))?/.exec(s);
+  if (m) {
+    d = Number(m[1]); mo = Number(m[2]); y = Number(m[3]);
+  } else {
+    m = /^(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})(?:[\sT,]+(\d{1,2}):(\d{2}))?/.exec(s);
+    if (!m) return 0;
+    y = Number(m[1]); mo = Number(m[2]); d = Number(m[3]);
+  }
+  var h = Number(m[4] || 0);
+  if (/(PM|μ\.\s?μ\.)/i.test(s) && h < 12) h += 12;
+  else if (/(AM|π\.\s?μ\.)/i.test(s) && h === 12) h = 0;
+  return y * 1e8 + mo * 1e6 + d * 1e4 + h * 100 + Number(m[5] || 0);
+}
+
+/** Κάθε αλλαγή του αρχείου των αναφορών (από ποιο, σε ποιο, γιατί), στο Script Property SWIM_REPORTS_LOG: οι 20 τελευταίες. */
+function swimNoteReportsChange_(from, to, why) {
+  try {
+    var props = swimProps_();
+    var list = swimReportsLog_();
+    list.push({ at: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'), from: from || '', to: to || '', why: why || '' });
+    props.setProperty('SWIM_REPORTS_LOG', JSON.stringify(list.slice(-20)));
+  } catch (e) { /* μόνο για τον έλεγχο */ }
+}
+
+function swimReportsLog_() {
+  try {
+    var list = JSON.parse(swimProps_().getProperty('SWIM_REPORTS_LOG') || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -5648,7 +5850,7 @@ function swimBenchmarksFor_(race, list) {
 // ---------------------------------------------------------------------------------------------
 
 var SWIM_INDEX_HEADERS = ['Race ID', 'Φύλλο', 'Αθλητής', 'Μητρώο', 'Αγώνισμα', 'Απόσταση', 'Φάση', 'Διοργάνωση', 'Ημερομηνία', 'Τελικός χρόνος', 'Ενημέρωση', 'Βίντεο', 'SheetId', 'Layout', 'JSON'];
-var SWIM_IDX = { id: 0, link: 1, sheetId: 12, layout: 13, json: 14 };
+var SWIM_IDX = { id: 0, link: 1, event: 4, updated: 10, sheetId: 12, layout: 13, json: 14 };
 
 function swimIndexSheet_(ss) {
   var sh = ss.getSheetByName(SWIM_INDEX_SHEET);
@@ -9192,6 +9394,437 @@ function swimOpenLibrary() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// (2.16.2) Ένα αρχείο αναλύσεων: έλεγχος και συγχώνευση
+//
+// Ως την 2.16.1, όταν το Google δεν άνοιγε για λίγο το αρχείο των αναλύσεων, το script έφτιαχνε νέο με το ίδιο όνομα και έγραφε από
+// εκεί και πέρα σε αυτό: δύο αρχεία, οι νέες αναλύσεις χωρίς τις παλιές (PB, elite αναφορές, επίπεδα, πρόοδος των αξιολογήσεων).
+// Τώρα δεν φτιάχνει ποτέ δεύτερο (swimReportsSpreadsheet_). Για όσα έγιναν ήδη δύο, από το Apps Script του KOE App (Εκτέλεση):
+//   swimReportsFilesCheck: τι υπάρχει και τι θα γίνει (μόνο διαβάζει).
+//   swimReportsFilesMerge: όλα στο πρώτο αρχείο (το αρχικό, swimSortReportsFiles_). Οι αναλύσεις του άλλου ξαναφτιάχνονται εκεί από τα
+//     δεδομένα τους (όπως η «Επαναδημιουργία», με τη σειρά που έγιναν, με όλες τις συγκρίσεις), οι σύνδεσμοι του «Αναλύσεις Αγώνων»
+//     πάνε εκεί, μπαίνουν οι γραμμές που λείπουν από τη μάθηση, τις elite αναφορές, τα elite καρέ και τα επίπεδα, και το Kinovea
+//     γράφει από εκεί και πέρα σε αυτό. Στο τέλος το άλλο αρχείο μετονομάζεται σε «… – παλιό (συγχωνεύτηκε …)»: δεν σβήνεται. Με
+//     πολλές αναλύσεις σταματά πριν από το όριο των 6 λεπτών του Google και λέει να τρέξει ξανά: συνεχίζει από εκεί που έμεινε.
+// ---------------------------------------------------------------------------------------------
+
+/** Μετά από τόσα ms η συγχώνευση δεν αρχίζει άλλη ανάλυση (το Google σταματά κάθε εκτέλεση στα 6 λεπτά). */
+var SWIM_MERGE_BUDGET_MS = 240000;
+var SWIM_MERGE_TITLE = 'Αρχείο αναλύσεων';
+
+/** Τι υπάρχει: τα αρχεία με το όνομα των αναφορών, ποιο κρατιέται και τι θα μεταφερθεί. Μόνο διαβάζει. */
+function swimReportsFilesCheck() {
+  var plan = swimMergePlan_();
+  var text = swimMergePlanText_(plan);
+  swimSay_(SWIM_MERGE_TITLE + ': έλεγχος', text);
+  return text;
+}
+
+/** Η συγχώνευση (δες πάνω). Τρέχει ξανά όσες φορές χρειαστεί: ό,τι μεταφέρθηκε ήδη δεν ξαναγίνεται. */
+function swimReportsFilesMerge() {
+  var started = Date.now();
+  var title = SWIM_MERGE_TITLE + ': συγχώνευση';
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    var busy = 'Το Kinovea γράφει αυτή τη στιγμή στο φύλλο. Ξανατρέξε τη swimReportsFilesMerge σε ένα λεπτό.';
+    swimSay_(title, busy);
+    return busy;
+  }
+  try {
+    var plan = swimMergePlan_();
+    if (plan.error || !plan.target) {
+      var why = swimMergePlanText_(plan);
+      swimSay_(title, why);
+      return why;
+    }
+    var target = plan.target;
+    // Πρώτα η ρύθμιση: από εδώ και πέρα το Kinovea γράφει στο αρχείο που μένει (και όσο τρέχει η συγχώνευση).
+    var moved = plan.current !== target.id;
+    if (moved) {
+      swimProps_().setProperty('SWIM_REPORTS_SPREADSHEET_ID', target.id);
+      swimNoteReportsChange_(plan.current, target.id, plan.sources.length ? 'συγχώνευση' : 'ρύθμιση στο μόνο αρχείο');
+    }
+    SWIM_REPORTS_OPEN_ = { id: target.id, ss: target.ss };
+    if (!plan.sources.length) {
+      var one = 'Ένα αρχείο αναλύσεων (' + swimCount_(target.count, 'ανάλυση', 'αναλύσεις') + '): τίποτα για συγχώνευση.' +
+        (moved ? ' Η ρύθμιση SWIM_REPORTS_SPREADSHEET_ID δείχνει τώρα σε αυτό.' : '') + '\n' + target.url;
+      swimSay_(title, one);
+      return one;
+    }
+
+    var aux = swimMergeAux_(plan);
+    var done = 0, failed = [];
+    for (var i = 0; i < plan.todo.length; i++) {
+      if (done + failed.length > 0 && Date.now() - started > SWIM_MERGE_BUDGET_MS) break;
+      var item = plan.todo[i];
+      try {
+        swimMergeItem_(target.ss, item);
+        done++;
+      } catch (err) {
+        failed.push({ item: item, error: String(err && err.message ? err.message : err) });
+      }
+      try { SpreadsheetApp.flush(); } catch (e2) { /* τίποτα να γραφτεί */ }
+    }
+    var left = plan.todo.length - done - failed.length;
+
+    var renamed = [];
+    if (!left && !failed.length) {
+      var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy');
+      plan.sources.forEach(function (src) {
+        var name = SWIM_REPORTS_TITLE + ' – παλιό (συγχωνεύτηκε ' + stamp + ')';
+        src.ss.rename(name);
+        renamed.push(name);
+      });
+    }
+
+    var lines = [];
+    var now = swimReportsFileInfo_(target.ss, target.file);
+    lines.push('Μένει: «' + target.name + '» – τώρα ' + swimCount_(now.count, 'ανάλυση', 'αναλύσεις') + ' (' + swimCount_(now.races, 'αγώνας', 'αγώνες') + ', ' +
+      swimCount_(now.trainings, 'τεχνική', 'τεχνικές') + ').');
+    lines.push(target.url);
+    lines.push('Το Kinovea γράφει από τώρα σε αυτό.');
+    lines.push('');
+    lines.push('Αναλύσεις από ' + (plan.sources.length === 1 ? 'το άλλο αρχείο' : 'τα άλλα αρχεία') + ': ' + done + (done === 1 ? ' μεταφέρθηκε' : ' μεταφέρθηκαν') +
+      ' τώρα' + (plan.same ? ', ' + plan.same + ' ήταν ήδη εδώ' : '') + (left ? ', ' + left + (left === 1 ? ' απομένει' : ' απομένουν') : '') + '.');
+    failed.forEach(function (f) { lines.push('  Δεν έγινε: ' + swimMergeItemLabel_(f.item) + ' – ' + f.error); });
+    plan.skipped.forEach(function (s) { lines.push('  Δεν διαβάζεται (έμεινε μόνο στο παλιό αρχείο): ' + swimMergeItemLabel_(s)); });
+    var auxText = swimMergeAuxText_(aux);
+    if (auxText) lines.push(auxText);
+    lines.push('');
+    if (left) {
+      lines.push('ΣΥΝΕΧΕΙΑ: ' + (left === 1 ? 'απομένει 1' : 'απομένουν ' + left) + '. Τρέξε ξανά τη swimReportsFilesMerge (το Google σταματά κάθε εκτέλεση στα 6 λεπτά).');
+    } else if (failed.length) {
+      lines.push('Κάποιες δεν έγιναν: τρέξε ξανά τη swimReportsFilesMerge· αν μείνουν, πες μου τι γράφει εδώ.');
+    } else {
+      lines.push('ΤΕΛΟΣ. ' + (renamed.length === 1 ? 'Το άλλο αρχείο μετονομάστηκε' : 'Τα άλλα αρχεία μετονομάστηκαν') + ' σε «' + renamed[0] +
+        '» (δεν σβήστηκε τίποτα· μπορείς να το σβήσεις όταν θέλεις).');
+    }
+    var text = lines.join('\n');
+    swimSay_(title, text);
+    return text;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Το σχέδιο της συγχώνευσης: files (τα αρχεία, πρώτο αυτό που μένει), target (αυτό που μένει), sources (τα άλλα),
+ * todo (οι αναλύσεις των άλλων που λείπουν από το target ή είναι νεότερες, με τη σειρά που ενημερώθηκαν), same (όσες είναι ήδη
+ * στο target, ίδιες ή νεότερες), skipped (όσες δεν διαβάζονται), current (η ρύθμιση: πού γράφει τώρα το Kinovea), error.
+ */
+function swimMergePlan_() {
+  var props = swimProps_();
+  var plan = { current: props.getProperty('SWIM_REPORTS_SPREADSHEET_ID') || '', files: [], unopened: [], target: null, sources: [],
+    todo: [], same: 0, skipped: [], error: '', log: swimReportsLog_() };
+  if (props.getProperty('SWIM_REPORTS_MODE') === 'same') {
+    plan.error = 'Οι αναλύσεις μπαίνουν στο ίδιο το KOE App (SWIM_REPORTS_MODE = same): δεν υπάρχει χωριστό αρχείο αναλύσεων.';
+    return plan;
+  }
+  // Μόνο από το project της σύνδεσης με το Kinovea (KOE App): ένα άλλο (π.χ. το Swim Analytics) έχει δικές του ρυθμίσεις.
+  if (!props.getProperty('SWIM_TOKEN')) {
+    plan.error = 'Τρέξε το από το Apps Script του KOE App (το project με τη σύνδεση του Kinovea), όχι από άλλο project.';
+    return plan;
+  }
+  var found = swimReportsFiles_();
+  // Το αρχείο της ρύθμισης και όταν έχει άλλο όνομα (π.χ. μετονομάστηκε).
+  if (plan.current && !found.list.some(function (f) { return f.id === plan.current; }) &&
+      !found.unopened.some(function (f) { return f.id === plan.current; })) {
+    var opened = swimTryOpen_(plan.current);
+    var file = null;
+    try { file = DriveApp.getFileById(plan.current); } catch (e) { file = null; }
+    if (opened.ss) found.list.push(swimReportsFileInfo_(opened.ss, file));
+    else found.unopened.push({ id: plan.current, error: opened.error });
+    swimSortReportsFiles_(found.list);
+  }
+  plan.files = found.list;
+  plan.unopened = found.unopened;
+  if (found.unopened.length) {
+    plan.error = 'Δεν άνοιξαν αυτή τη στιγμή: ' + found.unopened.map(function (f) { return f.id + ' (' + f.error + ')'; }).join(', ') +
+      '. Ξανατρέξε σε λίγο (χωρίς όλα τα αρχεία δεν γίνεται συγχώνευση).';
+    return plan;
+  }
+  if (!found.list.length) {
+    plan.error = 'Δεν βρέθηκε αρχείο με το όνομα «' + SWIM_REPORTS_TITLE + '».';
+    return plan;
+  }
+  plan.target = found.list[0];
+  plan.sources = found.list.slice(1);
+
+  var have = {};
+  plan.target.rows.forEach(function (r) { if (!have[r.id] || r.key > have[r.id].key) have[r.id] = r; });
+  var pick = {};
+  plan.sources.forEach(function (src) {
+    src.rows.forEach(function (r) {
+      var t = have[r.id];
+      if (t && (t.key >= r.key || !r.hasSheet)) { plan.same++; return; }
+      var item = { src: src, id: r.id, row: r.row, values: r.values, stamp: r.stamp, key: r.key, hasSheet: r.hasSheet, training: r.training,
+        newer: !!t, race: null };
+      if (r.hasSheet) {
+        try { item.race = JSON.parse(String(r.values[SWIM_IDX.json])); } catch (e) { item.race = null; }
+        if (!item.race || typeof item.race !== 'object') { plan.skipped.push(item); return; }
+      }
+      // Ίδια ανάλυση σε δύο από τα άλλα αρχεία: η νεότερη.
+      if (pick[r.id] && pick[r.id].key >= r.key) { plan.same++; return; }
+      if (pick[r.id]) plan.same++;
+      pick[r.id] = item;
+    });
+  });
+  plan.todo = Object.keys(pick).map(function (k) { return pick[k]; });
+  plan.todo.sort(function (a, b) { return a.key - b.key || (a.src.created - b.src.created) || a.row - b.row; });
+  plan.aux = swimMergeAux_(plan, true);
+  return plan;
+}
+
+/** «Φύλλο (Race ID)» μιας ανάλυσης για τα μηνύματα. */
+function swimMergeItemLabel_(item) {
+  var link = item.values ? item.values[SWIM_IDX.link] : '';
+  var name = String(link === null || link === undefined ? '' : link);
+  var m = /HYPERLINK\("[^"]*"\s*[,;]\s*"((?:[^"]|"")*)"\)/i.exec(name);
+  if (m) name = m[1].replace(/""/g, '"');
+  if (!name || name === '0') name = String(item.values ? item.values[4] || '' : '');
+  return (name ? name + ' ' : '') + '(' + item.id + ', ' + (item.stamp || 'χωρίς ημερομηνία') + ')';
+}
+
+/**
+ * Μία ανάλυση στο target: με φύλλο report, ξαναφτιάχνεται από τα δεδομένα της (όπως η «Επαναδημιουργία», χωρίς PDF· γράφει και το
+ * ευρετήριο, τις αξιολογήσεις και τη γραμμή του «Αναλύσεις Αγώνων» με τον σύνδεσμο εδώ)· χωρίς φύλλο (π.χ. από τη βιβλιοθήκη),
+ * μόνο η γραμμή του ευρετηρίου.
+ */
+function swimMergeItem_(ss, item) {
+  var index = swimIndexSheet_(ss);
+  var row = swimIndexRow_(index, item.id);
+  if (!item.hasSheet) {
+    var values = item.values.slice(0, SWIM_INDEX_HEADERS.length);
+    while (values.length < SWIM_INDEX_HEADERS.length) values.push('');
+    values[SWIM_IDX.link] = '';
+    values[SWIM_IDX.sheetId] = '';
+    var r = row || index.getLastRow() + 1;
+    swimEnsureRows_(index, r);
+    index.getRange(r, 1, 1, values.length).setValues([values]);
+    swimTouchIndexStamp_();
+    return;
+  }
+  // Υπάρχει ήδη εδώ (παλιότερη): ξαναφτιάχνεται όλο το φύλλο της.
+  if (row) index.getRange(row, SWIM_IDX.layout + 1).setValue('');
+  var race = item.race;
+  swimWithLang_(race.lang, function () { return swimUpsertRace_(race, { pdf: false }); });
+}
+
+/**
+ * Οι γραμμές που λείπουν από το target στα φύλλα που δεν είναι αναλύσεις: μάθηση (με το id της απάντησης, με νέο αύξοντα), elite
+ * αναφορές (ανά αναφορά: η πρώτη γραμμή της και όσες ακολουθούν χωρίς όνομα· μία αναφορά ανά Race ID, όπως η swimSaveReference_),
+ * elite καρέ και επίπεδα (ίδια γραμμή). dryRun: μόνο μετρά. { learning, references, frames, bench, other: [ονόματα φύλλων των άλλων
+ * αρχείων που δεν μεταφέρονται] }.
+ */
+function swimMergeAux_(plan, dryRun) {
+  var out = { learning: 0, references: 0, frames: 0, bench: 0, other: [] };
+  if (!plan.target) return out;
+  var tss = plan.target.ss;
+  var known = {};
+  [SWIM_INDEX_SHEET, SWIM_EVALS_SHEET, SWIM_LEARNING_SHEET, SWIM_REFERENCES_SHEET, SWIM_ELITE_SHEET, SWIM_BENCH_SHEET, SWIM_LIBRARY_SHEET]
+    .forEach(function (n) { known[n] = true; });
+  var rowsOf = function (sh) {
+    if (!sh || sh.getLastRow() < 2) return [];
+    return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(1, sh.getLastColumn())).getValues();
+  };
+  var cellText = function (v) {
+    return Object.prototype.toString.call(v) === '[object Date]' ? String(v.getTime()) : String(v === null || v === undefined ? '' : v).trim();
+  };
+  var keyOf = function (rows) {
+    return rows.map(function (row) {
+      var cells = row.map(cellText);
+      while (cells.length && cells[cells.length - 1] === '') cells.pop();
+      return cells.join('\u0001');
+    }).join('\u0002');
+  };
+  // Οι ομάδες γραμμών: μία αναφορά (blocks) ή μία γραμμή.
+  var groupsOf = function (rows, blocks) {
+    var out2 = [];
+    rows.forEach(function (row) {
+      var empty = row.every(function (v) { return cellText(v) === ''; });
+      if (empty) return;
+      if (blocks && out2.length && !cellText(row[SWIM_REF.name])) out2[out2.length - 1].rows.push(row);
+      else out2.push({ rows: [row] });
+    });
+    out2.forEach(function (g) {
+      g.key = keyOf(g.rows);
+      g.raceId = blocks ? cellText(g.rows[0][SWIM_REF.raceId]) : '';
+    });
+    return out2;
+  };
+  var append = function (sh, rows) {
+    var width = 0;
+    rows.forEach(function (r) { width = Math.max(width, r.length); });
+    var at = sh.getLastRow() + 1;
+    swimEnsureRows_(sh, at + rows.length - 1);
+    sh.getRange(at, 1, rows.length, width).setValues(rows.map(function (r) {
+      var x = r.slice();
+      while (x.length < width) x.push('');
+      return x;
+    }));
+    return at;
+  };
+  var plain = [
+    { name: SWIM_REFERENCES_SHEET, key: 'references', blocks: true, make: function () { return swimReferencesSheet_(tss); } },
+    { name: SWIM_ELITE_SHEET, key: 'frames', blocks: false, make: function () { return swimEliteSheet_(tss); } },
+    { name: SWIM_BENCH_SHEET, key: 'bench', blocks: false, make: function () { return swimBenchmarksSheet_(tss); } }
+  ];
+  plan.sources.forEach(function (src) {
+    var reportIds = {};
+    src.rows.forEach(function (r) { if (r.hasSheet) reportIds[String(r.values[SWIM_IDX.sheetId]).trim()] = true; });
+    src.ss.getSheets().forEach(function (sh) {
+      var n = sh.getName();
+      if (known[n] || reportIds[String(sh.getSheetId())]) return;
+      if (sh.getLastRow() < 1) return;
+      out.other.push(n);
+    });
+
+    // Μάθηση: οι απαντήσεις με id που δεν υπάρχει, στο τέλος με νέο αύξοντα (τα Kinovea τις ζητούν από τον αύξοντα).
+    var learnRows = rowsOf(src.ss.getSheetByName(SWIM_LEARNING_SHEET));
+    if (learnRows.length) {
+      var seen = {};
+      rowsOf(tss.getSheetByName(SWIM_LEARNING_SHEET)).forEach(function (r) { seen[cellText(r[1])] = true; });
+      var add = [];
+      learnRows.forEach(function (r) {
+        var id = cellText(r[1]);
+        if (!id || seen[id]) return;
+        seen[id] = true;
+        add.push(r);
+      });
+      out.learning += add.length;
+      if (add.length && !dryRun) {
+        var tl = swimLearningSheet_(true);
+        var last = tl.getLastRow();
+        var seq = Math.max(0, last - 1);
+        var rows = add.map(function (r) {
+          seq++;
+          return [seq, cellText(r[1]), cellText(r[2]), cellText(r[3]), cellText(r[4]), cellText(r[5])];
+        });
+        swimEnsureRows_(tl, last + rows.length);
+        tl.getRange(last + 1, 2, rows.length, SWIM_LEARNING_HEADERS.length - 1).setNumberFormat('@');
+        tl.getRange(last + 1, 1, rows.length, SWIM_LEARNING_HEADERS.length).setValues(rows);
+      }
+    }
+
+    // Elite αναφορές, elite καρέ, επίπεδα: ό,τι δεν υπάρχει ίδιο. Μια αναφορά με Race ID που υπάρχει με άλλους χρόνους: η νεότερη, του
+    // άλλου αρχείου (εκεί γράφτηκε μετά τη διάσπαση).
+    plain.forEach(function (p) {
+      var sgroups = groupsOf(rowsOf(src.ss.getSheetByName(p.name)), p.blocks);
+      if (!sgroups.length) return;
+      var tsh = tss.getSheetByName(p.name);
+      var have = {}, ids = {};
+      groupsOf(rowsOf(tsh), p.blocks).forEach(function (g) { have[g.key] = true; if (g.raceId) ids[g.raceId] = true; });
+      sgroups.forEach(function (g) {
+        if (have[g.key]) return;
+        have[g.key] = true;
+        out[p.key]++;
+        if (dryRun) return;
+        tsh = tsh || p.make();
+        if (g.raceId && ids[g.raceId]) swimDeleteReferenceBlock_(tsh, g.raceId);
+        if (p.blocks) {
+          var at = tsh.getLastRow() + 1;
+          swimEnsureRows_(tsh, at + g.rows.length - 1);
+          // Κείμενο στην απόσταση, την πισίνα και τον χρόνο, όπως η swimSaveReference_ (το 1:02.35 και το 4x100 μένουν όπως είναι).
+          [SWIM_REF.distance, SWIM_REF.pool, SWIM_REF.t].forEach(function (c) { tsh.getRange(at, c + 1, g.rows.length, 1).setNumberFormat('@'); });
+        }
+        append(tsh, g.rows);
+        if (g.raceId) ids[g.raceId] = true;
+      });
+    });
+  });
+  return out;
+}
+
+/** Ώστε να υπάρχει η γραμμή last στο φύλλο (μια περιοχή πέρα από τις γραμμές του φύλλου δεν γράφεται). */
+function swimEnsureRows_(sh, last) {
+  var max = sh.getMaxRows();
+  if (last > max) sh.insertRowsAfter(max, last - max);
+}
+
+function swimMergeAuxText_(aux) {
+  if (!aux) return '';
+  var parts = [];
+  if (aux.learning) parts.push('μάθηση Kinovea +' + aux.learning);
+  if (aux.references) parts.push('elite αναφορές +' + aux.references);
+  if (aux.frames) parts.push('elite καρέ +' + aux.frames);
+  if (aux.bench) parts.push('επίπεδα +' + aux.bench);
+  var text = parts.length ? 'Άλλα φύλλα: ' + parts.join(', ') + '.' : '';
+  if (aux.other && aux.other.length)
+    text += (text ? '\n' : '') + 'Φύλλα του άλλου αρχείου που δεν μεταφέρονται (μένουν εκεί): ' + aux.other.join(', ') + '.';
+  return text;
+}
+
+/** Το κείμενο του ελέγχου: τα αρχεία, ποιο μένει, τι θα μεταφερθεί και τι να τρέξεις. */
+function swimMergePlanText_(plan) {
+  var lines = [];
+  var date = function (ms) { return ms ? Utilities.formatDate(new Date(ms), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') : '–'; };
+  if (plan.files.length || plan.unopened.length)
+    lines.push('Αρχεία «' + SWIM_REPORTS_TITLE + '»: ' + (plan.files.length + plan.unopened.length) + '.');
+  plan.files.forEach(function (f, i) {
+    lines.push('');
+    lines.push((i + 1) + ') ' + swimCount_(f.count, 'ανάλυση', 'αναλύσεις') + ' (' + swimCount_(f.races, 'αγώνας', 'αγώνες') + ', ' +
+      swimCount_(f.trainings, 'τεχνική', 'τεχνικές') + (f.noSheet ? ', ' + f.noSheet + ' χωρίς φύλλο' : '') + '), ' + swimCount_(f.sheets, 'φύλλο', 'φύλλα') +
+      '· ενημερώσεις ' + (f.first || '–') + ' έως ' + (f.last || '–') +
+      '· φτιάχτηκε ' + date(f.created) + (f.name !== SWIM_REPORTS_TITLE ? '· όνομα «' + f.name + '»' : ''));
+    lines.push('   ' + f.url);
+    var tags = [];
+    if (f.id === plan.current) tags.push('ΕΔΩ γράφει τώρα το Kinovea');
+    if (plan.target && f.id === plan.target.id) tags.push(plan.sources.length ? 'ΜΕΝΕΙ: εδώ θα μαζευτούν όλα' : 'το αρχείο των αναλύσεων');
+    else if (plan.target) tags.push('θα μεταφερθεί στο αρχείο 1 και θα μετονομαστεί σε «… – παλιό»');
+    if (tags.length) lines.push('   → ' + tags.join(' · '));
+  });
+  if (plan.current && !plan.files.some(function (f) { return f.id === plan.current; }) &&
+      !plan.unopened.some(function (f) { return f.id === plan.current; }))
+    lines.push('Η ρύθμιση SWIM_REPORTS_SPREADSHEET_ID δείχνει αρχείο που δεν βρέθηκε: ' + plan.current);
+  if (!plan.current) lines.push('Δεν υπάρχει ρύθμιση SWIM_REPORTS_SPREADSHEET_ID.');
+  if (plan.error) {
+    lines.push('');
+    lines.push(plan.error);
+    return lines.join('\n');
+  }
+  lines.push('');
+  if (!plan.sources.length) {
+    lines.push(plan.current === plan.target.id ? 'Ένα αρχείο μόνο: όλα εντάξει, δεν χρειάζεται συγχώνευση.'
+      : 'Ένα αρχείο, αλλά η ρύθμιση δεν δείχνει σε αυτό: η swimReportsFilesMerge θα τη διορθώσει.');
+  } else {
+    var races = plan.todo.filter(function (t) { return !t.training; }).length;
+    var newer = plan.todo.filter(function (t) { return t.newer; }).length;
+    lines.push('Θα μεταφερθούν στο αρχείο 1: ' + swimCount_(plan.todo.length, 'ανάλυση', 'αναλύσεις') + ' (' + swimCount_(races, 'αγώνας', 'αγώνες') + ', ' +
+      swimCount_(plan.todo.length - races, 'τεχνική', 'τεχνικές') +
+      (newer ? '· ' + (newer === 1 ? '1 υπάρχει και στο αρχείο 1 αλλά εδώ είναι νεότερη' : newer + ' υπάρχουν και στο αρχείο 1 αλλά εδώ είναι νεότερες') : '') + ')' +
+      (plan.same ? ', ' + plan.same + ' είναι ήδη στο αρχείο 1' : '') + '.');
+    plan.todo.slice(0, 40).forEach(function (t) { lines.push('  ' + swimMergeItemLabel_(t)); });
+    if (plan.todo.length > 40) lines.push('  … και ' + (plan.todo.length - 40) + ' ακόμη.');
+    plan.skipped.forEach(function (s) { lines.push('  Δεν διαβάζεται (θα μείνει στο άλλο αρχείο): ' + swimMergeItemLabel_(s)); });
+    var auxText = swimMergeAuxText_(plan.aux);
+    if (auxText) lines.push(auxText);
+    lines.push('');
+    lines.push('Για τη συγχώνευση: τρέξε τη swimReportsFilesMerge. Κάθε ανάλυση ξαναφτιάχνεται στο αρχείο 1 (λίγα δευτερόλεπτα η καθεμία)· ' +
+      'αν είναι πολλές, θα σου πει να την ξανατρέξεις.');
+  }
+  if (plan.log.length) {
+    lines.push('');
+    lines.push('Αλλαγές του αρχείου: ' + plan.log.map(function (x) { return x.at + ' ' + (x.from || '–') + ' → ' + x.to + ' (' + x.why + ')'; }).join(' · '));
+  }
+  return lines.join('\n');
+}
+
+/** «1 ανάλυση», «3 αναλύσεις». */
+function swimCount_(n, one, many) {
+  return n + ' ' + (n === 1 ? one : many);
+}
+
+/** Ένα μήνυμα στο αρχείο καταγραφής (εκτέλεση από το Apps Script) και, από το μενού του φύλλου, σε παράθυρο. */
+function swimSay_(title, text) {
+  Logger.log(title + '\n' + text);
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.alert(title, text, ui.ButtonSet.OK);
+  } catch (e2) { /* από τον editor δεν υπάρχει παράθυρο: το κείμενο είναι στο αρχείο καταγραφής */ }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Μενού & ρύθμιση
 // ---------------------------------------------------------------------------------------------
 
@@ -9447,6 +10080,12 @@ var SWIM_EN_ = {
   'Το φύλλο είναι απασχολημένο, θα ξαναπροσπαθήσει.': 'The sheet is busy, it will try again.',
   'Δεν βρέθηκε το Google Sheet. Τρέξε πρώτα τη συνάρτηση swimSetup από το Apps Script.':
     'The Google Sheet was not found. First run the function swimSetup from the Apps Script.',
+  'Το Google Sheet (KOE App) δεν άνοιξε αυτή τη στιγμή (το Google δεν απάντησε)· το Kinovea θα ξαναδοκιμάσει μόνο του.':
+    'The Google Sheet (KOE App) did not open right now (Google did not answer); Kinovea will try again by itself.',
+  'Το Google Sheet των αναλύσεων δεν άνοιξε αυτή τη στιγμή (το Google δεν απάντησε)· το Kinovea θα ξαναδοκιμάσει μόνο του.':
+    'The Google Sheet of the analyses did not open right now (Google did not answer); Kinovea will try again by itself.',
+  'Το Google Sheet των αναλύσεων είναι στον κάδο του Drive: επανέφερέ το (Drive → Κάδος → Επαναφορά) και το Kinovea θα ξαναδοκιμάσει μόνο του.':
+    'The Google Sheet of the analyses is in the Drive trash: restore it (Drive → Trash → Restore) and Kinovea will try again by itself.',
   'Χρειάζονται το ονοματεπώνυμο και η χώρα (κωδικός τριών γραμμάτων, π.χ. ITA).':
     'The full name and the country are needed (three-letter code, e.g. ITA).',
   'Οι αθλητές της Ελλάδας είναι στο μητρώο της ΚΟΕ, με τον αριθμό μητρώου τους.':
