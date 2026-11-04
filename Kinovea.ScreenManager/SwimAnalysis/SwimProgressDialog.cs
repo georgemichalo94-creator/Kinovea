@@ -25,6 +25,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The work was stopped with the button.</summary>
         public bool Cancelled { get; private set; }
 
+        /// <summary>
+        /// (2.16.4) The stop was asked (the button, or closing the window): the worker forgets its CancellationPending before its
+        /// RunWorkerCompleted, so a stopped work was said done.
+        /// </summary>
+        private bool stopAsked;
+
         /// <summary>The work ended with an exception (null otherwise).</summary>
         public Exception Failure { get; private set; }
 
@@ -47,6 +53,7 @@ namespace Kinovea.ScreenManager
             stop.Click += (s, e) =>
             {
                 stop.Enabled = false;
+                stopAsked = true;
                 line.Text = SwimLang.T("Σταματά…");
                 worker.CancelAsync();
             };
@@ -54,7 +61,12 @@ namespace Kinovea.ScreenManager
             Controls.Add(bar);
             Controls.Add(stop);
 
-            worker.DoWork += (s, e) => work(worker);
+            worker.DoWork += (s, e) =>
+            {
+                work(worker);
+                if (worker.CancellationPending)
+                    e.Cancel = true;
+            };
             worker.ProgressChanged += (s, e) =>
             {
                 bar.Value = Math.Max(0, Math.Min(100, e.ProgressPercentage));
@@ -64,7 +76,7 @@ namespace Kinovea.ScreenManager
             };
             worker.RunWorkerCompleted += (s, e) =>
             {
-                Cancelled = worker.CancellationPending;
+                Cancelled = e.Error == null && (e.Cancelled || stopAsked);
                 Failure = e.Error;
                 Close();
             };
@@ -89,6 +101,7 @@ namespace Kinovea.ScreenManager
             {
                 e.Cancel = true;
                 stop.Enabled = false;
+                stopAsked = true;
                 worker.CancelAsync();
                 return;
             }
