@@ -2197,6 +2197,12 @@ namespace Kinovea.ScreenManager
             { "Το βίντεο όλων των οθονών δεν έγινε: ", "The video of all the screens could not be made: " },
             { "✓ Το βίντεο όλων των οθονών: {0}", "✓ The video of all the screens: {0}" },
             { "Καρέ {0}/{1} · απομένουν ~{2} δλ.", "Frame {0}/{1} · ~{2} s left" },
+            // 2.16.4: the package with a group of screens: the video of all the screens together.
+            { "Το βίντεο όλων των οθονών γίνεται με τα γραφικά…", "Making the video of all the screens with the graphics…" },
+            { "Το βίντεο όλων των οθονών γίνεται με τα γραφικά: καρέ {0}/{1} · απομένουν ~{2} δλ.", "Making the video of all the screens with the graphics: frame {0}/{1} · ~{2} s left" },
+            { "• Το βίντεο με τα γραφικά της ανάλυσης, όλες οι οθόνες μαζί (MP4)", "• The video with the graphics of the analysis, all the screens together (MP4)" },
+            { "• Το βίντεο του αγώνα με τα γραφικά της ανάλυσης, όλες οι οθόνες μαζί (MP4)", "• The video of the race with the graphics of the analysis, all the screens together (MP4)" },
+            { " · {0} οθόνες μαζί", " · {0} screens together" },
             { "Ξεκινά…", "Starting…" },
             { "Διακοπή", "Stop" },
             { "Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),\n",

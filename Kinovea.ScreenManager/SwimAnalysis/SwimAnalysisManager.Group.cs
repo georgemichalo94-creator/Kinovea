@@ -549,21 +549,7 @@ namespace Kinovea.ScreenManager
             finally
             {
                 suppressExportOverlay = false;
-                foreach (PlayerScreenUserInterface s in screens)
-                {
-                    try
-                    {
-                        if (!s.IsDisposed && s.SwimFrameServer != null && s.SwimFrameServer.Loaded)
-                        {
-                            s.SwimFrameServer.VideoReader.AfterFrameEnumeration();
-                            s.AfterExportVideo();
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        log.Error("Could not give a screen back its video after the video of the group.", e);
-                    }
-                }
+                GiveScreensBack(screens);
             }
 
             if (cancelled)
@@ -582,22 +568,71 @@ namespace Kinovea.ScreenManager
             return s.Trim();
         }
 
+        /// <summary>(2.16.4) How a video of the group is made: by «Βίντεο όλων των οθονών» or for the package for the coaches.</summary>
+        private sealed class GroupVideoJob
+        {
+            /// <summary>The graphics of the analysis on the images (the package: always, as its video of one screen).</summary>
+            public bool Graphics;
+
+            /// <summary>The video whose sound goes with the images (the video of the analysis: the joined video follows its frames); null: none.</summary>
+            public string Sound;
+
+            /// <summary>The package: the pictures of its preview at these moments of the video of the analysis (null: none).</summary>
+            public SwimPackage Package;
+            public List<KeyValuePair<long, string>> Moments;
+
+            /// <summary>The text of the progress: frame {0} of {1}, ~{2} s left.</summary>
+            public string Progress;
+
+            /// <summary>What came out: the size of the images, the frames written and their rate; stopped by the analyst.</summary>
+            public Size Size;
+            public int Frames;
+            public double Fps;
+            public bool Cancelled;
+        }
+
         /// <summary>
-        /// The frames of the part of the video of the analysis, each with the frame of every other screen of the group at the same moment
-        /// (their time origins), joined, at most 1920 x 1080, given to ffmpeg (H.264, no sound). The graphics drawn on the thread of the
-        /// screens. Returns the error, null when done or stopped.
+        /// The video of «Βίντεο όλων των οθονών» (RenderGroupFrames, without sound) into path. Returns the error, null when done or stopped.
         /// </summary>
         private string RenderGroupVideo(List<PlayerScreenUserInterface> screens, string path, long from, long to, BackgroundWorker worker)
+        {
+            GroupVideoJob job = new GroupVideoJob
+            {
+                Graphics = Settings == null || Settings.VideoGraphics,
+                Progress = SwimLang.T("Καρέ {0}/{1} · απομένουν ~{2} δλ.")
+            };
+            string temp = path + ".part";
+            string error = RenderGroupFrames(screens, temp, from, to, worker, job);
+            if (job.Cancelled || error != null)
+            {
+                TryDelete(temp);
+                return error;
+            }
+
+            File.Copy(temp, path, true);
+            TryDelete(temp);
+            return null;
+        }
+
+        /// <summary>
+        /// The images of a video of the group into temp (an MP4): each frame of the part of the video of the analysis with the frame of every
+        /// other screen of the group at the same moment (their time origins), joined in the shape of their videos as the snapshots of the
+        /// group (at most 1920 x 1080: nothing cut, no black between them), the graphics drawn on the thread of the screens, given to ffmpeg
+        /// (H.264) with the sound of job.Sound from the first frame. The pictures of the preview of a package at its moments. Returns the error,
+        /// null when done (job.Frames) or stopped (job.Cancelled).
+        /// </summary>
+        private string RenderGroupFrames(List<PlayerScreenUserInterface> screens, string temp, long from, long to, BackgroundWorker worker, GroupVideoJob job)
         {
             string ffmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
             VideoReader reader = frameServer.VideoReader;
             double tsPerSecond = reader.Info.AverageTimeStampsPerSeconds;
             double tsPerFrame = Math.Max(1.0, reader.Info.AverageTimeStampsPerFrame);
             double fps = tsPerSecond > 0 ? tsPerSecond / tsPerFrame : 1000.0 / Math.Max(1e-6, Timing.FrameIntervalMilliseconds);
+            job.Fps = fps;
             List<PlayerScreenUserInterface> others = screens.Where(s => s != player).ToList();
             PlayerScreenUserInterface target = GroupGraphicsScreen;
             bool panel = GroupPanelShown;
-            bool graphics = Settings == null || Settings.VideoGraphics;
+            bool graphics = job.Graphics;
 
             // The places of the images in the order of the screens (as in the grid and the snapshots of the group), the panel last in the
             // shape of the video of the analysis (it is drawn at its size). The images are read as the video of the analysis, then the
@@ -615,23 +650,20 @@ namespace Kinovea.ScreenManager
             int width = Math.Max(2, (int)Math.Floor(lw) & ~1), height = Math.Max(2, (int)Math.Floor(lh) & ~1);
             double kx = width / Math.Max(1.0, lw), ky = height / Math.Max(1.0, lh);
             List<Rectangle> rects = places.Select(p => Rectangle.FromLTRB((int)Math.Round(p.Left * kx), (int)Math.Round(p.Top * ky), (int)Math.Round(p.Right * kx), (int)Math.Round(p.Bottom * ky))).ToList();
+            job.Size = new Size(width, height);
 
             int total = (int)Math.Max(1, Math.Round((to - from) / tsPerFrame)) + 1;
-            string temp = path + ".part";
             byte[] buffer = new byte[width * height * 3];
             List<Bitmap> flushed = new List<Bitmap>();
             for (int i = 0; i < screens.Count + (panel ? 1 : 0); i++)
                 flushed.Add(null);
             DateTime began = DateTime.Now;
-            using (SwimVideoEncoder encoder = new SwimVideoEncoder())
+            int moment = 0;
+            using (SwimVideoEncoder encoder = new SwimVideoEncoder { MaxRateK = GroupVideoRate(width, height) })
             using (Bitmap joined = new Bitmap(width, height, PixelFormat.Format24bppRgb))
             {
                 try
                 {
-                    string error;
-                    if (!encoder.Start(ffmpeg, temp, width, height, fps, null, 0, 0, out error))
-                        return error;
-
                     reader.BeforeFrameEnumeration();
                     bool hasMore = reader.MoveTo(reader.Current != null ? reader.Current.Timestamp : from, from);
                     List<bool> otherMore = new List<bool>();
@@ -643,19 +675,31 @@ namespace Kinovea.ScreenManager
                         otherMore.Add(r.MoveTo(r.Current != null ? r.Current.Timestamp : at, Math.Max(r.WorkingZone.Start, Math.Min(at, r.WorkingZone.End))));
                     }
 
+                    bool started = false;
                     int count = 0;
                     while (true)
                     {
                         if (worker.CancellationPending)
                         {
                             encoder.Abort();
-                            TryDelete(temp);
+                            job.Cancelled = true;
                             return null;
                         }
 
                         VideoFrame frame = reader.Current;
                         if (frame == null || frame.Image == null || frame.Timestamp > to)
                             break;
+
+                        if (!started)
+                        {
+                            // The sound of the video of the analysis from its first frame read, as long as the images (padded, cut at their end).
+                            double soundFrom = (frame.Timestamp - reader.Info.FirstTimeStamp) / Math.Max(1e-9, tsPerSecond);
+                            double soundSeconds = (to - frame.Timestamp) / Math.Max(1e-9, tsPerSecond) + 2.0 / fps;
+                            string startError;
+                            if (!encoder.Start(ffmpeg, temp, width, height, fps, job.Sound, soundFrom, soundSeconds, out startError))
+                                return startError;
+                            started = true;
+                        }
 
                         // The video of the analysis, then each other screen at the same moment (its frame at or just after it).
                         flushed[0] = Flushed(player, frame, flushed[0]);
@@ -698,14 +742,26 @@ namespace Kinovea.ScreenManager
                             }
                         }
 
+                        // The pictures of the preview of the package (the start, the walls… of the video of the analysis): the joined image.
+                        if (job.Package != null && job.Moments != null && moment < job.Moments.Count && ts >= job.Moments[moment].Key)
+                        {
+                            string label = job.Moments[moment].Value;
+                            while (moment < job.Moments.Count && ts >= job.Moments[moment].Key)
+                                moment++;
+                            SwimPackageThumb thumb = new SwimPackageThumb { Label = label, Timestamp = ts, Image = ThumbOf(joined) };
+                            job.Package.Thumbs.Add(thumb);
+                            worker.ReportProgress(Percent(count, total), thumb);
+                        }
+
                         CopyBgr(joined, buffer);
                         if (!encoder.Write(buffer))
                         {
+                            // ffmpeg stopped taking images: a video it finished well is kept (the images to here), else its error.
                             string stopped;
                             if (!encoder.Finish(60000, out stopped))
                                 return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), string.IsNullOrEmpty(stopped) ? encoder.Errors : stopped);
-                            File.Copy(temp, path, true);
-                            TryDelete(temp);
+                            log.WarnFormat("Swim group video: ffmpeg ended after {0} of {1} frames.", count, total);
+                            job.Frames = count;
                             return null;
                         }
 
@@ -714,8 +770,8 @@ namespace Kinovea.ScreenManager
                         {
                             double seconds = (DateTime.Now - began).TotalSeconds;
                             double left = seconds * (total - count) / Math.Max(1, count);
-                            worker.ReportProgress(Math.Min(98, 100 * count / Math.Max(1, total)), string.Format(CultureInfo.InvariantCulture,
-                                SwimLang.T("Καρέ {0}/{1} · απομένουν ~{2} δλ."), count, total, Math.Max(0, (int)Math.Round(left))));
+                            worker.ReportProgress(Percent(count, total), string.Format(CultureInfo.InvariantCulture,
+                                job.Progress ?? SwimLang.T("Καρέ {0}/{1} · απομένουν ~{2} δλ."), count, total, Math.Max(0, (int)Math.Round(left))));
                         }
 
                         if (!hasMore)
@@ -733,9 +789,9 @@ namespace Kinovea.ScreenManager
                     string finishError;
                     if (!encoder.Finish(300000, out finishError))
                         return finishError;
-                    File.Copy(temp, path, true);
-                    TryDelete(temp);
-                    log.InfoFormat("Swim group video: {0} frames of {1} screens in {2:0.0} s ({3}x{4}).", count, screens.Count, (DateTime.Now - began).TotalSeconds, width, height);
+                    job.Frames = count;
+                    log.InfoFormat("Swim group video: {0} frames of {1} screens in {2:0.0} s ({3}x{4}, sound {5}, {6} kbit/s at most).", count, screens.Count,
+                        (DateTime.Now - began).TotalSeconds, width, height, job.Sound != null, encoder.MaxRateK);
                     return null;
                 }
                 catch (Exception e)
@@ -751,6 +807,52 @@ namespace Kinovea.ScreenManager
                         if (b != null)
                             b.Dispose();
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// (2.16.4) The bitrate cap of a video of the group (kbit/s): the one of the package for 1280 x 720, more for a larger joined image so that
+        /// every screen keeps its detail (1920 x 1080: 5000).
+        /// </summary>
+        private static int GroupVideoRate(int width, int height)
+        {
+            double k = width * (double)height / (1280.0 * 720.0);
+            return (int)Math.Max(SwimVideoEncoder.DefaultMaxRateK, Math.Min(5000, Math.Round(SwimVideoEncoder.DefaultMaxRateK * k)));
+        }
+
+        /// <summary>(2.16.4) A picture of the preview of the package (480 wide at most) from a joined image.</summary>
+        private static Bitmap ThumbOf(Bitmap image)
+        {
+            int width = Math.Min(480, image.Width);
+            int height = Math.Max(2, (int)Math.Round(width * (double)image.Height / Math.Max(1, image.Width)));
+            Bitmap thumb = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            using (Graphics g = Graphics.FromImage(thumb))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(image, new Rectangle(0, 0, width, height));
+            }
+
+            return thumb;
+        }
+
+        /// <summary>(2.16.4) The screens of a group given back their video after a video of the group (the export or the package).</summary>
+        private static void GiveScreensBack(List<PlayerScreenUserInterface> screens)
+        {
+            foreach (PlayerScreenUserInterface s in screens)
+            {
+                try
+                {
+                    if (!s.IsDisposed && s.SwimFrameServer != null && s.SwimFrameServer.Loaded)
+                    {
+                        s.SwimFrameServer.VideoReader.AfterFrameEnumeration();
+                        s.AfterExportVideo();
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not give a screen back its video after the video of the group.", e);
                 }
             }
         }

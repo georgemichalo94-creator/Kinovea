@@ -25,6 +25,7 @@ namespace Kinovea.ScreenManager
     /// PDF itself and the emails of the athlete's coaches in the answer (Apps Script 2.10.0, which also puts it in the KOE App), while
     /// the video of the race is made with the graphics of the analysis (the frames of the video export, given to ffmpeg: an MP4 at
     /// most 1280 wide); then the preview and OK: the sending with Smash. The files stay in a folder per competition and club.
+    /// (2.16.4) With a group of screens (two or more with a video), the video of all of them together (RenderPackageGroupVideo).
     /// </summary>
     public partial class SwimAnalysisManager
     {
@@ -126,8 +127,16 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.16.4) With a group of screens (two or more with a video), the video of the package is the video of all of them together:
+            // joined in the shape of their videos as the snapshots of the group, at the same moment, with the graphics where the group shows
+            // them and the sound of the video of the analysis.
+            List<PlayerScreenUserInterface> groupScreens = InGroup ? GroupScreens : null;
+            bool group = groupScreens != null && groupScreens.Count >= 2;
+            int screens = group ? groupScreens.Count : 1;
+            package.VideoScreens = screens;
+
             package.Subject = SwimPackage.SubjectFor(race);
-            package.Body = SwimPackage.BodyFor(race, Computed, false, Settings.PackageSignature);
+            package.Body = SwimPackage.BodyFor(race, Computed, false, Settings.PackageSignature, screens);
             race.PackageFolder = package.Folder;
             race.PackageBase = package.BaseName;
             race.PackageMade = DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
@@ -151,21 +160,39 @@ namespace Kinovea.ScreenManager
             List<KeyValuePair<long, string>> moments = PackageMoments(race, from, to);
             Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
             FormSwimPackage form = new FormSwimPackage(package, race.DisplayName, Settings.PackageSignature,
-                worker => RenderPackageVideo(package, from, to, moments, worker),
+                worker => group ? RenderPackageGroupVideo(package, groupScreens, from, to, moments, worker) : RenderPackageVideo(package, from, to, moments, worker),
                 () =>
                 {
                     packageRendering = true;
-                    player.BeforeExportVideo();
+                    if (group)
+                    {
+                        // The graphics drawn by the video of the group (on the screen chosen or on the panel), not by the export of each screen.
+                        suppressExportOverlay = true;
+                        foreach (PlayerScreenUserInterface s in groupScreens)
+                            s.BeforeExportVideo();
+                    }
+                    else
+                    {
+                        player.BeforeExportVideo();
+                    }
                 },
                 () =>
                 {
                     packageRendering = false;
-                    frameServer.VideoReader.AfterFrameEnumeration();
-                    if (player != null && !player.IsDisposed)
-                        player.AfterExportVideo();
+                    if (group)
+                    {
+                        suppressExportOverlay = false;
+                        GiveScreensBack(groupScreens);
+                    }
+                    else
+                    {
+                        frameServer.VideoReader.AfterFrameEnumeration();
+                        if (player != null && !player.IsDisposed)
+                            player.AfterExportVideo();
+                    }
                 },
                 () => RetryPackagePdf(job),
-                (archived, signature) => SwimPackage.BodyFor(race, Computed, archived, signature));
+                (archived, signature) => SwimPackage.BodyFor(race, Computed, archived, signature, screens));
             job.Form = form;
             DialogResult result;
             try
@@ -177,6 +204,7 @@ namespace Kinovea.ScreenManager
                 job.Form = null;
                 packageJob = null;
                 packageRendering = false;
+                suppressExportOverlay = false;
             }
 
             if (!string.Equals(form.Signature, Settings.PackageSignature ?? "", StringComparison.Ordinal))
@@ -670,6 +698,45 @@ namespace Kinovea.ScreenManager
                         flushed.Dispose();
                 }
             }
+        }
+
+        /// <summary>
+        /// (2.16.4) The video of the package with a group of screens (on the thread of the window's worker): the video of all the screens of the
+        /// group together (RenderGroupFrames: joined in the shape of their videos, at most 1920 x 1080, the graphics always, where the group
+        /// shows them), with the sound of the video of the analysis (not for a video in slow motion) and the pictures of the preview at the
+        /// moments. Returns the error, null when done (or stopped: the window knows).
+        /// </summary>
+        private string RenderPackageGroupVideo(SwimPackage package, List<PlayerScreenUserInterface> screens, long from, long to,
+            List<KeyValuePair<long, string>> moments, BackgroundWorker worker)
+        {
+            string ffmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
+            double tsPerSecond = frameServer.VideoReader.Info.AverageTimeStampsPerSeconds;
+            double hsf = Timing.HighSpeedFactor <= 0 ? 1.0 : Timing.HighSpeedFactor;
+            worker.ReportProgress(0, SwimLang.T("Το βίντεο όλων των οθονών γίνεται με τα γραφικά…"));
+            bool sound = Math.Abs(hsf - 1) < 0.01 && tsPerSecond > 0 && SwimVideoEncoder.HasSound(ffmpeg, videoPath);
+            GroupVideoJob job = new GroupVideoJob
+            {
+                Graphics = true,
+                Sound = sound ? videoPath : null,
+                Package = package,
+                Moments = moments,
+                Progress = SwimLang.T("Το βίντεο όλων των οθονών γίνεται με τα γραφικά: καρέ {0}/{1} · απομένουν ~{2} δλ.")
+            };
+            string temp = package.VideoPath + ".part";
+            string error = RenderGroupFrames(screens, temp, from, to, worker, job);
+            if (job.Cancelled)
+                return null;
+            if (error != null)
+                return error;
+
+            package.VideoPath = ReplaceFile(temp, package.VideoPath);
+            package.VideoSize = job.Size;
+            package.VideoHasSound = sound;
+            package.VideoScreens = screens.Count;
+            package.VideoSeconds = job.Frames / Math.Max(1e-6, job.Fps);
+            package.VideoReady = true;
+            log.InfoFormat("Swim package video of a group: {0} screens, {1} frames ({2}x{3}, sound {4}).", screens.Count, job.Frames, job.Size.Width, job.Size.Height, sound);
+            return null;
         }
 
         private static int Percent(int count, int total)

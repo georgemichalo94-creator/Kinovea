@@ -206,6 +206,32 @@ foreach ($case in @(@(1920, 1.0, $true, 37.5, 2, 'playing'), @(1280, 1.0, $false
     Check $false ('bar ' + $case[5] + ': ' + $e.Message)
   } finally { $g.Dispose(); $b.Dispose() }
 }
+# ---- (2.16.4) The package with a group of screens: the bitrate of its video, the sound of the analysis, the pictures of its preview, the message.
+try {
+  $enc = T 'SwimVideoEncoder'
+  $a7 = $enc.GetMethod('Arguments', [type[]]@([int], [int], [double], [string], [double], [double], [string]))
+  $argsOne = $a7.Invoke($null, [object[]]@([int]1280, [int]720, [double]50, $null, [double]0, [double]0, 'x.mp4'))
+  Check ($argsOne -like '*-maxrate 2500k -bufsize 5000k*' -and $argsOne -notlike '*-map 1:a:0*') 'the video of one screen: 2500 kbit/s, as before'
+  $a8 = $enc.GetMethod('Arguments', [type[]]@([int], [int], [double], [string], [double], [double], [string], [int]))
+  $argsGroup = $a8.Invoke($null, [object[]]@([int]1920, [int]1080, [double]50, 'a.mp4', [double]1.5, [double]30, 'x.mp4', [int]5000))
+  Check ($argsGroup -like '*-maxrate 5000k -bufsize 10000k*' -and $argsGroup -like '*-ss 1.500 -t 30.000 -i "a.mp4"*' -and $argsGroup -like '*-map 1:a:0*') 'the video of a group: 5000 kbit/s and the sound of the analysis'
+  $rate = $mt.GetMethod('GroupVideoRate', $all)
+  $r1 = $rate.Invoke($null, [object[]]@([int]1920, [int]1080)); $r2 = $rate.Invoke($null, [object[]]@([int]1280, [int]720)); $r3 = $rate.Invoke($null, [object[]]@([int]1920, [int]540))
+  Check ($r1 -eq 5000 -and $r2 -eq 2500 -and $r3 -gt 2500 -and $r3 -lt 5000) ('the bitrate of a group video by its size: ' + $r1 + ' / ' + $r2 + ' / ' + $r3)
+  $thumbOf = $mt.GetMethod('ThumbOf', $all)
+  $wide = New-Object System.Drawing.Bitmap 1920, 540
+  $tb = $thumbOf.Invoke($null, [object[]]@($wide.psobject.BaseObject))
+  Check ($tb.Width -eq 480 -and $tb.Height -eq 135) ('the picture of the preview of a joined video: ' + $tb.Width + 'x' + $tb.Height)
+  $tb.Dispose(); $wide.Dispose()
+  $pk = T 'SwimPackage'; $tComputed = T 'SwimComputed'
+  $body3 = $pk.GetMethod('BodyFor', [type[]]@($tRace, $tComputed, [bool], [string], [int])).Invoke($null, [object[]]@($race.psobject.BaseObject, $null, $false, '', [int]3))
+  Check ($body3 -like '*όλες οι οθόνες μαζί (MP4)*') 'the message of a group: the video of all the screens together'
+  $body1 = $pk.GetMethod('BodyFor', [type[]]@($tRace, $tComputed, [bool], [string])).Invoke($null, [object[]]@($race.psobject.BaseObject, $null, $false, ''))
+  Check ($body1 -like '*Το βίντεο με τα γραφικά της ανάλυσης (MP4)*' -and $body1 -notlike '*όλες οι οθόνες*') 'the message of one screen, as before'
+} catch {
+  $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+  Check $false ('the package of a group: ' + $e.GetType().Name + ' ' + $e.Message)
+}
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0
