@@ -403,24 +403,21 @@ $rowOfSample = $tShare.GetMethod('TechShareRow', [type[]]@($tSample))
 $rowOfForget = $tShare.GetMethod('TechShareRow', [type[]]@($tForget, [string]))
 $readShare = $tShare.GetMethod('ReadTechShare')
 $here = $tLearnRec.GetField('Here')
+# (The rows stay .NET objects: PowerShell reads the members of a JObject as its JSON properties.)
+$tJArray = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Newtonsoft.Json.dll')).GetType('Newtonsoft.Json.Linq.JArray')
+$parseArray = $tJArray.GetMethod('Parse', [type[]]@([string]))
 function Rows($learning, $since) {
-  # The rows a pull of the sheet gives: the answers of this Kinovea after 'since' (an index), then its answers taken away.
-  $o = $null
-  $list = @()
-  for ($k = $since; $k -lt $learning.Samples.Count; $k++) { $list += ,($rowOfSample.Invoke($null, [object[]]@($learning.Samples[$k].psobject.BaseObject))) }
-  foreach ($f in $learning.Forgotten) { if (-not $f.Shared) { $list += ,($rowOfForget.Invoke($null, [object[]]@($f.psobject.BaseObject, 'kvA'))) } }
-  if ($list.Count -gt 0) { $o = $list[0] }
-  $tArr = $null
-  if ($null -ne $o) { $tArr = $o.psobject.BaseObject.GetType().Assembly.GetType('Newtonsoft.Json.Linq.JArray') } else { $tArr = $script:tJArray }
-  $script:tJArray = $tArr
-  $arr = [Activator]::CreateInstance($tArr)
-  foreach ($r in $list) { $arr.Add($r.psobject.BaseObject) }
+  # The rows a pull of the sheet gives: the answers of this Kinovea from 'since' (an index), then its answers taken away.
+  $arr = [Activator]::CreateInstance($tJArray)
+  for ($k = $since; $k -lt $learning.Samples.Count; $k++) { $arr.Add($rowOfSample.Invoke($null, [object[]]@($learning.Samples[$k].psobject.BaseObject))) }
+  foreach ($f in $learning.Forgotten) { if (-not $f.Shared) { $arr.Add($rowOfForget.Invoke($null, [object[]]@($f.psobject.BaseObject, 'kvA'))) } }
   # Through text, as the sheet keeps them.
-  $text = $arr.ToString()
-  $parsed = $tArr.GetMethod('Parse', [type[]]@([string])).Invoke($null, @($text))
-  $outArgs = [object[]]@($parsed.psobject.BaseObject, $null, $null)
+  $outArgs = New-Object 'object[]' 3
+  $outArgs[0] = $parseArray.Invoke($null, [object[]]@($arr.ToString()))
   $null = $readShare.Invoke($null, $outArgs)
-  return ,@($outArgs[1], $outArgs[2])
+  $pair = New-Object 'object[]' 2
+  $pair[0] = $outArgs[1]; $pair[1] = $outArgs[2]
+  return ,$pair
 }
 function Merge($learning, $rows) { return $learning.Merge($rows[0], $rows[1]) }
 $here.SetValue($null, 'kvA')
