@@ -276,7 +276,7 @@ namespace Kinovea.ScreenManager
             if (Settings == null || !Settings.TechEvalAuto || phase == null || sheet == null || measures == null)
                 return 0;
 
-            int changed = 0;
+            int changed = 0, learned = 0;
             SwimTechEval eval = TechEval(phase, sheet, false);
             foreach (SwimTechSheetItem it in sheet.Items)
             {
@@ -289,7 +289,19 @@ namespace Kinovea.ScreenManager
                 if (eval != null)
                     eval.Scores.TryGetValue(it.Key, out score);
                 if (score != null && !score.Auto)
+                {
+                    // (2.16.6) A score of the coach given before the program measured the point (no skeleton yet, the marks later):
+                    // it teaches the learning now, with the measurement the program has (once: the measurement is kept with it).
+                    if (!score.Measured.HasValue && score.Value >= 0)
+                    {
+                        score.Measured = Math.Round(m.Value, 3);
+                        score.Unit = CheckUnit(it.Criterion);
+                        Learn(phase, sheet, it, score.Value, m.Value);
+                        learned++;
+                    }
+
                     continue;
+                }
 
                 if (!proposal.HasValue)
                 {
@@ -315,7 +327,8 @@ namespace Kinovea.ScreenManager
             if (changed > 0)
                 eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
 
-            return changed;
+            // The measurements kept with the coach's scores are saved too (the date of his evaluation stays).
+            return changed + learned;
         }
 
         private string CheckUnit(SwimTechCriterion c)
