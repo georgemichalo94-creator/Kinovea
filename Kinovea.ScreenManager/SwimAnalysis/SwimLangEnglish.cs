@@ -2218,6 +2218,10 @@ namespace Kinovea.ScreenManager
             { "στην οθόνη της ανάλυσης ({0})", "on the screen of the analysis ({0})" },
             { "στην οθόνη {0}", "on screen {0}" },
             { "σε πίνακα στη θέση μιας οθόνης", "on a panel in the place of a screen" },
+            // 2.16.5: the shared learning of the technique evaluation.
+            { "Η κοινή μάθηση της τεχνικής ανάλυσης με τα άλλα Kinovea θέλει το script 2.16.5 στο Google Sheet: ως τότε μένει σε αυτόν τον υπολογιστή.",
+                "Sharing the technique learning with the other Kinovea needs script 2.16.5 in the Google Sheet: until then it stays on this computer." },
+            { "🔄 Κοινή μάθηση τεχνικής: +{0} απαντήσεις από τα άλλα Kinovea.", "🔄 Shared technique learning: +{0} answers from the other Kinovea." },
         };
     }
 }

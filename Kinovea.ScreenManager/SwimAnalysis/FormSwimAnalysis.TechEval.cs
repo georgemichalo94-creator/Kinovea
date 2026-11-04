@@ -457,7 +457,9 @@ namespace Kinovea.ScreenManager
 
             SwimTechAgreement agreement = manager.TechAgreement(item);
             if (agreement != null && agreement.Samples > 0)
-                lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text + (agreement.Reliable ? " ★" : agreement.Disagrees ? SwimLang.T(" ⚠ (δεν προτείνεται πια μόνο του)") : ""));
+                lines.Add(SwimLang.T("Συμφωνία με τις απαντήσεις σου: ") + agreement.Text +
+                    (agreement.Shared > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" ({0} από τα άλλα Kinovea)"), agreement.Shared) : "") +
+                    (agreement.Reliable ? " ★" : agreement.Disagrees ? SwimLang.T(" ⚠ (δεν προτείνεται πια μόνο του)") : ""));
 
             if (item.Criterion.Level == "A" && measured && check != null && SwimTechEvaluator.NeedsAgreement.Contains(check.Id))
                 lines.Add(SwimLang.T("Μετριέται από τον σκελετό κάτω από το νερό: το βαθμολογεί μόνο του όταν συμφωνεί 9 στις 10 με τις απαντήσεις σου."));
