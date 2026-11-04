@@ -59,8 +59,43 @@ namespace Kinovea.ScreenManager
             Paint(g, points.Select(map).ToArray(), visibility, scale, angles);
         }
 
-        /// <summary>The skeleton from its joints in drawing coordinates.</summary>
+        /// <summary>
+        /// The skeleton from its joints in drawing coordinates. (2.16.6) A joint off any picture (NaN, infinite, far away: a bad reading
+        /// or zoom) is not drawn, and GDI+ failing on one shape never stops the drawing of the video (it says "overflow" or "out of
+        /// memory" then).
+        /// </summary>
         public static void Paint(Graphics g, PointF[] p, float[] visibility, float scale, bool angles)
+        {
+            if (g == null || p == null || visibility == null || p.Length < SwimJoints.Count || visibility.Length < SwimJoints.Count)
+                return;
+
+            float[] seen = new float[SwimJoints.Count];
+            for (int j = 0; j < SwimJoints.Count; j++)
+                seen[j] = Drawable(p[j]) ? visibility[j] : 0;
+
+            try
+            {
+                PaintJoints(g, p, seen, scale, angles);
+            }
+            catch (OverflowException)
+            {
+            }
+            catch (OutOfMemoryException)
+            {
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+            }
+        }
+
+        /// <summary>A point GDI+ can draw: a number, and not far beyond any picture.</summary>
+        private static bool Drawable(PointF q)
+        {
+            return !float.IsNaN(q.X) && !float.IsNaN(q.Y) && !float.IsInfinity(q.X) && !float.IsInfinity(q.Y) &&
+                Math.Abs(q.X) < 100000f && Math.Abs(q.Y) < 100000f;
+        }
+
+        private static void PaintJoints(Graphics g, PointF[] p, float[] visibility, float scale, bool angles)
         {
             using (Pen shadow = new Pen(Color.FromArgb(120, 0, 0, 0), 5.5f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             using (Pen leftPen = new Pen(Color.FromArgb(235, SwimTheme.Accent), 3f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round })
