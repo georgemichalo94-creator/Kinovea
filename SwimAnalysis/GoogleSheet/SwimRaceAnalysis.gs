@@ -26,9 +26,12 @@
  *  11. Κρατά την κοινή μάθηση της τεχνικής ανάλυσης (2.16.5): οι βαθμολογίες του προπονητή στα κριτήρια που μετρά το πρόγραμμα, με
  *      τη μέτρησή τους (μόνο αριθμοί και κωδικοί, χωρίς ονόματα), στο φύλλο "Μάθηση τεχνικής"· κάθε Kinovea στέλνει τις δικές του και
  *      παίρνει των άλλων, ώστε τα όρια και η αυτόματη αξιολόγηση να μαθαίνουν από όλους μαζί.
+ *  12. Πιο γρήγορο report και PDF (2.16.6): οι εικόνες που δεν άλλαξαν (στιγμιότυπα, elite καρέ, γραφικά) μένουν στο φύλλο όταν
+ *      ξαναφτιάχνεται (μετακινούνται, δεν κατεβαίνουν ξανά από το Drive), τα πλαίσια μπαίνουν όλα μαζί, και η απάντηση λέει πόσο
+ *      κράτησε κάθε κομμάτι (timings: report, PDF, KOE App), που το Kinovea γράφει στο μήνυμα του PDF.
  */
 
-var SWIM_VERSION = '2.16.5';
+var SWIM_VERSION = '2.16.6';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -187,6 +190,8 @@ function swimHandleRequest_(req) {
 
   var action = String(req.action || 'update');
   var fail = function (err) { return swimJson_(swimErrorAnswer_(err, false)); };
+  // (2.16.6) Πόσο κράτησε κάθε κομμάτι (ms): το Kinovea το γράφει στο μήνυμα του PDF.
+  var started = Date.now();
 
   // Ενέργειες που μόνο διαβάζουν ή γράφουν μόνο στο Drive: χωρίς κλείδωμα, ώστε να μην περιμένουν τις ενημερώσεις.
   var unlocked = {
@@ -220,6 +225,7 @@ function swimHandleRequest_(req) {
   } catch (err) {
     return swimJson_({ ok: false, error: swimT_('Το φύλλο είναι απασχολημένο, θα ξαναπροσπαθήσει.'), retry: true });
   }
+  var locked = Date.now();
 
   try {
     if (action === 'ping') {
@@ -262,12 +268,24 @@ function swimHandleRequest_(req) {
       // τρέχουσες τιμές τους επιστρέφονται (τιμές και ρυθμίσεις) χωρίς PDF· το Kinovea τα ανεβάζει και ζητά ξανά το PDF.
       var drawCharts = !!req.drawCharts;
       var result = swimUpsertRace_(req.race, { parts: swimPdfParts_(req), pdf: action === 'pdf' });
+      var reported = Date.now();
+      var steps = result.steps;
+      delete result.steps;
+      var timings = function (extra) {
+        var t = { lock: locked - started, report: reported - locked, rebuilt: !!result.rebuilt };
+        if (steps) t.steps = steps;
+        Object.keys(extra || {}).forEach(function (k) { t[k] = extra[k]; });
+        t.total = Date.now() - started;
+        try { console.log('swim ' + action + ' ' + JSON.stringify(t)); } catch (e) { /* χωρίς καταγραφή */ }
+        return t;
+      };
       var chartData = result.charts;
       delete result.charts;
       if (drawCharts && result.chartsMissing.length) {
         result.charts = chartData.filter(function (c) { return result.chartsMissing.indexOf(c.key) >= 0; });
         if (action === 'pdf') {
           result.needCharts = true;
+          result.timings = timings();
           return swimJson_(result);
         }
       } else if (action === 'pdf' && (result.chartsStale || []).length && swimChartsAgain_(result.raceId)) {
@@ -275,11 +293,13 @@ function swimHandleRequest_(req) {
         // Kinovea τις ξανασχεδιάζει (μία φορά) αντί να μπουν στο PDF γραφήματα του Google.
         result.charts = chartData.filter(function (c) { return result.chartsStale.indexOf(c.key) >= 0; });
         result.needCharts = true;
+        result.timings = timings();
         return swimJson_(result);
       }
       if (action === 'pdf') {
         var ss = swimReportsSpreadsheet_();
         var pdfs = swimExportPdfs_(ss, result);
+        var exported = Date.now();
         result.pdf = pdfs.pdf;
         // 2.12.0: η σύντομη ανάλυση σε δικό της αρχείο (με «σε δύο αρχεία»).
         if (pdfs.short) result.pdfShort = pdfs.short;
@@ -292,6 +312,9 @@ function swimHandleRequest_(req) {
         if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
         if (req.pdfData && result.pdf.blob) result.pdf.data = Utilities.base64Encode(result.pdf.blob.getBytes());
         if (req.pdfData && result.pdfShort && result.pdfShort.blob) result.pdfShort.data = Utilities.base64Encode(result.pdfShort.blob.getBytes());
+        result.timings = timings({ pdf: exported - reported, archive: Date.now() - exported });
+      } else {
+        result.timings = timings();
       }
       return swimJson_(result);
     }
@@ -890,9 +913,13 @@ function swimUpsertRace_(rawRace, opts) {
   // Η γλώσσα του report κρατιέται με τον αγώνα στο ευρετήριο (για τα report και τα PDF από το μενού)· τα ελληνικά χωρίς κλειδί.
   if (SWIM_LANG_ === 'en') race.lang = 'en';
 
+  // (2.16.6) Πόσο κράτησε κάθε βήμα (ms), για το μήνυμα του PDF στο Kinovea.
+  var steps = {}, lap = Date.now();
+  var step = function (name) { var now = Date.now(); steps[name] = (steps[name] || 0) + now - lap; lap = now; };
   var analysis = swimAnalyze_(race);
   var extras = race.kind === 'training' ? {} : swimComparisons_(race);
   var ss = swimReportsSpreadsheet_();
+  step('compare');
   // 2.13.0: οι αξιολογήσεις τεχνικής στο φύλλο «Αξιολογήσεις τεχνικής» (μία γραμμή η καθεμία) και η πρόοδος του αθλητή για το report.
   if (swimTechEvalList_(race).length) {
     try {
@@ -901,10 +928,12 @@ function swimUpsertRace_(rawRace, opts) {
     } catch (e) {
       extras.evalHistory = null;
     }
+    step('evals');
   }
   // Ύψος της σελίδας του PDF (μετριέται μία φορά από το ίδιο το Google): οι αλλαγές σελίδας του layout.
   extras.pageHeight = function (width) { return swimPdfPageHeight_(ss, width); };
   var layout = swimBuildLayout_(race, analysis, extras);
+  step('layout');
 
   var index = swimIndexSheet_(ss);
   var entry = swimFindIndexEntry_(index, race.id);
@@ -925,16 +954,24 @@ function swimUpsertRace_(rawRace, opts) {
   }
 
   var stored = swimSplitSignature_(entry ? entry.layoutSig : '');
+  step('index');
   if (rebuilt || !entry || stored.grid !== layout.signature) {
-    swimRenderLayout_(sheet, layout);
+    var placed = swimRenderLayout_(sheet, layout);
     rebuilt = true;
+    step('render');
+    if (placed) {
+      steps.imagesNew = placed.inserted;
+      steps.imagesKept = placed.kept;
+    }
   }
 
   swimWriteInputs_(sheet, race, analysis, layout);
   SpreadsheetApp.flush();
+  step('inputs');
 
   // Τα γραφήματα μετά τις τιμές: οι εικόνες του Kinovea όπου είναι για τις τρέχουσες τιμές, αλλιώς γραφήματα του Google.
   var charts = swimPlaceChartItems_(sheet, layout, race, rebuilt, rebuilt ? '' : stored.charts);
+  step('charts');
 
   var kpi = swimReadKpis_(sheet, layout, analysis);
   // Οι σελίδες του PDF: η πρώτη σελίδα «Με μια ματιά» (2.8.0), η σύντομη ανάλυση και τα σχόλια στο τέλος της πλήρους (2.11.0), μόνο για
@@ -982,6 +1019,9 @@ function swimUpsertRace_(rawRace, opts) {
     charts: charts.data.concat(v2charts.map(function (c) { return c.data; })),
     chartsMissing: charts.missing.concat(v2missing.map(function (c) { return c.key; }))
   };
+  step('finish');
+  // (2.16.6) Τα βήματα: ο χειριστής του αιτήματος τα βάζει στα timings της απάντησης (από το μενού αγνοούνται).
+  result.steps = steps;
   Object.defineProperty(result, 'quick', { value: quick, enumerable: false });
   // 2.12.0: η σύντομη ανάλυση του δεύτερου αρχείου (null: ένα αρχείο, ή η σύντομη δεν χωρά στις τρεις σελίδες).
   Object.defineProperty(result, 'quickShort', { value: quickShort, enumerable: false });
@@ -4816,7 +4856,16 @@ function swimInputPlan_(race, analysis, layout) {
 function swimRenderLayout_(sheet, layout) {
   var g = layout.grid;
   sheet.getCharts().forEach(function (ch) { sheet.removeChart(ch); });
-  try { sheet.getImages().forEach(function (im) { im.remove(); }); } catch (e) { /* παλιότερο Apps Script */ }
+  // (2.16.6) Οι εικόνες του layout (στιγμιότυπα, elite καρέ, γραφικά) μένουν στο φύλλο και πηγαίνουν στη νέα τους θέση: δεν κατεβαίνουν
+  // ξανά από το Drive σε κάθε ανακατασκευή (π.χ. σε κάθε βαθμολογία της αξιολόγησης). Οι άλλες (γραφήματα) φεύγουν όπως πριν.
+  var pool = {};
+  try {
+    sheet.getImages().forEach(function (im) {
+      var id = swimLayoutImageId_(im);
+      if (id) (pool[id] = pool[id] || []).push(im);
+      else im.remove();
+    });
+  } catch (e) { /* παλιότερο Apps Script */ }
   sheet.clear();
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
 
@@ -4863,10 +4912,18 @@ function swimRenderLayout_(sheet, layout) {
   g.merges.forEach(function (m) {
     sheet.getRange(m[0], m[1], m[2] - m[0] + 1, m[3] - m[1] + 1).merge();
   });
-  g.boxes.forEach(function (b) {
-    sheet.getRange(b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1)
-      .setBorder(true, true, true, true, true, true, SWIM_COLORS.border, SpreadsheetApp.BorderStyle.SOLID);
-  });
+  // (2.16.6) Τα πλαίσια όλα μαζί (ένα αίτημα αντί για ένα ανά πίνακα).
+  var boxes = g.boxes.map(function (b) { return swimA1_(b[0], b[1]) + ':' + swimA1_(b[2], b[3]); });
+  if (boxes.length) {
+    try {
+      sheet.getRangeList(boxes).setBorder(true, true, true, true, true, true, SWIM_COLORS.border, SpreadsheetApp.BorderStyle.SOLID);
+    } catch (e) {
+      g.boxes.forEach(function (b) {
+        sheet.getRange(b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1)
+          .setBorder(true, true, true, true, true, true, SWIM_COLORS.border, SpreadsheetApp.BorderStyle.SOLID);
+      });
+    }
+  }
   // Σταθερό ύψος σε κάθε γραμμή, ακριβώς όπως στο layout: οι σελίδες του PDF πέφτουν εκεί που υπολογίστηκαν.
   var from = 1, height = swimRowHeight_(g, 1);
   for (var hr = 2; hr <= nr + 1; hr++) {
@@ -4883,11 +4940,20 @@ function swimRenderLayout_(sheet, layout) {
   sheet.setFrozenRows(0);
 
   // Τα γραφήματα μπαίνουν μετά τις τιμές (swimPlaceChartItems_): εικόνες του Kinovea ή γραφήματα του Google.
+  var placed = { inserted: 0, kept: 0 };
   (layout.images || []).forEach(function (img) {
     var pos = img.x !== undefined ? swimColumnAt_(img.x) : { col: img.col, offset: 4 };
+    var offsetY = img.offsetY === undefined ? 4 : img.offsetY;
     try {
-      var blob = DriveApp.getFileById(img.fileId).getBlob();
-      var im = sheet.insertImage(blob, pos.col, img.row, pos.offset, img.offsetY === undefined ? 4 : img.offsetY);
+      var im = swimMoveLayoutImage_(sheet, pool[img.fileId], img.row, pos.col, pos.offset, offsetY);
+      if (im) {
+        placed.kept++;
+      } else {
+        var blob = DriveApp.getFileById(img.fileId).getBlob();
+        im = sheet.insertImage(blob, pos.col, img.row, pos.offset, offsetY);
+        try { im.setAltTextTitle(SWIM_LAYOUT_IMAGE + img.fileId); } catch (e4) { /* παλιότερο Apps Script */ }
+        placed.inserted++;
+      }
       var w = img.width, h = img.height;
       if (img.fit) {
         // Ολόκληρη η εικόνα μέσα στο πλαίσιο, με τις αναλογίες της, στο κέντρο του.
@@ -4905,6 +4971,37 @@ function swimRenderLayout_(sheet, layout) {
       sheet.getRange(img.row, pos.col).setValue(swimT_('(δεν βρέθηκε η εικόνα στο Drive)'));
     }
   });
+  // Όσες εικόνες δεν χρειάζονται πια (ένα στιγμιότυπο που σβήστηκε).
+  Object.keys(pool).forEach(function (id) {
+    pool[id].forEach(function (im) { try { im.remove(); } catch (e) { /* τίποτα */ } });
+  });
+  return placed;
+}
+
+/** (2.16.6) Ο τίτλος (alt text) μιας εικόνας του layout: μαζί με το id του αρχείου της στο Drive. */
+var SWIM_LAYOUT_IMAGE = 'swim-image:';
+
+/** Το id του αρχείου μιας εικόνας του layout που μπήκε από τη 2.16.6, αλλιώς ''. */
+function swimLayoutImageId_(im) {
+  var title = '';
+  try { title = String(im.getAltTextTitle() || ''); } catch (e) { return ''; }
+  return title.indexOf(SWIM_LAYOUT_IMAGE) === 0 ? title.substring(SWIM_LAYOUT_IMAGE.length) : '';
+}
+
+/**
+ * Μια εικόνα του ίδιου αρχείου που ήταν ήδη στο φύλλο, στη νέα της θέση (null: καμία, ή δεν μετακινείται: μπαίνει ξανά από το Drive).
+ */
+function swimMoveLayoutImage_(sheet, list, row, col, offsetX, offsetY) {
+  while (list && list.length) {
+    var im = list.shift();
+    try {
+      im.setAnchorCell(sheet.getRange(row, col)).setAnchorCellXOffset(offsetX).setAnchorCellYOffset(offsetY);
+      return im;
+    } catch (e) {
+      try { im.remove(); } catch (e2) { /* τίποτα */ }
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------
