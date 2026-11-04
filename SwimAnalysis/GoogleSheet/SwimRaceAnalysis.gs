@@ -23,9 +23,12 @@
  *      αποστολής του Kinovea δίνει και το ίδιο το PDF και τα email των προπονητών του αθλητή.
  *  10. Κρατά ένα μόνο αρχείο αναλύσεων (2.16.2): αν το Google δεν το ανοίξει για λίγο, ξαναδοκιμάζει και δίνει μήνυμα (ποτέ δεύτερο
  *      αρχείο)· όσα έγιναν ήδη δύο τα ενώνουν οι swimReportsFilesCheck (έλεγχος) και swimReportsFilesMerge (συγχώνευση).
+ *  11. Κρατά την κοινή μάθηση της τεχνικής ανάλυσης (2.16.5): οι βαθμολογίες του προπονητή στα κριτήρια που μετρά το πρόγραμμα, με
+ *      τη μέτρησή τους (μόνο αριθμοί και κωδικοί, χωρίς ονόματα), στο φύλλο "Μάθηση τεχνικής"· κάθε Kinovea στέλνει τις δικές του και
+ *      παίρνει των άλλων, ώστε τα όρια και η αυτόματη αξιολόγηση να μαθαίνουν από όλους μαζί.
  */
 
-var SWIM_VERSION = '2.16.3';
+var SWIM_VERSION = '2.16.5';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -202,6 +205,8 @@ function swimHandleRequest_(req) {
     eliteFrames: function () { return { ok: true, version: SWIM_VERSION, sheet: SWIM_ELITE_SHEET, frames: swimEliteFrames_() }; },
     getImage: function () { return swimGetImage_(req); },
     learningPull: function () { return swimLearningPull_(req); },
+    // 2.16.5: η μάθηση της τεχνικής ανάλυσης (ίδια μορφή, δικό της φύλλο).
+    techLearningPull: function () { return swimLearningPull_(req, SWIM_TECH_LEARNING_SHEET); },
     image: function () { return swimSaveSnapshot_(req); },
     images: function () { return swimSaveImages_(req); }
   };
@@ -246,6 +251,10 @@ function swimHandleRequest_(req) {
 
     if (action === 'learningPush') {
       return swimJson_(swimLearningPush_(req));
+    }
+
+    if (action === 'techLearningPush') {
+      return swimJson_(swimLearningPush_(req, SWIM_TECH_LEARNING_SHEET));
     }
 
     if (action === 'update' || action === 'pdf') {
@@ -8637,14 +8646,23 @@ var SWIM_ELITE_FOLDER = 'Elite καρέ';
 var SWIM_LEARNING_SHEET = 'Μάθηση Kinovea';
 var SWIM_LEARNING_HEADERS = ['Αύξων', 'Id', 'Kinovea', 'Ημερομηνία', 'Είδος', 'Απάντηση'];
 
+/**
+ * (2.16.5) Η κοινή μάθηση της τεχνικής ανάλυσης: ίδιες στήλες, μία γραμμή ανά βαθμολογία του προπονητή σε κριτήριο που μέτρησε το
+ * πρόγραμμα (είδος techeval: ο κωδικός της ανάλυσης, της φάσης, της λίστας και του κριτηρίου, η μέτρηση, καλό ή λάθος) ή ανά
+ * βαθμολογία που σβήστηκε (είδος techeval~forget). Μόνο αριθμοί και κωδικοί, χωρίς ονόματα. Μη σβήνεις γραμμές.
+ */
+var SWIM_TECH_LEARNING_SHEET = 'Μάθηση τεχνικής';
+
 /** Απαντήσεις ανά αίτημα το πολύ (την πρώτη φορά ένα Kinovea παίρνει μόνο τις πιο πρόσφατες τόσες). */
 var SWIM_LEARNING_MAX_PULL = 6000;
 
-function swimLearningSheet_(create) {
+/** Το φύλλο της μάθησης (name: της τεχνικής, 2.16.5· αλλιώς η μάθηση των σημαδιών). */
+function swimLearningSheet_(create, name) {
+  name = name || SWIM_LEARNING_SHEET;
   var ss = swimReportsSpreadsheet_();
-  var sh = ss.getSheetByName(SWIM_LEARNING_SHEET);
+  var sh = ss.getSheetByName(name);
   if (!sh && create) {
-    sh = ss.insertSheet(SWIM_LEARNING_SHEET);
+    sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, SWIM_LEARNING_HEADERS.length).setValues([SWIM_LEARNING_HEADERS]).setFontWeight('bold');
     // Κείμενο, όχι ημερομηνίες ή αριθμοί που αλλάζει το Sheets.
     sh.getRange(1, 2, 1, SWIM_LEARNING_HEADERS.length - 1).setNumberFormat('@');
@@ -8654,13 +8672,14 @@ function swimLearningSheet_(create) {
 }
 
 /**
- * Οι απαντήσεις ενός Kinovea (req.records, req.origin): μπαίνουν όσες δεν υπάρχουν ήδη (το id τους), στο τέλος του φύλλου.
- * Επιστρέφει πόσες μπήκαν και τον τελευταίο αύξοντα.
+ * Οι απαντήσεις ενός Kinovea (req.records, req.origin): μπαίνουν όσες δεν υπάρχουν ήδη (το id τους), στο τέλος του φύλλου (name: το
+ * φύλλο της μάθησης της τεχνικής, όπου μπαίνουν μόνο είδη techeval). Επιστρέφει πόσες μπήκαν και τον τελευταίο αύξοντα.
  */
-function swimLearningPush_(req) {
+function swimLearningPush_(req, name) {
   var records = Array.isArray(req.records) ? req.records : [];
   var origin = String(req.origin || '').slice(0, 64);
-  var sh = swimLearningSheet_(true);
+  var tech = name === SWIM_TECH_LEARNING_SHEET;
+  var sh = swimLearningSheet_(true, name);
   var last = sh.getLastRow();
   var seen = {};
   if (last > 1) {
@@ -8675,6 +8694,8 @@ function swimLearningPush_(req) {
     var id = String(r.Id || '').slice(0, 64);
     var kind = String(r.Kind || '').slice(0, 80);
     if (!id || !kind || seen[id]) return;
+    // Στη μάθηση της τεχνικής μόνο οι βαθμολογίες της (είδη techeval), όχι απαντήσεις των σημαδιών από λάθος.
+    if (tech && kind.indexOf('techeval') !== 0) return;
     if (!r.Origin) r.Origin = origin;
     var json = JSON.stringify(r);
     if (json.length > 40000) return;
@@ -8693,9 +8714,10 @@ function swimLearningPush_(req) {
 
 /**
  * Οι απαντήσεις μετά τον αύξοντα req.since (το πολύ req.max): την πρώτη φορά (since 0) οι πιο πρόσφατες. «more»: υπάρχουν κι άλλες.
+ * name: το φύλλο της μάθησης της τεχνικής (2.16.5).
  */
-function swimLearningPull_(req) {
-  var sh = swimLearningSheet_(false);
+function swimLearningPull_(req, name) {
+  var sh = swimLearningSheet_(false, name);
   var total = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
   var since = Math.max(0, Math.floor(Number(req.since) || 0));
   var max = Math.max(1, Math.min(SWIM_LEARNING_MAX_PULL, Math.floor(Number(req.max) || 2000)));
@@ -9644,11 +9666,12 @@ function swimMergeItem_(ss, item) {
  * αρχείων που δεν μεταφέρονται] }.
  */
 function swimMergeAux_(plan, dryRun) {
-  var out = { learning: 0, references: 0, frames: 0, bench: 0, other: [] };
+  var out = { learning: 0, techLearning: 0, references: 0, frames: 0, bench: 0, other: [] };
   if (!plan.target) return out;
   var tss = plan.target.ss;
   var known = {};
-  [SWIM_INDEX_SHEET, SWIM_EVALS_SHEET, SWIM_LEARNING_SHEET, SWIM_REFERENCES_SHEET, SWIM_ELITE_SHEET, SWIM_BENCH_SHEET, SWIM_LIBRARY_SHEET]
+  [SWIM_INDEX_SHEET, SWIM_EVALS_SHEET, SWIM_LEARNING_SHEET, SWIM_TECH_LEARNING_SHEET, SWIM_REFERENCES_SHEET, SWIM_ELITE_SHEET, SWIM_BENCH_SHEET,
+    SWIM_LIBRARY_SHEET]
     .forEach(function (n) { known[n] = true; });
   var rowsOf = function (sh) {
     if (!sh || sh.getLastRow() < 2) return [];
@@ -9706,11 +9729,13 @@ function swimMergeAux_(plan, dryRun) {
       out.other.push(n);
     });
 
-    // Μάθηση: οι απαντήσεις με id που δεν υπάρχει, στο τέλος με νέο αύξοντα (τα Kinovea τις ζητούν από τον αύξοντα).
-    var learnRows = rowsOf(src.ss.getSheetByName(SWIM_LEARNING_SHEET));
-    if (learnRows.length) {
+    // Μάθηση (των σημαδιών και, 2.16.5, της τεχνικής): οι απαντήσεις με id που δεν υπάρχει, στο τέλος με νέο αύξοντα (τα Kinovea τις
+    // ζητούν από τον αύξοντα).
+    [{ name: SWIM_LEARNING_SHEET, key: 'learning' }, { name: SWIM_TECH_LEARNING_SHEET, key: 'techLearning' }].forEach(function (ln) {
+      var learnRows = rowsOf(src.ss.getSheetByName(ln.name));
+      if (!learnRows.length) return;
       var seen = {};
-      rowsOf(tss.getSheetByName(SWIM_LEARNING_SHEET)).forEach(function (r) { seen[cellText(r[1])] = true; });
+      rowsOf(tss.getSheetByName(ln.name)).forEach(function (r) { seen[cellText(r[1])] = true; });
       var add = [];
       learnRows.forEach(function (r) {
         var id = cellText(r[1]);
@@ -9718,9 +9743,9 @@ function swimMergeAux_(plan, dryRun) {
         seen[id] = true;
         add.push(r);
       });
-      out.learning += add.length;
+      out[ln.key] += add.length;
       if (add.length && !dryRun) {
-        var tl = swimLearningSheet_(true);
+        var tl = swimLearningSheet_(true, ln.name);
         var last = tl.getLastRow();
         var seq = Math.max(0, last - 1);
         var rows = add.map(function (r) {
@@ -9731,7 +9756,7 @@ function swimMergeAux_(plan, dryRun) {
         tl.getRange(last + 1, 2, rows.length, SWIM_LEARNING_HEADERS.length - 1).setNumberFormat('@');
         tl.getRange(last + 1, 1, rows.length, SWIM_LEARNING_HEADERS.length).setValues(rows);
       }
-    }
+    });
 
     // Elite αναφορές, elite καρέ, επίπεδα: ό,τι δεν υπάρχει ίδιο. Μια αναφορά με Race ID που υπάρχει με άλλους χρόνους: η νεότερη, του
     // άλλου αρχείου (εκεί γράφτηκε μετά τη διάσπαση).
@@ -9772,6 +9797,7 @@ function swimMergeAuxText_(aux) {
   if (!aux) return '';
   var parts = [];
   if (aux.learning) parts.push('μάθηση Kinovea +' + aux.learning);
+  if (aux.techLearning) parts.push('μάθηση τεχνικής +' + aux.techLearning);
   if (aux.references) parts.push('elite αναφορές +' + aux.references);
   if (aux.frames) parts.push('elite καρέ +' + aux.frames);
   if (aux.bench) parts.push('επίπεδα +' + aux.bench);

@@ -39,6 +39,13 @@ namespace Kinovea.ScreenManager
 
         public DateTime? LastSync;
 
+        /// <summary>(2.16.5) The learning of the technique evaluation (sheet "Μάθηση τεχνικής"): the last answer of the sheet taken.</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public long TechPulledSeq;
+
+        /// <summary>(2.16.5) The answers of the coaches of this Kinovea given up to this moment (UTC) are in the sheet.</summary>
+        public DateTime TechPushedThrough = DateTime.MinValue;
+
         /// <summary>This Kinovea does not share its learning (a copy for tests: its answers are not an analyst's).</summary>
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public bool Off;
@@ -193,6 +200,7 @@ namespace Kinovea.ScreenManager
                 learningSync.PushedThrough = DateTime.MinValue;
                 foreach (SwimLearningForget f in MainLearning.Forgotten)
                     f.Sent = false;
+                TechShareAgain();
             }
 
             PullLearning(url, Settings.Token);
@@ -322,8 +330,24 @@ namespace Kinovea.ScreenManager
             });
         }
 
-        /// <summary>The exchange is over (done, or an error: tried again in a few minutes; a script older than 2.9.7: not again now).</summary>
+        /// <summary>
+        /// The exchange of the learning of the marks is over (done, or an error: tried again in a few minutes; a script older than 2.9.7:
+        /// not again now). (2.16.5) Done: the learning of the technique evaluation next (SyncTechLearning), then the end.
+        /// </summary>
         private void EndLearningSync(string error, bool done)
+        {
+            SayLearningSync(error);
+            if (done && TechShareReady)
+            {
+                SyncTechLearning();
+                return;
+            }
+
+            FinishLearningSync(done);
+        }
+
+        /// <summary>(2.16.5) The whole exchange is over: the next one in ten minutes (done) or in a few (an error).</summary>
+        private void FinishLearningSync(bool done)
         {
             learningSyncBusy = false;
             if (done)
@@ -336,7 +360,11 @@ namespace Kinovea.ScreenManager
             {
                 learningNextSync = DateTime.Now + LearningRetry;
             }
+        }
 
+        /// <summary>What the exchange of the learning of the marks says (a script older than 2.9.7, the answers that came in).</summary>
+        private void SayLearningSync(string error)
+        {
             if (!string.IsNullOrEmpty(error) && error.IndexOf("learning", StringComparison.OrdinalIgnoreCase) >= 0 &&
                 (error.Contains("Άγνωστη ενέργεια") || error.IndexOf("Unknown action", StringComparison.OrdinalIgnoreCase) >= 0))
             {

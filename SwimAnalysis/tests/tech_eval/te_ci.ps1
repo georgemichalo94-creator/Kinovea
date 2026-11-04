@@ -395,6 +395,97 @@ $both = $learn2.AgreementOf([System.Collections.Generic.IEnumerable[string]]$key
 $alone = $learn2.AgreementOf('ok.rotation_quick', $one.Checks['rotation_flip'])
 Check ($both.Samples -eq 6 -and $alone.Samples -eq 1) ('answers of the older point count: ' + $both.Samples + ' with, ' + $alone.Samples + ' without')
 
+# ---------------------------------------------------------------------------------------------------------------------------------
+# (2.16.5) The shared learning: the answers of one Kinovea (A) go through the rows of the sheet (as JSON text, as the Apps Script keeps
+# them) into another (B), which then learns the same limit; answers taken away, newer and older answers of the same key.
+$tShare = T 'SwimAnalysisManager'; $tLearnRec = T 'SwimLearning'; $tForget = T 'SwimTechForget'
+$rowOfSample = $tShare.GetMethod('TechShareRow', [type[]]@($tSample))
+$rowOfForget = $tShare.GetMethod('TechShareRow', [type[]]@($tForget, [string]))
+$readShare = $tShare.GetMethod('ReadTechShare')
+$here = $tLearnRec.GetField('Here')
+function Rows($learning, $since) {
+  # The rows a pull of the sheet gives: the answers of this Kinovea after 'since' (an index), then its answers taken away.
+  $o = $null
+  $list = @()
+  for ($k = $since; $k -lt $learning.Samples.Count; $k++) { $list += ,($rowOfSample.Invoke($null, @($learning.Samples[$k]))) }
+  foreach ($f in $learning.Forgotten) { if (-not $f.Shared) { $list += ,($rowOfForget.Invoke($null, @($f, 'kvA'))) } }
+  if ($list.Count -gt 0) { $o = $list[0] }
+  $tArr = $null
+  if ($o -ne $null) { $tArr = $o.GetType().Assembly.GetType('Newtonsoft.Json.Linq.JArray') } else { $tArr = $script:tJArray }
+  $script:tJArray = $tArr
+  $arr = [Activator]::CreateInstance($tArr)
+  foreach ($r in $list) { $arr.Add($r) }
+  # Through text, as the sheet keeps them.
+  $text = $arr.ToString()
+  $parsed = $tArr.GetMethod('Parse', [type[]]@([string])).Invoke($null, @($text))
+  $outArgs = [object[]]@($parsed, $null, $null)
+  $null = $readShare.Invoke($null, $outArgs)
+  return ,@($outArgs[1], $outArgs[2])
+}
+function Merge($learning, $rows) { return $learning.Merge($rows[0], $rows[1]) }
+$here.SetValue($null, 'kvA')
+$A = [Activator]::CreateInstance($tLearn)
+$i = 0
+foreach ($v in @(0.25, 0.27, 0.29, 0.31, 0.32, 0.33, 0.34)) { $x = [Activator]::CreateInstance($tSample); $x.Key = 'race1|turn-1|kv-turn-fs|p' + $i; $i++; $x.Check = 'push_time'; $x.Criterion = 'push.short'; $x.Measured = $v; $x.Good = $true; $x.Date = '2026-11-04'; $A.Put($x) }
+foreach ($v in @(0.37, 0.38, 0.40, 0.42, 0.45, 0.50, 0.55)) { $x = [Activator]::CreateInstance($tSample); $x.Key = 'race2|turn-1|kv-turn-fs|p' + $i; $i++; $x.Check = 'push_time'; $x.Criterion = 'push.short'; $x.Measured = $v; $x.Good = $false; $x.Date = '2026-11-04'; $A.Put($x) }
+$s0 = $A.Samples[0]
+# (PowerShell gives a DateTime? as the DateTime or $null.)
+Check ($s0.Id.Length -eq 32 -and $s0.Origin -eq 'kvA' -and $null -ne $s0.At -and $A.Samples[13].At -gt $s0.At) 'an answer of A: its id, its Kinovea, its moment (in order)'
+$here.SetValue($null, 'kvB')
+$B = [Activator]::CreateInstance($tLearn)
+Check ($null -eq $B.LimitOf($pushCheck)) 'B has learned nothing yet'
+$rows = Rows $A 0
+Check ($rows[0].Count -eq 14 -and $rows[1].Count -eq 0) ('the rows of A read back: ' + $rows[0].Count + ' answers')
+$n = Merge $B $rows
+$limB = $B.LimitOf($pushCheck); $limA = $A.LimitOf($pushCheck)
+Check ($n -eq 14 -and $B.Samples.Count -eq 14 -and $B.SharedCount -eq 14) ('B took the 14 answers of A (' + $n + ', from the others ' + $B.SharedCount + ')')
+Check ($null -ne $limB -and $limB.Max -eq $limA.Max -and $limB.Agree -eq $limA.Agree) ('B learned the limit of A: ' + $limB.Max)
+$agrB = $B.AgreementOf('push.short', $pushCheck)
+Check ($agrB.Shared -eq $agrB.Samples -and $agrB.Samples -gt 0) ('the agreement says the answers came from the others: ' + $agrB.Shared + '/' + $agrB.Samples)
+Check ((Merge $B (Rows $A 0)) -eq 0 -and $B.Samples.Count -eq 14) 'the same rows again: nothing'
+$b0 = $B.Samples | Where-Object { $_.Key -eq $s0.Key }
+Check ($b0.Id -eq $s0.Id -and $b0.Origin -eq 'kvA' -and [Math]::Abs(($b0.At - $s0.At).TotalMilliseconds) -lt 1 -and $b0.Measured -eq 0.25 -and $b0.Good) 'an answer as A gave it (id, Kinovea, moment, measurement, answer)'
+# A changes an answer: B follows; an older answer of the same key that comes later does not replace it.
+$here.SetValue($null, 'kvA')
+$old = $A.Samples[1]
+$x = [Activator]::CreateInstance($tSample); $x.Key = $old.Key; $x.Check = 'push_time'; $x.Criterion = 'push.short'; $x.Measured = $old.Measured; $x.Good = $false; $x.Date = '2026-11-04'; $A.Put($x)
+Check ($A.Samples.Count -eq 14 -and $A.Samples[13].Key -eq $old.Key -and $A.Samples[13].Id -ne $old.Id) 'the new answer of A replaces its old one (at the end)'
+$here.SetValue($null, 'kvB')
+$n = Merge $B (Rows $A 13)
+$b1 = $B.Samples | Where-Object { $_.Key -eq $old.Key }
+Check ($n -eq 1 -and $B.Samples.Count -eq 14 -and -not $b1.Good) ('B follows the new answer (' + $n + ')')
+$stale = [Activator]::CreateInstance($tSample); $stale.Key = $old.Key; $stale.Check = 'push_time'; $stale.Criterion = 'push.short'; $stale.Measured = 0.9; $stale.Good = $true
+$stale.Id = 'older-one'; $stale.Origin = 'kvC'; $stale.At = $old.At.AddMinutes(-1)
+$lst = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tSample)); $lst.Add($stale)
+$fl = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tForget))
+Check (($B.Merge($lst, $fl)) -eq 0 -and -not ($B.Samples | Where-Object { $_.Key -eq $old.Key }).Good) 'an older answer of the same key does not replace the newer'
+# A takes an answer away, then an evaluation (the start of its keys): B too; an answer given after it comes back.
+$here.SetValue($null, 'kvA')
+$gone = $A.Samples[2].Key
+$A.Remove($gone, $false)
+Check ($A.Forgotten.Count -eq 1 -and $A.Forgotten[0].Key -eq $gone -and -not $A.Forgotten[0].Prefix) 'A keeps the answer taken away for the others'
+$here.SetValue($null, 'kvB')
+$n = Merge $B (Rows $A 13)
+Check ($n -eq 1 -and $B.Samples.Count -eq 13 -and -not ($B.Samples | Where-Object { $_.Key -eq $gone }) -and $B.Forgotten.Count -eq 1 -and $B.Forgotten[0].Shared) ('B takes it away too (' + $n + ')')
+Check ((Merge $B (Rows $A 0)) -eq 0 -and $B.Samples.Count -eq 13) 'the answers before it do not come back'
+$here.SetValue($null, 'kvA')
+$x = [Activator]::CreateInstance($tSample); $x.Key = $gone; $x.Check = 'push_time'; $x.Criterion = 'push.short'; $x.Measured = 0.30; $x.Good = $true; $x.Date = '2026-11-04'; $A.Put($x)
+$A.Remove('race2|', $true)
+Check ($A.Samples.Count -eq 7 -and $A.Forgotten.Count -eq 2 -and $A.Forgotten[1].Prefix) 'A deletes an evaluation (7 answers go)'
+$here.SetValue($null, 'kvB')
+$n = Merge $B (Rows $A 6)
+Check ($B.Samples.Count -eq 7 -and -not ($B.Samples | Where-Object { $_.Key.StartsWith('race2|') }) -and ($B.Samples | Where-Object { $_.Key -eq $gone })) ('B: the evaluation went, the answer given again came back (' + $B.Samples.Count + ')')
+$order = @($B.Samples | ForEach-Object { $tLearn.GetMethod('When').Invoke($null, @($_)) })
+$sorted = $true; for ($k = 1; $k -lt $order.Count; $k++) { if ($order[$k] -lt $order[$k - 1]) { $sorted = $false } }
+Check $sorted 'the answers in the order they were given'
+# An answer older than 2.16.5 (no id, no moment): the same id on every computer, its day as its moment, it is this Kinovea's.
+$legacy = [Activator]::CreateInstance($tSample); $legacy.Key = 'race9|start|kv-start-fs|x'; $legacy.Check = 'push_time'; $legacy.Measured = 0.3; $legacy.Good = $true; $legacy.Date = '2026-10-20'
+$sid = $tLearn.GetMethod('StableId')
+$id1 = $sid.Invoke($null, @($legacy)); $id2 = $sid.Invoke($null, @($legacy))
+$when = $tLearn.GetMethod('When').Invoke($null, @($legacy))
+Check ($id1 -eq $id2 -and $id1.StartsWith('t') -and $id1.Length -eq 21 -and $when -eq [DateTime]::new(2026, 10, 20, 0, 0, 0, [DateTimeKind]::Utc) -and $tLearn.GetMethod('Own').Invoke($null, @($legacy))) ('an older answer: id ' + $id1 + ', moment ' + $when.ToString('o'))
+$here.SetValue($null, $null)
+
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0

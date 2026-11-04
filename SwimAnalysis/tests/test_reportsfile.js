@@ -172,6 +172,9 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   assert.ok(call({ action: 'saveReference', reference: ref(1) }).ok);
   const answer = id => ({ Id: id, Kind: 'race.split', Date: '2026-10-0' + id.slice(1) + 'T10:00:00.000+03:00', Value: 0.1 });
   assert.ok(call({ action: 'learningPush', origin: 'kv-one', records: [answer('a1'), answer('a2')] }).ok);
+  // (2.16.5) and two scores of the technique learning.
+  const score = id => ({ Id: id, Kind: 'techeval', Date: '2026-10-0' + id.slice(1), Key: 'tech1|start|s1|' + id, Check: 'knee', Measured: 90, Good: true });
+  assert.ok(call({ action: 'techLearningPush', origin: 'kv-one', records: [score('t1'), score('t2')] }).stored === 2);
   setStamps(OLD, { race1: '01/10/2026 10:00', race2: '02/10/2026 10:00', race3: '03/10/2026 10:00', tech1: '03/10/2026 12:00' });
 
   // The split: a new file with the same name and the setting there (what 2.16.1 did when Google did not answer).
@@ -186,6 +189,7 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   [race(4), race(5), race2b, race(3), training(2)].forEach(x => assert.ok(call({ action: 'update', race: x }).ok, x.id));
   assert.ok(call({ action: 'saveReference', reference: ref(2) }).ok);
   assert.ok(call({ action: 'learningPush', origin: 'kv-two', records: [answer('a2'), answer('a3')] }).ok);
+  assert.ok(call({ action: 'techLearningPush', origin: 'kv-two', records: [score('t2'), score('t3'), score('t4')] }).stored === 3);
   NEW.insertSheet('Σημειώσεις').getRange(1, 1).setValue('δοκιμή');
   setStamps(NEW, { race4: '05/10/2026 10:00', race5: '06/10/2026 10:00', race2: '05/10/2026 09:00', race3: '02/10/2026 09:00', tech2: '05/10/2026 12:00' });
   // A row that does not read (broken data) stays in the old file.
@@ -211,7 +215,7 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   assert.ok(at('ΕΔΩ γράφει τώρα το Kinovea') > at('2) '), 'Kinovea writes now to the new file');
   assert.ok(/Θα μεταφερθούν στο αρχείο 1: 4 αναλύσεις \(3 αγώνες, 1 τεχνική· 1 υπάρχει και στο αρχείο 1 αλλά εδώ είναι νεότερη\), 1 είναι ήδη στο αρχείο 1\./.test(text), text);
   assert.ok(/Δεν διαβάζεται \(θα μείνει στο άλλο αρχείο\): .*broken1/.test(text), 'the broken row');
-  assert.ok(/μάθηση Kinovea \+1, elite αναφορές \+1/.test(text), 'the other sheets: ' + text);
+  assert.ok(/μάθηση Kinovea \+1, μάθηση τεχνικής \+2, elite αναφορές \+1/.test(text), 'the other sheets: ' + text);
   assert.ok(/δεν μεταφέρονται \(μένουν εκεί\): Σημειώσεις\./.test(text), 'a sheet of notes stays');
   assert.ok(/· ρυθμίσεις en_US/.test(text) && /⚠ Με τις ρυθμίσεις el_GR οι τύποι του script βγαίνουν #ERROR!/.test(text), 'the locale of each file: ' + text);
   assert.strictEqual(text.split('⚠').length, 2, 'the warning only for the file with «;»');
@@ -260,6 +264,11 @@ const sheetIds = ss => ss.getSheets().map(s => String(s.getSheetId()));
   const lrows = learn.getRange(2, 1, learn.getLastRow() - 1, 6).getValues();
   assert.deepStrictEqual(lrows.map(r => String(r[1])), ['a1', 'a2', 'a3'], 'learning ids');
   assert.deepStrictEqual(lrows.map(r => Number(r[0])), [1, 2, 3], 'learning numbers');
+  const tlearn = OLD.getSheetByName('Μάθηση τεχνικής');
+  const trows = tlearn.getRange(2, 1, tlearn.getLastRow() - 1, 6).getValues();
+  assert.deepStrictEqual(trows.map(r => String(r[1])), ['t1', 't2', 't3', 't4'], 'technique learning ids');
+  assert.deepStrictEqual(trows.map(r => Number(r[0])), [1, 2, 3, 4], 'technique learning numbers');
+  assert.ok(trows.every(r => String(r[4]) === 'techeval'), 'technique learning kinds');
   // The two references, each a block.
   const refs = OLD.getSheetByName('Elite αναφορές');
   const rr = refs.getRange(2, 1, refs.getLastRow() - 1, 10).getValues();

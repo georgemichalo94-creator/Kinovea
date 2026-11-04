@@ -200,6 +200,27 @@ namespace Kinovea.ScreenManager
             Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, LearningTimeout);
         }
 
+        /// <summary>
+        /// (2.16.5) The answers of the coaches of this Kinovea for the shared learning of the technique evaluation (sheet "Μάθηση τεχνικής"
+        /// of the Apps Script 2.16.5), as PushLearning. The callback runs on the UI thread.
+        /// </summary>
+        public void PushTechLearning(string url, string token, string origin, JArray records, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "techLearningPush");
+            o["origin"] = origin;
+            o["records"] = records;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, LearningTimeout);
+        }
+
+        /// <summary>(2.16.5) The answers of the shared learning of the technique evaluation after 'since', as PullLearning. The callback runs on the UI thread.</summary>
+        public void PullTechLearning(string url, string token, long since, int max, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "techLearningPull");
+            o["since"] = since;
+            o["max"] = max;
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, LearningTimeout);
+        }
+
         private const int LearningTimeout = 120000;
 
         /// <summary>
