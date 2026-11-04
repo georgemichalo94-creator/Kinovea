@@ -781,15 +781,20 @@ namespace Kinovea.ScreenManager
         /// (2.10.0) The PDF of the report in the KOE App («Αρχεία Αθλητών/τριων», Apps Script 2.10.0): a short line in the status. Athletes
         /// outside the KOE registry (international) are not said; an older script says nothing.
         /// </summary>
-        private void ArchiveStatus(SwimRace race, SwimSheetResult result)
+        private void ArchiveStatus(SwimRace race, SwimSheetResult result, string took = "")
         {
             JObject archive = result != null && result.Raw != null ? result.Raw["archive"] as JObject : null;
+            string time = string.IsNullOrEmpty(took) ? "" : SwimLang.T(" · PDF ") + took;
             if (archive == null || race == null)
+            {
+                if (time.Length > 0)
+                    Status(SwimLang.T("✓ PDF ") + took, false);
                 return;
+            }
 
             if (archive.Value<bool?>("ok") == true)
             {
-                Status(SwimLang.T("✓ Το PDF μπήκε στο «Αρχεία Αθλητών/τριων» του KOE App, με τον αριθμό μητρώου του αθλητή."), false);
+                Status(SwimLang.T("✓ Το PDF μπήκε στο «Αρχεία Αθλητών/τριων» του KOE App, με τον αριθμό μητρώου του αθλητή.") + time, false);
                 return;
             }
 
@@ -797,8 +802,43 @@ namespace Kinovea.ScreenManager
             string id = (race.AthleteId ?? "").Trim();
             bool international = id.StartsWith("WA", StringComparison.OrdinalIgnoreCase) || id.StartsWith("X-", StringComparison.OrdinalIgnoreCase);
             if (reason == "registry" && international)
+            {
+                if (time.Length > 0)
+                    Status(SwimLang.T("✓ PDF ") + took, false);
                 return;
-            Status(SwimLang.T("Το PDF δεν μπήκε στο KOE App: ") + (archive.Value<string>("message") ?? reason), true);
+            }
+            Status(SwimLang.T("Το PDF δεν μπήκε στο KOE App: ") + (archive.Value<string>("message") ?? reason) + time, true);
+        }
+
+        /// <summary>
+        /// (2.16.6) How long a PDF took: «σε 18″ (report 9″ · PDF 6″ · KOE App 3″)» with the parts the Apps Script 2.16.6 measured (and
+        /// the wait for another request of the sheet when there was one), else the time of the request alone. "" without either.
+        /// </summary>
+        public static string PdfTimeText(SwimSheetResult r)
+        {
+            if (r == null)
+                return "";
+            JObject t = r.Raw != null ? r.Raw["timings"] as JObject : null;
+            Func<string, double?> seconds = k =>
+            {
+                JToken v = t != null ? t[k] : null;
+                return v != null && (v.Type == JTokenType.Integer || v.Type == JTokenType.Float) ? (double?)((double)v / 1000.0) : null;
+            };
+            double total = r.Seconds > 0 ? r.Seconds : (seconds("total") ?? 0);
+            if (total <= 0)
+                return "";
+
+            string text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("σε {0:0}″"), Math.Max(1, total));
+            double? report = seconds("report"), pdf = seconds("pdf"), archive = seconds("archive"), wait = seconds("lock");
+            if (report.HasValue && pdf.HasValue && archive.HasValue)
+            {
+                text += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" (report {0:0}″ · PDF {1:0}″ · KOE App {2:0}″"), report.Value, pdf.Value, archive.Value);
+                if (wait.HasValue && wait.Value >= 1)
+                    text += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · αναμονή {0:0}″"), wait.Value);
+                text += ")";
+            }
+
+            return text;
         }
     }
 }

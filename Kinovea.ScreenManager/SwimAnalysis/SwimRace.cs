@@ -816,6 +816,13 @@ namespace Kinovea.ScreenManager
         public string LastPdfUrl;
 
         /// <summary>
+        /// (2.16.6) A change of the analysis is not in the Google Sheet yet (to be sent, or sent without an answer): it goes the next time
+        /// the video is opened (Kinovea closed meanwhile, the connection lost).
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool SheetPending;
+
+        /// <summary>
         /// (2.10.0) The package for the coaches («📦 Δημιουργία αποστολής»): its folder and the name of its files (made again in place), when it
         /// was made and when the analyst said it was sent (dd/MM/yyyy HH:mm).
         /// </summary>
