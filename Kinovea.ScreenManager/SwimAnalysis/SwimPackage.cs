@@ -63,6 +63,9 @@ namespace Kinovea.ScreenManager
         public Size VideoSize;
         public bool VideoReady;
         public bool VideoHasSound;
+
+        /// <summary>(2.16.4) The screens in the video: all the screens of a group joined (2 or more), else 1.</summary>
+        public int VideoScreens = 1;
         public List<SwimPackageThumb> Thumbs = new List<SwimPackageThumb>();
 
         public string PdfFileName
@@ -231,6 +234,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static string BodyFor(SwimRace race, SwimComputed computed, bool archived, string signature)
         {
+            return BodyFor(race, computed, archived, signature, 1);
+        }
+
+        /// <summary>(2.16.4) The message, with the video of all the screens of a group together when screens is 2 or more.</summary>
+        public static string BodyFor(SwimRace race, SwimComputed computed, bool archived, string signature, int screens)
+        {
             string athlete = string.IsNullOrWhiteSpace(race.Athlete) ? SwimLang.T("Χωρίς όνομα") : race.Athlete.Trim();
             string g = (race.AthleteGender ?? "").Trim();
             bool female = g.StartsWith("Γυν", StringComparison.OrdinalIgnoreCase) || g == "F" || g == "W";
@@ -265,7 +274,11 @@ namespace Kinovea.ScreenManager
             b.AppendLine();
             b.AppendLine(SwimLang.T("Στην αποστολή:"));
             b.AppendLine(SwimLang.T("• Η αναφορά της ανάλυσης (PDF)"));
-            b.AppendLine(race.IsTraining ? SwimLang.T("• Το βίντεο με τα γραφικά της ανάλυσης (MP4)") : SwimLang.T("• Το βίντεο του αγώνα με τα γραφικά της ανάλυσης (MP4)"));
+            if (screens >= 2)
+                b.AppendLine(race.IsTraining ? SwimLang.T("• Το βίντεο με τα γραφικά της ανάλυσης, όλες οι οθόνες μαζί (MP4)")
+                    : SwimLang.T("• Το βίντεο του αγώνα με τα γραφικά της ανάλυσης, όλες οι οθόνες μαζί (MP4)"));
+            else
+                b.AppendLine(race.IsTraining ? SwimLang.T("• Το βίντεο με τα γραφικά της ανάλυσης (MP4)") : SwimLang.T("• Το βίντεο του αγώνα με τα γραφικά της ανάλυσης (MP4)"));
             if (archived)
             {
                 b.AppendLine();
@@ -356,8 +369,20 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>The bitrate cap of the videos (kbit/s): for the sending (a video of a group of screens may have more, MaxRateK).</summary>
+        public const int DefaultMaxRateK = 2500;
+
+        /// <summary>(2.16.4) The bitrate cap of this video (kbit/s).</summary>
+        public int MaxRateK = DefaultMaxRateK;
+
         /// <summary>The arguments of ffmpeg: the images on its input, the sound of the source (seconds from its start), the MP4.</summary>
         public static string Arguments(int width, int height, double fps, string soundSource, double soundFrom, double soundSeconds, string output)
+        {
+            return Arguments(width, height, fps, soundSource, soundFrom, soundSeconds, output, DefaultMaxRateK);
+        }
+
+        /// <summary>The arguments of ffmpeg with the bitrate capped at maxRateK kbit/s.</summary>
+        public static string Arguments(int width, int height, double fps, string soundSource, double soundFrom, double soundSeconds, string output, int maxRateK)
         {
             CultureInfo ci = CultureInfo.InvariantCulture;
             StringBuilder a = new StringBuilder("-hide_banner -nostats -loglevel error -y ");
@@ -369,7 +394,8 @@ namespace Kinovea.ScreenManager
             if (sound)
                 a.Append("-map 1:a:0 ");
             // H.264 4:2:0 (every player), quality first (the graphics must stay sharp), the bitrate capped for the sending.
-            a.Append("-c:v libx264 -preset veryfast -crf 24 -maxrate 2500k -bufsize 5000k -pix_fmt yuv420p ");
+            int rate = Math.Max(500, maxRateK);
+            a.AppendFormat(ci, "-c:v libx264 -preset veryfast -crf 24 -maxrate {0}k -bufsize {1}k -pix_fmt yuv420p ", rate, rate * 2);
             a.AppendFormat(ci, "-g {0} ", Math.Max(1, (int)Math.Round(fps * 2)));
             // The sound padded with silence and cut at the end of the images: never longer or shorter than the video.
             if (sound)
@@ -429,7 +455,7 @@ namespace Kinovea.ScreenManager
 
             try
             {
-                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, Arguments(width, height, fps, soundSource, soundFrom, soundSeconds, output))
+                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, Arguments(width, height, fps, soundSource, soundFrom, soundSeconds, output, MaxRateK))
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,

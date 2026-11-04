@@ -526,7 +526,8 @@ namespace Kinovea.ScreenManager
                 videoStatus.ForeColor = SwimTheme.Green;
                 videoStatus.Text = "✓ " + package.VideoFileName + " · " + string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", (int)d.TotalMinutes, d.Seconds) +
                     " · " + package.VideoSize.Width + "x" + package.VideoSize.Height + " · " + size +
-                    (package.VideoHasSound ? SwimLang.T(" · με ήχο") : SwimLang.T(" · χωρίς ήχο"));
+                    (package.VideoHasSound ? SwimLang.T(" · με ήχο") : SwimLang.T(" · χωρίς ήχο")) +
+                    (package.VideoScreens >= 2 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} οθόνες μαζί"), package.VideoScreens) : "");
                 btnPlay.Enabled = true;
                 btnClose.Text = SwimLang.T("Κλείσιμο");
             }
