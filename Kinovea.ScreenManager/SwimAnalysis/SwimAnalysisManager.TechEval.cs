@@ -137,7 +137,7 @@ namespace Kinovea.ScreenManager
             if (moved > 0)
             {
                 Changed(false);
-                ScheduleSend();
+                ScheduleSend(true);
             }
 
             return moved;
@@ -172,7 +172,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimTechScore s in dropped)
             {
                 if (!SnapshotOfScores(s.SnapshotId))
-                    RemoveEvalSnapshot(s);
+                    RemoveEvalSnapshot(null, null, s, null);
             }
 
             return moved;
@@ -216,7 +216,7 @@ namespace Kinovea.ScreenManager
             if (changed > 0)
             {
                 Changed(false);
-                ScheduleSend();
+                ScheduleSend(true);
             }
 
             return changed;
@@ -276,7 +276,7 @@ namespace Kinovea.ScreenManager
             if (Settings == null || !Settings.TechEvalAuto || phase == null || sheet == null || measures == null)
                 return 0;
 
-            int changed = 0;
+            int changed = 0, learned = 0;
             SwimTechEval eval = TechEval(phase, sheet, false);
             foreach (SwimTechSheetItem it in sheet.Items)
             {
@@ -289,7 +289,19 @@ namespace Kinovea.ScreenManager
                 if (eval != null)
                     eval.Scores.TryGetValue(it.Key, out score);
                 if (score != null && !score.Auto)
+                {
+                    // (2.16.6) A score of the coach given before the program measured the point (no skeleton yet, the marks later):
+                    // it teaches the learning now, with the measurement the program has (once: the measurement is kept with it).
+                    if (!score.Measured.HasValue && score.Value >= 0)
+                    {
+                        score.Measured = Math.Round(m.Value, 3);
+                        score.Unit = CheckUnit(it.Criterion);
+                        Learn(phase, sheet, it, score.Value, m.Value);
+                        learned++;
+                    }
+
                     continue;
+                }
 
                 if (!proposal.HasValue)
                 {
@@ -315,7 +327,8 @@ namespace Kinovea.ScreenManager
             if (changed > 0)
                 eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
 
-            return changed;
+            // The measurements kept with the coach's scores are saved too (the date of his evaluation stays).
+            return changed + learned;
         }
 
         private string CheckUnit(SwimTechCriterion c)
@@ -343,7 +356,7 @@ namespace Kinovea.ScreenManager
             if (!value.HasValue)
             {
                 eval.Scores.Remove(item.Key);
-                RemoveEvalSnapshot(old);
+                RemoveEvalSnapshot(eval, item.Key, old, item);
             }
             else
             {
@@ -362,7 +375,7 @@ namespace Kinovea.ScreenManager
                 }
                 else
                 {
-                    RemoveEvalSnapshot(score);
+                    RemoveEvalSnapshot(eval, item.Key, score, item);
                     score.SnapshotId = null;
                 }
 
@@ -371,7 +384,7 @@ namespace Kinovea.ScreenManager
 
             eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
             Changed(false);
-            ScheduleSend();
+            ScheduleSend(true);
         }
 
         /// <summary>
@@ -424,7 +437,7 @@ namespace Kinovea.ScreenManager
             eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
             Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Επιβεβαιώθηκαν {0} αυτόματες βαθμολογίες."), n), false);
             Changed(false);
-            ScheduleSend();
+            ScheduleSend(true);
         }
 
         public void SetTechEvalNotes(SwimTechPhase phase, SwimTechSheet sheet, string notes)
@@ -434,7 +447,7 @@ namespace Kinovea.ScreenManager
                 return;
             eval.Notes = notes ?? "";
             Changed(false);
-            ScheduleSend();
+            ScheduleSend(true);
         }
 
         /// <summary>Deletes the evaluation of a phase with a sheet (its frames of errors too).</summary>
@@ -443,9 +456,10 @@ namespace Kinovea.ScreenManager
             SwimTechEval eval = TechEval(phase, sheet, false);
             if (eval == null)
                 return;
-            foreach (SwimTechScore s in eval.Scores.Values)
-                RemoveEvalSnapshot(s);
+            // (2.16.6) Out of the analysis first: a frame another evaluation keeps stays (RemoveEvalSnapshot).
             Race.TechEvals.Remove(eval);
+            foreach (KeyValuePair<string, SwimTechScore> s in eval.Scores)
+                RemoveEvalSnapshot(null, s.Key, s.Value, sheet.Items.FirstOrDefault(i => i.Key == s.Key));
             SwimTechLearning learning = SwimTechLearning.Current;
             if (learning != null)
                 learning.Remove(LearnKey(phase, sheet, null), true);
@@ -517,9 +531,7 @@ namespace Kinovea.ScreenManager
 
             long ts = player.CurrentTimestamp;
             SwimSnapshot same = Race.Snapshots.FirstOrDefault(x => SameFrame(x.Timestamp, ts));
-            string label = item.Criterion.Label.El;
-            string cue = item.Criterion.Cue != null ? item.Criterion.Cue.El : "";
-            string comment = "✗ " + label + (cue.Length > 0 ? " → " + cue : "");
+            string comment = EvalComment(item);
             if (same != null)
             {
                 if (string.IsNullOrEmpty(same.Comment))
@@ -551,15 +563,57 @@ namespace Kinovea.ScreenManager
             return snapshot.Id;
         }
 
-        /// <summary>The snapshot of an error the evaluation took (not one of the analyst) goes with the error.</summary>
-        private void RemoveEvalSnapshot(SwimTechScore score)
+        /// <summary>The words of the frame of an error: the point and what to correct.</summary>
+        private static string EvalComment(SwimTechSheetItem item)
+        {
+            string label = item.Criterion.Label.El;
+            string cue = item.Criterion.Cue != null ? item.Criterion.Cue.El : "";
+            return "✗ " + label + (cue.Length > 0 ? " → " + cue : "");
+        }
+
+        /// <summary>
+        /// The frame of a point that is no longer an error (scored ✓ or –, cleared, its evaluation deleted) goes. (2.16.6) Not while another
+        /// error of the analysis keeps the same frame (two errors seen at one frame): it stays for that one, with its words. An own
+        /// snapshot the error took as its frame stays and loses only the words the error gave it. eval/key: the point that changed
+        /// (its own score does not count as another error).
+        /// </summary>
+        private void RemoveEvalSnapshot(SwimTechEval eval, string key, SwimTechScore score, SwimTechSheetItem item)
         {
             if (score == null || string.IsNullOrEmpty(score.SnapshotId) || Race == null)
                 return;
 
             SwimSnapshot snap = Race.Snapshots.FirstOrDefault(s => s.Id == score.SnapshotId);
-            if (snap != null && snap.Event != null && snap.Event.StartsWith("eval:", StringComparison.Ordinal))
+            if (snap == null)
+                return;
+
+            bool evalFrame = snap.Event != null && snap.Event.StartsWith("eval:", StringComparison.Ordinal);
+            SwimTechSheetCatalog cat = TechCatalog;
+            foreach (SwimTechEval e in Race.TechEvals)
+            {
+                SwimTechSheet s = cat != null ? cat.Sheet(e.SheetId) : null;
+                bool scored = s == null || s.Scored;
+                foreach (KeyValuePair<string, SwimTechScore> kv in e.Scores)
+                {
+                    if ((e == eval && kv.Key == key) || kv.Value == null || kv.Value.SnapshotId != snap.Id)
+                        continue;
+                    bool error = scored ? kv.Value.Value == 0 : kv.Value.Value == 1;
+                    if (!error)
+                        continue;
+
+                    // Another error keeps this frame: it is its frame now.
+                    SwimTechSheetItem other = s != null ? s.Items.FirstOrDefault(i => i.Key == kv.Key) : null;
+                    if (evalFrame)
+                        snap.Event = "eval:" + kv.Key;
+                    if (other != null && item != null && snap.Comment == EvalComment(item))
+                        snap.Comment = EvalComment(other);
+                    return;
+                }
+            }
+
+            if (evalFrame)
                 Race.Snapshots.Remove(snap);
+            else if (item != null && snap.Comment == EvalComment(item))
+                snap.Comment = "";
         }
 
         /// <summary>Go to the frame of a criterion in a phase (its moment, or the start of the phase).</summary>

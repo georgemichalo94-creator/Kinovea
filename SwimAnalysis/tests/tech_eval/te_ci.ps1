@@ -17,8 +17,9 @@ $script:resolving = $false
   if (-not [System.IO.File]::Exists($p)) { return $null }
   $script:resolving = $true
   try { return [System.Reflection.Assembly]::LoadFrom($p) } finally { $script:resolving = $false } })
-$a = [System.Reflection.Assembly]::LoadFrom($sm)
-function T($n) { return $a.GetType('Kinovea.ScreenManager.' + $n, $true) }
+# (Its own name: PowerShell names are not case sensitive, and the checks of the shared learning have a Kinovea "$A".)
+$smAssembly = [System.Reflection.Assembly]::LoadFrom($sm)
+function T($n) { return $smAssembly.GetType('Kinovea.ScreenManager.' + $n, $true) }
 $tCat = T 'SwimTechSheetCatalog'; $tEv = T 'SwimTechEvaluator'; $tRace = T 'SwimRace'; $tMark = T 'SwimMark'; $tType = T 'SwimMarkType'
 $tTiming = T 'SwimTiming'; $tCalc = T 'SwimCalculator'; $tTech = T 'SwimTechCalculator'; $tSkel = T 'SwimSkeleton'; $tKind = T 'SwimPhaseKind'
 $fails = 0
@@ -484,6 +485,43 @@ $id1 = $sid.Invoke($null, [object[]]@($lb)); $id2 = $sid.Invoke($null, [object[]
 $when = $whenOf.Invoke($null, [object[]]@($lb))
 Check ($id1 -eq $id2 -and $id1.StartsWith('t') -and $id1.Length -eq 21 -and $when -eq [DateTime]::new(2026, 10, 20, 0, 0, 0, [DateTimeKind]::Utc) -and $tLearn.GetMethod('Own').Invoke($null, [object[]]@($lb))) ('an older answer: id ' + $id1 + ', moment ' + $when.ToString('o'))
 $here.SetValue($null, $null)
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# (2.16.6) The time of a PDF in its message: with the parts the Apps Script 2.16.6 measured, else the time of the request.
+$tRes = T 'SwimSheetResult'
+$pdfTime = $tShare.GetMethod('PdfTimeText')
+$res = [Activator]::CreateInstance($tRes); $res.Seconds = 18.4
+$res.Raw = $tJArray.Assembly.GetType('Newtonsoft.Json.Linq.JObject').GetMethod('Parse', [type[]]@([string])).Invoke($null, [object[]]@('{"timings":{"lock":0,"report":9100,"pdf":6200,"archive":2900,"total":18300}}'))
+$txt = $pdfTime.Invoke($null, [object[]]@($res))
+Check ($txt -eq 'σε 18″ (report 9″ · PDF 6″ · KOE App 3″)') ('the time of a PDF: ' + $txt)
+$res.Raw = $tJArray.Assembly.GetType('Newtonsoft.Json.Linq.JObject').GetMethod('Parse', [type[]]@([string])).Invoke($null, [object[]]@('{"timings":{"lock":12500,"report":9100,"pdf":6200,"archive":2900,"total":30800}}'))
+$res.Seconds = 31.2
+$txt = $pdfTime.Invoke($null, [object[]]@($res))
+Check ($txt -eq 'σε 31″ (report 9″ · PDF 6″ · KOE App 3″ · αναμονή 13″)') ('with the wait for another request: ' + $txt)
+$res.Raw = $null; $res.Seconds = 42.0
+$txt = $pdfTime.Invoke($null, [object[]]@($res))
+Check ($txt -eq 'σε 42″') ('an older script: the time of the request only (' + $txt + ')')
+# A straight joint (no angle to draw) and joints off any picture do not stop the drawing of the skeleton (GDI+ says "out of memory").
+# (GDI+ only on Windows: the CI runs this in Windows PowerShell.)
+if (($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows) {
+$tPaint = T 'SwimSkeletonPainter'
+$paint = $tPaint.GetMethod('Paint', [type[]]@([System.Drawing.Graphics], [System.Drawing.PointF[]], [float[]], [float], [bool]))
+$bmp = New-Object System.Drawing.Bitmap 400, 300
+$gr = [System.Drawing.Graphics]::FromImage($bmp)
+$okDraw = $true
+try {
+  foreach ($case in @('straight', 'nan', 'far')) {
+    $pts = New-Object 'System.Drawing.PointF[]' 17; $vis = New-Object 'float[]' 17
+    for ($j = 0; $j -lt 17; $j++) { $pts[$j] = New-Object System.Drawing.PointF (100 + 10 * $j), 150; $vis[$j] = 0.95 }
+    if ($case -eq 'nan') { $pts[9] = New-Object System.Drawing.PointF ([float]::NaN), ([float]::NaN) }
+    if ($case -eq 'far') { $pts[9] = New-Object System.Drawing.PointF 3e9, 3e9 }
+    # (The arrays of New-Object come wrapped for PowerShell: reflection needs the arrays themselves.)
+    $null = $paint.Invoke($null, [object[]]@($gr, $pts.psobject.BaseObject, $vis.psobject.BaseObject, [float]1, $true))
+  }
+} catch { $okDraw = $false; Write-Output ('  ' + $_.Exception.InnerException) }
+$gr.Dispose(); $bmp.Dispose()
+Check $okDraw 'a skeleton with a straight joint, a NaN and a joint far away is drawn without an error'
+} else { Write-Output 'skip the drawing of a skeleton (GDI+ only on Windows)' }
 
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }

@@ -231,6 +231,19 @@ namespace Kinovea.ScreenManager
         private Timer sendTimer;
         private bool dirty;
 
+        /// <summary>The send after a change of the analysis (ms).</summary>
+        private const int SendDelay = 1500;
+
+        /// <summary>
+        /// (2.16.6) The send after a change of the evaluation of the technique (a score, a confirmation, its notes, a frame of an error): the
+        /// coach scores many points in a row and the report is made again once he pauses, not at every click (the PDF and «Αποστολή
+        /// τώρα» go at once with everything). It goes earlier when the analysis is left (another video or analysis, the window closed).
+        /// </summary>
+        private const int EvalSendDelay = 20000;
+
+        /// <summary>(2.16.6) The time origin of the video when the waiting send was scheduled (for a send made after the video changed).</summary>
+        private long scheduledOrigin;
+
         // Clicks on the video.
         private SwimPickTarget pendingMeasure = SwimPickTarget.None;
         private int pendingWall;
@@ -2483,6 +2496,7 @@ namespace Kinovea.ScreenManager
             if (race == null || race == Race)
                 return;
 
+            FlushPendingSend();
             CancelPick();
             Race = race;
             VideoFile.ActiveRaceId = race.Id;
@@ -2505,6 +2519,7 @@ namespace Kinovea.ScreenManager
             if (VideoFile == null)
                 return;
 
+            FlushPendingSend();
             CancelPick();
             SwimRace race = Race != null ? Race.CloneForNewSwimmer() : CreateDefaultRace();
             VideoFile.Races.Add(race);
@@ -2523,6 +2538,8 @@ namespace Kinovea.ScreenManager
             if (VideoFile == null || Race == null)
                 return;
 
+            // (2.16.6) A send that waited was for this analysis.
+            sendTimer.Stop();
             CancelPick();
             VideoFile.Races.Remove(Race);
             if (VideoFile.Races.Count == 0)
@@ -2571,13 +2588,62 @@ namespace Kinovea.ScreenManager
             ScheduleSend();
         }
 
-        private void ScheduleSend()
+        /// <summary>The analysis goes to the Google Sheet a little after its last change (evaluation: EvalSendDelay after it, 2.16.6).</summary>
+        private void ScheduleSend(bool evaluation = false)
         {
             if (!Settings.AutoSend || !Settings.IsConfigured)
                 return;
 
+            if (Race != null)
+                Race.SheetPending = true;
+            scheduledOrigin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             sendTimer.Stop();
+            sendTimer.Interval = evaluation ? EvalSendDelay : SendDelay;
             sendTimer.Start();
+        }
+
+        /// <summary>
+        /// (2.16.6) A send that waits (the delay after a change of the evaluation) goes now, for the analysis it was scheduled for, before
+        /// another video or analysis is opened or the window closes. Made with what was computed for it: the video may already be another.
+        /// </summary>
+        private void FlushPendingSend()
+        {
+            if (sendTimer == null || !sendTimer.Enabled)
+                return;
+
+            sendTimer.Stop();
+            if (Race == null || Settings == null || !Settings.IsConfigured || client == null)
+                return;
+
+            try
+            {
+                string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, scheduledOrigin, Settings, VideoName, "update", FinalForRace(), false,
+                    PackageFlags(Race));
+                Race.SheetPending = true;
+                client.Enqueue(Settings.WebAppUrl, body, Race.Id, false);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not send the analysis before leaving it.", e);
+            }
+        }
+
+        /// <summary>
+        /// (2.16.6) The analyses of the video just opened with changes not yet in the Google Sheet (Kinovea closed before they went, the
+        /// connection lost): they go now.
+        /// </summary>
+        private void SendPendingRaces()
+        {
+            if (VideoFile == null || Settings == null || !Settings.AutoSend || !Settings.IsConfigured)
+                return;
+
+            foreach (SwimRace r in VideoFile.Races.Where(x => x != null && x.SheetPending).ToList())
+            {
+                if (r == Race)
+                    ScheduleSend();
+                else
+                    SendRace(r, false);
+            }
         }
 
         private void SendTimer_Tick(object sender, EventArgs e)
@@ -3125,6 +3191,10 @@ namespace Kinovea.ScreenManager
             if (Race == null)
                 return;
 
+            // (2.16.6) The latest state goes now: a send that waited is not needed any more.
+            if (sendTimer != null)
+                sendTimer.Stop();
+
             // (2.15.0) The timing of the video changed since the last calculation (the slow-motion factor set in Kinovea): the times again.
             EnsureTimingCurrent();
 
@@ -3149,6 +3219,7 @@ namespace Kinovea.ScreenManager
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
             string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts,
                 PackageFlags(Race));
+            Race.SheetPending = true;
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
         }
 
@@ -3169,6 +3240,7 @@ namespace Kinovea.ScreenManager
             SwimComputed computed = SwimCalculator.Compute(race, Timing, Settings.StrokeRounding);
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
             long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
+            race.SheetPending = true;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
                 Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts, PackageFlags(race)), race.Id, pdf);
         }
@@ -3239,6 +3311,9 @@ namespace Kinovea.ScreenManager
                 SwimRace race = VideoFile.Races.FirstOrDefault(r => r.Id == e.RaceId);
                 if (race != null)
                 {
+                    // (2.16.6) Its latest state is in the Google Sheet, unless a newer one still waits.
+                    if (!client.HasWaiting(race.Id) && !(race == Race && sendTimer.Enabled))
+                        race.SheetPending = false;
                     if (!string.IsNullOrEmpty(e.Result.SheetName))
                         race.SheetName = e.Result.SheetName;
                     if (!string.IsNullOrEmpty(e.Result.SheetUrl))
@@ -3257,7 +3332,11 @@ namespace Kinovea.ScreenManager
                             if (!string.IsNullOrEmpty(shortUrl))
                                 OpenUrl(shortUrl);
                         }
-                        ArchiveStatus(race, e.Result);
+                        // (2.16.6) How long the PDF took (and each part of it, with the Apps Script 2.16.6), in the message and the log.
+                        string took = PdfTimeText(e.Result);
+                        if (took.Length > 0)
+                            log.InfoFormat("PDF {0} · {1}", took, e.Result.Raw != null && e.Result.Raw["timings"] != null ? e.Result.Raw["timings"].ToString(Newtonsoft.Json.Formatting.None) : "");
+                        ArchiveStatus(race, e.Result, took);
 
                         // An older Apps Script made the PDF with the charts of Google: they come out empty.
                         if (!chartsWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < chartsBackend)
@@ -3350,6 +3429,10 @@ namespace Kinovea.ScreenManager
             string path = frameServer.VideoReader.FilePath;
             bool sameVideo = this.player == player && string.Equals(videoPath, path, StringComparison.OrdinalIgnoreCase) && VideoFile != null;
 
+            // (2.16.6) A send that waits is for the analysis of the previous video: it goes now, with its timing.
+            if (!sameVideo)
+                FlushPendingSend();
+
             // A pending click belongs to the previous video.
             if (!sameVideo && PickTarget != SwimPickTarget.None)
             {
@@ -3386,6 +3469,7 @@ namespace Kinovea.ScreenManager
                 form.RefreshAll();
             if (check.Length > 0)
                 Status(check, true);
+            SendPendingRaces();
         }
 
         /// <summary>
@@ -3587,6 +3671,7 @@ namespace Kinovea.ScreenManager
 
         private void Form_FormClosed(object sender, FormClosedEventArgs e)
         {
+            FlushPendingSend();
             SaveNow();
             Settings.Save();
             form = null;

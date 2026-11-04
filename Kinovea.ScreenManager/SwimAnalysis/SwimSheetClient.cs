@@ -43,6 +43,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Google Drive file of an uploaded image.</summary>
         public string FileId;
         public JObject Raw;
+
+        /// <summary>(2.16.6) Seconds from the start of the request to its answer (the waiting in the queue not counted).</summary>
+        public double Seconds;
     }
 
     public class SwimSyncEventArgs : EventArgs
@@ -69,6 +72,18 @@ namespace Kinovea.ScreenManager
             public string Body;
             public string RaceId;
             public bool Pdf;
+
+            /// <summary>(2.16.6) When it was sent.</summary>
+            public DateTime Started;
+        }
+
+        /// <summary>
+        /// (2.16.6) A state of this race waits to be sent (a newer one queued while another was in flight, or a failed one to retry): the
+        /// answer that just came is not its latest state.
+        /// </summary>
+        public bool HasWaiting(string raceId)
+        {
+            return raceId != null && (pending.Any(p => p.RaceId == raceId) || failed.ContainsKey(raceId));
         }
 
         /// <summary>A PDF can take minutes (the Apps Script can run 6 minutes): it is not cut and sent again meanwhile.</summary>
@@ -360,6 +375,7 @@ namespace Kinovea.ScreenManager
             }
 
             Raise(SwimSyncState.Sending, request.Pdf ? SwimLang.T("Δημιουργία PDF…") : SwimLang.T("Αποστολή…"), request.RaceId, null);
+            request.Started = DateTime.Now;
 
             Task.Factory.StartNew(() => Post(request.Url, request.Body, request.Pdf ? PdfTimeout : UpdateTimeout)).ContinueWith(t =>
             {
@@ -393,6 +409,8 @@ namespace Kinovea.ScreenManager
         private void Completed(Request request, SwimSheetResult result)
         {
             inFlight = false;
+            if (result != null && request.Started != DateTime.MinValue)
+                result.Seconds = (DateTime.Now - request.Started).TotalSeconds;
 
             if (result.Ok)
             {

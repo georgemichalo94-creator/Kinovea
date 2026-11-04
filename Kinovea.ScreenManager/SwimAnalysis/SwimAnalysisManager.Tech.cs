@@ -1529,7 +1529,13 @@ namespace Kinovea.ScreenManager
                 {
                     snapshot.FileId = result.FileId;
                     MarkDirty();
-                    if (race == Race)
+                    if (race == Race && snapshot.Event != null && snapshot.Event.StartsWith("eval:", StringComparison.Ordinal))
+                    {
+                        // (2.16.6) The frame of an error goes with the other changes of the evaluation, a little after the last one.
+                        Changed(false);
+                        ScheduleSend(true);
+                    }
+                    else if (race == Race)
                         Changed(true);
                     else
                         SendRace(race, false);

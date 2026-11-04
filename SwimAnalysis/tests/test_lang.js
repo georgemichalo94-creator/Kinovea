@@ -105,6 +105,21 @@ function record(sh) {
     const rl = getRangeList.apply(sh, arguments);
     const set = rl.setNumberFormat;
     rl.setNumberFormat = f => { sh._log.push(['rangeList.setNumberFormat', JSON.stringify(list), f]); set(f); return rl; };
+    // (2.16.6) Τα πλαίσια όλα μαζί: γράφονται όπως ένα setBorder ανά περιοχή (ίδια σειρά, ίδια ορίσματα).
+    const border = rl.setBorder;
+    if (border) {
+      rl.setBorder = function () {
+        const args = Array.from(arguments);
+        const col = s => s.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+        list.forEach(a1 => {
+          const m = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(a1);
+          const r0 = Number(m[2]), c0 = col(m[1]), r1 = Number(m[4]), c1 = col(m[3]);
+          sh._log.push(['setBorder', r0, c0, r1 - r0 + 1, c1 - c0 + 1, JSON.stringify(args)]);
+        });
+        border.apply(rl, arguments);
+        return rl;
+      };
+    }
     return rl;
   };
   return sh;
@@ -132,7 +147,9 @@ function sheetState(sh) {
     name: sh.getName(), cells, rowHeights: sorted(sh._rowHeights), colWidths: sorted(sh._colWidths), forced: sorted(sh._forced),
     notes: sorted(sh._notes), log: sh._log || [], rules: (sh._rules || []).map(r => [r.formula, r.bg, r.color]),
     charts: sh._charts.map(c => ({ type: c.type, opts: c.opts, ranges: c.ranges.map(box), pos: c.pos })),
-    images: sh._images.map(im => ({ row: im.row, col: im.col, ox: im.ox, oy: im.oy, w: im.w, h: im.h, alt: im.alt || '', blob: im.blob._name }))
+    // 2.16.6: οι εικόνες του layout μένουν στο φύλλο (με τον τίτλο swim-image:…) και μετακινούνται: η σειρά τους και ο τίτλος δεν μετρούν.
+    images: sh._images.map(im => ({ row: im.row, col: im.col, ox: im.ox, oy: im.oy, w: im.w, h: im.h, alt: /^swim-image:/.test(im.alt || '') ? '' : (im.alt || ''),
+      blob: im.blob._name })).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0)
   };
 }
 const stateOf = G => Object.keys(G._all).sort().map(id => ({ id, sheets: G._all[id].getSheets().map(sheetState) }));
@@ -323,11 +340,17 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.16.5');
+assert.strictEqual(vNew, '2.16.6');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
 const withoutTimes = list => list.map(r => {
+  // 2.16.6: πόσο κράτησε κάθε κομμάτι (ms, αλλάζει σε κάθε εκτέλεση).
+  if (r && 'timings' in r) {
+    assert.ok(r.timings && typeof r.timings.total === 'number' && typeof r.timings.report === 'number', 'timings: ' + JSON.stringify(r.timings));
+    r = Object.assign({}, r);
+    delete r.timings;
+  }
   // 2.10.0: το αποτέλεσμα της καταχώρισης στο «Αρχεία Αθλητών/τριων» (εδώ χωρίς το φύλλο ή χωρίς αθλητή του μητρώου).
   if (r && 'archive' in r) {
     assert.ok(r.archive && typeof r.archive.ok === 'boolean' && r.archive.ok === false, 'archive result: ' + JSON.stringify(r.archive));
@@ -428,7 +451,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.16\.5$/, 'version line');
+like(/^Updated .* · version 2\.16\.6$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

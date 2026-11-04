@@ -118,6 +118,7 @@ function makeSheet(ss, name, id, opts) {
       im.getInherentWidth = () => (blob._size || [1280, 720])[0]; im.getInherentHeight = () => (blob._size || [1280, 720])[1];
       im.setAnchorCell = rng => { im.col = rng.getColumn(); im.row = rng.getRow(); return im; };
       im.setAnchorCellXOffset = x => { im.ox = x; return im; };
+      im.setAnchorCellYOffset = y => { im.oy = y; return im; };
       im.getAnchorCell = () => sheet.getRange(im.row, im.col);
       im.setAltTextTitle = t => { im.alt = String(t); return im; }; im.getAltTextTitle = () => im.alt || '';
       im.remove = () => { const i = images.indexOf(im); if (i < 0) throw new Error('image already removed'); images.splice(i, 1); };
@@ -125,7 +126,17 @@ function makeSheet(ss, name, id, opts) {
       images.push(im);
       return im;
     },
-    getRangeList: list => { if (!Array.isArray(list) || !list.length) throw new Error('bad rangelist'); return { setNumberFormat: f => { if (typeof f !== 'string') throw new Error('fmt'); } }; },
+    getRangeList: list => {
+      if (!Array.isArray(list) || !list.length) throw new Error('bad rangelist');
+      return {
+        setNumberFormat: f => { if (typeof f !== 'string') throw new Error('fmt'); },
+        // (2.16.6) Τα πλαίσια όλα μαζί: κάθε περιοχή A1:B2 μετρά ως πλαίσιο.
+        setBorder: () => {
+          list.forEach(a1 => { if (!/^[A-Z]+\d+:[A-Z]+\d+$/.test(a1)) throw new Error('bad box ' + a1); });
+          sheet._boxes = (sheet._boxes || 0) + list.length;
+        }
+      };
+    },
     setRowHeight: (r, h) => { rowHeights[r] = h; },
     setRowHeights: (r, n, h) => { for (let i = 0; i < n; i++) rowHeights[r + i] = h; },
     setRowHeightsForced: (r, n, h) => { if (!(h > 0) || !(n > 0)) throw new Error('bad row heights'); for (let i = 0; i < n; i++) { rowHeights[r + i] = h; forced[r + i] = true; } },
@@ -372,8 +383,11 @@ function makeContext(opts) {
     });
     return makeBlob(Array.from(Buffer.from(text, 'latin1')), 'application/pdf', 'export.pdf');
   }
+  const consoleLines = [];
   const ctx = {
-    console, JSON, Math, Date, Object, Array, String, Number, isFinite,
+    // (2.16.6) Τα μηνύματα του script (π.χ. οι χρόνοι κάθε αιτήματος) κρατιούνται (ctx._console), δεν γράφονται στην έξοδο των tests.
+    console: Object.assign(Object.create(console), { log: function () { consoleLines.push(Array.from(arguments).join(' ')); } }),
+    JSON, Math, Date, Object, Array, String, Number, isFinite,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => {}, BorderStyle: { SOLID: 'solid' },
       getUi: () => ui,
       newDataValidation: () => {
@@ -440,7 +454,7 @@ function makeContext(opts) {
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
-  ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf; ctx._cache = { store: cacheStore, log: cacheLog };
+  ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf; ctx._cache = { store: cacheStore, log: cacheLog }; ctx._console = consoleLines;
   ctx._openFails = openFails; ctx._opens = opens;
   return ctx;
 }

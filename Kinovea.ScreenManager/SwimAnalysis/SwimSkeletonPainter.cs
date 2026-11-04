@@ -59,8 +59,43 @@ namespace Kinovea.ScreenManager
             Paint(g, points.Select(map).ToArray(), visibility, scale, angles);
         }
 
-        /// <summary>The skeleton from its joints in drawing coordinates.</summary>
+        /// <summary>
+        /// The skeleton from its joints in drawing coordinates. (2.16.6) A joint off any picture (NaN, infinite, far away: a bad reading
+        /// or zoom) is not drawn, and GDI+ failing on one shape never stops the drawing of the video (it says "overflow" or "out of
+        /// memory" then).
+        /// </summary>
         public static void Paint(Graphics g, PointF[] p, float[] visibility, float scale, bool angles)
+        {
+            if (g == null || p == null || visibility == null || p.Length < SwimJoints.Count || visibility.Length < SwimJoints.Count)
+                return;
+
+            float[] seen = new float[SwimJoints.Count];
+            for (int j = 0; j < SwimJoints.Count; j++)
+                seen[j] = Drawable(p[j]) ? visibility[j] : 0;
+
+            try
+            {
+                PaintJoints(g, p, seen, scale, angles);
+            }
+            catch (OverflowException)
+            {
+            }
+            catch (OutOfMemoryException)
+            {
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+            }
+        }
+
+        /// <summary>A point GDI+ can draw: a number, and not far beyond any picture.</summary>
+        private static bool Drawable(PointF q)
+        {
+            return !float.IsNaN(q.X) && !float.IsNaN(q.Y) && !float.IsInfinity(q.X) && !float.IsInfinity(q.Y) &&
+                Math.Abs(q.X) < 100000f && Math.Abs(q.Y) < 100000f;
+        }
+
+        private static void PaintJoints(Graphics g, PointF[] p, float[] visibility, float scale, bool angles)
         {
             using (Pen shadow = new Pen(Color.FromArgb(120, 0, 0, 0), 5.5f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             using (Pen leftPen = new Pen(Color.FromArgb(235, SwimTheme.Accent), 3f * scale) { StartCap = LineCap.Round, EndCap = LineCap.Round })
@@ -113,7 +148,9 @@ namespace Kinovea.ScreenManager
         {
             double ax = a.X - v.X, ay = a.Y - v.Y, bx = b.X - v.X, by = b.Y - v.Y;
             double la = Math.Sqrt(ax * ax + ay * ay), lb = Math.Sqrt(bx * bx + by * by);
-            if (la < 4 || lb < 4)
+            // (2.16.6) Not for joints off any picture (NaN, far away) or too near each other.
+            if (double.IsNaN(la) || double.IsNaN(lb) || double.IsInfinity(la) || double.IsInfinity(lb) || la < 4 || lb < 4 ||
+                Math.Abs(v.X) > 100000 || Math.Abs(v.Y) > 100000)
                 return;
 
             double degrees = Math.Acos(Math.Max(-1, Math.Min(1, (ax * bx + ay * by) / (la * lb)))) * 180 / Math.PI;
@@ -124,8 +161,18 @@ namespace Kinovea.ScreenManager
             while (sweep < -180) sweep += 360;
 
             float radius = (float)Math.Max(8 * scale, Math.Min(22 * scale, 0.35 * Math.Min(la, lb)));
-            using (Pen arc = new Pen(Color.FromArgb(230, 255, 255, 255), 1.6f * scale))
-                g.DrawArc(arc, v.X - radius, v.Y - radius, 2 * radius, 2 * radius, (float)a0, (float)sweep);
+            // (2.16.6) GDI+ fails on an arc of almost nothing (and says it is out of memory): no arc, no value then.
+            if (double.IsNaN(sweep) || Math.Abs(sweep) < 0.5 || !(radius > 0.5f))
+                return;
+            try
+            {
+                using (Pen arc = new Pen(Color.FromArgb(230, 255, 255, 255), 1.6f * scale))
+                    g.DrawArc(arc, v.X - radius, v.Y - radius, 2 * radius, 2 * radius, (float)a0, (float)sweep);
+            }
+            catch (OutOfMemoryException)
+            {
+                return;
+            }
 
             // The value away from the inside of the angle.
             double mid = (a0 + sweep / 2) * Math.PI / 180;

@@ -2222,6 +2222,10 @@ namespace Kinovea.ScreenManager
             { "Η κοινή μάθηση της τεχνικής ανάλυσης με τα άλλα Kinovea θέλει το script 2.16.5 στο Google Sheet: ως τότε μένει σε αυτόν τον υπολογιστή.",
                 "Sharing the technique learning with the other Kinovea needs script 2.16.5 in the Google Sheet: until then it stays on this computer." },
             { "🔄 Κοινή μάθηση τεχνικής: +{0} απαντήσεις από τα άλλα Kinovea.", "🔄 Shared technique learning: +{0} answers from the other Kinovea." },
+            // 2.16.6: how long the PDF took.
+            { "σε {0:0}″", "in {0:0}″" },
+            { " (report {0:0}″ · PDF {1:0}″ · KOE App {2:0}″", " (report {0:0}″ · PDF {1:0}″ · KOE App {2:0}″" },
+            { " · αναμονή {0:0}″", " · waiting {0:0}″" },
         };
     }
 }
