@@ -407,18 +407,18 @@ function Rows($learning, $since) {
   # The rows a pull of the sheet gives: the answers of this Kinovea after 'since' (an index), then its answers taken away.
   $o = $null
   $list = @()
-  for ($k = $since; $k -lt $learning.Samples.Count; $k++) { $list += ,($rowOfSample.Invoke($null, @($learning.Samples[$k]))) }
-  foreach ($f in $learning.Forgotten) { if (-not $f.Shared) { $list += ,($rowOfForget.Invoke($null, @($f, 'kvA'))) } }
+  for ($k = $since; $k -lt $learning.Samples.Count; $k++) { $list += ,($rowOfSample.Invoke($null, [object[]]@($learning.Samples[$k].psobject.BaseObject))) }
+  foreach ($f in $learning.Forgotten) { if (-not $f.Shared) { $list += ,($rowOfForget.Invoke($null, [object[]]@($f.psobject.BaseObject, 'kvA'))) } }
   if ($list.Count -gt 0) { $o = $list[0] }
   $tArr = $null
-  if ($o -ne $null) { $tArr = $o.GetType().Assembly.GetType('Newtonsoft.Json.Linq.JArray') } else { $tArr = $script:tJArray }
+  if ($null -ne $o) { $tArr = $o.psobject.BaseObject.GetType().Assembly.GetType('Newtonsoft.Json.Linq.JArray') } else { $tArr = $script:tJArray }
   $script:tJArray = $tArr
   $arr = [Activator]::CreateInstance($tArr)
-  foreach ($r in $list) { $arr.Add($r) }
+  foreach ($r in $list) { $arr.Add($r.psobject.BaseObject) }
   # Through text, as the sheet keeps them.
   $text = $arr.ToString()
   $parsed = $tArr.GetMethod('Parse', [type[]]@([string])).Invoke($null, @($text))
-  $outArgs = [object[]]@($parsed, $null, $null)
+  $outArgs = [object[]]@($parsed.psobject.BaseObject, $null, $null)
   $null = $readShare.Invoke($null, $outArgs)
   return ,@($outArgs[1], $outArgs[2])
 }
@@ -475,15 +475,17 @@ Check ($A.Samples.Count -eq 7 -and $A.Forgotten.Count -eq 2 -and $A.Forgotten[1]
 $here.SetValue($null, 'kvB')
 $n = Merge $B (Rows $A 6)
 Check ($B.Samples.Count -eq 7 -and -not ($B.Samples | Where-Object { $_.Key.StartsWith('race2|') }) -and ($B.Samples | Where-Object { $_.Key -eq $gone })) ('B: the evaluation went, the answer given again came back (' + $B.Samples.Count + ')')
-$order = @($B.Samples | ForEach-Object { $tLearn.GetMethod('When').Invoke($null, @($_)) })
+$whenOf = $tLearn.GetMethod('When')
+$order = @(); foreach ($bs in $B.Samples) { $order += $whenOf.Invoke($null, [object[]]@($bs.psobject.BaseObject)) }
 $sorted = $true; for ($k = 1; $k -lt $order.Count; $k++) { if ($order[$k] -lt $order[$k - 1]) { $sorted = $false } }
 Check $sorted 'the answers in the order they were given'
 # An answer older than 2.16.5 (no id, no moment): the same id on every computer, its day as its moment, it is this Kinovea's.
 $legacy = [Activator]::CreateInstance($tSample); $legacy.Key = 'race9|start|kv-start-fs|x'; $legacy.Check = 'push_time'; $legacy.Measured = 0.3; $legacy.Good = $true; $legacy.Date = '2026-10-20'
 $sid = $tLearn.GetMethod('StableId')
-$id1 = $sid.Invoke($null, @($legacy)); $id2 = $sid.Invoke($null, @($legacy))
-$when = $tLearn.GetMethod('When').Invoke($null, @($legacy))
-Check ($id1 -eq $id2 -and $id1.StartsWith('t') -and $id1.Length -eq 21 -and $when -eq [DateTime]::new(2026, 10, 20, 0, 0, 0, [DateTimeKind]::Utc) -and $tLearn.GetMethod('Own').Invoke($null, @($legacy))) ('an older answer: id ' + $id1 + ', moment ' + $when.ToString('o'))
+$lb = $legacy.psobject.BaseObject
+$id1 = $sid.Invoke($null, [object[]]@($lb)); $id2 = $sid.Invoke($null, [object[]]@($lb))
+$when = $whenOf.Invoke($null, [object[]]@($lb))
+Check ($id1 -eq $id2 -and $id1.StartsWith('t') -and $id1.Length -eq 21 -and $when -eq [DateTime]::new(2026, 10, 20, 0, 0, 0, [DateTimeKind]::Utc) -and $tLearn.GetMethod('Own').Invoke($null, [object[]]@($lb))) ('an older answer: id ' + $id1 + ', moment ' + $when.ToString('o'))
 $here.SetValue($null, $null)
 
 Write-Output ('fails ' + $fails)
