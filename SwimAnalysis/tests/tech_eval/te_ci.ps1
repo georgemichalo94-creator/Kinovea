@@ -515,7 +515,8 @@ try {
     for ($j = 0; $j -lt 17; $j++) { $pts[$j] = New-Object System.Drawing.PointF (100 + 10 * $j), 150; $vis[$j] = 0.95 }
     if ($case -eq 'nan') { $pts[9] = New-Object System.Drawing.PointF ([float]::NaN), ([float]::NaN) }
     if ($case -eq 'far') { $pts[9] = New-Object System.Drawing.PointF 3e9, 3e9 }
-    $null = $paint.Invoke($null, [object[]]@($gr, $pts, $vis, [float]1, $true))
+    # (The arrays of New-Object come wrapped for PowerShell: reflection needs the arrays themselves.)
+    $null = $paint.Invoke($null, [object[]]@($gr, $pts.psobject.BaseObject, $vis.psobject.BaseObject, [float]1, $true))
   }
 } catch { $okDraw = $false; Write-Output ('  ' + $_.Exception.InnerException) }
 $gr.Dispose(); $bmp.Dispose()
