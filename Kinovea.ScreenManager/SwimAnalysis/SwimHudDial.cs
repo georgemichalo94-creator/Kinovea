@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -438,7 +439,10 @@ namespace Kinovea.ScreenManager
                 if (Inside(w, area))
                     return w;
 
-                w = Build(inner, outer, place, Math.PI, away - Math.PI / 2, s);
+                // The hub is bigger than the closed button: away from the edge by what it needs (the mouse stays over the hub).
+                float hubRoom = HubSize * s / 2 + Margin * s;
+                PointF edge = new PointF(Between(place.X, area.Left + hubRoom, area.Right - hubRoom), Between(place.Y, area.Top + hubRoom, area.Bottom - hubRoom));
+                w = Build(inner, outer, edge, Math.PI, away - Math.PI / 2, s);
                 if (Inside(w, area))
                     return w;
 
@@ -1289,15 +1293,20 @@ namespace Kinovea.ScreenManager
             Color text = dim && !hover ? SwimTheme.Faint : SwimTheme.Text;
             Color sign = dim && !hover ? SwimTheme.Faint : hover ? Color.White : primary ? SwimTheme.AccentPale : SwimTheme.AccentLight;
             float rm = (it.R0 + it.R1) / 2;
-            PointF m = Polar(c, rm, mid);
+            PointF m = Polar(c, it.Inner || string.IsNullOrEmpty(b.Key) ? rm : rm - 3 * scale, mid);
             float width = Math.Min((float)((it.A1 - it.A0) * rm) - gap - 6 * scale, 2.2f * (it.R1 - it.R0));
             string label = it.Label ?? "";
 
             if (it.Inner)
             {
-                RectangleF box = new RectangleF(m.X - width / 2, m.Y - (it.R1 - it.R0) / 2, width, it.R1 - it.R0);
-                Font font = label.Length <= 2 ? SwimTheme.Ui(11f * fs, FontStyle.Bold) : FitSize(g, label, width, new float[] { 7.5f, 7f, 6.5f, 6f }, fs, true);
-                Write(g, label, font, box, text, !dim || hover);
+                // Along the ring, as the tabs of a dial: read from the left at the top and at the bottom, upwards on the left side.
+                float along = (float)((it.A1 - it.A0) * rm) - gap - 6 * scale;
+                double degrees = mid * 180 / Math.PI + 90;
+                double turned = ((degrees % 360) + 360) % 360;
+                if (turned > 90.5 && turned < 269.5)
+                    degrees += 180;
+                Font font = label.Length <= 2 ? SwimTheme.Ui(11f * fs, FontStyle.Bold) : FitAlong(g, label, along, new float[] { 8f, 7.5f, 7f, 6.5f, 6f, 5.5f }, fs);
+                WriteAlong(g, label.Replace("\n", " "), font, m, (float)degrees, text, !dim || hover);
                 return;
             }
 
@@ -1368,6 +1377,56 @@ namespace Kinovea.ScreenManager
                 }
 
                 Write(g, key, SwimTheme.Ui(6.5f * fs, FontStyle.Bold), badge, dim ? SwimTheme.Faint : SwimTheme.AccentLight, false);
+            }
+        }
+
+        /// <summary>(2.17.0) The biggest of a few sizes with which a name fits a length along the ring (GDI+, it turns with the ring).</summary>
+        private static Font FitAlong(Graphics g, string text, float length, float[] sizes, float fs)
+        {
+            Font font = null;
+            foreach (float size in sizes)
+            {
+                font = SwimTheme.Ui(size * fs, FontStyle.Bold);
+                if (g.MeasureString(text, font, PointF.Empty, StringFormat.GenericTypographic).Width <= length)
+                    return font;
+            }
+
+            return font;
+        }
+
+        /// <summary>(2.17.0) A name turned by an angle around its middle (GDI+: the text of TextRenderer does not turn).</summary>
+        private static void WriteAlong(Graphics g, string text, Font font, PointF at, float degrees, Color color, bool glow)
+        {
+            if (string.IsNullOrEmpty(text) || font == null)
+                return;
+
+            GraphicsState state = g.Save();
+            try
+            {
+                g.TranslateTransform(at.X, at.Y);
+                g.RotateTransform(degrees);
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                using (StringFormat format = new StringFormat(StringFormat.GenericTypographic))
+                {
+                    format.Alignment = StringAlignment.Center;
+                    format.LineAlignment = StringAlignment.Center;
+                    format.FormatFlags |= StringFormatFlags.NoWrap | StringFormatFlags.NoClip;
+                    if (glow)
+                    {
+                        using (SolidBrush halo = new SolidBrush(SwimTheme.Mix(SwimTheme.Back, SwimTheme.Accent, 0.45)))
+                        {
+                            foreach (PointF o in new[] { new PointF(-1, 0), new PointF(1, 0), new PointF(0, -1), new PointF(0, 1) })
+                                g.DrawString(text, font, halo, o.X, o.Y, format);
+                        }
+                    }
+
+                    using (SolidBrush brush = new SolidBrush(color))
+                        g.DrawString(text, font, brush, 0, 0, format);
+                }
+            }
+            finally
+            {
+                g.Restore(state);
             }
         }
 
