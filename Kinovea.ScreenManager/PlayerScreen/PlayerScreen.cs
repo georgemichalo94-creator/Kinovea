@@ -933,6 +933,12 @@ namespace Kinovea.ScreenManager
             view.ShowSwimAnalysis();
         }
 
+        /// <summary>(Swim 2.18.0) The window of the swim analysis in a view and at a page (the main menu). False without a video.</summary>
+        public bool ShowSwimAnalysis(bool? technical, string page)
+        {
+            return view.ShowSwimAnalysis(technical, page);
+        }
+
         public void ShowAngleAngleDiagram()
         {
             FormAngleAngleAnalysis f = new FormAngleAngleAnalysis(frameServer.Metadata);

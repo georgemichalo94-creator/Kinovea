@@ -147,6 +147,12 @@ namespace Kinovea.ScreenManager
         public bool DialHidden = false;
 
         /// <summary>
+        /// (2.18.0) The classic menu of Kinovea instead of the menu of Kinovea Swim (Αρχείο, Επεξεργασία, Προβολή, Αγώνας, Τεχνική,
+        /// Αναφορά, Εργαλεία, Βοήθεια, ⚙ Ρυθμίσεις): read at the start of the program.
+        /// </summary>
+        public bool ClassicMenu = false;
+
+        /// <summary>
         /// Technical view of the race on the video (as the swimming reels): athlete label following the swimmer, race time with the
         /// strokes, tempo, distance per cycle and speed, phase, badges at the start, the breakouts and the checkpoints, per cycle chart.
         /// It replaces the race board and the velocity chart.

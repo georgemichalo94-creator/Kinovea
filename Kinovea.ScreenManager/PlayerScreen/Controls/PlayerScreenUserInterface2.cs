@@ -957,6 +957,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (Swim 2.18.0) The window of the swim analysis from the main menu: in its race view (false), its technical view (true) or the view
+        /// it has (null), at one of its pages (null: as it is). False without a video.
+        /// </summary>
+        public bool ShowSwimAnalysis(bool? technical, string page)
+        {
+            if (!m_FrameServer.Loaded)
+                return false;
+
+            SwimAnalysisManager.Instance.ShowView(this, m_FrameServer, technical, page);
+            return true;
+        }
+
+        /// <summary>
         /// Called by the swim race analysis when it starts or stops waiting for a click on the image.
         /// </summary>
         public void SwimPickModeChanged(bool picking)

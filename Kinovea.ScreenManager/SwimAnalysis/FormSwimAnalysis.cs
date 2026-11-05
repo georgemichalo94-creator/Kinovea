@@ -527,6 +527,39 @@ namespace Kinovea.ScreenManager
         /// Race analysis or technical analysis: the pages of the mode, the overlay of the video and the hotkeys stay the same.
         /// A training video has only the technical analysis.
         /// </summary>
+        /// <summary>
+        /// (2.18.0) From the main menu of Kinovea Swim: the view asked (a training video stays in the technical view, as with its switch),
+        /// then one of its pages (one the view does not have is not shown).
+        /// </summary>
+        internal void ShowView(bool? technical, string page)
+        {
+            if (technical.HasValue && (modeSwitch.SelectedIndex == 1) != technical.Value)
+                SetTechnicalView(technical.Value, true);
+
+            SwimPage shown = PageOf(page);
+            if (shown != null && tabs.VisiblePages.Contains(shown))
+                tabs.SelectedTab = shown;
+        }
+
+        private SwimPage PageOf(string page)
+        {
+            switch (page)
+            {
+                case "race": return tabRace;
+                case "start": return tabStart;
+                case "swim": return tabSwim;
+                case "turns": return tabTurns;
+                case "finish": return tabFinish;
+                case "finals": return tabFinals;
+                case "connection": return tabConnection;
+                case "tech-start": return tabTechStart;
+                case "tech-turns": return tabTechTurns;
+                case "tech-media": return tabTechMedia;
+                case "tech-eval": return tabTechEval;
+                default: return null;
+            }
+        }
+
         private void SetTechnicalView(bool technical, bool fromUser)
         {
             SwimRace race = manager.Race;
