@@ -381,7 +381,7 @@ public static class ReelPreview
         if (preview == null)
             throw new InvalidOperationException("SwimHudDial.Preview not found");
 
-        string[] variants = new string[] { "dial-closed", "dial-open", "dial-bottom", "dial-corner" };
+        string[] variants = new string[] { "dial-closed", "dial-open", "dial-bottom", "dial-corner", "dial-turn", "dial-check" };
         for (int i = 0; i < variants.Length; i++)
         {
             using (Bitmap image = (Bitmap)preview.Invoke(null, new object[] { i }))
