@@ -256,7 +256,7 @@ namespace Kinovea.ScreenManager
 
         public static string Dollars(double usd)
         {
-            return "$" + usd.ToString(usd < 10 ? "0.00" : "0.0", CultureInfo.InvariantCulture);
+            return "$" + usd.ToString(usd < 10 ? "0.00" : "0.##", CultureInfo.InvariantCulture);
         }
     }
 

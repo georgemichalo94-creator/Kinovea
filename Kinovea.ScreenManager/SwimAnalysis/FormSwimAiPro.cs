@@ -291,7 +291,7 @@ namespace Kinovea.ScreenManager
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
             // (The laptop of the analysis has about 820 points of height: the window fits, its answers below.)
-            ClientSize = new Size(720, 690);
+            ClientSize = new Size(720, 740);
             MinimumSize = new Size(600, 560);
             BackColor = SwimTheme.Back;
             ForeColor = SwimTheme.Text;
