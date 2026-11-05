@@ -2226,6 +2226,12 @@ namespace Kinovea.ScreenManager
             { "σε {0:0}″", "in {0:0}″" },
             { " (report {0:0}″ · PDF {1:0}″ · KOE App {2:0}″", " (report {0:0}″ · PDF {1:0}″ · KOE App {2:0}″" },
             { " · αναμονή {0:0}″", " · waiting {0:0}″" },
+            // 2.17.0: the words under the signs of the wheel of the round button.
+            { "Φως", "Light" },
+            { "Πιλότος", "Pilot" },
+            { "Καρέ", "Frame" },
+            { "Πρόταση", "Propose" },
+            { "Έλεγχος", "Check" },
         };
     }
 }
