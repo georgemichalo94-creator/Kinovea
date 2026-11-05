@@ -1184,6 +1184,36 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// (2.16.7) The scores the program filled (🤖) on the points of the sheet that wait for the coach's confirmation. An older
+        /// evaluation keeps the scores of a point that left its list (it still reads), but such a score waits for nothing: the
+        /// confirmation, the totals and the Sheet walk the points of the list, and so does this count.
+        /// </summary>
+        public static int PendingAuto(SwimTechSheet sheet, SwimTechEval eval)
+        {
+            return CountOnSheet(sheet, eval, s => s.Auto);
+        }
+
+        /// <summary>(2.16.7) On a list of errors: the errors there (1) among the points of the list.</summary>
+        public static int ErrorsPresent(SwimTechSheet sheet, SwimTechEval eval)
+        {
+            return CountOnSheet(sheet, eval, s => s.Value == 1);
+        }
+
+        private static int CountOnSheet(SwimTechSheet sheet, SwimTechEval eval, Func<SwimTechScore, bool> pick)
+        {
+            if (sheet == null || eval == null)
+                return 0;
+            int n = 0;
+            foreach (SwimTechSheetItem it in sheet.Items)
+            {
+                SwimTechScore s;
+                if (eval.Scores.TryGetValue(it.Key, out s) && s != null && pick(s))
+                    n++;
+            }
+            return n;
+        }
+
         /// <summary>"M" or "F" from the gender of the athlete ("Ανδρών", "Γυναικών", "Αγόρια", "Κορίτσια", "M", "F"), null when unknown.</summary>
         public static string GenderCode(string gender)
         {

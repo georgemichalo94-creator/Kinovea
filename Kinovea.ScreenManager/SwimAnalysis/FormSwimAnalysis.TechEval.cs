@@ -616,7 +616,8 @@ namespace Kinovea.ScreenManager
             tbEvalNotes.Enabled = true;
             FillEvalRows(cat, sheet, eval);
             RefreshEvalTotals(cat, phase, sheet, eval);
-            btnEvalConfirm.Enabled = eval != null && eval.Scores.Values.Any(s => s.Auto);
+            // (2.16.7) Only the points of the list (a point that left it keeps its older score, which waits for nothing).
+            btnEvalConfirm.Enabled = SwimTechEvaluator.PendingAuto(sheet, eval) > 0;
         }
 
         private void BuildEvalRows(SwimTechSheet sheet)
@@ -719,11 +720,11 @@ namespace Kinovea.ScreenManager
                     (scored < total ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · βαθμολογήθηκαν {0}"), scored) : ""));
             else
             {
-                int present = eval != null ? eval.Scores.Values.Count(s => s.Value == 1) : 0;
+                int present = SwimTechEvaluator.ErrorsPresent(sheet, eval);
                 parts.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Λάθη που υπάρχουν: {0} από {1}"), present, total));
             }
 
-            int auto = eval != null ? eval.Scores.Values.Count(s => s.Auto) : 0;
+            int auto = SwimTechEvaluator.PendingAuto(sheet, eval);
             if (auto > 0)
                 parts.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 {0} περιμένουν επιβεβαίωση"), auto));
 

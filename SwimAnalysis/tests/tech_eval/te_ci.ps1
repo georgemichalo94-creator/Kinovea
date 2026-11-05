@@ -385,6 +385,15 @@ $m4 = $moveRenamed.Invoke($null, [object[]]@($t3.psobject.BaseObject, $tf.psobje
 Check ($m4 -eq 1 -and $t3.Scores['ok.rotation_quick'].SnapshotId -eq 'snapOld' -and -not $t3.Scores.ContainsKey('ka.rotation_slow') -and $d3.Count -eq 1 -and $d3[0].SnapshotId -eq 'snapOlder') 'the coach''s score of the new point stays; the older one goes with its frame'
 $m5 = $moveRenamed.Invoke($null, [object[]]@($t3.psobject.BaseObject, $tf.psobject.BaseObject, $d3.psobject.BaseObject))
 Check ($m5 -eq 0) 'nothing moves twice'
+# (2.16.7) A point that left its list keeps its older score, but its 🤖 waits for nothing: the count of the 🤖 that wait (and the
+# confirm button) and the errors there walk the points of the list, as the confirmation and the totals do.
+$pendingAuto = $tEv.GetMethod('PendingAuto'); $errorsPresent = $tEv.GetMethod('ErrorsPresent')
+$t5 = [Activator]::CreateInstance($tEval); $t5.PhaseId = 'r'; $t5.SheetId = 'kv-turn-fs'
+$t5.Scores.Add('push.short', (Score 1 $true $null)); $t5.Scores.Add('zz.left', (Score 1 $true $null)); $t5.Scores.Add('ok.rotation_quick', (Score 0 $false $null))
+$p5 = $pendingAuto.Invoke($null, [object[]]@($tf.psobject.BaseObject, $t5.psobject.BaseObject))
+$e5 = $errorsPresent.Invoke($null, [object[]]@($tf.psobject.BaseObject, $t5.psobject.BaseObject))
+$n5 = $pendingAuto.Invoke($null, [object[]]@($tf.psobject.BaseObject, $null))
+Check ($p5 -eq 1 -and $e5 -eq 1 -and $n5 -eq 0 -and $t5.Scores.Count -eq 3) ('a point that left the list: its 🤖 does not wait (' + $p5 + ', ' + $e5 + ', ' + $n5 + ')')
 
 # The learning of a point of a single list counts the answers on the older points it stands for.
 $learn2 = [Activator]::CreateInstance($tLearn)
