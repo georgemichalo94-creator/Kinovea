@@ -26,8 +26,8 @@ $all = [System.Reflection.BindingFlags]'Public,NonPublic,Instance,Static'
 $fails = 0
 function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { Write-Output ('FAIL ' + $what); $script:fails++ } }
 
-# ---- A fictional main window with the menus and the toolbar of Kinovea (its names, its order, its separators).
-function MI([string]$name, [string]$text, $children) {
+# ---- A fictional main window with the menus and the toolbar of Kinovea (its names, its order, its separators). (Not «MI»: an alias of Move-Item.)
+function Mnu([string]$name, [string]$text, $children) {
   $m = New-Object System.Windows.Forms.ToolStripMenuItem
   $m.Name = $name; $m.Text = $text
   if ($children) { $m.DropDownItems.AddRange([System.Windows.Forms.ToolStripItem[]]@($children)) }
@@ -35,44 +35,44 @@ function MI([string]$name, [string]$text, $children) {
 }
 function Sep() { return (New-Object System.Windows.Forms.ToolStripSeparator) }
 $keys = [System.Windows.Forms.Keys]
-$save = MI 'mnuSave' 'Save annotations'; $save.ShortcutKeys = $keys::Control -bor $keys::S
-$undo = MI 'mnuUndo' 'Undo'; $undo.ShortcutKeys = $keys::Control -bor $keys::Z; $undo.Enabled = $false
-$redo = MI 'mnuRedo' 'Redo'; $redo.ShortcutKeys = $keys::Control -bor $keys::Y; $redo.Enabled = $false
-$recent = MI '' 'fictional_race_50fr.mp4'
-$file = MI 'mnuFile' 'File' @(
-  (MI 'mnuOpenFile' 'Open video'), (MI 'mnuOpenReplayWatcher' 'Open replay folder observer' @((MI 'mnuOpenReplayWatcherFolder' 'Open folder'))),
-  (MI 'mnuHistory' 'Recent' @($recent, (Sep), (MI 'mnuHistoryReset' 'Reset history'))), (Sep),
-  (MI 'mnuLoadAnnotations' 'Load annotations'), $save, (MI 'mnuSaveAs' 'Save annotations as'), (MI 'mnuUnloadAnnotations' 'Unload annotations'), (Sep),
-  (MI 'mnuExportVideo' 'Export video' @((MI 'mnuExportVideoVideo' 'Video'), (MI 'mnuExportVideoSlideshow' 'Slideshow'), (MI 'mnuExportVideoWithPauses' 'With pauses'), (MI 'mnuExportVideoSideBySide' 'Side by side'))),
-  (MI 'mnuExportImage' 'Export image' @((MI 'mnuExportImageImage' 'Image'), (MI 'mnuExportImageSequence' 'Sequence'), (MI 'mnuExportImageKeys' 'Key images'), (MI 'mnuExportImageSideBySide' 'Side by side'))),
-  (MI 'mnuExportDocument' 'Export document' @((MI 'mnuExportODT' 'Writer'), (MI 'mnuExportDOCX' 'Word'), (Sep), (MI 'mnuExportMarkdown' 'Markdown'))),
-  (MI 'mnuExportSpreadsheet' 'Export spreadsheet' @((MI 'mnuExportODS' 'Calc'), (MI 'mnuExportXLSX' 'Excel'), (MI 'mnuExportCSVTrajectory' 'Trajectory CSV'), (MI 'mnuExportTXTTrajectory' 'Trajectory text'), (MI 'mnuExportCSVChronometer' 'Chronometer CSV'), (Sep), (MI 'mnuExportJSON' 'JSON'))),
-  (Sep), (MI 'mnuCloseFile' 'Close'), (MI 'mnuCloseFile2' 'Close'), (Sep), (MI 'mnuQuit' 'Quit'))
-$edit = MI 'mnuEdit' 'Edit' @($undo, $redo, (Sep), (MI 'mnuCutDrawing' 'Cut'), (MI 'mnuCopyDrawing' 'Copy'), (MI 'mnuPasteDrawing' 'Paste'))
-$view = MI 'mnuView' 'View' @((MI 'mnuToggleNavigationPane' 'Navigation pane'), (MI 'mnuFullScreen' 'Full screen'), (Sep),
-  (MI 'mnuOnePlayer' 'One player'), (MI 'mnuTwoPlayers' 'Two players'), (MI 'mnuThreePlayers' 'Three'), (MI 'mnuFourPlayers' 'Four'), (MI 'mnuFivePlayers' 'Five'),
-  (MI 'mnuOneCapture' 'One capture'), (MI 'mnuTwoCaptures' 'Two captures'), (MI 'mnuTwoMixed' 'Mixed'), (Sep),
-  (MI 'mnuToggleCommonCtrls' 'Common controls'), (MI 'mnuVerticalLayout' 'Vertical layout'), (MI 'mnuSwapScreens' 'Swap screens'))
-$mysteryImage = MI 'mnuMysteryImage' 'A tool of the image'
-$image = MI 'mnuImage' 'Image' @((MI 'mnuAspectRatio' 'Aspect ratio' @((MI 'mnuAspectRatioAuto' 'Auto'), (Sep), (MI 'mnuAspectRatioForce43' '4:3'))), (MI 'mnuRotation' 'Rotation'),
-  (MI 'mnuMirror' 'Mirror'), (MI 'mnuDeinterlace' 'Deinterlace'), (MI 'mnuDemosaic' 'Demosaicing' @((MI 'mnuDemosaicNone' 'None'))), (MI 'mnuStabilization' 'Stabilization'), $mysteryImage)
-$video = MI 'mnuVideo' 'Video' @((MI '' 'Normal'), (Sep), (MI '' 'Kinogram'), (MI '' 'Camera motion'))
-$mysteryTool = MI 'mnuMysteryTool' 'A tool of a plugin'
-$swimItem = MI 'mnuSwimAnalysis' 'Swim race analysis'
-$tools = MI 'mnuTools' 'Tools' @((MI 'mnuImportImage' 'Import image'), (MI 'mnuBackground' 'Background'), (MI 'mnuTestGrid' 'Test grid'), (Sep),
-  (MI 'mnuTimeCalibration' 'Time calibration'), (MI 'mnuCoordinateSystem' 'Coordinate system'), (MI 'mnuLensCalibration' 'Lens calibration' @((MI 'mnuLensCalibrationOpen' 'Import'), (MI 'mnuLensCalibrationNone' 'None'))),
-  (MI 'mnuCalibrationValidation' 'Calibration validation'), (Sep), (MI 'mnuScatterDiagram' 'Scatter'), (MI 'mnuLinearKinematics' 'Linear'), (MI 'mnuAngularKinematics' 'Angular'),
-  (MI 'mnuAngleAngleDiagram' 'Angle-angle'), (Sep), $swimItem, $mysteryTool)
-$window = MI 'mnuWindow' 'Window' @((MI 'mnuWindowProperties' 'Window properties'), (Sep), (MI 'mnuOpenNewWindow' 'Open new window'), (MI 'mnuReopenWindow' 'Reopen window'),
-  (MI 'mnuManageWindows' 'Manage windows'), (Sep), (MI 'mnuManageWorkspaces' 'Manage workspaces'))
-$options = MI 'mnuOptions' 'Options' @((MI 'mnuLanguages' 'Language' @((MI '' 'English'), (MI '' 'Ελληνικά'), (Sep), (MI 'mnuTranslate1' 'Translate'))),
-  (MI 'mnuTimecode' 'Time' @((MI 'mnuTimecodeClassic' 'Classic'), (MI 'mnuTimecodeFrames' 'Frames'))), (MI 'mnuPointer' 'Pointer'), (Sep),
-  (MI 'mnuVariables' 'Context' @((MI 'mnuImportVariables' 'Import'))), (Sep), (MI 'mnuPreferences' 'Preferences'))
-$updates = MI '' 'Check for updates'
-$debug = MI 'mnuEnableDebugLogs' 'Enable debug logs'
-$help = MI 'mnuHelp' 'Help' @((MI 'mnuHelpContents' 'Help'), $updates, (MI 'mnuTranslate2' 'Translate Kinovea'), (Sep), (MI 'mnuApplicationFolder' 'Open application data folder'),
-  $debug, (Sep), (MI 'mnuWebsite' 'www.kinovea.org'), (MI 'mnuAbout' 'About'))
-$plugin = MI 'mnuPlugin' 'A menu of a plugin' @((MI '' 'Its command'))
+$save = Mnu 'mnuSave' 'Save annotations'; $save.ShortcutKeys = $keys::Control -bor $keys::S
+$undo = Mnu 'mnuUndo' 'Undo'; $undo.ShortcutKeys = $keys::Control -bor $keys::Z; $undo.Enabled = $false
+$redo = Mnu 'mnuRedo' 'Redo'; $redo.ShortcutKeys = $keys::Control -bor $keys::Y; $redo.Enabled = $false
+$recent = Mnu '' 'fictional_race_50fr.mp4'
+$file = Mnu 'mnuFile' 'File' @(
+  (Mnu 'mnuOpenFile' 'Open video'), (Mnu 'mnuOpenReplayWatcher' 'Open replay folder observer' @((Mnu 'mnuOpenReplayWatcherFolder' 'Open folder'))),
+  (Mnu 'mnuHistory' 'Recent' @($recent, (Sep), (Mnu 'mnuHistoryReset' 'Reset history'))), (Sep),
+  (Mnu 'mnuLoadAnnotations' 'Load annotations'), $save, (Mnu 'mnuSaveAs' 'Save annotations as'), (Mnu 'mnuUnloadAnnotations' 'Unload annotations'), (Sep),
+  (Mnu 'mnuExportVideo' 'Export video' @((Mnu 'mnuExportVideoVideo' 'Video'), (Mnu 'mnuExportVideoSlideshow' 'Slideshow'), (Mnu 'mnuExportVideoWithPauses' 'With pauses'), (Mnu 'mnuExportVideoSideBySide' 'Side by side'))),
+  (Mnu 'mnuExportImage' 'Export image' @((Mnu 'mnuExportImageImage' 'Image'), (Mnu 'mnuExportImageSequence' 'Sequence'), (Mnu 'mnuExportImageKeys' 'Key images'), (Mnu 'mnuExportImageSideBySide' 'Side by side'))),
+  (Mnu 'mnuExportDocument' 'Export document' @((Mnu 'mnuExportODT' 'Writer'), (Mnu 'mnuExportDOCX' 'Word'), (Sep), (Mnu 'mnuExportMarkdown' 'Markdown'))),
+  (Mnu 'mnuExportSpreadsheet' 'Export spreadsheet' @((Mnu 'mnuExportODS' 'Calc'), (Mnu 'mnuExportXLSX' 'Excel'), (Mnu 'mnuExportCSVTrajectory' 'Trajectory CSV'), (Mnu 'mnuExportTXTTrajectory' 'Trajectory text'), (Mnu 'mnuExportCSVChronometer' 'Chronometer CSV'), (Sep), (Mnu 'mnuExportJSON' 'JSON'))),
+  (Sep), (Mnu 'mnuCloseFile' 'Close'), (Mnu 'mnuCloseFile2' 'Close'), (Sep), (Mnu 'mnuQuit' 'Quit'))
+$edit = Mnu 'mnuEdit' 'Edit' @($undo, $redo, (Sep), (Mnu 'mnuCutDrawing' 'Cut'), (Mnu 'mnuCopyDrawing' 'Copy'), (Mnu 'mnuPasteDrawing' 'Paste'))
+$view = Mnu 'mnuView' 'View' @((Mnu 'mnuToggleNavigationPane' 'Navigation pane'), (Mnu 'mnuFullScreen' 'Full screen'), (Sep),
+  (Mnu 'mnuOnePlayer' 'One player'), (Mnu 'mnuTwoPlayers' 'Two players'), (Mnu 'mnuThreePlayers' 'Three'), (Mnu 'mnuFourPlayers' 'Four'), (Mnu 'mnuFivePlayers' 'Five'),
+  (Mnu 'mnuOneCapture' 'One capture'), (Mnu 'mnuTwoCaptures' 'Two captures'), (Mnu 'mnuTwoMixed' 'Mixed'), (Sep),
+  (Mnu 'mnuToggleCommonCtrls' 'Common controls'), (Mnu 'mnuVerticalLayout' 'Vertical layout'), (Mnu 'mnuSwapScreens' 'Swap screens'))
+$mysteryImage = Mnu 'mnuMysteryImage' 'A tool of the image'
+$image = Mnu 'mnuImage' 'Image' @((Mnu 'mnuAspectRatio' 'Aspect ratio' @((Mnu 'mnuAspectRatioAuto' 'Auto'), (Sep), (Mnu 'mnuAspectRatioForce43' '4:3'))), (Mnu 'mnuRotation' 'Rotation'),
+  (Mnu 'mnuMirror' 'Mirror'), (Mnu 'mnuDeinterlace' 'Deinterlace'), (Mnu 'mnuDemosaic' 'Demosaicing' @((Mnu 'mnuDemosaicNone' 'None'))), (Mnu 'mnuStabilization' 'Stabilization'), $mysteryImage)
+$video = Mnu 'mnuVideo' 'Video' @((Mnu '' 'Normal'), (Sep), (Mnu '' 'Kinogram'), (Mnu '' 'Camera motion'))
+$mysteryTool = Mnu 'mnuMysteryTool' 'A tool of a plugin'
+$swimItem = Mnu 'mnuSwimAnalysis' 'Swim race analysis'
+$tools = Mnu 'mnuTools' 'Tools' @((Mnu 'mnuImportImage' 'Import image'), (Mnu 'mnuBackground' 'Background'), (Mnu 'mnuTestGrid' 'Test grid'), (Sep),
+  (Mnu 'mnuTimeCalibration' 'Time calibration'), (Mnu 'mnuCoordinateSystem' 'Coordinate system'), (Mnu 'mnuLensCalibration' 'Lens calibration' @((Mnu 'mnuLensCalibrationOpen' 'Import'), (Mnu 'mnuLensCalibrationNone' 'None'))),
+  (Mnu 'mnuCalibrationValidation' 'Calibration validation'), (Sep), (Mnu 'mnuScatterDiagram' 'Scatter'), (Mnu 'mnuLinearKinematics' 'Linear'), (Mnu 'mnuAngularKinematics' 'Angular'),
+  (Mnu 'mnuAngleAngleDiagram' 'Angle-angle'), (Sep), $swimItem, $mysteryTool)
+$window = Mnu 'mnuWindow' 'Window' @((Mnu 'mnuWindowProperties' 'Window properties'), (Sep), (Mnu 'mnuOpenNewWindow' 'Open new window'), (Mnu 'mnuReopenWindow' 'Reopen window'),
+  (Mnu 'mnuManageWindows' 'Manage windows'), (Sep), (Mnu 'mnuManageWorkspaces' 'Manage workspaces'))
+$options = Mnu 'mnuOptions' 'Options' @((Mnu 'mnuLanguages' 'Language' @((Mnu '' 'English'), (Mnu '' 'Ελληνικά'), (Sep), (Mnu 'mnuTranslate1' 'Translate'))),
+  (Mnu 'mnuTimecode' 'Time' @((Mnu 'mnuTimecodeClassic' 'Classic'), (Mnu 'mnuTimecodeFrames' 'Frames'))), (Mnu 'mnuPointer' 'Pointer'), (Sep),
+  (Mnu 'mnuVariables' 'Context' @((Mnu 'mnuImportVariables' 'Import'))), (Sep), (Mnu 'mnuPreferences' 'Preferences'))
+$updates = Mnu '' 'Check for updates'
+$debug = Mnu 'mnuEnableDebugLogs' 'Enable debug logs'
+$help = Mnu 'mnuHelp' 'Help' @((Mnu 'mnuHelpContents' 'Help'), $updates, (Mnu 'mnuTranslate2' 'Translate Kinovea'), (Sep), (Mnu 'mnuApplicationFolder' 'Open application data folder'),
+  $debug, (Sep), (Mnu 'mnuWebsite' 'www.kinovea.org'), (Mnu 'mnuAbout' 'About'))
+$plugin = Mnu 'mnuPlugin' 'A menu of a plugin' @((Mnu '' 'Its command'))
 
 $form = New-Object System.Windows.Forms.Form
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -84,8 +84,8 @@ $tool.GripStyle = 'Hidden'
 function TB([string]$name, [string]$tip) { $b = New-Object System.Windows.Forms.ToolStripButton; $b.Name = $name; $b.ToolTipText = $tip; $b.DisplayStyle = 'Image'
   $bmp = New-Object System.Drawing.Bitmap(16, 16); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::FromArgb(120, 200, 255)); $g.Dispose(); $b.Image = $bmp; return $b }
 $more = New-Object System.Windows.Forms.ToolStripDropDownButton; $more.Name = 'toolMorePlayers'; $more.DisplayStyle = 'Image'
-$more.Image = (TB 'x' '').Image
-$more.DropDownItems.AddRange([System.Windows.Forms.ToolStripItem[]]@((MI 'toolThreePlayers' '3'), (MI 'toolFourPlayers' '4'), (MI 'toolFivePlayers' '5')))
+$more.Image = (TB 'toolMoreIcon' '').Image
+$more.DropDownItems.AddRange([System.Windows.Forms.ToolStripItem[]]@((Mnu 'toolThreePlayers' '3'), (Mnu 'toolFourPlayers' '4'), (Mnu 'toolFivePlayers' '5')))
 $tool.Items.AddRange([System.Windows.Forms.ToolStripItem[]]@((TB 'toolOpenFile' 'Open'), (TB 'toolSave' 'Save'), (Sep), (TB 'toolToggleNavigationPane' 'Pane'), (Sep),
   (TB 'toolExplorer' 'Browser'), (TB 'toolOnePlayer' '1'), (TB 'toolTwoPlayers' '2'), $more, (TB 'toolOneCapture' 'C1'), (TB 'toolTwoCaptures' 'C2'), (TB 'toolTwoMixed' 'M'),
   (Sep), (TB 'toolFullScreen' 'Full')))
@@ -104,8 +104,9 @@ $open = [Func[Nullable[bool], string, bool]] { param($technical, $page) $script:
 $tHost.GetField('OpenAnalysis').SetValue($h, $open)
 $tHost.GetField('BigScreensOn').SetValue($h, [Func[bool]] { return $false })
 $tHost.GetField('CanBigScreens').SetValue($h, [Func[bool]] { return $true })
-$menu = $tMenu.GetConstructors($all)[0].Invoke([object[]]@($strip, $h))
-$tMenu.GetMethod('SetToolbar').Invoke($menu, [object[]]@($tool)) | Out-Null
+# Reflection gets the objects themselves, not their PowerShell wrappers (see gp_ci.ps1).
+$menu = $tMenu.GetConstructors($all)[0].Invoke([object[]]@($strip.psobject.BaseObject, $h.psobject.BaseObject))
+$tMenu.GetMethod('SetToolbar').Invoke($menu, [object[]]@($tool.psobject.BaseObject)) | Out-Null
 $tMenu.GetMethod('Apply').Invoke($menu, $null) | Out-Null
 $active = $tMenu.GetProperty('Active').GetValue($menu)
 $lost = $tMenu.GetProperty('Lost', $all).GetValue($menu)
