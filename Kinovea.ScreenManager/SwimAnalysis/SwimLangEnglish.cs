@@ -2372,6 +2372,13 @@ namespace Kinovea.ScreenManager
             { "Η σύνδεση με το Google Sheet", "The connection with the Google Sheet" },
             { "Το κλασικό μενού του Kinovea έρχεται στο επόμενο άνοιγμα του προγράμματος.", "The classic menu of Kinovea comes at the next start of the program." },
             { "Το μενού του Kinovea Swim μένει και στο επόμενο άνοιγμα.", "The menu of Kinovea Swim stays at the next start too." },
+            { "Επανάληψη", "Redo" },
+            { "Απενεργοποίηση καταγραφής (debug)", "Disable debug logs" },
+            { "Ενεργοποίηση καταγραφής (debug)", "Enable debug logs" },
+            { "Κανονικό", "Normal" },
+            { "Κινόγραμμα", "Kinogram" },
+            { "Κίνηση κάμερας", "Camera motion" },
+            { "Βαθμονόμηση φακού", "Lens calibration" },
         };
     }
 }

@@ -56,7 +56,11 @@ $view = Mnu 'mnuView' 'View' @((Mnu 'mnuToggleNavigationPane' 'Navigation pane')
 $mysteryImage = Mnu 'mnuMysteryImage' 'A tool of the image'
 $image = Mnu 'mnuImage' 'Image' @((Mnu 'mnuAspectRatio' 'Aspect ratio' @((Mnu 'mnuAspectRatioAuto' 'Auto'), (Sep), (Mnu 'mnuAspectRatioForce43' '4:3'))), (Mnu 'mnuRotation' 'Rotation'),
   (Mnu 'mnuMirror' 'Mirror'), (Mnu 'mnuDeinterlace' 'Deinterlace'), (Mnu 'mnuDemosaic' 'Demosaicing' @((Mnu 'mnuDemosaicNone' 'None'))), (Mnu 'mnuStabilization' 'Stabilization'), $mysteryImage)
-$video = Mnu 'mnuVideo' 'Video' @((Mnu '' 'Normal'), (Sep), (Mnu '' 'Kinogram'), (Mnu '' 'Camera motion'))
+$filterType = $a.GetType('Kinovea.ScreenManager.VideoFilterType', $true)
+$fNone = Mnu '' 'Analysis'; $fNone.Tag = [Enum]::Parse($filterType, 'None')
+$fKino = Mnu '' 'Kinogram'; $fKino.Tag = [Enum]::Parse($filterType, 'Kinogram')
+$fCam = Mnu '' 'Camera motion estimation'; $fCam.Tag = [Enum]::Parse($filterType, 'CameraMotion')
+$video = Mnu 'mnuVideo' 'Video' @($fNone, (Sep), $fKino, $fCam)
 $mysteryTool = Mnu 'mnuMysteryTool' 'A tool of a plugin'
 $swimItem = Mnu 'mnuSwimAnalysis' 'Swim race analysis'
 $tools = Mnu 'mnuTools' 'Tools' @((Mnu 'mnuImportImage' 'Import image'), (Mnu 'mnuBackground' 'Background'), (Mnu 'mnuTestGrid' 'Test grid'), (Sep),
@@ -138,10 +142,14 @@ Check ($recent.OwnerItem -eq (Named 'mnuHistory') -and (Named 'mnuHistory').Owne
 Check ($file.DropDownItems[$file.DropDownItems.Count - 1] -eq (Named 'mnuQuit')) 'Έξοδος is last in Αρχείο'
 Check ($mysteryTool.OwnerItem -eq $tools -and $tools.DropDownItems[$tools.DropDownItems.Count - 1] -eq $mysteryTool) 'an unknown tool at the end of Εργαλεία'
 Check ($swimItem.OwnerItem -eq $tools) 'the swim analysis stays in Εργαλεία'
-Check ($updates.OwnerItem -eq $help -and $debug.OwnerItem -eq $help -and $debug.Text -eq 'Enable debug logs') 'Βοήθεια keeps its items (and the text that changes)'
+Check ($updates.OwnerItem -eq $help -and $debug.OwnerItem -eq $help -and @('Enable debug logs', 'Ενεργοποίηση καταγραφής (debug)') -contains $debug.Text) ('Βοήθεια keeps its items (the debug logs: ' + $debug.Text + ')')
 Check ((Named 'mnuWindowProperties').OwnerItem.OwnerItem -eq $options) 'the windows of Kinovea in ⚙ Ρυθμίσεις › Παράθυρα'
 Check ($plugin.Available -and $strip.Items.Contains($plugin) -and $plugin.DropDownItems.Count -eq 1) 'an unknown menu stays as it is'
-Check ($undo.Text -eq 'Undo') 'undo keeps the text of Kinovea (with its action)'
+Check ($undo.Text -eq 'Αναίρεση') ('undo: our word (' + $undo.Text + ')')
+$close = Named 'mnuCloseFile'
+$close.Text = 'Close (fictional_race.mp4)'
+Check ($close.Text -eq 'Κλείσιμο (fictional_race.mp4)') ('closing keeps its file: ' + $close.Text)
+Check ($fNone.Text -eq 'Κανονικό' -and $fKino.Text -eq 'Κινόγραμμα' -and $fCam.Text -eq 'Κίνηση κάμερας') ('the filters by their kind: ' + $fNone.Text + ', ' + $fKino.Text + ', ' + $fCam.Text)
 
 # Names: Greek, again after the program sets its own, in English with the analysis.
 Check ($file.Text -eq 'Αρχείο' -and (Named 'mnuSaveAs').Text -eq 'Αποθήκευση ως…') ('names: ' + $file.Text + ', ' + (Named 'mnuSaveAs').Text)
@@ -149,9 +157,9 @@ $file.Text = 'File'
 Check ($file.Text -eq 'Αρχείο') 'the name comes back when Kinovea sets its own'
 $lang = T 'SwimLang'
 $lang.GetProperty('English').SetValue($null, $true)
-Check ($file.Text -eq 'File' -and $report.Text -eq 'Report' -and (Named 'mnuQuit').Text -eq 'Exit' -and $race.Text -eq 'Race') ('in English: ' + $file.Text + ', ' + $report.Text + ', ' + (Named 'mnuQuit').Text + ', ' + $race.Text)
+Check ($file.Text -eq 'File' -and $report.Text -eq 'Report' -and (Named 'mnuQuit').Text -eq 'Exit' -and $race.Text -eq 'Race' -and $close.Text -eq 'Close (fictional_race.mp4)') ('in English: ' + $file.Text + ', ' + $report.Text + ', ' + (Named 'mnuQuit').Text + ', ' + $race.Text + ', ' + $close.Text)
 $lang.GetProperty('English').SetValue($null, $false)
-Check ($file.Text -eq 'Αρχείο' -and $report.Text -eq 'Αναφορά') 'back in Greek'
+Check ($file.Text -eq 'Αρχείο' -and $report.Text -eq 'Αναφορά' -and $close.Text -eq 'Κλείσιμο (fictional_race.mp4)') 'back in Greek'
 
 # A second layout (a change of language of Kinovea) changes nothing.
 $count = $strip.Items.Count; $raceCount = $race.DropDownItems.Count; $toolCount = $tool.Items.Count
@@ -165,7 +173,7 @@ Check ($tool.Items[0].Text -eq 'Άνοιγμα' -and $tool.Items[1].Text -eq 'Α
 Check (($names -join ' ').Contains('ΟΘΟΝΕΣ') -and ($names -join ' ').Contains('ΑΝΑΛΥΣΗ Αγώνας Τεχνική') -and $names[$names.Count - 1] -eq '📦 Δημιουργία αποστολής') 'the parts of the toolbar'
 Check (-not $tool.Items[2].Enabled) '↶ waits for something to undo'
 $undo.Enabled = $true; $undo.Text = 'Undo : a fictional drawing'
-Check ($tool.Items[2].Enabled -and $tool.Items[2].ToolTipText -eq 'Undo : a fictional drawing (Ctrl+Z)') ('↶ follows the menu: ' + $tool.Items[2].ToolTipText)
+Check ($tool.Items[2].Enabled -and $undo.Text -eq 'Αναίρεση : a fictional drawing' -and $tool.Items[2].ToolTipText -eq 'Αναίρεση : a fictional drawing (Ctrl+Z)') ('↶ follows the menu: ' + $tool.Items[2].ToolTipText)
 
 # The pages of the window from the menus.
 $infoItem = @($race.DropDownItems | Where-Object { $_.Text -eq 'Στοιχεία και αποτελέσματα' })[0]

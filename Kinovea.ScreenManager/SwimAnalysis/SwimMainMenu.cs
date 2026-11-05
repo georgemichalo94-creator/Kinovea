@@ -67,6 +67,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The Greek names of the items (set again whenever Kinovea sets its own, and in English with the analysis).</summary>
         private readonly Dictionary<ToolStripItem, string> labels = new Dictionary<ToolStripItem, string>();
         private readonly Dictionary<ToolStripItem, string> tips = new Dictionary<ToolStripItem, string>();
+
+        /// <summary>Items whose name says something that changes: the word of Kinovea at their start (undo, redo, closing).</summary>
+        private readonly Dictionary<ToolStripItem, KeyValuePair<Func<string>, string>> prefixes = new Dictionary<ToolStripItem, KeyValuePair<Func<string>, string>>();
+
+        /// <summary>Items whose name follows a state (the debug logs on or off): the Greek name now.</summary>
+        private readonly Dictionary<ToolStripItem, Func<string>> states = new Dictionary<ToolStripItem, Func<string>>();
         private readonly HashSet<ToolStripMenuItem> groups = new HashSet<ToolStripMenuItem>();
         private readonly HashSet<ToolStripDropDownItem> themed = new HashSet<ToolStripDropDownItem>();
         private readonly List<ToolStripItem> added = new List<ToolStripItem>();
@@ -682,7 +688,7 @@ namespace Kinovea.ScreenManager
             if (item == null)
                 return;
 
-            bool known = labels.ContainsKey(item);
+            bool known = labels.ContainsKey(item) || prefixes.ContainsKey(item) || states.ContainsKey(item);
             labels[item] = greek;
             if (!known)
                 item.TextChanged += (s, e) => KeepLabel(item);
@@ -698,14 +704,71 @@ namespace Kinovea.ScreenManager
             return SwimLang.T(greek);
         }
 
-        private void KeepLabel(ToolStripItem item)
+        /// <summary>The English of a Greek name of the menu (itself without one).</summary>
+        private static string English(string greek)
+        {
+            string english;
+            if (MenuEnglish.TryGetValue(greek, out english) || SwimLangEnglish.Map.TryGetValue(greek, out english))
+                return english;
+
+            return greek;
+        }
+
+        /// <summary>The name an item has to have now, or null for the one the program gave it.</summary>
+        private string LabelOf(ToolStripItem item)
         {
             string greek;
-            if (relabeling || !labels.TryGetValue(item, out greek))
+            if (labels.TryGetValue(item, out greek))
+                return Text(greek);
+
+            Func<string> state;
+            if (states.TryGetValue(item, out state))
+            {
+                string now = null;
+                try
+                {
+                    now = state();
+                }
+                catch (Exception)
+                {
+                    now = null;
+                }
+
+                return now == null ? null : Text(now);
+            }
+
+            KeyValuePair<Func<string>, string> prefix;
+            if (!prefixes.TryGetValue(item, out prefix))
+                return null;
+
+            // The word of Kinovea, or ours in either language, at the start: ours in the language of the analysis, the rest as it is.
+            string current = item.Text ?? "";
+            string kinovea = null;
+            try
+            {
+                kinovea = prefix.Key();
+            }
+            catch (Exception)
+            {
+                kinovea = null;
+            }
+
+            foreach (string word in new[] { kinovea, prefix.Value, English(prefix.Value) })
+            {
+                if (!string.IsNullOrEmpty(word) && current.StartsWith(word, StringComparison.Ordinal))
+                    return Text(prefix.Value) + current.Substring(word.Length);
+            }
+
+            return null;
+        }
+
+        private void KeepLabel(ToolStripItem item)
+        {
+            if (relabeling)
                 return;
 
-            string text = Text(greek);
-            if (item.Text == text)
+            string text = LabelOf(item);
+            if (text == null || item.Text == text)
                 return;
 
             relabeling = true;
@@ -811,6 +874,74 @@ namespace Kinovea.ScreenManager
 
             for (int i = 0; i < names.GetLength(0); i++)
                 SetLabel(Item(names[i, 0]), names[i, 1]);
+
+            // Undo and redo keep their action, closing its file: only the word of Kinovea at their start is ours.
+            ToolStripMenuItem undo = Item("mnuUndo") as ToolStripMenuItem;
+            ToolStripMenuItem redo = Item("mnuRedo") as ToolStripMenuItem;
+            SetPrefix(undo, () => KinoveaWord(undo, "mnuUndo"), "Αναίρεση");
+            SetPrefix(redo, () => KinoveaWord(redo, "mnuRedo"), "Επανάληψη");
+            SetPrefix(Item("mnuCloseFile"), () => Languages.ScreenManagerLang.Generic_Close, "Κλείσιμο");
+            SetPrefix(Item("mnuCloseFile2"), () => Languages.ScreenManagerLang.Generic_Close, "Κλείσιμο");
+
+            // The debug logs: the name of what a click does now.
+            SetState(Item("mnuEnableDebugLogs"), () => PreferencesManager.GeneralPreferences.EnableDebugLog ?
+                "Απενεργοποίηση καταγραφής (debug)" : "Ενεργοποίηση καταγραφής (debug)");
+
+            // The filters of the video, by their kind.
+            foreach (ToolStripMenuItem menu in strip.Items.OfType<ToolStripMenuItem>())
+                LabelFilters(menu.DropDownItems);
+        }
+
+        private void LabelFilters(ToolStripItemCollection items)
+        {
+            foreach (ToolStripItem item in items)
+            {
+                if (item.Tag is VideoFilterType)
+                {
+                    switch ((VideoFilterType)item.Tag)
+                    {
+                        case VideoFilterType.None: SetLabel(item, "Κανονικό"); break;
+                        case VideoFilterType.Kinogram: SetLabel(item, "Κινόγραμμα"); break;
+                        case VideoFilterType.CameraMotion: SetLabel(item, "Κίνηση κάμερας"); break;
+                        case VideoFilterType.LensCalibration: SetLabel(item, "Βαθμονόμηση φακού"); break;
+                    }
+
+                    continue;
+                }
+
+                ToolStripMenuItem m = item as ToolStripMenuItem;
+                if (m != null && m.HasDropDownItems)
+                    LabelFilters(m.DropDownItems);
+            }
+        }
+
+        /// <summary>The word Kinovea starts the name of undo or redo with (from the resources it keeps in the item).</summary>
+        private static string KinoveaWord(ToolStripItem item, string key)
+        {
+            System.Resources.ResourceManager rm = item != null ? item.Tag as System.Resources.ResourceManager : null;
+            return rm != null ? rm.GetString(key) : null;
+        }
+
+        private void SetPrefix(ToolStripItem item, Func<string> kinovea, string greek)
+        {
+            if (item == null)
+                return;
+
+            bool known = prefixes.ContainsKey(item) || labels.ContainsKey(item) || states.ContainsKey(item);
+            prefixes[item] = new KeyValuePair<Func<string>, string>(kinovea, greek);
+            if (!known)
+                item.TextChanged += (s, e) => KeepLabel(item);
+        }
+
+        private void SetState(ToolStripItem item, Func<string> greek)
+        {
+            if (item == null)
+                return;
+
+            bool known = prefixes.ContainsKey(item) || labels.ContainsKey(item) || states.ContainsKey(item);
+            states[item] = greek;
+            if (!known)
+                item.TextChanged += (s, e) => KeepLabel(item);
         }
 
         private void Relabel()
@@ -818,14 +949,14 @@ namespace Kinovea.ScreenManager
             relabeling = true;
             try
             {
-                foreach (KeyValuePair<ToolStripItem, string> kv in labels)
+                foreach (ToolStripItem item in labels.Keys.Concat(prefixes.Keys).Concat(states.Keys).ToList())
                 {
-                    if (kv.Key == null || kv.Key.IsDisposed)
+                    if (item == null || item.IsDisposed)
                         continue;
 
-                    string text = Text(kv.Value);
-                    if (kv.Key.Text != text)
-                        kv.Key.Text = text;
+                    string text = LabelOf(item);
+                    if (text != null && item.Text != text)
+                        item.Text = text;
                 }
             }
             finally
