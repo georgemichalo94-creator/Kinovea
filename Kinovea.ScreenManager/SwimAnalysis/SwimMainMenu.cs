@@ -149,11 +149,9 @@ namespace Kinovea.ScreenManager
             {
                 if (!built)
                 {
+                    // Not yet (the menus of Kinovea not there): again at the next refresh; failed (put back): the classic menu stays.
                     if (!Build())
-                    {
-                        failed = true;
                         return;
-                    }
 
                     built = true;
                     SwimLang.Changed += (s, e) => Relabel();
@@ -293,7 +291,7 @@ namespace Kinovea.ScreenManager
             ToolStripMenuItem help = TopMenu("mnuHelp");
             if (file == null || edit == null || view == null || tools == null || options == null || help == null)
             {
-                log.Warn("The menus of Kinovea were not found by their names: the classic menu stays.");
+                log.Warn("The menus of Kinovea were not found by their names: the classic menu stays for now.");
                 return false;
             }
 
@@ -325,6 +323,7 @@ namespace Kinovea.ScreenManager
             }
 
             Restore(had, options, optionsIndex);
+            failed = true;
             return false;
         }
 
@@ -1062,6 +1061,7 @@ namespace Kinovea.ScreenManager
             SwimAnalysisManager m = SwimAnalysisManager.Current;
             SwimRace race = m != null ? m.Race : null;
             bool tech = race != null && (race.IsTraining || m.TechnicalView);
+            add(new ToolStripSeparator());
             add(new SwimMenuHeader { Text = SwimLang.T("Τώρα στο βίντεο"), Font = headerFont ?? strip.Font });
             if (race == null || tech != technical)
             {
