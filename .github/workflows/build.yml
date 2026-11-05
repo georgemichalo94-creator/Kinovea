@@ -252,6 +252,16 @@ jobs:
             $a2 = Invoke-RestMethod $up2 -Method Post -Headers $headers -InFile group-panel.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release images::$($a2.name) $($a2.size) bytes"
           }
+          # (2.18.0) The pictures of the main menu (drawn on a fictional menu), for a look.
+          if (Test-Path main-menu) {
+            Compress-Archive -Path main-menu\* -DestinationPath main-menu.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'main-menu.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up3 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=main-menu.zip"
+            $a3 = Invoke-RestMethod $up3 -Method Post -Headers $headers -InFile main-menu.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release menu pictures::$($a3.name) $($a3.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
