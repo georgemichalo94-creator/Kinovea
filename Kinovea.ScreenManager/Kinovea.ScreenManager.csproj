@@ -1054,6 +1054,12 @@
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.cs" />
+    <Compile Include="SwimAnalysis\SwimAiPro.cs" />
+    <Compile Include="SwimAnalysis\SwimAiProPrompt.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.AiPro.cs" />
+    <Compile Include="SwimAnalysis\FormSwimAiPro.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimHudDial.cs">
       <SubType>Component</SubType>
     </Compile>
