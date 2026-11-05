@@ -80,6 +80,9 @@ namespace Kinovea.ScreenManager
 
         // (Swim 2.14.0) Big screens: with two or more screens each shows only its image in the window (VideoBigScreens).
         private bool bigScreens;
+
+        /// <summary>(Swim 2.18.0) The main menu of Kinovea Swim (the menus of Kinovea in groups by task, or the classic menu).</summary>
+        private SwimMainMenu swimMenu;
         private List<string> camerasToDiscover = new List<string>();
         private bool autoLaunchInProgress;
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -788,6 +791,17 @@ namespace Kinovea.ScreenManager
             ToolStripManager.Merge(ThisMenu, menu);
 
             RefreshCultureMenu();
+
+            // (Swim 2.18.0) The menu of Kinovea Swim, laid out at the first RefreshUICulture (when all the modules are in it).
+            SwimMainMenu.NameFields(this);
+            swimMenu = new SwimMainMenu(menu as MenuStrip, new SwimMenuHost
+            {
+                OpenAnalysis = ShowSwimView,
+                BigScreensOn = () => bigScreens,
+                CanBigScreens = () => playerScreens.Count() >= 2,
+                SetBigScreens = on => BigScreens(on),
+                ShowGroupMenu = () => ShowGroupMenu(null)
+            });
         }
 
         public void ExtendToolBar(ToolStrip toolbar)
@@ -857,6 +871,9 @@ namespace Kinovea.ScreenManager
 
             ToolStripManager.Merge(ts, toolbar);
 
+            SwimMainMenu.NameFields(this);
+            if (swimMenu != null)
+                swimMenu.SetToolbar(toolbar);
         }
         public void ExtendStatusBar(ToolStrip statusbar)
         {
@@ -906,6 +923,10 @@ namespace Kinovea.ScreenManager
             // Screens
             foreach (AbstractScreen screen in screenList)
                 screen.RefreshUICulture();
+
+            // (Swim 2.18.0) The menu of Kinovea Swim after the texts of Kinovea.
+            if (swimMenu != null)
+                swimMenu.Apply();
         }
 
         /// <summary>
@@ -3899,6 +3920,19 @@ namespace Kinovea.ScreenManager
                 return;
 
             ps.ShowSwimAnalysis();
+        }
+
+        /// <summary>
+        /// (Swim 2.18.0) The window of the swim analysis from the main menu: of the video of the active screen, else of the first screen
+        /// with a video; in its race view (false), technical view (true) or the view it has (null), at a page. False without a video.
+        /// </summary>
+        private bool ShowSwimView(bool? technical, string page)
+        {
+            PlayerScreen ps = activeScreen as PlayerScreen;
+            if (ps == null || !ps.Full)
+                ps = screenList.OfType<PlayerScreen>().FirstOrDefault(p => p.Full);
+
+            return ps != null && ps.ShowSwimAnalysis(technical, page);
         }
         #endregion
 

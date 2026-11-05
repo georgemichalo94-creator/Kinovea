@@ -318,6 +318,21 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.18.0) The window from the main menu of Kinovea Swim (Αγώνας, Τεχνική, ⚙ Ρυθμίσεις): in the race view (false) or the
+        /// technical view (true), or as it is (null), at one of its pages ("race", "start", "swim", "turns", "finish", "finals",
+        /// "connection", "tech-start", "tech-turns", "tech-media", "tech-eval"; null: the page it shows).
+        /// </summary>
+        public void ShowView(PlayerScreenUserInterface player, FrameServerPlayer frameServer, bool? technical, string page)
+        {
+            if (technical.HasValue)
+                TechnicalView = technical.Value;
+
+            ShowWindow(player, frameServer);
+            if (form != null && !form.IsDisposed)
+                form.ShowView(technical, page);
+        }
+
+        /// <summary>
         /// Handles a Swim* command from the player screen at the given video timestamp.
         /// </summary>
         /// <summary>(2.15.0) The start key moved only the origin of the screen it was pressed on (not tied to the others of a group).</summary>

@@ -188,6 +188,27 @@ jobs:
         path: group-panel
         if-no-files-found: ignore
 
+    - name: Swim main menu
+      shell: pwsh
+      timeout-minutes: 6
+      run: |
+        # (2.18.0) The main menu of Kinovea Swim on a fictional menu of Kinovea: nothing lost, every item in its place, the names.
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\main_menu\mm_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -out main-menu 2>&1
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim main menu::exit ' + $code + ' | ' + (($bad + ($out | Select-Object -Last 6)) -join ' | ')); exit 1 }
+        Write-Output ('::notice title=Swim main menu::' + ($out | Select-Object -Last 1))
+
+    - name: Swim main menu images
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: main-menu
+        path: main-menu
+        if-no-files-found: ignore
+
     # The same zip as the asset of a draft release of the branch (drafts are not public): the update of the analysts'
     # computers takes it from there, where the storage of the artifacts cannot be reached. Never fails the run. A work in
     # progress branch (swim-wip-…) built on demand gets one too, for a test on one computer before it is released.
@@ -230,6 +251,16 @@ jobs:
             $up2 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=group-panel.zip"
             $a2 = Invoke-RestMethod $up2 -Method Post -Headers $headers -InFile group-panel.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release images::$($a2.name) $($a2.size) bytes"
+          }
+          # (2.18.0) The pictures of the main menu (drawn on a fictional menu), for a look.
+          if (Test-Path main-menu) {
+            Compress-Archive -Path main-menu\* -DestinationPath main-menu.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'main-menu.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up3 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=main-menu.zip"
+            $a3 = Invoke-RestMethod $up3 -Method Post -Headers $headers -InFile main-menu.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release menu pictures::$($a3.name) $($a3.size) bytes"
           }
         } catch {
           $detail = $_.ErrorDetails.Message

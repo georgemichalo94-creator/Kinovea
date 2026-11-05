@@ -1053,6 +1053,7 @@
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.Tech.cs" />
+    <Compile Include="SwimAnalysis\SwimMainMenu.cs" />
     <Compile Include="SwimAnalysis\SwimHudDial.cs">
       <SubType>Component</SubType>
     </Compile>
