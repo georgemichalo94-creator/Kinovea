@@ -2472,6 +2472,19 @@ namespace Kinovea.ScreenManager
             { "Ο Claude σχολιάζει τον αγώνα για την αναφορά και αξιολογεί την εκκίνηση και τις στροφές με τις λίστες σου (με κωδικό).", "Claude comments the race for the report and evaluates the start and the turns with your lists (with a password)." },
             { "Ο Claude αξιολογεί την εκκίνηση ή τη στροφή από τα καρέ των οθονών με τη λίστα σου· οι απαντήσεις του μπαίνουν στη λίστα ως AI για να τις επιβεβαιώσεις (με κωδικό).", "Claude evaluates the start or the turn from the frames of the screens with your list; its answers go in the list as AI for you to confirm (with a password)." },
             { "Η ανάλυση της εκκίνησης, της στροφής ή του αγώνα από τον Claude (με κωδικό)", "The analysis of the start, the turn or the race by Claude (with a password)" },
+
+            // 2.19.1: AI pro with several screens (the frames as Claude sees them, the limits of a request).
+            { "👁 Δες τα καρέ (δωρεάν)", "👁 See the frames (free)" },
+            { "📷 Τα καρέ που στάλθηκαν", "📷 The frames that were sent" },
+            { " · με {0} οθόνες έως {1} στιγμές ανά αίτηση (όριο μεγέθους)", " · with {0} screens at most {1} moments a request (size limit)" },
+            { "Τα καρέ δεν χωρούν σε μία αίτηση: διάλεξε λιγότερες οθόνες ή κανονική λεπτομέρεια.", "The frames do not fit in one request: choose fewer screens or the normal detail." },
+            { "Τα καρέ: {0} στιγμές × {1} οθόνες ({2} καρέ) · δεν στάλθηκε τίποτα.", "The frames: {0} moments × {1} screens ({2} frames) · nothing was sent." },
+            { "Έτσι θα τα δει ο Claude: κάθε σειρά μία στιγμή, κάθε στήλη μία οθόνη. Αν οι οθόνες δεν δείχνουν την ίδια στιγμή, συγχρόνισέ τες πριν από την ανάλυση.", "This is how Claude will see them: each row a moment, each column a screen. If the screens do not show the same moment, synchronise them before the analysis." },
+            { "Τα καρέ που στάλθηκαν στον Claude: κάθε σειρά μία στιγμή, κάθε στήλη μία οθόνη.", "The frames that were sent to Claude: each row a moment, each column a screen." },
+            { "{0} στιγμές × {1} οθόνες", "{0} moments × {1} screens" },
+            { "χωρίς καρέ (εκτός του βίντεο αυτής της κάμερας)", "no frame (outside the video of this camera)" },
+            { "AI pro · τα καρέ", "AI pro · the frames" },
+            { "Αποθήκευση εικόνας…", "Save the picture…" },
         };
     }
 }

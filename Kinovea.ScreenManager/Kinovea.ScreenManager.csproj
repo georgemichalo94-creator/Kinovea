@@ -1057,6 +1057,7 @@
     <Compile Include="SwimAnalysis\SwimAiPro.cs" />
     <Compile Include="SwimAnalysis\SwimAiProPrompt.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.AiPro.cs" />
+    <Compile Include="SwimAnalysis\SwimAiFrames.cs" />
     <Compile Include="SwimAnalysis\FormSwimAiPro.cs">
       <SubType>Form</SubType>
     </Compile>

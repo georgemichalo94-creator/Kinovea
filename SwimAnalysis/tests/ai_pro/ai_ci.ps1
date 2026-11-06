@@ -1,4 +1,4 @@
-﻿# ai_ci.ps1: the CI check of AI pro (2.19.0) with FICTIONAL data only: the password gate (with a test hash: the owner's password is in
+﻿# ai_ci.ps1: the CI check of AI pro (2.19.0, several screens 2.19.1) with FICTIONAL data only: the password gate (with a test hash: the owner's password is in
 # no file), the protected key, the prices and the book of the month, the moments of a start and a turn, the request (no name of a person
 # or a club or a competition, every point of the list, the frames), a fake Claude API on this computer (the headers, a busy API asked
 # again, the errors), Claude's answers into the list (proposals AI, the coach's own scores and the program's measurements kept), the
@@ -367,6 +367,99 @@ $raceContext = $prompt.GetMethod('RaceContext').Invoke($null, @($race, $computed
 $namedRace = @('Δοκιμαστική Αθλήτρια', 'TEST-ID-123', 'Όμιλος Δοκιμής', '2010', 'Αγώνες Δοκιμής', 'Πόλη Δοκιμής') | Where-Object { $raceContext.Contains($_) }
 Check ($namedRace.Count -eq 0) 'no name in the comments of a race either'
 
+# ---- Several screens (2.19.1): the moments a request takes, its limits, a screen without a frame, the picture of the frames.
+$budget = T 'SwimAiBudget'
+$bm = $budget.GetMethod('Moments')
+$normal = @(1..5 | ForEach-Object { [int]$bm.Invoke($null, @(16, [int]$_, 1280)) })
+$high = @(1..5 | ForEach-Object { [int]$bm.Invoke($null, @(16, [int]$_, 1920)) })
+Write-Output ('moments of a request for 1..5 screens: normal ' + ($normal -join ' ') + ' · high ' + ($high -join ' '))
+Check (($normal -join ',') -eq '16,16,16,15,12') 'normal detail: 16 moments with 1 to 3 screens, 15 with 4, 12 with 5'
+Check (($high -join ',') -eq '16,16,12,9,7') 'high detail: 16 moments with 1 or 2 screens, then fewer (12, 9, 7)'
+Check ([int]$bm.Invoke($null, @(14, 2, 1280)) -eq 14 -and [int]$bm.Invoke($null, @(14, 5, 1920)) -eq 7) 'the race the same way (14 moments, fewer with many screens)'
+$fakeFrame = 560 * 1024
+foreach ($screens in 2..5) {
+  foreach ($edge in @(1280, 1920)) {
+    $mm = [int]$bm.Invoke($null, @(16, $screens, $edge))
+    $ms2 = $momentsType.GetMethod('Tech').Invoke($null, @($turn, $turnSheet, $timing, $one, [long]0, [long]60000, $mm, 'el'))
+    $cov = @($timed | Where-Object { $a = [string]$_; @($ms2 | Where-Object { $_.Anchors.Contains($a) }).Count -gt 0 })
+    $imgs = NewList $tImg
+    $h = [int][Math]::Round($edge * 9 / 16.0)
+    $size = if ($edge -gt 1280) { $fakeFrame } else { 260 * 1024 }
+    foreach ($m in $ms2) { foreach ($s in 1..$screens) { $img = [Activator]::CreateInstance($tImg); $img.Moment = $m.N; $img.Screen = $s; $img.Width = $edge; $img.Height = $h; $img.Jpeg = (New-Object byte[] $size); $imgs.Add($img) } }
+    $fits = [bool]$budget.GetMethod('Fits').Invoke($null, [object[]](,$imgs))
+    $b2 = $request.GetMethod('Build').Invoke($null, @('claude-opus-5-5', 'system', 'context', $ms2, $imgs, $screens, $prompt.GetMethod('TechSchema').Invoke($null, @()), 16000))
+    $blocks = @($b2['messages'][0]['content'] | Where-Object { $_['type'].ToString() -eq 'image' }).Count
+    $named2 = @($b2['messages'][0]['content'] | Where-Object { $_['type'].ToString() -eq 'text' -and $_['text'].ToString().StartsWith('Moment ') -and $_['text'].ToString().Contains(' · screen ') }).Count
+    $length = $b2.ToString([Newtonsoft.Json.Formatting]::None).Length
+    $tokens = 0; foreach ($i in $imgs) { $tokens += [int]$models.GetMethod('ImageTokens').Invoke($null, @($i.Width, $i.Height)) }
+    Check ($fits -and $imgs.Count -le 60 -and $blocks -eq $imgs.Count -and $named2 -eq $imgs.Count -and $length -lt 30000000 -and $tokens -le 110000 -and $cov.Count -eq $timed.Count) ("$screens screens at $edge" + ': ' + @($ms2).Count + ' moments, ' + $imgs.Count + ' frames, ' + $tokens + ' tokens, ' + [Math]::Round($length / 1MB, 1) + ' MB, every point of the list (' + $cov.Count + '/' + $timed.Count + ')')
+  }
+}
+# Frames larger than thought: the request made smaller after they were taken, its moments numbered again, no point lost.
+$big = $momentsType.GetMethod('Tech').Invoke($null, @($turn, $turnSheet, $timing, $one, [long]0, [long]60000, 16, 'el'))
+$bigList = NewList (T 'SwimAiMoment'); foreach ($m in $big) { $bigList.Add($m) }
+$bigImgs = NewList $tImg
+foreach ($m in $bigList) { foreach ($s in 1..5) { $img = [Activator]::CreateInstance($tImg); $img.Moment = $m.N; $img.Screen = $s; $img.Width = 1920; $img.Height = 1080; $img.Jpeg = (New-Object byte[] (700 * 1024)); $bigImgs.Add($img) } }
+$before = $bigList.Count
+$fit = [bool]$budget.GetMethod('Fit').Invoke($null, @($bigList, $bigImgs))
+$numbers = @($bigList | ForEach-Object { $_.N }) -join ','
+$expected = @(1..$bigList.Count) -join ','
+$orphans = @($bigImgs | Where-Object { $_.Moment -lt 1 -or $_.Moment -gt $bigList.Count }).Count
+$bigCov = @($timed | Where-Object { $a = [string]$_; @($bigList | Where-Object { $_.Anchors.Contains($a) }).Count -gt 0 })
+Check ($fit -and $bigImgs.Count -le 60 -and $numbers -eq $expected -and $orphans -eq 0 -and $bigCov.Count -eq $timed.Count) ('5 screens of 700 KB a frame: ' + $before + ' moments made ' + $bigList.Count + ' (' + $bigImgs.Count + ' frames), numbered again, every point kept')
+# A screen without a frame at a moment (its video starts later): said in the request.
+$three = NewList $tImg
+foreach ($m in $moments) { foreach ($s in 1..3) { if ($m.N -eq 1 -and $s -eq 3) { continue }; $img = [Activator]::CreateInstance($tImg); $img.Moment = $m.N; $img.Screen = $s; $img.Width = 1280; $img.Height = 720; $img.Jpeg = $jpeg; $three.Add($img) } }
+$b3 = $request.GetMethod('Build').Invoke($null, @('claude-opus-5-5', 'system', 'context', $moments, $three, 3, $prompt.GetMethod('TechSchema').Invoke($null, @()), 16000))
+$t3 = (@($b3['messages'][0]['content'] | Where-Object { $_['type'].ToString() -eq 'text' } | ForEach-Object { $_['text'].ToString() }) -join "`n")
+Check ($t3.Contains('Moment 1: no frame of screen 3') -and -not $t3.Contains('Moment 2: no frame') -and $t3.Contains('Moment 2 · screen 3')) 'a screen without a frame at a moment: said to Claude (and only there)'
+$ctx3 = $prompt.GetMethod('TechContext').Invoke($null, @($race, $turn, $turnSheet, $one, $measures, $athlete, $moments, 3, $three.Count, 'el', $null))
+Check ($ctx3.Contains('3 synchronised screens')) 'three screens: the request says they are synchronised'
+# The picture of the frames: a row a moment, a column a screen, the frame missing in grey (fictional frames).
+if ($windows) {
+  $tSet = T 'SwimAiFramesSet'; $contact = T 'SwimAiContact'
+  $drawing = 'System.Drawing.Graphics' -as [type]; $jpg = ('System.Drawing.Imaging.ImageFormat' -as [type])::Jpeg
+  $colors = @(@(40, 90, 140), @(20, 120, 90), @(120, 80, 40))
+  function FakeFrame($s, $n) {
+    $b = New-Object System.Drawing.Bitmap 1280, 720
+    $g = $drawing::FromImage($b)
+    $c = $colors[$s - 1]
+    $g.Clear([System.Drawing.Color]::FromArgb($c[0], $c[1], $c[2]))
+    $f = New-Object System.Drawing.Font 'Segoe UI', 60
+    $g.DrawString(('screen ' + $s + ' · moment ' + $n), $f, [System.Drawing.Brushes]::White, 60, 300)
+    $f.Dispose(); $g.Dispose()
+    $ms = New-Object System.IO.MemoryStream; $b.Save($ms, $jpg); $b.Dispose()
+    return ,$ms.ToArray()
+  }
+  function NewSet($title, $count, $screens, $skip) {
+    $set = [Activator]::CreateInstance($tSet); $set.Title = $title
+    $k = 0
+    foreach ($m in $moments) {
+      $k++; if ($k -gt $count) { break }
+      $set.Moments.Add($m)
+      foreach ($s in 1..$screens) {
+        if ($skip -and $m.N -eq 1 -and $s -eq $screens) { continue }
+        $img = [Activator]::CreateInstance($tImg); $img.Moment = $m.N; $img.Screen = $s; $img.Width = 1280; $img.Height = 720; $img.Jpeg = (FakeFrame $s $m.N); $set.Images.Add($img)
+      }
+    }
+    return ,$set
+  }
+  $set3 = NewSet 'Turn 1 · test list' 4 3 $true
+  $thumb = [int]$contact.GetMethod('Thumb').Invoke($null, @(3, 1300))
+  $pic = $contact.GetMethod('Compose').Invoke($null, @($set3, $thumb))
+  $row = [int][Math]::Round($thumb * 720 / 1280.0)
+  $w3 = 10 + 3 * ($thumb + 10); $h3 = 36 + 4 * (22 + $row + 10) + 10
+  $grey = $pic.GetPixel(10 + 2 * ($thumb + 10) + [int]($thumb / 2), 36 + 22 + [int]($row * 0.75))
+  $blue = $pic.GetPixel(10 + [int]($thumb / 2), 36 + 22 + [int]($row * 0.25))
+  Check ($pic.Width -eq $w3 -and $pic.Height -eq $h3) ('the picture: 3 columns, 4 rows (' + $pic.Width + ' x ' + $pic.Height + ', frames ' + $thumb + ' wide)')
+  Check ($grey.R -eq 8 -and $grey.G -eq 32 -and $grey.B -eq 47 -and [Math]::Abs($blue.B - 140) -lt 12) 'the frame of screen 3 at moment 1 missing: a grey box; the others drawn'
+  if ($out) { $pic.Save([System.IO.Path]::Combine($out, 'ai_4_frames.png'), ('System.Drawing.Imaging.ImageFormat' -as [type])::Png) }
+  $pic.Dispose()
+  Check ([int]$contact.GetMethod('Thumb').Invoke($null, @(2, 1300)) -eq 480 -and [int]$contact.GetMethod('Thumb').Invoke($null, @(5, 1300)) -eq 242) 'the frames as wide as the window allows (2 screens 480, 5 screens 242)'
+  $script:frameSets = NewList $tSet
+  $script:frameSets.Add($set3); $script:frameSets.Add((NewSet 'Start · test list' 3 2 $false))
+}
+
 # ---- The windows (pictures for the review).
 if ($windows -and $out) {
   function Picture($form, $name) {
@@ -396,6 +489,12 @@ if ($windows -and $out) {
     $box.Text = (([string][char]0x2501) * 2) + ' ' + $turn.Title + ' · ' + $turnSheet.Title.Text + ' ' + (([string][char]0x2501) * 2) + "`r`n" + $rest
     Picture $form 'ai_3_window.png'
   } catch { Write-Output ('picture of the window not drawn: ' + $_.Exception.Message) }
+  try {
+    $frames = [Activator]::CreateInstance((T 'FormSwimAiFrames'), [object[]]@($script:frameSets, 'Fictional frames of the test: each row a moment, each column a screen.'))
+    $shown = (T 'FormSwimAiFrames').GetProperty('Picture', $all).GetValue($frames)
+    Check ($null -ne $shown -and $shown.Width -gt 600) 'the window of the frames shows the picture of the first request'
+    Picture $frames 'ai_5_frames_window.png'
+  } catch { Write-Output ('FAIL the window of the frames: ' + $_.Exception.Message); $script:fails++ }
 }
 
 try { Remove-Item -Recurse -Force $settingsDir } catch { }

@@ -232,6 +232,8 @@ namespace Kinovea.ScreenManager
         private readonly Label lblEstimate;
         private readonly Label lblMonth;
         private readonly SwimButton btnRun;
+        private readonly SwimButton btnPreview;
+        private readonly SwimButton btnSent;
         private readonly Label lblProgress;
         private readonly TextBox txtResult;
         private readonly Label lblAgree;
@@ -261,6 +263,7 @@ namespace Kinovea.ScreenManager
             public SwimTechSheet Sheet;
             public string Title;
             public List<SwimAiMoment> Moments;
+            public List<SwimAiImage> Images;
             public JObject Body;
             public string Error;
             public bool Flying;
@@ -370,9 +373,16 @@ namespace Kinovea.ScreenManager
                 else
                     Run();
             };
+            // (2.19.1) The frames as Claude sees them: before a request (nothing spent), and those of the last analysis.
+            btnPreview = new SwimButton(true) { Text = SwimLang.T("👁 Δες τα καρέ (δωρεάν)"), AutoSize = true, Height = 34 };
+            btnPreview.Click += (s, e) => Preview();
+            btnSent = new SwimButton(true) { Text = SwimLang.T("📷 Τα καρέ που στάλθηκαν"), AutoSize = true, Height = 34, Enabled = false };
+            btnSent.Click += (s, e) => ShowSent();
             SwimButton close = new SwimButton(true) { Text = SwimLang.T("Κλείσιμο"), AutoSize = true, Height = 34 };
             close.Click += (s, e) => Close();
             buttons.Controls.Add(btnRun);
+            buttons.Controls.Add(btnPreview);
+            buttons.Controls.Add(btnSent);
             buttons.Controls.Add(close);
             root.Controls.Add(buttons);
             lblProgress = new Label { AutoSize = true, ForeColor = SwimTheme.Amber, Margin = new Padding(0, 2, 0, 4), MaximumSize = new Size(660, 0) };
@@ -486,6 +496,7 @@ namespace Kinovea.ScreenManager
             if (cmbWhat.Items.Count == 0)
             {
                 btnRun.Enabled = false;
+                btnPreview.Enabled = false;
                 lblProgress.Text = race != null && race.IsTraining
                     ? SwimLang.T("Δεν υπάρχει ακόμη εκκίνηση ή στροφή με λίστα: σημάδεψε πρώτα το σήμα της εκκίνησης ή την επαφή με τον τοίχο.")
                     : SwimLang.T("Δεν υπάρχει ακόμη τίποτα να αναλυθεί: σημάδεψε πρώτα την εκκίνηση του αγώνα.");
@@ -584,6 +595,17 @@ namespace Kinovea.ScreenManager
             get { return chkHigh.Checked ? SwimAnalysisManager.AiEdgeHigh : SwimAnalysisManager.AiEdgeNormal; }
         }
 
+        /// <summary>(2.19.1) The moments of a request with these screens (fewer with three screens or more, or the high detail: SwimAiBudget).</summary>
+        private int MomentsMax(int screens, bool isRace)
+        {
+            return SwimAiBudget.Moments(Wanted(isRace), screens, Edge);
+        }
+
+        private int Wanted(bool isRace)
+        {
+            return isRace ? 14 : (manager.Settings != null ? manager.Settings.AiProMoments : 16);
+        }
+
         private List<PlayerScreenUserInterface> ChosenScreens()
         {
             return screenBoxes.Where(p => p.Key.Checked && p.Value != null && !p.Value.IsDisposed).Select(p => p.Value).ToList();
@@ -660,18 +682,23 @@ namespace Kinovea.ScreenManager
             int requests, frames;
             Count(what, screens, out requests, out frames);
             double usd = Estimate(requests, frames);
-            lblEstimate.Text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Εκτίμηση: {0} καρέ σε {1} αίτηση(-εις) · ≈ {2}"), frames, requests, SwimAiModels.Dollars(usd));
+            string text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Εκτίμηση: {0} καρέ σε {1} αίτηση(-εις) · ≈ {2}"), frames, requests, SwimAiModels.Dollars(usd));
+            bool isRace = what.Kind == "race";
+            int allowed = MomentsMax(screens, isRace);
+            if (allowed < Wanted(isRace))
+                text += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · με {0} οθόνες έως {1} στιγμές ανά αίτηση (όριο μεγέθους)"), screens, allowed);
+            lblEstimate.Text = text;
         }
 
         private void Count(WhatItem what, int screens, out int requests, out int frames)
         {
             requests = 0;
             frames = 0;
-            int max = manager.Settings != null ? manager.Settings.AiProMoments : 16;
+            int max = MomentsMax(screens, false);
             if (what.Kind == "race")
             {
                 requests = 1;
-                frames = manager.AiRaceMoments(14).Count * screens;
+                frames = manager.AiRaceMoments(MomentsMax(screens, true)).Count * screens;
                 return;
             }
 
@@ -742,7 +769,14 @@ namespace Kinovea.ScreenManager
             cmbModel.Enabled = !on;
             chkHigh.Enabled = !on;
             btnKey.Enabled = !on;
+            btnPreview.Enabled = !on && cmbWhat.Items.Count > 0;
+            btnSent.Enabled = !on && HasSent;
             Cursor = on ? Cursors.AppStarting : Cursors.Default;
+        }
+
+        private bool HasSent
+        {
+            get { return jobs.Any(j => j.Images != null && j.Images.Count > 0 && j.Moments != null); }
         }
 
         private void Progress(string text)
@@ -824,7 +858,6 @@ namespace Kinovea.ScreenManager
             SetRunning(true);
             txtResult.Clear();
             int edge = Edge;
-            int max = settings.AiProMoments;
 
             // The frames first (the screens move to each moment and go back after), then the requests.
             for (int i = 0; i < jobs.Count; i++)
@@ -834,7 +867,7 @@ namespace Kinovea.ScreenManager
                 Progress(head + SwimLang.T("Λήψη καρέ: ") + j.Title + "…");
                 try
                 {
-                    j.Moments = j.IsRace ? manager.AiRaceMoments(14) : manager.AiTechMoments(j.Phase, j.Sheet, max);
+                    j.Moments = j.IsRace ? manager.AiRaceMoments(MomentsMax(screens.Count, true)) : manager.AiTechMoments(j.Phase, j.Sheet, MomentsMax(screens.Count, false));
                     if (j.Moments.Count == 0)
                     {
                         j.Error = SwimLang.T("Δεν βρέθηκαν στιγμές στο βίντεο (λείπουν τα σημάδια).");
@@ -849,9 +882,17 @@ namespace Kinovea.ScreenManager
                         continue;
                     }
 
+                    // (2.19.1) Under the limits of a request even when the frames came larger than thought.
+                    if (!SwimAiBudget.Fit(j.Moments, images))
+                    {
+                        j.Error = SwimLang.T("Τα καρέ δεν χωρούν σε μία αίτηση: διάλεξε λιγότερες οθόνες ή κανονική λεπτομέρεια.");
+                        continue;
+                    }
+
                     j.Body = j.IsRace
                         ? manager.AiRaceRequest(athlete, j.Moments, images, screens.Count, model)
                         : manager.AiTechRequest(j.Phase, j.Sheet, athlete, j.Moments, images, screens.Count, model);
+                    j.Images = images;
                 }
                 catch (Exception e)
                 {
@@ -993,6 +1034,95 @@ namespace Kinovea.ScreenManager
             }
 
             RefreshEstimate();
+        }
+
+        /// <summary>(2.19.1) The frames of what is chosen, as Claude would see them: no request, nothing spent.</summary>
+        private void Preview()
+        {
+            WhatItem what = cmbWhat.SelectedItem as WhatItem;
+            if (running || what == null || race == null || race != manager.Race)
+                return;
+            List<PlayerScreenUserInterface> screens = ChosenScreens();
+            if (screens.Count == 0)
+            {
+                lblProgress.Text = SwimLang.T("Διάλεξε τουλάχιστον μία οθόνη.");
+                return;
+            }
+
+            bool isRace = what.Kind == "race";
+            SwimTechPhase phase = what.Phase;
+            SwimTechSheet sheet = what.Sheet;
+            string title;
+            if (what.Kind == "all")
+            {
+                // All of them: the one where the video is (else the first); the others one by one from the list.
+                List<SwimTechPhase> phases = manager.AiPhases();
+                SwimTechPhase now = manager.AiCurrentPhase();
+                phase = phases.FirstOrDefault(p => now != null && p.Id == now.Id) ?? phases.FirstOrDefault();
+                sheet = phase != null ? manager.TechSheetFor(phase) : null;
+            }
+
+            if (isRace)
+                title = SwimLang.T("Σχόλια του αγώνα");
+            else if (phase != null && sheet != null)
+                title = phase.Title + " · " + sheet.Title.Text;
+            else
+                return;
+
+            List<SwimAiMoment> moments = isRace ? manager.AiRaceMoments(MomentsMax(screens.Count, true)) : manager.AiTechMoments(phase, sheet, MomentsMax(screens.Count, false));
+            if (moments.Count == 0)
+            {
+                lblProgress.Text = SwimLang.T("Δεν βρέθηκαν στιγμές στο βίντεο (λείπουν τα σημάδια).");
+                return;
+            }
+
+            List<SwimAiImage> images = null;
+            btnRun.Enabled = btnPreview.Enabled = btnSent.Enabled = false;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                images = manager.AiCapture(moments, screens, Edge, (done, total) =>
+                    Progress(SwimLang.T("Λήψη καρέ: ") + title + string.Format(CultureInfo.InvariantCulture, " · {0}/{1}", done, total)));
+                SwimAiBudget.Fit(moments, images);
+            }
+            catch (Exception e)
+            {
+                Progress("⚠ " + e.Message);
+                return;
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                btnRun.Enabled = cmbWhat.Items.Count > 0;
+                btnPreview.Enabled = cmbWhat.Items.Count > 0;
+                btnSent.Enabled = HasSent;
+            }
+
+            if (images == null || images.Count == 0)
+            {
+                Progress(SwimLang.T("Δεν πάρθηκαν καρέ από τις οθόνες."));
+                return;
+            }
+
+            SwimAiFramesSet set = new SwimAiFramesSet { Title = title, Moments = moments, Images = images };
+            Progress(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Τα καρέ: {0} στιγμές × {1} οθόνες ({2} καρέ) · δεν στάλθηκε τίποτα."), moments.Count, set.Screens.Count, images.Count));
+            ShowFrames(new List<SwimAiFramesSet> { set }, SwimLang.T("Έτσι θα τα δει ο Claude: κάθε σειρά μία στιγμή, κάθε στήλη μία οθόνη. Αν οι οθόνες δεν δείχνουν την ίδια στιγμή, συγχρόνισέ τες πριν από την ανάλυση."));
+        }
+
+        /// <summary>(2.19.1) The frames of the last analysis, as they went to Claude (one request at a time).</summary>
+        private void ShowSent()
+        {
+            List<SwimAiFramesSet> sets = jobs.Where(j => j.Images != null && j.Images.Count > 0 && j.Moments != null)
+                .Select(j => new SwimAiFramesSet { Title = j.Title, Moments = j.Moments, Images = j.Images }).ToList();
+            if (sets.Count == 0)
+                return;
+            ShowFrames(sets, SwimLang.T("Τα καρέ που στάλθηκαν στον Claude: κάθε σειρά μία στιγμή, κάθε στήλη μία οθόνη."));
+        }
+
+        private void ShowFrames(List<SwimAiFramesSet> sets, string note)
+        {
+            using (FormSwimAiFrames f = new FormSwimAiFrames(sets, note))
+                f.ShowDialog(this);
         }
 
         private void CancelAll()

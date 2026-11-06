@@ -592,7 +592,7 @@ namespace Kinovea.ScreenManager
                         labels.Add(label);
                 }
 
-                m.Label = labels.Count > 0 ? string.Join(" / ", labels.ToArray()) : "a frame between the marks";
+                m.Label = labels.Count > 0 ? string.Join(" / ", labels.ToArray()) : (lang == "en" ? "a frame between the marks" : "καρέ ανάμεσα στα σημάδια");
             }
 
             return list;
@@ -628,15 +628,16 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The moments of a race for its comments: the start (signal, block, entry, breakout), each wall and the breakout after it, the finish.</summary>
-        public static List<SwimAiMoment> Race(SwimRace race, SwimComputed computed, SwimTiming timing, long first, long last, int max)
+        public static List<SwimAiMoment> Race(SwimRace race, SwimComputed computed, SwimTiming timing, long first, long last, int max, string lang)
         {
+            bool en = lang == "en";
             List<SwimAiMoment> list = new List<SwimAiMoment>();
             if (race == null || race.IsTraining || !race.StartTimestamp.HasValue || computed == null || timing == null || !timing.IsValid)
                 return list;
 
             long origin = race.StartTimestamp.Value;
             double frame = Math.Max(1, timing.AverageTimestampsPerFrame);
-            string unit = race.IsYards ? " yd" : " m";
+            string unit = race.IsYards ? " yd" : (en ? " m" : " μ.");
             Action<double?, string> add = (seconds, label) =>
             {
                 if (!seconds.HasValue || double.IsNaN(seconds.Value) || double.IsInfinity(seconds.Value))
@@ -647,12 +648,12 @@ namespace Kinovea.ScreenManager
                 list.Add(new SwimAiMoment { Timestamp = ts, Seconds = seconds.Value, Label = label });
             };
 
-            add(0, "start signal");
-            add(computed.BlockTime, "feet off the block");
-            add(computed.EntryTime, "hand entry");
+            add(0, en ? "start signal" : "σήμα εκκίνησης");
+            add(computed.BlockTime, en ? "feet off the block" : "τα πόδια φεύγουν από το βατήρα");
+            add(computed.EntryTime, en ? "hand entry" : "είσοδος χεριών");
             List<double> breakouts = computed.Breakouts.OrderBy(b => b).ToList();
             if (breakouts.Count > 0)
-                add(breakouts[0], "breakout after the start");
+                add(breakouts[0], en ? "breakout after the start" : "έξοδος μετά την εκκίνηση");
             foreach (SwimRow r in computed.Rows)
             {
                 if (race.Pool <= 0 || r.D <= 0 || r.D % race.Pool != 0)
@@ -660,11 +661,11 @@ namespace Kinovea.ScreenManager
                 double t = r.OnVideo;
                 if (double.IsNaN(t))
                     continue;
-                add(t, r.D >= race.Distance ? "finish" : "wall " + r.D.ToString(CultureInfo.InvariantCulture) + unit);
+                add(t, r.D >= race.Distance ? (en ? "finish" : "τερματισμός") : (en ? "wall " : "τοίχος ") + r.D.ToString(CultureInfo.InvariantCulture) + unit);
                 if (r.D < race.Distance)
                 {
                     double? after = breakouts.Where(b => b > t).Select(b => (double?)b).FirstOrDefault();
-                    add(after, "breakout after the wall " + r.D.ToString(CultureInfo.InvariantCulture) + unit);
+                    add(after, (en ? "breakout after the wall " : "έξοδος μετά τον τοίχο ") + r.D.ToString(CultureInfo.InvariantCulture) + unit);
                 }
             }
 
@@ -674,6 +675,126 @@ namespace Kinovea.ScreenManager
             for (int i = 0; i < list.Count; i++)
                 list[i].N = i + 1;
             return list;
+        }
+    }
+
+    /// <summary>
+    /// (2.19.1) How many frames a request takes: at most 60 (the API takes 100 in a request), about 110 000 tokens of frames and 20 MB of
+    /// JPEG (the request stays under the 32 MB of the API with its frames in base64). With one or two screens nothing changes (16 moments);
+    /// with three screens or more, or with the high detail, fewer moments (the nearest join: no point of the list is lost).
+    /// </summary>
+    public static class SwimAiBudget
+    {
+        public const int MaxImages = 60;
+        public const int MaxImageTokens = 110000;
+        public const long MaxJpegBytes = 20L * 1024 * 1024;
+
+        /// <summary>A frame of the pool as JPEG (q85), at most about: 120–250 KB at 1280 pixels, 300–550 KB at 1920.</summary>
+        public static long FrameBytes(int edge)
+        {
+            return edge > SwimAnalysisManager.AiEdgeNormal ? 560L * 1024 : 260L * 1024;
+        }
+
+        /// <summary>The moments of a request with these screens and this detail: at most wanted, at least 2.</summary>
+        public static int Moments(int wanted, int screens, int edge)
+        {
+            int s = Math.Max(1, screens);
+            int e = Math.Max(1, edge);
+            int tokens = Math.Max(1, SwimAiModels.ImageTokens(e, (int)Math.Round(e * 9 / 16.0)));
+            int byImages = MaxImages / s;
+            int byTokens = MaxImageTokens / (s * tokens);
+            int byBytes = (int)(MaxJpegBytes / (s * FrameBytes(e)));
+            return Math.Max(2, Math.Min(wanted, Math.Min(byImages, Math.Min(byTokens, byBytes))));
+        }
+
+        public static long Bytes(IEnumerable<SwimAiImage> images)
+        {
+            return images == null ? 0 : images.Where(i => i != null && i.Jpeg != null).Sum(i => (long)i.Jpeg.Length);
+        }
+
+        public static bool Fits(ICollection<SwimAiImage> images)
+        {
+            return images != null && images.Count <= MaxImages && Bytes(images) <= MaxJpegBytes;
+        }
+
+        /// <summary>
+        /// The frames under the limits after they were taken (when their JPEG came larger than thought): a moment without a point of the
+        /// list goes first, else the moment nearest to the one before it joins it (its points are judged there); the moments numbered again.
+        /// False when even two moments do not fit.
+        /// </summary>
+        public static bool Fit(List<SwimAiMoment> moments, List<SwimAiImage> images)
+        {
+            if (moments == null || images == null)
+                return false;
+            bool changed = false;
+            while (moments.Count > 2 && !Fits(images))
+            {
+                int at = Weakest(moments);
+                SwimAiMoment gone = moments[at];
+                if (gone.Anchors.Count > 0)
+                {
+                    SwimAiMoment into = moments[at > 0 ? at - 1 : 1];
+                    foreach (string a in gone.Anchors)
+                    {
+                        if (!into.Anchors.Contains(a))
+                            into.Anchors.Add(a);
+                    }
+
+                    if (!string.IsNullOrEmpty(gone.Label) && !(into.Label ?? "").Contains(gone.Label))
+                        into.Label = string.IsNullOrEmpty(into.Label) ? gone.Label : into.Label + " / " + gone.Label;
+                }
+
+                images.RemoveAll(i => i.Moment == gone.N);
+                moments.RemoveAt(at);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                Dictionary<int, int> number = new Dictionary<int, int>();
+                for (int i = 0; i < moments.Count; i++)
+                {
+                    number[moments[i].N] = i + 1;
+                    moments[i].N = i + 1;
+                }
+
+                foreach (SwimAiImage i in images)
+                {
+                    int n;
+                    if (number.TryGetValue(i.Moment, out n))
+                        i.Moment = n;
+                }
+            }
+
+            return Fits(images);
+        }
+
+        /// <summary>The moment that goes first: without a point of the list and nearest to another, else the nearest to the one before it.</summary>
+        private static int Weakest(List<SwimAiMoment> moments)
+        {
+            int best = -1;
+            long gap = long.MaxValue;
+            for (int pass = 0; pass < 2 && best < 0; pass++)
+            {
+                for (int i = 0; i < moments.Count; i++)
+                {
+                    bool free = moments[i].Anchors.Count == 0;
+                    if (pass == 0 ? !free : i == 0)
+                        continue;
+                    long g = long.MaxValue;
+                    if (i > 0)
+                        g = Math.Min(g, Math.Abs(moments[i].Timestamp - moments[i - 1].Timestamp));
+                    if (pass == 0 && i < moments.Count - 1)
+                        g = Math.Min(g, Math.Abs(moments[i + 1].Timestamp - moments[i].Timestamp));
+                    if (g < gap)
+                    {
+                        gap = g;
+                        best = i;
+                    }
+                }
+            }
+
+            return best >= 0 ? best : moments.Count - 1;
         }
     }
 
@@ -692,14 +813,23 @@ namespace Kinovea.ScreenManager
             content.Add(Text(context));
             if (moments != null && images != null)
             {
+                // (2.19.1) A screen without a frame at a moment (its video starts later or ends before it): said, so that Claude does not
+                // take another camera's frame for it.
+                List<int> present = images.Where(x => x.Jpeg != null && x.Jpeg.Length > 0).Select(x => x.Screen).Distinct().OrderBy(x => x).ToList();
                 foreach (SwimAiMoment m in moments.OrderBy(x => x.N))
                 {
-                    foreach (SwimAiImage i in images.Where(x => x.Moment == m.N && x.Jpeg != null && x.Jpeg.Length > 0).OrderBy(x => x.Screen))
+                    List<SwimAiImage> its = images.Where(x => x.Moment == m.N && x.Jpeg != null && x.Jpeg.Length > 0).OrderBy(x => x.Screen).ToList();
+                    foreach (SwimAiImage i in its)
                     {
                         content.Add(Text("Moment " + m.N.ToString(CultureInfo.InvariantCulture) + (screens > 1 ? " · screen " + i.Screen.ToString(CultureInfo.InvariantCulture) : "") +
                             " · " + m.Label + " (" + SwimAiPrompt.Signed(m.Seconds) + " s)"));
                         content.Add(Image(i));
                     }
+
+                    List<int> none = screens > 1 ? present.Where(s => !its.Any(i => i.Screen == s)).ToList() : new List<int>();
+                    if (none.Count > 0)
+                        content.Add(Text("Moment " + m.N.ToString(CultureInfo.InvariantCulture) + ": no frame of screen " +
+                            string.Join(", ", none.Select(s => s.ToString(CultureInfo.InvariantCulture)).ToArray()) + " (outside the video of that camera)."));
                 }
             }
 

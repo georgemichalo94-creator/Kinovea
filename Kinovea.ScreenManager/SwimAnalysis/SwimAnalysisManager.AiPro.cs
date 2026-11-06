@@ -106,7 +106,7 @@ namespace Kinovea.ScreenManager
         {
             if (!HasVideo)
                 return new List<SwimAiMoment>();
-            return SwimAiMoments.Race(Race, Computed, Timing, frameServer.VideoReader.WorkingZone.Start, frameServer.VideoReader.WorkingZone.End, max);
+            return SwimAiMoments.Race(Race, Computed, Timing, frameServer.VideoReader.WorkingZone.Start, frameServer.VideoReader.WorkingZone.End, max, SwimLang.Code);
         }
 
         /// <summary>
