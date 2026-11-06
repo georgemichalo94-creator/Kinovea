@@ -514,7 +514,7 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The answer of the API: the input of the tool Claude called (the evaluation), the tokens and their cost.</summary>
+        /// <summary>The answer of the API: the JSON of the evaluation (structured outputs: in its text), the tokens and their cost.</summary>
         public static SwimAiReply Parse(string text, string model)
         {
             SwimAiReply r = new SwimAiReply { Model = model };
@@ -560,6 +560,14 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // The answer as JSON in its text (structured outputs); a tool's input when a model answered with one.
+            if (r.Input == null && r.Text.Trim().Length > 0)
+            {
+                r.Input = JsonOf(r.Text);
+                if (r.Input != null)
+                    r.Tool = "json";
+            }
+
             if (r.StopReason == "max_tokens")
             {
                 r.Error = SwimLang.T("Η απάντηση του Claude κόπηκε (πολύ μεγάλη). Δοκίμασε λιγότερα καρέ.");
@@ -582,6 +590,23 @@ namespace Kinovea.ScreenManager
 
             r.Ok = true;
             return r;
+        }
+
+        /// <summary>The JSON object of an answer's text (between its first { and its last }, without the fences of a code block).</summary>
+        internal static JObject JsonOf(string text)
+        {
+            string t = (text ?? "").Trim();
+            int a = t.IndexOf('{'), b = t.LastIndexOf('}');
+            if (a < 0 || b <= a)
+                return null;
+            try
+            {
+                return JObject.Parse(t.Substring(a, b - a + 1));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static bool SpendLimit(string text)

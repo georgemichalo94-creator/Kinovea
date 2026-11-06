@@ -23,8 +23,6 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public static class SwimAiPrompt
     {
-        public const string TechTool = "swim_technique_evaluation";
-        public const string RaceTool = "swim_race_report";
 
         private static string LanguageLine(string lang)
         {
@@ -89,67 +87,67 @@ namespace Kinovea.ScreenManager
             });
         }
 
-        /// <summary>The form of the answer of a technique evaluation.</summary>
-        public static JObject TechToolSchema()
+        /// <summary>
+        /// The form of the answer of a technique evaluation: a JSON schema for the structured outputs of the API (output_config.format;
+        /// the answer is JSON of this form in its text). Every object is closed and every field required (null where it may be missing).
+        /// Its observations come first: Claude describes the frames before it judges.
+        /// </summary>
+        public static JObject TechSchema()
         {
             return JObject.Parse(@"{
-  ""name"": ""swim_technique_evaluation"",
-  ""description"": ""Your evaluation of the start or the turn against the coach's checklist."",
-  ""input_schema"": {
-    ""type"": ""object"",
-    ""properties"": {
-      ""observations"": {
-        ""type"": ""array"",
-        ""description"": ""Briefly, what you see at each moment (on every screen), before judging."",
-        ""items"": {
-          ""type"": ""object"",
-          ""properties"": { ""moment"": { ""type"": ""integer"" }, ""seen"": { ""type"": ""string"" } },
-          ""required"": [ ""moment"", ""seen"" ]
-        }
-      },
-      ""points"": {
-        ""type"": ""array"",
-        ""description"": ""One entry for every key of the checklist."",
-        ""items"": {
-          ""type"": ""object"",
-          ""properties"": {
-            ""key"": { ""type"": ""string"" },
-            ""done"": { ""type"": [ ""boolean"", ""null"" ], ""description"": ""true: done as the point says (a list of errors: the error is not there); false: not done (the error is there); null: the frames do not show it."" },
-            ""sure"": { ""type"": ""number"", ""description"": ""From 0.5 (either way) to 1 (clearly visible)."" },
-            ""moment"": { ""type"": [ ""integer"", ""null"" ] },
-            ""why"": { ""type"": ""string"", ""description"": ""One short sentence: what you saw."" }
-          },
-          ""required"": [ ""key"", ""done"", ""sure"", ""why"" ]
-        }
-      },
-      ""summary"": { ""type"": ""string"" },
-      ""priorities"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } },
-      ""doubts"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } }
+  ""type"": ""object"",
+  ""properties"": {
+    ""observations"": {
+      ""type"": ""array"",
+      ""description"": ""Briefly, what you see at each moment (on every screen), before judging."",
+      ""items"": {
+        ""type"": ""object"",
+        ""properties"": { ""moment"": { ""type"": ""integer"" }, ""seen"": { ""type"": ""string"" } },
+        ""required"": [ ""moment"", ""seen"" ],
+        ""additionalProperties"": false
+      }
     },
-    ""required"": [ ""observations"", ""points"", ""summary"", ""priorities"" ]
-  }
+    ""points"": {
+      ""type"": ""array"",
+      ""description"": ""One entry for every key of the checklist."",
+      ""items"": {
+        ""type"": ""object"",
+        ""properties"": {
+          ""key"": { ""type"": ""string"" },
+          ""done"": { ""type"": [ ""boolean"", ""null"" ], ""description"": ""true: done as the point says (a list of errors: the error is not there); false: not done (the error is there); null: the frames do not show it."" },
+          ""sure"": { ""type"": ""number"", ""description"": ""From 0.5 (either way) to 1 (clearly visible)."" },
+          ""moment"": { ""type"": [ ""integer"", ""null"" ], ""description"": ""The moment you judged it at; null when the frames do not show it."" },
+          ""why"": { ""type"": ""string"", ""description"": ""One short sentence: what you saw."" }
+        },
+        ""required"": [ ""key"", ""done"", ""sure"", ""moment"", ""why"" ],
+        ""additionalProperties"": false
+      }
+    },
+    ""summary"": { ""type"": ""string"" },
+    ""priorities"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } },
+    ""doubts"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } }
+  },
+  ""required"": [ ""observations"", ""points"", ""summary"", ""priorities"", ""doubts"" ],
+  ""additionalProperties"": false
 }");
         }
 
-        /// <summary>The form of the answer of the comments of a race.</summary>
-        public static JObject RaceToolSchema()
+        /// <summary>The form of the answer of the comments of a race (structured outputs, as TechSchema).</summary>
+        public static JObject RaceSchema()
         {
             return JObject.Parse(@"{
-  ""name"": ""swim_race_report"",
-  ""description"": ""The comments of the race report."",
-  ""input_schema"": {
-    ""type"": ""object"",
-    ""properties"": {
-      ""start"": { ""type"": ""string"" },
-      ""swim"": { ""type"": ""string"" },
-      ""turns"": { ""type"": ""string"" },
-      ""finish"": { ""type"": ""string"" },
-      ""comparison"": { ""type"": ""string"" },
-      ""priorities"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } },
-      ""doubts"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } }
-    },
-    ""required"": [ ""start"", ""swim"", ""turns"", ""finish"", ""comparison"", ""priorities"" ]
-  }
+  ""type"": ""object"",
+  ""properties"": {
+    ""start"": { ""type"": ""string"" },
+    ""swim"": { ""type"": ""string"" },
+    ""turns"": { ""type"": ""string"" },
+    ""finish"": { ""type"": ""string"" },
+    ""comparison"": { ""type"": ""string"" },
+    ""priorities"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } },
+    ""doubts"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } }
+  },
+  ""required"": [ ""start"", ""swim"", ""turns"", ""finish"", ""comparison"", ""priorities"", ""doubts"" ],
+  ""additionalProperties"": false
 }");
         }
 
@@ -237,7 +235,7 @@ namespace Kinovea.ScreenManager
 
             b.AppendLine();
             b.AppendLine("# What to do");
-            b.AppendLine("Look at the " + images.ToString(CultureInfo.InvariantCulture) + " frames that follow, then call " + TechTool + " once, with every key of the checklist (" +
+            b.AppendLine("Look at the " + images.ToString(CultureInfo.InvariantCulture) + " frames that follow, then give your evaluation as JSON in the form asked, with every key of the checklist (" +
                 count.ToString(CultureInfo.InvariantCulture) + " points).");
             return b.ToString();
         }
@@ -328,7 +326,7 @@ namespace Kinovea.ScreenManager
             FramesText(b, moments, screens, "the start signal");
             b.AppendLine();
             b.AppendLine("# What to do");
-            b.AppendLine("Look at the " + images.ToString(CultureInfo.InvariantCulture) + " frames that follow, then call " + RaceTool + " once.");
+            b.AppendLine("Look at the " + images.ToString(CultureInfo.InvariantCulture) + " frames that follow, then give the comments as JSON in the form asked.");
             return b.ToString();
         }
 
@@ -682,12 +680,13 @@ namespace Kinovea.ScreenManager
     /// <summary>(2.19.0) The body of a request of AI pro to the Messages API.</summary>
     public static class SwimAiRequest
     {
-        public const int TechMaxTokens = 8192;
-        public const int RaceMaxTokens = 4096;
+        /// <summary>The longest answers (with the thinking of the models that think first: a cut answer is not taken).</summary>
+        public const int TechMaxTokens = 16000;
+        public const int RaceMaxTokens = 8000;
 
-        /// <summary>The text, then each moment's frames (one per screen) after a line that names them, then the tool to call.</summary>
+        /// <summary>The text, then each moment's frames (one per screen) after a line that names them; the answer as JSON of the schema.</summary>
         public static JObject Build(string model, string system, string context, IList<SwimAiMoment> moments, IList<SwimAiImage> images, int screens,
-            JObject tool, int maxTokens)
+            JObject schema, int maxTokens)
         {
             JArray content = new JArray();
             content.Add(Text(context));
@@ -704,23 +703,25 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            string name = (string)tool["name"];
-            content.Add(Text("Now call " + name + "."));
+            content.Add(Text("Now give your answer as JSON in the form asked."));
 
             JObject message = new JObject();
             message["role"] = "user";
             message["content"] = content;
-            JObject choice = new JObject();
-            choice["type"] = "tool";
-            choice["name"] = name;
+
+            // The answer as JSON of the schema (structured outputs, every model): the newest models do not take a forced tool.
+            JObject format = new JObject();
+            format["type"] = "json_schema";
+            format["schema"] = schema;
+            JObject output = new JObject();
+            output["format"] = format;
 
             JObject body = new JObject();
             body["model"] = model;
             body["max_tokens"] = maxTokens;
             body["system"] = system;
             body["messages"] = new JArray(message);
-            body["tools"] = new JArray(tool);
-            body["tool_choice"] = choice;
+            body["output_config"] = output;
             return body;
         }
 

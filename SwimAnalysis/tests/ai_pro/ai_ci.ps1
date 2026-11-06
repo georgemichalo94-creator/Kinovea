@@ -155,7 +155,7 @@ $images = NewList $tImg
 foreach ($m in $moments) { foreach ($screen in @(1, 2)) { $img = [Activator]::CreateInstance($tImg); $img.Moment = $m.N; $img.Screen = $screen; $img.Width = 1280; $img.Height = 720; $img.Jpeg = $jpeg; $images.Add($img) } }
 $measures = $tEv.GetMethod('Measure').Invoke($null, @($race, $turn, $timing, $one))
 $context = $prompt.GetMethod('TechContext').Invoke($null, @($race, $turn, $turnSheet, $one, $measures, $athlete, $moments, 2, $images.Count, 'el', $null))
-$body = $request.GetMethod('Build').Invoke($null, @('claude-opus-5-5', $prompt.GetMethod('TechSystem').Invoke($null, @('el')), $context, $moments, $images, 2, $prompt.GetMethod('TechToolSchema').Invoke($null, @()), 8192))
+$body = $request.GetMethod('Build').Invoke($null, @('claude-opus-5-5', $prompt.GetMethod('TechSystem').Invoke($null, @('el')), $context, $moments, $images, 2, $prompt.GetMethod('TechSchema').Invoke($null, @()), 16000))
 $texts = New-Object System.Text.StringBuilder
 [void]$texts.Append($body['system'].ToString())
 $imageBlocks = 0; $firstMedia = ''
@@ -173,8 +173,12 @@ Check ($imageBlocks -eq $images.Count -and $firstMedia -eq 'image/jpeg') ('every
 Check ($all_text.Contains('Moment 1 · screen 1') -and $all_text.Contains('Moment 1 · screen 2')) 'each frame named by its moment and its screen'
 Check ($context.Contains('female') -and $context.Contains('Νεάνιδες') -and $context.Contains('172 cm') -and $context.Contains('η θέση του κεφαλιού')) 'the athlete as the coach gave it (no name)'
 Check ($context.Contains('flip turn') -and $context.Contains('freestyle')) 'the event and the kind of turn'
-Check ($body['tool_choice']['name'].ToString() -eq 'swim_technique_evaluation' -and $body['tools'][0]['name'].ToString() -eq 'swim_technique_evaluation') 'the answer is the tool of the evaluation (JSON)'
-Check ($body['model'].ToString() -eq 'claude-opus-5-5' -and [int]$body['max_tokens'] -eq 8192) 'the model and the length of the answer'
+# (Claude Opus 5.5 and Sonnet 5.5 answer 400 to a forced tool: the answer is JSON of a schema, structured outputs.)
+$format = $body['output_config']['format']
+Check ($format['type'].ToString() -eq 'json_schema' -and $null -eq $body['tool_choice'] -and $null -eq $body['tools']) 'the answer as JSON of a schema (structured outputs), no forced tool'
+$closed = @($format['schema'].SelectTokens('$..additionalProperties') | Where-Object { $_.ToString() -eq 'False' }).Count
+Check ($closed -eq 3 -and @($format['schema']['required'] | ForEach-Object { $_.ToString() }) -contains 'points') ('the schema: its objects closed (' + $closed + '), the points required')
+Check ($body['model'].ToString() -eq 'claude-opus-5-5' -and [int]$body['max_tokens'] -eq 16000) 'the model and the length of the answer'
 Check ($all_text.Contains('Write every text in Greek')) 'the answer in Greek for a Greek analysis'
 
 # ---- A fake Claude API on this computer: the headers, a busy API asked again, the errors.
@@ -229,10 +233,8 @@ public class KvFakeClaudeApi {
   public void Stop() { try { listener.Stop(); listener.Close(); } catch (Exception) { } }
 }
 "@
-$reply = @'
-{"id":"msg_test","type":"message","role":"assistant","model":"claude-opus-5-5","stop_reason":"tool_use",
- "usage":{"input_tokens":31240,"output_tokens":2880},
- "content":[{"type":"tool_use","id":"toolu_test","name":"swim_technique_evaluation","input":{
+$evaluation = @'
+{
   "observations":[{"moment":1,"seen":"Κοιτάζει τον τοίχο στην προσέγγιση."},{"moment":2,"seen":"Αρχίζει την περιστροφή."}],
   "points":[
    {"key":"t.wall","done":true,"sure":0.9,"moment":1,"why":"Κοιτάζει τον τοίχο πριν την τελευταία χεριά."},
@@ -244,8 +246,15 @@ $reply = @'
    {"key":"x.unknown","done":true,"sure":1,"why":"Όχι σημείο της λίστας."}],
   "summary":"Καλή προσέγγιση· η περιστροφή και η επαφή χάνουν χρόνο.",
   "priorities":["Πιο σφιχτή περιστροφή: πηγούνι στο στήθος.","Πιο σύντομη επαφή στον τοίχο."],
-  "doubts":["Το σημάδι της αποκόλλησης ίσως ένα καρέ νωρίς."]}}]}
+  "doubts":["Το σημάδι της αποκόλλησης ίσως ένα καρέ νωρίς."]}
 '@
+$replyObject = [Newtonsoft.Json.Linq.JObject]::Parse('{"id":"msg_test","type":"message","role":"assistant","model":"claude-opus-5-5","stop_reason":"end_turn","usage":{"input_tokens":31240,"output_tokens":2880},"content":[{"type":"thinking","thinking":"..."},{"type":"text","text":""}]}')
+# (A string set into JSON by PowerShell would be parsed into an object: the text as a JSON string value.)
+$replyObject['content'][1]['text'] = [Newtonsoft.Json.Linq.JValue]::CreateString($evaluation)
+$reply = $replyObject.ToString([Newtonsoft.Json.Formatting]::None)
+$toolObject = [Newtonsoft.Json.Linq.JObject]::Parse('{"type":"message","model":"claude-opus-5-5","stop_reason":"tool_use","usage":{"input_tokens":5,"output_tokens":5},"content":[{"type":"tool_use","name":"swim_technique_evaluation","input":{}}]}')
+$toolObject['content'][0]['input'] = [Newtonsoft.Json.Linq.JObject]::Parse($evaluation)
+$toolReply = $toolObject.ToString([Newtonsoft.Json.Formatting]::None)
 $tCall = T 'SwimAiCall'
 $api = New-Object KvFakeClaudeApi
 $port = 18000 + (Get-Random -Minimum 0 -Maximum 4000)
@@ -255,11 +264,16 @@ $json = $body.ToString([Newtonsoft.Json.Formatting]::None)
 $call = [Activator]::CreateInstance($tCall)
 $api.Codes.Enqueue(200); $api.Replies.Enqueue($reply)
 $answer = $call.Send($fakeKey, $json, 'claude-opus-5-5')
-Check ($answer.Ok -and $answer.Tool -eq 'swim_technique_evaluation' -and $answer.InputTokens -eq 31240 -and $answer.OutputTokens -eq 2880) 'the answer read: the evaluation and its tokens'
+Check ($answer.Ok -and $answer.Tool -eq 'json' -and $answer.InputTokens -eq 31240 -and $answer.OutputTokens -eq 2880 -and $null -ne $answer.Input['points']) 'the answer read: the JSON of the evaluation (after the thinking) and its tokens'
 Check ([Math]::Abs($answer.Usd - (31240 * 4 + 2880 * 20) / 1e6) -lt 1e-9) ('its cost: ' + $answer.Usd)
 Check ($api.Keys[0] -eq $fakeKey -and $api.Versions[0] -eq '2023-06-01') 'the key and the version of the API in the headers'
 $sent = [Newtonsoft.Json.Linq.JObject]::Parse($api.Bodies[0])
 Check ($sent['model'].ToString() -eq 'claude-opus-5-5' -and @($sent['messages'][0]['content']).Count -eq @($body['messages'][0]['content']).Count) 'the body arrived whole'
+$api.Codes.Enqueue(200); $api.Replies.Enqueue($toolReply)
+$byTool = $call.Send($fakeKey, $json, 'claude-opus-5-5')
+Check ($byTool.Ok -and $byTool.Tool -eq 'swim_technique_evaluation' -and @($byTool.Input['points']).Count -eq 7) 'an answer as a tool is read too'
+$fenced = $tCall.GetMethod('JsonOf', $all).Invoke($null, @("Here it is:`n" + '```json' + "`n" + '{"summary":"ok","points":[]}' + "`n" + '```'))
+Check ($null -ne $fenced -and $fenced['summary'].ToString() -eq 'ok') 'JSON in the fences of a code block is read'
 $api.Codes.Enqueue(429); $api.Replies.Enqueue('{"type":"error","error":{"type":"rate_limit_error","message":"Too many"}}'); $api.RetryAfter.Enqueue('1')
 $api.Codes.Enqueue(200); $api.Replies.Enqueue($reply); $api.RetryAfter.Enqueue('')
 $before = $api.Bodies.Count
@@ -275,9 +289,12 @@ $api.Codes.Enqueue(429); $api.Replies.Enqueue('{"type":"error","error":{"type":"
 $before = $api.Bodies.Count
 $limit = $call.Send($fakeKey, $json, 'claude-opus-5-5')
 Check ((-not $limit.Ok) -and $api.Bodies.Count - $before -eq 1) ('the monthly limit is not asked again: ' + $limit.Error)
-$api.Codes.Enqueue(200); $api.Replies.Enqueue('{"type":"message","model":"claude-opus-5-5","stop_reason":"max_tokens","usage":{"input_tokens":10,"output_tokens":8192},"content":[{"type":"tool_use","name":"swim_technique_evaluation","input":{}}]}')
+$api.Codes.Enqueue(200); $api.Replies.Enqueue('{"type":"message","model":"claude-opus-5-5","stop_reason":"max_tokens","usage":{"input_tokens":10,"output_tokens":16000},"content":[{"type":"text","text":"{\"observations\":[{\"moment\":1,\"seen\":\"cut"}]}')
 $cut = $call.Send($fakeKey, $json, 'claude-opus-5-5')
-Check ((-not $cut.Ok) -and $cut.OutputTokens -eq 8192) ('an answer cut by its length is not taken (its tokens counted): ' + $cut.Error)
+Check ((-not $cut.Ok) -and $cut.OutputTokens -eq 16000) ('an answer cut by its length is not taken (its tokens counted): ' + $cut.Error)
+$api.Codes.Enqueue(400); $api.Replies.Enqueue('{"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \"tool\" and \"any\" are not supported for this model."}}')
+$shape = $call.Send($fakeKey, $json, 'claude-opus-5-5')
+Check ((-not $shape.Ok) -and $shape.Status -eq 400 -and $shape.Error.Contains('400')) ('a request the API does not take: its message shown (' + $shape.Error + ')')
 $api.Stop()
 Start-Sleep -Milliseconds 300
 $off = $call.Send($fakeKey, $json, 'claude-opus-5-5')

@@ -260,7 +260,7 @@ namespace Kinovea.ScreenManager
             string lang = SwimLang.Code;
             string context = SwimAiPrompt.TechContext(Race, phase, sheet, TechCatalog, TechMeasures(phase), athlete, moments, screens, images.Count, lang,
                 AiCalibration());
-            return SwimAiRequest.Build(model, SwimAiPrompt.TechSystem(lang), context, moments, images, screens, SwimAiPrompt.TechToolSchema(),
+            return SwimAiRequest.Build(model, SwimAiPrompt.TechSystem(lang), context, moments, images, screens, SwimAiPrompt.TechSchema(),
                 SwimAiRequest.TechMaxTokens);
         }
 
@@ -269,7 +269,7 @@ namespace Kinovea.ScreenManager
         {
             string lang = SwimLang.Code;
             string context = SwimAiPrompt.RaceContext(Race, Computed, TechPhases, TechCatalog, athlete, moments, screens, images.Count, lang);
-            return SwimAiRequest.Build(model, SwimAiPrompt.RaceSystem(lang), context, moments, images, screens, SwimAiPrompt.RaceToolSchema(),
+            return SwimAiRequest.Build(model, SwimAiPrompt.RaceSystem(lang), context, moments, images, screens, SwimAiPrompt.RaceSchema(),
                 SwimAiRequest.RaceMaxTokens);
         }
 
