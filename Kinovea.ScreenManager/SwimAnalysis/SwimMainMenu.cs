@@ -420,10 +420,12 @@ namespace Kinovea.ScreenManager
             ToolStripMenuItem newAthlete = Entry("Νέος αθλητής…", null, () => WithRace(m => m.NewRace()));
             ToolStripMenuItem raceInfo = Entry("Στοιχεία και αποτελέσματα", null, () => OpenAnalysis(false, "race"));
             ToolStripMenuItem finals = Entry("Σύγκριση με τελικό…", null, () => OpenAnalysis(false, "finals"));
+            ToolStripMenuItem raceAi = Entry("AI pro · ανάλυση με τον Claude…", null, () => WithRace(m => m.ShowAiPro()));
+            Tip(raceAi, "Ο Claude σχολιάζει τον αγώνα για την αναφορά και αξιολογεί την εκκίνηση και τις στροφές με τις λίστες σου (με κωδικό).");
             ToolStripMenuItem closeAnalysis = Entry("Κλείσιμο ανάλυσης", null, () => WithRace(m => m.CloseAnalysis()));
             ToolStripMenuItem deleteAnalysis = Entry("Διαγραφή ανάλυσης…", null, () => WithRace(DeleteAnalysis));
             Tip(closeAnalysis, "Κλείνουν οι μπάρες και ο πίνακας· η ανάλυση μένει αποθηκευμένη στο βίντεο.");
-            needRace.AddRange(new ToolStripItem[] { newAthlete, closeAnalysis, deleteAnalysis });
+            needRace.AddRange(new ToolStripItem[] { newAthlete, closeAnalysis, deleteAnalysis, raceAi });
             ToolStripSeparator closing = new ToolStripSeparator();
             raceNowBefore = closing;
             mnuRace.DropDownItems.AddRange(new ToolStripItem[] { racePanel, newAthlete, raceInfo, Header("Βήματα της ανάλυσης"),
@@ -431,18 +433,23 @@ namespace Kinovea.ScreenManager
                 Entry("Κολύμβηση · περάσματα", null, () => OpenAnalysis(false, "swim")),
                 Entry("Στροφές", null, () => OpenAnalysis(false, "turns")),
                 Entry("Τερματισμός και ΔΑΚ", null, () => OpenAnalysis(false, "finish")),
-                finals, closing, closeAnalysis, deleteAnalysis });
+                finals, raceAi, closing, closeAnalysis, deleteAnalysis });
             mnuRace.DropDownOpening += (s, e) => { RefreshNeedRace(); FillNow(mnuRace, raceNow, false, raceNowBefore); };
 
             // Τεχνική: the window and its pages, the buttons of the bars of the moment.
             mnuTech = TopLevel("Τεχνική");
+            ToolStripMenuItem techAi = Entry("AI pro · ανάλυση με τον Claude…", null, () => WithRace(m => m.ShowAiPro()));
+            Tip(techAi, "Ο Claude αξιολογεί την εκκίνηση ή τη στροφή από τα καρέ των οθονών με τη λίστα σου· οι απαντήσεις του μπαίνουν στη λίστα ως AI για να τις επιβεβαιώσεις (με κωδικό).");
+            needRace.Add(techAi);
             mnuTech.DropDownItems.AddRange(new ToolStripItem[] {
                 Entry("Πίνακας τεχνικής ανάλυσης", Properties.Resources.plot_16, () => OpenAnalysis(true, null)),
                 Header("Σελίδες"),
                 Entry("Εκκινήσεις", null, () => OpenAnalysis(true, "tech-start")),
                 Entry("Στροφές", null, () => OpenAnalysis(true, "tech-turns")),
                 Entry("Στιγμιότυπα και γωνίες", null, () => OpenAnalysis(true, "tech-media")),
-                Entry("Αξιολόγηση", null, () => OpenAnalysis(true, "tech-eval")) });
+                Entry("Αξιολόγηση", null, () => OpenAnalysis(true, "tech-eval")),
+                new ToolStripSeparator(),
+                techAi });
             mnuTech.DropDownOpening += (s, e) => { RefreshNeedRace(); FillNow(mnuTech, techNow, true, null); };
 
             // Αναφορά: the PDF and the sending of the analysis, then the exports of Kinovea.
@@ -1015,6 +1022,7 @@ namespace Kinovea.ScreenManager
 
             ToolStripButton race = ToolButton("Αγώνας", "Ο πίνακας της ανάλυσης αγώνα του βίντεο", () => OpenAnalysis(false, null));
             ToolStripButton tech = ToolButton("Τεχνική", "Ο πίνακας της τεχνικής ανάλυσης του βίντεο", () => OpenAnalysis(true, null));
+            ToolStripButton ai = ToolButton("AI pro", "Η ανάλυση της εκκίνησης, της στροφής ή του αγώνα από τον Claude (με κωδικό)", () => WithRace(m => m.ShowAiPro()));
             ToolStripButton pdf = ToolButton("PDF", "Το PDF της αναφοράς", () => WithRace(m => m.PdfByUser()));
             ToolStripButton package = ToolButton("📦 Δημιουργία αποστολής", "Η αποστολή για τους προπονητές: PDF, βίντεο με τα γραφικά, μήνυμα.",
                 () => WithRace(m => m.CreatePackage()));
@@ -1026,6 +1034,7 @@ namespace Kinovea.ScreenManager
             toolbar.Items.Add(Caption("ΑΝΑΛΥΣΗ"));
             toolbar.Items.Add(race);
             toolbar.Items.Add(tech);
+            toolbar.Items.Add(ai);
             toolbar.Items.Add(new ToolStripSeparator());
             toolbar.Items.Add(Caption("ΑΝΑΦΟΡΑ"));
             toolbar.Items.Add(pdf);

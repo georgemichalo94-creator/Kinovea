@@ -305,8 +305,8 @@ namespace Kinovea.ScreenManager
 
                 if (!proposal.HasValue)
                 {
-                    // The measurement no longer says: an automatic score goes.
-                    if (score != null && eval != null)
+                    // The measurement no longer says: an automatic score goes ((2.19.0) not a proposal of Claude, which did not come from it).
+                    if (score != null && eval != null && !score.ByAi)
                     {
                         eval.Scores.Remove(it.Key);
                         changed++;
@@ -383,6 +383,7 @@ namespace Kinovea.ScreenManager
             }
 
             eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
+            AiCalibrate(eval, sheet);
             Changed(false);
             ScheduleSend(true);
         }
@@ -408,6 +409,7 @@ namespace Kinovea.ScreenManager
                     continue;
 
                 s.Auto = false;
+                s.ByAi = false;
                 n++;
                 Learn(phase, sheet, it, s.Value, s.Measured);
 
@@ -435,6 +437,7 @@ namespace Kinovea.ScreenManager
             if (n == 0)
                 return;
             eval.Date = DateTime.Now.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture);
+            AiCalibrate(eval, sheet);
             Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Επιβεβαιώθηκαν {0} αυτόματες βαθμολογίες."), n), false);
             Changed(false);
             ScheduleSend(true);
@@ -463,6 +466,20 @@ namespace Kinovea.ScreenManager
             SwimTechLearning learning = SwimTechLearning.Current;
             if (learning != null)
                 learning.Remove(LearnKey(phase, sheet, null), true);
+            if (eval.Ai != null)
+            {
+                try
+                {
+                    SwimAiCalibration calibration = SwimAiCalibration.Current;
+                    if (calibration.RemoveEval(Race, phase.Id, sheet.Id))
+                        calibration.Save();
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not update the calibration of AI pro.", e);
+                }
+            }
+
             Changed(true);
         }
 

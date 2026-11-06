@@ -153,6 +153,27 @@ namespace Kinovea.ScreenManager
         public bool ClassicMenu = false;
 
         /// <summary>
+        /// (2.19.0) AI pro: the key of the Claude API of the owner, protected for his Windows user (DPAPI, SwimAiKey): no other user
+        /// or computer can read it. Empty: no key yet.
+        /// </summary>
+        public string AiProKey = "";
+
+        /// <summary>(2.19.0) The model of AI pro (SwimAiModels).</summary>
+        public string AiProModel = SwimAiModels.Opus;
+
+        /// <summary>(2.19.0) The frames for Claude in high detail (1920 instead of 1280 pixels on their long side: about twice the cost).</summary>
+        public bool AiProHighDetail = false;
+
+        /// <summary>(2.19.0) The most moments of a start or a turn sent (each with the frame of every screen chosen).</summary>
+        public int AiProMoments = 16;
+
+        /// <summary>(2.19.0) Nothing more is sent in a month once this is spent (US dollars; the API credits of the Max plan are $100).</summary>
+        public double AiProMonthLimit = 95;
+
+        /// <summary>(2.19.0) What AI pro spent by month ("yyyy-MM"), on this computer.</summary>
+        public Dictionary<string, SwimAiUsage> AiProUsage = new Dictionary<string, SwimAiUsage>();
+
+        /// <summary>
         /// Technical view of the race on the video (as the swimming reels): athlete label following the swimmer, race time with the
         /// strokes, tempo, distance per cycle and speed, phase, badges at the start, the breakouts and the checkpoints, per cycle chart.
         /// It replaces the race board and the velocity chart.
@@ -255,6 +276,12 @@ namespace Kinovea.ScreenManager
                     {
                         if (settings.TechSheetChoice == null)
                             settings.TechSheetChoice = new Dictionary<string, string>();
+                        if (settings.AiProUsage == null)
+                            settings.AiProUsage = new Dictionary<string, SwimAiUsage>();
+                        if (string.IsNullOrEmpty(settings.AiProModel))
+                            settings.AiProModel = SwimAiModels.Opus;
+                        if (settings.AiProMoments < 4)
+                            settings.AiProMoments = 16;
                         return settings;
                     }
                 }

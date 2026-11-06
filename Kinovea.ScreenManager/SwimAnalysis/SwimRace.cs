@@ -153,6 +153,19 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The scores by criterion key (SwimTechCriterion).</summary>
         public Dictionary<string, SwimTechScore> Scores = new Dictionary<string, SwimTechScore>();
+
+        /// <summary>
+        /// (2.19.0) AI pro: Claude's answers on the points (by criterion key), kept when the coach scores them (how often they agree, and
+        /// the calibration of the next requests); its model and the date of its answer.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, SwimAiMark> Ai;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AiModel;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AiDate;
     }
 
     /// <summary>
@@ -179,6 +192,10 @@ namespace Kinovea.ScreenManager
 
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public string Comment;
+
+        /// <summary>(2.19.0) A proposal of Claude (AI pro), shown «AI» instead of 🤖 until the coach confirms or changes it (Auto).</summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool ByAi;
     }
 
     /// <summary>
@@ -779,6 +796,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>(2.13.0) Evaluations of the starts and turns with the sheets of criteria.</summary>
         public List<SwimTechEval> TechEvals = new List<SwimTechEval>();
+
+        /// <summary>(2.19.0) What the coach gave about the athlete for AI pro (never the name), for the next requests of this analysis.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SwimAiAthlete AiAthlete;
 
         /// <summary>Frame of the finish with the graphics of the video (final time, velocity chart), for the race report.</summary>
         public SwimSnapshot FinalFrame;

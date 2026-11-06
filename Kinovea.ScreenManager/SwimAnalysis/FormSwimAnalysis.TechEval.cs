@@ -472,6 +472,19 @@ namespace Kinovea.ScreenManager
                 lines.Add(SwimLang.T("Δεν φαίνεται από πλάγια κάμερα: το κρίνεις εσύ στο καρέ."));
             if (item.Criterion.Cue != null && item.Criterion.Cue.Text.Length > 0)
                 lines.Add(SwimLang.T("Διόρθωση: ") + item.Criterion.Cue.Text);
+
+            // (2.19.0) Claude's answer on the point (AI pro), with how sure it was and what it saw.
+            SwimTechPhase aiPhase = SelectedPhase(cmbEvalPhase);
+            SheetItem aiSheet = cmbEvalSheet.SelectedItem as SheetItem;
+            SwimTechEval aiEval = aiPhase != null && aiSheet != null ? manager.TechEval(aiPhase, aiSheet.Sheet, false) : null;
+            SwimAiMark mark;
+            if (aiEval != null && aiEval.Ai != null && aiEval.Ai.TryGetValue(item.Key, out mark) && mark != null)
+            {
+                string said = mark.Value < 0 ? "–" : SwimAiApply.Done(aiSheet.Sheet, mark.Value) ? "✓" : "✗";
+                lines.Add("AI pro (" + SwimAiModels.Short(aiEval.AiModel) + "): " + said + string.Format(CultureInfo.InvariantCulture, " · {0:0}%", mark.Sure * 100) +
+                    (string.IsNullOrEmpty(mark.Why) ? "" : " · " + mark.Why));
+            }
+
             e.ToolTipText = string.Join(Environment.NewLine, lines.ToArray());
         }
 
@@ -696,15 +709,16 @@ namespace Kinovea.ScreenManager
                 int? v = sc != null ? (int?)sc.Value : null;
                 // On a list of errors: "ναι" (the error is there) in the ✗ column.
                 int? goodCol = sheet.Scored ? 1 : 0, badCol = sheet.Scored ? 0 : 1;
-                SetScoreCell(row.Cells[EvalColGood], v.HasValue && v.Value == goodCol, sc != null && sc.Auto, SwimTheme.Green, "✓");
-                SetScoreCell(row.Cells[EvalColBad], v.HasValue && v.Value == badCol, sc != null && sc.Auto, SwimTheme.Red, "✗");
-                SetScoreCell(row.Cells[EvalColNone], v.HasValue && v.Value < 0, false, SwimTheme.Faint, "–");
+                SetScoreCell(row.Cells[EvalColGood], v.HasValue && v.Value == goodCol, sc != null && sc.Auto, sc != null && sc.ByAi, SwimTheme.Green, "✓");
+                SetScoreCell(row.Cells[EvalColBad], v.HasValue && v.Value == badCol, sc != null && sc.Auto, sc != null && sc.ByAi, SwimTheme.Red, "✗");
+                SetScoreCell(row.Cells[EvalColNone], v.HasValue && v.Value < 0, false, false, SwimTheme.Faint, "–");
             }
         }
 
-        private static void SetScoreCell(DataGridViewCell cell, bool on, bool auto, Color color, string text)
+        /// <summary>A score cell: 🤖 a proposal of the program, (2.19.0) AI a proposal of Claude (AI pro), until the coach confirms it.</summary>
+        private static void SetScoreCell(DataGridViewCell cell, bool on, bool auto, bool ai, Color color, string text)
         {
-            cell.Value = on ? (auto ? "🤖" + text : text) : "·";
+            cell.Value = on ? (auto ? (ai ? "AI" : "🤖") + text : text) : "·";
             cell.Style.BackColor = on ? SwimTheme.Mix(SwimTheme.Back, color, auto ? 0.25 : 0.55) : Color.Empty;
             cell.Style.SelectionBackColor = cell.Style.BackColor.IsEmpty ? Color.Empty : cell.Style.BackColor;
             cell.Style.ForeColor = on ? SwimTheme.Text : SwimTheme.Faint;
