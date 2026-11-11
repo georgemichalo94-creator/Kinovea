@@ -180,6 +180,12 @@ namespace Kinovea.ScreenManager
         public string Serial = "";
         public string Model = "";
 
+        /// <summary>
+        /// Seconds from the start command to the camera recording, as measured by the camera's link (null: not measured): lines up the
+        /// videos of the recording when their sounds do not match (a camera under the water).
+        /// </summary>
+        public double? StartOffset;
+
         /// <summary>The name of the file on the card (GX010123.MP4), once found.</summary>
         public string Source = "";
         public List<string> Targets = new List<string>();
@@ -194,6 +200,9 @@ namespace Kinovea.ScreenManager
         public DateTime Stop = DateTime.MinValue;
         public SwimTakeDetails Details = new SwimTakeDetails();
         public List<SwimTakeCamera> Cameras = new List<SwimTakeCamera>();
+
+        /// <summary>(2.21.0) The video of all its cameras, once made ("" before).</summary>
+        public string Composite = "";
 
         public bool AllDone
         {
@@ -415,6 +424,44 @@ namespace Kinovea.ScreenManager
             log.DebugFormat("The camera \"{0}\" did not start: out of the recording.", alias);
             Save();
             RaiseChanged();
+        }
+
+        /// <summary>The video of all the cameras of a recording, made.</summary>
+        public static void SetComposite(string takeId, string path)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.FirstOrDefault(t => t.Id == takeId);
+                if (take == null)
+                    return;
+
+                take.Composite = path ?? "";
+            }
+
+            Save();
+            RaiseChanged();
+        }
+
+        /// <summary>The measured start of a camera after the command of its recording (seconds).</summary>
+        public static void SetStartOffset(string alias, DateTime commandTime, double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0 || seconds > 15)
+                return;
+
+            bool changed = false;
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.LastOrDefault(t => Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.Any(c => c.Alias == alias));
+                SwimTakeCamera camera = take != null ? take.Cameras.First(c => c.Alias == alias) : null;
+                if (camera != null && (!camera.StartOffset.HasValue || Math.Abs(camera.StartOffset.Value - seconds) > 1e-6))
+                {
+                    camera.StartOffset = seconds;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                Save();
         }
 
         /// <summary>A camera stopped: the end of its recording.</summary>

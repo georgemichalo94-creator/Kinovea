@@ -855,6 +855,23 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>(Swim 2.21.0) The measured start of this camera after the command of its recording, kept with the recording.</summary>
+        private void NoteStartOffset()
+        {
+            try
+            {
+                IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
+                if (media == null || cameraSummary == null || remoteTakeStart == DateTime.MinValue)
+                    return;
+
+                SwimGoProTakes.SetStartOffset(cameraSummary.Alias, remoteTakeStart, media.StartOffset(remoteTakeStart));
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while keeping the start of a camera.", e);
+            }
+        }
+
         /// <summary>(Swim 2.21.0) The camera of this screen did not start at the command: it is not in that recording.</summary>
         private void ForgetTake(DateTime commandTime)
         {
@@ -901,9 +918,16 @@ namespace Kinovea.ScreenManager
             // (2.21.0) A start the camera did not do: the recording has no file of this camera, it leaves the recording.
             IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
             if (!recording && media != null && remoteTakeStart != DateTime.MinValue && media.FailedStart == remoteTakeStart)
+            {
                 ForgetTake(remoteTakeStart);
+            }
             else
+            {
+                if (!recording)
+                    NoteStartOffset();
+
                 KeepTake(recording, DateTime.Now);
+            }
 
             remoteTakeStart = recording ? DateTime.Now : DateTime.MinValue;
             if (recording)
@@ -953,6 +977,7 @@ namespace Kinovea.ScreenManager
 
             DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
             remoteCommandTime = DateTime.MinValue;
+            NoteStartOffset();
             remoteSource.SetRemoteRecording(false, commandTime);
             KeepTake(false, DateTime.Now);
             remoteTakeStart = DateTime.MinValue;

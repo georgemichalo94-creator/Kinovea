@@ -21,7 +21,9 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// (Swim 2.21.0) The recordings of the GoPro cameras started from Kinovea and their videos: copied from the cards (in a card reader,
     /// found by themselves, or a folder they were copied in) or downloaded by the Wi-Fi of the cameras, to the folder of the videos with
-    /// the names of the athletes or of the race. A recording whose details were wrong is corrected here before its videos come.
+    /// the names of the athletes or of the race. A recording whose details were wrong is corrected here before its videos come. When the
+    /// videos of all the cameras of a recording came, the video of all of them is made by itself (one after the other, the window can be
+    /// closed meanwhile: it hides until they are made) and «▶ Προβολή» plays it.
     /// </summary>
     public class FormGoProTransfer : Form
     {
@@ -39,6 +41,17 @@ namespace Kinovea.ScreenManager
         private readonly Button btnStop = new Button();
         private CancellationTokenSource cancel;
         private List<SwimTake> shown = new List<SwimTake>();
+
+        // (2.21.0) The videos of all the cameras: made by themselves when the videos of a recording came (the choice kept while Kinovea runs).
+        private static bool autoComposite = true;
+        private readonly CheckBox cbAuto = new CheckBox();
+        private readonly Button btnView = new Button();
+        private readonly Button btnComposite = new Button();
+        private readonly Queue<string> compositeQueue = new Queue<string>();
+        private readonly HashSet<string> compositeFailed = new HashSet<string>();
+        private CancellationTokenSource compositeCancel;
+        private string makingTake;
+        private bool making;
 
         #region Entry points
         /// <summary>The details of the next recordings (the button «📝» of the screens).</summary>
@@ -66,6 +79,10 @@ namespace Kinovea.ScreenManager
             }
             else
             {
+                // Hidden while it makes the videos of all the cameras.
+                if (!instance.Visible)
+                    instance.Show();
+
                 instance.Activate();
             }
         }
@@ -112,45 +129,71 @@ namespace Kinovea.ScreenManager
             grid.Columns.Add("kind", SwimLang.T("Είδος"));
             grid.Columns.Add("who", SwimLang.T("Αθλητής ή αγώνισμα"));
             grid.Columns.Add("cameras", SwimLang.T("Κάμερες (✓ στον υπολογιστή)"));
-            grid.Columns[0].FillWeight = 16;
+            grid.Columns.Add("composite", "🎬");
+            grid.Columns[0].FillWeight = 15;
             grid.Columns[1].FillWeight = 10;
-            grid.Columns[2].FillWeight = 44;
-            grid.Columns[3].FillWeight = 30;
-            grid.CellDoubleClick += (s, e) => EditSelected();
+            grid.Columns[2].FillWeight = 42;
+            grid.Columns[3].FillWeight = 27;
+            grid.Columns[4].FillWeight = 6;
+            grid.Columns[4].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            grid.Columns[4].ToolTipText = SwimLang.T("Το ενοποιημένο βίντεο των καμερών (✓ έγινε · ⏳ γίνεται · … περιμένει · ⚠ δεν έγινε). Διπλό κλικ: προβολή.");
+            grid.CellDoubleClick += (s, e) =>
+            {
+                if (e.RowIndex >= 0 && e.ColumnIndex == 4)
+                    ViewSelected();
+                else
+                    EditSelected();
+            };
 
-            // The actions.
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(8, 8, 8, 4), WrapContents = false };
+            // The actions: the videos to the computer and the video of all the cameras, then the list.
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 80, Padding = new Padding(8, 6, 8, 2), WrapContents = true };
             btnCard.Text = SwimLang.T("💾 Από κάρτα ή φάκελο…");
             btnWifi.Text = SwimLang.T("📶 Κατέβασμα με Wi-Fi");
             btnEdit.Text = SwimLang.T("📝 Διόρθωση στοιχείων");
             btnRemove.Text = SwimLang.T("🗑 Έξω από τη λίστα");
             btnStop.Text = SwimLang.T("■ Διακοπή");
-            cbPending.Text = SwimLang.T("Μόνο όσα δεν ήρθαν");
+            btnView.Text = SwimLang.T("▶ Προβολή");
+            btnComposite.Text = SwimLang.T("🎬 Ενοποιημένο βίντεο");
+            cbPending.Text = SwimLang.T("Σήμερα και όσα περιμένουν");
             cbPending.Checked = true;
             cbPending.AutoSize = true;
             cbPending.Margin = new Padding(14, 7, 0, 0);
-            foreach (Button b in new[] { btnCard, btnWifi, btnEdit, btnRemove, btnStop })
+            cbAuto.Text = SwimLang.T("🎬 Ενοποιημένο μόνο του");
+            cbAuto.Checked = autoComposite;
+            cbAuto.AutoSize = true;
+            cbAuto.Margin = new Padding(14, 7, 0, 0);
+            foreach (Button b in new[] { btnCard, btnWifi, btnStop, btnView, btnComposite, btnEdit, btnRemove })
             {
                 b.AutoSize = true;
                 actions.Controls.Add(b);
             }
 
+            btnView.Margin = new Padding(18, 3, 3, 3);
+            btnView.Font = new Font(Font, FontStyle.Bold);
+            actions.SetFlowBreak(btnComposite, true);
             actions.Controls.Add(cbPending);
+            actions.Controls.Add(cbAuto);
             btnStop.Enabled = false;
             btnCard.Click += (s, e) => ImportFromFolder();
             btnWifi.Click += (s, e) => DownloadByWifi();
             btnEdit.Click += (s, e) => EditSelected();
             btnRemove.Click += (s, e) => RemoveSelected();
+            btnView.Click += (s, e) => ViewSelected();
+            btnComposite.Click += (s, e) => MakeSelected();
             btnStop.Click += (s, e) =>
             {
                 if (cancel != null)
                     cancel.Cancel();
+
+                if (compositeCancel != null)
+                    compositeCancel.Cancel();
             };
             cbPending.CheckedChanged += (s, e) => Fill();
+            cbAuto.CheckedChanged += (s, e) => autoComposite = cbAuto.Checked;
 
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(10, 4, 10, 6) };
+            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 72, Padding = new Padding(10, 4, 10, 6) };
             lblStatus.Dock = DockStyle.Top;
-            lblStatus.Height = 36;
+            lblStatus.Height = 44;
             progress.Dock = DockStyle.Bottom;
             progress.Height = 14;
             bottom.Controls.Add(lblStatus);
@@ -162,15 +205,31 @@ namespace Kinovea.ScreenManager
             Controls.Add(top);
 
             SwimGoProTakes.Changed += Takes_Changed;
+            FormClosing += (s, e) =>
+            {
+                // The videos of all the cameras go on: the window hides until they are made (closed with the program).
+                if (making && e.CloseReason == CloseReason.UserClosing)
+                {
+                    e.Cancel = true;
+                    Hide();
+                }
+            };
             FormClosed += (s, e) =>
             {
                 SwimGoProTakes.Changed -= Takes_Changed;
                 if (cancel != null)
                     cancel.Cancel();
+
+                if (compositeCancel != null)
+                    compositeCancel.Cancel();
+
+                // The program closes while a video is made: its ffmpeg stops now and its temporary file goes.
+                if (making)
+                    SwimTakeComposite.StopAll();
             };
 
             Fill();
-            lblStatus.Text = SwimLang.T("Οι εγγραφές που ξεκίνησαν από το Kinovea. Βάλε τις κάρτες των καμερών σε card reader και πάτα «Από κάρτα» (ή διάλεξε φάκελο με τα αρχεία τους)· ή «Κατέβασμα με Wi-Fi» για λίγες εγγραφές.");
+            lblStatus.Text = SwimLang.T("Οι εγγραφές που ξεκίνησαν από το Kinovea. Κάρτες σε card reader: «Από κάρτα» · λίγες εγγραφές: «Κατέβασμα με Wi-Fi». Όταν έρθουν τα βίντεο όλων των καμερών μιας εγγραφής, γίνεται μόνο του το ενοποιημένο βίντεο (🎬) · «▶ Προβολή» για να το δεις.");
         }
 
         private void Takes_Changed(object sender, EventArgs e)
@@ -191,7 +250,10 @@ namespace Kinovea.ScreenManager
             lblRoot.Text = SwimLang.T("Φάκελος βίντεο: ") + (root.Length > 0 ? root : SwimLang.T("(δεν έχει διαλεχτεί)"));
             List<SwimTake> takes = SwimGoProTakes.Takes;
             if (cbPending.Checked)
-                takes = takes.Where(t => !t.AllDone).ToList();
+            {
+                DateTime today = DateTime.Today;
+                takes = takes.Where(t => !t.AllDone || t.Start.Date == today || t.Id == makingTake || compositeQueue.Contains(t.Id)).ToList();
+            }
 
             takes.Reverse();
             HashSet<string> selected = new HashSet<string>(SelectedTakes().Select(t => t.Id));
@@ -201,7 +263,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimTake t in takes)
             {
                 string cameras = string.Join(" · ", t.Cameras.Select(c => c.Alias + (c.Done ? " ✓" : " …")));
-                int row = grid.Rows.Add(t.Start.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), t.Details.KindName, t.Details.Summary, cameras);
+                int row = grid.Rows.Add(t.Start.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), t.Details.KindName, t.Details.Summary, cameras, CompositeMark(t));
                 grid.Rows[row].Tag = t;
                 if (selected.Contains(t.Id))
                     grid.Rows[row].Selected = true;
@@ -211,6 +273,42 @@ namespace Kinovea.ScreenManager
             }
 
             grid.ResumeLayout();
+        }
+
+        /// <summary>The video of all the cameras of a recording: ✓ made, ⏳ being made, … waiting, ⚠ not made (what went wrong is told).</summary>
+        private string CompositeMark(SwimTake t)
+        {
+            if (t.Id == makingTake)
+                return "⏳";
+
+            if (SwimTakeComposite.HasComposite(t))
+                return "✓";
+
+            if (compositeQueue.Contains(t.Id))
+                return "…";
+
+            return compositeFailed.Contains(t.Id) ? "⚠" : "";
+        }
+
+        private void SelectTake(string id)
+        {
+            if (id == null)
+                return;
+
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                SwimTake t = row.Tag as SwimTake;
+                bool mine = t != null && t.Id == id;
+                row.Selected = mine;
+                if (mine)
+                {
+                    try
+                    {
+                        grid.FirstDisplayedScrollingRowIndex = row.Index;
+                    }
+                    catch (Exception) { }
+                }
+            }
         }
 
         private List<SwimTake> SelectedTakes()
@@ -308,6 +406,7 @@ namespace Kinovea.ScreenManager
             btnWifi.Enabled = !busy;
             btnEdit.Enabled = !busy;
             btnRemove.Enabled = !busy;
+            btnComposite.Enabled = !busy;
             btnStop.Enabled = busy;
             if (!busy)
                 progress.Value = 0;
@@ -343,6 +442,8 @@ namespace Kinovea.ScreenManager
             cancel = new CancellationTokenSource();
             CancellationToken token = cancel.Token;
             SetBusy(true);
+            List<string> touched = new List<string>();
+            bool stopped = false;
             try
             {
                 Status(SwimLang.T("Διαβάζονται τα βίντεο…"), false);
@@ -401,6 +502,8 @@ namespace Kinovea.ScreenManager
                     return n;
                 });
 
+                touched.AddRange(matches.Select(m => m.Take.Id));
+
                 if (error != null)
                     Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Αντιγράφηκαν {0} βίντεο· πρόβλημα: {1}"), copied, error), true);
                 else
@@ -408,6 +511,7 @@ namespace Kinovea.ScreenManager
             }
             catch (OperationCanceledException)
             {
+                stopped = true;
                 Status(SwimLang.T("Σταμάτησε. Ό,τι αντιγράφηκε ολόκληρο έμεινε."), true);
             }
             catch (Exception e)
@@ -419,6 +523,9 @@ namespace Kinovea.ScreenManager
                 SetBusy(false);
                 Fill();
             }
+
+            if (!stopped)
+                AutoComposites(touched);
         }
 
         /// <summary>
@@ -546,6 +653,8 @@ namespace Kinovea.ScreenManager
             SetBusy(true);
             int got = 0;
             List<string> problems = new List<string>();
+            List<string> touched = new List<string>();
+            bool stopped = false;
             try
             {
                 foreach (string missing in wanted.Where(w => sources.All(s => s.Key != w)))
@@ -584,6 +693,7 @@ namespace Kinovea.ScreenManager
                     List<KeyValuePair<string, string>> log = new List<KeyValuePair<string, string>>();
                     foreach (SwimGoProMatch m in matched ?? new List<SwimGoProMatch>())
                     {
+                        touched.Add(m.Take.Id);
                         bool whole = true;
                         for (int i = 0; i < m.Files.Count; i++)
                             whole &= SwimGoProFiles.IsWhole(m.Targets[i], m.Files[i].Size) || (m.Files[i].Size <= 0 && File.Exists(m.Targets[i]));
@@ -620,6 +730,7 @@ namespace Kinovea.ScreenManager
             }
             catch (OperationCanceledException)
             {
+                stopped = true;
                 Status(SwimLang.T("Σταμάτησε. Ό,τι κατέβηκε ολόκληρο έμεινε."), true);
             }
             catch (Exception e)
@@ -630,6 +741,209 @@ namespace Kinovea.ScreenManager
             {
                 SetBusy(false);
                 Fill();
+            }
+
+            if (!stopped)
+                AutoComposites(touched);
+        }
+        #endregion
+
+        #region The video of all the cameras
+        /// <summary>The recordings that just got videos: the video of all their cameras when all came (if chosen).</summary>
+        private void AutoComposites(IEnumerable<string> takeIds)
+        {
+            if (!autoComposite)
+                return;
+
+            HashSet<string> wanted = new HashSet<string>(takeIds);
+            if (wanted.Count == 0)
+                return;
+
+            foreach (SwimTake t in SwimGoProTakes.Takes.Where(x => wanted.Contains(x.Id)))
+            {
+                if (SwimTakeComposite.Ready(t) && !compositeFailed.Contains(t.Id) && !compositeQueue.Contains(t.Id) && t.Id != makingTake)
+                    compositeQueue.Enqueue(t.Id);
+            }
+
+            RunComposites();
+        }
+
+        /// <summary>The button «🎬»: the video of all the cameras of the chosen recordings (again when made).</summary>
+        private void MakeSelected()
+        {
+            List<SwimTake> selected = SelectedTakes();
+            if (selected.Count == 0)
+            {
+                Status(SwimLang.T("Διάλεξε μια εγγραφή για το ενοποιημένο βίντεο των καμερών της."), false);
+                return;
+            }
+
+            List<SwimTake> able = selected.Where(t => SwimTakeComposite.Views(t).Count >= 2).ToList();
+            if (able.Count == 0)
+            {
+                Status(SwimLang.T("Για το ενοποιημένο βίντεο χρειάζονται στον υπολογιστή τα βίντεο τουλάχιστον δύο καμερών της εγγραφής."), true);
+                return;
+            }
+
+            if (able.Any(SwimTakeComposite.HasComposite))
+            {
+                string text = able.Count == 1 ?
+                    SwimLang.T("Υπάρχει ήδη το ενοποιημένο βίντεο αυτής της εγγραφής. Να ξαναγίνει;") :
+                    SwimLang.T("Κάποιες από αυτές τις εγγραφές έχουν ήδη ενοποιημένο βίντεο. Να ξαναγίνουν;");
+                if (MessageBox.Show(this, text, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    return;
+            }
+
+            foreach (SwimTake t in able)
+            {
+                compositeFailed.Remove(t.Id);
+                if (!compositeQueue.Contains(t.Id) && t.Id != makingTake)
+                    compositeQueue.Enqueue(t.Id);
+            }
+
+            RunComposites();
+        }
+
+        /// <summary>The video of all the cameras of the chosen recording, in the player of the computer.</summary>
+        private void ViewSelected()
+        {
+            SwimTake take = SelectedTakes().FirstOrDefault(SwimTakeComposite.HasComposite);
+            if (take == null)
+            {
+                Status(SwimLang.T("Διάλεξε μια εγγραφή με ενοποιημένο βίντεο (🎬 ✓)."), false);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(take.Composite) { UseShellExecute = true });
+            }
+            catch (Exception e)
+            {
+                Status(SwimLang.T("Το βίντεο δεν άνοιξε: ") + e.Message, true);
+            }
+        }
+
+        private static string TakeLabel(SwimTake take)
+        {
+            return take.Details.Summary + " · " + take.Start.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>The videos waiting, one after the other (the program stays quick: ffmpeg below the normal priority).</summary>
+        private async void RunComposites()
+        {
+            if (making || compositeQueue.Count == 0)
+                return;
+
+            making = true;
+            compositeCancel = new CancellationTokenSource();
+            CancellationToken token = compositeCancel.Token;
+            SetBusy(true);
+            int made = 0;
+            string lastMade = null;
+            bool stopped = false;
+            List<string> problems = new List<string>();
+            try
+            {
+                while (compositeQueue.Count > 0)
+                {
+                    token.ThrowIfCancellationRequested();
+                    string id = compositeQueue.Dequeue();
+                    SwimTake take = SwimGoProTakes.Takes.FirstOrDefault(t => t.Id == id);
+                    if (take == null)
+                        continue;
+
+                    makingTake = id;
+                    Fill();
+                    string label = TakeLabel(take);
+                    int left = compositeQueue.Count;
+                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🎬 Γίνεται το ενοποιημένο βίντεο: {0}"), label) +
+                        (left > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · περιμένουν ακόμη {0}"), left) : ""), false);
+                    progress.Value = 0;
+                    Progress<double> reporter = new Progress<double>(p =>
+                    {
+                        if (!IsDisposed)
+                            progress.Value = (int)Math.Max(0, Math.Min(100, p * 100));
+                    });
+                    IProgress<double> report = reporter;
+                    string output = SwimTakeComposite.OutputPath(take);
+                    string error;
+                    if (output == null)
+                    {
+                        error = SwimLang.T("χρειάζονται τα βίντεο τουλάχιστον δύο καμερών");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            error = await Task.Run(() =>
+                            {
+                                List<SwimCompositeView> views;
+                                return SwimTakeComposite.Make(SwimTakeComposite.Ffmpeg, take, output, p => report.Report(p), token, out views);
+                            });
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception e)
+                        {
+                            error = e.Message;
+                        }
+                    }
+
+                    if (error == null)
+                    {
+                        SwimGoProTakes.SetComposite(id, output);
+                        compositeFailed.Remove(id);
+                        made++;
+                        lastMade = id;
+                    }
+                    else
+                    {
+                        compositeFailed.Add(id);
+                        problems.Add(label + ": " + error);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                stopped = true;
+            }
+            catch (Exception e)
+            {
+                problems.Add(e.Message);
+            }
+            finally
+            {
+                // Stopped (or an error): what waited is not made by itself (the button «🎬» makes it).
+                compositeQueue.Clear();
+                making = false;
+                makingTake = null;
+                if (!IsDisposed)
+                {
+                    SetBusy(false);
+                    Fill();
+                }
+            }
+
+            if (IsDisposed)
+                return;
+
+            if (stopped)
+            {
+                Status(SwimLang.T("Σταμάτησε το ενοποιημένο βίντεο."), true);
+            }
+            else if (problems.Count > 0)
+            {
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Ενοποιημένα βίντεο: {0} έγιναν. Δεν έγινε: "), made) + string.Join(" · ", problems), true);
+            }
+            else if (made > 0)
+            {
+                Status(made == 1 ?
+                    SwimLang.T("✓ Έγινε το ενοποιημένο βίντεο. «▶ Προβολή» για να το δεις.") :
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Έγιναν {0} ενοποιημένα βίντεο. «▶ Προβολή» για να τα δεις."), made), false);
+                SelectTake(lastMade);
             }
         }
         #endregion

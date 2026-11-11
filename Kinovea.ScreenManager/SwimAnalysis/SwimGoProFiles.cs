@@ -35,6 +35,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The time zone of the camera written in the file, in minutes (int.MinValue when not written).</summary>
         public int ZoneMinutes = int.MinValue;
+
+        /// <summary>(2.21.0) Length of the video in seconds (0 when not read).</summary>
+        public double Duration;
     }
 
     /// <summary>(Swim 2.21.0) A recording of a camera and the files found for it (its parts).</summary>
@@ -219,6 +222,17 @@ namespace Kinovea.ScreenManager
                         double seconds = version == 1 ? (double)ReadUInt64(r) : ReadUInt32(r);
                         if (seconds > 0)
                             f.Created = mp4Epoch.AddSeconds(seconds);
+
+                        // Modification time, then the time scale and the duration.
+                        if (version == 1)
+                            ReadUInt64(r);
+                        else
+                            ReadUInt32(r);
+
+                        double scale = ReadUInt32(r);
+                        double units = version == 1 ? (double)ReadUInt64(r) : ReadUInt32(r);
+                        if (scale > 0 && units > 0)
+                            f.Duration = units / scale;
                         break;
                     case "GPMF":
                         int length = (int)Math.Min(contentEnd - content, 1 << 20);
