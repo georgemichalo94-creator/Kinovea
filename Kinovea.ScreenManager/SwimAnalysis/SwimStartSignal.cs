@@ -17,8 +17,9 @@ namespace Kinovea.ScreenManager
 {
     /// <summary>
     /// (Swim 2.22.0) The start signal of the computer for the starts and turns of technique analysis: «Take your marks» (the voice of
-    /// Windows, an English one when there is one), a pause of about two seconds (1.8 – 2.2 s, not always the same, as a starter) and the
-    /// horn: two tones together (890 and 1017 Hz, as the start systems of the pools), 0.6 s. The cameras that hear the horn are lined up
+    /// Windows, an English one when there is one), a pause of 1.5 s and the horn: two tones together (890 and 1017 Hz, as the start
+    /// systems of the pools), 0.6 s, hard and at the top of the scale (each tone with its odd harmonics, rounded off: a buzz as the
+    /// horns of the start systems, louder on a small speaker; no tone of one mixed into the other). The cameras that hear the horn are lined up
     /// by it (their sounds), and the start analysis finds its moment (the start of the attempt). Played by the speaker of the computer
     /// (or the one connected to it); one signal at a time. The words go without the band of the horn's tones (820 – 1120 Hz): the start
     /// analysis hears two tones 8/7 apart there, as the 7th and 8th harmonics of a voice can be, so that only the horn is a start signal.
@@ -32,8 +33,12 @@ namespace Kinovea.ScreenManager
         public const double LowTone = 890;
         public const double HighTone = 1017;
         public const double HornSeconds = 0.6;
-        public const double MinPause = 1.8;
-        public const double MaxPause = 2.2;
+
+        /// <summary>From the end of the words to the horn (s), as the analyst asked (11.11.2026: 1.5 s).</summary>
+        public const double Pause = 1.5;
+
+        /// <summary>The peak of the horn (of the scale).</summary>
+        public const double HornPeak = 0.95;
         public const string Words = "Take your marks";
         public const string GreekWords = "Τέικ γιορ μάρκς";
 
@@ -41,7 +46,6 @@ namespace Kinovea.ScreenManager
         public const double BandFrom = 820, BandTo = 1120, BandEdge = 40;
 
         private static readonly object locker = new object();
-        private static readonly Random random = new Random();
         private static short[] voice;
         private static bool voiceTried;
         private static SoundPlayer player;
@@ -65,9 +69,8 @@ namespace Kinovea.ScreenManager
                 if (DateTime.Now < busyUntil)
                     return DateTime.MinValue;
 
-                double pause = MinPause + (MaxPause - MinPause) * random.NextDouble();
                 double hornAt;
-                byte[] wave = Build(Voice(), pause, out hornAt);
+                byte[] wave = Build(Voice(), Pause, out hornAt);
                 try
                 {
                     if (player != null)
@@ -83,7 +86,7 @@ namespace Kinovea.ScreenManager
                     player.Play();
                     double length = (wave.Length - 44) / 2.0 / Rate;
                     busyUntil = start.AddSeconds(length + 0.3);
-                    log.DebugFormat("Start signal: the horn {0:0.00} s after the words.", pause);
+                    log.DebugFormat("Start signal: the horn {0:0.00} s after the words.", Pause);
                     return start.AddSeconds(hornAt);
                 }
                 catch (Exception e)
@@ -135,18 +138,40 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>The horn: the two tones together, a quick rise and fall (no click).</summary>
+        /// <summary>
+        /// The horn: the two tones together, each a hard tone (its odd harmonics to the 7th, under half the rate, rounded off by a soft
+        /// limit: a buzz, about 4.4 dB louder than two plain tones at the same peak), at HornPeak; a quick rise and fall (no click). Each
+        /// tone is made apart, so no sound between them comes in (the start analysis hears the two tones over the sounds around them).
+        /// </summary>
         public static short[] Horn()
         {
             int n = (int)(HornSeconds * Rate);
-            int edge = (int)(0.012 * Rate);
+            int edge = (int)(0.008 * Rate);
+            double[] sum = new double[n];
+            foreach (double tone in new[] { LowTone, HighTone })
+            {
+                double[] v = new double[n];
+                double peak = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    double t = i / (double)Rate, s = 0;
+                    for (int k = 1; k <= 7; k += 2)
+                        s += Math.Sin(2 * Math.PI * k * tone * t) / k;
+
+                    v[i] = s;
+                    peak = Math.Max(peak, Math.Abs(s));
+                }
+
+                for (int i = 0; i < n; i++)
+                    sum[i] += Math.Tanh(2 * v[i] / Math.Max(1e-9, peak));
+            }
+
+            double top = sum.Max(x => Math.Abs(x));
             short[] horn = new short[n];
             for (int i = 0; i < n; i++)
             {
-                double t = i / (double)Rate;
                 double envelope = Math.Min(1, Math.Min(i / (double)edge, (n - 1 - i) / (double)edge));
-                double v = 0.38 * Math.Sin(2 * Math.PI * LowTone * t) + 0.38 * Math.Sin(2 * Math.PI * HighTone * t);
-                horn[i] = (short)Math.Round(32767 * envelope * v);
+                horn[i] = (short)Math.Round(32767 * HornPeak * envelope * sum[i] / Math.Max(1e-9, top));
             }
 
             return horn;

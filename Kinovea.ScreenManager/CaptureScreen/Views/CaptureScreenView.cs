@@ -505,7 +505,7 @@ namespace Kinovea.ScreenManager
             x += btnTakes.PreferredSize.Width + 6;
 
             // (2.22.0) A continuous recording: the end of the session (with an order of athletes), the next athlete and its undo (while it records).
-            btnEndSession = SmallButton(x, "🏁");
+            btnEndSession = SmallButton(x, SwimLang.T("🏁 Τέλος"));
             btnEndSession.Click += (s, e) => presenter.View_EndSession();
             toolTips.SetToolTip(btnEndSession, SwimLang.T("🏁 Ολοκλήρωση συνεδρίας: η σειρά των αθλητών αδειάζει και ανοίγει το «📥 Βίντεο» για τις κάρτες (κοπή των συνεχόμενων βίντεο για κάθε αθλητή)."));
             ShowGoProButton(btnEndSession, false);
@@ -518,9 +518,9 @@ namespace Kinovea.ScreenManager
             toolTips.SetToolTip(btnNextAthlete, SwimLang.T("Στο τέλος της προσπάθειας του αθλητή: τελειώνει το κομμάτι του, αρχίζει του επόμενου της σειράς (και το «επόμενο» ενός presenter)."));
             ShowGoProButton(btnNextAthlete, false);
 
-            btnSignal = SmallButton(x, "📣");
+            btnSignal = SmallButton(x, SwimLang.T("📣 Σήμα"));
             btnSignal.Click += (s, e) => Flash(btnSignal, presenter != null && presenter.View_StartSignal());
-            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από ~2 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
+            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από 1,5 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
 
             btnUndoAthlete = SmallButton(x, "↶");
             btnUndoAthlete.Click += (s, e) => UndoAthleteClicked();

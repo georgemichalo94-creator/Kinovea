@@ -655,7 +655,9 @@ namespace Kinovea.ScreenManager
                     Padding = new Padding(8, 6, 8, 0),
                     Text = SwimLang.T("Μία γραμμή για κάθε αθλητή, με τη σειρά που θα κολυμπήσουν (από Excel: ΑΜ, ονοματεπώνυμο, σωματείο· ή μόνο ΑΜ ή μόνο όνομα). Μπαίνουν στο τέλος της σειράς.")
                 };
-                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = clip, Font = new Font("Consolas", 9f) };
+                // The lines of a web page or another program can end with \n alone: a TextBox shows them as one line.
+                string lines = (clip ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = lines, Font = new Font("Consolas", 9f) };
                 FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6) };
                 Button ok = new Button { Text = SwimLang.T("Στη σειρά"), DialogResult = DialogResult.OK, Width = 100 };
                 Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, Width = 100 };
@@ -766,7 +768,9 @@ namespace Kinovea.ScreenManager
                     Padding = new Padding(8, 6, 8, 0),
                     Text = SwimLang.T("Αντίγραψε τα αποτελέσματα ή τη λίστα εκκίνησης της σειράς (από τη σελίδα ή το PDF) και επικόλλησέ τα εδώ. Ο διάδρομος δίνει τον αθλητή κάθε βίντεο.")
                 };
-                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = clip, Font = new Font("Consolas", 9f) };
+                // The lines of a web page or another program can end with \n alone: a TextBox shows them as one line.
+                string lines = (clip ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = lines, Font = new Font("Consolas", 9f) };
                 FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6) };
                 Button ok = new Button { Text = SwimLang.T("Ανάγνωση"), DialogResult = DialogResult.OK, Width = 100 };
                 Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, Width = 100 };
