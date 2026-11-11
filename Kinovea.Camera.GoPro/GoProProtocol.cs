@@ -50,6 +50,7 @@ namespace Kinovea.Camera.GoPro
         public const byte SettingResolution = 2;
         public const byte SettingFps = 3;
         public const byte SettingLed = 91;
+        public const byte SettingAspectRatio = 108;
         public const byte SettingLens = 121;
         public const byte SettingAntiFlicker = 134;
         public const byte SettingHypersmooth = 135;

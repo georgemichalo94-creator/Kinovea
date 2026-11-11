@@ -1221,7 +1221,7 @@ namespace Kinovea.Camera.GoPro
                                 response != null && response.Length >= 2 ? response[1].ToString() : "no answer");
                         }
 
-                        if (!ok)
+                        if (!ok && !setting.Optional)
                             failed.Add(setting);
                     }
 
@@ -1231,8 +1231,17 @@ namespace Kinovea.Camera.GoPro
                 // The settings as the camera has them now (the tile of the settings shows them).
                 byte[] query = new byte[] { GoProIds.QueryGetSettings, GoProIds.SettingResolution, GoProIds.SettingFps, GoProIds.SettingLens, GoProIds.SettingAntiFlicker, GoProIds.SettingHypersmooth };
                 await RequestAsync(Get(c => c.query), GoProIds.QueryResponse, GoProIds.QueryGetSettings, query, 2500).ConfigureAwait(false);
+                await Task.Delay(300).ConfigureAwait(false);
 
-                if (left.Count == 0)
+                // A camera can take each value and still change one by itself (a resolution without that frame rate).
+                GoProState now = Snapshot(null);
+                if (left.Count == 0 && now.Resolution >= 0 && !preset.Matches(now))
+                {
+                    SetNotice(name + ": " + GoProText.T("η κάμερα έμεινε σε ", "the camera stayed at ") + GoProPresets.Describe(now) +
+                        GoProText.T(" αντί για ", " instead of ") + preset.Description + GoProText.T(". Ξαναπάτα το κουμπί ή άλλαξέ το στην κάμερα.", ". Press the button again or change it on the camera."), true, 180);
+                    log.WarnFormat("\"{0}\" taken by the GoPro {1:X12} but it stayed at {2}.", preset.Id, Address, GoProPresets.Describe(now));
+                }
+                else if (left.Count == 0)
                 {
                     SetNotice(name + " ✓  " + preset.Description, false, 90);
                     log.DebugFormat("\"{0}\" is in the GoPro {1:X12}.", preset.Id, Address);
