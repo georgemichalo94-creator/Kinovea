@@ -234,7 +234,8 @@ Check ($found5[0].Targets[1].EndsWith('_K1_2_μέρος2.MP4')) ('the second par
 # ---- The list of a card by Wi-Fi (Open GoPro /gopro/media/list) and its match.
 $goproAsm = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Kinovea.Camera.GoPro.dll'))
 $media = $goproAsm.GetType('Kinovea.Camera.GoPro.GoProMedia', $true)
-$cre = [long]($t0.AddHours(-2).AddMinutes(50).AddSeconds(2) - (New-Object DateTime 1970, 1, 1)).TotalSeconds
+# The list by Wi-Fi gives the clock of the camera (a HERO12 too, as tested).
+$cre = [long]($t0.AddMinutes(50).AddSeconds(2) - (New-Object DateTime 1970, 1, 1)).TotalSeconds
 $json = '{"id":"1","media":[{"d":"100GOPRO","fs":[{"n":"GX010021.MP4","cre":"' + $cre + '","mod":"' + ($cre + 60) + '","s":"123456"},{"n":"GX010021.THM","cre":"' + $cre + '","s":"10"}]}]}'
 $list = $media.GetMethod('ParseList', $all).Invoke($null, @($json))
 Check ($list.Count -eq 1 -and $list[0].Name -eq 'GX010021.MP4' -and $list[0].Size -eq 123456 -and $list[0].Folder -eq '100GOPRO') 'the list of the card: the videos, their folder and size'
@@ -264,6 +265,14 @@ $okA = @($found4 | Where-Object { $_.Take.Start -eq $tA -and $_.Files[0].Name -e
 $okB = @($found4 | Where-Object { $_.Take.Start -eq $tB -and $_.Files[0].Name -eq 'GX010052.MP4' }).Count -eq 1
 Check ($found4.Count -eq 2 -and $okA -and $okB) 'the clock three hours off for all the files: each recording its own file (not the one of the other hour)'
 $takesT::SetNext((Details 'start' '900002' 'ΔΕΥΤΕΡΟ ΠΑΡΑΔΕΙΓΜΑ' 'Α.Ο. Δοκιμής'))
+
+# ---- A recording without its file never takes a file of another hour (one file of another hour proves nothing).
+$t9 = $t0.AddMinutes(90)
+$takesT::Started('K1', $s1, 'HERO9 Black', $t9)
+$card5 = [System.IO.Path]::Combine($work, 'card5')
+[FakeGoPro]::Write("$card5\DCIM\100GOPRO\GX010061.MP4", $t9.AddHours(-5).AddSeconds(3), $s1, 'HERO9 Black', 1000, 17)
+Check ($filesT::Match($takesT::Takes, 'K1', $filesT::Scan($card5, $none)).Count -eq 0) 'a recording without its file: the file of another hour is not taken'
+$takesT::Remove([string[]]@(@($takesT::Takes | Where-Object { $_.Start -eq $t9 })[0].Id))
 
 # ---- A camera that did not start leaves the recording; a recording without cameras goes.
 $t7 = $t0.AddMinutes(70)

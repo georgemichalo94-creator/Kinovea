@@ -256,7 +256,9 @@ namespace Kinovea.ScreenManager
             if (selected.Count == 0)
                 return;
 
-            string text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Να βγουν {0} εγγραφές από τη λίστα; Τα βίντεο στις κάρτες και στον υπολογιστή δεν σβήνονται."), selected.Count);
+            string text = selected.Count == 1 ?
+                SwimLang.T("Να βγει η εγγραφή από τη λίστα; Τα βίντεο στις κάρτες και στον υπολογιστή δεν σβήνονται.") :
+                string.Format(CultureInfo.InvariantCulture, SwimLang.T("Να βγουν {0} εγγραφές από τη λίστα; Τα βίντεο στις κάρτες και στον υπολογιστή δεν σβήνονται."), selected.Count);
             if (MessageBox.Show(this, text, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 SwimGoProTakes.Remove(selected.Select(t => t.Id));
         }
@@ -376,9 +378,12 @@ namespace Kinovea.ScreenManager
                 SwimGoProFiles.PlanTargets(root, matches);
                 long bytes = matches.SelectMany(m => m.Files).Sum(f => Math.Max(0, f.Size));
                 int count = matches.Sum(m => m.Files.Count);
+                int takeCount = matches.Select(m => m.Take.Id).Distinct().Count();
                 string question = string.Format(CultureInfo.InvariantCulture,
-                    SwimLang.T("Βρέθηκαν {0} βίντεο για {1} εγγραφές ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι."),
-                    count, matches.Select(m => m.Take.Id).Distinct().Count(), bytes / 1073741824.0, root);
+                    takeCount == 1 ?
+                        SwimLang.T("Βρέθηκαν {0} βίντεο για 1 εγγραφή ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι.") :
+                        SwimLang.T("Βρέθηκαν {0} βίντεο για {1} εγγραφές ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι."),
+                    count, takeCount, bytes / 1073741824.0, root);
                 if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 {
                     Status("", false);

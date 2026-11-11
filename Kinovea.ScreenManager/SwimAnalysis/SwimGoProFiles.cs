@@ -285,28 +285,31 @@ namespace Kinovea.ScreenManager
         #region Matching
         /// <summary>
         /// The files of one camera for its recordings (not on the computer yet): a recording takes the file (and its parts) that started
-        /// within 20 s of its start, nearest first. The clock of the camera is the same for all its files: when it is a whole number of
-        /// hours off (universal time, another time zone), the one number of hours that finds the most recordings is taken for all of
-        /// them (no file of another hour is taken for a recording), the clock of the computer first.
+        /// within 20 s of its start, nearest first. The clock of the camera is the same for all its files: the clock of the computer
+        /// first; another clock a whole number of hours off (universal time, another time zone) only when it finds more recordings and at
+        /// least two (a single file of another hour proves nothing: a recording without a file must not take the video of another one).
         /// </summary>
         public static List<SwimGoProMatch> Match(List<SwimTake> takes, string alias, List<SwimGoProFile> files)
         {
-            // The first number of hours that finds the most recordings (0 first: a tie keeps the clock of the computer).
-            List<SwimGoProMatch> best = new List<SwimGoProMatch>();
-            int bestHours = 0;
+            // The clock of the computer first; another one only with more recordings found, and at least two.
             int pending = takes.Count(t => t.Cameras.Any(c => c.Alias == alias && !c.Done));
+            double error;
+            List<SwimGoProMatch> best = MatchAt(takes, alias, files, 0, out error);
+            int bestHours = 0;
             foreach (int hours in HourOffsets())
             {
-                double error;
+                if (best.Count == pending)
+                    break;
+
+                if (hours == 0)
+                    continue;
+
                 List<SwimGoProMatch> found = MatchAt(takes, alias, files, hours, out error);
-                if (found.Count > best.Count)
+                if (found.Count >= 2 && found.Count > best.Count)
                 {
                     best = found;
                     bestHours = hours;
                 }
-
-                if (best.Count == pending)
-                    break;
             }
 
             if (bestHours != 0 && best.Count > 0)
@@ -677,7 +680,8 @@ namespace Kinovea.ScreenManager
 
         private static void WriteCsv(Dictionary<string, List<string>> csv)
         {
-            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+            // One list per day: the copies and downloads of a day are added to it.
+            string stamp = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             foreach (KeyValuePair<string, List<string>> entry in csv)
             {
                 try

@@ -2499,6 +2499,8 @@ namespace Kinovea.ScreenManager
             { "Αποθήκευση εικόνας…", "Save the picture…" },
             // (2.21.0) The recordings of the GoPro cameras and their videos.
             { "Σειρά", "Heat" },
+            { "Να βγει η εγγραφή από τη λίστα; Τα βίντεο στις κάρτες και στον υπολογιστή δεν σβήνονται.", "Remove the recording from the list? The videos on the cards and on the computer are not deleted." },
+            { "Βρέθηκαν {0} βίντεο για 1 εγγραφή ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι.", "{0} videos found for 1 recording ({2:0.0} GB). Copy them to the folder {3}?\n\nThe files of the card stay as they are." },
             { "χωρίς αθλητή", "no athlete" },
             { "Κάμερα", "Camera" },
             { "📝 Στοιχεία εγγραφής GoPro", "📝 GoPro recording details" },
