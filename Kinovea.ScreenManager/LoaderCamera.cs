@@ -38,8 +38,9 @@ namespace Kinovea.ScreenManager
             {
                 LoadInSpecificTarget(manager, 0, summary, screenDescriptor);
             }
-            else if (manager.ScreenCount == 2)
+            else
             {
+                // Two screens, or (Swim 2.20.0) up to five in the grid: the first empty capture screen, then the active one.
                 int target = manager.FindTargetScreen(typeof(CaptureScreen));
                 if (target != -1)
                     LoadInSpecificTarget(manager, target, summary, screenDescriptor);

@@ -195,7 +195,11 @@ namespace Kinovea.ScreenManager
         private string lastExportedMetadata;
 
         private bool shared;
+        private int shareCount = 1;
         private bool synched;
+        // (Swim 2.20.0) A camera that records on its own card: the moment of the last command (shared by the screens started together).
+        private DateTime remoteCommandTime = DateTime.MinValue;
+        private IRemoteRecordingSource remoteSource;
         
         private Metadata metadata;
         private MetadataRenderer metadataRenderer;
@@ -295,8 +299,18 @@ namespace Kinovea.ScreenManager
 
         public void SetShared(bool shared)
         {
-            log.DebugFormat("Set shared: {0}", shared);
-            this.shared = shared;
+            SetShareCount(shared ? 2 : 1);
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) The number of screens of the window that share the memory of the delay buffers (up to five).
+        /// </summary>
+        public void SetShareCount(int count)
+        {
+            count = Math.Max(1, count);
+            log.DebugFormat("Set shared: {0} screens", count);
+            this.shared = count > 1;
+            this.shareCount = count;
             AllocateDelayer();
         }
 
@@ -310,10 +324,32 @@ namespace Kinovea.ScreenManager
 
         public void ForceRecordingStatus(bool record)
         {
+            ForceRecordingStatus(record, DateTime.Now);
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) Start or stop recording with the moment of the command shared by the screens started together (the cameras
+        /// that record on their own card measure their start from it).
+        /// </summary>
+        public void ForceRecordingStatus(bool record, DateTime commandTime)
+        {
             if (recording == record)
                 return;
 
+            remoteCommandTime = commandTime;
             ToggleRecording();
+        }
+
+        /// <summary>(Swim 2.20.0) The name of the camera of this screen (null without one).</summary>
+        public string CameraAlias
+        {
+            get { return cameraLoaded && cameraSummary != null ? cameraSummary.Alias : null; }
+        }
+
+        /// <summary>(Swim 2.20.0) The camera of this screen records on its own card (a GoPro): nothing is written on the computer.</summary>
+        public bool RecordsOnCamera
+        {
+            get { return cameraGrabber is IRemoteRecordingSource; }
         }
 
         public void PerformSnapshot()
@@ -725,11 +761,117 @@ namespace Kinovea.ScreenManager
             UpdateTitle();
             cameraLoaded = true;
 
+            // (Swim 2.20.0) A camera that records on its own card tells its screen when it starts or stops.
+            AttachRemote();
+
             RaiseActivated(EventArgs.Empty);
 
             if (connect)
                 Connect();
         }
+
+        #region Swim: cameras that record on their own card (2.20.0)
+        private void AttachRemote()
+        {
+            DetachRemote();
+            remoteSource = cameraGrabber as IRemoteRecordingSource;
+            if (remoteSource != null)
+                remoteSource.RemoteRecordingChanged += RemoteSource_RecordingChanged;
+        }
+
+        private void DetachRemote()
+        {
+            if (remoteSource != null)
+                remoteSource.RemoteRecordingChanged -= RemoteSource_RecordingChanged;
+
+            remoteSource = null;
+        }
+
+        private void RemoteSource_RecordingChanged(object sender, EventArgs e)
+        {
+            // Any thread.
+            try
+            {
+                if (dummy != null && dummy.IsHandleCreated)
+                    dummy.BeginInvoke((Action)SyncRemoteRecording);
+            }
+            catch (Exception ex)
+            {
+                log.Error("Error while passing the state of the camera to its screen.", ex);
+            }
+        }
+
+        /// <summary>
+        /// The screen follows the camera: a recording started or stopped from its own button, stopped by the camera (full card, heat,
+        /// battery), or a command that failed.
+        /// </summary>
+        private void SyncRemoteRecording()
+        {
+            if (remoteSource == null || view == null || !cameraLoaded)
+                return;
+
+            bool onCamera = remoteSource.RemoteRecording;
+            if (onCamera == recording)
+                return;
+
+            recording = onCamera;
+            if (recording)
+            {
+                stopwatchRecording.Restart();
+                view.UpdateRecordingStatus(true);
+                viewportController.UpdateRecordingIndicator(RecordingStatus.Recording, 1.0f);
+                RecordingStarted?.Invoke(this, EventArgs.Empty);
+            }
+            else
+            {
+                view.UpdateRecordingStatus(false);
+                UpdateRecordingIndicator();
+                wasTriggered = false;
+                RecordingStopped?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>
+        /// The record button of a screen whose camera records on its own card: the command goes to the camera, nothing is written on the
+        /// computer (no capture folder needed). The screen shows the recording at once and follows the camera after.
+        /// </summary>
+        private void StartRemoteRecording()
+        {
+            if (remoteSource == null || recording)
+                return;
+
+            DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
+            remoteCommandTime = DateTime.MinValue;
+            remoteSource.SetRemoteRecording(true, commandTime);
+
+            recording = true;
+            stopwatchRecording.Restart();
+            log.DebugFormat("Recording started on the camera {0}.", cameraSummary.Alias);
+            view.UpdateRecordingStatus(true);
+            viewportController.StartingRecording();
+            viewportController.UpdateRecordingIndicator(RecordingStatus.Recording, 1.0f);
+            RecordingStarted?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void StopRemoteRecording()
+        {
+            if (remoteSource == null || !recording)
+                return;
+
+            DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
+            remoteCommandTime = DateTime.MinValue;
+            remoteSource.SetRemoteRecording(false, commandTime);
+
+            recording = false;
+            StartQuietPeriod();
+            log.DebugFormat("Recording stopped on the camera {0}.", cameraSummary.Alias);
+            viewportController.StoppingRecording();
+            view.UpdateRecordingStatus(false);
+            UpdateRecordingIndicator();
+            wasTriggered = false;
+            RecordingStopped?.Invoke(this, EventArgs.Empty);
+        }
+        #endregion
 
         /// <summary>
         /// Listen for new cameras until we find the one requested in the screen descriptor, 
@@ -787,6 +929,7 @@ namespace Kinovea.ScreenManager
             if (cameraConnected)
                 Disconnect();
 
+            DetachRemote();
             cameraGrabber = null;
 
             delayer.FreeAll();
@@ -980,7 +1123,15 @@ namespace Kinovea.ScreenManager
 
             cameraConnected = false;
 
-            if (recording)
+            // (Swim 2.20.0) A camera that records on its own card keeps recording when its screen lets it go (the screen closed, the
+            // computer asleep): only its record button stops it. The screen finds the state again at the next connection.
+            if (recording && remoteSource != null)
+            {
+                recording = false;
+                view.UpdateRecordingStatus(false);
+                RecordingStopped?.Invoke(this, EventArgs.Empty);
+            }
+            else if (recording)
                 StopRecording(false);
 
             if (consumerRealtime != null)
@@ -1326,19 +1477,21 @@ namespace Kinovea.ScreenManager
             }
 
             // Get the displayed frame.
+            // (Swim 2.20.0) A camera that records on its own card shows its state as it is now, never delayed.
             int target = 0;
-            Bitmap displayFrame = delayedDisplay ? delayer.GetWeak(delay, ImageRotation, Mirrored, out target) : delayer.GetWeak(0, ImageRotation, Mirrored, out target);
-            
+            bool showDelayed = delayedDisplay && remoteSource == null;
+            Bitmap displayFrame = showDelayed ? delayer.GetWeak(delay, ImageRotation, Mirrored, out target) : delayer.GetWeak(0, ImageRotation, Mirrored, out target);
+
             if (displayFrame == null && target < 0)
                 displayFrame = CreateWaitImage(-target);
-            
+
             if (displayFrame != null)
             {
                 viewportController.ForgetBitmap();
                 viewportController.Bitmap = displayFrame;
             }
-            
-            if (recording && recordingThumbnail == null && displayFrame != null)
+
+            if (recording && remoteSource == null && recordingThumbnail == null && displayFrame != null)
                 recordingThumbnail = BitmapHelper.Copy(displayFrame);
 
             if (recording && maxRecordingSeconds > 0)
@@ -1715,6 +1868,13 @@ namespace Kinovea.ScreenManager
             if (!cameraLoaded || recording)
                 return;
 
+            // (Swim 2.20.0) A camera that records on its own card (GoPro): the command goes to the camera.
+            if (remoteSource != null)
+            {
+                StartRemoteRecording();
+                return;
+            }
+
             // Interpolate the filename variables with the current context.
             bool uncompressed = PreferencesManager.CapturePreferences.SaveUncompressedVideo && imageDescriptor.Format != Kinovea.Services.ImageFormat.JPEG;
             string path = BuildRecordingPath(true);
@@ -1834,6 +1994,13 @@ namespace Kinovea.ScreenManager
         {
             if (!cameraLoaded || !recording)
                 return;
+
+            // (Swim 2.20.0) A camera that records on its own card (GoPro): the command goes to the camera.
+            if (remoteSource != null)
+            {
+                StopRemoteRecording();
+                return;
+            }
 
             log.DebugFormat("Stopping recording.");
 
@@ -2216,7 +2383,8 @@ namespace Kinovea.ScreenManager
                 return false;
 
             long totalMemoryMB = (long)PreferencesManager.CapturePreferences.CaptureMemoryBuffer;
-            long availableMemory = shared ? totalMemoryMB / 2 : totalMemoryMB;
+            // (Swim 2.20.0) Shared by all the screens of the window (up to five).
+            long availableMemory = shared ? totalMemoryMB / Math.Max(2, shareCount) : totalMemoryMB;
             log.DebugFormat("Allocating or reallocating delay buffer for {0}. Shared: {1}, Available memory: {2}/{3}", cameraSummary.Alias, shared, availableMemory, totalMemoryMB);
 
             long megabyte = 1024 * 1024;

@@ -391,6 +391,10 @@
       <Project>{6358dc91-456d-41d3-8c73-6ee39c6e3048}</Project>
       <Name>Kinovea.Camera.FrameGenerator</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Kinovea.Camera.GoPro\Kinovea.Camera.GoPro.csproj">
+      <Project>{45cc4d9f-44d3-4b50-bb98-bf9570922afe}</Project>
+      <Name>Kinovea.Camera.GoPro</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Kinovea.Camera.HTTP\Kinovea.Camera.HTTP.csproj">
       <Project>{7b8cf26d-b8af-4914-b395-93661d225ea3}</Project>
       <Name>Kinovea.Camera.HTTP</Name>

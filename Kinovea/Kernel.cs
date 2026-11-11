@@ -154,6 +154,17 @@ namespace Kinovea.Root
                 CameraTypeManager.LoadCameraManager(typeof(Camera.DirectShow.CameraManagerDirectShow));
                 CameraTypeManager.LoadCameraManager(typeof(Camera.HTTP.CameraManagerHTTP));
                 CameraTypeManager.LoadCameraManager(typeof(Camera.FrameGenerator.CameraManagerFrameGenerator));
+
+                // (Swim 2.20.0) The GoPro cameras controlled by Bluetooth (Windows 10 or later).
+                try
+                {
+                    CameraTypeManager.LoadCameraManager(typeof(Camera.GoPro.CameraManagerGoPro));
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not load the camera manager of the GoPro cameras.", e);
+                }
+
                 log.DebugFormat("Loaded built-in camera managers:{0} ms.", stopwatch.ElapsedMilliseconds);
 
                 log.Debug("Loading external camera managers.");
