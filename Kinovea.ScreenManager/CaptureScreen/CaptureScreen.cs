@@ -200,6 +200,9 @@ namespace Kinovea.ScreenManager
         // (Swim 2.20.0) A camera that records on its own card: the moment of the last command (shared by the screens started together).
         private DateTime remoteCommandTime = DateTime.MinValue;
         private DateTime remoteTakeStart = DateTime.MinValue;
+
+        // (Swim 2.22.0) When this screen last told its camera to stop: a camera that goes on recording after it did not take it.
+        private DateTime remoteStopCommand = DateTime.MinValue;
         private IRemoteRecordingSource remoteSource;
         
         private Metadata metadata;
@@ -674,6 +677,56 @@ namespace Kinovea.ScreenManager
             FormGoProTransfer.ShowWindow(view != null ? view.FindForm() : null);
         }
 
+        /// <summary>
+        /// (Swim 2.22.0) «⏭ Επόμενος» of a continuous recording (the button of any of its screens, or the key of a presenter): the attempt
+        /// of the athlete in the water ends now, the next one of the order starts. False (and why) when it was not taken.
+        /// </summary>
+        public bool View_NextAthlete(out string message)
+        {
+            return SwimGoProTakes.NextAthlete(DateTime.Now, out message);
+        }
+
+        /// <summary>
+        /// (Swim 2.22.0) «📣»: the start signal of the computer («Take your marks», ~2 s, the horn), only when the user presses it; kept with
+        /// the recording going on. False while one plays.
+        /// </summary>
+        public bool View_StartSignal()
+        {
+            DateTime horn = SwimStartSignal.Play();
+            if (horn == DateTime.MinValue)
+                return false;
+
+            SwimGoProTakes.AddSignal(horn);
+            return true;
+        }
+
+        /// <summary>(Swim 2.22.0) «↶»: the last press of «⏭ Επόμενος» undone.</summary>
+        public bool View_UndoNextAthlete(out string message)
+        {
+            return SwimGoProTakes.UndoNextAthlete(out message);
+        }
+
+        /// <summary>
+        /// (Swim 2.22.0) «🏁 Ολοκλήρωση συνεδρίας»: the order of the athletes is emptied and the window of the videos opens for the cards
+        /// (each camera's continuous videos are cut there for each athlete). Not while a camera records.
+        /// </summary>
+        public void View_EndSession()
+        {
+            IWin32Window owner = view != null ? view.FindForm() : null;
+            if (SwimGoProTakes.AnyRecording())
+            {
+                MessageBox.Show(owner, SwimLang.T("Σταμάτησε πρώτα την εγγραφή των καμερών."), SwimLang.T("🏁 Ολοκλήρωση συνεδρίας"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string text = SwimLang.T("Ολοκλήρωση της συνεδρίας: η σειρά των αθλητών αδειάζει και ανοίγει το «📥 Βίντεο».\n\nΒάλε εκεί μία-μία τις κάρτες των καμερών (card reader) και πάτα «💾 Από κάρτα»: τα συνεχόμενα βίντεο κόβονται για κάθε αθλητή, στους φακέλους τους.\n\nΣυνέχεια;");
+            if (MessageBox.Show(owner, text, SwimLang.T("🏁 Ολοκλήρωση συνεδρίας"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            SwimGoProTakes.EndSession();
+            FormGoProTransfer.ShowWindow(owner);
+        }
+
         /// <summary>(Swim 2.20.0) A set of settings (GoPro: race, technique analysis) in this camera or in all the cameras of its kind.</summary>
         public void View_ApplyCameraPreset(string id, bool allCameras)
         {
@@ -855,6 +908,23 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>(Swim 2.21.0) The measured start of this camera after the command of its recording, kept with the recording.</summary>
+        private void NoteStartOffset()
+        {
+            try
+            {
+                IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
+                if (media == null || cameraSummary == null || remoteTakeStart == DateTime.MinValue)
+                    return;
+
+                SwimGoProTakes.SetStartOffset(cameraSummary.Alias, remoteTakeStart, media.StartOffset(remoteTakeStart));
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while keeping the start of a camera.", e);
+            }
+        }
+
         /// <summary>(Swim 2.21.0) The camera of this screen did not start at the command: it is not in that recording.</summary>
         private void ForgetTake(DateTime commandTime)
         {
@@ -901,9 +971,21 @@ namespace Kinovea.ScreenManager
             // (2.21.0) A start the camera did not do: the recording has no file of this camera, it leaves the recording.
             IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
             if (!recording && media != null && remoteTakeStart != DateTime.MinValue && media.FailedStart == remoteTakeStart)
+            {
                 ForgetTake(remoteTakeStart);
+            }
             else
-                KeepTake(recording, DateTime.Now);
+            {
+                if (!recording)
+                    NoteStartOffset();
+
+                // (2.22.0) A stop the camera did not take (under the water, out of reach): the same recording goes on, not a new one.
+                bool stopRefused = recording && remoteStopCommand != DateTime.MinValue && (DateTime.Now - remoteStopCommand).TotalSeconds < 120;
+                if (!stopRefused)
+                    KeepTake(recording, DateTime.Now);
+                else
+                    log.DebugFormat("The camera {0} did not take the stop: it goes on recording.", cameraSummary != null ? cameraSummary.Alias : "");
+            }
 
             remoteTakeStart = recording ? DateTime.Now : DateTime.MinValue;
             if (recording)
@@ -933,6 +1015,7 @@ namespace Kinovea.ScreenManager
 
             DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
             remoteCommandTime = DateTime.MinValue;
+            remoteStopCommand = DateTime.MinValue;
             remoteSource.SetRemoteRecording(true, commandTime);
             KeepTake(true, commandTime);
             remoteTakeStart = commandTime;
@@ -953,6 +1036,8 @@ namespace Kinovea.ScreenManager
 
             DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
             remoteCommandTime = DateTime.MinValue;
+            NoteStartOffset();
+            remoteStopCommand = DateTime.Now;
             remoteSource.SetRemoteRecording(false, commandTime);
             KeepTake(false, DateTime.Now);
             remoteTakeStart = DateTime.MinValue;

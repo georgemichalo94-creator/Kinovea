@@ -35,6 +35,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The time zone of the camera written in the file, in minutes (int.MinValue when not written).</summary>
         public int ZoneMinutes = int.MinValue;
+
+        /// <summary>(2.21.0) Length of the video in seconds (0 when not read).</summary>
+        public double Duration;
     }
 
     /// <summary>(Swim 2.21.0) A recording of a camera and the files found for it (its parts).</summary>
@@ -47,6 +50,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The file is already at its place, whole (an earlier copy or download that stopped later): not copied again.</summary>
         public List<bool> Present = new List<bool>();
+
+        /// <summary>(2.22.0) The hours the clock of the camera is off the computer (0 almost always).</summary>
+        public int Hours;
     }
 
     /// <summary>
@@ -219,6 +225,17 @@ namespace Kinovea.ScreenManager
                         double seconds = version == 1 ? (double)ReadUInt64(r) : ReadUInt32(r);
                         if (seconds > 0)
                             f.Created = mp4Epoch.AddSeconds(seconds);
+
+                        // Modification time, then the time scale and the duration.
+                        if (version == 1)
+                            ReadUInt64(r);
+                        else
+                            ReadUInt32(r);
+
+                        double scale = ReadUInt32(r);
+                        double units = version == 1 ? (double)ReadUInt64(r) : ReadUInt32(r);
+                        if (scale > 0 && units > 0)
+                            f.Duration = units / scale;
                         break;
                     case "GPMF":
                         int length = (int)Math.Min(contentEnd - content, 1 << 20);
@@ -268,6 +285,270 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        #region Key images (2.22.0)
+        /// <summary>The tables of a track of an MP4 that give the times of its images.</summary>
+        private sealed class Mp4Track
+        {
+            public string Handler = "";
+            public long Timescale;
+            public List<long[]> Stts = new List<long[]>();
+            public List<long> Stss;
+            public List<long[]> Ctts;
+            public long MediaTime;
+
+            /// <summary>The empty edits before the first one (in the time scale of the movie): the track starts that much later.</summary>
+            public long EmptyEdits;
+        }
+
+        /// <summary>The time scale of the movie (mvhd), for the empty edits.</summary>
+        private sealed class Mp4Movie
+        {
+            public long Timescale;
+        }
+
+        /// <summary>
+        /// (2.22.0) The times (s, on the clock of the file) of the key images of the first video track of an MP4: the images a cut without
+        /// coding starts at. From its tables (stts, stss, ctts and the first edit). Null when not read, empty when every image is a key one.
+        /// </summary>
+        public static double[] KeyframeTimes(string path)
+        {
+            double seconds;
+            return KeyframeTimes(path, out seconds);
+        }
+
+        /// <summary>
+        /// (2.22.0) The same, and the length of the picture (s, 0 when not read): the files of a long recording follow each other by their
+        /// pictures (the sound of a file may go a little longer).
+        /// </summary>
+        public static double[] KeyframeTimes(string path, out double videoSeconds)
+        {
+            videoSeconds = 0;
+            try
+            {
+                using (FileStream s = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536))
+                using (BinaryReader r = new BinaryReader(s))
+                {
+                    List<Mp4Track> tracks = new List<Mp4Track>();
+                    Mp4Movie movie = new Mp4Movie();
+                    ReadTracks(r, 0, s.Length, tracks, null, movie, 0);
+                    Mp4Track video = tracks.FirstOrDefault(t => t.Handler == "vide" && t.Timescale > 0 && t.Stts.Count > 0);
+                    if (video == null)
+                        return null;
+
+                    double delay = movie.Timescale > 0 ? video.EmptyEdits / (double)movie.Timescale : 0;
+                    videoSeconds = delay + video.Stts.Sum(e => (double)e[0] * e[1]) / video.Timescale;
+                    if (video.Stss == null)
+                        return new double[0];
+
+                    // The decode time of each key image (sample numbers from 1), then its presentation time.
+                    List<double> times = new List<double>(video.Stss.Count);
+                    long sample = 1, time = 0;
+                    int entry = 0;
+                    long leftInEntry = video.Stts[0][0];
+                    List<long> sync = video.Stss.OrderBy(n => n).ToList();
+                    foreach (long n in sync)
+                    {
+                        while (sample < n && entry < video.Stts.Count)
+                        {
+                            long step = Math.Min(n - sample, leftInEntry);
+                            time += step * video.Stts[entry][1];
+                            sample += step;
+                            leftInEntry -= step;
+                            if (leftInEntry == 0)
+                            {
+                                entry++;
+                                if (entry < video.Stts.Count)
+                                    leftInEntry = video.Stts[entry][0];
+                            }
+                        }
+
+                        long pts = time + CompositionOffset(video.Ctts, n);
+                        times.Add(delay + (pts - video.MediaTime) / (double)video.Timescale);
+                    }
+
+                    return times.OrderBy(t => t).ToArray();
+                }
+            }
+            catch (Exception e)
+            {
+                log.Debug("Could not read the key images of a video.", e);
+                return null;
+            }
+        }
+
+        private static long CompositionOffset(List<long[]> ctts, long sample)
+        {
+            if (ctts == null)
+                return 0;
+
+            long first = 1;
+            foreach (long[] e in ctts)
+            {
+                if (sample < first + e[0])
+                    return e[1];
+
+                first += e[0];
+            }
+
+            return 0;
+        }
+
+        private static void ReadTracks(BinaryReader r, long start, long end, List<Mp4Track> tracks, Mp4Track track, Mp4Movie movie, int depth)
+        {
+            Stream s = r.BaseStream;
+            long position = start;
+            while (position + 8 <= end && depth < 8)
+            {
+                s.Position = position;
+                long size = ReadUInt32(r);
+                string type = Encoding.ASCII.GetString(r.ReadBytes(4));
+                long header = 8;
+                if (size == 1)
+                {
+                    size = (long)ReadUInt64(r);
+                    header = 16;
+                }
+                else if (size == 0)
+                {
+                    size = end - position;
+                }
+
+                if (size < header || position + size > end)
+                    break;
+
+                long content = position + header;
+                long contentEnd = position + size;
+                switch (type)
+                {
+                    case "moov":
+                    case "mdia":
+                    case "minf":
+                    case "stbl":
+                    case "edts":
+                        ReadTracks(r, content, contentEnd, tracks, track, movie, depth + 1);
+                        break;
+                    case "trak":
+                        Mp4Track t = new Mp4Track();
+                        tracks.Add(t);
+                        ReadTracks(r, content, contentEnd, tracks, t, movie, depth + 1);
+                        break;
+                    case "mvhd":
+                        {
+                            s.Position = content;
+                            int version = r.ReadByte();
+                            r.ReadBytes(3);
+                            if (version == 1)
+                            {
+                                ReadUInt64(r);
+                                ReadUInt64(r);
+                            }
+                            else
+                            {
+                                ReadUInt32(r);
+                                ReadUInt32(r);
+                            }
+
+                            movie.Timescale = ReadUInt32(r);
+                        }
+
+                        break;
+                    case "hdlr":
+                        if (track != null)
+                        {
+                            s.Position = content + 8;
+                            track.Handler = Encoding.ASCII.GetString(r.ReadBytes(4));
+                        }
+
+                        break;
+                    case "mdhd":
+                        if (track != null)
+                        {
+                            s.Position = content;
+                            int version = r.ReadByte();
+                            r.ReadBytes(3);
+                            if (version == 1)
+                            {
+                                ReadUInt64(r);
+                                ReadUInt64(r);
+                            }
+                            else
+                            {
+                                ReadUInt32(r);
+                                ReadUInt32(r);
+                            }
+
+                            track.Timescale = ReadUInt32(r);
+                        }
+
+                        break;
+                    case "stts":
+                    case "ctts":
+                        if (track != null)
+                        {
+                            s.Position = content;
+                            int version = r.ReadByte();
+                            r.ReadBytes(3);
+                            long count = ReadUInt32(r);
+                            List<long[]> entries = new List<long[]>();
+                            for (long i = 0; i < count && s.Position + 8 <= contentEnd; i++)
+                            {
+                                long n = ReadUInt32(r);
+                                long v = ReadUInt32(r);
+                                if (type == "ctts" && (version == 1 || v > int.MaxValue))
+                                    v = (int)(uint)v;
+
+                                entries.Add(new[] { n, v });
+                            }
+
+                            if (type == "stts")
+                                track.Stts = entries;
+                            else
+                                track.Ctts = entries;
+                        }
+
+                        break;
+                    case "stss":
+                        if (track != null)
+                        {
+                            s.Position = content + 4;
+                            long count = ReadUInt32(r);
+                            track.Stss = new List<long>();
+                            for (long i = 0; i < count && s.Position + 4 <= contentEnd; i++)
+                                track.Stss.Add(ReadUInt32(r));
+                        }
+
+                        break;
+                    case "elst":
+                        if (track != null)
+                        {
+                            s.Position = content;
+                            int version = r.ReadByte();
+                            r.ReadBytes(3);
+                            long count = ReadUInt32(r);
+                            for (long i = 0; i < count && s.Position + 12 <= contentEnd; i++)
+                            {
+                                // The duration of the edit, where it starts in the track (-1: an empty edit, the track starts later), its rate.
+                                long duration = version == 1 ? (long)ReadUInt64(r) : ReadUInt32(r);
+                                long media = version == 1 ? (long)ReadUInt64(r) : (int)ReadUInt32(r);
+                                r.ReadBytes(4);
+                                if (media >= 0)
+                                {
+                                    track.MediaTime = media;
+                                    break;
+                                }
+
+                                track.EmptyEdits += duration;
+                            }
+                        }
+
+                        break;
+                }
+
+                position += size;
+            }
+        }
+        #endregion
+
         private static uint ReadUInt32(BinaryReader r)
         {
             byte[] b = r.ReadBytes(4);
@@ -285,28 +566,34 @@ namespace Kinovea.ScreenManager
         #region Matching
         /// <summary>
         /// The files of one camera for its recordings (not on the computer yet): a recording takes the file (and its parts) that started
-        /// within 20 s of its start, nearest first. The clock of the camera is the same for all its files: when it is a whole number of
-        /// hours off (universal time, another time zone), the one number of hours that finds the most recordings is taken for all of
-        /// them (no file of another hour is taken for a recording), the clock of the computer first.
+        /// within 20 s of its start, nearest first. The clock of the camera is the same for all its files: the clock of the computer
+        /// first; another clock a whole number of hours off (universal time, another time zone) only when it finds more recordings and at
+        /// least two (a single file of another hour proves nothing: a recording without a file must not take the video of another one).
         /// </summary>
         public static List<SwimGoProMatch> Match(List<SwimTake> takes, string alias, List<SwimGoProFile> files)
         {
-            // The first number of hours that finds the most recordings (0 first: a tie keeps the clock of the computer).
-            List<SwimGoProMatch> best = new List<SwimGoProMatch>();
-            int bestHours = 0;
+            // (2.22.0) The parts of a continuous recording are cut from the files of their recording: not matched themselves.
+            takes = takes.Where(t => !t.IsPart).ToList();
+
+            // The clock of the computer first; another one only with more recordings found, and at least two.
             int pending = takes.Count(t => t.Cameras.Any(c => c.Alias == alias && !c.Done));
+            double error;
+            List<SwimGoProMatch> best = MatchAt(takes, alias, files, 0, out error);
+            int bestHours = 0;
             foreach (int hours in HourOffsets())
             {
-                double error;
+                if (best.Count == pending)
+                    break;
+
+                if (hours == 0)
+                    continue;
+
                 List<SwimGoProMatch> found = MatchAt(takes, alias, files, hours, out error);
-                if (found.Count > best.Count)
+                if (found.Count >= 2 && found.Count > best.Count)
                 {
                     best = found;
                     bestHours = hours;
                 }
-
-                if (best.Count == pending)
-                    break;
             }
 
             if (bestHours != 0 && best.Count > 0)
@@ -361,7 +648,7 @@ namespace Kinovea.ScreenManager
 
                 used.Add(best.Key);
                 error += bestError;
-                result.Add(new SwimGoProMatch { Take = take, Camera = camera, Files = best.OrderBy(x => x.Part).ToList() });
+                result.Add(new SwimGoProMatch { Take = take, Camera = camera, Files = best.OrderBy(x => x.Part).ToList(), Hours = hours });
             }
 
             return result;
@@ -632,6 +919,22 @@ namespace Kinovea.ScreenManager
             WriteCsv(csv);
         }
 
+        /// <summary>(2.22.0) The videos of the parts of a continuous recording, cut: «Κοπή;GX010123.MP4 12.0 – 45.3 s;…» in the CSV of the day.</summary>
+        public static void LogCuts(IEnumerable<KeyValuePair<string, string>> cuts)
+        {
+            Dictionary<string, List<string>> csv = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> c in cuts)
+            {
+                string session = SessionOf(c.Value);
+                if (!csv.ContainsKey(session))
+                    csv[session] = new List<string>();
+
+                csv[session].Add("Κοπή;" + c.Key + ";" + c.Value);
+            }
+
+            WriteCsv(csv);
+        }
+
         private static void CopyFile(string source, string target, CancellationToken token, Action<long> onBytes)
         {
             byte[] buffer = new byte[4 << 20];
@@ -677,7 +980,8 @@ namespace Kinovea.ScreenManager
 
         private static void WriteCsv(Dictionary<string, List<string>> csv)
         {
-            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+            // One list per day: the copies and downloads of a day are added to it.
+            string stamp = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
             foreach (KeyValuePair<string, List<string>> entry in csv)
             {
                 try

@@ -17,7 +17,9 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// (Swim 2.21.0) The details of the next recordings of the GoPro cameras: race, start or turn; the athlete from the list of the
     /// registry (or a name), his club; the competition, place and day; for a race the event, round, heat and lane (the swimmer of the
-    /// lane from pasted results or a start list). Also the folder of the videos, and the path the next video will get.
+    /// lane from pasted results or a start list). Also the folder of the videos, and the path the next video will get. (2.22.0) On the
+    /// right, the order of the athletes of a continuous recording: they swim one after the other in the same video, «⏭ Επόμενος» at the
+    /// end of each attempt, and the videos of the cards are cut for each of them.
     /// </summary>
     public class FormGoProTakeDetails : Form
     {
@@ -43,15 +45,31 @@ namespace Kinovea.ScreenManager
         private readonly TextBox tbRoot = new TextBox();
         private readonly Label lblPreview = new Label();
         private readonly List<Control> raceOnly = new List<Control>();
+        private readonly ListBox lbQueue = new ListBox();
+        private readonly CheckBox cbQueueEnter = new CheckBox();
+        private readonly Label lblQueueCount = new Label();
+        private readonly Panel queuePanel = new Panel();
+        private readonly ToolTip queueTips = new ToolTip();
+        private readonly bool withOrder;
         private bool updating;
 
         /// <summary>The details chosen (null when cancelled) and the folder of the videos.</summary>
         public SwimTakeDetails Result { get; private set; }
         public string RootFolder { get; private set; }
 
+        /// <summary>
+        /// The details of the next recordings (with the order of the athletes of a continuous recording), or of one recording afterwards
+        /// (`order` false: no order).
+        /// </summary>
         public FormGoProTakeDetails(SwimTakeDetails current, string root, string sampleCamera)
+            : this(current, root, sampleCamera, true)
+        {
+        }
+
+        public FormGoProTakeDetails(SwimTakeDetails current, string root, string sampleCamera, bool order)
         {
             details = (current ?? new SwimTakeDetails()).Clone();
+            withOrder = order;
             this.sampleCamera = string.IsNullOrEmpty(sampleCamera) ? SwimLang.T("Κάμερα") : sampleCamera;
 
             Text = SwimLang.T("📝 Στοιχεία εγγραφής GoPro");
@@ -62,7 +80,7 @@ namespace Kinovea.ScreenManager
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Font;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(660, 740);
+            ClientSize = new Size(1090, 740);
             KeyPreview = true;
 
             TableLayoutPanel table = new TableLayoutPanel
@@ -99,12 +117,22 @@ namespace Kinovea.ScreenManager
             lbAthletes.Width = 440;
             lbAthletes.Height = 90;
             lbAthletes.IntegralHeight = false;
-            lbAthletes.DoubleClick += (s, e) => ChooseSelected(false);
+            lbAthletes.DoubleClick += (s, e) =>
+            {
+                if (QueueEnter)
+                    QueueSelected();
+                else
+                    ChooseSelected(false);
+            };
             lbAthletes.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
                 {
-                    ChooseSelected(true);
+                    if (QueueEnter)
+                        QueueSelected();
+                    else
+                        ChooseSelected(true);
+
                     e.Handled = true;
                 }
             };
@@ -206,8 +234,13 @@ namespace Kinovea.ScreenManager
             buttons.Controls.Add(ok);
             CancelButton = cancel;
 
+            BuildQueuePanel();
             Controls.Add(table);
             Controls.Add(buttons);
+            if (withOrder)
+                Controls.Add(queuePanel);
+            else
+                ClientSize = new Size(660, 740);
 
             ShowDetails();
             FormClosing += (s, e) =>
@@ -263,6 +296,7 @@ namespace Kinovea.ScreenManager
 
             KindChanged();
             ShowSwimmers();
+            ShowQueue();
             ShowPreview();
         }
 
@@ -306,6 +340,9 @@ namespace Kinovea.ScreenManager
             foreach (Control c in raceOnly)
                 c.Enabled = race;
 
+            // (2.22.0) A race is never a continuous recording.
+            queuePanel.Enabled = !race;
+
             if (!updating)
                 FieldsChanged();
         }
@@ -316,6 +353,15 @@ namespace Kinovea.ScreenManager
             if (root.Length == 0)
             {
                 lblPreview.Text = SwimLang.T("Διάλεξε τον φάκελο των βίντεο (π.χ. E:\\).");
+                return;
+            }
+
+            if (details.IsContinuous)
+            {
+                // (2.22.0) The video of the first athlete of the order; one for each of them.
+                SwimTake part = new SwimTake { Start = DateTime.Now, Details = details.ForAthlete(details.Queue[0]) };
+                lblPreview.Text = SwimGoProTakes.TargetPath(root, part, sampleCamera, 1) + "\n" +
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("(συνεχόμενη εγγραφή: ένα βίντεο για κάθε έναν από τους {0} αθλητές της σειράς)"), details.Queue.Count);
                 return;
             }
 
@@ -376,7 +422,10 @@ namespace Kinovea.ScreenManager
                 if (lbAthletes.Items.Count > 0)
                     lbAthletes.SelectedIndex = Math.Max(0, lbAthletes.SelectedIndex);
 
-                ChooseSelected(true);
+                if (QueueEnter)
+                    QueueSelected();
+                else
+                    ChooseSelected(true);
             }
         }
 
@@ -408,6 +457,291 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
+        #region Order of the athletes (2.22.0)
+        /// <summary>Enter (or a double click) in the search puts the athlete in the order (the form stays open for the next one).</summary>
+        private bool QueueEnter
+        {
+            get { return withOrder && cbQueueEnter.Checked && !rbRace.Checked; }
+        }
+
+        private void BuildQueuePanel()
+        {
+            queuePanel.Dock = DockStyle.Right;
+            queuePanel.Width = 420;
+            queuePanel.Padding = new Padding(10, 10, 12, 8);
+
+            Label title = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 24,
+                Font = new Font(Font, FontStyle.Bold),
+                Text = SwimLang.T("👥 Σειρά αθλητών (συνεχόμενη εγγραφή)")
+            };
+            Label help = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 96,
+                ForeColor = Color.DimGray,
+                Text = SwimLang.T("Πολλοί αθλητές στο ίδιο βίντεο, ο ένας μετά τον άλλον: βάλε τους με τη σειρά που θα κολυμπήσουν. Στην εγγραφή πατάς «⏭ Επόμενος» στο τέλος κάθε προσπάθειας· από τις κάρτες, το βίντεο κάθε κάμερας κόβεται για κάθε αθλητή. Άδεια σειρά: ένα βίντεο για τον αθλητή των πεδίων.")
+            };
+            cbQueueEnter.Dock = DockStyle.Top;
+            cbQueueEnter.Height = 26;
+            cbQueueEnter.Text = SwimLang.T("Enter στην αναζήτηση: ο αθλητής μπαίνει στη σειρά");
+            cbQueueEnter.Checked = details.IsContinuous;
+
+            lbQueue.Dock = DockStyle.Fill;
+            lbQueue.IntegralHeight = false;
+            lbQueue.HorizontalScrollbar = true;
+            lbQueue.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Delete)
+                {
+                    RemoveQueued();
+                    e.Handled = true;
+                }
+            };
+
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 70, Padding = new Padding(0, 6, 0, 0), WrapContents = true };
+            Button add = QueueButton(actions, SwimLang.T("➕ Ο αθλητής των πεδίων"), SwimLang.T("Ο αθλητής των πεδίων (ΑΜ, όνομα, σωματείο) στο τέλος της σειράς."));
+            Button paste = QueueButton(actions, SwimLang.T("📋 Επικόλληση λίστας…"), SwimLang.T("Μία γραμμή για κάθε αθλητή (από Excel: ΑΜ, ονοματεπώνυμο, σωματείο· ή μόνο ΑΜ ή όνομα: τα υπόλοιπα από τη λίστα των αθλητών)."));
+            Button up = QueueButton(actions, "▲", SwimLang.T("Πιο νωρίς στη σειρά"));
+            Button down = QueueButton(actions, "▼", SwimLang.T("Πιο αργά στη σειρά"));
+            Button remove = QueueButton(actions, "✖", SwimLang.T("Έξω από τη σειρά"));
+            Button clear = QueueButton(actions, SwimLang.T("🗑 Όλοι"), SwimLang.T("Άδεια σειρά: ένα βίντεο για τον αθλητή των πεδίων."));
+            add.Click += (s, e) => QueueFields();
+            paste.Click += (s, e) => PasteQueue();
+            up.Click += (s, e) => MoveQueued(-1);
+            down.Click += (s, e) => MoveQueued(1);
+            remove.Click += (s, e) => RemoveQueued();
+            clear.Click += (s, e) =>
+            {
+                if (details.Queue.Count == 0)
+                    return;
+
+                if (MessageBox.Show(this, SwimLang.T("Να αδειάσει η σειρά των αθλητών;"), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    return;
+
+                details.Queue = new List<SwimTakeAthlete>();
+                ShowQueue();
+                ShowPreview();
+            };
+
+            lblQueueCount.Dock = DockStyle.Bottom;
+            lblQueueCount.Height = 22;
+            lblQueueCount.ForeColor = Color.FromArgb(30, 90, 140);
+
+            queuePanel.Controls.Add(lbQueue);
+            queuePanel.Controls.Add(cbQueueEnter);
+            queuePanel.Controls.Add(help);
+            queuePanel.Controls.Add(title);
+            queuePanel.Controls.Add(actions);
+            queuePanel.Controls.Add(lblQueueCount);
+        }
+
+        private Button QueueButton(FlowLayoutPanel panel, string text, string tip)
+        {
+            Button b = new Button { Text = text, AutoSize = true, Margin = new Padding(0, 0, 6, 4) };
+            queueTips.SetToolTip(b, tip);
+            panel.Controls.Add(b);
+            return b;
+        }
+
+        private void ShowQueue()
+        {
+            if (details.Queue == null)
+                details.Queue = new List<SwimTakeAthlete>();
+
+            int selected = lbQueue.SelectedIndex;
+            lbQueue.BeginUpdate();
+            lbQueue.Items.Clear();
+            for (int i = 0; i < details.Queue.Count; i++)
+                lbQueue.Items.Add((i + 1).ToString(CultureInfo.InvariantCulture) + ".  " + details.Queue[i]);
+
+            lbQueue.EndUpdate();
+            if (lbQueue.Items.Count > 0)
+                lbQueue.SelectedIndex = Math.Max(0, Math.Min(lbQueue.Items.Count - 1, selected));
+
+            lblQueueCount.Text = details.Queue.Count == 0 ?
+                SwimLang.T("Χωρίς σειρά: ένα βίντεο για τον αθλητή των πεδίων.") :
+                string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} αθλητές · συνεχόμενη εγγραφή"), details.Queue.Count);
+        }
+
+        private void Enqueue(SwimTakeAthlete athlete)
+        {
+            if (athlete == null || string.IsNullOrWhiteSpace(athlete.Athlete))
+                return;
+
+            details.Queue.Add(athlete);
+            cbQueueEnter.Checked = true;
+            ShowQueue();
+            lbQueue.SelectedIndex = lbQueue.Items.Count - 1;
+            ShowPreview();
+        }
+
+        /// <summary>The athlete chosen in the search into the order; the search is ready for the next one.</summary>
+        private void QueueSelected()
+        {
+            SwimAthlete a = lbAthletes.SelectedItem as SwimAthlete;
+            if (a == null)
+                return;
+
+            Enqueue(new SwimTakeAthlete { AthleteId = a.Id ?? "", Athlete = a.Name ?? "", Club = a.Club ?? "" });
+            tbSearch.Text = "";
+            tbSearch.Focus();
+        }
+
+        private void QueueFields()
+        {
+            ReadFields();
+            if (string.IsNullOrWhiteSpace(details.Athlete))
+            {
+                MessageBox.Show(this, SwimLang.T("Γράψε πρώτα τον αθλητή (αναζήτηση ή ονοματεπώνυμο)."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Enqueue(new SwimTakeAthlete { AthleteId = details.AthleteId, Athlete = details.Athlete, Club = details.Club });
+            tbSearch.Text = "";
+            tbSearch.Focus();
+        }
+
+        private void MoveQueued(int step)
+        {
+            int i = lbQueue.SelectedIndex;
+            int j = i + step;
+            if (i < 0 || j < 0 || j >= details.Queue.Count)
+                return;
+
+            SwimTakeAthlete a = details.Queue[i];
+            details.Queue.RemoveAt(i);
+            details.Queue.Insert(j, a);
+            ShowQueue();
+            lbQueue.SelectedIndex = j;
+            ShowPreview();
+        }
+
+        private void RemoveQueued()
+        {
+            int i = lbQueue.SelectedIndex;
+            if (i < 0 || i >= details.Queue.Count)
+                return;
+
+            details.Queue.RemoveAt(i);
+            ShowQueue();
+            ShowPreview();
+        }
+
+        private void PasteQueue()
+        {
+            string clip = "";
+            try
+            {
+                if (Clipboard.ContainsText())
+                    clip = Clipboard.GetText();
+            }
+            catch (Exception) { }
+
+            using (Form paste = new Form())
+            {
+                paste.Text = SwimLang.T("📋 Επικόλληση λίστας αθλητών");
+                paste.StartPosition = FormStartPosition.CenterParent;
+                paste.ClientSize = new Size(560, 420);
+                paste.MinimizeBox = false;
+                paste.MaximizeBox = false;
+                paste.ShowInTaskbar = false;
+                Label help = new Label
+                {
+                    Dock = DockStyle.Top,
+                    Height = 44,
+                    Padding = new Padding(8, 6, 8, 0),
+                    Text = SwimLang.T("Μία γραμμή για κάθε αθλητή, με τη σειρά που θα κολυμπήσουν (από Excel: ΑΜ, ονοματεπώνυμο, σωματείο· ή μόνο ΑΜ ή μόνο όνομα). Μπαίνουν στο τέλος της σειράς.")
+                };
+                // The lines of a web page or another program can end with \n alone: a TextBox shows them as one line.
+                string lines = (clip ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = lines, Font = new Font("Consolas", 9f) };
+                FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6) };
+                Button ok = new Button { Text = SwimLang.T("Στη σειρά"), DialogResult = DialogResult.OK, Width = 100 };
+                Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, Width = 100 };
+                bar.Controls.Add(cancel);
+                bar.Controls.Add(ok);
+                paste.Controls.Add(text);
+                paste.Controls.Add(bar);
+                paste.Controls.Add(help);
+                paste.CancelButton = cancel;
+                if (paste.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                List<SwimTakeAthlete> read = ReadAthleteLines(text.Text, SwimAnalysisManager.Instance.Athletes);
+                foreach (SwimTakeAthlete a in read)
+                    details.Queue.Add(a);
+
+                ShowQueue();
+                ShowPreview();
+                if (read.Count == 0)
+                    MessageBox.Show(this, SwimLang.T("Δεν διαβάστηκαν αθλητές από το κείμενο."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        /// <summary>
+        /// The athletes of a pasted list, one per line: a number of the registry (digits), the name, the club (the columns of Excel, or
+        /// ";"); what the line does not say is taken from the list of the athletes (by the number, or a name that only one has).
+        /// </summary>
+        public static List<SwimTakeAthlete> ReadAthleteLines(string text, SwimAthleteList list)
+        {
+            List<SwimTakeAthlete> result = new List<SwimTakeAthlete>();
+            foreach (string raw in (text ?? "").Replace("\r", "").Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0)
+                    continue;
+
+                string[] cells = line.Split(new[] { '\t', ';' }, StringSplitOptions.None).Select(c => c.Trim()).Where(c => c.Length > 0).ToArray();
+                string id = "";
+                List<string> rest = new List<string>();
+                foreach (string c in cells)
+                {
+                    if (id.Length == 0 && c.All(char.IsDigit) && c.Length >= 3)
+                        id = c;
+                    else
+                        rest.Add(c);
+                }
+
+                // "123456 ΕΠΩΝΥΜΟ ΟΝΟΜΑ" in one cell: the number first.
+                if (id.Length == 0 && rest.Count > 0)
+                {
+                    string[] words = rest[0].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (words.Length > 1 && words[0].All(char.IsDigit) && words[0].Length >= 3)
+                    {
+                        id = words[0];
+                        rest[0] = string.Join(" ", words.Skip(1));
+                    }
+                }
+
+                string name = rest.Count > 0 ? rest[0] : "";
+                string club = rest.Count > 1 ? rest[1] : "";
+                SwimAthlete found = null;
+                if (list != null)
+                {
+                    if (id.Length > 0)
+                        found = list.Find(id);
+
+                    if (found == null && name.Length > 0)
+                    {
+                        List<SwimAthlete> matches = list.Search(name, 2);
+                        if (matches.Count == 1)
+                            found = matches[0];
+                    }
+                }
+
+                if (found != null)
+                    result.Add(new SwimTakeAthlete { AthleteId = found.Id ?? id, Athlete = found.Name ?? name, Club = club.Length > 0 ? club : (found.Club ?? "") });
+                else if (name.Length > 0)
+                    result.Add(new SwimTakeAthlete { AthleteId = id, Athlete = name, Club = club });
+            }
+
+            return result;
+        }
+        #endregion
+
         #region Pasted list, analysis, folder
         private void PasteList()
         {
@@ -434,7 +768,9 @@ namespace Kinovea.ScreenManager
                     Padding = new Padding(8, 6, 8, 0),
                     Text = SwimLang.T("Αντίγραψε τα αποτελέσματα ή τη λίστα εκκίνησης της σειράς (από τη σελίδα ή το PDF) και επικόλλησέ τα εδώ. Ο διάδρομος δίνει τον αθλητή κάθε βίντεο.")
                 };
-                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = clip, Font = new Font("Consolas", 9f) };
+                // The lines of a web page or another program can end with \n alone: a TextBox shows them as one line.
+                string lines = (clip ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+                TextBox text = new TextBox { Multiline = true, ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, WordWrap = false, Text = lines, Font = new Font("Consolas", 9f) };
                 FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Height = 40, Padding = new Padding(6) };
                 Button ok = new Button { Text = SwimLang.T("Ανάγνωση"), DialogResult = DialogResult.OK, Width = 100 };
                 Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, Width = 100 };

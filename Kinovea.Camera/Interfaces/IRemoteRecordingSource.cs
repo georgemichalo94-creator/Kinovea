@@ -108,6 +108,12 @@ namespace Kinovea.Camera
         DateTime FailedStart { get; }
 
         /// <summary>
+        /// (2.21.0) Seconds between a start command (its time) and the moment the camera said it records, as measured; NaN when not
+        /// measured for that command. The videos of the cameras of a recording are lined up by it when their sounds do not match.
+        /// </summary>
+        double StartOffset(DateTime commandTime);
+
+        /// <summary>
         /// The computer joins the Wi-Fi of the camera, lists the videos of its card, asks `choose` which ones go where (the files and
         /// their paths on the computer) and downloads them, then goes back to its network. One camera at a time. Returns null when it
         /// went, else what went wrong (in the language of the interface).

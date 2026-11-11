@@ -20,6 +20,7 @@ along with Kinovea. If not, see http://www.gnu.org/licenses/.
 #endregion
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Linq;
@@ -86,6 +87,14 @@ namespace Kinovea.ScreenManager
         private readonly List<Button> presetButtons = new List<Button>();
         private Button btnTakeDetails;
         private bool takesHooked;
+        // (Swim 2.22.0) A continuous recording: «⏭ Επόμενος», «↶», and «🏁 Ολοκλήρωση συνεδρίας».
+        private Button btnNextAthlete;
+        private Button btnUndoAthlete;
+        private Button btnEndSession;
+        private Button btnSignal;
+        private Timer flashTimer;
+        // The buttons of the second line shown or not (the Visible of a control says false while its screen is not shown yet).
+        private readonly Dictionary<Button, bool> goproShown = new Dictionary<Button, bool>();
         private CapturedFilesView capturedFilesView;
         private bool capturedFilesPanelForceCollapsed = false;
         private bool recording;
@@ -432,6 +441,11 @@ namespace Kinovea.ScreenManager
 
             presetButtons.Clear();
             btnTakeDetails = null;
+            btnNextAthlete = null;
+            btnUndoAthlete = null;
+            btnEndSession = null;
+            btnSignal = null;
+            goproShown.Clear();
             if (!takesHooked)
             {
                 takesHooked = true;
@@ -490,6 +504,29 @@ namespace Kinovea.ScreenManager
             toolTips.SetToolTip(btnTakes, SwimLang.T("Οι εγγραφές των GoPro και τα βίντεό τους: από τις κάρτες (card reader) ή με το Wi-Fi της κάμερας στον φάκελο, με τα ονόματα των αθλητών."));
             x += btnTakes.PreferredSize.Width + 6;
 
+            // (2.22.0) A continuous recording: the end of the session (with an order of athletes), the next athlete and its undo (while it records).
+            btnEndSession = SmallButton(x, SwimLang.T("🏁 Τέλος"));
+            btnEndSession.Click += (s, e) => presenter.View_EndSession();
+            toolTips.SetToolTip(btnEndSession, SwimLang.T("🏁 Ολοκλήρωση συνεδρίας: η σειρά των αθλητών αδειάζει και ανοίγει το «📥 Βίντεο» για τις κάρτες (κοπή των συνεχόμενων βίντεο για κάθε αθλητή)."));
+            ShowGoProButton(btnEndSession, false);
+
+            btnNextAthlete = SmallButton(x, SwimLang.T("⏭ Επόμενος"));
+            btnNextAthlete.Font = new Font(btnNextAthlete.Font.FontFamily, 10f, FontStyle.Bold);
+            btnNextAthlete.BackColor = Color.FromArgb(222, 240, 255);
+            btnNextAthlete.FlatAppearance.BorderColor = Color.FromArgb(0, 120, 215);
+            btnNextAthlete.Click += (s, e) => NextAthleteClicked();
+            toolTips.SetToolTip(btnNextAthlete, SwimLang.T("Στο τέλος της προσπάθειας του αθλητή: τελειώνει το κομμάτι του, αρχίζει του επόμενου της σειράς (και το «επόμενο» ενός presenter)."));
+            ShowGoProButton(btnNextAthlete, false);
+
+            btnSignal = SmallButton(x, SwimLang.T("📣 Σήμα"));
+            btnSignal.Click += (s, e) => Flash(btnSignal, presenter != null && presenter.View_StartSignal());
+            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από 1,5 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
+
+            btnUndoAthlete = SmallButton(x, "↶");
+            btnUndoAthlete.Click += (s, e) => UndoAthleteClicked();
+            toolTips.SetToolTip(btnUndoAthlete, SwimLang.T("Αναίρεση του τελευταίου «⏭ Επόμενος»."));
+            ShowGoProButton(btnUndoAthlete, false);
+
             btnTakeDetails = SmallButton(x, "📝");
             btnTakeDetails.AutoSize = false;
             btnTakeDetails.AutoEllipsis = true;
@@ -497,6 +534,89 @@ namespace Kinovea.ScreenManager
             btnTakeDetails.Size = new Size(120, 28);
             btnTakeDetails.Click += (s, e) => presenter.View_EditTakeDetails();
             UpdateTakeDetails();
+        }
+
+        /// <summary>(Swim 2.22.0) The buttons of the second line one after the other (the visible ones), the details last.</summary>
+        private void LayoutGoProRow()
+        {
+            Button details = btnTakeDetails;
+            if (details == null || details.IsDisposed)
+                return;
+
+            int x = 8;
+            foreach (Button b in presetButtons)
+            {
+                bool shown;
+                if (b == details || (goproShown.TryGetValue(b, out shown) && !shown))
+                    continue;
+
+                b.Left = x;
+                x += (b.AutoSize ? b.PreferredSize.Width : b.Width) + 6;
+            }
+
+            details.Left = x;
+            FitTakeDetails();
+        }
+
+        private void ShowGoProButton(Button b, bool show)
+        {
+            if (b == null)
+                return;
+
+            b.Visible = show;
+            goproShown[b] = show;
+        }
+
+        private void NextAthleteClicked()
+        {
+            if (presenter == null || btnNextAthlete == null)
+                return;
+
+            string message;
+            bool ok = presenter.View_NextAthlete(out message);
+            Flash(btnNextAthlete, ok);
+            toolTips.SetToolTip(btnNextAthlete, message);
+        }
+
+        private void UndoAthleteClicked()
+        {
+            if (presenter == null || btnUndoAthlete == null)
+                return;
+
+            string message;
+            bool ok = presenter.View_UndoNextAthlete(out message);
+            Flash(btnUndoAthlete, ok);
+            toolTips.SetToolTip(btnUndoAthlete, message);
+        }
+
+        /// <summary>A press taken (green) or not (orange: the same press, nothing to undo), for half a second.</summary>
+        private void Flash(Button button, bool ok)
+        {
+            if (button == null || button.IsDisposed)
+                return;
+
+            Color normal = button == btnNextAthlete ? Color.FromArgb(222, 240, 255) : Color.White;
+            button.BackColor = ok ? Color.FromArgb(170, 230, 180) : Color.FromArgb(255, 205, 150);
+            if (flashTimer == null)
+            {
+                flashTimer = new Timer { Interval = 600 };
+                Disposed += (s, e) => flashTimer.Dispose();
+            }
+
+            flashTimer.Stop();
+            flashTimer.Tick -= FlashTimer_Tick;
+            flashTimer.Tick += FlashTimer_Tick;
+            flashTimer.Tag = new object[] { button, normal };
+            flashTimer.Start();
+        }
+
+        private void FlashTimer_Tick(object sender, EventArgs e)
+        {
+            flashTimer.Stop();
+            object[] state = flashTimer.Tag as object[];
+            Button button = state != null ? state[0] as Button : null;
+            if (button != null && !button.IsDisposed)
+                button.BackColor = (Color)state[1];
         }
 
         /// <summary>The button of the details as wide as its text, within the screen.</summary>
@@ -557,16 +677,49 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimTakeDetails next = SwimGoProTakes.Next;
-            string summary = next.Summary;
-            string shown = summary.Length > 34 ? summary.Substring(0, 33) + "…" : summary;
-            button.Text = "📝 " + shown;
-            string root = SwimGoProTakes.Root;
-            string path = root.Length > 0 ?
-                SwimGoProTakes.TargetPath(root, new SwimTake { Start = DateTime.Now, Details = next }, presenter != null ? presenter.CameraAlias : "", 1) :
-                SwimLang.T("(διάλεξε τον φάκελο των βίντεο)");
-            toolTips.SetToolTip(button, SwimLang.T("Τα στοιχεία των επόμενων εγγραφών (αθλητής, στροφή ή εκκίνηση, αγώνας): δίνουν τον φάκελο και το όνομα των βίντεο.") +
-                "\n" + summary + "\n" + path);
-            FitTakeDetails();
+            string alias = presenter != null ? presenter.CameraAlias : "";
+
+            // (2.22.0) A continuous recording of this camera: the athlete in the water, «⏭ Επόμενος» and «↶» instead of the settings.
+            SwimTake open = null;
+            int parts = 0;
+            SwimTake current = recording ? SwimGoProTakes.Continuous(out open, out parts) : null;
+            bool continuous = current != null && current.Cameras.Any(c => c.Alias == alias);
+            foreach (Button b in presetButtons)
+            {
+                if (b != button && b != btnNextAthlete && b != btnUndoAthlete && b != btnEndSession)
+                    ShowGoProButton(b, !continuous);
+            }
+
+            ShowGoProButton(btnNextAthlete, continuous);
+            ShowGoProButton(btnSignal, true);
+            ShowGoProButton(btnUndoAthlete, continuous && current.Marks != null && current.Marks.Count > 0);
+            ShowGoProButton(btnEndSession, !continuous && next.IsContinuous);
+
+            if (continuous)
+            {
+                int total = current.Details.Queue.Count;
+                string who = open != null ? open.Details.SwimmerName : "";
+                string summary = open != null ?
+                    string.Format(CultureInfo.InvariantCulture, "🏊 {0}/{1} · {2}", open.Index, total, who.Length > 0 ? who : SwimLang.T("χωρίς όνομα")) :
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ {0}/{1} · τέλος της σειράς"), Math.Min(parts, total), total);
+                button.Text = summary.Length > 40 ? summary.Substring(0, 39) + "…" : summary;
+                toolTips.SetToolTip(button, SwimLang.T("Συνεχόμενη εγγραφή: ο αθλητής στο νερό τώρα. «⏭ Επόμενος» στο τέλος της προσπάθειάς του.") + "\n" + summary);
+            }
+            else
+            {
+                string summary = next.Summary;
+                string shown = summary.Length > 34 ? summary.Substring(0, 33) + "…" : summary;
+                button.Text = "📝 " + shown;
+                SwimTakeDetails sample = next.IsContinuous ? next.ForAthlete(next.Queue[0]) : next;
+                string root = SwimGoProTakes.Root;
+                string path = root.Length > 0 ?
+                    SwimGoProTakes.TargetPath(root, new SwimTake { Start = DateTime.Now, Details = sample }, alias, 1) :
+                    SwimLang.T("(διάλεξε τον φάκελο των βίντεο)");
+                toolTips.SetToolTip(button, SwimLang.T("Τα στοιχεία των επόμενων εγγραφών (αθλητής, στροφή ή εκκίνηση, αγώνας): δίνουν τον φάκελο και το όνομα των βίντεο.") +
+                    "\n" + summary + "\n" + path);
+            }
+
+            LayoutGoProRow();
         }
 
         /// <summary>(Swim 2.20.0) The text of the button of the live image (only when it changes).</summary>
@@ -600,6 +753,10 @@ namespace Kinovea.ScreenManager
             btnCaptureFolders.Enabled = !recording;
             cbCaptureFolder.Enabled = !recording;
             tbFilename.Enabled = !recording;
+
+            // (Swim 2.22.0) «⏭ Επόμενος» while a continuous recording goes on.
+            if (btnTakeDetails != null)
+                UpdateTakeDetails();
         }
         public void UpdateDelayMax(double delaySeconds, int delayFrames)
         {
@@ -948,6 +1105,24 @@ namespace Kinovea.ScreenManager
         public bool ExecuteScreenCommand(int cmd)
         {
             CaptureScreenCommands command = (CaptureScreenCommands)cmd;
+
+            // (Swim 2.22.0) A continuous recording: the keys of a presenter («next»: Page Down or →, «back»: Page Up or ←) are
+            // «⏭ Επόμενος» and «↶».
+            bool nextShown;
+            if (btnNextAthlete != null && goproShown.TryGetValue(btnNextAthlete, out nextShown) && nextShown)
+            {
+                if (command == CaptureScreenCommands.ForwardRound10Percent || command == CaptureScreenCommands.GotoNextImage)
+                {
+                    NextAthleteClicked();
+                    return true;
+                }
+
+                if (command == CaptureScreenCommands.BackwardRound10Percent || command == CaptureScreenCommands.GotoPreviousImage)
+                {
+                    UndoAthleteClicked();
+                    return true;
+                }
+            }
 
             switch (command)
             {

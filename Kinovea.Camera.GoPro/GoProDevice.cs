@@ -163,6 +163,18 @@ namespace Kinovea.Camera.GoPro
             get { lock (locker) { return serialNumber ?? ""; } }
         }
 
+        /// <summary>(2.21.0) Seconds from the start command of that time to the camera recording (NaN: not measured for it).</summary>
+        public double StartOffsetOf(DateTime commandTime)
+        {
+            lock (locker)
+            {
+                if (commandTime == DateTime.MinValue || lastCommandTime != commandTime || lastStartAt < commandTime)
+                    return double.NaN;
+
+                return lastStartOffset;
+            }
+        }
+
         /// <summary>(2.21.0) The time of the last start command the camera did not do (MinValue when none).</summary>
         public DateTime FailedStart
         {

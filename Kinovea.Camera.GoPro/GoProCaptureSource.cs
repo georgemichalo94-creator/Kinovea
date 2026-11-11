@@ -274,6 +274,13 @@ namespace Kinovea.Camera.GoPro
             }
         }
 
+        /// <summary>(2.21.0) Seconds from a start command to the camera recording (NaN: not measured for it).</summary>
+        public double StartOffset(DateTime commandTime)
+        {
+            GoProDevice d = device;
+            return d != null ? d.StartOffsetOf(commandTime) : double.NaN;
+        }
+
         /// <summary>(2.21.0) The last start command this camera did not do (its recording has no file of it).</summary>
         public DateTime FailedStart
         {

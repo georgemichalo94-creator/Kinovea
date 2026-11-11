@@ -24,6 +24,21 @@ namespace Kinovea.ScreenManager
         public string Club = "";
     }
 
+    /// <summary>(Swim 2.22.0) An athlete of the order of a continuous recording: his number of the registry, name and club.</summary>
+    public class SwimTakeAthlete
+    {
+        public string AthleteId = "";
+        public string Athlete = "";
+        public string Club = "";
+
+        public override string ToString()
+        {
+            string id = (AthleteId ?? "").Trim();
+            string club = (Club ?? "").Trim();
+            return (id.Length > 0 ? id + "  " : "") + (Athlete ?? "").Trim() + (club.Length > 0 ? "  · " + club : "");
+        }
+    }
+
     /// <summary>
     /// (Swim 2.21.0) What the next recordings of the GoPro cameras are: a race (competition, event, round, heat, lane or swimmer) or a
     /// start or turn of technique analysis (the athlete of the registry: his number, name and club), the place and the day. The
@@ -49,6 +64,30 @@ namespace Kinovea.ScreenManager
         public int Heat;
         public int Lane;
         public List<SwimTakeSwimmer> Swimmers = new List<SwimTakeSwimmer>();
+
+        /// <summary>
+        /// (2.22.0) The athletes of a continuous recording in their order (start or turn): one after the other in the same video, the
+        /// button «⏭ Επόμενος» at the end of the attempt of each; the video of each camera is cut for each of them. Empty: a recording
+        /// of the athlete of the details.
+        /// </summary>
+        public List<SwimTakeAthlete> Queue = new List<SwimTakeAthlete>();
+
+        /// <summary>(2.22.0) A continuous recording of the athletes of the order (never a race).</summary>
+        public bool IsContinuous
+        {
+            get { return !IsRace && Queue != null && Queue.Count > 0; }
+        }
+
+        /// <summary>(2.22.0) The details of one athlete of the order (null: none, named afterwards), without an order of their own.</summary>
+        public SwimTakeDetails ForAthlete(SwimTakeAthlete athlete)
+        {
+            SwimTakeDetails d = Clone();
+            d.Queue = new List<SwimTakeAthlete>();
+            d.AthleteId = athlete != null ? (athlete.AthleteId ?? "").Trim() : "";
+            d.Athlete = athlete != null ? (athlete.Athlete ?? "").Trim() : "";
+            d.Club = athlete != null ? (athlete.Club ?? "").Trim() : "";
+            return d;
+        }
 
         public SwimTakeDetails Clone()
         {
@@ -150,6 +189,9 @@ namespace Kinovea.ScreenManager
         {
             get
             {
+                if (IsContinuous)
+                    return string.Format(CultureInfo.InvariantCulture, SwimLang.T("👥 {0} αθλητές · {1}"), Queue.Count, KindName);
+
                 string who = SwimmerName;
                 if (IsRace)
                 {
@@ -180,6 +222,13 @@ namespace Kinovea.ScreenManager
         public string Serial = "";
         public string Model = "";
 
+        /// <summary>
+        /// Seconds from the start command to the camera recording, as measured by the camera's link (null: not measured): lines up the
+        /// videos of the recording when their sounds do not match (a camera under the water). (2.22.0) For a part of a continuous
+        /// recording: from the command of that recording to the first image of the part's video.
+        /// </summary>
+        public double? StartOffset;
+
         /// <summary>The name of the file on the card (GX010123.MP4), once found.</summary>
         public string Source = "";
         public List<string> Targets = new List<string>();
@@ -194,6 +243,46 @@ namespace Kinovea.ScreenManager
         public DateTime Stop = DateTime.MinValue;
         public SwimTakeDetails Details = new SwimTakeDetails();
         public List<SwimTakeCamera> Cameras = new List<SwimTakeCamera>();
+
+        /// <summary>(2.21.0) The video of all its cameras, once made ("" before).</summary>
+        public string Composite = "";
+
+        /// <summary>
+        /// (2.22.0) A part of a continuous recording (one athlete): the recording it is cut from and its place in it (1, 2…); "" and 0
+        /// for a recording of its own. Its Start and Stop are the moments of the button «⏭ Επόμενος» (the start of the recording for the
+        /// first part, its end for the last one).
+        /// </summary>
+        public string ParentId = "";
+        public int Index;
+
+        /// <summary>(2.22.0) A part ended by the button (else by the end of the recording: it is cut to the end of the files).</summary>
+        public bool EndedByButton;
+
+        /// <summary>(2.22.0) A continuous recording: the moments of the button «⏭ Επόμενος» (the ends of the attempts).</summary>
+        public List<DateTime> Marks = new List<DateTime>();
+
+        /// <summary>(2.22.0) The horns of the start signal of the computer during the recording (its clock).</summary>
+        public List<DateTime> Signals = new List<DateTime>();
+
+        /// <summary>
+        /// (2.22.0) What the sound of this recording said of the measured starts of its cameras when its video of all the cameras was
+        /// made (s, by camera): the start of a camera is its measured start plus this (the same amount for all left out). The other parts
+        /// of the same continuous recording line up by it the cameras whose sound did not match (a part without the horn). Null: none.
+        /// </summary>
+        public Dictionary<string, double> Clock;
+
+        [JsonIgnore]
+        public bool IsPart
+        {
+            get { return !string.IsNullOrEmpty(ParentId); }
+        }
+
+        /// <summary>(2.22.0) A continuous recording, cut in parts (it is not shown: its parts are).</summary>
+        [JsonIgnore]
+        public bool IsContinuous
+        {
+            get { return !IsPart && Details != null && Details.IsContinuous; }
+        }
 
         public bool AllDone
         {
@@ -285,6 +374,15 @@ namespace Kinovea.ScreenManager
 
         public static void Save()
         {
+            // (2.22.0) One writer at a time: the cut and the videos of all the cameras save from their own threads.
+            lock (saveLocker)
+                SaveNow();
+        }
+
+        private static readonly object saveLocker = new object();
+
+        private static void SaveNow()
+        {
             string json;
             lock (locker)
             {
@@ -374,14 +472,28 @@ namespace Kinovea.ScreenManager
             lock (locker)
             {
                 SwimTakeLog d = Data;
-                SwimTake take = d.Takes.LastOrDefault(t => t.Stop == DateTime.MinValue && Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.All(c => c.Alias != alias));
-                if (take == null)
+                SwimTake take = d.Takes.LastOrDefault(t => !t.IsPart && t.Stop == DateTime.MinValue && Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.All(c => c.Alias != alias));
+                bool created = take == null;
+                if (created)
                 {
                     take = new SwimTake { Start = commandTime, Details = d.Next.Clone() };
                     d.Takes.Add(take);
                 }
 
                 take.Cameras.Add(new SwimTakeCamera { Alias = alias ?? "", Serial = serial ?? "", Model = model ?? "" });
+
+                // (2.22.0) A continuous recording: its parts (the first athlete of the order from now), with all its cameras.
+                if (take.IsContinuous)
+                {
+                    if (created)
+                        RebuildParts(take);
+
+                    foreach (SwimTake part in d.Takes.Where(t => t.ParentId == take.Id))
+                    {
+                        if (part.Cameras.All(c => c.Alias != (alias ?? "")))
+                            part.Cameras.Add(new SwimTakeCamera { Alias = alias ?? "", Serial = serial ?? "", Model = model ?? "" });
+                    }
+                }
             }
 
             log.DebugFormat("Recording of the camera \"{0}\" kept.", alias);
@@ -398,12 +510,19 @@ namespace Kinovea.ScreenManager
             bool changed = false;
             lock (locker)
             {
-                SwimTake take = Data.Takes.LastOrDefault(t => Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.Any(c => c.Alias == alias && !c.Done));
+                SwimTake take = Data.Takes.LastOrDefault(t => !t.IsPart && Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.Any(c => c.Alias == alias && !c.Done));
                 if (take != null)
                 {
                     take.Cameras.RemoveAll(c => c.Alias == alias && !c.Done);
+                    foreach (SwimTake part in Data.Takes.Where(t => t.ParentId == take.Id))
+                        part.Cameras.RemoveAll(c => c.Alias == alias && !c.Done);
+
                     if (take.Cameras.Count == 0)
+                    {
+                        string id = take.Id;
                         Data.Takes.Remove(take);
+                        Data.Takes.RemoveAll(t => t.ParentId == id);
+                    }
 
                     changed = true;
                 }
@@ -417,16 +536,59 @@ namespace Kinovea.ScreenManager
             RaiseChanged();
         }
 
+        /// <summary>The video of all the cameras of a recording, made.</summary>
+        public static void SetComposite(string takeId, string path)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.FirstOrDefault(t => t.Id == takeId);
+                if (take == null)
+                    return;
+
+                take.Composite = path ?? "";
+            }
+
+            Save();
+            RaiseChanged();
+        }
+
+        /// <summary>The measured start of a camera after the command of its recording (seconds).</summary>
+        public static void SetStartOffset(string alias, DateTime commandTime, double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0 || seconds > 15)
+                return;
+
+            bool changed = false;
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.LastOrDefault(t => !t.IsPart && Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.Any(c => c.Alias == alias));
+                SwimTakeCamera camera = take != null ? take.Cameras.First(c => c.Alias == alias) : null;
+                if (camera != null && (!camera.StartOffset.HasValue || Math.Abs(camera.StartOffset.Value - seconds) > 1e-6))
+                {
+                    camera.StartOffset = seconds;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                Save();
+        }
+
         /// <summary>A camera stopped: the end of its recording.</summary>
         public static void Stopped(string alias, DateTime time)
         {
             lock (locker)
             {
-                SwimTake take = Data.Takes.LastOrDefault(t => t.Cameras.Any(c => c.Alias == alias));
+                SwimTake take = Data.Takes.LastOrDefault(t => !t.IsPart && t.Cameras.Any(c => c.Alias == alias));
                 if (take == null || (take.Stop != DateTime.MinValue && take.Stop > time))
                     return;
 
+                bool first = take.Stop == DateTime.MinValue;
                 take.Stop = time;
+
+                // (2.22.0) The part of the athlete of the end: it ends with the first camera that stops (it is cut to the end of the files).
+                if (first && take.IsContinuous)
+                    RebuildParts(take);
             }
 
             Save();
@@ -453,7 +615,13 @@ namespace Kinovea.ScreenManager
         {
             HashSet<string> ids = new HashSet<string>(takeIds);
             lock (locker)
-                Data.Takes.RemoveAll(t => ids.Contains(t.Id));
+            {
+                // (2.22.0) A continuous recording out: its parts too; its last part out: the recording too (once ended).
+                HashSet<string> parents = new HashSet<string>(Data.Takes.Where(t => ids.Contains(t.Id) && !t.IsPart).Select(t => t.Id));
+                Data.Takes.RemoveAll(t => ids.Contains(t.Id) || parents.Contains(t.ParentId ?? ""));
+                HashSet<string> withParts = new HashSet<string>(Data.Takes.Where(t => t.IsPart).Select(t => t.ParentId));
+                Data.Takes.RemoveAll(t => t.IsContinuous && t.Stop != DateTime.MinValue && !withParts.Contains(t.Id));
+            }
 
             Save();
             RaiseChanged();
@@ -508,6 +676,229 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
+        #region Continuous recordings (2.22.0)
+        /// <summary>A press of «⏭ Επόμενος» closer than this to the one before (or to the start) is the same press (a double click).</summary>
+        public const double MinPartSeconds = 2;
+
+        /// <summary>The continuous recording going on: the last recording started, of an order of athletes, not ended. Under the lock.</summary>
+        private static SwimTake CurrentUnlocked()
+        {
+            SwimTake parent = Data.Takes.LastOrDefault(t => !t.IsPart);
+            return parent != null && parent.IsContinuous && parent.Stop == DateTime.MinValue ? parent : null;
+        }
+
+        /// <summary>
+        /// The parts of a continuous recording from its presses (under the lock): part i from the press i - 1 (the start for the first) to
+        /// the press i, the athlete i of the order; after the last press the part of the next athlete, open until the end of the
+        /// recording, when the order has one more (a press after the last athlete ends the order; one more press is a part of a swimmer
+        /// the order does not have, named afterwards). A part already there keeps its details (corrected or not) and its videos; a part of
+        /// an undone press goes, unless its videos came.
+        /// </summary>
+        private static void RebuildParts(SwimTake parent)
+        {
+            List<SwimTakeAthlete> queue = parent.Details.Queue ?? new List<SwimTakeAthlete>();
+            List<DateTime> marks = parent.Marks ?? (parent.Marks = new List<DateTime>());
+            int presses = marks.Count;
+            int count = presses + (presses < queue.Count ? 1 : 0);
+            List<SwimTake> parts = Data.Takes.Where(t => t.ParentId == parent.Id).ToList();
+            for (int i = 1; i <= count; i++)
+            {
+                SwimTake part = parts.FirstOrDefault(p => p.Index == i);
+                if (part == null)
+                {
+                    part = new SwimTake { ParentId = parent.Id, Index = i, Details = parent.Details.ForAthlete(i <= queue.Count ? queue[i - 1] : null) };
+                    foreach (SwimTakeCamera c in parent.Cameras)
+                        part.Cameras.Add(new SwimTakeCamera { Alias = c.Alias, Serial = c.Serial, Model = c.Model });
+
+                    Data.Takes.Add(part);
+                }
+
+                part.Start = i == 1 ? parent.Start : marks[i - 2];
+                part.EndedByButton = i <= presses;
+                part.Stop = i <= presses ? marks[i - 1] : parent.Stop;
+            }
+
+            Data.Takes.RemoveAll(t => t.ParentId == parent.Id && t.Index > count && t.Cameras.All(c => !c.Done));
+        }
+
+        /// <summary>
+        /// The continuous recording going on (a copy, null when none), its part open now (the athlete in the water: null after the last one)
+        /// and the number of its parts so far.
+        /// </summary>
+        public static SwimTake Continuous(out SwimTake open, out int parts)
+        {
+            lock (locker)
+            {
+                open = null;
+                parts = 0;
+                SwimTake parent = CurrentUnlocked();
+                if (parent == null)
+                    return null;
+
+                List<SwimTake> mine = Data.Takes.Where(t => t.ParentId == parent.Id).OrderBy(t => t.Index).ToList();
+                parts = mine.Count;
+                SwimTake current = mine.LastOrDefault(t => t.Stop == DateTime.MinValue);
+                if (current != null)
+                    open = JsonConvert.DeserializeObject<SwimTake>(JsonConvert.SerializeObject(current));
+
+                return JsonConvert.DeserializeObject<SwimTake>(JsonConvert.SerializeObject(parent));
+            }
+        }
+
+        /// <summary>
+        /// The button «⏭ Επόμενος» (or the key of a presenter): the attempt of the athlete in the water ends now, the next one of the order
+        /// starts. False (and why in `message`) when no continuous recording goes on or the press is the same as the one before.
+        /// </summary>
+        public static bool NextAthlete(DateTime now, out string message)
+        {
+            lock (locker)
+            {
+                SwimTake parent = CurrentUnlocked();
+                if (parent == null)
+                {
+                    message = SwimLang.T("Δεν γίνεται συνεχόμενη εγγραφή.");
+                    return false;
+                }
+
+                List<DateTime> marks = parent.Marks ?? (parent.Marks = new List<DateTime>());
+                DateTime last = marks.Count > 0 ? marks[marks.Count - 1] : parent.Start;
+                if ((now - last).TotalSeconds < MinPartSeconds)
+                {
+                    message = SwimLang.T("Το ίδιο πάτημα (λιγότερο από 2 s μετά το προηγούμενο).");
+                    return false;
+                }
+
+                marks.Add(now);
+                RebuildParts(parent);
+                int queue = parent.Details.Queue.Count;
+                int done = marks.Count;
+                SwimTake next = Data.Takes.FirstOrDefault(t => t.ParentId == parent.Id && t.Stop == DateTime.MinValue);
+                if (next != null)
+                    message = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ {0}/{1} · τώρα: {2}"), done, queue, next.Details.Summary);
+                else if (done <= queue)
+                    message = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ {0}/{1} · τέλος της σειράς"), done, queue);
+                else
+                    message = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ +{0} χωρίς όνομα (μετά τη σειρά)"), done - queue);
+            }
+
+            log.Debug("The next athlete of the continuous recording.");
+            Save();
+            RaiseChanged();
+            return true;
+        }
+
+        /// <summary>The button «↶»: the last press is undone (its part goes, unless its videos came).</summary>
+        public static bool UndoNextAthlete(out string message)
+        {
+            lock (locker)
+            {
+                SwimTake parent = CurrentUnlocked();
+                if (parent == null || parent.Marks == null || parent.Marks.Count == 0)
+                {
+                    message = SwimLang.T("Δεν υπάρχει πάτημα για αναίρεση.");
+                    return false;
+                }
+
+                parent.Marks.RemoveAt(parent.Marks.Count - 1);
+                RebuildParts(parent);
+                message = string.Format(CultureInfo.InvariantCulture, SwimLang.T("↶ Αναιρέθηκε· μέσα στο νερό: {0}/{1}"), parent.Marks.Count + 1, parent.Details.Queue.Count);
+            }
+
+            Save();
+            RaiseChanged();
+            return true;
+        }
+
+        /// <summary>The parts of a continuous recording (copies), in their order.</summary>
+        public static List<SwimTake> Parts(string parentId)
+        {
+            lock (locker)
+                return JsonConvert.DeserializeObject<List<SwimTake>>(JsonConvert.SerializeObject(Data.Takes.Where(t => t.ParentId == parentId).OrderBy(t => t.Index).ToList()));
+        }
+
+        /// <summary>
+        /// The start of the video of a camera of a part: seconds from the command of its recording to the first image of the part's video
+        /// (lines up the videos of the part when their sounds do not match).
+        /// </summary>
+        public static void SetPartStart(string partId, string alias, double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds))
+                return;
+
+            lock (locker)
+            {
+                SwimTake part = Data.Takes.FirstOrDefault(t => t.Id == partId);
+                SwimTakeCamera camera = part != null ? part.Cameras.FirstOrDefault(c => c.Alias == alias) : null;
+                if (camera == null)
+                    return;
+
+                camera.StartOffset = seconds;
+            }
+
+            Save();
+        }
+
+        /// <summary>(2.22.0) What the sound of a recording said of the measured starts of its cameras (see SwimTake.Clock).</summary>
+        public static void SetClock(string takeId, Dictionary<string, double> clock)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.FirstOrDefault(t => t.Id == takeId);
+                if (take == null)
+                    return;
+
+                take.Clock = clock != null && clock.Count > 0 ? new Dictionary<string, double>(clock) : null;
+            }
+
+            Save();
+        }
+
+        /// <summary>(2.22.0) The start signal sounded during the recording (for a part: during the part, on the clock of the computer).</summary>
+        public static bool HasSignal(SwimTake take)
+        {
+            if (take == null)
+                return false;
+
+            lock (locker)
+            {
+                SwimTake owner = take.IsPart ? Data.Takes.FirstOrDefault(t => t.Id == take.ParentId) : take;
+                if (owner == null || owner.Signals == null)
+                    return false;
+
+                DateTime stop = take.Stop != DateTime.MinValue ? take.Stop : DateTime.MaxValue;
+                return owner.Signals.Any(s => s >= take.Start && s <= stop);
+            }
+        }
+
+        /// <summary>The horn of the start signal: kept with the recording going on (none: nothing).</summary>
+        public static void AddSignal(DateTime horn)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.LastOrDefault(t => !t.IsPart);
+                if (take == null || take.Stop != DateTime.MinValue)
+                    return;
+
+                if (take.Signals == null)
+                    take.Signals = new List<DateTime>();
+
+                take.Signals.Add(horn);
+            }
+
+            Save();
+        }
+
+        /// <summary>«🏁 Ολοκλήρωση συνεδρίας»: the order of the athletes is emptied (the next recordings are of one athlete each).</summary>
+        public static void EndSession()
+        {
+            lock (locker)
+                Data.Next.Queue = new List<SwimTakeAthlete>();
+
+            Save();
+            RaiseChanged();
+        }
+        #endregion
+
         #region Screens
         /// <summary>A capture screen with a camera that gives its files (a GoPro): the Wi-Fi downloads go through it.</summary>
         public static void Register(CaptureScreen screen)
@@ -523,6 +914,16 @@ namespace Kinovea.ScreenManager
         {
             lock (locker)
                 screens.Remove(screen);
+        }
+
+        /// <summary>(2.22.0) A camera of the screens records now.</summary>
+        public static bool AnyRecording()
+        {
+            List<CaptureScreen> copy;
+            lock (locker)
+                copy = screens.ToList();
+
+            return copy.Any(s => s.Recording);
         }
 
         /// <summary>The cameras of the screens now: their name and their source.</summary>
