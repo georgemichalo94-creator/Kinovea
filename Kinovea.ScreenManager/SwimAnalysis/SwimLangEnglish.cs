@@ -2300,7 +2300,7 @@ namespace Kinovea.ScreenManager
             { "Εγγραφή στην κάρτα της κάμερας: τίποτα δεν γράφεται στον υπολογιστή.", "Recording on the card of the camera: nothing is written on the computer." },
             { "👁 Κλείσιμο εικόνας", "👁 Close the image" },
             { "👁 Ζωντανή εικόνα (Wi-Fi)", "👁 Live image (Wi-Fi)" },
-            { "Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή.", "The image of the camera by its Wi-Fi, one camera at a time (about 0.3 s behind). The computer joins the Wi-Fi of the camera while it is on." },
+            { "Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή· κλείνει μόνη της σε 3 λεπτά.", "The image of the camera by its Wi-Fi, one camera at a time (about 0.3 s behind). The computer joins the Wi-Fi of the camera while it is on; it closes by itself after 3 minutes." },
             { "Η σύνδεση με GoPro δεν φορτώθηκε: χρειάζονται Windows 10 ή νεότερα με Bluetooth.", "The GoPro connection did not load: it needs Windows 10 or later with Bluetooth." },
             { "Δεν βρέθηκε GoPro. Άναψε τις κάμερες με τις ασύρματες συνδέσεις ανοιχτές. Την πρώτη φορά βάλε την καθεμιά σε σύζευξη (Προτιμήσεις › Συνδέσεις › Σύνδεση συσκευής › GoPro Quik) και ξαναπάτα.", "No GoPro found. Turn the cameras on with wireless connections on. The first time, put each one in pairing mode (Preferences › Connections › Connect Device › GoPro Quik) and press again." },
             { "Κάμερα + βίντεο", "Camera + video" },

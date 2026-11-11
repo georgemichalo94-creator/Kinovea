@@ -655,9 +655,10 @@ namespace Kinovea.ScreenManager
             if (live == null || view == null)
                 return;
 
+            // The source may ask the user first (and be told no): the button shows what is.
             bool on = !live.LivePreview;
             live.SetLivePreview(on);
-            view.UpdateLivePreview(on);
+            view.UpdateLivePreview(live.LivePreview);
         }
 
         public void View_ToggleDelayedDisplay()

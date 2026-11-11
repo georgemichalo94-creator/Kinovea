@@ -72,6 +72,7 @@ namespace Kinovea.Camera.GoPro
         private readonly Averager dataRateAverager = new Averager(0.02);
         private byte[] liveBuffer;
         private int period = 250;
+        private static bool networkLossAccepted;
         private const int width = GoProStatusPainter.Width;
         private const int height = GoProStatusPainter.Height;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -193,14 +194,57 @@ namespace Kinovea.Camera.GoPro
         #endregion
 
         #region ILivePreviewSource
-        /// <summary>The live image of this camera on or off (the one of another camera stops first).</summary>
+        /// <summary>
+        /// The live image of this camera on or off (the one of another camera stops first). The first time, when the computer has only
+        /// one Wi-Fi and is on it, the user is told that the computer is off its network while the live image is on. UI thread.
+        /// </summary>
         public void SetLivePreview(bool on)
         {
             GoProDevice d = device;
-            if (on && d != null)
-                GoProPreview.Start(d);
-            else
+            if (!on || d == null)
+            {
                 GoProPreview.Stop(address);
+                return;
+            }
+
+            if (!networkLossAccepted && WouldTakeTheNetwork())
+            {
+                string text = GoProText.T(
+                    "Για τη ζωντανή εικόνα ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας.\n\n" +
+                    "Ο υπολογιστής έχει ένα Wi-Fi: όσο είναι ανοιχτή η εικόνα (έως 3 λεπτά) δεν θα έχει ίντερνετ " +
+                    "(Google Sheet, απομακρυσμένη σύνδεση). Μετά ξαναγυρίζει μόνος του στο δίκτυό του.\n" +
+                    "Με καλώδιο δικτύου ή ένα δεύτερο Wi-Fi (USB) κρατά το ίντερνετ.\n\n" +
+                    "Την πρώτη φορά τα Windows μπορεί να ρωτήσουν για το τείχος προστασίας: πάτα «Να επιτρέπεται η πρόσβαση».\n\n" +
+                    "Να ανοίξει η ζωντανή εικόνα;",
+                    "For the live image the computer joins the Wi-Fi of the camera.\n\n" +
+                    "The computer has one Wi-Fi: while the image is on (up to 3 minutes) it has no internet " +
+                    "(Google Sheet, remote connection). Then it goes back to its network by itself.\n" +
+                    "With a network cable or a second Wi-Fi (USB) it keeps the internet.\n\n" +
+                    "The first time Windows may ask about the firewall: press \"Allow access\".\n\n" +
+                    "Open the live image?");
+
+                System.Windows.Forms.DialogResult answer = System.Windows.Forms.MessageBox.Show(text, GoProText.T("Ζωντανή εικόνα GoPro", "GoPro live image"),
+                    System.Windows.Forms.MessageBoxButtons.YesNo, System.Windows.Forms.MessageBoxIcon.Information);
+
+                if (answer != System.Windows.Forms.DialogResult.Yes)
+                    return;
+
+                networkLossAccepted = true;
+            }
+
+            GoProPreview.Start(d);
+        }
+
+        private static bool WouldTakeTheNetwork()
+        {
+            try
+            {
+                return GoProWifi.WouldTakeTheNetwork();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
         #endregion
 
@@ -236,8 +280,17 @@ namespace Kinovea.Camera.GoPro
                         liveBuffer = new byte[width * height * 3];
 
                     live = preview.CopyLatest(liveBuffer);
-                    if (!live && preview.Status != null)
-                        s.Problem = "👁 " + preview.Status;
+                    s.PreviewSecondsLeft = preview.SecondsLeft;
+                    string previewStatus = preview.Status;
+                    if (!live && previewStatus != null)
+                        s.Problem = GoProText.T("Ζωντανή εικόνα: ", "Live image: ") + previewStatus;
+                }
+                else if (string.IsNullOrEmpty(s.Problem))
+                {
+                    // How the last live image ended by itself (an error, the time limit), for a minute.
+                    string outcome = GoProPreview.LastOutcome(address);
+                    if (outcome != null)
+                        s.Problem = GoProText.T("Ζωντανή εικόνα: ", "Live image: ") + outcome;
                 }
 
                 SetPeriod(preview != null ? 40 : 250);

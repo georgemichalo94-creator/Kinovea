@@ -68,7 +68,10 @@ namespace Kinovea.Camera.GoPro
         public override List<CameraSummary> DiscoverCameras(IEnumerable<CameraBlurb> blurbs)
         {
             List<CameraSummary> summaries = new List<CameraSummary>();
-            List<GoProSighting> heard = Listen();
+
+            // Only the Open GoPro cameras (heard with the service or the data of GoPro): a device that only has a name like "GoPro Cam"
+            // cannot be controlled and would take a screen for nothing.
+            List<GoProSighting> heard = Listen().Where(x => x.Confirmed).ToList();
             HashSet<ulong> listed = new HashSet<ulong>();
             HashSet<ulong> active = new HashSet<ulong>(ActiveAddresses());
             Dictionary<ulong, GoProSighting> byAddress = heard.ToDictionary(x => x.Address);

@@ -23,6 +23,12 @@ namespace Kinovea.Camera.GoPro
         public bool Awake;
         public DateTime LastSeen;
 
+        /// <summary>
+        /// Heard with the service or the manufacturer data of GoPro (an Open GoPro camera). A device heard only by a name that starts
+        /// with "GoPro " is not one (another device, or a camera that cannot be controlled).
+        /// </summary>
+        public bool Confirmed;
+
         public GoProSighting Copy()
         {
             return (GoProSighting)MemberwiseClone();
@@ -162,11 +168,17 @@ namespace Kinovea.Camera.GoPro
                     {
                         sighting = new GoProSighting { Address = args.BluetoothAddress };
                         sightings[args.BluetoothAddress] = sighting;
-                        log.DebugFormat("GoPro heard: {0:X12}.", args.BluetoothAddress);
+                        log.DebugFormat("GoPro heard: {0:X12} \"{1}\" (service or data of GoPro: {2}).", args.BluetoothAddress, name, goPro);
                     }
 
                     if (!string.IsNullOrEmpty(name))
                         sighting.Name = name;
+
+                    if (goPro && !sighting.Confirmed)
+                    {
+                        sighting.Confirmed = true;
+                        log.DebugFormat("GoPro confirmed: {0:X12} (model {1}).", args.BluetoothAddress, model);
+                    }
 
                     if (model >= 0)
                     {

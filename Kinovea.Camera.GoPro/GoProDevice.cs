@@ -67,6 +67,9 @@ namespace Kinovea.Camera.GoPro
         public short Rssi;
         public DateTime ClockSetAt = DateTime.MinValue;
         public bool PreviewOn;
+
+        /// <summary>The seconds before the live image closes by itself (-1 when it is not on).</summary>
+        public int PreviewSecondsLeft = -1;
     }
 
     /// <summary>
@@ -187,6 +190,7 @@ namespace Kinovea.Camera.GoPro
         private GoProLink link = GoProLink.Idle;
         private DateTime linkSince = DateTime.UtcNow;
         private string problem;
+        private DateTime problemUntil = DateTime.MinValue;
         private string modelName;
         private string firmware;
         private int batteryPercent = -1;
@@ -303,9 +307,11 @@ namespace Kinovea.Camera.GoPro
                 }
                 catch (Exception e)
                 {
+                    // The details go to the log; the screen says what happens next.
                     log.Error(string.Format("Error with the GoPro {0:X12}.", Address), e);
                     DisconnectGatt();
-                    SetLink(GoProLink.Searching, e.Message);
+                    SetLink(GoProLink.Searching, GoProText.T("Η σύνδεση δεν ολοκληρώθηκε: ξαναδοκιμάζεται σε λίγα δευτερόλεπτα…",
+                        "The connection did not complete: it is tried again in a few seconds…"));
                 }
 
                 try
@@ -357,8 +363,18 @@ namespace Kinovea.Camera.GoPro
                 return;
             }
 
-            // Pairing, once per computer: the camera must be in pairing mode.
-            DeviceInformationPairing pairing = device.DeviceInformation.Pairing;
+            // Pairing, once per computer: the camera must be in pairing mode. (Windows can give a device without its information
+            // while it is still being added: tried again at the next round.)
+            DeviceInformation information = device.DeviceInformation;
+            DeviceInformationPairing pairing = information != null ? information.Pairing : null;
+            if (pairing == null)
+            {
+                device.Dispose();
+                log.WarnFormat("The GoPro {0:X12} came without its pairing information: tried again.", Address);
+                SetLink(GoProLink.Searching, GoProText.T("Η κάμερα βρέθηκε, η σύνδεση ξαναδοκιμάζεται…", "The camera was found, the connection is tried again…"));
+                return;
+            }
+
             if (!pairing.IsPaired)
             {
                 if (!pairing.CanPair || !InPairingMode())
@@ -369,23 +385,25 @@ namespace Kinovea.Camera.GoPro
                 }
 
                 SetLink(GoProLink.Pairing, GoProText.T("Σύζευξη με τον υπολογιστή…", "Pairing with the computer…"));
+                DeviceInformationCustomPairing custom = pairing.Custom;
                 DevicePairingResult result;
-                pairing.Custom.PairingRequested += Custom_PairingRequested;
+                custom.PairingRequested += Custom_PairingRequested;
                 try
                 {
                     DevicePairingKinds kinds = DevicePairingKinds.ConfirmOnly | DevicePairingKinds.ConfirmPinMatch | DevicePairingKinds.DisplayPin;
-                    result = await pairing.Custom.PairAsync(kinds, DevicePairingProtectionLevel.Encryption).AsTask(token).ConfigureAwait(false);
+                    result = await custom.PairAsync(kinds, DevicePairingProtectionLevel.Encryption).AsTask(token).ConfigureAwait(false);
                 }
                 finally
                 {
-                    pairing.Custom.PairingRequested -= Custom_PairingRequested;
+                    custom.PairingRequested -= Custom_PairingRequested;
                 }
 
-                log.DebugFormat("Pairing with the GoPro {0:X12}: {1}.", Address, result.Status);
-                if (result.Status != DevicePairingResultStatus.Paired && result.Status != DevicePairingResultStatus.AlreadyPaired)
+                DevicePairingResultStatus status = result != null ? result.Status : DevicePairingResultStatus.Failed;
+                log.WarnFormat("Pairing with the GoPro {0:X12}: {1}.", Address, status);
+                if (status != DevicePairingResultStatus.Paired && status != DevicePairingResultStatus.AlreadyPaired)
                 {
                     device.Dispose();
-                    SetLink(GoProLink.NeedsPairing, PairingHint() + " (" + result.Status + ")");
+                    SetLink(GoProLink.NeedsPairing, PairingHint() + " (" + status + ")");
                     return;
                 }
             }
@@ -619,6 +637,9 @@ namespace Kinovea.Camera.GoPro
                 if (fields.Count > 3)
                     firmware = GoProPackets.Text(fields[3]);
             }
+
+            GoProSighting seen = GoProScanner.Find(Address);
+            log.DebugFormat("The GoPro {0:X12} is \"{1}\", {2}, firmware {3}.", Address, seen != null ? seen.Name : "?", modelName, firmware);
         }
 
         private void Fail(GattCommunicationStatus status)
@@ -908,6 +929,7 @@ namespace Kinovea.Camera.GoPro
                             {
                                 lastStartOffset = (DateTime.Now - lastCommandTime).TotalSeconds;
                                 lastStartAt = DateTime.Now;
+                                log.DebugFormat("The GoPro {0:X12} started recording {1:0.000} s after the command.", Address, lastStartOffset);
                             }
                         }
                         else
@@ -966,7 +988,13 @@ namespace Kinovea.Camera.GoPro
                 pendingUntil = DateTime.UtcNow.AddSeconds(8);
                 lastCommandTime = commandTime;
                 lastCommandStart = record;
-                problem = null;
+
+                // The message of a previous command goes (the one of the link stays).
+                if (problemUntil != DateTime.MinValue)
+                {
+                    problem = null;
+                    problemUntil = DateTime.MinValue;
+                }
             }
 
             CheckRecordingChange();
@@ -1007,20 +1035,26 @@ namespace Kinovea.Camera.GoPro
                     if (desiredRecording == record)
                     {
                         pendingUntil = DateTime.MinValue;
-                        problem = GoProText.T("Η κάμερα δεν δέχτηκε την εντολή: δες αν είναι συνδεδεμένη και όχι σε μενού.",
-                            "The camera did not take the command: check that it is connected and not in a menu.");
+                        string reason = record ? BlockedReasonUnlocked() : null;
+                        problem = reason ?? (record ?
+                            GoProText.T("Η κάμερα δεν δέχτηκε την εντολή έναρξης: δες αν είναι συνδεδεμένη και όχι σε μενού.",
+                                "The camera did not take the start command: check that it is connected and not in a menu.") :
+                            GoProText.T("Η κάμερα δεν δέχτηκε την εντολή σταματήματος: σταμάτα την από το κουμπί της.",
+                                "The camera did not take the stop command: stop it with its own button."));
+                        problemUntil = DateTime.UtcNow.AddSeconds(90);
                     }
                 }
 
+                log.WarnFormat("The GoPro {0:X12} did not take the command to {1} recording.", Address, record ? "start" : "stop");
                 CheckRecordingChange();
                 return;
             }
 
             // The camera says when it starts or stops (pushed); asked again in case the change is not pushed.
-            for (int i = 0; i < 3; i++)
+            bool confirmed = false;
+            for (int i = 0; i < 3 && !confirmed; i++)
             {
                 await Task.Delay(1200).ConfigureAwait(false);
-                bool confirmed;
                 lock (locker)
                     confirmed = encodingKnown && encoding == record;
 
@@ -1028,8 +1062,65 @@ namespace Kinovea.Camera.GoPro
                     break;
 
                 await QueryStatusesAsync(new byte[] { GoProIds.StatusEncoding, GoProIds.StatusEncodingSeconds }).ConfigureAwait(false);
+                lock (locker)
+                    confirmed = encodingKnown && encoding == record;
+
                 CheckRecordingChange();
             }
+
+            if (confirmed)
+                return;
+
+            // Taken but not done: the screen says why once the time of the command is over.
+            await Task.Delay(TimeSpan.FromSeconds(4.5)).ConfigureAwait(false);
+            await QueryStatusesAsync(MainStatuses).ConfigureAwait(false);
+            lock (locker)
+            {
+                confirmed = encodingKnown && encoding == record;
+                if (!confirmed && desiredRecording == record)
+                {
+                    pendingUntil = DateTime.MinValue;
+                    string reason = record ? BlockedReasonUnlocked() : null;
+                    problem = reason ?? (record ?
+                        GoProText.T("Η κάμερα δέχτηκε την εντολή αλλά δεν ξεκίνησε να γράφει: δες την οθόνη της.",
+                            "The camera took the command but did not start recording: look at its screen.") :
+                        GoProText.T("Η κάμερα δέχτηκε την εντολή αλλά γράφει ακόμη: σταμάτα την από το κουμπί της.",
+                            "The camera took the command but is still recording: stop it with its own button."));
+                    problemUntil = DateTime.UtcNow.AddSeconds(90);
+                }
+            }
+
+            if (!confirmed)
+                log.WarnFormat("The GoPro {0:X12} took the command to {1} recording but did not do it.", Address, record ? "start" : "stop");
+
+            CheckRecordingChange();
+        }
+
+        /// <summary>Why the camera cannot record, from what it said (null when nothing it said explains it). Under the lock.</summary>
+        private string BlockedReasonUnlocked()
+        {
+            switch (primaryStorage)
+            {
+                case 1:
+                    return GoProText.T("Δεν γράφει: η κάρτα είναι γεμάτη.", "Not recording: the card is full.");
+                case 2:
+                    return GoProText.T("Δεν γράφει: η κάμερα δεν έχει κάρτα.", "Not recording: the camera has no card.");
+                case 3:
+                    return GoProText.T("Δεν γράφει: η κάρτα έχει πρόβλημα (φορμάρισμα από το μενού της κάμερας).", "Not recording: the card has a problem (format it from the menu of the camera).");
+                case 4:
+                    return GoProText.T("Δεν γράφει: η κάρτα είναι απασχολημένη (σύνδεση USB ή μεταφορά αρχείων;).", "Not recording: the card is busy (USB connection or file transfer?).");
+            }
+
+            if (hot)
+                return GoProText.T("Δεν γράφει: η κάμερα ζεστάθηκε πολύ (σκιά, άνοιξε το πορτάκι της μπαταρίας).", "Not recording: the camera is too hot (shade, open the battery door).");
+
+            if (batteryPercent >= 0 && batteryPercent <= 2)
+                return GoProText.T("Δεν γράφει: η μπαταρία τελείωσε.", "Not recording: the battery is empty.");
+
+            if (busy)
+                return GoProText.T("Δεν γράφει: η κάμερα είναι απασχολημένη (μενού ή αναπαραγωγή στην οθόνη της).", "Not recording: the camera is busy (a menu or playback on its screen).");
+
+            return null;
         }
 
         private bool EffectiveUnlocked()
@@ -1109,6 +1200,7 @@ namespace Kinovea.Camera.GoPro
                 }
 
                 problem = hint;
+                problemUntil = DateTime.MinValue;
             }
         }
 
@@ -1136,7 +1228,7 @@ namespace Kinovea.Camera.GoPro
                 s.Firmware = firmware;
                 s.Link = link;
                 s.LinkSeconds = (DateTime.UtcNow - linkSince).TotalSeconds;
-                s.Problem = problem;
+                s.Problem = problemUntil == DateTime.MinValue || problemUntil > DateTime.UtcNow ? problem : null;
                 s.Recording = EffectiveUnlocked();
                 s.CommandPending = pendingUntil > DateTime.UtcNow && (!encodingKnown || desiredRecording != encoding);
                 s.RecordingSeconds = encoding && encodingSince != DateTime.MinValue ? (long)(DateTime.Now - encodingSince).TotalSeconds : 0;

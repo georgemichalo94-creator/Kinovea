@@ -405,7 +405,7 @@ namespace Kinovea.ScreenManager
 
             livePreviewOn = on;
             btnLivePreview.Text = on ? SwimLang.T("👁 Κλείσιμο εικόνας") : SwimLang.T("👁 Ζωντανή εικόνα (Wi-Fi)");
-            toolTips.SetToolTip(btnLivePreview, SwimLang.T("Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή."));
+            toolTips.SetToolTip(btnLivePreview, SwimLang.T("Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή· κλείνει μόνη της σε 3 λεπτά."));
         }
 
         public void UpdateRecordingStatus(bool recording)
