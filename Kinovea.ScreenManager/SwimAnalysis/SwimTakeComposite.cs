@@ -423,7 +423,11 @@ namespace Kinovea.ScreenManager
             foreach (SwimCompositeView v in views)
             {
                 double wanted = Math.Max(0, from + v.Offset);
-                double seek = Math.Max(0, wanted - 0.5 / v.Fps);
+
+                // (2.22.0) Not held at 0: the first image of a video can be a little before 0 on the clock of its streams (the videos of
+                // the athletes of a continuous recording, cut at a key image, start 0.5 ms before it) and a seek at 0 left it out: that
+                // camera one image ahead of the others.
+                double seek = wanted - 0.5 / v.Fps;
                 a.AppendFormat(ci, "-seek_timestamp 1 -ss {0:0.0000} -t {1:0.000} -i \"{2}\" ", seek, length + 1 / v.Fps, v.Path);
             }
 

@@ -20,7 +20,9 @@ namespace Kinovea.ScreenManager
     /// Windows, an English one when there is one), a pause of about two seconds (1.8 – 2.2 s, not always the same, as a starter) and the
     /// horn: two tones together (890 and 1017 Hz, as the start systems of the pools), 0.6 s. The cameras that hear the horn are lined up
     /// by it (their sounds), and the start analysis finds its moment (the start of the attempt). Played by the speaker of the computer
-    /// (or the one connected to it); one signal at a time.
+    /// (or the one connected to it); one signal at a time. The words go without the band of the horn's tones (820 – 1120 Hz): the start
+    /// analysis hears two tones 8/7 apart there, as the 7th and 8th harmonics of a voice can be, so that only the horn is a start signal.
+    /// Without an English voice, a Greek one says the words as written in Greek letters («Τέικ γιορ μάρκς»).
     /// </summary>
     public static class SwimStartSignal
     {
@@ -33,6 +35,10 @@ namespace Kinovea.ScreenManager
         public const double MinPause = 1.8;
         public const double MaxPause = 2.2;
         public const string Words = "Take your marks";
+        public const string GreekWords = "Τέικ γιορ μάρκς";
+
+        /// <summary>The band of the horn's tones, out of the words (Hz), with smooth edges of BandEdge.</summary>
+        public const double BandFrom = 820, BandTo = 1120, BandEdge = 40;
 
         private static readonly object locker = new object();
         private static readonly Random random = new Random();
@@ -162,19 +168,23 @@ namespace Kinovea.ScreenManager
                     {
                         InstalledVoice english = synth.GetInstalledVoices().FirstOrDefault(v => v.Enabled && v.VoiceInfo != null &&
                             v.VoiceInfo.Culture != null && v.VoiceInfo.Culture.TwoLetterISOLanguageName == "en");
+                        string words = Words;
                         if (english != null)
                             synth.SelectVoice(english.VoiceInfo.Name);
+                        else if (synth.Voice != null && synth.Voice.Culture != null && synth.Voice.Culture.TwoLetterISOLanguageName == "el")
+                            words = GreekWords;
 
                         synth.Rate = -1;
                         synth.Volume = 100;
                         synth.SetOutputToAudioStream(ms, new SpeechAudioFormatInfo(Rate, AudioBitsPerSample.Sixteen, AudioChannel.Mono));
-                        synth.Speak(Words);
+                        synth.Speak(words);
                         synth.SetOutputToNull();
                         byte[] bytes = ms.ToArray();
                         short[] samples = new short[bytes.Length / 2];
                         Buffer.BlockCopy(bytes, 0, samples, 0, samples.Length * 2);
-                        voice = Normalize(Trim(samples));
-                        log.DebugFormat("The words of the start signal: {0:0.00} s ({1}).", voice.Length / (double)Rate, english != null ? english.VoiceInfo.Name : "the voice of Windows");
+                        voice = Normalize(WithoutHornBand(Trim(samples)));
+                        log.DebugFormat("The words of the start signal: {0:0.00} s ({1}, «{2}»).", voice.Length / (double)Rate,
+                            synth.Voice != null ? synth.Voice.Name : "the voice of Windows", words);
                     }
                 }
                 catch (Exception e)
@@ -185,6 +195,59 @@ namespace Kinovea.ScreenManager
 
                 return voice;
             }
+        }
+
+        /// <summary>
+        /// The sound without the band of the horn (BandFrom – BandTo, smooth edges): one transform of all of it (padded to twice its length,
+        /// so nothing comes round from the end), the band cut, back.
+        /// </summary>
+        public static short[] WithoutHornBand(short[] s)
+        {
+            if (s == null || s.Length == 0)
+                return s ?? new short[0];
+
+            int n = 1;
+            while (n < 2 * s.Length)
+                n <<= 1;
+
+            double[] re = new double[n], im = new double[n];
+            for (int i = 0; i < s.Length; i++)
+                re[i] = s[i];
+
+            SwimStartSound.Fft(re, im);
+            double bin = (double)Rate / n;
+            for (int k = 0; k <= n / 2; k++)
+            {
+                double f = k * bin, keep = 1;
+                if (f >= BandFrom && f <= BandTo)
+                    keep = 0;
+                else if (f > BandFrom - BandEdge && f < BandFrom)
+                    keep = 0.5 + 0.5 * Math.Cos(Math.PI * (f - (BandFrom - BandEdge)) / BandEdge);
+                else if (f > BandTo && f < BandTo + BandEdge)
+                    keep = 0.5 - 0.5 * Math.Cos(Math.PI * (f - BandTo) / BandEdge);
+
+                if (keep >= 1)
+                    continue;
+
+                re[k] *= keep;
+                im[k] *= keep;
+                if (k > 0 && k < n / 2)
+                {
+                    re[n - k] *= keep;
+                    im[n - k] *= keep;
+                }
+            }
+
+            // Back: the transform of the conjugate, conjugated, over n (only the real part is kept).
+            for (int k = 0; k < n; k++)
+                im[k] = -im[k];
+
+            SwimStartSound.Fft(re, im);
+            short[] result = new short[s.Length];
+            for (int i = 0; i < s.Length; i++)
+                result[i] = (short)Math.Max(short.MinValue, Math.Min(short.MaxValue, Math.Round(re[i] / n)));
+
+            return result;
         }
 
         /// <summary>The silence before and after the words out.</summary>

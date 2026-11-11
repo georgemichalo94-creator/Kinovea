@@ -155,6 +155,19 @@ public static class FictionalPool2
         return y;
     }
 
+    // The signal as a camera at the pool hears it from the speaker: lower, with the noise of its microphone (never digital silence).
+    public static float[] Heard(float[] x, int seed)
+    {
+        Random r = new Random(seed);
+        float[] y = new float[x.Length];
+        for (int i = 0; i < x.Length; i++)
+        {
+            double g = Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());
+            y[i] = (float)(0.5 * x[i] + 0.01 * g);
+        }
+        return y;
+    }
+
     // An image (a whole frame) against five images in a row of another video: the nearest one, as the shift from the middle (-2 … 2).
     public static int Nearest(string target, string[] frames, Rectangle area, out string details)
     {
@@ -421,7 +434,7 @@ Write-Output 'step: the start signal'
 $sigT = T 'SwimStartSignal'
 $hornAt = 0.0
 $wave = $sigT::Build([int16[]]@(), 2.0, [ref]$hornAt)
-$samples = [FictionalPool2]::ToRate($wave, 22050, 16000)
+$samples = [FictionalPool2]::Heard([FictionalPool2]::ToRate($wave, 22050, 16000), 5)
 $beeps = (T 'SwimStartSound')::Find($samples)
 $b0 = if ($beeps.Count -gt 0) { $beeps[0] } else { $null }
 if ($b0) { Write-Output ('     heard: ' + $b0.Onset.ToString('0.000', $ci) + ' s (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s), ' + $b0.Low.ToString('0', $ci) + '/' + $b0.High.ToString('0', $ci) + ' Hz, score ' + $b0.Score.ToString('0.0', $ci)) }
@@ -431,6 +444,10 @@ $words = $sigT::Voice()
 Write-Output ('     the words of Windows: ' + ($words.Length / 22050.0).ToString('0.00', $ci) + ' s')
 $full = $sigT::Build($words, 2.0, [ref]$hornAt)
 Check ($full.Length -gt $wave.Length -or $words.Length -eq 0) 'the words before the pause (when Windows has a voice)'
+# The words without the band of the horn: the start analysis hears only the horn as a start signal, not the voice before it.
+$beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($full, 22050, 16000), 6))
+Write-Output ('     with the words, heard: ' + (($beeps | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s ' + $_.Low.ToString('0', $ci) + '/' + $_.High.ToString('0', $ci) + ' Hz score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') + ' (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s)')
+Check ($beeps.Count -gt 0 -and [Math]::Abs($beeps[0].Onset - $hornAt) -le 0.06) 'with the words before it: the horn the clearest start signal, at its moment'
 if ($out) { [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($out, 'gk_signal.wav'), $full) }
 
 # ---- The end of the session; the parts out of the list, the recording too.
