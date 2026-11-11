@@ -29,6 +29,7 @@ using System.Reflection;
 using System.Resources;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Linq;
 
@@ -64,9 +65,14 @@ namespace Kinovea.ScreenManager
         #region Members
         /// <summary>
         /// Most playback screens in one window: 3 in a row, 2 + 2, 3 on top and 2 below.
-        /// Capture screens stay at two at most.
         /// </summary>
         public const int MaxPlayerScreens = 5;
+
+        /// <summary>
+        /// (Swim 2.20.0) Most capture screens in one window, in the same grid as the playback screens. A camera and a video side by side
+        /// stay at two screens.
+        /// </summary>
+        public const int MaxCaptureScreens = 5;
 
         private ScreenManagerUserInterface view;
         private DualPlayerController dualPlayer = new DualPlayerController();
@@ -138,6 +144,12 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem mnuThreePlayers = new ToolStripMenuItem();
         private ToolStripMenuItem mnuFourPlayers = new ToolStripMenuItem();
         private ToolStripMenuItem mnuFivePlayers = new ToolStripMenuItem();
+        // (Swim 2.20.0) Three, four or five capture screens in the grid, as the playback screens.
+        private ToolStripMenuItem mnuThreeCaptures = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuFourCaptures = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuFiveCaptures = new ToolStripMenuItem();
+        // (Swim 2.20.0) The GoPro cameras found by Bluetooth, each in a capture screen.
+        private ToolStripMenuItem mnuGoProScreens = new ToolStripMenuItem();
         private ToolStripMenuItem mnuVerticalLayout = new ToolStripMenuItem();
         private ToolStripMenuItem mnuToggleCommonCtrls = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSwapScreens = new ToolStripMenuItem();
@@ -207,6 +219,11 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem toolThreePlayers = new ToolStripMenuItem();
         private ToolStripMenuItem toolFourPlayers = new ToolStripMenuItem();
         private ToolStripMenuItem toolFivePlayers = new ToolStripMenuItem();
+        private ToolStripDropDownButton toolMoreCaptures = new ToolStripDropDownButton();
+        private ToolStripMenuItem toolThreeCaptures = new ToolStripMenuItem();
+        private ToolStripMenuItem toolFourCaptures = new ToolStripMenuItem();
+        private ToolStripMenuItem toolFiveCaptures = new ToolStripMenuItem();
+        private ToolStripMenuItem toolGoProScreens = new ToolStripMenuItem();
         private ToolStripButton toolFullScreen = new ToolStripButton();
         #endregion
 
@@ -229,6 +246,10 @@ namespace Kinovea.ScreenManager
             // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
             SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
             AddCommonControlsEventHandlers();
+
+            // (Swim 2.20.0) The texts that the camera modules draw on their images (GoPro) in the language of the swim analysis.
+            CameraUiLanguage.English = SwimLang.English;
+            SwimLang.Changed += (s, e) => CameraUiLanguage.English = SwimLang.English;
 
             dualPlayer.ExportImageAsked += (s, e) => ExportImages(ImageExportFormat.SideBySide);
             dualPlayer.ExportVideoAsked += (s, e) => ExportVideo(VideoExportFormat.SideBySide);
@@ -546,6 +567,19 @@ namespace Kinovea.ScreenManager
             mnuFivePlayers.Click += (s, e) => SetPlayerScreenCount(5);
             mnuFivePlayers.MergeAction = MergeAction.Append;
 
+            mnuThreeCaptures.Image = GridIcon(3, true);
+            mnuThreeCaptures.Click += (s, e) => SetCaptureScreenCount(3);
+            mnuThreeCaptures.MergeAction = MergeAction.Append;
+            mnuFourCaptures.Image = GridIcon(4, true);
+            mnuFourCaptures.Click += (s, e) => SetCaptureScreenCount(4);
+            mnuFourCaptures.MergeAction = MergeAction.Append;
+            mnuFiveCaptures.Image = GridIcon(5, true);
+            mnuFiveCaptures.Click += (s, e) => SetCaptureScreenCount(5);
+            mnuFiveCaptures.MergeAction = MergeAction.Append;
+            mnuGoProScreens.Image = Properties.Resources.camera_video;
+            mnuGoProScreens.Click += (s, e) => GoProsInScreens();
+            mnuGoProScreens.MergeAction = MergeAction.Append;
+
             mnuSwapScreens.Image = Properties.Resources.flatswap3d;
             mnuSwapScreens.Enabled = false;
             mnuSwapScreens.Click += mnuSwapScreensOnClick;
@@ -570,6 +604,10 @@ namespace Kinovea.ScreenManager
                 mnuFivePlayers,
                 mnuOneCapture,
                 mnuTwoCaptures,
+                mnuThreeCaptures,
+                mnuFourCaptures,
+                mnuFiveCaptures,
+                mnuGoProScreens,
                 mnuTwoMixed,
                 new ToolStripSeparator(),
                 mnuToggleCommonCtrls,
@@ -849,6 +887,19 @@ namespace Kinovea.ScreenManager
             toolFivePlayers.Click += (s, e) => SetPlayerScreenCount(5);
             toolMorePlayers.DropDownItems.AddRange(new ToolStripItem[] { toolThreePlayers, toolFourPlayers, toolFivePlayers });
 
+            // (Swim 2.20.0) Three to five capture screens, and the GoPro cameras found by Bluetooth each in a screen.
+            toolMoreCaptures.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolMoreCaptures.Image = GridIcon(5, true);
+            toolThreeCaptures.Image = GridIcon(3, true);
+            toolThreeCaptures.Click += (s, e) => SetCaptureScreenCount(3);
+            toolFourCaptures.Image = GridIcon(4, true);
+            toolFourCaptures.Click += (s, e) => SetCaptureScreenCount(4);
+            toolFiveCaptures.Image = GridIcon(5, true);
+            toolFiveCaptures.Click += (s, e) => SetCaptureScreenCount(5);
+            toolGoProScreens.Image = Properties.Resources.camera_video;
+            toolGoProScreens.Click += (s, e) => GoProsInScreens();
+            toolMoreCaptures.DropDownItems.AddRange(new ToolStripItem[] { toolThreeCaptures, toolFourCaptures, toolFiveCaptures, new ToolStripSeparator(), toolGoProScreens });
+
             // Full screen: only the images of the screens, joined (F11 or Esc to come back), as View > Full screen.
             toolFullScreen.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolFullScreen.Image = Properties.Resources.expand_16;
@@ -865,6 +916,7 @@ namespace Kinovea.ScreenManager
                                             toolMorePlayers,
                                             toolOneCapture,
                                             toolTwoCaptures,
+                                            toolMoreCaptures,
                                             toolTwoMixed,
                                             new ToolStripSeparator(),
                                             toolFullScreen });
@@ -1387,6 +1439,13 @@ namespace Kinovea.ScreenManager
                 view.ShowCommonControls(true, types, dualPlayer.View, dualCapture.View);
                 canShowCommonControls = true;
             }
+            else if (screenList.Count > 2 && screenList.All(s => s is CaptureScreen))
+            {
+                // (Swim 2.20.0) Grid of capture screens: the common controls start, stop and pause all the cameras together.
+                Pair<Type, Type> types = new Pair<Type, Type>(typeof(CaptureScreen), typeof(CaptureScreen));
+                view.ShowCommonControls(true, types, dualPlayer.View, dualCapture.View);
+                canShowCommonControls = true;
+            }
             else
             {
                 view.ShowCommonControls(false, null, null, null);
@@ -1397,8 +1456,9 @@ namespace Kinovea.ScreenManager
         {
             // The screen list has changed and involve capture screens.
             // Update their shared state to trigger a memory buffer reset.
+            // (Swim 2.20.0) The memory of the delay buffers is shared by all the screens of the window (up to five).
             foreach (CaptureScreen screen in captureScreens)
-                screen.SetShared(screenList.Count == 2);
+                screen.SetShareCount(screenList.Count);
         }
         /// <summary>
         /// Full screen of the window (F11, View > Full screen, the button of the toolbar, Escape on a screen to leave it):
@@ -2743,6 +2803,11 @@ namespace Kinovea.ScreenManager
             toolThreePlayers.Text = PlayerScreensText(3);
             toolFourPlayers.Text = PlayerScreensText(4);
             toolFivePlayers.Text = PlayerScreensText(5);
+            toolMoreCaptures.ToolTipText = CaptureScreensText(0);
+            toolThreeCaptures.Text = CaptureScreensText(3);
+            toolFourCaptures.Text = CaptureScreensText(4);
+            toolFiveCaptures.Text = CaptureScreensText(5);
+            toolGoProScreens.Text = CaptureScreensText(-1);
             toolFullScreen.ToolTipText = ScreenManagerLang.ToolTip_FullScreen;
         }
         private void RefreshCultureMenu()
@@ -2798,6 +2863,10 @@ namespace Kinovea.ScreenManager
             mnuThreePlayers.Text = PlayerScreensText(3);
             mnuFourPlayers.Text = PlayerScreensText(4);
             mnuFivePlayers.Text = PlayerScreensText(5);
+            mnuThreeCaptures.Text = CaptureScreensText(3);
+            mnuFourCaptures.Text = CaptureScreensText(4);
+            mnuFiveCaptures.Text = CaptureScreensText(5);
+            mnuGoProScreens.Text = CaptureScreensText(-1);
             mnuToggleCommonCtrls.Text = ScreenManagerLang.mnuToggleCommonCtrls;
             mnuVerticalLayout.Text = Kinovea.ScreenManager.Languages.ScreenManagerLang.mnuVerticalLayout;
             mnuSwapScreens.Text = ScreenManagerLang.mnuSwapScreens;
@@ -3555,6 +3624,103 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (Swim 2.20.0) Only capture screens, `count` of them (1 to MaxCaptureScreens), in the grid of the playback screens.
+        /// The playback screens are closed (asking about unsaved annotations), then the empty capture screens, then the last ones;
+        /// the cameras already in a screen stay in it.
+        /// </summary>
+        private void SetCaptureScreenCount(int count)
+        {
+            count = Math.Max(1, Math.Min(MaxCaptureScreens, count));
+
+            for (int i = screenList.Count - 1; i >= 0; i--)
+            {
+                if (screenList[i] is PlayerScreen && !ScreenRemover.RemoveScreen(this, i))
+                {
+                    AfterScreenListChange();
+                    return;
+                }
+            }
+
+            if (ReduceScreens(count))
+            {
+                while (screenList.Count < count)
+                    AddCaptureScreen();
+            }
+
+            AfterSharedBufferChange();
+            AfterScreenListChange();
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) The GoPro cameras (found by Bluetooth, or known from before), each in a capture screen of its own, in the order
+        /// of their names (K1, K2, K3…), at most MaxCaptureScreens. The cameras already in a screen stay in it; the other screens of
+        /// the window are closed. The camera module needs a few seconds to hear the cameras the first time.
+        /// </summary>
+        private async void GoProsInScreens()
+        {
+            CameraManager manager = CameraTypeManager.CameraManagers.FirstOrDefault(m => m.CameraType == GoProCameraType);
+            if (manager == null)
+            {
+                MessageBox.Show(SwimLang.T("Η σύνδεση με GoPro δεν φορτώθηκε: χρειάζονται Windows 10 ή νεότερα με Bluetooth."),
+                    "GoPro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            List<CameraSummary> found = new List<CameraSummary>();
+            Cursor memoCursor = view.Cursor;
+            view.Cursor = Cursors.WaitCursor;
+            try
+            {
+                // The first call starts listening; the cameras that are on answer within a few seconds.
+                for (int attempt = 0; attempt < 10; attempt++)
+                {
+                    found = manager.DiscoverCameras(PreferencesManager.CapturePreferences.CameraBlurbs);
+                    if (found.Count > 0 && attempt >= 4)
+                        break;
+
+                    await Task.Delay(500);
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while looking for the GoPro cameras.", e);
+            }
+            finally
+            {
+                if (view != null)
+                    view.Cursor = memoCursor;
+            }
+
+            found = found.OrderBy(s => s.Alias, StringComparer.CurrentCultureIgnoreCase).Take(MaxCaptureScreens).ToList();
+            if (found.Count == 0)
+            {
+                MessageBox.Show(SwimLang.T("Δεν βρέθηκε GoPro. Άναψε τις κάμερες με τις ασύρματες συνδέσεις ανοιχτές. Την πρώτη φορά βάλε την καθεμιά σε σύζευξη (Προτιμήσεις › Συνδέσεις › Σύνδεση συσκευής › GoPro Quik) και ξαναπάτα."),
+                    "GoPro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            SetCaptureScreenCount(found.Count);
+            if (screenList.Count != found.Count || !screenList.All(s => s is CaptureScreen))
+                return;
+
+            // The cameras already in a screen stay there; the others go to the remaining screens in their order.
+            List<CameraSummary> missing = found.Where(s => !captureScreens.Any(c => c.Full && c.CameraAlias == s.Alias)).ToList();
+            foreach (CameraSummary summary in missing)
+            {
+                int target = screenList.FindIndex(s => s is CaptureScreen && (!s.Full || !found.Any(f => f.Alias == ((CaptureScreen)s).CameraAlias)));
+                if (target < 0)
+                    break;
+
+                DoLoadCameraInScreen(summary, target);
+            }
+
+            AfterScreenListChange();
+        }
+
+        /// <summary>(Swim 2.20.0) The type of the camera manager of the GoPro cameras (Kinovea.Camera.GoPro).</summary>
+        private const string GoProCameraType = "5B2F7C1E-3A94-4D6B-9E0F-0C7A1D2E8B64";
+
+        /// <summary>
         /// Close screens down to `count`: the empty ones first, then from the end.
         /// Returns false if the user cancelled the closing of a screen with unsaved annotations.
         /// </summary>
@@ -3617,15 +3783,31 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// 16x16 icon of the screen grid: 3 in a row, 2 + 2, 3 + 2.
+        /// (Swim 2.20.0) Text of the menus for several capture screens (-1: the GoPro cameras each in a screen).
         /// </summary>
-        private static Bitmap GridIcon(int count)
+        private static string CaptureScreensText(int count)
+        {
+            bool greek = Thread.CurrentThread.CurrentUICulture.TwoLetterISOLanguageName == "el";
+            switch (count)
+            {
+                case 3: return greek ? "Τρεις Οθόνες Εγγραφής" : "Three capture screens";
+                case 4: return greek ? "Τέσσερις Οθόνες Εγγραφής" : "Four capture screens";
+                case 5: return greek ? "Πέντε Οθόνες Εγγραφής" : "Five capture screens";
+                case -1: return greek ? "Οι GoPro σε οθόνες εγγραφής (Bluetooth)" : "The GoPro cameras in capture screens (Bluetooth)";
+                default: return greek ? "Περισσότερες Οθόνες Εγγραφής" : "More capture screens";
+            }
+        }
+
+        /// <summary>
+        /// 16x16 icon of the screen grid: 3 in a row, 2 + 2, 3 + 2 (in red for the capture screens).
+        /// </summary>
+        private static Bitmap GridIcon(int count, bool capture = false)
         {
             int[] rows = count == 3 ? new int[] { 3 } : (count == 4 ? new int[] { 2, 2 } : new int[] { 3, 2 });
             Bitmap bmp = new Bitmap(16, 16, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bmp))
-            using (SolidBrush fill = new SolidBrush(Color.FromArgb(120, 170, 220)))
-            using (Pen border = new Pen(Color.FromArgb(40, 80, 130)))
+            using (SolidBrush fill = new SolidBrush(capture ? Color.FromArgb(236, 150, 130) : Color.FromArgb(120, 170, 220)))
+            using (Pen border = new Pen(capture ? Color.FromArgb(150, 50, 40) : Color.FromArgb(40, 80, 130)))
             {
                 g.Clear(Color.Transparent);
                 int areaTop = rows.Length == 1 ? 4 : 2;
@@ -4192,7 +4374,9 @@ namespace Kinovea.ScreenManager
         {
             var screenDescriptors = WindowManager.ActiveWindow.ScreenList;
             int count = screenDescriptors.Count;
-            int max = screenDescriptors.All(sd => sd is ScreenDescriptorPlayback) ? MaxPlayerScreens : 2;
+            // (Swim 2.20.0) Up to five capture screens too; a camera with a video stays at two screens.
+            int max = screenDescriptors.All(sd => sd is ScreenDescriptorPlayback) ? MaxPlayerScreens :
+                (screenDescriptors.All(sd => sd is ScreenDescriptorCapture) ? MaxCaptureScreens : 2);
             if (count > max)
             {
                 log.ErrorFormat("More than {0} screen descriptors.", max);
@@ -4228,7 +4412,8 @@ namespace Kinovea.ScreenManager
                     ScreenDescriptorCapture sdc = sd.Clone() as ScreenDescriptorCapture;
                     CameraSummary summary = new CameraSummary(sdc.CameraName);
 
-                    int targetScreen = added == 0 ? 0 : 1;
+                    // (Swim 2.20.0) The screen just added, whichever its place in the grid.
+                    int targetScreen = screenList.Count - 1;
                     LoaderCamera.LoadCameraInScreen(this, summary, targetScreen, sdc);
                     added++;
                 }
@@ -4347,7 +4532,7 @@ namespace Kinovea.ScreenManager
         {
             CaptureScreen screen = new CaptureScreen();
             if (screenList.Count > 0)
-                screen.SetShared(true);
+                screen.SetShareCount(screenList.Count + 1);
 
             screen.RefreshUICulture();
             AddScreen(screen);
@@ -4395,7 +4580,7 @@ namespace Kinovea.ScreenManager
         {
             // We are about to add a new screen, signal it to a potential existing capture screen for buffer memory management.
             foreach (CaptureScreen captureScreen in captureScreens)
-                captureScreen.SetShared(true);
+                captureScreen.SetShareCount(screenList.Count + 1);
 
             AddScreenEventHandlers(screen);
             screenList.Add(screen);

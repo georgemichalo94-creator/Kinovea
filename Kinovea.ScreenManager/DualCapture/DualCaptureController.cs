@@ -42,7 +42,8 @@ namespace Kinovea.ScreenManager
         #region Public methods
         public void ScreenListChanged(List<AbstractScreen> screenList)
         {
-            if (screenList.Count == 2 && screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
+            // (Swim 2.20.0) Two capture screens or more (up to five in the grid): the common controls drive all of them.
+            if (screenList.Count >= 2 && screenList.All(s => s is CaptureScreen))
                 Enter(screenList);
             else
                 Exit();
@@ -75,8 +76,7 @@ namespace Kinovea.ScreenManager
             Exit();
 
             screens.Clear();
-            screens.Add((CaptureScreen)screenList[0]);
-            screens.Add((CaptureScreen)screenList[1]);
+            screens.AddRange(screenList.Cast<CaptureScreen>());
 
             foreach (CaptureScreen screen in screens)
             {
@@ -126,8 +126,11 @@ namespace Kinovea.ScreenManager
         }
         private void CCtrl_RecordingChanged(object sender, EventArgs<bool> e)
         {
+            // (Swim 2.20.0) One moment for all the screens: the cameras that record on their own card (GoPro) get their command at
+            // the same time and measure their start from it.
+            DateTime commandTime = DateTime.Now;
             foreach (CaptureScreen screen in screens)
-                screen.ForceRecordingStatus(e.Value);
+                screen.ForceRecordingStatus(e.Value, commandTime);
         }
         #endregion
         

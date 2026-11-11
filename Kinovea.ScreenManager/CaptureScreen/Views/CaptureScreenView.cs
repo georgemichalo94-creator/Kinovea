@@ -79,6 +79,11 @@ namespace Kinovea.ScreenManager
 
         #region Members
         private CaptureScreen presenter;
+        // (Swim 2.20.0) The live image of a camera that records on its own card (GoPro).
+        private Button btnLivePreview;
+        private Label lblRecordsOnCamera;
+        private bool? livePreviewOn;
+        private readonly List<Button> presetButtons = new List<Button>();
         private CapturedFilesView capturedFilesView;
         private bool capturedFilesPanelForceCollapsed = false;
         private bool recording;
@@ -347,6 +352,124 @@ namespace Kinovea.ScreenManager
                 btnArm.Image = Properties.Capture.quick_mode_off_16;
                 toolTips.SetToolTip(btnArm, Kinovea.ScreenManager.Languages.ScreenManagerLang.tooltip_TheCaptureTriggerIsDisarmed);
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) A camera that records on its own card (GoPro): no delay, duration, capture folder or file name (nothing is
+        /// written on the computer); a line that says so and, for a camera with a live image, its button.
+        /// </summary>
+        public void SetRecordsOnCamera(bool onCamera, bool livePreview)
+        {
+            SetRecordsOnCamera(onCamera, livePreview, null);
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) The same, with the buttons of the sets of settings of the camera (GoPro: race, technique analysis) on the
+        /// second line: a click puts the set in all the cameras of the screens, a right click only in this one.
+        /// </summary>
+        public void SetRecordsOnCamera(bool onCamera, bool livePreview, IList<Kinovea.Camera.CameraPreset> presets)
+        {
+            foreach (Control c in new Control[] { btnDelay, nudDelay, sldrDelay, btnDuration, nudDuration, cbCaptureFolder, btnCaptureFolders, tbFilename })
+                c.Visible = !onCamera;
+
+            if (onCamera && btnLivePreview == null)
+            {
+                btnLivePreview = new Button
+                {
+                    Location = new Point(223, 11),
+                    Size = new Size(190, 28),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.White,
+                    Cursor = Cursors.Hand,
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
+                btnLivePreview.FlatAppearance.BorderColor = Color.Silver;
+                btnLivePreview.Click += (s, e) => presenter.View_ToggleLivePreview();
+
+                lblRecordsOnCamera = new Label
+                {
+                    AutoSize = true,
+                    Location = new Point(8, 64),
+                    ForeColor = Color.DimGray
+                };
+
+                pnlControls.Controls.Add(btnLivePreview);
+                pnlControls.Controls.Add(lblRecordsOnCamera);
+            }
+
+            if (btnLivePreview != null)
+            {
+                btnLivePreview.Visible = onCamera && livePreview;
+                lblRecordsOnCamera.Text = SwimLang.T("Εγγραφή στην κάρτα της κάμερας: τίποτα δεν γράφεται στον υπολογιστή.");
+                livePreviewOn = null;
+                UpdateLivePreview(false);
+            }
+
+            SetPresetButtons(onCamera ? presets : null);
+            if (lblRecordsOnCamera != null)
+                lblRecordsOnCamera.Visible = onCamera && presetButtons.Count == 0;
+        }
+
+        /// <summary>The buttons of the sets of settings (none when the camera has no sets).</summary>
+        private void SetPresetButtons(IList<Kinovea.Camera.CameraPreset> presets)
+        {
+            foreach (Button b in presetButtons)
+            {
+                pnlControls.Controls.Remove(b);
+                b.Dispose();
+            }
+
+            presetButtons.Clear();
+            if (presets == null || presets.Count == 0)
+                return;
+
+            int x = 8;
+            foreach (Kinovea.Camera.CameraPreset preset in presets)
+            {
+                string id = preset.Id;
+                Button button = new Button
+                {
+                    Location = new Point(x, 58),
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    Height = 28,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.White,
+                    Cursor = Cursors.Hand,
+                    Text = "⚙ " + preset.Name,
+                    Padding = new Padding(4, 0, 4, 0)
+                };
+                button.FlatAppearance.BorderColor = Color.Silver;
+                button.Click += (s, e) => presenter.View_ApplyCameraPreset(id, true);
+                button.MouseUp += (s, e) =>
+                {
+                    if (e.Button != MouseButtons.Right)
+                        return;
+
+                    ContextMenuStrip menu = new ContextMenuStrip();
+                    menu.Items.Add(new ToolStripMenuItem(SwimLang.T("Μόνο σε αυτή την κάμερα"), null, (s2, e2) => presenter.View_ApplyCameraPreset(id, false)));
+                    menu.Closed += (s2, e2) => BeginInvoke((Action)(() => menu.Dispose()));
+                    menu.Show(button, e.Location);
+                };
+
+                toolTips.SetToolTip(button, string.Format(SwimLang.T("{0} σε όλες τις GoPro των οθονών: {1}.\nΤο βλέπεις στην οθόνη κάθε κάμερας. Δεξί κλικ: μόνο σε αυτή την κάμερα."),
+                    preset.Name, preset.Description));
+
+                pnlControls.Controls.Add(button);
+                presetButtons.Add(button);
+                x += button.PreferredSize.Width + 6;
+            }
+        }
+
+        /// <summary>(Swim 2.20.0) The text of the button of the live image (only when it changes).</summary>
+        public void UpdateLivePreview(bool on)
+        {
+            if (btnLivePreview == null || livePreviewOn == on)
+                return;
+
+            livePreviewOn = on;
+            btnLivePreview.Text = on ? SwimLang.T("👁 Κλείσιμο εικόνας") : SwimLang.T("👁 Ζωντανή εικόνα (Wi-Fi)");
+            toolTips.SetToolTip(btnLivePreview, SwimLang.T("Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή· κλείνει μόνη της σε 3 λεπτά."));
         }
 
         public void UpdateRecordingStatus(bool recording)

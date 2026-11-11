@@ -162,6 +162,7 @@
     <Compile Include="ImageAspectRatio.cs" />
     <Compile Include="Interfaces\IConnectionWizard.cs" />
     <Compile Include="Interfaces\ICaptureSource.cs" />
+    <Compile Include="Interfaces\IRemoteRecordingSource.cs" />
     <Compile Include="Languages\CameraLang.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>

@@ -388,7 +388,8 @@ namespace Kinovea.ScreenManager
             // Προβολή: the screens, full screen, the panels; the analysis on the video; the image and the filters of the video.
             ToolStripMenuItem screens = Group("Οθόνες", Properties.Resources.television);
             Put(screens, placed, named, "mnuOnePlayer", "mnuTwoPlayers", "mnuThreePlayers", "mnuFourPlayers", "mnuFivePlayers", null,
-                "mnuOneCapture", "mnuTwoCaptures", "mnuTwoMixed", null, "mnuVerticalLayout", "mnuSwapScreens");
+                "mnuOneCapture", "mnuTwoCaptures", "mnuThreeCaptures", "mnuFourCaptures", "mnuFiveCaptures", "mnuGoProScreens", "mnuTwoMixed",
+                null, "mnuVerticalLayout", "mnuSwapScreens");
             ToolStripMenuItem picture = Group("Εικόνα", Properties.Resources.image);
             if (image != null)
                 PutAll(picture, placed, had[image]);
@@ -817,6 +818,10 @@ namespace Kinovea.ScreenManager
                 { "mnuFivePlayers", "5 βίντεο" },
                 { "mnuOneCapture", "1 κάμερα (ζωντανά)" },
                 { "mnuTwoCaptures", "2 κάμερες" },
+                { "mnuThreeCaptures", "3 κάμερες" },
+                { "mnuFourCaptures", "4 κάμερες" },
+                { "mnuFiveCaptures", "5 κάμερες" },
+                { "mnuGoProScreens", "GoPro: όλες σε οθόνες (Bluetooth)" },
                 { "mnuTwoMixed", "Κάμερα + βίντεο" },
                 { "mnuVerticalLayout", "Κάθετη διάταξη" },
                 { "mnuSwapScreens", "Αντιμετάθεση οθονών" },
