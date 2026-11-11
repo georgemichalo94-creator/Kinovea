@@ -84,6 +84,8 @@ namespace Kinovea.ScreenManager
         private Label lblRecordsOnCamera;
         private bool? livePreviewOn;
         private readonly List<Button> presetButtons = new List<Button>();
+        private Button btnTakeDetails;
+        private bool takesHooked;
         private CapturedFilesView capturedFilesView;
         private bool capturedFilesPanelForceCollapsed = false;
         private bool recording;
@@ -369,6 +371,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void SetRecordsOnCamera(bool onCamera, bool livePreview, IList<Kinovea.Camera.CameraPreset> presets)
         {
+            SetRecordsOnCamera(onCamera, livePreview, presets, false);
+        }
+
+        /// <summary>
+        /// (Swim 2.21.0) The same, with the buttons of the recordings of a camera that gives its files (a GoPro): «📝» the details of the
+        /// next recordings (it shows the athlete or the event), «📥» their videos to the folder (from the cards or by Wi-Fi).
+        /// </summary>
+        public void SetRecordsOnCamera(bool onCamera, bool livePreview, IList<Kinovea.Camera.CameraPreset> presets, bool media)
+        {
             foreach (Control c in new Control[] { btnDelay, nudDelay, sldrDelay, btnDuration, nudDuration, cbCaptureFolder, btnCaptureFolders, tbFilename })
                 c.Visible = !onCamera;
 
@@ -405,13 +416,13 @@ namespace Kinovea.ScreenManager
                 UpdateLivePreview(false);
             }
 
-            SetPresetButtons(onCamera ? presets : null);
+            SetPresetButtons(onCamera ? presets : null, onCamera && media);
             if (lblRecordsOnCamera != null)
                 lblRecordsOnCamera.Visible = onCamera && presetButtons.Count == 0;
         }
 
-        /// <summary>The buttons of the sets of settings (none when the camera has no sets).</summary>
-        private void SetPresetButtons(IList<Kinovea.Camera.CameraPreset> presets)
+        /// <summary>The buttons of the sets of settings (none when the camera has no sets), then the ones of the recordings.</summary>
+        private void SetPresetButtons(IList<Kinovea.Camera.CameraPreset> presets, bool media)
         {
             foreach (Button b in presetButtons)
             {
@@ -420,10 +431,19 @@ namespace Kinovea.ScreenManager
             }
 
             presetButtons.Clear();
-            if (presets == null || presets.Count == 0)
-                return;
+            btnTakeDetails = null;
+            if (!takesHooked)
+            {
+                takesHooked = true;
+                SwimGoProTakes.Changed += SwimGoProTakes_Changed;
+                pnlControls.Resize += (s, e) => FitTakeDetails();
+                Disposed += (s, e) => SwimGoProTakes.Changed -= SwimGoProTakes_Changed;
+            }
 
             int x = 8;
+            if (presets == null)
+                presets = new List<Kinovea.Camera.CameraPreset>();
+
             foreach (Kinovea.Camera.CameraPreset preset in presets)
             {
                 string id = preset.Id;
@@ -436,7 +456,7 @@ namespace Kinovea.ScreenManager
                     FlatStyle = FlatStyle.Flat,
                     BackColor = Color.White,
                     Cursor = Cursors.Hand,
-                    Text = "⚙ " + preset.Name,
+                    Text = "⚙ " + preset.ShortName,
                     Padding = new Padding(4, 0, 4, 0)
                 };
                 button.FlatAppearance.BorderColor = Color.Silver;
@@ -459,6 +479,94 @@ namespace Kinovea.ScreenManager
                 presetButtons.Add(button);
                 x += button.PreferredSize.Width + 6;
             }
+
+            if (!media)
+                return;
+
+            // (2.21.0) The videos of the recordings, then the details of the next recordings (the athlete or the event, on the button:
+            // the last one, as wide as the screen leaves it, so that no button goes out of a narrow screen).
+            Button btnTakes = SmallButton(x, SwimLang.T("📥 Βίντεο"));
+            btnTakes.Click += (s, e) => presenter.View_ShowTakes();
+            toolTips.SetToolTip(btnTakes, SwimLang.T("Οι εγγραφές των GoPro και τα βίντεό τους: από τις κάρτες (card reader) ή με το Wi-Fi της κάμερας στον φάκελο, με τα ονόματα των αθλητών."));
+            x += btnTakes.PreferredSize.Width + 6;
+
+            btnTakeDetails = SmallButton(x, "📝");
+            btnTakeDetails.AutoSize = false;
+            btnTakeDetails.AutoEllipsis = true;
+            btnTakeDetails.TextAlign = ContentAlignment.MiddleLeft;
+            btnTakeDetails.Size = new Size(120, 28);
+            btnTakeDetails.Click += (s, e) => presenter.View_EditTakeDetails();
+            UpdateTakeDetails();
+        }
+
+        /// <summary>The button of the details as wide as its text, within the screen.</summary>
+        private void FitTakeDetails()
+        {
+            Button button = btnTakeDetails;
+            if (button == null || button.IsDisposed)
+                return;
+
+            int wanted = TextRenderer.MeasureText(button.Text, button.Font).Width + 24;
+            int room = pnlControls.ClientSize.Width - button.Left - 8;
+            button.Width = Math.Max(56, Math.Min(wanted, room));
+        }
+
+        private Button SmallButton(int x, string text)
+        {
+            Button button = new Button
+            {
+                Location = new Point(x, 58),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Height = 28,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                Cursor = Cursors.Hand,
+                Text = text,
+                Padding = new Padding(4, 0, 4, 0)
+            };
+            button.FlatAppearance.BorderColor = Color.Silver;
+            pnlControls.Controls.Add(button);
+            presetButtons.Add(button);
+            return button;
+        }
+
+        private void SwimGoProTakes_Changed(object sender, EventArgs e)
+        {
+            try
+            {
+                if (IsDisposed || !IsHandleCreated)
+                    return;
+
+                if (InvokeRequired)
+                    BeginInvoke((Action)UpdateTakeDetails);
+                else
+                    UpdateTakeDetails();
+            }
+            catch (Exception)
+            {
+                // The screen is closing.
+            }
+        }
+
+        /// <summary>The button of the details says who the next recordings are of.</summary>
+        private void UpdateTakeDetails()
+        {
+            Button button = btnTakeDetails;
+            if (button == null || button.IsDisposed)
+                return;
+
+            SwimTakeDetails next = SwimGoProTakes.Next;
+            string summary = next.Summary;
+            string shown = summary.Length > 34 ? summary.Substring(0, 33) + "…" : summary;
+            button.Text = "📝 " + shown;
+            string root = SwimGoProTakes.Root;
+            string path = root.Length > 0 ?
+                SwimGoProTakes.TargetPath(root, new SwimTake { Start = DateTime.Now, Details = next }, presenter != null ? presenter.CameraAlias : "", 1) :
+                SwimLang.T("(διάλεξε τον φάκελο των βίντεο)");
+            toolTips.SetToolTip(button, SwimLang.T("Τα στοιχεία των επόμενων εγγραφών (αθλητής, στροφή ή εκκίνηση, αγώνας): δίνουν τον φάκελο και το όνομα των βίντεο.") +
+                "\n" + summary + "\n" + path);
+            FitTakeDetails();
         }
 
         /// <summary>(Swim 2.20.0) The text of the button of the live image (only when it changes).</summary>

@@ -199,6 +199,7 @@ namespace Kinovea.ScreenManager
         private bool synched;
         // (Swim 2.20.0) A camera that records on its own card: the moment of the last command (shared by the screens started together).
         private DateTime remoteCommandTime = DateTime.MinValue;
+        private DateTime remoteTakeStart = DateTime.MinValue;
         private IRemoteRecordingSource remoteSource;
         
         private Metadata metadata;
@@ -661,6 +662,18 @@ namespace Kinovea.ScreenManager
             view.UpdateLivePreview(live.LivePreview);
         }
 
+        /// <summary>(Swim 2.21.0) The details of the next recordings (athlete, race…): the names of the videos.</summary>
+        public void View_EditTakeDetails()
+        {
+            FormGoProTransfer.EditDetails(view != null ? view.FindForm() : null, CameraAlias);
+        }
+
+        /// <summary>(Swim 2.21.0) The recordings and their videos: from the cards or by Wi-Fi to the folder.</summary>
+        public void View_ShowTakes()
+        {
+            FormGoProTransfer.ShowWindow(view != null ? view.FindForm() : null);
+        }
+
         /// <summary>(Swim 2.20.0) A set of settings (GoPro: race, technique analysis) in this camera or in all the cameras of its kind.</summary>
         public void View_ApplyCameraPreset(string id, bool allCameras)
         {
@@ -785,7 +798,8 @@ namespace Kinovea.ScreenManager
             // (Swim 2.20.0) A camera that records on its own card tells its screen when it starts or stops.
             AttachRemote();
             ICameraPresetSource presetSource = cameraGrabber as ICameraPresetSource;
-            view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource, presetSource != null ? presetSource.CameraPresets : null);
+            view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource, presetSource != null ? presetSource.CameraPresets : null,
+                cameraGrabber is IRemoteMediaSource);
 
             RaiseActivated(EventArgs.Empty);
 
@@ -800,6 +814,10 @@ namespace Kinovea.ScreenManager
             remoteSource = cameraGrabber as IRemoteRecordingSource;
             if (remoteSource != null)
                 remoteSource.RemoteRecordingChanged += RemoteSource_RecordingChanged;
+
+            // (2.21.0) Its files can be downloaded through this screen.
+            if (cameraGrabber is IRemoteMediaSource)
+                SwimGoProTakes.Register(this);
         }
 
         private void DetachRemote()
@@ -808,6 +826,47 @@ namespace Kinovea.ScreenManager
                 remoteSource.RemoteRecordingChanged -= RemoteSource_RecordingChanged;
 
             remoteSource = null;
+            SwimGoProTakes.Unregister(this);
+        }
+
+        /// <summary>(Swim 2.21.0) The camera of this screen when it gives its files (a GoPro), else null.</summary>
+        public IRemoteMediaSource RemoteMedia
+        {
+            get { return cameraLoaded ? cameraGrabber as IRemoteMediaSource : null; }
+        }
+
+        /// <summary>(Swim 2.21.0) A recording of the camera of this screen is kept with the details of now (the names of its videos).</summary>
+        private void KeepTake(bool started, DateTime time)
+        {
+            try
+            {
+                IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
+                if (media == null || cameraSummary == null)
+                    return;
+
+                if (started)
+                    SwimGoProTakes.Started(cameraSummary.Alias, media.CameraSerial, media.CameraModel, time);
+                else
+                    SwimGoProTakes.Stopped(cameraSummary.Alias, time);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while keeping the recording of the camera.", e);
+            }
+        }
+
+        /// <summary>(Swim 2.21.0) The camera of this screen did not start at the command: it is not in that recording.</summary>
+        private void ForgetTake(DateTime commandTime)
+        {
+            try
+            {
+                if (cameraSummary != null)
+                    SwimGoProTakes.Failed(cameraSummary.Alias, commandTime);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while taking a camera out of a recording.", e);
+            }
         }
 
         private void RemoteSource_RecordingChanged(object sender, EventArgs e)
@@ -838,6 +897,15 @@ namespace Kinovea.ScreenManager
                 return;
 
             recording = onCamera;
+
+            // (2.21.0) A start the camera did not do: the recording has no file of this camera, it leaves the recording.
+            IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
+            if (!recording && media != null && remoteTakeStart != DateTime.MinValue && media.FailedStart == remoteTakeStart)
+                ForgetTake(remoteTakeStart);
+            else
+                KeepTake(recording, DateTime.Now);
+
+            remoteTakeStart = recording ? DateTime.Now : DateTime.MinValue;
             if (recording)
             {
                 stopwatchRecording.Restart();
@@ -866,6 +934,8 @@ namespace Kinovea.ScreenManager
             DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
             remoteCommandTime = DateTime.MinValue;
             remoteSource.SetRemoteRecording(true, commandTime);
+            KeepTake(true, commandTime);
+            remoteTakeStart = commandTime;
 
             recording = true;
             stopwatchRecording.Restart();
@@ -884,6 +954,8 @@ namespace Kinovea.ScreenManager
             DateTime commandTime = remoteCommandTime != DateTime.MinValue && (DateTime.Now - remoteCommandTime).TotalSeconds < 2 ? remoteCommandTime : DateTime.Now;
             remoteCommandTime = DateTime.MinValue;
             remoteSource.SetRemoteRecording(false, commandTime);
+            KeepTake(false, DateTime.Now);
+            remoteTakeStart = DateTime.MinValue;
 
             recording = false;
             StartQuietPeriod();

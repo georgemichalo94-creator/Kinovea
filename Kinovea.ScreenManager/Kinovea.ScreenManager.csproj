@@ -1081,6 +1081,14 @@
     <Compile Include="SwimAnalysis\SwimOfficialResults.cs" />
     <Compile Include="SwimAnalysis\SwimResultsPaste.cs" />
     <Compile Include="SwimAnalysis\SwimPasteDialog.cs" />
+    <Compile Include="SwimAnalysis\SwimGoProTakes.cs" />
+    <Compile Include="SwimAnalysis\SwimGoProFiles.cs" />
+    <Compile Include="SwimAnalysis\FormGoProTakeDetails.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SwimAnalysis\FormGoProTransfer.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimPackage.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Package.cs" />
     <Compile Include="SwimAnalysis\FormSwimPackage.cs">

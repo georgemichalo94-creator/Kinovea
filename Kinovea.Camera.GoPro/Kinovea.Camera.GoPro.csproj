@@ -60,6 +60,7 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
   </ItemGroup>
@@ -70,6 +71,7 @@
     </Compile>
     <Compile Include="GoProCaptureSource.cs" />
     <Compile Include="GoProDevice.cs" />
+    <Compile Include="GoProMedia.cs" />
     <Compile Include="GoProProtocol.cs" />
     <Compile Include="GoProScanner.cs" />
     <Compile Include="GoProStatusPainter.cs" />
