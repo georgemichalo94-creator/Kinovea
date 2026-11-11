@@ -33,6 +33,7 @@ namespace Kinovea.Camera.GoPro
 
         private const int FrameBytes = Width * Height * 3;
         private const int UdpPort = 8554;
+        private const int SioUdpConnReset = -1744830452;
         private const string CameraIp = "10.5.5.9";
         private const string CameraAddress = "http://" + CameraIp + ":8080";
 
@@ -55,6 +56,7 @@ namespace Kinovea.Camera.GoPro
         private DateTime latestAt = DateTime.MinValue;
         private DateTime firstFrameAt = DateTime.MinValue;
         private long frames;
+        private long packets;
         private string status;
         private GoProWifi wifi;
         private UdpClient udp;
@@ -248,7 +250,7 @@ namespace Kinovea.Camera.GoPro
             catch (Exception e)
             {
                 log.Error("Error with the live image of the GoPro.", e);
-                outcome = GoProText.T("Η ζωντανή εικόνα σταμάτησε από λάθος: ξαναδοκίμασε.", "The live image stopped on an error: try again.");
+                outcome = GoProText.T("σταμάτησε από λάθος: ξαναδοκίμασε.", "stopped on an error: try again.");
             }
 
             if (token.IsCancellationRequested)
@@ -271,9 +273,9 @@ namespace Kinovea.Camera.GoPro
         private async Task<string> StreamAsync(CancellationToken token)
         {
             device.SetPreviewWanted(true);
-            SetStatus(GoProText.T("Ανοίγει το Wi-Fi της κάμερας…", "Turning the Wi-Fi of the camera on…"));
+            SetStatus(GoProText.T("ανοίγει το Wi-Fi της κάμερας…", "turning the Wi-Fi of the camera on…"));
             if (!device.IsConnected)
-                return GoProText.T("Η ζωντανή εικόνα θέλει πρώτα τη σύνδεση Bluetooth της κάμερας.", "The live image first needs the Bluetooth connection of the camera.");
+                return GoProText.T("θέλει πρώτα τη σύνδεση Bluetooth της κάμερας.", "it first needs the Bluetooth connection of the camera.");
 
             await device.SetWifiAsync(true).ConfigureAwait(false);
             string[] credentials = null;
@@ -285,9 +287,9 @@ namespace Kinovea.Camera.GoPro
             }
 
             if (credentials == null)
-                return GoProText.T("Δεν διαβάστηκε το Wi-Fi της κάμερας από το Bluetooth.", "The Wi-Fi of the camera could not be read by Bluetooth.");
+                return GoProText.T("δεν διαβάστηκε το Wi-Fi της κάμερας από το Bluetooth.", "the Wi-Fi of the camera could not be read by Bluetooth.");
 
-            SetStatus(GoProText.T("Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας…", "The computer joins the Wi-Fi of the camera…"));
+            SetStatus(GoProText.T("ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας…", "the computer joins the Wi-Fi of the camera…"));
             wifi = new GoProWifi();
             string ssid = credentials[0];
             string password = credentials[1];
@@ -296,7 +298,7 @@ namespace Kinovea.Camera.GoPro
             if (error != null)
                 return error;
 
-            SetStatus(GoProText.T("Η κάμερα ξεκινά την εικόνα…", "The camera starts its image…"));
+            SetStatus(GoProText.T("η κάμερα ξεκινά την εικόνα της…", "the camera starts its image…"));
             StartReceiving();
 
             using (HttpClient http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) })
@@ -312,7 +314,7 @@ namespace Kinovea.Camera.GoPro
 
                 token.ThrowIfCancellationRequested();
                 if (!started)
-                    return GoProText.T("Η κάμερα δεν ξεκίνησε την εικόνα της (Wi-Fi).", "The camera did not start its image (Wi-Fi).");
+                    return GoProText.T("η κάμερα δεν ξεκίνησε την εικόνα της (Wi-Fi).", "the camera did not start its image (Wi-Fi).");
 
                 log.Debug("The stream of the live image is asked.");
                 Stopwatch sinceStart = Stopwatch.StartNew();
@@ -335,20 +337,28 @@ namespace Kinovea.Camera.GoPro
                     if (first != DateTime.MinValue && (DateTime.UtcNow - first).TotalSeconds >= MaxSeconds)
                     {
                         log.DebugFormat("The live image closes after {0} s ({1} images).", MaxSeconds, count);
-                        return GoProText.T("Η ζωντανή εικόνα έκλεισε μόνη της μετά από 3 λεπτά (ζέστη και μπαταρία της κάμερας). Πάτα ξανά για να την ανοίξεις.",
-                            "The live image closed by itself after 3 minutes (heat and battery of the camera). Press again to open it.");
+                        return GoProText.T("έκλεισε μόνη της μετά από 3 λεπτά (ζέστη και μπαταρία της κάμερας). Πάτα ξανά για να την ανοίξεις.",
+                            "closed by itself after 3 minutes (heat and battery of the camera). Press again to open it.");
                     }
 
-                    // No image at all: the firewall of Windows may hold the stream of the camera.
+                    // No image at all: nothing comes (the firewall of Windows may hold the stream), or it comes and is not decoded.
                     if (first == DateTime.MinValue)
                     {
+                        bool arriving = Interlocked.Read(ref packets) > 0;
                         if (sinceStart.Elapsed.TotalSeconds > 30)
-                            return GoProText.T("Δεν ήρθε εικόνα από την κάμερα. Αν τα Windows ρώτησαν για το τείχος προστασίας, πάτα «Να επιτρέπεται η πρόσβαση» και ξαναδοκίμασε.",
-                                "No image came from the camera. If Windows asked about the firewall, press \"Allow access\" and try again.");
+                        {
+                            log.DebugFormat("No image after 30 s ({0} packets).", Interlocked.Read(ref packets));
+                            return arriving ?
+                                GoProText.T("η εικόνα της κάμερας έρχεται αλλά δεν διαβάζεται (ffmpeg). Ξαναδοκίμασε.", "the image of the camera comes but cannot be read (ffmpeg). Try again.") :
+                                GoProText.T("δεν ήρθε εικόνα από την κάμερα. Αν τα Windows ρώτησαν για το τείχος προστασίας, πάτα «Να επιτρέπεται η πρόσβαση» και ξαναδοκίμασε.",
+                                    "no image came from the camera. If Windows asked about the firewall, press \"Allow access\" and try again.");
+                        }
 
                         if (sinceStart.Elapsed.TotalSeconds > 6)
-                            SetStatus(GoProText.T("Δεν έρχεται ακόμη εικόνα. Αν τα Windows ρωτούν για το τείχος προστασίας, πάτα «Να επιτρέπεται η πρόσβαση».",
-                                "No image yet. If Windows asks about the firewall, press \"Allow access\"."));
+                            SetStatus(arriving ?
+                                GoProText.T("η εικόνα έρχεται, διαβάζεται…", "the image comes, it is being read…") :
+                                GoProText.T("δεν έρχεται ακόμη εικόνα. Αν τα Windows ρωτούν για το τείχος προστασίας, πάτα «Να επιτρέπεται η πρόσβαση».",
+                                    "no image yet. If Windows asks about the firewall, press \"Allow access\"."));
                     }
 
                     // The camera is kept awake on its Wi-Fi; a stream that stopped (a mode without preview) is asked again.
@@ -359,7 +369,7 @@ namespace Kinovea.Camera.GoPro
                         if (!fresh)
                         {
                             if (first != DateTime.MinValue)
-                                SetStatus(GoProText.T("Περιμένει την εικόνα της κάμερας…", "Waiting for the image of the camera…"));
+                                SetStatus(GoProText.T("περιμένει την εικόνα της κάμερας…", "waiting for the image of the camera…"));
 
                             Punch();
                             await GetAsync(http, "/gopro/camera/stream/start").ConfigureAwait(false);
@@ -432,6 +442,17 @@ namespace Kinovea.Camera.GoPro
             udp = new UdpClient(new IPEndPoint(IPAddress.Any, UdpPort));
             udp.Client.ReceiveBufferSize = 4 * 1024 * 1024;
 
+            // Windows reports the "port unreachable" answer to a packet sent from this socket (the packet towards the camera) as an
+            // error of the next receive, which would end the stream: turned off.
+            try
+            {
+                udp.Client.IOControl((IOControlCode)SioUdpConnReset, new byte[] { 0, 0, 0, 0 }, null);
+            }
+            catch (Exception e)
+            {
+                log.Debug("Could not turn off the reset of the UDP socket.", e);
+            }
+
             Stream input = ffmpeg.StandardInput.BaseStream;
             Stream output = ffmpeg.StandardOutput.BaseStream;
             CancellationToken token = cancel.Token;
@@ -445,13 +466,22 @@ namespace Kinovea.Camera.GoPro
         private void Receive(Stream input, CancellationToken token)
         {
             IPEndPoint from = new IPEndPoint(IPAddress.Any, 0);
-            long packets = 0;
             try
             {
                 while (!token.IsCancellationRequested)
                 {
-                    byte[] datagram = udp.Receive(ref from);
-                    if (packets++ == 0)
+                    byte[] datagram;
+                    try
+                    {
+                        datagram = udp.Receive(ref from);
+                    }
+                    catch (SocketException e) when (e.SocketErrorCode == SocketError.ConnectionReset)
+                    {
+                        // An answer to the packet towards the camera, not the end of the stream.
+                        continue;
+                    }
+
+                    if (Interlocked.Increment(ref packets) == 1)
                         log.DebugFormat("The stream of the live image comes from {0}.", from);
 
                     input.Write(datagram, 0, datagram.Length);

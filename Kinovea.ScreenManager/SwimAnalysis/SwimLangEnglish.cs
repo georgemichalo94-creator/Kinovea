@@ -2298,6 +2298,8 @@ namespace Kinovea.ScreenManager
             { "5 κάμερες", "5 cameras" },
             { "GoPro: όλες σε οθόνες (Bluetooth)", "GoPro: all in screens (Bluetooth)" },
             { "Εγγραφή στην κάρτα της κάμερας: τίποτα δεν γράφεται στον υπολογιστή.", "Recording on the card of the camera: nothing is written on the computer." },
+            { "Μόνο σε αυτή την κάμερα", "Only in this camera" },
+            { "{0} σε όλες τις GoPro των οθονών: {1}.\nΤο βλέπεις στην οθόνη κάθε κάμερας. Δεξί κλικ: μόνο σε αυτή την κάμερα.", "{0} in all the GoPro cameras of the screens: {1}.\nEach screen shows how it went. Right click: only in this camera." },
             { "👁 Κλείσιμο εικόνας", "👁 Close the image" },
             { "👁 Ζωντανή εικόνα (Wi-Fi)", "👁 Live image (Wi-Fi)" },
             { "Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή· κλείνει μόνη της σε 3 λεπτά.", "The image of the camera by its Wi-Fi, one camera at a time (about 0.3 s behind). The computer joins the Wi-Fi of the camera while it is on; it closes by itself after 3 minutes." },

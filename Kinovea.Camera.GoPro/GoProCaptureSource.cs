@@ -5,8 +5,10 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 */
 #endregion
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -19,7 +21,7 @@ namespace Kinovea.Camera.GoPro
     /// (Swim 2.20.0) The source of a capture screen with a GoPro: its images show the state of the camera (4 per second), its record
     /// button starts and stops the camera itself (the video is written on the card of the camera, not on the computer).
     /// </summary>
-    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource, ILivePreviewSource
+    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource, ILivePreviewSource, ICameraPresetSource
     {
         public event EventHandler<FrameProducedEventArgs> FrameProduced;
         public event EventHandler GrabbingStatusChanged;
@@ -244,6 +246,46 @@ namespace Kinovea.Camera.GoPro
             catch (Exception)
             {
                 return false;
+            }
+        }
+        #endregion
+
+        #region ICameraPresetSource
+        /// <summary>The sets of settings of the GoPro cameras (race, technique analysis), in the language of the interface.</summary>
+        public IList<CameraPreset> CameraPresets
+        {
+            get { return GoProPresets.All.Select(p => new CameraPreset(p.Id, p.Name, p.Description)).ToList(); }
+        }
+
+        /// <summary>The GoPro cameras of the screens that are connected now.</summary>
+        public int ConnectedCameras
+        {
+            get { return GoProDevice.Active().Count(d => d.IsConnected); }
+        }
+
+        /// <summary>The set in this camera or in all the GoPro cameras of the screens (each one at its own pace). Returns at once.</summary>
+        public void ApplyCameraPreset(string id, bool allCameras)
+        {
+            GoProPreset preset = GoProPresets.Find(id);
+            if (preset == null)
+                return;
+
+            List<GoProDevice> devices = new List<GoProDevice>();
+            if (allCameras)
+            {
+                devices.AddRange(GoProDevice.Active());
+            }
+            else
+            {
+                GoProDevice d = device;
+                if (d != null)
+                    devices.Add(d);
+            }
+
+            foreach (GoProDevice d in devices)
+            {
+                GoProDevice target = d;
+                System.Threading.Tasks.Task.Run(() => target.ApplyPresetAsync(preset));
             }
         }
         #endregion

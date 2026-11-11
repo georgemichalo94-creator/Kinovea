@@ -134,11 +134,11 @@ namespace Kinovea.Camera.GoPro
             uint negotiated;
             uint error = WlanOpenHandle(ClientVersion, IntPtr.Zero, out negotiated, out handle);
             if (error != 0)
-                return GoProText.T("Το Wi-Fi των Windows δεν απαντά (κωδικός " + error + ").", "The Wi-Fi of Windows does not answer (code " + error + ").");
+                return GoProText.T("το Wi-Fi των Windows δεν απαντά (κωδικός " + error + ").", "the Wi-Fi of Windows does not answer (code " + error + ").");
 
             List<Interface> interfaces = Interfaces(handle);
             if (interfaces.Count == 0)
-                return GoProText.T("Δεν βρέθηκε Wi-Fi στον υπολογιστή.", "No Wi-Fi was found on this computer.");
+                return GoProText.T("δεν βρέθηκε Wi-Fi στον υπολογιστή.", "no Wi-Fi was found on this computer.");
 
             // A free adapter first (a second Wi-Fi keeps the internet of the computer), else the one of the computer.
             Interface chosen = interfaces.Find(i => i.State == StateDisconnected) ?? interfaces.Find(i => i.State == StateConnected) ?? interfaces[0];
@@ -152,8 +152,8 @@ namespace Kinovea.Camera.GoPro
             uint reason;
             error = WlanSetProfile(handle, ref used, ProfileUser, ProfileXml(ssid, password), null, true, IntPtr.Zero, out reason);
             if (error != 0)
-                return GoProText.T("Το δίκτυο της κάμερας δεν μπήκε στα Windows (κωδικός " + error + "/" + reason + ").",
-                    "The network of the camera could not be added to Windows (code " + error + "/" + reason + ").");
+                return GoProText.T("το δίκτυο της κάμερας δεν μπήκε στα Windows (κωδικός " + error + "/" + reason + ").",
+                    "the network of the camera could not be added to Windows (code " + error + "/" + reason + ").");
 
             cameraProfile = ssid;
             log.DebugFormat("Joining the Wi-Fi of the camera with \"{0}\" (the only adapter: {1}).", AdapterName, SharedAdapter);
@@ -197,8 +197,8 @@ namespace Kinovea.Camera.GoPro
             if (token.IsCancellationRequested)
                 return null;
 
-            return GoProText.T("Ο υπολογιστής δεν μπήκε στο Wi-Fi της κάμερας σε " + (timeoutMs / 1000) + " s: δες αν το Wi-Fi του υπολογιστή είναι ανοιχτό.",
-                "The computer did not join the Wi-Fi of the camera within " + (timeoutMs / 1000) + " s: check that the Wi-Fi of the computer is on.");
+            return GoProText.T("ο υπολογιστής δεν μπήκε στο Wi-Fi της κάμερας σε " + (timeoutMs / 1000) + " s: δες αν το Wi-Fi του υπολογιστή είναι ανοιχτό.",
+                "the computer did not join the Wi-Fi of the camera within " + (timeoutMs / 1000) + " s: check that the Wi-Fi of the computer is on.");
         }
 
         /// <summary>Back to the network of before (or off the network of the camera); the profile of the camera is removed.</summary>

@@ -74,6 +74,7 @@
     <Compile Include="GoProScanner.cs" />
     <Compile Include="GoProStatusPainter.cs" />
     <Compile Include="GoProText.cs" />
+    <Compile Include="GoProPresets.cs" />
     <Compile Include="GoProPreview.cs" />
     <Compile Include="GoProWifi.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

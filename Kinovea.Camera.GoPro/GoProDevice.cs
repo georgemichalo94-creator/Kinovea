@@ -70,6 +70,10 @@ namespace Kinovea.Camera.GoPro
 
         /// <summary>The seconds before the live image closes by itself (-1 when it is not on).</summary>
         public int PreviewSecondsLeft = -1;
+
+        /// <summary>How an action went (a set of settings), for a while; amber when something did not go.</summary>
+        public string Notice;
+        public bool NoticeError;
     }
 
     /// <summary>
@@ -191,6 +195,10 @@ namespace Kinovea.Camera.GoPro
         private DateTime linkSince = DateTime.UtcNow;
         private string problem;
         private DateTime problemUntil = DateTime.MinValue;
+        private string notice;
+        private bool noticeError;
+        private DateTime noticeUntil = DateTime.MinValue;
+        private int applying;
         private string modelName;
         private string firmware;
         private int batteryPercent = -1;
@@ -1151,6 +1159,114 @@ namespace Kinovea.Camera.GoPro
         }
         #endregion
 
+        #region Sets of settings
+        /// <summary>
+        /// Puts a set of settings in the camera (the video mode first): each setting with the values its model takes, twice when one
+        /// depends on another (a resolution that needs another frame rate first). The screen says how it went. Not while it records.
+        /// </summary>
+        public async Task ApplyPresetAsync(GoProPreset preset)
+        {
+            if (preset == null)
+                return;
+
+            if (Interlocked.Exchange(ref applying, 1) == 1)
+                return;
+
+            try
+            {
+                string name = preset.Name;
+                if (!IsConnected)
+                {
+                    SetNotice(name + ": " + GoProText.T("η κάμερα δεν είναι συνδεδεμένη ακόμη.", "the camera is not connected yet."), true, 60);
+                    return;
+                }
+
+                bool recording;
+                lock (locker)
+                    recording = encoding || (pendingUntil > DateTime.UtcNow && desiredRecording);
+
+                if (recording)
+                {
+                    SetNotice(name + ": " + GoProText.T("σταμάτα πρώτα την εγγραφή.", "stop the recording first."), true, 60);
+                    return;
+                }
+
+                SetNotice(name + "…", false, 30);
+                log.DebugFormat("Putting \"{0}\" in the GoPro {1:X12}.", preset.Id, Address);
+
+                // The video mode (not photos or time lapses).
+                byte[] group = new byte[] { GoProIds.CmdLoadPresetGroup, 0x02, (byte)(GoProIds.PresetGroupVideo >> 8), (byte)(GoProIds.PresetGroupVideo & 0xFF) };
+                byte[] groupResponse = await RequestAsync(Get(c => c.command), GoProIds.CommandResponse, GoProIds.CmdLoadPresetGroup, group, 2500).ConfigureAwait(false);
+                if (groupResponse == null || groupResponse.Length < 2 || groupResponse[1] != 0)
+                    log.DebugFormat("The GoPro {0:X12} did not load the video presets: {1}.", Address, groupResponse != null && groupResponse.Length >= 2 ? groupResponse[1].ToString() : "no answer");
+
+                List<GoProSettingValue> left = preset.Settings.ToList();
+                for (int pass = 0; pass < 2 && left.Count > 0; pass++)
+                {
+                    List<GoProSettingValue> failed = new List<GoProSettingValue>();
+                    foreach (GoProSettingValue setting in left)
+                    {
+                        bool ok = false;
+                        foreach (int value in setting.Values)
+                        {
+                            byte[] message = new byte[] { setting.Setting, 0x01, (byte)value };
+                            byte[] response = await RequestAsync(Get(c => c.settings), GoProIds.SettingsResponse, setting.Setting, message, 2500).ConfigureAwait(false);
+                            if (response != null && response.Length >= 2 && response[1] == 0)
+                            {
+                                ok = true;
+                                break;
+                            }
+
+                            log.DebugFormat("The GoPro {0:X12} did not take {1} for the setting {2}: {3}.", Address, value, setting.Setting,
+                                response != null && response.Length >= 2 ? response[1].ToString() : "no answer");
+                        }
+
+                        if (!ok)
+                            failed.Add(setting);
+                    }
+
+                    left = failed;
+                }
+
+                // The settings as the camera has them now (the tile of the settings shows them).
+                byte[] query = new byte[] { GoProIds.QueryGetSettings, GoProIds.SettingResolution, GoProIds.SettingFps, GoProIds.SettingLens, GoProIds.SettingAntiFlicker, GoProIds.SettingHypersmooth };
+                await RequestAsync(Get(c => c.query), GoProIds.QueryResponse, GoProIds.QueryGetSettings, query, 2500).ConfigureAwait(false);
+
+                if (left.Count == 0)
+                {
+                    SetNotice(name + " ✓  " + preset.Description, false, 90);
+                    log.DebugFormat("\"{0}\" is in the GoPro {1:X12}.", preset.Id, Address);
+                }
+                else
+                {
+                    string missing = string.Join(", ", left.Select(s => s.Label));
+                    SetNotice(name + ": " + GoProText.T("η κάμερα δεν δέχτηκε ", "the camera did not take ") + missing +
+                        GoProText.T(" (άλλαξέ τα στην κάμερα· αν είναι σε μενού, βγες από αυτό).", " (change them on the camera; if it is in a menu, leave it)."), true, 180);
+                    log.WarnFormat("\"{0}\" is not all in the GoPro {1:X12}: {2}.", preset.Id, Address, missing);
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while putting a set of settings in the GoPro.", e);
+                SetNotice(preset.Name + ": " + GoProText.T("δεν ολοκληρώθηκε, ξαναδοκίμασε.", "did not complete, try again."), true, 90);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref applying, 0);
+            }
+        }
+
+        private void SetNotice(string text, bool error, int seconds)
+        {
+            lock (locker)
+            {
+                notice = text;
+                noticeError = error;
+                noticeUntil = DateTime.UtcNow.AddSeconds(seconds);
+            }
+        }
+        #endregion
+
         #region Wi-Fi
         /// <summary>The access point of the camera on or off (off saves battery and heat; on for the live image).</summary>
         public async Task<bool> SetWifiAsync(bool on)
@@ -1251,6 +1367,11 @@ namespace Kinovea.Camera.GoPro
                 s.Hypersmooth = hypersmooth;
                 s.ClockSetAt = clockSetAt;
                 s.PreviewOn = previewWanted;
+                if (noticeUntil > DateTime.UtcNow)
+                {
+                    s.Notice = notice;
+                    s.NoticeError = noticeError;
+                }
             }
 
             if (seen != null)

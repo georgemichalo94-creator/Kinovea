@@ -661,6 +661,14 @@ namespace Kinovea.ScreenManager
             view.UpdateLivePreview(live.LivePreview);
         }
 
+        /// <summary>(Swim 2.20.0) A set of settings (GoPro: race, technique analysis) in this camera or in all the cameras of its kind.</summary>
+        public void View_ApplyCameraPreset(string id, bool allCameras)
+        {
+            ICameraPresetSource source = cameraGrabber as ICameraPresetSource;
+            if (source != null)
+                source.ApplyCameraPreset(id, allCameras);
+        }
+
         public void View_ToggleDelayedDisplay()
         {
             delayedDisplay = !delayedDisplay;
@@ -776,7 +784,8 @@ namespace Kinovea.ScreenManager
 
             // (Swim 2.20.0) A camera that records on its own card tells its screen when it starts or stops.
             AttachRemote();
-            view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource);
+            ICameraPresetSource presetSource = cameraGrabber as ICameraPresetSource;
+            view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource, presetSource != null ? presetSource.CameraPresets : null);
 
             RaiseActivated(EventArgs.Empty);
 

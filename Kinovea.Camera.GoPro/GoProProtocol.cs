@@ -40,7 +40,11 @@ namespace Kinovea.Camera.GoPro
         public const byte CmdSetDateTime = 0x0D;
         public const byte CmdSetWifiAp = 0x17;
         public const byte CmdGetHardwareInfo = 0x3C;
+        public const byte CmdLoadPresetGroup = 0x3E;
         public const byte CmdSetThirdPartyClient = 0x50;
+
+        /// <summary>The group of the video presets (Load Preset Group): the camera records video, not photos or time lapses.</summary>
+        public const int PresetGroupVideo = 1000;
 
         // Settings (Settings characteristic): [id, length, value] → [id, status].
         public const byte SettingResolution = 2;

@@ -109,7 +109,7 @@ namespace Kinovea.Camera.GoPro
                 if (s.PreviewSecondsLeft >= 0)
                     parts.Add(string.Format(CultureInfo.InvariantCulture, GoProText.T("κλείνει σε {0}", "closes in {0}"), MinutesSeconds(s.PreviewSecondsLeft)));
 
-                g.DrawString(string.Join("  ·  ", parts), fontBand, ink, new RectangleF(590, 12, Width - 608, 44), right);
+                g.DrawString(string.Join("  ·  ", parts), fontPill, ink, new RectangleF(600, 16, Width - 618, 40), right);
             }
 
             // The image comes with a short delay: said once, at the bottom.
@@ -117,7 +117,7 @@ namespace Kinovea.Camera.GoPro
                 g.FillRectangle(back, 0, Height - 40, Width, 40);
 
             using (SolidBrush dim = new SolidBrush(Dim))
-                g.DrawString(GoProText.T("Ζωντανή εικόνα από το Wi-Fi της κάμερας (~0,3 s πίσω) · μία κάμερα τη φορά", "Live image by the Wi-Fi of the camera (~0.3 s behind) · one camera at a time"),
+                g.DrawString(GoProText.T("Ζωντανή εικόνα (Wi-Fi, ~0,3 s πίσω) · μία κάμερα τη φορά", "Live image (Wi-Fi, ~0.3 s behind) · one camera at a time"),
                     fontTileNote, dim, new RectangleF(18, Height - 37, Width - 36, 34), ellipsis);
         }
 
@@ -326,11 +326,18 @@ namespace Kinovea.Camera.GoPro
                     wrong.Add("HS " + GoProIds.HypersmoothName(s.Hypersmooth));
 
                 wrong.RemoveAll(string.IsNullOrEmpty);
+                GoProPreset matching = GoProPresets.Matching(s);
                 if (wrong.Count > 0)
                 {
                     videoColor = Amber;
                     noteColor = Amber;
                     note = string.Join(" · ", wrong);
+                }
+                else if (matching != null)
+                {
+                    // One of the sets (race, technique): said in green.
+                    note = matching.Short + " ✓";
+                    noteColor = Green;
                 }
                 else
                 {
@@ -377,6 +384,15 @@ namespace Kinovea.Camera.GoPro
             {
                 using (SolidBrush amber = new SolidBrush(Amber))
                     g.DrawString("⚠ " + s.Problem, fontHint, amber, rect, wrap);
+
+                return;
+            }
+
+            // How an action went (a set of settings): green when it went, amber when something did not.
+            if (!string.IsNullOrEmpty(s.Notice))
+            {
+                using (SolidBrush brush = new SolidBrush(s.NoticeError ? Amber : Green))
+                    g.DrawString((s.NoticeError ? "⚠ " : "") + s.Notice, fontHint, brush, rect, wrap);
 
                 return;
             }
