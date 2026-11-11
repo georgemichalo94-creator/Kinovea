@@ -263,6 +263,7 @@ $found4 = $filesT::Match($takesT::Takes, 'K4', $filesT::Scan($card4, $none))
 $okA = @($found4 | Where-Object { $_.Take.Start -eq $tA -and $_.Files[0].Name -eq 'GX010051.MP4' }).Count -eq 1
 $okB = @($found4 | Where-Object { $_.Take.Start -eq $tB -and $_.Files[0].Name -eq 'GX010052.MP4' }).Count -eq 1
 Check ($found4.Count -eq 2 -and $okA -and $okB) 'the clock three hours off for all the files: each recording its own file (not the one of the other hour)'
+$takesT::SetNext((Details 'start' '900002' 'ΔΕΥΤΕΡΟ ΠΑΡΑΔΕΙΓΜΑ' 'Α.Ο. Δοκιμής'))
 
 # ---- A camera that did not start leaves the recording; a recording without cameras goes.
 $t7 = $t0.AddMinutes(70)
