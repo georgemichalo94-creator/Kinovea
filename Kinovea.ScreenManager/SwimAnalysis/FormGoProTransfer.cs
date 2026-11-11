@@ -23,7 +23,8 @@ namespace Kinovea.ScreenManager
     /// found by themselves, or a folder they were copied in) or downloaded by the Wi-Fi of the cameras, to the folder of the videos with
     /// the names of the athletes or of the race. A recording whose details were wrong is corrected here before its videos come. When the
     /// videos of all the cameras of a recording came, the video of all of them is made by itself (one after the other, the window can be
-    /// closed meanwhile: it hides until they are made) and «▶ Προβολή» plays it.
+    /// closed meanwhile: it hides until they are made) and «▶ Προβολή» plays it. (2.22.0) A continuous recording (an order of athletes,
+    /// «⏭ Επόμενος» at the end of each attempt) is shown as its parts, one per athlete: its files of a card are cut for each of them.
     /// </summary>
     public class FormGoProTransfer : Form
     {
@@ -248,7 +249,7 @@ namespace Kinovea.ScreenManager
         {
             string root = SwimGoProTakes.Root;
             lblRoot.Text = SwimLang.T("Φάκελος βίντεο: ") + (root.Length > 0 ? root : SwimLang.T("(δεν έχει διαλεχτεί)"));
-            List<SwimTake> takes = SwimGoProTakes.Takes;
+            List<SwimTake> takes = SwimGoProTakes.Takes.Where(t => !t.IsContinuous).ToList();
             if (cbPending.Checked)
             {
                 DateTime today = DateTime.Today;
@@ -263,7 +264,8 @@ namespace Kinovea.ScreenManager
             foreach (SwimTake t in takes)
             {
                 string cameras = string.Join(" · ", t.Cameras.Select(c => c.Alias + (c.Done ? " ✓" : " …")));
-                int row = grid.Rows.Add(t.Start.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), t.Details.KindName, t.Details.Summary, cameras, CompositeMark(t));
+                string who = (t.IsPart ? "#" + t.Index.ToString(CultureInfo.InvariantCulture) + "  " : "") + t.Details.Summary;
+                int row = grid.Rows.Add(t.Start.ToString("dd/MM HH:mm:ss", CultureInfo.InvariantCulture), t.Details.KindName, who, cameras, CompositeMark(t));
                 grid.Rows[row].Tag = t;
                 if (selected.Contains(t.Id))
                     grid.Rows[row].Selected = true;
@@ -335,7 +337,7 @@ namespace Kinovea.ScreenManager
 
             SwimTake take = selected[0];
             string camera = take.Cameras.Count > 0 ? take.Cameras[0].Alias : "";
-            using (FormGoProTakeDetails form = new FormGoProTakeDetails(take.Details, SwimGoProTakes.Root, camera))
+            using (FormGoProTakeDetails form = new FormGoProTakeDetails(take.Details, SwimGoProTakes.Root, camera, false))
             {
                 form.Text = SwimLang.T("📝 Στοιχεία της εγγραφής ") + take.Start.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
                 if (form.ShowDialog(this) != DialogResult.OK || form.Result == null)
@@ -418,6 +420,16 @@ namespace Kinovea.ScreenManager
             lblStatus.ForeColor = warning ? Color.FromArgb(170, 70, 30) : SystemColors.ControlText;
         }
 
+        /// <summary>(2.22.0) The cut of the parts of a continuous recording: the video and the part done of all.</summary>
+        private void ShowCutProgress(string text, double done)
+        {
+            if (IsDisposed)
+                return;
+
+            Status("✂ " + text + string.Format(CultureInfo.InvariantCulture, " · {0:0}%", done * 100), false);
+            progress.Value = (int)Math.Max(0, Math.Min(100, done * 100));
+        }
+
         private void ShowProgress(string text, long done, long total)
         {
             if (IsDisposed)
@@ -476,15 +488,40 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
-                SwimGoProFiles.PlanTargets(root, matches);
-                long bytes = matches.SelectMany(m => m.Files).Sum(f => Math.Max(0, f.Size));
-                int count = matches.Sum(m => m.Files.Count);
-                int takeCount = matches.Select(m => m.Take.Id).Distinct().Count();
-                string question = string.Format(CultureInfo.InvariantCulture,
-                    takeCount == 1 ?
-                        SwimLang.T("Βρέθηκαν {0} βίντεο για 1 εγγραφή ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι.") :
-                        SwimLang.T("Βρέθηκαν {0} βίντεο για {1} εγγραφές ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι."),
-                    count, takeCount, bytes / 1073741824.0, root);
+                // (2.22.0) The continuous recordings are cut for their athletes; the others copied whole.
+                List<SwimGoProMatch> copies = matches.Where(m => !m.Take.IsContinuous).ToList();
+                List<SwimGoProMatch> cuts = matches.Where(m => m.Take.IsContinuous).ToList();
+                SwimGoProFiles.PlanTargets(root, copies);
+                HashSet<string> taken = new HashSet<string>(copies.SelectMany(m => m.Targets).Select(t => t.ToLowerInvariant()));
+                List<SwimCutJob> jobs = new List<SwimCutJob>();
+                foreach (SwimGoProMatch m in cuts)
+                    jobs.AddRange(SwimGoProCut.Plan(root, m, SwimGoProTakes.Parts(m.Take.Id), taken));
+
+                long bytes = copies.SelectMany(m => m.Files).Sum(f => Math.Max(0, f.Size));
+                int count = copies.Sum(m => m.Files.Count);
+                int takeCount = copies.Select(m => m.Take.Id).Distinct().Count();
+                string question;
+                if (cuts.Count == 0)
+                {
+                    question = string.Format(CultureInfo.InvariantCulture,
+                        takeCount == 1 ?
+                            SwimLang.T("Βρέθηκαν {0} βίντεο για 1 εγγραφή ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι.") :
+                            SwimLang.T("Βρέθηκαν {0} βίντεο για {1} εγγραφές ({2:0.0} GB). Αντιγραφή στον φάκελο {3};\n\nΤα αρχεία της κάρτας μένουν όπως είναι."),
+                        count, takeCount, bytes / 1073741824.0, root);
+                }
+                else
+                {
+                    double cutBytes = jobs.SelectMany(j => j.Pieces).Sum(x => x.File.Duration > 0 ? x.File.Size * (x.To - x.From) / x.File.Duration : 0);
+                    List<string> found = new List<string>();
+                    if (copies.Count > 0)
+                        found.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("• {0} βίντεο για {1} εγγραφές ({2:0.0} GB): αντιγραφή"), count, takeCount, bytes / 1073741824.0));
+
+                    found.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("• {0} συνεχόμενα βίντεο: κοπή σε {1} κομμάτια, ένα για κάθε αθλητή ({2:0.0} GB)"),
+                        cuts.Count, jobs.Count(j => j.Pieces.Count > 0), cutBytes / 1073741824.0));
+                    question = SwimLang.T("Βρέθηκαν:") + "\n" + string.Join("\n", found) + "\n\n" +
+                        string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στον φάκελο {0};\n\nΤα αρχεία της κάρτας μένουν όπως είναι."), root);
+                }
+
                 if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 {
                     Status("", false);
@@ -493,21 +530,37 @@ namespace Kinovea.ScreenManager
 
                 Progress<KeyValuePair<string, long[]>> reporter = new Progress<KeyValuePair<string, long[]>>(p => ShowProgress(p.Key, p.Value[0], p.Value[1]));
                 IProgress<KeyValuePair<string, long[]>> report = reporter;
+                Progress<KeyValuePair<string, double>> cutReporter = new Progress<KeyValuePair<string, double>>(p => ShowCutProgress(p.Key, p.Value));
+                IProgress<KeyValuePair<string, double>> cutReport = cutReporter;
                 string error = null;
+                int cutCount = 0;
                 int copied = await Task.Run(() =>
                 {
-                    string copyError;
-                    int n = SwimGoProFiles.Copy(matches, (name, done, total) => report.Report(new KeyValuePair<string, long[]>(name, new[] { done, total })), token, out copyError);
-                    error = copyError;
+                    string copyError = null, cutError = null;
+                    int n = 0;
+                    if (copies.Count > 0)
+                        n = SwimGoProFiles.Copy(copies, (name, done, total) => report.Report(new KeyValuePair<string, long[]>(name, new[] { done, total })), token, out copyError);
+
+                    if (jobs.Count > 0)
+                        cutCount = SwimGoProCut.Run(SwimTakeComposite.Ffmpeg, jobs, (name, done) => cutReport.Report(new KeyValuePair<string, double>(name, done)), token, out cutError);
+
+                    foreach (SwimGoProMatch m in cuts)
+                        SwimGoProCut.Finish(m);
+
+                    error = copyError ?? cutError;
                     return n;
                 });
 
-                touched.AddRange(matches.Select(m => m.Take.Id));
+                touched.AddRange(copies.Select(m => m.Take.Id));
+                touched.AddRange(jobs.Select(j => j.Part.Id));
 
+                string result = jobs.Count == 0 ?
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Αντιγράφηκαν {0} βίντεο στον φάκελο."), copied) :
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Αντιγράφηκαν {0} βίντεο και κόπηκαν {1} κομμάτια αθλητών."), copied, cutCount);
                 if (error != null)
-                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Αντιγράφηκαν {0} βίντεο· πρόβλημα: {1}"), copied, error), true);
+                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Αντιγράφηκαν {0} βίντεο· πρόβλημα: {1}"), copied + cutCount, error), true);
                 else
-                    Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ Αντιγράφηκαν {0} βίντεο στον φάκελο."), copied), false);
+                    Status(result, false);
             }
             catch (OperationCanceledException)
             {
@@ -624,6 +677,15 @@ namespace Kinovea.ScreenManager
             List<SwimTake> takes = SelectedTakes();
             if (takes.Count == 0)
                 takes = SwimGoProTakes.Takes.Where(t => !t.AllDone).ToList();
+
+            // (2.22.0) A continuous recording is long and cut for its athletes: from the cards.
+            bool continuous = takes.Any(t => t.IsPart || t.IsContinuous);
+            takes = takes.Where(t => !t.IsPart && !t.IsContinuous).ToList();
+            if (takes.Count == 0 && continuous)
+            {
+                Status(SwimLang.T("Οι συνεχόμενες εγγραφές κόβονται από τις κάρτες: «💾 Από κάρτα ή φάκελο»."), true);
+                return;
+            }
 
             List<string> wanted = takes.SelectMany(t => t.Cameras).Where(c => !c.Done).Select(c => c.Alias).Distinct().ToList();
             List<KeyValuePair<string, IRemoteMediaSource>> sources = SwimGoProTakes.MediaSources().Where(s => wanted.Contains(s.Key)).ToList();

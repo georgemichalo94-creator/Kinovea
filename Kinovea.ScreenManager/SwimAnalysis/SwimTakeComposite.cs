@@ -482,8 +482,11 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>ffmpeg with its progress (out_time_ms of -progress) and stop; null when it went, else its last error lines.</summary>
-        private static string Run(string ffmpeg, string arguments, string partial, double length, Action<double> progress, CancellationToken token)
+        /// <summary>
+        /// ffmpeg with its progress (out_time_ms of -progress) and stop; null when it went, else its last error lines. `partial`: the
+        /// temporary file it writes (removed if the program closes meanwhile). Also for the cuts of the continuous recordings (2.22.0).
+        /// </summary>
+        internal static string Run(string ffmpeg, string arguments, string partial, double length, Action<double> progress, CancellationToken token)
         {
             ProcessStartInfo info = new ProcessStartInfo(ffmpeg, arguments)
             {
@@ -562,7 +565,7 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private static string RunForText(string ffmpeg, string arguments, int timeoutMs)
+        internal static string RunForText(string ffmpeg, string arguments, int timeoutMs)
         {
             try
             {
