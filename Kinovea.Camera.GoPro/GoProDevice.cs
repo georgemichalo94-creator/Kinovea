@@ -1241,6 +1241,13 @@ namespace Kinovea.Camera.GoPro
                         GoProText.T(" αντί για ", " instead of ") + preset.Description + GoProText.T(". Ξαναπάτα το κουμπί ή άλλαξέ το στην κάμερα.", ". Press the button again or change it on the camera."), true, 180);
                     log.WarnFormat("\"{0}\" taken by the GoPro {1:X12} but it stayed at {2}.", preset.Id, Address, GoProPresets.Describe(now));
                 }
+                else if (left.Count == 0 && preset.MatchesWithOtherResolution(now))
+                {
+                    // Still the set (the camera gives this frame rate only at a lower resolution): said, in green.
+                    SetNotice(name + " ✓  " + GoProPresets.Describe(now) + GoProText.T(" (η κάμερα δεν δίνει υψηλότερη ανάλυση στα ", " (the camera does not give a higher resolution at ") +
+                        preset.Fps + " fps)", false, 120);
+                    log.DebugFormat("\"{0}\" is in the GoPro {1:X12} at {2}.", preset.Id, Address, GoProPresets.Describe(now));
+                }
                 else if (left.Count == 0)
                 {
                     SetNotice(name + " ✓  " + preset.Description, false, 90);

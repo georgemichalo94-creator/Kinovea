@@ -30,6 +30,12 @@ namespace Kinovea.Camera.GoPro
     /// <summary>A ready-made set of settings of the GoPro cameras.</summary>
     internal sealed class GoProPreset
     {
+        /// <summary>The camera has the set with a resolution other than the first one (the HERO12 at 1080 for 100 fps).</summary>
+        public bool MatchesWithOtherResolution(GoProState s)
+        {
+            return Matches(s) && Resolutions.Length > 0 && s.Resolution != Resolutions[0];
+        }
+
         public string Id;
         public string NameGreek;
         public string NameEnglish;
@@ -108,7 +114,8 @@ namespace Kinovea.Camera.GoPro
                 ShortGreek = "τεχνική",
                 ShortEnglish = "technique",
                 Fps = 100,
-                Resolutions = new[] { 4 },
+                // 2.7K, else 1080 (a camera that does not give 2.7K at 100 fps, or a dark pool): both good for technique.
+                Resolutions = new[] { 4, 9 },
                 Settings = new List<GoProSettingValue>
                 {
                     new GoProSettingValue(GoProIds.SettingAntiFlicker, "50 Hz", 3, 1),
