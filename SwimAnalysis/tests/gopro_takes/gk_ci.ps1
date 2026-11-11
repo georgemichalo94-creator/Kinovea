@@ -440,13 +440,13 @@ $b0 = if ($beeps.Count -gt 0) { $beeps[0] } else { $null }
 if ($b0) { Write-Output ('     heard: ' + $b0.Onset.ToString('0.000', $ci) + ' s (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s), ' + $b0.Low.ToString('0', $ci) + '/' + $b0.High.ToString('0', $ci) + ' Hz, score ' + $b0.Score.ToString('0.0', $ci)) }
 Check ($b0 -ne $null -and [Math]::Abs($b0.Onset - $hornAt) -le 0.06) 'the horn found by the start analysis at its moment'
 Check ($b0 -ne $null -and [Math]::Abs($b0.Low - 890) -le 30 -and [Math]::Abs($b0.High - 1017) -le 30) 'its two tones (890 and 1017 Hz, as the start systems)'
-# The horn hard and loud (asked: 11.11.2026): its level (RMS) of the scale, 1.5 s after the words.
+# The horn short, hard and loud as at the meets (asked: 11-12.11.2026): its length and level (RMS) of the scale, 1.5 s after the words.
 $horn = $sigT::Horn()
 $sq = 0.0
 foreach ($s in $horn) { $sq += [double]$s * [double]$s }
 $rms = [Math]::Sqrt($sq / $horn.Length) / 32767.0
 Write-Output ('     the horn: ' + ($horn.Length / 22050.0).ToString('0.00', $ci) + ' s, level ' + $rms.ToString('0.000', $ci) + ' of the scale (two plain tones: 0.380), pause ' + $sigT::Pause + ' s')
-Check ($rms -ge 0.58 -and $sigT::Pause -eq 1.5) 'the horn loud (its level at least 0.58 of the scale), 1.5 s after the words'
+Check ($rms -ge 0.65 -and $horn.Length -le [int](0.35 * 22050) -and $sigT::Pause -eq 1.5) 'the horn short and loud as at the meets (0.3 s, its level at least 0.65 of the scale), 1.5 s after the words'
 $words = $sigT::Voice()
 Write-Output ('     the words of Windows: ' + ($words.Length / 22050.0).ToString('0.00', $ci) + ' s')
 $full = $sigT::Build($words, $sigT::Pause, [ref]$hornAt)

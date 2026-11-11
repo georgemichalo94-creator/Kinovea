@@ -18,8 +18,8 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// (Swim 2.22.0) The start signal of the computer for the starts and turns of technique analysis: «Take your marks» (the voice of
     /// Windows, an English one when there is one), a pause of 1.5 s and the horn: two tones together (890 and 1017 Hz, as the start
-    /// systems of the pools), 0.6 s, hard and at the top of the scale (each tone with its odd harmonics, rounded off: a buzz as the
-    /// horns of the start systems, louder on a small speaker; no tone of one mixed into the other). The cameras that hear the horn are lined up
+    /// systems of the pools), short and sharp as at the meets (0.3 s, rising and falling in 2 ms), hard and at the top of the scale
+    /// (two square tones driven together into a soft limit, as a horn speaker driven hard). The cameras that hear the horn are lined up
     /// by it (their sounds), and the start analysis finds its moment (the start of the attempt). Played by the speaker of the computer
     /// (or the one connected to it); one signal at a time. The words go without the band of the horn's tones (820 – 1120 Hz): the start
     /// analysis hears two tones 8/7 apart there, as the 7th and 8th harmonics of a voice can be, so that only the horn is a start signal.
@@ -32,13 +32,20 @@ namespace Kinovea.ScreenManager
         public const int Rate = 22050;
         public const double LowTone = 890;
         public const double HighTone = 1017;
-        public const double HornSeconds = 0.6;
+        /// <summary>The horn (s): short, as the start systems of the meets (11.11.2026: «πιο κοφτός»).</summary>
+        public const double HornSeconds = 0.3;
 
         /// <summary>From the end of the words to the horn (s), as the analyst asked (11.11.2026: 1.5 s).</summary>
         public const double Pause = 1.5;
 
         /// <summary>The peak of the horn (of the scale).</summary>
         public const double HornPeak = 0.95;
+
+        /// <summary>How hard the two tones are driven together into the soft limit (a hard sound; louder for the same peak).</summary>
+        public const double HornDrive = 6;
+
+        /// <summary>The harmonics of the square tones go up to here (Hz), under half the rate: nothing folds back.</summary>
+        private const double HornTop = 10000;
         public const string Words = "Take your marks";
         public const string GreekWords = "Τέικ γιορ μάρκς";
 
@@ -139,14 +146,15 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The horn: the two tones together, each a hard tone (its odd harmonics to the 7th, under half the rate, rounded off by a soft
-        /// limit: a buzz, about 4.4 dB louder than two plain tones at the same peak), at HornPeak; a quick rise and fall (no click). Each
-        /// tone is made apart, so no sound between them comes in (the start analysis hears the two tones over the sounds around them).
+        /// The horn: the two tones together, each a square tone (its odd harmonics under HornTop), both driven into a soft limit (tanh,
+        /// HornDrive: the hard sound of a horn speaker driven hard, about 1 dB louder than the tones alone and harsher), at HornPeak; it
+        /// rises and falls in 2 ms (sharp, as at the meets). The start analysis hears the two tones over what the limit adds (28 dB under).
         /// </summary>
         public static short[] Horn()
         {
             int n = (int)(HornSeconds * Rate);
-            int edge = (int)(0.008 * Rate);
+            int edge = Math.Max(1, (int)(0.002 * Rate));
+            double top = Math.Min(HornTop, Rate / 2.0 - 100);
             double[] sum = new double[n];
             foreach (double tone in new[] { LowTone, HighTone })
             {
@@ -155,7 +163,7 @@ namespace Kinovea.ScreenManager
                 for (int i = 0; i < n; i++)
                 {
                     double t = i / (double)Rate, s = 0;
-                    for (int k = 1; k <= 7; k += 2)
+                    for (int k = 1; k * tone < top; k += 2)
                         s += Math.Sin(2 * Math.PI * k * tone * t) / k;
 
                     v[i] = s;
@@ -163,15 +171,17 @@ namespace Kinovea.ScreenManager
                 }
 
                 for (int i = 0; i < n; i++)
-                    sum[i] += Math.Tanh(2 * v[i] / Math.Max(1e-9, peak));
+                    sum[i] += v[i] / Math.Max(1e-9, peak);
             }
 
-            double top = sum.Max(x => Math.Abs(x));
+            double most = sum.Max(x => Math.Abs(x));
+            double limit = Math.Tanh(HornDrive);
             short[] horn = new short[n];
             for (int i = 0; i < n; i++)
             {
                 double envelope = Math.Min(1, Math.Min(i / (double)edge, (n - 1 - i) / (double)edge));
-                horn[i] = (short)Math.Round(32767 * HornPeak * envelope * sum[i] / Math.Max(1e-9, top));
+                double s = Math.Tanh(HornDrive * sum[i] / Math.Max(1e-9, most)) / limit;
+                horn[i] = (short)Math.Round(32767 * HornPeak * envelope * s);
             }
 
             return horn;
