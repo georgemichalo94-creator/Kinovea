@@ -412,7 +412,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The arguments of ffmpeg: each video from its image nearest to the start of the common part (read from half an image before it,
-        /// its clock from 0), in its place of the grid, the drawing over all.
+        /// its clock from 0), in its place of the grid, the drawing over all. The seek is on the clock of the streams, as the sound that lined
+        /// them up (-seek_timestamp: else ffmpeg adds the start of the file to it, before 0 when the sound starts before the picture, and
+        /// keeps an image too early).
         /// </summary>
         public static string Arguments(List<SwimCompositeView> views, double from, double length, double fps, string overlay, string output)
         {
@@ -421,9 +423,8 @@ namespace Kinovea.ScreenManager
             foreach (SwimCompositeView v in views)
             {
                 double wanted = Math.Max(0, from + v.Offset);
-                double image = Math.Round(wanted * v.Fps);
-                double seek = Math.Max(0, (image - 0.5) / v.Fps);
-                a.AppendFormat(ci, "-ss {0:0.0000} -t {1:0.000} -i \"{2}\" ", seek, length + 1 / v.Fps, v.Path);
+                double seek = Math.Max(0, wanted - 0.5 / v.Fps);
+                a.AppendFormat(ci, "-seek_timestamp 1 -ss {0:0.0000} -t {1:0.000} -i \"{2}\" ", seek, length + 1 / v.Fps, v.Path);
             }
 
             a.AppendFormat(ci, "-loop 1 -t {0:0.000} -i \"{1}\" ", length, overlay);
