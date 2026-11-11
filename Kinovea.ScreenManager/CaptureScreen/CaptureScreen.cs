@@ -199,6 +199,7 @@ namespace Kinovea.ScreenManager
         private bool synched;
         // (Swim 2.20.0) A camera that records on its own card: the moment of the last command (shared by the screens started together).
         private DateTime remoteCommandTime = DateTime.MinValue;
+        private DateTime remoteTakeStart = DateTime.MinValue;
         private IRemoteRecordingSource remoteSource;
         
         private Metadata metadata;
@@ -854,6 +855,20 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>(Swim 2.21.0) The camera of this screen did not start at the command: it is not in that recording.</summary>
+        private void ForgetTake(DateTime commandTime)
+        {
+            try
+            {
+                if (cameraSummary != null)
+                    SwimGoProTakes.Failed(cameraSummary.Alias, commandTime);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while taking a camera out of a recording.", e);
+            }
+        }
+
         private void RemoteSource_RecordingChanged(object sender, EventArgs e)
         {
             // Any thread.
@@ -882,7 +897,15 @@ namespace Kinovea.ScreenManager
                 return;
 
             recording = onCamera;
-            KeepTake(recording, DateTime.Now);
+
+            // (2.21.0) A start the camera did not do: the recording has no file of this camera, it leaves the recording.
+            IRemoteMediaSource media = cameraGrabber as IRemoteMediaSource;
+            if (!recording && media != null && remoteTakeStart != DateTime.MinValue && media.FailedStart == remoteTakeStart)
+                ForgetTake(remoteTakeStart);
+            else
+                KeepTake(recording, DateTime.Now);
+
+            remoteTakeStart = recording ? DateTime.Now : DateTime.MinValue;
             if (recording)
             {
                 stopwatchRecording.Restart();
@@ -912,6 +935,7 @@ namespace Kinovea.ScreenManager
             remoteCommandTime = DateTime.MinValue;
             remoteSource.SetRemoteRecording(true, commandTime);
             KeepTake(true, commandTime);
+            remoteTakeStart = commandTime;
 
             recording = true;
             stopwatchRecording.Restart();
@@ -931,6 +955,7 @@ namespace Kinovea.ScreenManager
             remoteCommandTime = DateTime.MinValue;
             remoteSource.SetRemoteRecording(false, commandTime);
             KeepTake(false, DateTime.Now);
+            remoteTakeStart = DateTime.MinValue;
 
             recording = false;
             StartQuietPeriod();

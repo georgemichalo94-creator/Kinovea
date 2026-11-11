@@ -102,6 +102,12 @@ namespace Kinovea.Camera
         string CameraModel { get; }
 
         /// <summary>
+        /// The time of the last start command the camera did not do (not connected, refused, or taken but not started): that recording
+        /// has no file of this camera. DateTime.MinValue when none.
+        /// </summary>
+        DateTime FailedStart { get; }
+
+        /// <summary>
         /// The computer joins the Wi-Fi of the camera, lists the videos of its card, asks `choose` which ones go where (the files and
         /// their paths on the computer) and downloads them, then goes back to its network. One camera at a time. Returns null when it
         /// went, else what went wrong (in the language of the interface).

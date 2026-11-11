@@ -64,6 +64,7 @@ namespace Kinovea.Camera.GoPro
         private readonly CameraSummary summary;
         private readonly ulong address;
         private GoProDevice device;
+        private DateTime failedStart = DateTime.MinValue;
         private System.Threading.Timer timer;
         private bool grabbing;
         private int ticking;
@@ -182,6 +183,9 @@ namespace Kinovea.Camera.GoPro
             GoProDevice d = device;
             if (d == null)
             {
+                if (record)
+                    failedStart = commandTime;
+
                 RemoteRecordingChanged?.Invoke(this, EventArgs.Empty);
                 return;
             }
@@ -267,6 +271,17 @@ namespace Kinovea.Camera.GoPro
             {
                 GoProDevice d = device;
                 return d != null ? d.ModelName : "";
+            }
+        }
+
+        /// <summary>(2.21.0) The last start command this camera did not do (its recording has no file of it).</summary>
+        public DateTime FailedStart
+        {
+            get
+            {
+                GoProDevice d = device;
+                DateTime fromDevice = d != null ? d.FailedStart : DateTime.MinValue;
+                return fromDevice > failedStart ? fromDevice : failedStart;
             }
         }
 

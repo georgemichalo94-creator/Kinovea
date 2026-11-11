@@ -57,6 +57,11 @@ public static class FakeGoPro
     }
     public static void Write(string path, DateTime created, string serial, string model, int payload, int seed)
     {
+        Write(path, created, serial, model, payload, seed, int.MinValue);
+    }
+    // zone: the time zone in minutes written in TZON (as a HERO12: then `created` is universal time); int.MinValue: none.
+    public static void Write(string path, DateTime created, string serial, string model, int payload, int seed, int zone)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         uint seconds = (uint)(created - new DateTime(1904, 1, 1)).TotalSeconds;
         byte[] mvhd = Join(new byte[4], U32(seconds), U32(seconds), U32(1000), U32(60000), U32(0x00010000), new byte[] { 1, 0 }, new byte[10],
@@ -65,6 +70,7 @@ public static class FakeGoPro
         keys.Add(Klv("FMWR", (byte)'c', 1, Encoding.ASCII.GetBytes("H00.00.00.00.00")));
         if (serial != null) keys.Add(Klv("CASN", (byte)'c', 1, Encoding.ASCII.GetBytes(serial)));
         if (model != null) keys.Add(Klv("MINF", (byte)'c', 1, Encoding.ASCII.GetBytes(model)));
+        if (zone != int.MinValue) keys.Add(Klv("TZON", (byte)'s', 2, new byte[] { (byte)((short)zone >> 8), (byte)(short)zone }));
         byte[] inner = Join(keys.ToArray());
         byte[] devc = Join(Encoding.ASCII.GetBytes("DEVC"), new byte[] { 0, 1, (byte)(inner.Length >> 8), (byte)inner.Length }, inner);
         byte[] picture = new byte[payload];
@@ -237,6 +243,35 @@ $takesT::Started('K2', $s2, 'HERO12 Black', $t0.AddMinutes(50))
 $remote = $filesT::FromRemote($list)
 $foundW = $filesT::Match($takesT::Takes, 'K2', $remote)
 Check ($foundW.Count -eq 1 -and $foundW[0].Files[0].Name -eq 'GX010021.MP4') 'the video of the card found by Wi-Fi for its recording'
+
+# ---- A HERO12 writes universal time and its time zone: the clock of the camera comes back.
+[FakeGoPro]::Write("$work\zone\DCIM\100GOPRO\GX010041.MP4", $t0.AddHours(-3).AddSeconds(1), $s2, 'HERO12 Black', 1000, 13, 180)
+$fz = $filesT::Read("$work\zone\DCIM\100GOPRO\GX010041.MP4")
+Check ($fz.ZoneMinutes -eq 180 -and [Math]::Abs(($fz.Created - $t0.AddSeconds(1)).TotalSeconds) -lt 1.01) ('universal time + the zone of the camera (TZON 180): ' + $fz.Created.ToString('HH:mm:ss'))
+[FakeGoPro]::Write("$work\zone2\DCIM\100GOPRO\GX010042.MP4", $t0.AddHours(2).AddSeconds(1), $s2, 'HERO12 Black', 1000, 14, -300)
+$fz2 = $filesT::Read("$work\zone2\DCIM\100GOPRO\GX010042.MP4")
+Check ($fz2.ZoneMinutes -eq -300 -and [Math]::Abs(($fz2.Created - $t0.AddHours(-3).AddSeconds(1)).TotalSeconds) -lt 1.01) 'a zone west of Greenwich (TZON -300)'
+
+# ---- A camera in universal time without its zone, recordings three hours apart: one clock for all its files, no file of another hour.
+$takesT::SetNext((Details 'turn' '900003' 'ΤΕΤΑΡΤΟ ΠΑΡΑΔΕΙΓΜΑ' 'Ν.Ο. Δοκιμής'))
+$tA = $t0.AddHours(2); $tB = $t0.AddHours(5)
+$takesT::Started('K4', 'C3441300000004', 'HERO9 Black', $tA); $takesT::Started('K4', 'C3441300000004', 'HERO9 Black', $tB)
+$card4 = [System.IO.Path]::Combine($work, 'card4')
+[FakeGoPro]::Write("$card4\DCIM\100GOPRO\GX010051.MP4", $tA.AddHours(-3).AddSeconds(1), 'C3441300000004', 'HERO9 Black', 1000, 15)
+[FakeGoPro]::Write("$card4\DCIM\100GOPRO\GX010052.MP4", $tB.AddHours(-3).AddSeconds(1), 'C3441300000004', 'HERO9 Black', 1000, 16)
+$found4 = $filesT::Match($takesT::Takes, 'K4', $filesT::Scan($card4, $none))
+$okA = @($found4 | Where-Object { $_.Take.Start -eq $tA -and $_.Files[0].Name -eq 'GX010051.MP4' }).Count -eq 1
+$okB = @($found4 | Where-Object { $_.Take.Start -eq $tB -and $_.Files[0].Name -eq 'GX010052.MP4' }).Count -eq 1
+Check ($found4.Count -eq 2 -and $okA -and $okB) 'the clock three hours off for all the files: each recording its own file (not the one of the other hour)'
+
+# ---- A camera that did not start leaves the recording; a recording without cameras goes.
+$t7 = $t0.AddMinutes(70)
+$takesT::Started('K1', $s1, 'HERO9 Black', $t7); $takesT::Started('K2', $s2, 'HERO12 Black', $t7)
+$takesT::Failed('K2', $t7)
+$take7 = @($takesT::Takes | Where-Object { $_.Start -eq $t7 })
+Check ($take7.Count -eq 1 -and $take7[0].Cameras.Count -eq 1 -and $take7[0].Cameras[0].Alias -eq 'K1') 'the camera that did not start is out of the recording'
+$takesT::Failed('K1', $t7)
+Check (@($takesT::Takes | Where-Object { $_.Start -eq $t7 }).Count -eq 0) 'no camera left: the recording goes'
 
 # ---- The names stay in Greek with the English interface.
 $lang = T 'SwimLang'

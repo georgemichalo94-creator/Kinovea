@@ -389,6 +389,34 @@ namespace Kinovea.ScreenManager
             RaiseChanged();
         }
 
+        /// <summary>
+        /// A camera did not start at the command (not connected, refused, or taken but not started): it leaves that recording, which goes
+        /// when no camera is left.
+        /// </summary>
+        public static void Failed(string alias, DateTime commandTime)
+        {
+            bool changed = false;
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.LastOrDefault(t => Math.Abs((t.Start - commandTime).TotalSeconds) < 2 && t.Cameras.Any(c => c.Alias == alias && !c.Done));
+                if (take != null)
+                {
+                    take.Cameras.RemoveAll(c => c.Alias == alias && !c.Done);
+                    if (take.Cameras.Count == 0)
+                        Data.Takes.Remove(take);
+
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+                return;
+
+            log.DebugFormat("The camera \"{0}\" did not start: out of the recording.", alias);
+            Save();
+            RaiseChanged();
+        }
+
         /// <summary>A camera stopped: the end of its recording.</summary>
         public static void Stopped(string alias, DateTime time)
         {

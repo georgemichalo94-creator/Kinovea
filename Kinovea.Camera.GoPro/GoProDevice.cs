@@ -163,6 +163,12 @@ namespace Kinovea.Camera.GoPro
             get { lock (locker) { return serialNumber ?? ""; } }
         }
 
+        /// <summary>(2.21.0) The time of the last start command the camera did not do (MinValue when none).</summary>
+        public DateTime FailedStart
+        {
+            get { lock (locker) { return failedStart; } }
+        }
+
         /// <summary>(2.21.0) The model ("HERO9 Black"; "" before the first connection).</summary>
         public string ModelName
         {
@@ -238,6 +244,7 @@ namespace Kinovea.Camera.GoPro
         private DateTime pendingUntil = DateTime.MinValue;
         private DateTime lastCommandTime = DateTime.MinValue;
         private bool lastCommandStart;
+        private DateTime failedStart = DateTime.MinValue;
         private double lastStartOffset = double.NaN;
         private DateTime lastStartAt = DateTime.MinValue;
         private bool reportedRecording;
@@ -1060,6 +1067,9 @@ namespace Kinovea.Camera.GoPro
                     if (desiredRecording == record)
                     {
                         pendingUntil = DateTime.MinValue;
+                        if (record)
+                            failedStart = lastCommandTime;
+
                         string reason = record ? BlockedReasonUnlocked() : null;
                         problem = reason ?? (record ?
                             GoProText.T("Η κάμερα δεν δέχτηκε την εντολή έναρξης: δες αν είναι συνδεδεμένη και όχι σε μενού.",
@@ -1105,6 +1115,9 @@ namespace Kinovea.Camera.GoPro
                 if (!confirmed && desiredRecording == record)
                 {
                     pendingUntil = DateTime.MinValue;
+                    if (record)
+                        failedStart = lastCommandTime;
+
                     string reason = record ? BlockedReasonUnlocked() : null;
                     problem = reason ?? (record ?
                         GoProText.T("Η κάμερα δέχτηκε την εντολή αλλά δεν ξεκίνησε να γράφει: δες την οθόνη της.",

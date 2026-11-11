@@ -32,6 +32,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The serial number and model written by the camera in the file ("" when not found).</summary>
         public string Serial = "";
         public string Model = "";
+
+        /// <summary>The time zone of the camera written in the file, in minutes (int.MinValue when not written).</summary>
+        public int ZoneMinutes = int.MinValue;
     }
 
     /// <summary>(Swim 2.21.0) A recording of a camera and the files found for it (its parts).</summary>
@@ -167,6 +170,8 @@ namespace Kinovea.ScreenManager
 
                 if (f.Created == DateTime.MinValue)
                     f.Created = info.LastWriteTime;
+                else if (f.ZoneMinutes != int.MinValue && Math.Abs(f.ZoneMinutes) <= 14 * 60)
+                    f.Created = f.Created.AddMinutes(f.ZoneMinutes); // universal time in the file (HERO12…): the clock of the camera
             }
             catch (Exception e)
             {
@@ -246,6 +251,10 @@ namespace Kinovea.ScreenManager
                 {
                     ReadGpmf(data, content, content + length, f, depth + 1);
                 }
+                else if (key == "TZON" && type == (byte)'s' && length >= 2)
+                {
+                    f.ZoneMinutes = (short)((data[content] << 8) | data[content + 1]);
+                }
                 else if (type == (byte)'c' && (key == "CASN" || key == "MINF"))
                 {
                     string text = Encoding.ASCII.GetString(data, content, length).Trim('\0', ' ');
@@ -276,10 +285,51 @@ namespace Kinovea.ScreenManager
         #region Matching
         /// <summary>
         /// The files of one camera for its recordings (not on the computer yet): a recording takes the file (and its parts) that started
-        /// within 20 s of its start, nearest first; the clock of a camera that writes universal time is a whole number of hours away.
+        /// within 20 s of its start, nearest first. The clock of the camera is the same for all its files: when it is a whole number of
+        /// hours off (universal time, another time zone), the one number of hours that finds the most recordings is taken for all of
+        /// them (no file of another hour is taken for a recording), the clock of the computer first.
         /// </summary>
         public static List<SwimGoProMatch> Match(List<SwimTake> takes, string alias, List<SwimGoProFile> files)
         {
+            // The first number of hours that finds the most recordings (0 first: a tie keeps the clock of the computer).
+            List<SwimGoProMatch> best = new List<SwimGoProMatch>();
+            int bestHours = 0;
+            int pending = takes.Count(t => t.Cameras.Any(c => c.Alias == alias && !c.Done));
+            foreach (int hours in HourOffsets())
+            {
+                double error;
+                List<SwimGoProMatch> found = MatchAt(takes, alias, files, hours, out error);
+                if (found.Count > best.Count)
+                {
+                    best = found;
+                    bestHours = hours;
+                }
+
+                if (best.Count == pending)
+                    break;
+            }
+
+            if (bestHours != 0 && best.Count > 0)
+                log.DebugFormat("The clock of the camera \"{0}\" is {1} h off the computer.", alias, bestHours);
+
+            return best;
+        }
+
+        /// <summary>0 first, then ±1 … ±14 hours (all the time zones).</summary>
+        private static IEnumerable<int> HourOffsets()
+        {
+            yield return 0;
+            for (int h = 1; h <= 14; h++)
+            {
+                yield return h;
+                yield return -h;
+            }
+        }
+
+        /// <summary>The recordings of a camera and their files with its clock `hours` off; `error` the seconds off in all.</summary>
+        private static List<SwimGoProMatch> MatchAt(List<SwimTake> takes, string alias, List<SwimGoProFile> files, int hours, out double error)
+        {
+            error = 0;
             List<SwimGoProMatch> result = new List<SwimGoProMatch>();
             List<IGrouping<string, SwimGoProFile>> groups = files.GroupBy(f => f.Folder + "/" + f.Number.ToString(CultureInfo.InvariantCulture)).ToList();
             HashSet<string> used = new HashSet<string>();
@@ -298,10 +348,10 @@ namespace Kinovea.ScreenManager
                         continue;
 
                     SwimGoProFile first = g.OrderBy(x => x.Part).First();
-                    double error = TimeError(first.Created, take.Start);
-                    if (error < bestError)
+                    double e = TimeError(first.Created, take.Start, hours);
+                    if (e < bestError)
                     {
-                        bestError = error;
+                        bestError = e;
                         best = g;
                     }
                 }
@@ -310,31 +360,22 @@ namespace Kinovea.ScreenManager
                     continue;
 
                 used.Add(best.Key);
+                error += bestError;
                 result.Add(new SwimGoProMatch { Take = take, Camera = camera, Files = best.OrderBy(x => x.Part).ToList() });
             }
 
             return result;
         }
 
-        /// <summary>Seconds between the start of a file and of a recording, the clock of the camera possibly a whole number of hours off.</summary>
-        private static double TimeError(DateTime fileStart, DateTime takeStart)
+        /// <summary>Seconds between the start of a file and of a recording, the clock of the camera `hours` off.</summary>
+        private static double TimeError(DateTime fileStart, DateTime takeStart, int hours)
         {
             if (fileStart == DateTime.MinValue)
                 return double.MaxValue;
 
-            double best = double.MaxValue;
-            for (int hours = -3; hours <= 3; hours++)
-            {
-                // The camera starts a little after the command (up to 2 s): its file starts at or after it.
-                double seconds = (fileStart.AddHours(hours) - takeStart).TotalSeconds;
-                double error = seconds >= -2 ? Math.Abs(seconds - 1) : Math.Abs(seconds) + 5;
-                if (hours != 0)
-                    error += 1;
-
-                best = Math.Min(best, error);
-            }
-
-            return best;
+            // The camera starts a little after the command (up to 2 s): its file starts at or after it.
+            double seconds = (fileStart.AddHours(hours) - takeStart).TotalSeconds;
+            return seconds >= -2 ? Math.Abs(seconds - 1) : Math.Abs(seconds) + 5;
         }
 
         /// <summary>
