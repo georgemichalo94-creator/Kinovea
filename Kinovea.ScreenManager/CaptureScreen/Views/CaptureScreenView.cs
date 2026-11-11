@@ -487,7 +487,7 @@ namespace Kinovea.ScreenManager
             // the last one, as wide as the screen leaves it, so that no button goes out of a narrow screen).
             Button btnTakes = SmallButton(x, SwimLang.T("📥 Βίντεο"));
             btnTakes.Click += (s, e) => presenter.View_ShowTakes();
-            toolTips.SetToolTip(btnTakes, SwimLang.T("Οι εγγραφές των GoPro και τα βίντεο τους: από τις κάρτες (card reader ή USB) ή με το Wi-Fi της κάμερας στον φάκελο, με τα ονόματα των αθλητών."));
+            toolTips.SetToolTip(btnTakes, SwimLang.T("Οι εγγραφές των GoPro και τα βίντεό τους: από τις κάρτες (card reader) ή με το Wi-Fi της κάμερας στον φάκελο, με τα ονόματα των αθλητών."));
             x += btnTakes.PreferredSize.Width + 6;
 
             btnTakeDetails = SmallButton(x, "📝");

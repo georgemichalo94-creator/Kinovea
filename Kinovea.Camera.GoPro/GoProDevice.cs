@@ -664,7 +664,7 @@ namespace Kinovea.Camera.GoPro
             }
 
             GoProSighting seen = GoProScanner.Find(Address);
-            log.DebugFormat("The GoPro {0:X12} is \"{1}\", {2}, firmware {3}.", Address, seen != null ? seen.Name : "?", modelName, firmware);
+            log.DebugFormat("The GoPro {0:X12} is \"{1}\", {2}, firmware {3}, serial number {4}.", Address, seen != null ? seen.Name : "?", modelName, firmware, serialNumber);
         }
 
         private void Fail(GattCommunicationStatus status)

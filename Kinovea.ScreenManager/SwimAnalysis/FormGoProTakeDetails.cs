@@ -62,7 +62,7 @@ namespace Kinovea.ScreenManager
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Font;
             Font = new Font("Segoe UI", 9f);
-            ClientSize = new Size(640, 690);
+            ClientSize = new Size(660, 740);
             KeyPreview = true;
 
             TableLayoutPanel table = new TableLayoutPanel
@@ -97,7 +97,7 @@ namespace Kinovea.ScreenManager
             AddRow(table, SwimLang.T("Αναζήτηση αθλητή"), tbSearch);
 
             lbAthletes.Width = 440;
-            lbAthletes.Height = 110;
+            lbAthletes.Height = 90;
             lbAthletes.IntegralHeight = false;
             lbAthletes.DoubleClick += (s, e) => ChooseSelected(false);
             lbAthletes.KeyDown += (s, e) =>
@@ -173,11 +173,11 @@ namespace Kinovea.ScreenManager
             Button btnPaste = new Button { Text = SwimLang.T("📋 Επικόλληση αποτελεσμάτων ή λίστας εκκίνησης…"), AutoSize = true };
             btnPaste.Click += (s, e) => PasteList();
             lblSwimmers.AutoSize = true;
+            lblSwimmers.MaximumSize = new Size(440, 0);
             lblSwimmers.ForeColor = Color.DimGray;
-            lblSwimmers.Margin = new Padding(8, 7, 0, 0);
             pastePanel.Controls.Add(btnPaste);
-            pastePanel.Controls.Add(lblSwimmers);
             raceOnly.Add(AddRow(table, "", pastePanel));
+            AddRow(table, "", lblSwimmers);
 
             Button btnFromAnalysis = new Button { Text = SwimLang.T("↙ Από τα στοιχεία της ανάλυσης"), AutoSize = true };
             btnFromAnalysis.Click += (s, e) => FromAnalysis();

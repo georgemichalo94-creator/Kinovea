@@ -186,6 +186,19 @@ Check (@($takes | ForEach-Object { $_.Cameras } | Where-Object { $_.Alias -eq 'K
 Check (-not $takes[0].AllDone) 'the first recording waits for K2'
 Check ($filesT::Match($takes, 'K1', $scan1).Count -eq 0) 'the same card again: nothing to copy'
 
+# ---- A camera that writes another serial number in its files than by Bluetooth: learned from a download, its card is found by it.
+$card3 = [System.IO.Path]::Combine($work, 'card3')
+[FakeGoPro]::Write("$card3\DCIM\100GOPRO\GX010031.MP4", $t0.AddMinutes(5).AddSeconds(1), 'C3501399999999', 'HERO12 Black', 1000, 12)
+$scan3 = $filesT::Scan($card3, $none)
+Check ($filesT::CameraOf($takes, $scan3) -eq 'K2') 'an unknown serial number, the only HERO12 Black of the recordings: K2 by its model'
+$takesT::Started('K3', 'C3501300000003', 'HERO12 Black', $t0.AddMinutes(60))
+$takes = $takesT::Takes
+Check ($filesT::CameraOf($takes, $scan3) -eq $null) 'two cameras of that model: the files do not say which (the window asks)'
+$takesT::LearnFileSerial('C3501300000003', 'C3501399999999')
+Check ($filesT::CameraOf($takes, $scan3) -eq 'K3') 'the serial number learned from a download: K3'
+$takesT::Remove([string[]]@($takes[$takes.Count - 1].Id))
+$takes = $takesT::Takes
+
 # ---- The card of K2: its clock two hours behind.
 $found2 = $filesT::Match($takes, 'K2', $scan2)
 Check ($found2.Count -eq 2) ('the 2 recordings of K2 found with its clock in universal time: ' + $found2.Count)

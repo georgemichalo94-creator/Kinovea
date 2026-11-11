@@ -47,7 +47,7 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
-    /// (Swim 2.21.0) The videos of the GoPro cameras on a card (a card reader, the camera by USB, or a folder they were copied in) or in
+    /// (Swim 2.21.0) The videos of the GoPro cameras on a card (in a card reader, or a folder they were copied in) or in
     /// the list of the card by Wi-Fi, found for the recordings started from Kinovea: same camera (its serial number in the file) and the
     /// same start (within 20 s; the clock of a camera written as universal time is also found, a whole number of hours away). The files
     /// are copied, never moved or deleted; a CSV in the folder of the day says what went where.
@@ -56,6 +56,7 @@ namespace Kinovea.ScreenManager
     {
         private static readonly Regex goProName = new Regex(@"^G[XHPL](\d{2})(\d{4})\.MP4$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         private static readonly Regex oldName = new Regex(@"^GOPR(\d{4})\.MP4$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex goProFolder = new Regex(@"^\d{3}GOPRO$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         private static readonly DateTime mp4Epoch = new DateTime(1904, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -81,6 +82,41 @@ namespace Kinovea.ScreenManager
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// The GoPro cards in the computer now (in a card reader): the drives other than the one of Windows with a DCIM\100GOPRO…
+        /// folder. (A GoPro by USB is a device of Windows, not a drive: its files are copied to a folder first.)
+        /// </summary>
+        public static List<string> FindCards()
+        {
+            List<string> result = new List<string>();
+            string system = System.IO.Path.GetPathRoot(Environment.SystemDirectory) ?? "";
+            foreach (DriveInfo drive in DriveInfo.GetDrives())
+            {
+                try
+                {
+                    if (drive.DriveType != DriveType.Removable && drive.DriveType != DriveType.Fixed)
+                        continue;
+
+                    if (!drive.IsReady)
+                        continue;
+
+                    string root = drive.RootDirectory.FullName;
+                    if (string.Equals(root, system, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string dcim = System.IO.Path.Combine(root, "DCIM");
+                    if (Directory.Exists(dcim) && Directory.EnumerateDirectories(dcim).Any(d => goProFolder.IsMatch(System.IO.Path.GetFileName(d))))
+                        result.Add(root);
+                }
+                catch (Exception e)
+                {
+                    log.Debug("A drive could not be looked at for a GoPro card.", e);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>The GoPro videos under a folder (a card: DCIM\100GOPRO…), read; the others are left.</summary>
@@ -313,7 +349,10 @@ namespace Kinovea.ScreenManager
                 if (string.IsNullOrEmpty(f.Serial))
                     continue;
 
-                SwimTakeCamera c = cameras.LastOrDefault(x => !string.IsNullOrEmpty(x.Serial) && string.Equals(x.Serial.Trim(), f.Serial.Trim(), StringComparison.OrdinalIgnoreCase));
+                string serial = f.Serial.Trim();
+                SwimTakeCamera c = cameras.LastOrDefault(x => !string.IsNullOrEmpty(x.Serial) &&
+                    (string.Equals(x.Serial.Trim(), serial, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(SwimGoProTakes.FileSerialOf(x.Serial), serial, StringComparison.OrdinalIgnoreCase)));
                 if (c != null)
                     return c.Alias;
             }

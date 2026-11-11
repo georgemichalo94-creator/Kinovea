@@ -207,6 +207,9 @@ namespace Kinovea.ScreenManager
         public SwimTakeDetails Next = new SwimTakeDetails();
         public string Root = "";
         public List<SwimTake> Takes = new List<SwimTake>();
+
+        /// <summary>The serial number a camera writes in its files when it is not the one it gives by Bluetooth (learned by Wi-Fi).</summary>
+        public Dictionary<string, string> FileSerials = new Dictionary<string, string>();
     }
 
     /// <summary>
@@ -262,6 +265,9 @@ namespace Kinovea.ScreenManager
 
                         if (loaded.Takes == null)
                             loaded.Takes = new List<SwimTake>();
+
+                        if (loaded.FileSerials == null)
+                            loaded.FileSerials = new Dictionary<string, string>();
 
                         // A new day: the date of the details is today's.
                         loaded.Next.Date = DateTime.Now.ToString("d.M.yyyy", CultureInfo.InvariantCulture);
@@ -442,6 +448,35 @@ namespace Kinovea.ScreenManager
 
             Save();
             RaiseChanged();
+        }
+        /// <summary>
+        /// A file downloaded from a camera says another serial number than the camera by Bluetooth: kept, so that its card is found by
+        /// it too.
+        /// </summary>
+        public static void LearnFileSerial(string serial, string fileSerial)
+        {
+            if (string.IsNullOrWhiteSpace(serial) || string.IsNullOrWhiteSpace(fileSerial) ||
+                string.Equals(serial.Trim(), fileSerial.Trim(), StringComparison.OrdinalIgnoreCase))
+                return;
+
+            lock (locker)
+                Data.FileSerials[serial.Trim()] = fileSerial.Trim();
+
+            log.WarnFormat("A GoPro writes the serial number {0} in its files and gives {1} by Bluetooth.", fileSerial.Trim(), serial.Trim());
+            Save();
+        }
+
+        /// <summary>The serial number a camera writes in its files (the one by Bluetooth unless learned otherwise).</summary>
+        public static string FileSerialOf(string serial)
+        {
+            if (string.IsNullOrWhiteSpace(serial))
+                return "";
+
+            lock (locker)
+            {
+                string learned;
+                return Data.FileSerials.TryGetValue(serial.Trim(), out learned) ? learned : serial.Trim();
+            }
         }
         #endregion
 

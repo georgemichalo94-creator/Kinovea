@@ -19,8 +19,8 @@ using Kinovea.Camera;
 namespace Kinovea.ScreenManager
 {
     /// <summary>
-    /// (Swim 2.21.0) The recordings of the GoPro cameras started from Kinovea and their videos: copied from the cards (a card reader,
-    /// the camera by USB, or a folder they were copied in) or downloaded by the Wi-Fi of the cameras, to the folder of the videos with
+    /// (Swim 2.21.0) The recordings of the GoPro cameras started from Kinovea and their videos: copied from the cards (in a card reader,
+    /// found by themselves, or a folder they were copied in) or downloaded by the Wi-Fi of the cameras, to the folder of the videos with
     /// the names of the athletes or of the race. A recording whose details were wrong is corrected here before its videos come.
     /// </summary>
     public class FormGoProTransfer : Form
@@ -148,9 +148,9 @@ namespace Kinovea.ScreenManager
             };
             cbPending.CheckedChanged += (s, e) => Fill();
 
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(10, 4, 10, 6) };
+            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 64, Padding = new Padding(10, 4, 10, 6) };
             lblStatus.Dock = DockStyle.Top;
-            lblStatus.Height = 22;
+            lblStatus.Height = 36;
             progress.Dock = DockStyle.Bottom;
             progress.Height = 14;
             bottom.Controls.Add(lblStatus);
@@ -170,7 +170,7 @@ namespace Kinovea.ScreenManager
             };
 
             Fill();
-            lblStatus.Text = SwimLang.T("Οι εγγραφές που ξεκίνησαν από το Kinovea. Βάλε την κάρτα κάθε κάμερας σε card reader (ή την κάμερα με USB) και πάτα «Από κάρτα»· ή «Κατέβασμα με Wi-Fi» για λίγες εγγραφές.");
+            lblStatus.Text = SwimLang.T("Οι εγγραφές που ξεκίνησαν από το Kinovea. Βάλε τις κάρτες των καμερών σε card reader και πάτα «Από κάρτα» (ή διάλεξε φάκελο με τα αρχεία τους)· ή «Κατέβασμα με Wi-Fi» για λίγες εγγραφές.");
         }
 
         private void Takes_Changed(object sender, EventArgs e)
@@ -334,16 +334,9 @@ namespace Kinovea.ScreenManager
             if (root == null)
                 return;
 
-            string folder;
-            using (FolderBrowserDialog dialog = new FolderBrowserDialog())
-            {
-                dialog.Description = SwimLang.T("Η κάρτα της κάμερας (στο card reader ή η κάμερα με USB) ή ένας φάκελος με τα αρχεία της.");
-                dialog.ShowNewFolderButton = false;
-                if (dialog.ShowDialog(this) != DialogResult.OK)
-                    return;
-
-                folder = dialog.SelectedPath;
-            }
+            List<string> folders = ChooseSources();
+            if (folders == null || folders.Count == 0)
+                return;
 
             cancel = new CancellationTokenSource();
             CancellationToken token = cancel.Token;
@@ -352,7 +345,7 @@ namespace Kinovea.ScreenManager
             {
                 Status(SwimLang.T("Διαβάζονται τα βίντεο…"), false);
                 List<SwimTake> takes = SwimGoProTakes.Takes;
-                List<SwimGoProFile> files = await Task.Run(() => SwimGoProFiles.Scan(folder, token));
+                List<SwimGoProFile> files = await Task.Run(() => folders.SelectMany(f => SwimGoProFiles.Scan(f, token)).ToList());
                 if (files.Count == 0)
                 {
                     Status(SwimLang.T("Δεν βρέθηκαν βίντεο GoPro σε αυτόν τον φάκελο."), true);
@@ -420,6 +413,54 @@ namespace Kinovea.ScreenManager
             {
                 SetBusy(false);
                 Fill();
+            }
+        }
+
+        /// <summary>
+        /// Where the videos are: the GoPro cards in the computer (found by themselves), else or instead a folder the user chooses (a card
+        /// or the files of a camera copied in a folder). Null when cancelled.
+        /// </summary>
+        private List<string> ChooseSources()
+        {
+            List<string> cards = SwimGoProFiles.FindCards();
+            if (cards.Count > 0)
+            {
+                string text = string.Format(CultureInfo.InvariantCulture,
+                    SwimLang.T("Κάρτες GoPro στον υπολογιστή: {0}\n\nΝαι: αντιγραφή από αυτές · Όχι: διαλέγεις άλλο φάκελο."), string.Join("  ", cards));
+                DialogResult answer = MessageBox.Show(this, text, Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (answer == DialogResult.Yes)
+                    return cards;
+
+                if (answer != DialogResult.No)
+                    return null;
+            }
+
+            using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = SwimLang.T("Η κάρτα της κάμερας (στο card reader) ή ένας φάκελος με τα αρχεία της.");
+                dialog.ShowNewFolderButton = false;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return null;
+
+                return new List<string> { dialog.SelectedPath };
+            }
+        }
+
+        /// <summary>A file just downloaded from a camera says the serial number written in its files: kept when not the Bluetooth one.</summary>
+        private static void LearnSerial(IRemoteMediaSource source, List<KeyValuePair<string, string>> downloaded)
+        {
+            try
+            {
+                if (downloaded.Count == 0 || string.IsNullOrEmpty(source.CameraSerial))
+                    return;
+
+                SwimGoProFile file = SwimGoProFiles.Read(downloaded[0].Value);
+                if (!string.IsNullOrEmpty(file.Serial))
+                    SwimGoProTakes.LearnFileSerial(source.CameraSerial, file.Serial);
+            }
+            catch (Exception)
+            {
+                // Only a help for the cards.
             }
         }
 
@@ -555,6 +596,9 @@ namespace Kinovea.ScreenManager
                             got++;
                         }
                     }
+
+                    // The serial number in the files of this camera (its card is found by it).
+                    LearnSerial(source.Value, log);
 
                     if (error != null)
                         problems.Add(alias + ": " + error);
