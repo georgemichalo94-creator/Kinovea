@@ -61,7 +61,12 @@ namespace Kinovea.ScreenManager
         /// The details of the next recordings (with the order of the athletes of a continuous recording), or of one recording afterwards
         /// (`order` false: no order).
         /// </summary>
-        public FormGoProTakeDetails(SwimTakeDetails current, string root, string sampleCamera, bool order = true)
+        public FormGoProTakeDetails(SwimTakeDetails current, string root, string sampleCamera)
+            : this(current, root, sampleCamera, true)
+        {
+        }
+
+        public FormGoProTakeDetails(SwimTakeDetails current, string root, string sampleCamera, bool order)
         {
             details = (current ?? new SwimTakeDetails()).Clone();
             withOrder = order;

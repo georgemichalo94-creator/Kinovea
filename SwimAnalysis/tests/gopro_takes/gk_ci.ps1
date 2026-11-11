@@ -136,6 +136,25 @@ public static class FictionalPool2
         return s / a.Length;
     }
 
+    // The samples of a WAV (16 bits, one channel) at another rate (linear), as the sound read from a video.
+    public static float[] ToRate(byte[] wav, int from, int to)
+    {
+        int n = (wav.Length - 44) / 2;
+        float[] x = new float[n];
+        for (int i = 0; i < n; i++)
+            x[i] = BitConverter.ToInt16(wav, 44 + 2 * i) / 32768f;
+        int m = (int)((long)n * to / from);
+        float[] y = new float[m];
+        for (int j = 0; j < m; j++)
+        {
+            double p = j * (double)from / to;
+            int i = (int)p;
+            double f = p - i;
+            y[j] = (float)(i + 1 < n ? x[i] * (1 - f) + x[i + 1] * f : x[Math.Min(i, n - 1)]);
+        }
+        return y;
+    }
+
     // An image (a whole frame) against five images in a row of another video: the nearest one, as the shift from the middle (-2 … 2).
     public static int Nearest(string target, string[] frames, Rectangle area, out string details)
     {
@@ -396,6 +415,23 @@ $lines = "900201`tΠαράδειγμα Πέμπτος`tΝ.Ο. Δοκιμής`r`n
 $read = $detailsT::ReadAthleteLines($lines, $null)
 Write-Output ('     pasted: ' + (($read | ForEach-Object { $_.ToString() }) -join ' | '))
 Check ($read.Count -eq 3 -and $read[0].AthleteId -eq '900201' -and $read[0].Club -eq 'Ν.Ο. Δοκιμής' -and $read[1].AthleteId -eq '900202' -and $read[1].Athlete -eq 'Παράδειγμα Έκτη' -and $read[2].Athlete -eq 'Παράδειγμα Έβδομος' -and $read[2].Club -eq 'Ο.Α. Δοκιμής') 'a pasted list read: number, name, club'
+
+# ---- The start signal: the horn heard as a start signal by the start analysis, at its place; the words when Windows has a voice.
+Write-Output 'step: the start signal'
+$sigT = T 'SwimStartSignal'
+$hornAt = 0.0
+$wave = $sigT::Build([int16[]]@(), 2.0, [ref]$hornAt)
+$samples = [FictionalPool2]::ToRate($wave, 22050, 16000)
+$beeps = (T 'SwimStartSound')::Find($samples)
+$b0 = if ($beeps.Count -gt 0) { $beeps[0] } else { $null }
+if ($b0) { Write-Output ('     heard: ' + $b0.Onset.ToString('0.000', $ci) + ' s (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s), ' + $b0.Low.ToString('0', $ci) + '/' + $b0.High.ToString('0', $ci) + ' Hz, score ' + $b0.Score.ToString('0.0', $ci)) }
+Check ($b0 -ne $null -and [Math]::Abs($b0.Onset - $hornAt) -le 0.06) 'the horn found by the start analysis at its moment'
+Check ($b0 -ne $null -and [Math]::Abs($b0.Low - 890) -le 30 -and [Math]::Abs($b0.High - 1017) -le 30) 'its two tones (890 and 1017 Hz, as the start systems)'
+$words = $sigT::Voice()
+Write-Output ('     the words of Windows: ' + ($words.Length / 22050.0).ToString('0.00', $ci) + ' s')
+$full = $sigT::Build($words, 2.0, [ref]$hornAt)
+Check ($full.Length -gt $wave.Length -or $words.Length -eq 0) 'the words before the pause (when Windows has a voice)'
+if ($out) { [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($out, 'gk_signal.wav'), $full) }
 
 # ---- The end of the session; the parts out of the list, the recording too.
 $takesT::EndSession()

@@ -686,6 +686,20 @@ namespace Kinovea.ScreenManager
             return SwimGoProTakes.NextAthlete(DateTime.Now, out message);
         }
 
+        /// <summary>
+        /// (Swim 2.22.0) «📣»: the start signal of the computer («Take your marks», ~2 s, the horn), only when the user presses it; kept with
+        /// the recording going on. False while one plays.
+        /// </summary>
+        public bool View_StartSignal()
+        {
+            DateTime horn = SwimStartSignal.Play();
+            if (horn == DateTime.MinValue)
+                return false;
+
+            SwimGoProTakes.AddSignal(horn);
+            return true;
+        }
+
         /// <summary>(Swim 2.22.0) «↶»: the last press of «⏭ Επόμενος» undone.</summary>
         public bool View_UndoNextAthlete(out string message)
         {

@@ -2641,6 +2641,8 @@ namespace Kinovea.ScreenManager
             { "Αναίρεση του τελευταίου «⏭ Επόμενος».", "Undo the last «⏭ Next»." },
             { "χωρίς όνομα", "without a name" },
             { "Συνεχόμενη εγγραφή: ο αθλητής στο νερό τώρα. «⏭ Επόμενος» στο τέλος της προσπάθειάς του.", "Continuous recording: the athlete in the water now. «⏭ Next» at the end of his attempt." },
+            // (2.22.0) The start signal of the computer.
+            { "Σήμα εκκίνησης: «Take your marks» και μετά από ~2 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό.", "Start signal: «Take your marks» and the horn ~2 s later. All the cameras hear the horn: it lines them up by their sound and gives the moment of the start. With a speaker by the water, the cameras in the water hear it too." },
         };
     }
 }

@@ -261,6 +261,9 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.22.0) A continuous recording: the moments of the button «⏭ Επόμενος» (the ends of the attempts).</summary>
         public List<DateTime> Marks = new List<DateTime>();
 
+        /// <summary>(2.22.0) The horns of the start signal of the computer during the recording (its clock).</summary>
+        public List<DateTime> Signals = new List<DateTime>();
+
         [JsonIgnore]
         public bool IsPart
         {
@@ -814,6 +817,24 @@ namespace Kinovea.ScreenManager
                     return;
 
                 camera.StartOffset = seconds;
+            }
+
+            Save();
+        }
+
+        /// <summary>The horn of the start signal: kept with the recording going on (none: nothing).</summary>
+        public static void AddSignal(DateTime horn)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.LastOrDefault(t => !t.IsPart);
+                if (take == null || take.Stop != DateTime.MinValue)
+                    return;
+
+                if (take.Signals == null)
+                    take.Signals = new List<DateTime>();
+
+                take.Signals.Add(horn);
             }
 
             Save();

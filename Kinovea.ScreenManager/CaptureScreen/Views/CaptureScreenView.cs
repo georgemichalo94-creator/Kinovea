@@ -91,6 +91,7 @@ namespace Kinovea.ScreenManager
         private Button btnNextAthlete;
         private Button btnUndoAthlete;
         private Button btnEndSession;
+        private Button btnSignal;
         private Timer flashTimer;
         // The buttons of the second line shown or not (the Visible of a control says false while its screen is not shown yet).
         private readonly Dictionary<Button, bool> goproShown = new Dictionary<Button, bool>();
@@ -443,6 +444,7 @@ namespace Kinovea.ScreenManager
             btnNextAthlete = null;
             btnUndoAthlete = null;
             btnEndSession = null;
+            btnSignal = null;
             goproShown.Clear();
             if (!takesHooked)
             {
@@ -515,6 +517,10 @@ namespace Kinovea.ScreenManager
             btnNextAthlete.Click += (s, e) => NextAthleteClicked();
             toolTips.SetToolTip(btnNextAthlete, SwimLang.T("Στο τέλος της προσπάθειας του αθλητή: τελειώνει το κομμάτι του, αρχίζει του επόμενου της σειράς (και το «επόμενο» ενός presenter)."));
             ShowGoProButton(btnNextAthlete, false);
+
+            btnSignal = SmallButton(x, "📣");
+            btnSignal.Click += (s, e) => Flash(btnSignal, presenter != null && presenter.View_StartSignal());
+            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από ~2 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
 
             btnUndoAthlete = SmallButton(x, "↶");
             btnUndoAthlete.Click += (s, e) => UndoAthleteClicked();
@@ -685,6 +691,7 @@ namespace Kinovea.ScreenManager
             }
 
             ShowGoProButton(btnNextAthlete, continuous);
+            ShowGoProButton(btnSignal, true);
             ShowGoProButton(btnUndoAthlete, continuous && current.Marks != null && current.Marks.Count > 0);
             ShowGoProButton(btnEndSession, !continuous && next.IsContinuous);
 
