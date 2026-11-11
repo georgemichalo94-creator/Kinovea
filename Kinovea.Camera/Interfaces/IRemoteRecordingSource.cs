@@ -34,6 +34,19 @@ namespace Kinovea.Camera
     }
 
     /// <summary>
+    /// (Swim 2.20.0) A camera whose live image can be turned on and off from its screen (a GoPro by its own Wi-Fi, one camera at a
+    /// time); without it the screen shows the state of the camera.
+    /// </summary>
+    public interface ILivePreviewSource
+    {
+        /// <summary>The live image is on (or starting).</summary>
+        bool LivePreview { get; }
+
+        /// <summary>Turns the live image on or off (another camera's live image stops first). Returns at once.</summary>
+        void SetLivePreview(bool on);
+    }
+
+    /// <summary>
     /// (Swim 2.20.0) The language of the texts that the camera modules draw on their images (Greek or English), set by the screens
     /// with the language of the swim analysis.
     /// </summary>

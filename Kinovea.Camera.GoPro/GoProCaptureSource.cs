@@ -19,7 +19,7 @@ namespace Kinovea.Camera.GoPro
     /// (Swim 2.20.0) The source of a capture screen with a GoPro: its images show the state of the camera (4 per second), its record
     /// button starts and stops the camera itself (the video is written on the card of the camera, not on the computer).
     /// </summary>
-    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource
+    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource, ILivePreviewSource
     {
         public event EventHandler<FrameProducedEventArgs> FrameProduced;
         public event EventHandler GrabbingStatusChanged;
@@ -50,6 +50,12 @@ namespace Kinovea.Camera.GoPro
                 return d != null && d.EffectiveRecording;
             }
         }
+
+        /// <summary>The live image of this camera is on (or starting).</summary>
+        public bool LivePreview
+        {
+            get { return GoProPreview.CurrentAddress == address; }
+        }
         #endregion
 
         #region Members
@@ -64,6 +70,8 @@ namespace Kinovea.Camera.GoPro
         private GoProStatusPainter painter;
         private readonly Stopwatch swDataRate = new Stopwatch();
         private readonly Averager dataRateAverager = new Averager(0.02);
+        private byte[] liveBuffer;
+        private int period = 250;
         private const int width = GoProStatusPainter.Width;
         private const int height = GoProStatusPainter.Height;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -117,7 +125,8 @@ namespace Kinovea.Camera.GoPro
             grabbing = true;
             swDataRate.Restart();
             GrabbingStatusChanged?.Invoke(this, EventArgs.Empty);
-            timer = new System.Threading.Timer(Tick, null, 0, 250);
+            period = 250;
+            timer = new System.Threading.Timer(Tick, null, 0, period);
         }
 
         public void Stop()
@@ -131,9 +140,10 @@ namespace Kinovea.Camera.GoPro
             if (t != null)
                 t.Dispose();
 
-            // No new image; one being drawn finishes first.
+            // No new image; one being drawn finishes first. The live image of this camera ends with its screen.
             grabbing = false;
             SpinWait.SpinUntil(() => Volatile.Read(ref ticking) == 0, 1000);
+            GoProPreview.Stop(address);
 
             GoProDevice d = device;
             device = null;
@@ -182,6 +192,18 @@ namespace Kinovea.Camera.GoPro
         }
         #endregion
 
+        #region ILivePreviewSource
+        /// <summary>The live image of this camera on or off (the one of another camera stops first).</summary>
+        public void SetLivePreview(bool on)
+        {
+            GoProDevice d = device;
+            if (on && d != null)
+                GoProPreview.Start(d);
+            else
+                GoProPreview.Stop(address);
+        }
+        #endregion
+
         #region Images
         private void Tick(object state)
         {
@@ -205,8 +227,31 @@ namespace Kinovea.Camera.GoPro
                     s = new GoProState { Alias = summary.Alias, Link = GoProLink.NoBluetooth, Problem = GoProText.T("Η σύνδεση Bluetooth δεν ξεκίνησε: χρειάζονται Windows 10 ή νεότερα.", "The Bluetooth connection did not start: it needs Windows 10 or later.") };
                 }
 
-                using (Graphics g = Graphics.FromImage(canvas))
-                    painter.Paint(g, s);
+                // The live image when it comes (with the state on a band over it), else the state of the camera.
+                GoProPreview preview = GoProPreview.For(address);
+                bool live = false;
+                if (preview != null)
+                {
+                    if (liveBuffer == null)
+                        liveBuffer = new byte[width * height * 3];
+
+                    live = preview.CopyLatest(liveBuffer);
+                    if (!live && preview.Status != null)
+                        s.Problem = "👁 " + preview.Status;
+                }
+
+                SetPeriod(preview != null ? 40 : 250);
+                if (live)
+                {
+                    FillCanvas(liveBuffer);
+                    using (Graphics g = Graphics.FromImage(canvas))
+                        painter.PaintOverlay(g, s);
+                }
+                else
+                {
+                    using (Graphics g = Graphics.FromImage(canvas))
+                        painter.Paint(g, s);
+                }
 
                 CopyCanvas();
                 ComputeDataRate(frameBuffer.Length);
@@ -237,6 +282,35 @@ namespace Kinovea.Camera.GoPro
             {
                 canvas.UnlockBits(data);
             }
+        }
+
+        /// <summary>The live image into the canvas (BGR, top-down, the size of the screen).</summary>
+        private void FillCanvas(byte[] bgr)
+        {
+            Rectangle rect = new Rectangle(0, 0, width, height);
+            BitmapData data = canvas.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+            try
+            {
+                int row = width * 3;
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(bgr, y * row, IntPtr.Add(data.Scan0, y * data.Stride), row);
+            }
+            finally
+            {
+                canvas.UnlockBits(data);
+            }
+        }
+
+        /// <summary>Faster images while the live image is on (25 per second), else 4 per second.</summary>
+        private void SetPeriod(int milliseconds)
+        {
+            if (milliseconds == period)
+                return;
+
+            period = milliseconds;
+            System.Threading.Timer t = timer;
+            if (t != null)
+                t.Change(milliseconds, milliseconds);
         }
 
         private void ComputeDataRate(int bytes)

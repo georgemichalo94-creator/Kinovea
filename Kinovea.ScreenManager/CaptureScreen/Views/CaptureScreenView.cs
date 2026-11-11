@@ -79,6 +79,10 @@ namespace Kinovea.ScreenManager
 
         #region Members
         private CaptureScreen presenter;
+        // (Swim 2.20.0) The live image of a camera that records on its own card (GoPro).
+        private Button btnLivePreview;
+        private Label lblRecordsOnCamera;
+        private bool? livePreviewOn;
         private CapturedFilesView capturedFilesView;
         private bool capturedFilesPanelForceCollapsed = false;
         private bool recording;
@@ -347,6 +351,61 @@ namespace Kinovea.ScreenManager
                 btnArm.Image = Properties.Capture.quick_mode_off_16;
                 toolTips.SetToolTip(btnArm, Kinovea.ScreenManager.Languages.ScreenManagerLang.tooltip_TheCaptureTriggerIsDisarmed);
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.20.0) A camera that records on its own card (GoPro): no delay, duration, capture folder or file name (nothing is
+        /// written on the computer); a line that says so and, for a camera with a live image, its button.
+        /// </summary>
+        public void SetRecordsOnCamera(bool onCamera, bool livePreview)
+        {
+            foreach (Control c in new Control[] { btnDelay, nudDelay, sldrDelay, btnDuration, nudDuration, cbCaptureFolder, btnCaptureFolders, tbFilename })
+                c.Visible = !onCamera;
+
+            if (onCamera && btnLivePreview == null)
+            {
+                btnLivePreview = new Button
+                {
+                    Location = new Point(223, 11),
+                    Size = new Size(190, 28),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.White,
+                    Cursor = Cursors.Hand,
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
+                btnLivePreview.FlatAppearance.BorderColor = Color.Silver;
+                btnLivePreview.Click += (s, e) => presenter.View_ToggleLivePreview();
+
+                lblRecordsOnCamera = new Label
+                {
+                    AutoSize = true,
+                    Location = new Point(8, 64),
+                    ForeColor = Color.DimGray
+                };
+
+                pnlControls.Controls.Add(btnLivePreview);
+                pnlControls.Controls.Add(lblRecordsOnCamera);
+            }
+
+            if (btnLivePreview != null)
+            {
+                btnLivePreview.Visible = onCamera && livePreview;
+                lblRecordsOnCamera.Visible = onCamera;
+                lblRecordsOnCamera.Text = SwimLang.T("Εγγραφή στην κάρτα της κάμερας: τίποτα δεν γράφεται στον υπολογιστή.");
+                livePreviewOn = null;
+                UpdateLivePreview(false);
+            }
+        }
+
+        /// <summary>(Swim 2.20.0) The text of the button of the live image (only when it changes).</summary>
+        public void UpdateLivePreview(bool on)
+        {
+            if (btnLivePreview == null || livePreviewOn == on)
+                return;
+
+            livePreviewOn = on;
+            btnLivePreview.Text = on ? SwimLang.T("👁 Κλείσιμο εικόνας") : SwimLang.T("👁 Ζωντανή εικόνα (Wi-Fi)");
+            toolTips.SetToolTip(btnLivePreview, SwimLang.T("Η εικόνα της κάμερας από το Wi-Fi της, μία κάμερα τη φορά (περίπου 0,3 s πίσω). Ο υπολογιστής μπαίνει στο Wi-Fi της κάμερας όσο είναι ανοιχτή."));
         }
 
         public void UpdateRecordingStatus(bool recording)

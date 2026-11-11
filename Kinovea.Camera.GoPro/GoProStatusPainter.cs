@@ -65,6 +65,53 @@ namespace Kinovea.Camera.GoPro
             PaintFooter(g, s);
         }
 
+        /// <summary>
+        /// The live image with a band over its top: the name of the camera, whether it records and for how long, its battery and card,
+        /// and that the image comes with a short delay.
+        /// </summary>
+        public void PaintOverlay(Graphics g, GoProState s)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+            using (SolidBrush band = new SolidBrush(Color.FromArgb(170, 8, 16, 22)))
+                g.FillRectangle(band, 0, 0, Width, 52);
+
+            string title = !string.IsNullOrEmpty(s.Alias) ? s.Alias : (s.BleName ?? "GoPro");
+            using (SolidBrush ink = new SolidBrush(Ink))
+            using (SolidBrush dim = new SolidBrush(Dim))
+            using (SolidBrush red = new SolidBrush(Red))
+            {
+                g.DrawString(title, fontPill, ink, new RectangleF(14, 13, 220, 26), ellipsis);
+                float x = 240;
+                if (s.Recording)
+                {
+                    g.FillEllipse(red, x, 17, 16, 16);
+                    string recording = (s.CommandPending ? GoProText.T("ΕΚΚΙΝΗΣΗ…", "STARTING…") : GoProText.T("ΕΓΓΡΑΦΗ ", "REC ") + GoProText.Clock(s.RecordingSeconds));
+                    g.DrawString(recording, fontPill, red, x + 22, 13);
+                }
+                else
+                {
+                    g.DrawString(GoProText.T("δεν γράφει", "not recording"), fontPill, dim, x, 13);
+                }
+
+                List<string> parts = new List<string>();
+                if (s.BatteryPercent >= 0)
+                    parts.Add("🔋 " + s.BatteryPercent.ToString(CultureInfo.InvariantCulture) + " %");
+
+                if (s.RemainingVideoSeconds >= 0)
+                    parts.Add(GoProText.Duration(s.RemainingVideoSeconds));
+
+                if (s.Hot)
+                    parts.Add(GoProText.T("⚠ ζέστη", "⚠ hot"));
+
+                parts.Add(GoProText.T("👁 ζωντανά (~0,3 s πίσω)", "👁 live (~0.3 s behind)"));
+                StringFormat right = new StringFormat(StringFormatFlags.NoWrap) { Alignment = StringAlignment.Far, Trimming = StringTrimming.EllipsisCharacter };
+                using (right)
+                    g.DrawString(string.Join("   ", parts), fontSub, ink, new RectangleF(520, 15, Width - 534, 26), right);
+            }
+        }
+
         private void PaintHeader(Graphics g, GoProState s)
         {
             string title = !string.IsNullOrEmpty(s.Alias) ? s.Alias : (s.BleName ?? "GoPro");

@@ -647,7 +647,19 @@ namespace Kinovea.ScreenManager
         {
             ToggleRecording();
         }
-        
+
+        /// <summary>(Swim 2.20.0) The live image of a GoPro on or off (one camera at a time).</summary>
+        public void View_ToggleLivePreview()
+        {
+            ILivePreviewSource live = cameraGrabber as ILivePreviewSource;
+            if (live == null || view == null)
+                return;
+
+            bool on = !live.LivePreview;
+            live.SetLivePreview(on);
+            view.UpdateLivePreview(on);
+        }
+
         public void View_ToggleDelayedDisplay()
         {
             delayedDisplay = !delayedDisplay;
@@ -763,6 +775,7 @@ namespace Kinovea.ScreenManager
 
             // (Swim 2.20.0) A camera that records on its own card tells its screen when it starts or stops.
             AttachRemote();
+            view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource);
 
             RaiseActivated(EventArgs.Empty);
 
@@ -930,6 +943,9 @@ namespace Kinovea.ScreenManager
                 Disconnect();
 
             DetachRemote();
+            if (view != null)
+                view.SetRecordsOnCamera(false, false);
+
             cameraGrabber = null;
 
             delayer.FreeAll();
@@ -1493,6 +1509,11 @@ namespace Kinovea.ScreenManager
 
             if (recording && remoteSource == null && recordingThumbnail == null && displayFrame != null)
                 recordingThumbnail = BitmapHelper.Copy(displayFrame);
+
+            // (Swim 2.20.0) The button of the live image follows the camera (another screen may have taken the live image).
+            ILivePreviewSource live = cameraGrabber as ILivePreviewSource;
+            if (live != null)
+                view.UpdateLivePreview(live.LivePreview);
 
             if (recording && maxRecordingSeconds > 0)
             {
