@@ -2594,6 +2594,7 @@ namespace Kinovea.ScreenManager
             { "το ffmpeg δεν έγραψε το βίντεο", "ffmpeg did not write the video" },
             { "συγχρονισμός: ήχος", "sync: sound" },
             { "συγχρονισμός: έναρξη κάμερας", "sync: camera start" },
+            { "συγχρονισμός: ήχος της εγγραφής", "sync: sound of the recording" },
             { "συγχρονισμός: ώρα αρχείου (±1 s)", "sync: file time (±1 s)" },
             { "χωρίς συγχρονισμό", "not synchronized" },
             // (2.22.0) Continuous recordings: the order of the athletes, «⏭ Επόμενος», the cut for each athlete.
@@ -2606,6 +2607,7 @@ namespace Kinovea.ScreenManager
             { "Δεν υπάρχει πάτημα για αναίρεση.", "There is no press to undo." },
             { "↶ Αναιρέθηκε· μέσα στο νερό: {0}/{1}", "↶ Undone · in the water: {0}/{1}" },
             { "• {0} βίντεο για {1} εγγραφές ({2:0.0} GB): αντιγραφή", "• {0} videos for {1} recordings ({2:0.0} GB): copy" },
+            { "• {0} βίντεο για 1 εγγραφή ({2:0.0} GB): αντιγραφή", "• {0} videos for 1 recording ({2:0.0} GB): copy" },
             { "• {0} συνεχόμενα βίντεο: κοπή σε {1} κομμάτια, ένα για κάθε αθλητή ({2:0.0} GB)", "• {0} continuous videos: cut into {1} parts, one for each athlete ({2:0.0} GB)" },
             { "Βρέθηκαν:", "Found:" },
             { "Στον φάκελο {0};\n\nΤα αρχεία της κάρτας μένουν όπως είναι.", "To the folder {0}?\n\nThe files of the card stay as they are." },

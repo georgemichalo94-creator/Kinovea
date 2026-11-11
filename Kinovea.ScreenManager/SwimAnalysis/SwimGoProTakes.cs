@@ -264,6 +264,13 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.22.0) The horns of the start signal of the computer during the recording (its clock).</summary>
         public List<DateTime> Signals = new List<DateTime>();
 
+        /// <summary>
+        /// (2.22.0) What the sound of this recording said of the measured starts of its cameras when its video of all the cameras was
+        /// made (s, by camera): the start of a camera is its measured start plus this (the same amount for all left out). The other parts
+        /// of the same continuous recording line up by it the cameras whose sound did not match (a part without the horn). Null: none.
+        /// </summary>
+        public Dictionary<string, double> Clock;
+
         [JsonIgnore]
         public bool IsPart
         {
@@ -366,6 +373,15 @@ namespace Kinovea.ScreenManager
         }
 
         public static void Save()
+        {
+            // (2.22.0) One writer at a time: the cut and the videos of all the cameras save from their own threads.
+            lock (saveLocker)
+                SaveNow();
+        }
+
+        private static readonly object saveLocker = new object();
+
+        private static void SaveNow()
         {
             string json;
             lock (locker)
@@ -820,6 +836,38 @@ namespace Kinovea.ScreenManager
             }
 
             Save();
+        }
+
+        /// <summary>(2.22.0) What the sound of a recording said of the measured starts of its cameras (see SwimTake.Clock).</summary>
+        public static void SetClock(string takeId, Dictionary<string, double> clock)
+        {
+            lock (locker)
+            {
+                SwimTake take = Data.Takes.FirstOrDefault(t => t.Id == takeId);
+                if (take == null)
+                    return;
+
+                take.Clock = clock != null && clock.Count > 0 ? new Dictionary<string, double>(clock) : null;
+            }
+
+            Save();
+        }
+
+        /// <summary>(2.22.0) The start signal sounded during the recording (for a part: during the part, on the clock of the computer).</summary>
+        public static bool HasSignal(SwimTake take)
+        {
+            if (take == null)
+                return false;
+
+            lock (locker)
+            {
+                SwimTake owner = take.IsPart ? Data.Takes.FirstOrDefault(t => t.Id == take.ParentId) : take;
+                if (owner == null || owner.Signals == null)
+                    return false;
+
+                DateTime stop = take.Stop != DateTime.MinValue ? take.Stop : DateTime.MaxValue;
+                return owner.Signals.Any(s => s >= take.Start && s <= stop);
+            }
         }
 
         /// <summary>The horn of the start signal: kept with the recording going on (none: nothing).</summary>

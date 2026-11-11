@@ -249,6 +249,65 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.22.0) As LineUp, for the views of a recording: what its sound says of the measured starts of the cameras is kept with it
+        /// (SwimTake.Clock); in a part of a continuous recording, a camera lined up by its measured start (its sound did not match:
+        /// a part without the horn) is lined up by what the sound said in the other parts of the same recording (the median), as the
+        /// starts of the cameras are those of the whole recording: «clock». The measured starts can be a tenth of a second off.
+        /// </summary>
+        public static void LineUp(string ffmpeg, List<SwimCompositeView> views, CancellationToken token, SwimTake take)
+        {
+            LineUp(ffmpeg, views, token);
+            if (take == null || views.Count < 2)
+                return;
+
+            SwimCompositeView anchor = views.FirstOrDefault(v => v.Way == "first");
+            if (anchor == null || double.IsNaN(anchor.StartOffset))
+                return;
+
+            // What the sound says: the offset it found less the one of the measured starts is the anchor's correction less the view's.
+            Dictionary<string, double> clock = new Dictionary<string, double>();
+            foreach (SwimCompositeView v in views)
+            {
+                if (v == anchor || v.Way != "sound" || double.IsNaN(v.StartOffset))
+                    continue;
+
+                clock[anchor.Camera] = 0;
+                clock[v.Camera] = (anchor.StartOffset - v.StartOffset) - (v.Offset - anchor.Offset);
+            }
+
+            if (clock.Count > 0)
+                SwimGoProTakes.SetClock(take.Id, clock);
+
+            if (!take.IsPart)
+                return;
+
+            List<SwimTake> others = SwimGoProTakes.Parts(take.ParentId).Where(p => p.Id != take.Id && p.Clock != null).ToList();
+            bool changed = false;
+            foreach (SwimCompositeView v in views)
+            {
+                if (v == anchor || v.Way != "start")
+                    continue;
+
+                List<double> d = others.Where(p => p.Clock.ContainsKey(anchor.Camera) && p.Clock.ContainsKey(v.Camera))
+                    .Select(p => p.Clock[anchor.Camera] - p.Clock[v.Camera]).OrderBy(x => x).ToList();
+                if (d.Count == 0)
+                    continue;
+
+                double median = d.Count % 2 == 1 ? d[d.Count / 2] : 0.5 * (d[d.Count / 2 - 1] + d[d.Count / 2]);
+                v.Offset += median;
+                v.Way = "clock";
+                changed = true;
+            }
+
+            if (!changed)
+                return;
+
+            double first = views[0].Offset;
+            foreach (SwimCompositeView v in views)
+                v.Offset -= first;
+        }
+
+        /// <summary>
         /// The offset of a view from the anchor by the measured starts of the cameras (from the same command: the one that started later
         /// is behind by the difference), else by the starts written in the files (to the second), else 0.
         /// </summary>
@@ -339,7 +398,7 @@ namespace Kinovea.ScreenManager
             if (progress != null)
                 progress(0.02);
 
-            LineUp(ffmpeg, views, token);
+            LineUp(ffmpeg, views, token, take);
             return MakeFromViews(ffmpeg, take, views, output, progress, token);
         }
 
@@ -669,6 +728,7 @@ namespace Kinovea.ScreenManager
             {
                 case "sound": return SwimLang.T("συγχρονισμός: ήχος");
                 case "start": return SwimLang.T("συγχρονισμός: έναρξη κάμερας");
+                case "clock": return SwimLang.T("συγχρονισμός: ήχος της εγγραφής");
                 case "file": return SwimLang.T("συγχρονισμός: ώρα αρχείου (±1 s)");
                 case "none": return SwimLang.T("χωρίς συγχρονισμό");
                 default: return "";

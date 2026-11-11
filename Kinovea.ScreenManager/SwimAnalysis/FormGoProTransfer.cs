@@ -514,7 +514,9 @@ namespace Kinovea.ScreenManager
                     double cutBytes = jobs.SelectMany(j => j.Pieces).Sum(x => x.File.Duration > 0 ? x.File.Size * (x.To - x.From) / x.File.Duration : 0);
                     List<string> found = new List<string>();
                     if (copies.Count > 0)
-                        found.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("• {0} βίντεο για {1} εγγραφές ({2:0.0} GB): αντιγραφή"), count, takeCount, bytes / 1073741824.0));
+                        found.Add(string.Format(CultureInfo.InvariantCulture, takeCount == 1 ?
+                            SwimLang.T("• {0} βίντεο για 1 εγγραφή ({2:0.0} GB): αντιγραφή") :
+                            SwimLang.T("• {0} βίντεο για {1} εγγραφές ({2:0.0} GB): αντιγραφή"), count, takeCount, bytes / 1073741824.0));
 
                     found.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("• {0} συνεχόμενα βίντεο: κοπή σε {1} κομμάτια, ένα για κάθε αθλητή ({2:0.0} GB)"),
                         cuts.Count, jobs.Count(j => j.Pieces.Count > 0), cutBytes / 1073741824.0));
@@ -821,7 +823,8 @@ namespace Kinovea.ScreenManager
             if (wanted.Count == 0)
                 return;
 
-            foreach (SwimTake t in SwimGoProTakes.Takes.Where(x => wanted.Contains(x.Id)))
+            // (2.22.0) The parts with the start signal first: their sound lines up the cameras of the others of the same recording.
+            foreach (SwimTake t in SwimGoProTakes.Takes.Where(x => wanted.Contains(x.Id)).OrderByDescending(x => SwimGoProTakes.HasSignal(x) ? 1 : 0))
             {
                 if (SwimTakeComposite.Ready(t) && !compositeFailed.Contains(t.Id) && !compositeQueue.Contains(t.Id) && t.Id != makingTake)
                     compositeQueue.Enqueue(t.Id);

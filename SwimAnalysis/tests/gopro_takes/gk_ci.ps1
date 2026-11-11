@@ -395,6 +395,26 @@ foreach ($v in $views) { $e2 = $null; [void]$compT::Probe($ff, $v, [ref]$e2); $v
 $compT::LineUp($ff, $views, $none)
 Check ($views[1].Way -eq 'start' -and [Math]::Abs($views[1].Offset - 0.5) -lt 1e-6) ('without sound, by the kept starts: ' + $views[1].Offset.ToString('0.000', $ci) + ' (' + $views[1].Way + ')')
 
+# The sound of one part lines up the others of the same recording (the test of 12.11.2026: a camera that did not hear the same as
+# the others in a part without the horn was lined up by its start measured by Bluetooth, 0.09 s off). K2's measured start 0.08 s
+# late in parts 2 and 3: part 2 made again (its sound: 0.5 s) keeps what it says of the starts; part 3 without sound by it: 0.5 s.
+foreach ($p in @($parts[1], $parts[2])) {
+  $c = @($p.Cameras | Where-Object { $_.Alias -eq 'K2' })[0]
+  $takesT::SetPartStart($p.Id, 'K2', $c.StartOffset + 0.08)
+}
+$parts = @($takesT::Parts($recording.Id))
+$made = $null
+$err = $compT::Make($ff, $parts[1], $compT::OutputPath($parts[1]), $null, $none, [ref]$made)
+Check ($err -eq $null -and $made -ne $null -and $made[1].Way -eq 'sound' -and [Math]::Abs($made[1].Offset - 0.5) -le 0.02) ('part 2 again, by its sound: ' + $(if ($made) { $made[1].Offset.ToString('0.000', $ci) + ' (' + $made[1].Way + ')' } else { $err }))
+$parts = @($takesT::Parts($recording.Id))
+$clock = $parts[1].Clock
+Write-Output ('     what the sound of part 2 says of the starts: ' + $(if ($clock) { (($clock.GetEnumerator() | Sort-Object Key | ForEach-Object { $_.Key + ' ' + $_.Value.ToString('+0.000;-0.000', $ci) }) -join ', ') } else { 'nothing' }))
+Check ($clock -ne $null -and $clock.ContainsKey('K1') -and $clock.ContainsKey('K2') -and [Math]::Abs($clock['K2'] - $clock['K1'] + 0.08) -le 0.02) 'kept with part 2: K2 started 0.08 s before its measured start'
+$views = $compT::Views($parts[2])
+foreach ($v in $views) { $e2 = $null; [void]$compT::Probe($ff, $v, [ref]$e2); $v.Sound = $false }
+$compT::LineUp($ff, $views, $none, $parts[2])
+Check ($views[1].Way -eq 'clock' -and [Math]::Abs($views[1].Offset - 0.5) -le 0.02) ('part 3 without sound, by the sound of part 2: ' + $views[1].Offset.ToString('0.000', $ci) + ' (' + $views[1].Way + '; by its measured start alone: 0.420)')
+
 # ---- The window of the videos: the parts, not the recording; the details with the order; a pasted list.
 $transferT = T 'FormGoProTransfer'
 $ctor = $transferT.GetConstructor([System.Reflection.BindingFlags]'NonPublic,Instance', $null, [Type[]]@(), $null)
