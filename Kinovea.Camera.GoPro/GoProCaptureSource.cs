@@ -21,7 +21,7 @@ namespace Kinovea.Camera.GoPro
     /// (Swim 2.20.0) The source of a capture screen with a GoPro: its images show the state of the camera (4 per second), its record
     /// button starts and stops the camera itself (the video is written on the card of the camera, not on the computer).
     /// </summary>
-    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource, ILivePreviewSource, ICameraPresetSource
+    public class GoProCaptureSource : ICaptureSource, IRemoteRecordingSource, ILivePreviewSource, ICameraPresetSource, IRemoteMediaSource
     {
         public event EventHandler<FrameProducedEventArgs> FrameProduced;
         public event EventHandler GrabbingStatusChanged;
@@ -250,11 +250,39 @@ namespace Kinovea.Camera.GoPro
         }
         #endregion
 
+        #region IRemoteMediaSource
+        /// <summary>(2.21.0) The serial number of the camera, read at its connection ("" before).</summary>
+        public string CameraSerial
+        {
+            get
+            {
+                GoProDevice d = device;
+                return d != null ? d.SerialNumber : "";
+            }
+        }
+
+        public string CameraModel
+        {
+            get
+            {
+                GoProDevice d = device;
+                return d != null ? d.ModelName : "";
+            }
+        }
+
+        /// <summary>(2.21.0) Videos of the card of this camera by its Wi-Fi (the live image of any camera stops first).</summary>
+        public System.Threading.Tasks.Task<string> DownloadAsync(Func<IList<RemoteMediaFile>, IList<RemoteMediaDownload>> choose,
+            IProgress<RemoteMediaProgress> progress, CancellationToken token)
+        {
+            return GoProMedia.DownloadAsync(device, summary.Alias, choose, progress, token);
+        }
+        #endregion
+
         #region ICameraPresetSource
         /// <summary>The sets of settings of the GoPro cameras (race, technique analysis), in the language of the interface.</summary>
         public IList<CameraPreset> CameraPresets
         {
-            get { return GoProPresets.All.Select(p => new CameraPreset(p.Id, p.Name, p.Description)).ToList(); }
+            get { return GoProPresets.All.Select(p => new CameraPreset(p.Id, p.Name, p.Description, p.Button)).ToList(); }
         }
 
         /// <summary>The GoPro cameras of the screens that are connected now.</summary>

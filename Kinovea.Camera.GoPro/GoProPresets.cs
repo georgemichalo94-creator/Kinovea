@@ -41,6 +41,8 @@ namespace Kinovea.Camera.GoPro
         public string NameEnglish;
         public string ShortGreek;
         public string ShortEnglish;
+        public string ButtonGreek;
+        public string ButtonEnglish;
         public int Fps;
         public int[] Resolutions;
         public string ResolutionLabel;
@@ -49,6 +51,12 @@ namespace Kinovea.Camera.GoPro
         public string Name
         {
             get { return GoProText.T(NameGreek, NameEnglish); }
+        }
+
+        /// <summary>(2.21.0) The name on the button of the screen ("Αγώνας", "Τεχνική").</summary>
+        public string Button
+        {
+            get { return GoProText.T(ButtonGreek, ButtonEnglish); }
         }
 
         /// <summary>The short name for the settings tile ("αγώνας", "τεχνική").</summary>
@@ -91,6 +99,8 @@ namespace Kinovea.Camera.GoPro
                 NameEnglish = "Race settings",
                 ShortGreek = "αγώνας",
                 ShortEnglish = "race",
+                ButtonGreek = "Αγώνας",
+                ButtonEnglish = "Race",
                 Fps = 50,
                 Resolutions = new[] { 6, 111 },
                 Settings = new List<GoProSettingValue>
@@ -113,6 +123,8 @@ namespace Kinovea.Camera.GoPro
                 NameEnglish = "Technique analysis settings",
                 ShortGreek = "τεχνική",
                 ShortEnglish = "technique",
+                ButtonGreek = "Τεχνική",
+                ButtonEnglish = "Technique",
                 Fps = 100,
                 // 2.7K, else 1080 (a camera that does not give 2.7K at 100 fps, or a dark pool): both good for technique.
                 Resolutions = new[] { 4, 9 },

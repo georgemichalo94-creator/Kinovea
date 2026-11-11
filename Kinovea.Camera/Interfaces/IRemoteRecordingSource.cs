@@ -6,6 +6,8 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 #endregion
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Kinovea.Camera
 {
@@ -70,12 +72,69 @@ namespace Kinovea.Camera
         public string Name { get; private set; }
         public string Description { get; private set; }
 
+        /// <summary>(2.21.0) The name on a small button ("Αγώνας"); the name when not given.</summary>
+        public string ShortName { get; private set; }
+
         public CameraPreset(string id, string name, string description)
+            : this(id, name, description, null)
+        {
+        }
+
+        public CameraPreset(string id, string name, string description, string shortName)
         {
             Id = id;
             Name = name;
             Description = description;
+            ShortName = string.IsNullOrEmpty(shortName) ? name : shortName;
         }
+    }
+
+    /// <summary>
+    /// (Swim 2.21.0) A camera that records on its own card and gives its files to the computer: who it is (its serial number, also
+    /// written in its files) and the download of some of its files by its own Wi-Fi.
+    /// </summary>
+    public interface IRemoteMediaSource
+    {
+        /// <summary>The serial number of the camera ("" while it is not known: before its first connection).</summary>
+        string CameraSerial { get; }
+
+        /// <summary>The model ("HERO9 Black"; "" while it is not known).</summary>
+        string CameraModel { get; }
+
+        /// <summary>
+        /// The computer joins the Wi-Fi of the camera, lists the videos of its card, asks `choose` which ones go where (the files and
+        /// their paths on the computer) and downloads them, then goes back to its network. One camera at a time. Returns null when it
+        /// went, else what went wrong (in the language of the interface).
+        /// </summary>
+        Task<string> DownloadAsync(Func<IList<RemoteMediaFile>, IList<RemoteMediaDownload>> choose, IProgress<RemoteMediaProgress> progress, CancellationToken token);
+    }
+
+    /// <summary>(Swim 2.21.0) A video on the card of a camera.</summary>
+    public sealed class RemoteMediaFile
+    {
+        /// <summary>The folder of the card ("100GOPRO") and the name of the file ("GX010123.MP4").</summary>
+        public string Folder { get; set; }
+        public string Name { get; set; }
+
+        /// <summary>When the recording started, on the clock of the camera (the clock of the computer since the camera took it).</summary>
+        public DateTime Created { get; set; }
+
+        public long Size { get; set; }
+    }
+
+    /// <summary>(Swim 2.21.0) A file of the card and where it goes on the computer.</summary>
+    public sealed class RemoteMediaDownload
+    {
+        public RemoteMediaFile File { get; set; }
+        public string TargetPath { get; set; }
+    }
+
+    /// <summary>(Swim 2.21.0) How a download goes: the file, its bytes so far and in all.</summary>
+    public sealed class RemoteMediaProgress
+    {
+        public string Text { get; set; }
+        public long Done { get; set; }
+        public long Total { get; set; }
     }
 
     /// <summary>

@@ -76,6 +76,17 @@ namespace Kinovea.Camera.GoPro
         public static void Start(GoProDevice device)
         {
             HookExit();
+
+            // (2.21.0) The Wi-Fi of the computer is taken by a download of videos: the live image waits for it.
+            if (GoProMedia.Busy)
+            {
+                lock (currentLock)
+                    outcomes[device.Address] = new KeyValuePair<DateTime, string>(DateTime.UtcNow,
+                        GoProText.T("περιμένει το κατέβασμα των βίντεο (Wi-Fi) να τελειώσει.", "waits for the download of the videos (Wi-Fi) to end."));
+
+                return;
+            }
+
             GoProPreview previous;
             GoProPreview preview = new GoProPreview(device);
             lock (currentLock)
@@ -91,6 +102,19 @@ namespace Kinovea.Camera.GoPro
                 await stopping.ConfigureAwait(false);
                 await preview.RunAsync().ConfigureAwait(false);
             });
+        }
+
+        /// <summary>(2.21.0) Stops the live image of any camera and waits until the computer is back on its network.</summary>
+        public static Task StopAnyAsync()
+        {
+            GoProPreview preview;
+            lock (currentLock)
+            {
+                preview = current;
+                current = null;
+            }
+
+            return preview != null ? preview.StopAsync() : Task.FromResult(0);
         }
 
         /// <summary>Stops the live image of this camera (if it is on).</summary>

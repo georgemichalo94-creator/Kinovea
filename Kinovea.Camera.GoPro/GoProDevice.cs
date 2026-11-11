@@ -157,6 +157,18 @@ namespace Kinovea.Camera.GoPro
             get { lock (locker) { return connected; } }
         }
 
+        /// <summary>(2.21.0) The serial number of the camera (from its connection; "" before).</summary>
+        public string SerialNumber
+        {
+            get { lock (locker) { return serialNumber ?? ""; } }
+        }
+
+        /// <summary>(2.21.0) The model ("HERO9 Black"; "" before the first connection).</summary>
+        public string ModelName
+        {
+            get { lock (locker) { return modelName ?? ""; } }
+        }
+
         /// <summary>The camera records (what it says; while a command is on its way, what was asked).</summary>
         public bool EffectiveRecording
         {
@@ -201,6 +213,7 @@ namespace Kinovea.Camera.GoPro
         private int applying;
         private string modelName;
         private string firmware;
+        private string serialNumber;
         private int batteryPercent = -1;
         private int batteryBars = -1;
         private int primaryStorage = -1;
@@ -644,6 +657,10 @@ namespace Kinovea.Camera.GoPro
 
                 if (fields.Count > 3)
                     firmware = GoProPackets.Text(fields[3]);
+
+                // (2.21.0) The serial number: the camera of a file of a card (it is written in its files too).
+                if (fields.Count > 4)
+                    serialNumber = GoProPackets.Text(fields[4]);
             }
 
             GoProSighting seen = GoProScanner.Find(Address);
@@ -1272,7 +1289,7 @@ namespace Kinovea.Camera.GoPro
             }
         }
 
-        private void SetNotice(string text, bool error, int seconds)
+        internal void SetNotice(string text, bool error, int seconds)
         {
             lock (locker)
             {
