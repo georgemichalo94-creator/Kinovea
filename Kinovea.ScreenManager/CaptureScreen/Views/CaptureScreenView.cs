@@ -520,7 +520,7 @@ namespace Kinovea.ScreenManager
 
             btnSignal = SmallButton(x, SwimLang.T("📣 Σήμα"));
             btnSignal.Click += (s, e) => Flash(btnSignal, presenter != null && presenter.View_StartSignal());
-            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από 1,5 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
+            toolTips.SetToolTip(btnSignal, SwimLang.T("Σήμα εκκίνησης: «Take your marks» και μετά από 1 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό."));
 
             btnUndoAthlete = SmallButton(x, "↶");
             btnUndoAthlete.Click += (s, e) => UndoAthleteClicked();

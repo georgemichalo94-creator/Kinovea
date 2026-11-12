@@ -2646,7 +2646,7 @@ namespace Kinovea.ScreenManager
             // (2.22.0) The start signal of the computer.
             { "🏁 Τέλος", "🏁 End" },
             { "📣 Σήμα", "📣 Signal" },
-            { "Σήμα εκκίνησης: «Take your marks» και μετά από 1,5 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό.", "Start signal: «Take your marks» and the horn 1.5 s later. All the cameras hear the horn: it lines them up by their sound and gives the moment of the start. With a speaker by the water, the cameras in the water hear it too." },
+            { "Σήμα εκκίνησης: «Take your marks» και μετά από 1 s η κόρνα. Η κόρνα ακούγεται σε όλες τις κάμερες: τις συγχρονίζει από τον ήχο και δίνει τη στιγμή της εκκίνησης. Με ηχείο δίπλα στο νερό ακούγεται και στις κάμερες μέσα στο νερό.", "Start signal: «Take your marks» and the horn 1 s later. All the cameras hear the horn: it lines them up by their sound and gives the moment of the start. With a speaker by the water, the cameras in the water hear it too." },
         };
     }
 }
