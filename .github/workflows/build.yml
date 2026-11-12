@@ -104,6 +104,23 @@ jobs:
         path: Kinovea-Swim-Portable-${{env.VERSION}}.zip
         archive: false
 
+    # (2.22.0) The Baumer camera plugin (the GigE cameras of the Contemplas system), as Kinovea installs a camera plugin: a folder
+    # Baumer under AppData\Plugins\Camera with its manifest, its assembly and the Baumer GAPI runtime (Refs\Baumer). The assemblies
+    # of Kinovea itself stay out (the plugin uses those of the program).
+    - name: Zip Baumer camera plugin
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        $src = "Kinovea.Camera.Baumer\bin\x64\Release"
+        if (-not (Test-Path "$src\Kinovea.Camera.Baumer.dll")) { Write-Output "::warning title=Baumer plugin::not built"; exit 0 }
+        $dst = "plugin-baumer\Baumer"
+        New-Item -ItemType Directory -Force -Path $dst | Out-Null
+        Get-ChildItem $src -File | Where-Object { $_.Extension -ne '.pdb' -and $_.Name -notmatch '^(Kinovea\.(Camera|Pipeline|Services)|log4net)\.dll$' } | Copy-Item -Destination $dst
+        if (-not (Test-Path "$dst\manifest.xml")) { Write-Output "::warning title=Baumer plugin::no manifest"; exit 0 }
+        Compress-Archive -Path "plugin-baumer\*" -DestinationPath Kinovea-Camera-Baumer.zip -Force
+        $files = Get-ChildItem $dst | ForEach-Object { $_.Name }
+        Write-Output ("::notice title=Baumer plugin::" + $files.Count + " files: " + ($files -join ', '))
+
     # The checks of the swim module before the draft release below (a failure stops it): the script with its mock of Apps Script,
     # and the technique evaluation of the built DLL on a fictional turn and start with a fictional catalogue (the coach's real
     # sheets stay on the analysts' computers), in Windows PowerShell as Kinovea runs (.NET Framework).
@@ -312,6 +329,15 @@ jobs:
           $upload = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=$zip"
           $asset = Invoke-RestMethod $upload -Method Post -Headers $headers -InFile $zip -ContentType "application/zip"
           Write-Output "::notice title=Draft release::$tag $($asset.name) $($asset.size) bytes"
+          # (2.22.0) The Baumer camera plugin beside it (the cameras of the Contemplas system), for AppData\Plugins\Camera.
+          if (Test-Path Kinovea-Camera-Baumer.zip) {
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'Kinovea-Camera-Baumer.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $upb = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=Kinovea-Camera-Baumer.zip"
+            $ab = Invoke-RestMethod $upb -Method Post -Headers $headers -InFile Kinovea-Camera-Baumer.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release Baumer plugin::$($ab.name) $($ab.size) bytes"
+          }
           # (2.16.0) The images of the check of the group of screens beside it (drawn on fictional data), for a look.
           if (Test-Path group-panel) {
             Compress-Archive -Path group-panel\* -DestinationPath group-panel.zip -Force
