@@ -145,14 +145,85 @@ public static class FictionalPool2
             x[i] = BitConverter.ToInt16(wav, 44 + 2 * i) / 32768f;
         int m = (int)((long)n * to / from);
         float[] y = new float[m];
+        double ratio = from / (double)to;
+        int half = ratio > 1.5 ? (int)Math.Floor(ratio / 2) : 0;
         for (int j = 0; j < m; j++)
         {
-            double p = j * (double)from / to;
+            double p = j * ratio;
             int i = (int)p;
+            if (half > 0)
+            {
+                // From a higher rate: the mean of the samples around (a low pass: less of what is above the new half rate folds back).
+                double sum = 0;
+                int count = 0;
+                for (int k = Math.Max(0, i - half); k <= Math.Min(n - 1, i + half); k++)
+                {
+                    sum += x[k];
+                    count++;
+                }
+                y[j] = (float)(sum / Math.Max(1, count));
+                continue;
+            }
             double f = p - i;
             y[j] = (float)(i + 1 < n ? x[i] * (1 - f) + x[i + 1] * f : x[Math.Min(i, n - 1)]);
         }
         return y;
+    }
+
+    // A fictional WAV of two channels (16 bits) for the own sounds of the start signal.
+    public static void WriteStereo(string path, double[] left, double[] right, int rate)
+    {
+        int n = left.Length;
+        using (var w = new System.IO.BinaryWriter(System.IO.File.Create(path)))
+        {
+            w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + 4 * n);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt ")); w.Write(16); w.Write((short)1); w.Write((short)2);
+            w.Write(rate); w.Write(rate * 4); w.Write((short)4); w.Write((short)16);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("data")); w.Write(4 * n);
+            for (int i = 0; i < n; i++)
+            {
+                w.Write((short)Math.Round(32767 * Math.Max(-1, Math.Min(1, left[i]))));
+                w.Write((short)Math.Round(32767 * Math.Max(-1, Math.Min(1, right[i]))));
+            }
+        }
+    }
+
+    // A fictional horn: two square tones together (low and high), silence before and after.
+    public static double[] Horn2(int rate, double before, double length, double after, double low, double high)
+    {
+        int n = (int)((before + length + after) * rate);
+        double[] x = new double[n];
+        int a = (int)(before * rate), b = (int)((before + length) * rate);
+        for (int i = a; i < b; i++)
+        {
+            double t = (i - a) / (double)rate;
+            x[i] = 0.4 * Math.Sign(Math.Sin(2 * Math.PI * low * t)) + 0.4 * Math.Sign(Math.Sin(2 * Math.PI * high * t));
+        }
+        return x;
+    }
+
+    // Fictional words: bursts of a voice of 125 Hz (its 7th and 8th harmonics 875 and 1000 Hz, 8/7 apart as the tones of a horn)
+    // and a low rumble after them (40 dB under: not words).
+    public static double[] Voice2(int rate, double[][] bursts, double seconds)
+    {
+        int n = (int)(seconds * rate);
+        double[] x = new double[n];
+        foreach (double[] burst in bursts)
+        {
+            int a = (int)(burst[0] * rate), b = Math.Min(n, (int)(burst[1] * rate));
+            for (int i = a; i < b; i++)
+            {
+                double t = i / (double)rate, s = 0;
+                for (int k = 1; k <= 20; k++)
+                    s += Math.Sin(2 * Math.PI * k * 125 * t) / k;
+                double edge = Math.Min(1, Math.Min((i - a) / (0.02 * rate), (b - 1 - i) / (0.02 * rate)));
+                x[i] = 0.35 * edge * s;
+            }
+        }
+        double end = bursts[bursts.Length - 1][1];
+        for (int i = (int)(end * rate); i < n; i++)
+            x[i] += 0.006 * Math.Sin(2 * Math.PI * 30 * i / (double)rate);
+        return x;
     }
 
     // The signal as a camera at the pool hears it from the speaker: lower, with the noise of its microphone (never digital silence).
@@ -454,7 +525,7 @@ Write-Output 'step: the start signal'
 $sigT = T 'SwimStartSignal'
 $hornAt = 0.0
 $wave = $sigT::Build([int16[]]@(), $sigT::Pause, [ref]$hornAt)
-$samples = [FictionalPool2]::Heard([FictionalPool2]::ToRate($wave, 22050, 16000), 5)
+$samples = [FictionalPool2]::Heard([FictionalPool2]::ToRate($wave, $sigT::Rate, 16000), 5)
 $beeps = (T 'SwimStartSound')::Find($samples)
 $b0 = if ($beeps.Count -gt 0) { $beeps[0] } else { $null }
 if ($b0) { Write-Output ('     heard: ' + $b0.Onset.ToString('0.000', $ci) + ' s (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s), ' + $b0.Low.ToString('0', $ci) + '/' + $b0.High.ToString('0', $ci) + ' Hz, score ' + $b0.Score.ToString('0.0', $ci)) }
@@ -465,17 +536,45 @@ $horn = $sigT::Horn()
 $sq = 0.0
 foreach ($s in $horn) { $sq += [double]$s * [double]$s }
 $rms = [Math]::Sqrt($sq / $horn.Length) / 32767.0
-Write-Output ('     the horn: ' + ($horn.Length / 22050.0).ToString('0.00', $ci) + ' s, level ' + $rms.ToString('0.000', $ci) + ' of the scale (two plain tones: 0.380), pause ' + $sigT::Pause + ' s')
-Check ($rms -ge 0.65 -and $horn.Length -le [int](0.35 * 22050) -and $sigT::Pause -eq 1.5) 'the horn short and loud as at the meets (0.3 s, its level at least 0.65 of the scale), 1.5 s after the words'
+Write-Output ('     the horn: ' + ($horn.Length / [double]$sigT::Rate).ToString('0.00', $ci) + ' s, level ' + $rms.ToString('0.000', $ci) + ' of the scale (two plain tones: 0.380), pause ' + $sigT::Pause + ' s')
+Check ($rms -ge 0.65 -and $horn.Length -le [int](0.35 * $sigT::Rate) -and $sigT::Pause -eq 1.5) 'the horn short and loud as at the meets (0.3 s, its level at least 0.65 of the scale), 1.5 s after the words'
 $words = $sigT::Voice()
-Write-Output ('     the words of Windows: ' + ($words.Length / 22050.0).ToString('0.00', $ci) + ' s')
+Write-Output ('     the words of Windows: ' + ($words.Length / [double]$sigT::Rate).ToString('0.00', $ci) + ' s')
 $full = $sigT::Build($words, $sigT::Pause, [ref]$hornAt)
 Check ($full.Length -gt $wave.Length -or $words.Length -eq 0) 'the words before the pause (when Windows has a voice)'
 # The words without the band of the horn: the start analysis hears only the horn as a start signal, not the voice before it.
-$beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($full, 22050, 16000), 6))
+$beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($full, $sigT::Rate, 16000), 6))
 Write-Output ('     with the words, heard: ' + (($beeps | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s ' + $_.Low.ToString('0', $ci) + '/' + $_.High.ToString('0', $ci) + ' Hz score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') + ' (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s)')
 Check ($beeps.Count -gt 0 -and [Math]::Abs($beeps[0].Onset - $hornAt) -le 0.06) 'with the words before it: the horn the clearest start signal, at its moment'
 if ($out) { [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($out, 'gk_signal.wav'), $full) }
+
+# The own sounds of the analyst (12.11.2026: those of TEMPLO, at 44.1 kHz, two channels): fictional ones in the folder of the settings,
+# read where they are. The words from their first sound to their last (the rumble after them out), without the band of the horn; the
+# horn from its first sound; the signal with them: the horn heard at its moment with its tones, the clearest with the words before it.
+$r = $sigT::Rate
+Check ($sigT::Sounds() -eq 'words: voice of Windows; horn: made') ('no own sounds: ' + $sigT::Sounds())
+$bursts = [double[][]]@([double[]]@(0.20, 0.60), [double[]]@(0.80, 1.20), [double[]]@(1.40, 1.70))
+$v = [FictionalPool2]::Voice2($r, $bursts, 2.4)
+[FictionalPool2]::WriteStereo([System.IO.Path]::Combine($settingsDir, 'SwimStartWords.wav'), $v, $v, $r)
+$h = [FictionalPool2]::Horn2($r, 0.08, 0.25, 0.4, 915, 1046)
+[FictionalPool2]::WriteStereo([System.IO.Path]::Combine($settingsDir, 'SwimStartHorn.wav'), $h, $h, $r)
+Write-Output ('     own sounds: ' + $sigT::Sounds())
+$ownWords = $sigT::WordsSound()
+$ownHorn = $sigT::HornSound()
+$wordsLength = $ownWords.Length / [double]$r
+$hornLength = $ownHorn.Length / [double]$r
+Write-Output ('     own words ' + $wordsLength.ToString('0.000', $ci) + ' s (their sounds: 1.500 s), own horn ' + $hornLength.ToString('0.000', $ci) + ' s (0.250 s)')
+Check ($sigT::Sounds() -eq 'words: SwimStartWords.wav; horn: SwimStartHorn.wav') 'the own sounds found in the folder of the settings'
+Check ([Math]::Abs($wordsLength - 1.50) -le 0.04) 'the own words from their first sound to their last (the rumble after them out)'
+Check ($hornLength -ge 0.25 -and $hornLength -le 0.26) 'the own horn from its first sound'
+$ownAt = 0.0
+$ownWave = $sigT::Build($ownWords, $ownHorn, $sigT::Pause, [ref]$ownAt)
+$beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($ownWave, $r, 16000), 7))
+Write-Output ('     with the own sounds, heard: ' + (($beeps | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s ' + $_.Low.ToString('0', $ci) + '/' + $_.High.ToString('0', $ci) + ' Hz score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') + ' (the horn at ' + $ownAt.ToString('0.000', $ci) + ' s)')
+Check ($beeps.Count -gt 0 -and [Math]::Abs($beeps[0].Onset - $ownAt) -le 0.06 -and [Math]::Abs($beeps[0].Low - 915) -le 30 -and [Math]::Abs($beeps[0].High - 1046) -le 30) 'the own horn heard at its moment with its tones, the clearest with the own words before it'
+[System.IO.File]::Delete([System.IO.Path]::Combine($settingsDir, 'SwimStartWords.wav'))
+[System.IO.File]::Delete([System.IO.Path]::Combine($settingsDir, 'SwimStartHorn.wav'))
+Check ($sigT::Sounds() -eq 'words: voice of Windows; horn: made') 'without them again: the voice of Windows and the made horn'
 
 # ---- The end of the session; the parts out of the list, the recording too.
 $takesT::EndSession()
