@@ -542,7 +542,9 @@ Check ($rms -ge 0.30 -and $horn.Length -le [int](0.26 * $sigT::Rate) -and $sigT:
 $words = $sigT::Voice()
 Write-Output ('     the words of Windows: ' + ($words.Length / [double]$sigT::Rate).ToString('0.00', $ci) + ' s')
 $full = $sigT::Build($words, $sigT::Pause, [ref]$hornAt)
-Check ($full.Length -gt $wave.Length -or $words.Length -eq 0) 'the words before the pause (when Windows has a voice)'
+$noWordsAt = 0.0
+$noWords = $sigT::Build([int16[]]@(), $sigT::Pause, [ref]$noWordsAt)
+Check ($full.Length -gt $noWords.Length -or $words.Length -eq 0) 'the words before the pause (when Windows has a voice)'
 # The words without the band of the horn: the start analysis hears only the horn as a start signal, not the voice before it.
 $beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($full, $sigT::Rate, 16000), 6))
 Write-Output ('     with the words, heard: ' + (($beeps | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s ' + $_.Low.ToString('0', $ci) + '/' + $_.High.ToString('0', $ci) + ' Hz score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') + ' (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s)')
