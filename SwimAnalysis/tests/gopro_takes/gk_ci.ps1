@@ -584,22 +584,22 @@ Write-Output ('     with the words, heard: ' + (($beeps | Select-Object -First 3
 Check ($beeps.Count -gt 0 -and [Math]::Abs($beeps[0].Onset - $hornAt) -le 0.06) 'with the words before it: the horn the clearest start signal, at its moment'
 
 # (2.22.0) The start key (G) of a training video goes to the horn heard near the press (Kinovea plays no sound, the horn of the 📣 has
-# no light): pressed with the swimmer still on the block (2.5 s before the horn), at the release (0.7 s after) or in the flight (3.5 s
-# after), the signal at the horn; pressed farther than the window (3 s before to 4 s after the press), none. Two horns 2 s apart: the
-# one nearest to the press. No horn: none (the signal stays at the press).
+# no light): pressed with the swimmer still on the block (3.5 or 2.5 s before the horn), at the release (0.7 s after) or under the water
+# (2.5 s after), the signal at the horn; pressed farther (the horn more than 4 s after the press or more than 3 s before it), none. Two
+# horns 2 s apart: the one nearest to the press. No horn: none (the signal stays at the press).
 $soundT = T 'SwimStartSound'
 $padded = [FictionalPool2]::Heard([FictionalPool2]::Pad([FictionalPool2]::ToRate($full, $sigT::Rate, 16000), 3.0, 4.0), 8)
 $hornIn = $hornAt + 3.0
 $beeps = $soundT::Find($padded)
-$offsets = [double[]]@(-2.5, 0.7, 3.5, -4.5, 4.5)
+$offsets = [double[]]@(-3.5, -2.5, 0.7, 2.5, -4.5, 3.5)
 $fromPress = @{}
 foreach ($d in $offsets) {
   $h = $soundT::HornNear($beeps, $hornIn + $d)
   if ($h) { $fromPress[$d] = $h.Onset - $hornIn } else { $fromPress[$d] = $null }
 }
 Write-Output ('     the horn from presses at ' + (($offsets | ForEach-Object { $_.ToString('+0.0;-0.0', $ci) + ' s: ' + $(if ($fromPress[$_] -ne $null) { $fromPress[$_].ToString('+0.000;-0.000', $ci) } else { 'none' }) }) -join ' | ') + ' (from the horn)')
-Check (@($offsets[0..2] | Where-Object { $fromPress[$_] -eq $null -or [Math]::Abs($fromPress[$_]) -gt 0.06 }).Count -eq 0) 'the start key of a training video at the horn: pressed 2.5 s before it, 0.7 s and 3.5 s after it'
-Check ($fromPress[$offsets[3]] -eq $null -and $fromPress[$offsets[4]] -eq $null) 'pressed farther from the horn than the window (3 s before to 4 s after the press): none'
+Check (@($offsets[0..3] | Where-Object { $fromPress[$_] -eq $null -or [Math]::Abs($fromPress[$_]) -gt 0.06 }).Count -eq 0) 'the start key of a training video at the horn: pressed 3.5 and 2.5 s before it, 0.7 and 2.5 s after it'
+Check ($fromPress[$offsets[4]] -eq $null -and $fromPress[$offsets[5]] -eq $null) 'pressed farther from the horn (4.5 s before it, 3.5 s after it): none'
 $two = [FictionalPool2]::Horns(12.0, [double[]]@(5.0, 7.0), 912.3, 1043.3, 9)
 $beeps2 = $soundT::Find($two)
 $h1 = $soundT::HornNear($beeps2, 4.6)
