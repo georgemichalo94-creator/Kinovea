@@ -274,6 +274,16 @@ namespace Kinovea.Camera.GoPro
         private string lastNote;
         private DateTime lastNoteAt = DateTime.MinValue;
 
+        // (2.22.0) A HERO9 takes this computer again only in pairing mode (it does not keep it, as if the pairing was not completed on
+        // its side), a HERO12 connects by itself. Once per session, a camera in pairing mode while Windows keeps an older pairing with
+        // it is paired again from the start (then the pairing is finished and its state asked). The steps of a first connection that
+        // does not come go to the log from the third attempt (at most 12 lines).
+        private int attemptsSinceBegin;
+        private int firstNotes;
+        private static readonly object pairedLock = new object();
+        private static readonly HashSet<ulong> pairedAgain = new HashSet<ulong>();
+        private static bool adapterLogged;
+
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
 
@@ -304,6 +314,12 @@ namespace Kinovea.Camera.GoPro
         #region Life
         private void Begin()
         {
+            lock (locker)
+            {
+                attemptsSinceBegin = 0;
+                firstNotes = 0;
+            }
+
             Task previous = loop;
             cancel = new CancellationTokenSource();
             CancellationToken token = cancel.Token;
@@ -463,6 +479,7 @@ namespace Kinovea.Camera.GoPro
                 // The state of the radio is not always given to desktop programs.
             }
 
+            LogAdapter(adapter);
             SetLink(GoProLink.Connecting, LostHint());
             bool afterLoss;
             int attempt;
@@ -472,8 +489,13 @@ namespace Kinovea.Camera.GoPro
                 if (afterLoss)
                     attemptsSinceLoss++;
 
-                attempt = attemptsSinceLoss;
+                attemptsSinceBegin++;
+                attempt = afterLoss ? attemptsSinceLoss : attemptsSinceBegin;
             }
+
+            // (2.22.0) A first connection that does not come: what is heard goes to the log for 2 minutes.
+            if (!afterLoss && attempt == 3)
+                GoProScanner.Verbose(TimeSpan.FromMinutes(2));
 
             BluetoothLEDevice device = await BluetoothLEDevice.FromBluetoothAddressAsync(Address).AsTask(token).ConfigureAwait(false);
             if (device == null)
@@ -495,6 +517,43 @@ namespace Kinovea.Camera.GoPro
                 return;
             }
 
+            // (2.22.0) In pairing mode while Windows keeps an older pairing with it (a HERO9 takes the computer again only so): paired
+            // again from the start, once per session, so that the camera completes the pairing and keeps this computer.
+            bool inPairingMode = InPairingMode();
+            if (pairing.IsPaired && inPairingMode)
+            {
+                bool first;
+                lock (pairedLock)
+                    first = pairedAgain.Add(Address);
+
+                if (first)
+                {
+                    log.WarnFormat("GoPro {0:X12}: in pairing mode while Windows keeps an older pairing with it (protection {1}): paired again from the start, once.",
+                        Address, pairing.ProtectionLevel);
+                    SetLink(GoProLink.Pairing, GoProText.T("Σύζευξη από την αρχή, ώστε η κάμερα να θυμάται τον υπολογιστή…", "Pairing again from the start, so that the camera remembers the computer…"));
+                    string dropped = "?";
+                    try
+                    {
+                        DeviceUnpairingResult unpaired = await pairing.UnpairAsync().AsTask(token).ConfigureAwait(false);
+                        if (unpaired != null)
+                            dropped = unpaired.Status.ToString();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception e)
+                    {
+                        dropped = e.Message;
+                    }
+
+                    log.WarnFormat("GoPro {0:X12}: the older pairing of Windows dropped: {1}.", Address, dropped);
+                    device.Dispose();
+                    return;
+                }
+            }
+
+            bool pairedNow = false;
             if (!pairing.IsPaired)
             {
                 if (!pairing.CanPair || !InPairingMode())
@@ -527,6 +586,8 @@ namespace Kinovea.Camera.GoPro
                     SetLink(GoProLink.NeedsPairing, PairingHint() + " (" + status + ")");
                     return;
                 }
+
+                pairedNow = status == DevicePairingResultStatus.Paired;
             }
 
             // (2.22.0) After a loss, from the third attempt on: Windows is asked to hold the connection itself (a kept session) before the
@@ -562,8 +623,12 @@ namespace Kinovea.Camera.GoPro
                 try { linkNow = device.ConnectionStatus.ToString(); }
                 catch (Exception) { linkNow = "?"; }
 
+                string addressType;
+                try { addressType = device.BluetoothAddressType.ToString(); }
+                catch (Exception) { addressType = "?"; }
+
                 Note("services: " + found.Status + " (" + found.Services.Count + " found), link of Windows " + linkNow +
-                    (early != null ? ", kept session " + early.SessionStatus : ""));
+                    (early != null ? ", kept session " + early.SessionStatus : "") + ", address " + addressType);
                 DropSession(early);
                 device.Dispose();
                 if (found.Status == GattCommunicationStatus.AccessDenied)
@@ -672,36 +737,46 @@ namespace Kinovea.Camera.GoPro
                 log.WarnFormat("GoPro {0:X12}: connected again {1:0} s after the loss (attempt {2}{3}).", Address, (DateTime.UtcNow - lostSince).TotalSeconds,
                     attempt, early != null ? ", kept session" : "");
 
+            int attempts;
             lock (locker)
             {
+                attempts = attemptsSinceBegin;
                 attemptsSinceLoss = 0;
+                attemptsSinceBegin = 0;
+                firstNotes = 0;
                 lastNote = null;
             }
 
-            await PrepareAsync(token).ConfigureAwait(false);
-
-            // (2.22.0) A stop that waited for the camera goes now.
+            // (2.22.0) A stop that waited for the camera goes first (it records on meanwhile), then the preparation, then again if it
+            // was not taken.
+            await DeliverWaitingStopAsync().ConfigureAwait(false);
+            await PrepareAsync(token, inPairingMode, pairedNow, attempts).ConfigureAwait(false);
             await DeliverWaitingStopAsync().ConfigureAwait(false);
         }
 
         private async Task FindOptionalAsync(BluetoothLEDevice device, CancellationToken token)
         {
+            string networkNote = "not asked";
             try
             {
                 GattDeviceServicesResult network = await device.GetGattServicesForUuidAsync(GoProIds.NetworkService, BluetoothCacheMode.Uncached).AsTask(token).ConfigureAwait(false);
+                networkNote = "service " + network.Status + " (" + network.Services.Count + ")";
                 if (network.Status == GattCommunicationStatus.Success && network.Services.Count > 0)
                 {
                     lock (locker)
                         services.Add(network.Services[0]);
 
                     GattCharacteristicsResult chars = await network.Services[0].GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(token).ConfigureAwait(false);
+                    networkNote += ", characteristics " + chars.Status;
                     if (chars.Status == GattCommunicationStatus.Success)
                     {
                         GattCharacteristic cmd = chars.Characteristics.FirstOrDefault(c => c.Uuid == GoProIds.NetworkCommand);
                         GattCharacteristic rsp = chars.Characteristics.FirstOrDefault(c => c.Uuid == GoProIds.NetworkResponse);
+                        networkNote += " (" + string.Join(" ", chars.Characteristics.Select(c => c.Uuid.ToString("D").Substring(4, 4))) + ")";
                         if (cmd != null && rsp != null)
                         {
                             GattCommunicationStatus status = await rsp.WriteClientCharacteristicConfigurationDescriptorAsync(GattClientCharacteristicConfigurationDescriptorValue.Notify).AsTask(token).ConfigureAwait(false);
+                            networkNote += ", notifications " + status;
                             if (status == GattCommunicationStatus.Success)
                             {
                                 rsp.ValueChanged += Response_ValueChanged;
@@ -739,14 +814,17 @@ namespace Kinovea.Camera.GoPro
             catch (Exception e)
             {
                 log.Debug("The optional services of the camera were not found.", e);
+                networkNote += ", " + e.Message;
             }
+
+            log.WarnFormat("GoPro {0:X12}: network management (the end of the pairing): {1}.", Address, networkNote);
         }
 
         /// <summary>
         /// After the connection: wait until the camera answers, finish the pairing, the clock of the computer, all the statuses and
         /// settings with their changes, the Wi-Fi off (unless the live image is on).
         /// </summary>
-        private async Task PrepareAsync(CancellationToken token)
+        private async Task PrepareAsync(CancellationToken token, bool inPairingMode, bool pairedNow, int attempts)
         {
             for (int i = 0; i < 10 && !token.IsCancellationRequested; i++)
             {
@@ -761,14 +839,18 @@ namespace Kinovea.Camera.GoPro
             }
 
             GattCharacteristic network = Get(c => c.networkCommand);
+            byte[] finish = null;
             if (network != null)
             {
                 // RequestPairingFinish { result = SUCCESS (0), phoneName = "Kinovea" } on the feature 0x03, action 0x01.
                 byte[] name = Encoding.ASCII.GetBytes("Kinovea");
                 List<byte> message = new List<byte> { GoProIds.FeatureWirelessManagement, GoProIds.ActionSetPairingState, 0x08, 0x00, 0x12, (byte)name.Length };
                 message.AddRange(name);
-                await RequestAsync(network, GoProIds.NetworkResponse, GoProIds.FeatureWirelessManagement, message.ToArray(), 1500).ConfigureAwait(false);
+                finish = await RequestAsync(network, GoProIds.NetworkResponse, GoProIds.FeatureWirelessManagement, message.ToArray(), 1500).ConfigureAwait(false);
             }
+
+            // (2.22.0) How the camera keeps this computer (a HERO9 took it again only in pairing mode), in the log at each connection.
+            await LogPairingAsync(network != null, finish, inPairingMode, pairedNow, attempts).ConfigureAwait(false);
 
             await RequestAsync(Get(c => c.command), GoProIds.CommandResponse, GoProIds.CmdSetThirdPartyClient, new byte[] { GoProIds.CmdSetThirdPartyClient }, 1000).ConfigureAwait(false);
             await SetClockAsync(token).ConfigureAwait(false);
@@ -830,9 +912,13 @@ namespace Kinovea.Camera.GoPro
         private void Note(string what)
         {
             int attempt;
+            string when;
             lock (locker)
             {
-                if (lostAt == DateTime.MinValue && !stopWaiting)
+                bool afterLoss = lostAt != DateTime.MinValue || stopWaiting;
+
+                // (2.22.0) A first connection that does not come: its steps too, from the third attempt (at most 12 lines).
+                if (!afterLoss && (attemptsSinceBegin < 3 || firstNotes >= 12))
                     return;
 
                 if (what == lastNote && (DateTime.UtcNow - lastNoteAt).TotalSeconds < 30)
@@ -840,10 +926,64 @@ namespace Kinovea.Camera.GoPro
 
                 lastNote = what;
                 lastNoteAt = DateTime.UtcNow;
-                attempt = attemptsSinceLoss;
+                attempt = afterLoss ? attemptsSinceLoss : attemptsSinceBegin;
+                when = lostAt != DateTime.MinValue ? "after the loss" : (stopWaiting ? "with the stop waiting" : "to connect");
+                if (!afterLoss)
+                    firstNotes++;
             }
 
-            log.WarnFormat("GoPro {0:X12}: attempt {1} after the loss: {2}.", Address, attempt, what);
+            log.WarnFormat("GoPro {0:X12}: attempt {1} {2}: {3}.", Address, attempt, when, what);
+        }
+
+        /// <summary>
+        /// (2.22.0) The end of the pairing as the camera answered it and the pairing statuses (19 state: 4 completed; 20 last type;
+        /// 21 last success, ms after boot; 27 remote; 28 legacy state; 31 connected devices), in the log at each connection.
+        /// </summary>
+        private async Task LogPairingAsync(bool hasNetwork, byte[] finish, bool inPairingMode, bool pairedNow, int attempts)
+        {
+            byte[] ids = new byte[] { 19, 20, 21, 27, 28, 31 };
+            byte[] message = new byte[ids.Length + 1];
+            message[0] = GoProIds.QueryGetStatuses;
+            Array.Copy(ids, 0, message, 1, ids.Length);
+            byte[] response = await RequestAsync(Get(c => c.query), GoProIds.QueryResponse, GoProIds.QueryGetStatuses, message, 2000).ConfigureAwait(false);
+            Dictionary<int, byte[]> values = response != null && response.Length >= 2 ? GoProPackets.ParseTlv(response, 2) : new Dictionary<int, byte[]>();
+
+            string model;
+            lock (locker)
+                model = modelName;
+
+            string answer = !hasNetwork ? "not sent (no network management)" : (finish == null ? "no answer" : BitConverter.ToString(finish));
+            log.WarnFormat("GoPro {0:X12} ({1}): connected at attempt {2}, in pairing mode {3}, paired now {4}; pairing finish {5}; pairing state {6}, last type {7}, last success {8}, remote {9}, legacy state {10}, connected devices {11}{12}.",
+                Address, model ?? "?", attempts, inPairingMode, pairedNow, answer, StatusText(values, 19), StatusText(values, 20), StatusText(values, 21),
+                StatusText(values, 27), StatusText(values, 28), StatusText(values, 31), response == null ? " (no answer)" : "");
+        }
+
+        private static string StatusText(Dictionary<int, byte[]> values, int id)
+        {
+            byte[] v;
+            return values.TryGetValue(id, out v) ? GoProPackets.Number(v).ToString(System.Globalization.CultureInfo.InvariantCulture) : "–";
+        }
+
+        /// <summary>(2.22.0) The Bluetooth of the computer, once per session in the log.</summary>
+        private static void LogAdapter(BluetoothAdapter adapter)
+        {
+            lock (pairedLock)
+            {
+                if (adapterLogged)
+                    return;
+
+                adapterLogged = true;
+            }
+
+            try
+            {
+                log.WarnFormat("Bluetooth of the computer: {0:X12}, LE secure connections {1}, central {2}, peripheral {3}.", adapter.BluetoothAddress,
+                    adapter.AreLowEnergySecureConnectionsSupported, adapter.IsCentralRoleSupported, adapter.IsPeripheralRoleSupported);
+            }
+            catch (Exception e)
+            {
+                log.Debug("Could not describe the Bluetooth of the computer.", e);
+            }
         }
 
         /// <summary>(2.22.0) A kept session of an attempt that did not connect goes.</summary>
