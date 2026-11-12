@@ -58,6 +58,9 @@ namespace Kinovea.Camera.GoPro
         /// <summary>The last error of the listening (null when it works).</summary>
         public static string LastError { get; private set; }
 
+        /// <summary>(2.22.0) A camera was heard (its address): a camera that lost its connection is looked for at once.</summary>
+        public static event Action<ulong> Heard;
+
         /// <summary>Listen (or keep listening) for the cameras.</summary>
         public static void Want()
         {
@@ -171,6 +174,19 @@ namespace Kinovea.Camera.GoPro
                         log.DebugFormat("GoPro heard: {0:X12} \"{1}\" (service or data of GoPro: {2}).", args.BluetoothAddress, name, goPro);
                     }
 
+                    // (2.22.0) The name of a camera heard at another address than before: written to the log once.
+                    if (!string.IsNullOrEmpty(name) && sighting.Name != name)
+                    {
+                        foreach (GoProSighting other in sightings.Values)
+                        {
+                            if (other.Address != args.BluetoothAddress && other.Name == name)
+                            {
+                                log.WarnFormat("GoPro \"{0}\" heard at {1:X12}, known before at {2:X12}.", name, args.BluetoothAddress, other.Address);
+                                break;
+                            }
+                        }
+                    }
+
                     if (!string.IsNullOrEmpty(name))
                         sighting.Name = name;
 
@@ -191,6 +207,10 @@ namespace Kinovea.Camera.GoPro
                     sighting.Rssi = args.RawSignalStrengthInDBm;
                     sighting.LastSeen = DateTime.UtcNow;
                 }
+
+                Action<ulong> heard = Heard;
+                if (heard != null)
+                    heard(args.BluetoothAddress);
             }
             catch (Exception e)
             {

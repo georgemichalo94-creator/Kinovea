@@ -262,12 +262,40 @@ namespace Kinovea.Camera.GoPro
         private bool reportedRecording;
         private bool previewWanted;
 
+        // (2.22.0) A stop asked while the camera could not be reached (under the water): it waits and goes as soon as the camera is
+        // connected again, and the screens show the recording stopped from the press. The moment the connection was lost, the last
+        // time the search was written to the log (every 30 s), and a wake of the search when the camera is heard (out of the water).
+        private bool stopWaiting;
+        private DateTime stopWaitingSince = DateTime.MinValue;
+        private DateTime lostAt = DateTime.MinValue;
+        private DateTime lostLoggedAt = DateTime.MinValue;
+        private TaskCompletionSource<bool> heardAgain = new TaskCompletionSource<bool>();
+
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
 
         private GoProDevice(ulong address)
         {
             Address = address;
+            GoProScanner.Heard += Scanner_Heard;
+        }
+
+        /// <summary>(2.22.0) The camera is heard (it advertises, so it is not connected): the search tries at once.</summary>
+        private void Scanner_Heard(ulong address)
+        {
+            if (address != Address)
+                return;
+
+            TaskCompletionSource<bool> tcs;
+            lock (locker)
+            {
+                if (connected)
+                    return;
+
+                tcs = heardAgain;
+            }
+
+            tcs.TrySetResult(true);
         }
 
         #region Life
@@ -306,6 +334,7 @@ namespace Kinovea.Camera.GoPro
                     if (!IsConnected)
                     {
                         GoProScanner.Want();
+                        LogSearch();
                         await ConnectAsync(token).ConfigureAwait(false);
                         ticks = 0;
                         failures = 0;
@@ -318,9 +347,17 @@ namespace Kinovea.Camera.GoPro
 
                         if (lost)
                         {
-                            log.DebugFormat("Connection lost with the GoPro {0:X12}.", Address);
+                            bool wasRecording;
+                            lock (locker)
+                            {
+                                wasRecording = encoding;
+                                lostAt = DateTime.UtcNow;
+                                lostLoggedAt = DateTime.UtcNow;
+                            }
+
+                            log.WarnFormat("GoPro {0:X12}: the connection was lost (recording: {1}).", Address, wasRecording);
                             DisconnectGatt();
-                            SetLink(GoProLink.Searching, GoProText.T("Η σύνδεση χάθηκε: ξανασυνδέεται…", "The connection was lost: connecting again…"));
+                            SetLink(GoProLink.Searching, NotReachedHint());
                         }
                         else
                         {
@@ -336,6 +373,14 @@ namespace Kinovea.Camera.GoPro
                             {
                                 await QueryStatusesAsync(MainStatuses).ConfigureAwait(false);
                             }
+
+                            // (2.22.0) A stop that waited and was not taken at the connection: tried again.
+                            bool waits;
+                            lock (locker)
+                                waits = stopWaiting;
+
+                            if (ok && waits)
+                                await DeliverWaitingStopAsync().ConfigureAwait(false);
 
                             ticks++;
                         }
@@ -356,7 +401,26 @@ namespace Kinovea.Camera.GoPro
 
                 try
                 {
-                    await Task.Delay(IsConnected ? 3000 : 4000, token).ConfigureAwait(false);
+                    if (IsConnected)
+                    {
+                        await Task.Delay(3000, token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        // (2.22.0) Looked for again after 1 to 2 s: at once when the camera is heard (out of the water).
+                        TaskCompletionSource<bool> tcs;
+                        lock (locker)
+                        {
+                            if (heardAgain.Task.IsCompleted)
+                                heardAgain = new TaskCompletionSource<bool>();
+
+                            tcs = heardAgain;
+                        }
+
+                        await Task.Delay(1000, token).ConfigureAwait(false);
+                        await Task.WhenAny(Task.Delay(1000, token), tcs.Task).ConfigureAwait(false);
+                        token.ThrowIfCancellationRequested();
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -395,11 +459,11 @@ namespace Kinovea.Camera.GoPro
                 // The state of the radio is not always given to desktop programs.
             }
 
-            SetLink(GoProLink.Connecting, null);
+            SetLink(GoProLink.Connecting, LostHint());
             BluetoothLEDevice device = await BluetoothLEDevice.FromBluetoothAddressAsync(Address).AsTask(token).ConfigureAwait(false);
             if (device == null)
             {
-                SetLink(GoProLink.Searching, NotAnsweringHint());
+                SetLink(GoProLink.Searching, NotReachedHint());
                 return;
             }
 
@@ -456,7 +520,7 @@ namespace Kinovea.Camera.GoPro
                 if (found.Status == GattCommunicationStatus.AccessDenied)
                     SetLink(GoProLink.NeedsPairing, PairingHint());
                 else
-                    SetLink(GoProLink.Searching, NotAnsweringHint());
+                    SetLink(GoProLink.Searching, NotReachedHint());
 
                 return;
             }
@@ -541,7 +605,21 @@ namespace Kinovea.Camera.GoPro
 
             SetLink(GoProLink.Connected, null);
             log.DebugFormat("Connected to the GoPro {0:X12}.", Address);
+
+            DateTime lostSince;
+            lock (locker)
+            {
+                lostSince = lostAt;
+                lostAt = DateTime.MinValue;
+            }
+
+            if (lostSince != DateTime.MinValue)
+                log.WarnFormat("GoPro {0:X12}: connected again {1:0} s after the loss.", Address, (DateTime.UtcNow - lostSince).TotalSeconds);
+
             await PrepareAsync(token).ConfigureAwait(false);
+
+            // (2.22.0) A stop that waited for the camera goes now.
+            await DeliverWaitingStopAsync().ConfigureAwait(false);
         }
 
         private async Task FindOptionalAsync(BluetoothLEDevice device, CancellationToken token)
@@ -692,7 +770,7 @@ namespace Kinovea.Camera.GoPro
             if (status == GattCommunicationStatus.AccessDenied || status == GattCommunicationStatus.ProtocolError)
                 SetLink(GoProLink.NeedsPairing, PairingHint());
             else
-                SetLink(GoProLink.Searching, NotAnsweringHint());
+                SetLink(GoProLink.Searching, NotReachedHint());
         }
 
         /// <summary>The camera was heard in pairing mode in the last 20 s.</summary>
@@ -1026,6 +1104,7 @@ namespace Kinovea.Camera.GoPro
         /// </summary>
         public void SetRecording(bool record, DateTime commandTime)
         {
+            bool waits = false;
             lock (locker)
             {
                 desiredRecording = record;
@@ -1039,15 +1118,119 @@ namespace Kinovea.Camera.GoPro
                     problem = null;
                     problemUntil = DateTime.MinValue;
                 }
+
+                // (2.22.0) A new command replaces a stop that waited. A stop while the camera cannot be reached (under the water)
+                // waits for it: it goes as soon as the camera is connected again.
+                stopWaiting = false;
+                if (!record && !connected)
+                {
+                    stopWaiting = true;
+                    stopWaitingSince = DateTime.UtcNow;
+                    pendingUntil = DateTime.MinValue;
+                    waits = true;
+                }
+            }
+
+            if (waits)
+            {
+                log.WarnFormat("GoPro {0:X12}: not connected, the stop waits for the camera.", Address);
+                ShowWaitingStop();
+                CheckRecordingChange();
+                return;
             }
 
             CheckRecordingChange();
             Task.Run(() => SendShutterAsync(record));
         }
 
+        /// <summary>(2.22.0) The screen says that the stop waits (while the camera is looked for).</summary>
+        private void ShowWaitingStop()
+        {
+            lock (locker)
+            {
+                if (!connected && (link == GoProLink.Searching || link == GoProLink.Connecting))
+                {
+                    problem = NotReachedHintUnlocked();
+                    problemUntil = DateTime.MinValue;
+                }
+            }
+        }
+
+        /// <summary>
+        /// (2.22.0) A stop that waited for the camera (out of reach, under the water), now that it is connected: sent unless the camera
+        /// no longer records; tried again while connected until it is taken.
+        /// </summary>
+        private async Task DeliverWaitingStopAsync()
+        {
+            bool waiting;
+            DateTime since;
+            lock (locker)
+            {
+                waiting = stopWaiting && !desiredRecording;
+                since = stopWaitingSince;
+            }
+
+            if (!waiting)
+                return;
+
+            await QueryStatusesAsync(new byte[] { GoProIds.StatusEncoding, GoProIds.StatusEncodingSeconds }).ConfigureAwait(false);
+            bool recordsNow;
+            lock (locker)
+                recordsNow = !encodingKnown || encoding;
+
+            bool accepted = false;
+            if (recordsNow)
+            {
+                for (int attempt = 0; attempt < 3 && !accepted && IsConnected; attempt++)
+                {
+                    byte[] message = new byte[] { GoProIds.CmdSetShutter, 0x01, 0x00 };
+                    byte[] response = await RequestAsync(Get(c => c.command), GoProIds.CommandResponse, GoProIds.CmdSetShutter, message, 2500).ConfigureAwait(false);
+                    accepted = response != null && response.Length >= 2 && response[1] == 0;
+                    if (!accepted)
+                        await Task.Delay(400).ConfigureAwait(false);
+                }
+
+                if (!accepted)
+                {
+                    log.WarnFormat("GoPro {0:X12}: the stop that waited was not taken yet.", Address);
+                    return;
+                }
+
+                for (int i = 0; i < 4; i++)
+                {
+                    await Task.Delay(1200).ConfigureAwait(false);
+                    await QueryStatusesAsync(new byte[] { GoProIds.StatusEncoding, GoProIds.StatusEncodingSeconds }).ConfigureAwait(false);
+                    bool stopped;
+                    lock (locker)
+                        stopped = encodingKnown && !encoding;
+
+                    if (stopped)
+                        break;
+                }
+            }
+
+            bool done;
+            lock (locker)
+            {
+                done = stopWaiting && encodingKnown && !encoding;
+                if (done)
+                    stopWaiting = false;
+            }
+
+            if (done)
+            {
+                log.WarnFormat("GoPro {0:X12}: {1} {2:0} s after the stop was asked.", Address, recordsNow ? "stopped by the stop that waited" : "it was not recording when it connected", (DateTime.UtcNow - since).TotalSeconds);
+                if (recordsNow)
+                    SetNotice(GoProText.T("Σταμάτησε: η στάση στάλθηκε μόλις συνδέθηκε.", "Stopped: the stop was sent as soon as it connected."), false, 60);
+            }
+
+            CheckRecordingChange();
+        }
+
         private async Task SendShutterAsync(bool record)
         {
             bool accepted = false;
+            bool refused = false;
             try
             {
                 for (int attempt = 0; attempt < 4 && !accepted; attempt++)
@@ -1064,7 +1247,12 @@ namespace Kinovea.Camera.GoPro
                     if (response != null && response.Length >= 2 && response[1] == 0)
                         accepted = true;
                     else
+                    {
+                        if (response != null)
+                            refused = true;
+
                         await Task.Delay(400).ConfigureAwait(false);
+                    }
                 }
             }
             catch (Exception e)
@@ -1074,6 +1262,27 @@ namespace Kinovea.Camera.GoPro
 
             if (!accepted)
             {
+                // (2.22.0) A stop that got no answer (the camera went out of reach, under the water): it waits for the camera.
+                bool waits = false;
+                lock (locker)
+                {
+                    if (!record && !refused && desiredRecording == record && (!connected || lostSignal))
+                    {
+                        stopWaiting = true;
+                        stopWaitingSince = DateTime.UtcNow;
+                        pendingUntil = DateTime.MinValue;
+                        waits = true;
+                    }
+                }
+
+                if (waits)
+                {
+                    log.WarnFormat("GoPro {0:X12}: no answer to the stop, it waits for the camera.", Address);
+                    ShowWaitingStop();
+                    CheckRecordingChange();
+                    return;
+                }
+
                 lock (locker)
                 {
                     if (desiredRecording == record)
@@ -1177,6 +1386,10 @@ namespace Kinovea.Camera.GoPro
         {
             if (pendingUntil > DateTime.UtcNow)
                 return desiredRecording;
+
+            // (2.22.0) A stop that waits for the camera (under the water): stopped for the screens from the press.
+            if (stopWaiting)
+                return false;
 
             return encoding;
         }
@@ -1376,6 +1589,52 @@ namespace Kinovea.Camera.GoPro
                 problem = hint;
                 problemUntil = DateTime.MinValue;
             }
+        }
+
+        /// <summary>(2.22.0) The hint while the camera is looked for after a loss, else none (a first connection says nothing).</summary>
+        private string LostHint()
+        {
+            lock (locker)
+                return lostAt != DateTime.MinValue || stopWaiting ? NotReachedHintUnlocked() : null;
+        }
+
+        /// <summary>(2.22.0) What the screen says while the camera is looked for: after a loss (under the water), with a stop that waits.</summary>
+        private string NotReachedHint()
+        {
+            lock (locker)
+                return NotReachedHintUnlocked();
+        }
+
+        private string NotReachedHintUnlocked()
+        {
+            if (stopWaiting)
+                return GoProText.T("⏳ Η στάση περιμένει: στέλνεται μόλις συνδεθεί η κάμερα (όταν βγει από το νερό). Αν δεν συνδεθεί σε 20″, στην κάμερα: Συνδέσεις › Σύνδεση συσκευής › GoPro Quik.",
+                    "⏳ The stop waits: it is sent as soon as the camera connects (out of the water). If it does not connect in 20 s, on the camera: Connections › Connect Device › GoPro Quik.");
+
+            if (lostAt != DateTime.MinValue)
+                return GoProText.T("Η σύνδεση χάθηκε (μέσα στο νερό;): ξανασυνδέεται μόνη της μόλις βγει. Αν δεν συνδεθεί σε 20″, στην κάμερα: Συνδέσεις › Σύνδεση συσκευής › GoPro Quik.",
+                    "The connection was lost (under the water?): it connects again by itself once out. If it does not connect in 20 s, on the camera: Connections › Connect Device › GoPro Quik.");
+
+            return NotAnsweringHint();
+        }
+
+        /// <summary>(2.22.0) The search after a loss in the log, every 30 s: when the camera was heard last and how.</summary>
+        private void LogSearch()
+        {
+            DateTime since;
+            lock (locker)
+            {
+                if (lostAt == DateTime.MinValue || (DateTime.UtcNow - lostLoggedAt).TotalSeconds < 30)
+                    return;
+
+                since = lostAt;
+                lostLoggedAt = DateTime.UtcNow;
+            }
+
+            GoProSighting seen = GoProScanner.Find(Address);
+            string heard = seen == null || seen.LastSeen < since ? "not heard since" :
+                string.Format("heard {0:0} s ago (pairing {1}, awake {2}, {3} dBm)", (DateTime.UtcNow - seen.LastSeen).TotalSeconds, seen.Pairing, seen.Awake, seen.Rssi);
+            log.WarnFormat("GoPro {0:X12}: not connected again {1:0} s after the loss; {2}.", Address, (DateTime.UtcNow - since).TotalSeconds, heard);
         }
 
         private static string NotAnsweringHint()
