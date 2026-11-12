@@ -274,14 +274,15 @@ namespace Kinovea.Camera.GoPro
         private string lastNote;
         private DateTime lastNoteAt = DateTime.MinValue;
 
-        // (2.22.0) A HERO9 takes a computer or a phone only in pairing mode, after any disconnection: it ignores their connection
-        // outside it, even after a reset of its connections and a pairing it says completed (state 4), and after it is turned off and
-        // on (12.11.2026); its remote reconnects because the camera calls it. A HERO12 connects by itself. The screen of a HERO9 that is
-        // not connected says at once to put it in pairing mode. The steps of a first connection that does not come go to the log from
-        // the third attempt (at most 12 lines).
+        // (2.22.0) A HERO9 often ignores the plain connection of the computer outside pairing mode, but it takes the one that Windows
+        // holds itself (a kept session): at the pool (12.11.2026) the HERO9 reconnected 5 times out of 6 without pairing, in 5 s to
+        // 2 min, the kept session from the third attempt. A HERO9 now has a kept session from its first attempt, kept between the
+        // attempts (Windows looks for it in the background); pairing mode stays the way to connect at once. A HERO12 connects by
+        // itself in 6–7 s. The steps of a first connection that does not come go to the log from the third attempt (at most 12 lines).
         private int attemptsSinceBegin;
         private int firstNotes;
         private int heardModel = -1;
+        private GattSession searchSession;
         private static readonly object pairedLock = new object();
         private static bool adapterLogged;
 
@@ -574,7 +575,24 @@ namespace Kinovea.Camera.GoPro
             // (2.22.0) After a loss, from the third attempt on: Windows is asked to hold the connection itself (a kept session) before the
             // services are asked, which reaches a camera that the plain query does not (a HERO9 out of the water that advertises).
             GattSession early = null;
-            if (afterLoss && attempt >= 3)
+            bool keepSearching;
+            lock (locker)
+            {
+                keepSearching = OnlyInPairingModeUnlocked();
+                if (keepSearching)
+                {
+                    early = searchSession;
+                    searchSession = null;
+                }
+            }
+
+            if (keepSearching && early != null)
+            {
+                // (2.22.0) The kept session of the previous attempt (Windows looked for the camera meanwhile).
+                for (int i = 0; i < 4 && early.SessionStatus != GattSessionStatus.Active; i++)
+                    await Task.Delay(500, token).ConfigureAwait(false);
+            }
+            else if (keepSearching || (afterLoss && attempt >= 3))
             {
                 try
                 {
@@ -610,7 +628,7 @@ namespace Kinovea.Camera.GoPro
 
                 Note("services: " + found.Status + " (" + found.Services.Count + " found), link of Windows " + linkNow +
                     (early != null ? ", kept session " + early.SessionStatus : "") + ", address " + addressType);
-                DropSession(early);
+                KeepOrDrop(early, keepSearching);
                 device.Dispose();
                 if (found.Status == GattCommunicationStatus.AccessDenied)
                     SetLink(GoProLink.NeedsPairing, PairingHint());
@@ -632,7 +650,7 @@ namespace Kinovea.Camera.GoPro
             if (characteristics.Status != GattCommunicationStatus.Success)
             {
                 Note("characteristics: " + characteristics.Status);
-                DropSession(early);
+                KeepOrDrop(early, keepSearching);
                 Fail(characteristics.Status);
                 return;
             }
@@ -654,7 +672,7 @@ namespace Kinovea.Camera.GoPro
                 Get(c => c.settingsResponse) == null || Get(c => c.query) == null || Get(c => c.queryResponse) == null)
             {
                 Note("characteristics missing");
-                DropSession(early);
+                KeepOrDrop(early, keepSearching);
                 Fail(GattCommunicationStatus.Unreachable);
                 return;
             }
@@ -665,7 +683,7 @@ namespace Kinovea.Camera.GoPro
                 if (status != GattCommunicationStatus.Success)
                 {
                     Note("notifications: " + status);
-                    DropSession(early);
+                    KeepOrDrop(early, keepSearching);
                     // Windows keeps a pairing that the camera forgot (a reset): it is dropped, the camera in pairing mode pairs again.
                     if ((status == GattCommunicationStatus.AccessDenied || status == GattCommunicationStatus.ProtocolError) && InPairingMode())
                     {
@@ -967,6 +985,30 @@ namespace Kinovea.Camera.GoPro
             }
         }
 
+        /// <summary>(2.22.0) The kept session of an attempt that did not connect: kept for the next attempt (a HERO9), else it goes.</summary>
+        private void KeepOrDrop(GattSession s, bool keep)
+        {
+            if (s == null)
+                return;
+
+            if (keep)
+            {
+                GattSession old;
+                lock (locker)
+                {
+                    old = searchSession;
+                    searchSession = s;
+                }
+
+                if (old != null && old != s)
+                    DropSession(old);
+
+                return;
+            }
+
+            DropSession(s);
+        }
+
         /// <summary>(2.22.0) A kept session of an attempt that did not connect goes.</summary>
         private static void DropSession(GattSession s)
         {
@@ -1031,9 +1073,12 @@ namespace Kinovea.Camera.GoPro
             List<GattDeviceService> held;
             BluetoothLEDevice device;
             GattSession s;
+            GattSession searching;
             List<TaskCompletionSource<byte[]>> waiting;
             lock (locker)
             {
+                searching = searchSession;
+                searchSession = null;
                 foreach (GattCharacteristic c in new GattCharacteristic[] { commandResponse, settingsResponse, queryResponse, networkResponse })
                 {
                     if (c != null)
@@ -1057,6 +1102,8 @@ namespace Kinovea.Camera.GoPro
 
             foreach (TaskCompletionSource<byte[]> tcs in waiting)
                 tcs.TrySetResult(null);
+
+            DropSession(searching);
 
             foreach (GattCharacteristic c in notified)
             {
@@ -1327,7 +1374,7 @@ namespace Kinovea.Camera.GoPro
             lock (locker)
             {
                 desiredRecording = record;
-                pendingUntil = DateTime.UtcNow.AddSeconds(8);
+                pendingUntil = DateTime.UtcNow.AddSeconds(record ? 15 : 8);
                 lastCommandTime = commandTime;
                 lastCommandStart = record;
 
@@ -1509,6 +1556,13 @@ namespace Kinovea.Camera.GoPro
                         pendingUntil = DateTime.MinValue;
                         if (record)
                             failedStart = lastCommandTime;
+
+                        // (2.22.0) Not reached: the recording it was known to do may have been stopped meanwhile (by its remote).
+                        if (record && !connected)
+                        {
+                            encoding = false;
+                            encodingKnown = false;
+                        }
 
                         string reason = record ? BlockedReasonUnlocked() : null;
                         problem = reason ?? (record ?
@@ -1831,15 +1885,15 @@ namespace Kinovea.Camera.GoPro
             if (OnlyInPairingModeUnlocked())
             {
                 if (stopWaiting)
-                    return GoProText.T("⏳ Η στάση περιμένει. Η HERO9 όσο γράφει δεν συνδέεται: σταμάτα τη με το remote ή το κουμπί της, μετά σύζευξη (Connections › Connect Device › GoPro Quik).",
-                        "⏳ The stop waits. A HERO9 that records does not connect: stop it with the remote or its button, then pair it (Connections › Connect Device › GoPro Quik).");
+                    return GoProText.T("⏳ Η στάση περιμένει: φεύγει μόλις η HERO9 ξανασυνδεθεί (συχνά μόνη της σε 1–2′). Για αμέσως: στάση με το remote ή το κουμπί της.",
+                        "⏳ The stop waits: it goes once the HERO9 connects again (often by itself in 1–2 min). At once: stop it with the remote or its button.");
 
                 if (encoding)
-                    return GoProText.T("Η HERO9 όσο γράφει δεν ξανασυνδέεται: στάση με το remote ή το κουμπί της, μετά σύζευξη (Connections › Connect Device › GoPro Quik).",
-                        "A HERO9 that records does not connect again: stop it with the remote or its button, then pair it (Connections › Connect Device › GoPro Quik).");
+                    return GoProText.T("Η HERO9 ξανασυνδέεται συχνά μόνη της σε 1–2′. Όσο γράφει δεν μπαίνει σε σύζευξη: για αμέσως, στάση με το remote ή το κουμπί της.",
+                        "A HERO9 often connects again by itself in 1–2 min. While it records it cannot be paired: at once, stop it with the remote or its button.");
 
-                return GoProText.T("Η HERO9 συνδέεται μόνο σε σύζευξη: Connections › Connect Device › GoPro Quik. Συνδέεται σε 1–2″.",
-                    "A HERO9 connects only in pairing mode: Connections › Connect Device › GoPro Quik. It connects in 1–2 s.");
+                return GoProText.T("Η HERO9 ξανασυνδέεται συχνά μόνη της σε 1–2′. Για αμέσως: σύζευξη, Connections › Connect Device › GoPro Quik (1–2″).",
+                    "A HERO9 often connects again by itself in 1–2 min. At once: pairing mode, Connections › Connect Device › GoPro Quik (1–2 s).");
             }
 
             if (stopWaiting)
@@ -1876,11 +1930,7 @@ namespace Kinovea.Camera.GoPro
         /// <summary>(2.22.0) The camera is not reached: a HERO9 needs pairing mode (said at once), another is looked for.</summary>
         private void SetNotReached()
         {
-            bool only;
-            lock (locker)
-                only = OnlyInPairingModeUnlocked();
-
-            SetLink(only ? GoProLink.NeedsPairing : GoProLink.Searching, NotReachedHint());
+            SetLink(GoProLink.Searching, NotReachedHint());
         }
 
         /// <summary>(2.22.0) A HERO9 (by its model, or by the model of its advertisement): it takes a computer only in pairing mode.</summary>
