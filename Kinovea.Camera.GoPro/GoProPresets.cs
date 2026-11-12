@@ -113,7 +113,9 @@ namespace Kinovea.Camera.GoPro
                     new GoProSettingValue(GoProIds.SettingResolution, "2.7K 4:3", 6, 111),
                     new GoProSettingValue(GoProIds.SettingFps, "50 fps", 6),
                     new GoProSettingValue(GoProIds.SettingLens, "Linear", 4),
-                    new GoProSettingValue(GoProIds.SettingHypersmooth, "HyperSmooth off", 0)
+                    new GoProSettingValue(GoProIds.SettingHypersmooth, "HyperSmooth off", 0),
+                    // (2.22.0) Always landscape: a camera started lying on its side (on its pole) does not record standing.
+                    new GoProSettingValue(GoProIds.SettingOrientation, "Landscape", 5) { Optional = true }
                 }
             },
             new GoProPreset
@@ -136,7 +138,8 @@ namespace Kinovea.Camera.GoPro
                     new GoProSettingValue(GoProIds.SettingResolution, "2.7K", 4),
                     new GoProSettingValue(GoProIds.SettingFps, "100 fps", 2),
                     new GoProSettingValue(GoProIds.SettingLens, "Linear", 4),
-                    new GoProSettingValue(GoProIds.SettingHypersmooth, "HyperSmooth off", 0)
+                    new GoProSettingValue(GoProIds.SettingHypersmooth, "HyperSmooth off", 0),
+                    new GoProSettingValue(GoProIds.SettingOrientation, "Landscape", 5) { Optional = true }
                 }
             }
         };

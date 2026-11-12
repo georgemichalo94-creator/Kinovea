@@ -251,6 +251,10 @@ namespace Kinovea.ScreenManager
                         {
                             string target = File.Exists(job.Target) ? SwimGoProTakes.FreePath(job.Target, null) : job.Target;
                             File.Move(partial, target);
+
+                            // (2.22.0) A camera started lying on its side: its video in landscape, as it was filmed.
+                            if (SwimVideoTurn.ClearQuarterTurn(target))
+                                log.WarnFormat("The video of the camera \"{0}\" was marked as turned a quarter (the camera lay on its side at the start): the mark was cleared.", job.Alias);
                             SwimGoProTakes.MarkDone(job.Part.Id, job.Alias, SourceText(job), new List<string> { target });
                             SwimGoProTakes.SetPartStart(job.Part.Id, job.Alias, job.StartFromCommand);
                             lines.Add(new KeyValuePair<string, string>(SourceText(job), target));
@@ -359,5 +363,204 @@ namespace Kinovea.ScreenManager
             catch (Exception) { }
         }
         #endregion
+    }
+
+    /// <summary>
+    /// (Swim 2.22.0) A GoPro video marked as turned a quarter: the camera lay on its side when its recording started (a GoPro fixes the
+    /// orientation of a video at its start), while its picture itself is landscape (the camera was put in its place after). Players and
+    /// the video of all the cameras show it standing. The mark (the matrix of its video track) goes, in place: 36 bytes, the picture is
+    /// not touched. Swimming is filmed in landscape (12.11.2026: the two HERO9 of the turns, started lying on their poles).
+    /// </summary>
+    public static class SwimVideoTurn
+    {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        // The matrix that turns nothing: 1, 0, 0 / 0, 1, 0 / 0, 0, 1 (16.16, 16.16, 2.30).
+        private static readonly int[] Identity = { 0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000 };
+
+        /// <summary>The quarter-turn mark of the video cleared (in place): true when it had one.</summary>
+        public static bool ClearQuarterTurn(string path)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+                {
+                    long moovStart, moovEnd;
+                    if (!Find(fs, 0, fs.Length, "moov", out moovStart, out moovEnd))
+                        return false;
+
+                    bool cleared = false;
+                    long pos = moovStart;
+                    while (pos + 8 <= moovEnd)
+                    {
+                        long size;
+                        int header;
+                        string type;
+                        if (!Header(fs, pos, moovEnd, out size, out header, out type))
+                            break;
+
+                        long tkhdStart, tkhdEnd;
+                        if (type == "trak" && Find(fs, pos + header, pos + size, "tkhd", out tkhdStart, out tkhdEnd))
+                        {
+                            fs.Position = tkhdStart;
+                            int version = fs.ReadByte();
+
+                            // Version and flags, the times, the track, the length (4 + 20, or 4 + 32), reserved, layer, group, volume (16).
+                            long matrix = tkhdStart + 4 + (version == 1 ? 32 : 20) + 16;
+                            byte[] m = new byte[36];
+                            fs.Position = matrix;
+                            if (matrix + 36 <= tkhdEnd && ReadAll(fs, m) && IsQuarterTurn(m))
+                            {
+                                byte[] identity = new byte[36];
+                                for (int i = 0; i < 9; i++)
+                                    WriteInt(identity, i * 4, Identity[i]);
+
+                                fs.Position = matrix;
+                                fs.Write(identity, 0, identity.Length);
+                                cleared = true;
+                            }
+                        }
+
+                        pos += size;
+                    }
+
+                    if (cleared)
+                        fs.Flush();
+
+                    return cleared;
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("The turn of a video could not be read or cleared.", e);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The videos of the cameras of these recordings marked as turned a quarter, cleared: the recordings with a video cleared (`files`:
+        /// how many videos).
+        /// </summary>
+        public static List<string> Repair(IEnumerable<SwimTake> takes, out int files)
+        {
+            files = 0;
+            List<string> repaired = new List<string>();
+            foreach (SwimTake take in takes)
+            {
+                bool any = false;
+                foreach (SwimTakeCamera camera in take.Cameras)
+                {
+                    foreach (string target in camera.Targets ?? new List<string>())
+                    {
+                        if (string.IsNullOrEmpty(target) || !File.Exists(target) || !ClearQuarterTurn(target))
+                            continue;
+
+                        files++;
+                        any = true;
+                        log.WarnFormat("A video of the camera \"{0}\" was marked as turned a quarter (the camera lay on its side at the start): the mark was cleared.", camera.Alias);
+                    }
+                }
+
+                if (any)
+                    repaired.Add(take.Id);
+            }
+
+            return repaired;
+        }
+
+        /// <summary>The matrix turns a quarter (either way): a = d = 0, b = ±1, c = ∓1.</summary>
+        private static bool IsQuarterTurn(byte[] m)
+        {
+            int a = ReadInt(m, 0);
+            int b = ReadInt(m, 4);
+            int c = ReadInt(m, 12);
+            int d = ReadInt(m, 16);
+            return a == 0 && d == 0 && Math.Abs(b) == 0x10000 && c == -b;
+        }
+
+        /// <summary>The first box of this name between start and end: its content (after its header) and its end.</summary>
+        private static bool Find(FileStream fs, long start, long end, string name, out long contentStart, out long boxEnd)
+        {
+            contentStart = 0;
+            boxEnd = 0;
+            long pos = start;
+            while (pos + 8 <= end)
+            {
+                long size;
+                int header;
+                string type;
+                if (!Header(fs, pos, end, out size, out header, out type))
+                    return false;
+
+                if (type == name)
+                {
+                    contentStart = pos + header;
+                    boxEnd = pos + size;
+                    return true;
+                }
+
+                pos += size;
+            }
+
+            return false;
+        }
+
+        /// <summary>The header of the box at pos: its size (all of it), the size of its header and its type.</summary>
+        private static bool Header(FileStream fs, long pos, long end, out long size, out int header, out string type)
+        {
+            size = 0;
+            header = 8;
+            type = null;
+            byte[] b = new byte[8];
+            fs.Position = pos;
+            if (!ReadAll(fs, b))
+                return false;
+
+            size = (uint)ReadInt(b, 0);
+            type = Encoding.ASCII.GetString(b, 4, 4);
+            if (size == 1)
+            {
+                byte[] large = new byte[8];
+                if (!ReadAll(fs, large))
+                    return false;
+
+                size = ((long)(uint)ReadInt(large, 0) << 32) | (uint)ReadInt(large, 4);
+                header = 16;
+            }
+            else if (size == 0)
+            {
+                size = end - pos;
+            }
+
+            return size >= header && pos + size <= end;
+        }
+
+        private static bool ReadAll(FileStream fs, byte[] buffer)
+        {
+            int read = 0;
+            while (read < buffer.Length)
+            {
+                int n = fs.Read(buffer, read, buffer.Length - read);
+                if (n <= 0)
+                    return false;
+
+                read += n;
+            }
+
+            return true;
+        }
+
+        private static int ReadInt(byte[] b, int at)
+        {
+            return (b[at] << 24) | (b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3];
+        }
+
+        private static void WriteInt(byte[] b, int at, int value)
+        {
+            b[at] = (byte)(value >> 24);
+            b[at + 1] = (byte)(value >> 16);
+            b[at + 2] = (byte)(value >> 8);
+            b[at + 3] = (byte)value;
+        }
     }
 }

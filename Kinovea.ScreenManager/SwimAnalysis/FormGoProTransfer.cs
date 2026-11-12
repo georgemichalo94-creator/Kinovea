@@ -231,6 +231,57 @@ namespace Kinovea.ScreenManager
 
             Fill();
             lblStatus.Text = SwimLang.T("Οι εγγραφές που ξεκίνησαν από το Kinovea. Κάρτες σε card reader: «Από κάρτα» · λίγες εγγραφές: «Κατέβασμα με Wi-Fi». Όταν έρθουν τα βίντεο όλων των καμερών μιας εγγραφής, γίνεται μόνο του το ενοποιημένο βίντεο (🎬) · «▶ Προβολή» για να το δεις.");
+
+            // (2.22.0) The videos of cameras started lying on their side (marked as turned a quarter): in landscape, and their videos
+            // of all the cameras again.
+            Shown += (s, e) => RepairTurned(null);
+        }
+
+        /// <summary>
+        /// (2.22.0) The videos of the recordings (all, or these) marked as turned a quarter: the mark cleared (a camera that lay on its side
+        /// when its recording started, its picture is landscape), then the video of all the cameras of their recordings again.
+        /// </summary>
+        private async void RepairTurned(IEnumerable<string> takeIds)
+        {
+            try
+            {
+                HashSet<string> wanted = takeIds != null ? new HashSet<string>(takeIds) : null;
+                List<SwimTake> takes = SwimGoProTakes.Takes.Where(x => wanted == null || wanted.Contains(x.Id)).ToList();
+                int files = 0;
+                List<string> repaired = await Task.Run(() =>
+                {
+                    int n;
+                    List<string> ids = SwimVideoTurn.Repair(takes, out n);
+                    files = n;
+                    return ids;
+                });
+
+                if (IsDisposed || repaired.Count == 0)
+                    return;
+
+                int again = 0;
+                foreach (SwimTake take in SwimGoProTakes.Takes.Where(x => repaired.Contains(x.Id)))
+                {
+                    if (!autoComposite || !(SwimTakeComposite.HasComposite(take) || SwimTakeComposite.Ready(take)))
+                        continue;
+
+                    compositeFailed.Remove(take.Id);
+                    if (!compositeQueue.Contains(take.Id) && take.Id != makingTake)
+                    {
+                        compositeQueue.Enqueue(take.Id);
+                        again++;
+                    }
+                }
+
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("↻ {0} βίντεο ήταν γυρισμένα κάθετα (η κάμερα ήταν ξαπλωμένη όταν ξεκίνησε η εγγραφή): έγιναν οριζόντια, όπως τραβήχτηκαν."), files) +
+                    (again > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Ξαναγίνονται {0} ενοποιημένα βίντεο."), again) :
+                    (autoComposite ? "" : SwimLang.T(" Πάτα «🎬» για να ξαναγίνουν τα ενοποιημένα τους."))), false);
+                RunComposites();
+            }
+            catch (Exception e)
+            {
+                Status(SwimLang.T("Τα γυρισμένα βίντεο δεν διορθώθηκαν: ") + e.Message, true);
+            }
         }
 
         private void Takes_Changed(object sender, EventArgs e)
@@ -580,7 +631,12 @@ namespace Kinovea.ScreenManager
             }
 
             if (!stopped)
+            {
+                // (2.22.0) A video copied whole from a camera started lying on its side: in landscape (the cut ones are already).
+                int turned;
+                SwimVideoTurn.Repair(SwimGoProTakes.Takes.Where(x => touched.Contains(x.Id)), out turned);
                 AutoComposites(touched);
+            }
         }
 
         /// <summary>
@@ -808,7 +864,11 @@ namespace Kinovea.ScreenManager
             }
 
             if (!stopped)
+            {
+                int turned;
+                SwimVideoTurn.Repair(SwimGoProTakes.Takes.Where(x => touched.Contains(x.Id)), out turned);
                 AutoComposites(touched);
+            }
         }
         #endregion
 

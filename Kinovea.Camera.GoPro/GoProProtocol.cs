@@ -53,6 +53,9 @@ namespace Kinovea.Camera.GoPro
         public const byte SettingAspectRatio = 108;
         public const byte SettingLens = 121;
         public const byte SettingAntiFlicker = 134;
+
+        /// <summary>(2.22.0) The orientation of the videos: 0 all (also standing, when the camera is on its side at the start), 5 landscape (the right way up or upside down), 255 locked (HERO9).</summary>
+        public const byte SettingOrientation = 112;
         public const byte SettingHypersmooth = 135;
 
         /// <summary>The keep alive is the value 0x42 of the setting 91 (every 3 s after the connection).</summary>
