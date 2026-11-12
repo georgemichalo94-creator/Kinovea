@@ -270,6 +270,9 @@ namespace Kinovea.Camera.GoPro
         private DateTime lostAt = DateTime.MinValue;
         private DateTime lostLoggedAt = DateTime.MinValue;
         private TaskCompletionSource<bool> heardAgain = new TaskCompletionSource<bool>();
+        private int attemptsSinceLoss;
+        private string lastNote;
+        private DateTime lastNoteAt = DateTime.MinValue;
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
@@ -356,6 +359,7 @@ namespace Kinovea.Camera.GoPro
                             }
 
                             log.WarnFormat("GoPro {0:X12}: the connection was lost (recording: {1}).", Address, wasRecording);
+                            GoProScanner.Verbose(TimeSpan.FromMinutes(5));
                             DisconnectGatt();
                             SetLink(GoProLink.Searching, NotReachedHint());
                         }
@@ -460,9 +464,21 @@ namespace Kinovea.Camera.GoPro
             }
 
             SetLink(GoProLink.Connecting, LostHint());
+            bool afterLoss;
+            int attempt;
+            lock (locker)
+            {
+                afterLoss = lostAt != DateTime.MinValue || stopWaiting;
+                if (afterLoss)
+                    attemptsSinceLoss++;
+
+                attempt = attemptsSinceLoss;
+            }
+
             BluetoothLEDevice device = await BluetoothLEDevice.FromBluetoothAddressAsync(Address).AsTask(token).ConfigureAwait(false);
             if (device == null)
             {
+                Note("Windows gave no device");
                 SetLink(GoProLink.Searching, NotReachedHint());
                 return;
             }
@@ -483,6 +499,7 @@ namespace Kinovea.Camera.GoPro
             {
                 if (!pairing.CanPair || !InPairingMode())
                 {
+                    Note("Windows says it is not paired (can pair: " + pairing.CanPair + ")");
                     device.Dispose();
                     SetLink(GoProLink.NeedsPairing, PairingHint());
                     return;
@@ -512,10 +529,42 @@ namespace Kinovea.Camera.GoPro
                 }
             }
 
+            // (2.22.0) After a loss, from the third attempt on: Windows is asked to hold the connection itself (a kept session) before the
+            // services are asked, which reaches a camera that the plain query does not (a HERO9 out of the water that advertises).
+            GattSession early = null;
+            if (afterLoss && attempt >= 3)
+            {
+                try
+                {
+                    early = await GattSession.FromDeviceIdAsync(device.BluetoothDeviceId).AsTask(token).ConfigureAwait(false);
+                    if (early != null)
+                    {
+                        early.MaintainConnection = true;
+                        for (int i = 0; i < 16 && early.SessionStatus != GattSessionStatus.Active; i++)
+                            await Task.Delay(500, token).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception e)
+                {
+                    Note("kept session: " + e.Message);
+                }
+            }
+
             // The services of the camera: this is the connection itself.
             GattDeviceServicesResult found = await device.GetGattServicesForUuidAsync(GoProIds.ControlQueryService, BluetoothCacheMode.Uncached).AsTask(token).ConfigureAwait(false);
             if (found.Status != GattCommunicationStatus.Success || found.Services.Count == 0)
             {
+                string linkNow;
+                try { linkNow = device.ConnectionStatus.ToString(); }
+                catch (Exception) { linkNow = "?"; }
+
+                Note("services: " + found.Status + " (" + found.Services.Count + " found), link of Windows " + linkNow +
+                    (early != null ? ", kept session " + early.SessionStatus : ""));
+                DropSession(early);
                 device.Dispose();
                 if (found.Status == GattCommunicationStatus.AccessDenied)
                     SetLink(GoProLink.NeedsPairing, PairingHint());
@@ -536,6 +585,8 @@ namespace Kinovea.Camera.GoPro
             GattCharacteristicsResult characteristics = await found.Services[0].GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(token).ConfigureAwait(false);
             if (characteristics.Status != GattCommunicationStatus.Success)
             {
+                Note("characteristics: " + characteristics.Status);
+                DropSession(early);
                 Fail(characteristics.Status);
                 return;
             }
@@ -556,6 +607,8 @@ namespace Kinovea.Camera.GoPro
             if (Get(c => c.command) == null || Get(c => c.commandResponse) == null || Get(c => c.settings) == null ||
                 Get(c => c.settingsResponse) == null || Get(c => c.query) == null || Get(c => c.queryResponse) == null)
             {
+                Note("characteristics missing");
+                DropSession(early);
                 Fail(GattCommunicationStatus.Unreachable);
                 return;
             }
@@ -565,6 +618,8 @@ namespace Kinovea.Camera.GoPro
                 GattCommunicationStatus status = await c.WriteClientCharacteristicConfigurationDescriptorAsync(GattClientCharacteristicConfigurationDescriptorValue.Notify).AsTask(token).ConfigureAwait(false);
                 if (status != GattCommunicationStatus.Success)
                 {
+                    Note("notifications: " + status);
+                    DropSession(early);
                     // Windows keeps a pairing that the camera forgot (a reset): it is dropped, the camera in pairing mode pairs again.
                     if ((status == GattCommunicationStatus.AccessDenied || status == GattCommunicationStatus.ProtocolError) && InPairingMode())
                     {
@@ -584,7 +639,7 @@ namespace Kinovea.Camera.GoPro
 
             try
             {
-                GattSession s = await GattSession.FromDeviceIdAsync(device.BluetoothDeviceId).AsTask(token).ConfigureAwait(false);
+                GattSession s = early ?? await GattSession.FromDeviceIdAsync(device.BluetoothDeviceId).AsTask(token).ConfigureAwait(false);
                 if (s != null)
                 {
                     s.MaintainConnection = true;
@@ -614,7 +669,14 @@ namespace Kinovea.Camera.GoPro
             }
 
             if (lostSince != DateTime.MinValue)
-                log.WarnFormat("GoPro {0:X12}: connected again {1:0} s after the loss.", Address, (DateTime.UtcNow - lostSince).TotalSeconds);
+                log.WarnFormat("GoPro {0:X12}: connected again {1:0} s after the loss (attempt {2}{3}).", Address, (DateTime.UtcNow - lostSince).TotalSeconds,
+                    attempt, early != null ? ", kept session" : "");
+
+            lock (locker)
+            {
+                attemptsSinceLoss = 0;
+                lastNote = null;
+            }
 
             await PrepareAsync(token).ConfigureAwait(false);
 
@@ -762,6 +824,42 @@ namespace Kinovea.Camera.GoPro
 
             GoProSighting seen = GoProScanner.Find(Address);
             log.DebugFormat("The GoPro {0:X12} is \"{1}\", {2}, firmware {3}, serial number {4}.", Address, seen != null ? seen.Name : "?", modelName, firmware, serialNumber);
+        }
+
+        /// <summary>(2.22.0) A step of a connection that failed after a loss, in the log (the same one once every 30 s).</summary>
+        private void Note(string what)
+        {
+            int attempt;
+            lock (locker)
+            {
+                if (lostAt == DateTime.MinValue && !stopWaiting)
+                    return;
+
+                if (what == lastNote && (DateTime.UtcNow - lastNoteAt).TotalSeconds < 30)
+                    return;
+
+                lastNote = what;
+                lastNoteAt = DateTime.UtcNow;
+                attempt = attemptsSinceLoss;
+            }
+
+            log.WarnFormat("GoPro {0:X12}: attempt {1} after the loss: {2}.", Address, attempt, what);
+        }
+
+        /// <summary>(2.22.0) A kept session of an attempt that did not connect goes.</summary>
+        private static void DropSession(GattSession s)
+        {
+            if (s == null)
+                return;
+
+            try
+            {
+                s.MaintainConnection = false;
+                s.Dispose();
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void Fail(GattCommunicationStatus status)
@@ -1631,9 +1729,10 @@ namespace Kinovea.Camera.GoPro
                 lostLoggedAt = DateTime.UtcNow;
             }
 
+            GoProScanner.Verbose(TimeSpan.FromMinutes(2));
             GoProSighting seen = GoProScanner.Find(Address);
             string heard = seen == null || seen.LastSeen < since ? "not heard since" :
-                string.Format("heard {0:0} s ago (pairing {1}, awake {2}, {3} dBm)", (DateTime.UtcNow - seen.LastSeen).TotalSeconds, seen.Pairing, seen.Awake, seen.Rssi);
+                string.Format("heard {0:0} s ago ({1}, pairing {2}, awake {3}, {4} dBm)", (DateTime.UtcNow - seen.LastSeen).TotalSeconds, seen.Kind, seen.Pairing, seen.Awake, seen.Rssi);
             log.WarnFormat("GoPro {0:X12}: not connected again {1:0} s after the loss; {2}.", Address, (DateTime.UtcNow - since).TotalSeconds, heard);
         }
 

@@ -23,6 +23,9 @@ namespace Kinovea.Camera.GoPro
         public bool Awake;
         public DateTime LastSeen;
 
+        /// <summary>(2.22.0) The kind of its last advertisement (ConnectableUndirected, ScannableUndirected…), not of a scan response.</summary>
+        public string Kind = "";
+
         /// <summary>
         /// Heard with the service or the manufacturer data of GoPro (an Open GoPro camera). A device heard only by a name that starts
         /// with "GoPro " is not one (another device, or a camera that cannot be controlled).
@@ -60,6 +63,21 @@ namespace Kinovea.Camera.GoPro
 
         /// <summary>(2.22.0) A camera was heard (its address): a camera that lost its connection is looked for at once.</summary>
         public static event Action<ulong> Heard;
+
+        // (2.22.0) While a camera that lost its connection is looked for: what is heard goes to the log (each kind once per device).
+        private static DateTime verboseUntil = DateTime.MinValue;
+        private static readonly HashSet<string> verboseSaid = new HashSet<string>();
+
+        /// <summary>(2.22.0) What is heard goes to the log for this long (a camera is looked for after a loss).</summary>
+        public static void Verbose(TimeSpan span)
+        {
+            lock (locker)
+            {
+                DateTime until = DateTime.UtcNow + span;
+                if (until > verboseUntil)
+                    verboseUntil = until;
+            }
+        }
 
         /// <summary>Listen (or keep listening) for the cameras.</summary>
         public static void Want()
@@ -206,6 +224,16 @@ namespace Kinovea.Camera.GoPro
 
                     sighting.Rssi = args.RawSignalStrengthInDBm;
                     sighting.LastSeen = DateTime.UtcNow;
+                    if (args.AdvertisementType != BluetoothLEAdvertisementType.ScanResponse)
+                        sighting.Kind = args.AdvertisementType.ToString();
+
+                    if (DateTime.UtcNow < verboseUntil)
+                    {
+                        string key = string.Format("{0:X12}|{1}|{2}|{3}|{4}", args.BluetoothAddress, sighting.Name, args.AdvertisementType, goPro, pairing);
+                        if (verboseSaid.Add(key))
+                            log.WarnFormat("Heard while a camera is looked for: {0:X12} \"{1}\" ({2}, data of GoPro {3}, pairing {4}, awake {5}, {6} dBm).",
+                                args.BluetoothAddress, sighting.Name, args.AdvertisementType, goPro, pairing, awake, args.RawSignalStrengthInDBm);
+                    }
                 }
 
                 Action<ulong> heard = Heard;
