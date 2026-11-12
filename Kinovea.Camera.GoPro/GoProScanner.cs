@@ -68,6 +68,11 @@ namespace Kinovea.Camera.GoPro
         private static DateTime verboseUntil = DateTime.MinValue;
         private static readonly HashSet<string> verboseSaid = new HashSet<string>();
 
+        // (2.22.0) The whole advertisement of the devices of GoPro and of a remote (a name with "GoPro" or "Remote", the company or the
+        // services of GoPro), once each and at most 60 per session: how a remote presents itself, for Kinovea in its place (a HERO9
+        // calls its remote by itself, while it takes a computer only in pairing mode).
+        private static readonly HashSet<string> surveyed = new HashSet<string>();
+
         /// <summary>(2.22.0) What is heard goes to the log for this long (a camera is looked for after a loss).</summary>
         public static void Verbose(TimeSpan span)
         {
@@ -177,6 +182,7 @@ namespace Kinovea.Camera.GoPro
                 }
 
                 string name = advertisement.LocalName;
+                Survey(args, advertisement, name);
                 lock (locker)
                 {
                     // The scan response with the name comes apart from the advertisement with the service: the address joins them.
@@ -244,6 +250,26 @@ namespace Kinovea.Camera.GoPro
             {
                 log.Error("Error while reading a Bluetooth advertisement.", e);
             }
+        }
+
+        private static void Survey(BluetoothLEAdvertisementReceivedEventArgs args, BluetoothLEAdvertisement advertisement, string name)
+        {
+            bool company = advertisement.ManufacturerData.Any(d => d.CompanyId == GoProIds.CompanyId || d.CompanyId == 0xF202);
+            bool service = advertisement.ServiceUuids.Any(u => u == GoProIds.ControlQueryService || u.ToString("D").EndsWith("-aa8d-11e3-9046-0002a5d5c51b", StringComparison.OrdinalIgnoreCase));
+            bool named = !string.IsNullOrEmpty(name) && (name.IndexOf("gopro", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("remote", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (!company && !service && !named)
+                return;
+
+            string sections = string.Join(" ", advertisement.DataSections.Select(s => s.DataType.ToString("X2") + ":" + BitConverter.ToString(GoProBuffers.ToBytes(s.Data))));
+            string key = string.Format("{0:X12}|{1}|{2}|{3}", args.BluetoothAddress, args.AdvertisementType, name, sections);
+            lock (locker)
+            {
+                if (surveyed.Count >= 60 || !surveyed.Add(key))
+                    return;
+            }
+
+            log.WarnFormat("Advertisement {0:X12} \"{1}\" ({2}, {3}, {4} dBm): {5}.", args.BluetoothAddress, name, args.AdvertisementType,
+                args.BluetoothAddressType, args.RawSignalStrengthInDBm, sections);
         }
 
         private static void Watcher_Stopped(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementWatcherStoppedEventArgs args)
