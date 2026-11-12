@@ -1826,24 +1826,29 @@ namespace Kinovea.Camera.GoPro
 
         private string NotReachedHintUnlocked()
         {
-            // (2.22.0) A HERO9 connects only in pairing mode: said at once.
+            // (2.22.0) A HERO9 connects only in pairing mode, and a camera that records cannot be put in pairing mode (its menus are
+            // closed): while it records it is stopped by the remote (which reconnects by itself) or by its button, then paired.
             if (OnlyInPairingModeUnlocked())
             {
                 if (stopWaiting)
-                    return GoProText.T("⏳ Η στάση περιμένει. Η HERO9 συνδέεται μόνο σε σύζευξη: στην κάμερα Connections › Connect Device › GoPro Quik, και σταματά αμέσως.",
-                        "⏳ The stop waits. A HERO9 connects only in pairing mode: on the camera Connections › Connect Device › GoPro Quik, and it stops at once.");
+                    return GoProText.T("⏳ Η στάση περιμένει. Η HERO9 όσο γράφει δεν συνδέεται: σταμάτα τη με το remote ή το κουμπί της, μετά σύζευξη (Connections › Connect Device › GoPro Quik).",
+                        "⏳ The stop waits. A HERO9 that records does not connect: stop it with the remote or its button, then pair it (Connections › Connect Device › GoPro Quik).");
 
-                return GoProText.T("Η HERO9 συνδέεται στον υπολογιστή μόνο σε σύζευξη: στην κάμερα Connections › Connect Device › GoPro Quik. Συνδέεται σε 1–2″.",
-                    "A HERO9 connects to the computer only in pairing mode: on the camera Connections › Connect Device › GoPro Quik. It connects in 1–2 s.");
+                if (encoding)
+                    return GoProText.T("Η HERO9 όσο γράφει δεν ξανασυνδέεται: στάση με το remote ή το κουμπί της, μετά σύζευξη (Connections › Connect Device › GoPro Quik).",
+                        "A HERO9 that records does not connect again: stop it with the remote or its button, then pair it (Connections › Connect Device › GoPro Quik).");
+
+                return GoProText.T("Η HERO9 συνδέεται μόνο σε σύζευξη: Connections › Connect Device › GoPro Quik. Συνδέεται σε 1–2″.",
+                    "A HERO9 connects only in pairing mode: Connections › Connect Device › GoPro Quik. It connects in 1–2 s.");
             }
 
             if (stopWaiting)
-                return GoProText.T("⏳ Η στάση περιμένει: στέλνεται μόλις συνδεθεί η κάμερα (όταν βγει από το νερό). Αν δεν συνδεθεί σε 20″, στην κάμερα: Συνδέσεις › Σύνδεση συσκευής › GoPro Quik.",
-                    "⏳ The stop waits: it is sent as soon as the camera connects (out of the water). If it does not connect in 20 s, on the camera: Connections › Connect Device › GoPro Quik.");
+                return GoProText.T("⏳ Η στάση περιμένει: στέλνεται μόλις η κάμερα βγει από το νερό και συνδεθεί. Αν δεν συνδεθεί σε 20″: στάση με το remote ή το κουμπί της.",
+                    "⏳ The stop waits: it is sent as soon as the camera is out of the water and connects. If it does not connect in 20 s: stop it with the remote or its button.");
 
             if (lostAt != DateTime.MinValue)
-                return GoProText.T("Η σύνδεση χάθηκε (μέσα στο νερό;): ξανασυνδέεται μόνη της μόλις βγει. Αν δεν συνδεθεί σε 20″, στην κάμερα: Συνδέσεις › Σύνδεση συσκευής › GoPro Quik.",
-                    "The connection was lost (under the water?): it connects again by itself once out. If it does not connect in 20 s, on the camera: Connections › Connect Device › GoPro Quik.");
+                return GoProText.T("Η σύνδεση χάθηκε (μέσα στο νερό;): ξανασυνδέεται μόνη της μόλις βγει. Αν δεν συνδεθεί σε 20″ και γράφει: στάση με το remote ή το κουμπί της.",
+                    "The connection was lost (under the water?): it connects again by itself once out. If it does not connect in 20 s while it records: stop it with the remote or its button.");
 
             return NotAnsweringHint();
         }
