@@ -20,9 +20,9 @@ namespace Kinovea.ScreenManager
 {
     /// <summary>
     /// (Swim 2.22.0) The start signal of the computer for the starts and turns of technique analysis: «Take your marks» (the voice of
-    /// Windows, an English one when there is one), a pause of 1.5 s and the horn: two tones together (890 and 1017 Hz, as the start
-    /// systems of the pools), short and sharp as at the meets (0.3 s, rising and falling in 2 ms), hard and at the top of the scale
-    /// (two square tones driven together into a soft limit, as a horn speaker driven hard). The cameras that hear the horn are lined up
+    /// Windows, an English one when there is one), a pause of 1 s and the horn: a horn of our own made as those of the start systems
+    /// (that of TEMPLO measured, 12.11.2026): two tones together, 912 and 1043 Hz (8/7), with their 2nd and 3rd harmonics and their sum
+    /// (7 to 15 dB under, as a horn speaker), 0.25 s (12 ms up, 0.13 s full, falling off), a little limited (as a speaker driven hard). The cameras that hear the horn are lined up
     /// by it (their sounds), and the start analysis finds its moment (the start of the attempt). Played by the speaker of the computer
     /// (or the one connected to it); one signal at a time. The words go without the band of the horn's tones (820 – 1120 Hz): the start
     /// analysis hears two tones 8/7 apart there, as the 7th and 8th harmonics of a voice can be, so that only the horn is a start signal.
@@ -38,22 +38,21 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The rate of the signal (that of the sounds of TEMPLO: nothing to change in them).</summary>
         public const int Rate = 44100;
-        public const double LowTone = 890;
-        public const double HighTone = 1017;
-        /// <summary>The horn (s): short, as the start systems of the meets (11.11.2026: «πιο κοφτός»).</summary>
-        public const double HornSeconds = 0.3;
+        /// <summary>The two tones of the horn (Hz), 8/7 apart, as the horns of the start systems (that of TEMPLO: 912 and 1043 Hz).</summary>
+        public const double LowTone = 912.3;
+        public const double HighTone = 1043.3;
 
-        /// <summary>From the end of the words to the horn (s), as the analyst asked (11.11.2026: 1.5 s).</summary>
-        public const double Pause = 1.5;
+        /// <summary>The horn (s): short, as at the meets (11-12.11.2026: «πιο κοφτός»).</summary>
+        public const double HornSeconds = 0.25;
+
+        /// <summary>From the end of the words to the horn (s), as the analyst asked (12.11.2026: 1 s).</summary>
+        public const double Pause = 1.0;
 
         /// <summary>The peak of the horn (of the scale).</summary>
         public const double HornPeak = 0.95;
 
-        /// <summary>How hard the two tones are driven together into the soft limit (a hard sound; louder for the same peak).</summary>
-        public const double HornDrive = 6;
-
-        /// <summary>The harmonics of the square tones go up to here (Hz), under half the rate: nothing folds back.</summary>
-        private const double HornTop = 10000;
+        /// <summary>How hard the sound of the horn is driven into the soft limit (a speaker driven hard: louder for the same peak).</summary>
+        public const double HornDrive = 1.5;
         public const string Words = "Take your marks";
         public const string GreekWords = "Τέικ γιορ μάρκς";
 
@@ -175,42 +174,43 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The horn: the two tones together, each a square tone (its odd harmonics under HornTop), both driven into a soft limit (tanh,
-        /// HornDrive: the hard sound of a horn speaker driven hard, about 1 dB louder than the tones alone and harsher), at HornPeak; it
-        /// rises and falls in 2 ms (sharp, as at the meets). The start analysis hears the two tones over what the limit adds (28 dB under).
+        /// The horn of our own: the two tones and what a horn speaker adds to them, with their levels (dB under the low tone) as measured on
+        /// the horn of TEMPLO, each at a phase of its own (fixed: the same horn every time); 12 ms up, full to 0.13 s, then falling off
+        /// (35 ms to a third), 2 ms to the end at 0.25 s; through a soft limit (tanh, HornDrive) to HornPeak.
         /// </summary>
         public static short[] Horn()
         {
-            int n = (int)(HornSeconds * Rate);
-            int edge = Math.Max(1, (int)(0.002 * Rate));
-            double top = Math.Min(HornTop, Rate / 2.0 - 100);
-            double[] sum = new double[n];
-            foreach (double tone in new[] { LowTone, HighTone })
+            double[][] partials =
             {
-                double[] v = new double[n];
-                double peak = 0;
-                for (int i = 0; i < n; i++)
-                {
-                    double t = i / (double)Rate, s = 0;
-                    for (int k = 1; k * tone < top; k += 2)
-                        s += Math.Sin(2 * Math.PI * k * tone * t) / k;
+                new[] { LowTone, 0.0 }, new[] { HighTone, -7.4 },
+                new[] { 2 * LowTone, -10.5 }, new[] { 2 * HighTone, -11.7 }, new[] { LowTone + HighTone, -12.1 },
+                new[] { 3 * LowTone, -13.7 }, new[] { 3 * HighTone, -14.6 }, new[] { 2 * LowTone + HighTone, -22.3 }, new[] { 5 * HighTone, -30.9 },
+            };
 
-                    v[i] = s;
-                    peak = Math.Max(peak, Math.Abs(s));
-                }
+            Random random = new Random(7);
+            double[] phases = partials.Select(x => 2 * Math.PI * random.NextDouble()).ToArray();
+            int n = (int)(HornSeconds * Rate);
+            double[] sound = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                double t = i / (double)Rate, s = 0;
+                for (int k = 0; k < partials.Length; k++)
+                    s += Math.Pow(10, partials[k][1] / 20) * Math.Sin(2 * Math.PI * partials[k][0] * t + phases[k]);
 
-                for (int i = 0; i < n; i++)
-                    sum[i] += v[i] / Math.Max(1e-9, peak);
+                sound[i] = s;
             }
 
-            double most = sum.Max(x => Math.Abs(x));
+            double most = sound.Max(x => Math.Abs(x));
             double limit = Math.Tanh(HornDrive);
             short[] horn = new short[n];
             for (int i = 0; i < n; i++)
             {
-                double envelope = Math.Min(1, Math.Min(i / (double)edge, (n - 1 - i) / (double)edge));
-                double s = Math.Tanh(HornDrive * sum[i] / Math.Max(1e-9, most)) / limit;
-                horn[i] = (short)Math.Round(32767 * HornPeak * envelope * s);
+                double t = i / (double)Rate;
+                double up = t < 0.012 ? 0.5 - 0.5 * Math.Cos(Math.PI * t / 0.012) : 1;
+                double down = t < 0.13 ? 1 : Math.Exp(-(t - 0.13) / 0.035);
+                double end = Math.Min(1, (HornSeconds - t) / 0.002);
+                double s = Math.Tanh(HornDrive * sound[i] / Math.Max(1e-9, most)) / limit;
+                horn[i] = (short)Math.Round(32767 * HornPeak * up * down * Math.Max(0, end) * s);
             }
 
             return horn;
