@@ -524,7 +524,8 @@ Check ($read.Count -eq 3 -and $read[0].AthleteId -eq '900201' -and $read[0].Club
 Write-Output 'step: the start signal'
 $sigT = T 'SwimStartSignal'
 $hornAt = 0.0
-$wave = $sigT::Build([int16[]]@(), $sigT::Pause, [ref]$hornAt)
+# (2 s of silence before the horn: the start analysis wants at least 2 s of sound; the camera has always more.)
+$wave = $sigT::Build([int16[]]@(), 2.0, [ref]$hornAt)
 $samples = [FictionalPool2]::Heard([FictionalPool2]::ToRate($wave, $sigT::Rate, 16000), 5)
 $beeps = (T 'SwimStartSound')::Find($samples)
 $b0 = if ($beeps.Count -gt 0) { $beeps[0] } else { $null }
