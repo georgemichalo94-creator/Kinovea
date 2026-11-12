@@ -335,6 +335,32 @@ namespace Kinovea.ScreenManager
         /// <summary>Confidence of a start proposed when another signal heard is nearly as clear (Ambiguous): the pilot asks.</summary>
         public const double AmbiguousConfidence = 0.55;
 
+        /// <summary>
+        /// (2.22.0) Seconds before and after a press of the start key on a training video where the horn of the start is looked for:
+        /// the press from the swimmer still on the block («Take your marks», a pause of 1 s, the horn) to the flight.
+        /// </summary>
+        public const double HornBefore = 3.0;
+        public const double HornAfter = 4.0;
+
+        /// <summary>
+        /// (2.22.0) The horn of a start near a press of the start key (pressed: seconds of the sound read), for a training video whose
+        /// signal (the horn of the computer's 📣 or of a start system) has no light to see and whose sound Kinovea does not play: the
+        /// clearest start signal heard from HornBefore before to HornAfter after the press (at least MinScore), and of the signals
+        /// nearly as clear as it (AmbiguousShare) the nearest to the press. Null: none.
+        /// </summary>
+        public static SwimBeep HornNear(IList<SwimBeep> beeps, double pressed)
+        {
+            if (beeps == null)
+                return null;
+
+            List<SwimBeep> near = beeps.Where(b => b != null && b.Score >= MinScore && b.Onset >= pressed - HornBefore && b.Onset <= pressed + HornAfter).ToList();
+            if (near.Count == 0)
+                return null;
+
+            double best = near.Max(b => b.Score);
+            return near.Where(b => b.Score >= best * AmbiguousShare).OrderBy(b => Math.Abs(b.Onset - pressed)).First();
+        }
+
         /// <summary>The signal heard has the tones of a start system the analyst has confirmed (known: the learned ones, null: none).</summary>
         public static bool Known(SwimBeep b, IList<SwimStartTone> known)
         {

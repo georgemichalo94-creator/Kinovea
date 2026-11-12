@@ -72,6 +72,7 @@ namespace Kinovea.ScreenManager
         private Button btnDeleteProposals;
         private CheckBox chkProposeAuto;
         private CheckBox chkAutoSnapshots;
+        private CheckBox chkSignalHorn;
         private Label lblProposals;
         private DataGridView gridAngles;
         private TextBox tbNotes;
@@ -202,8 +203,18 @@ namespace Kinovea.ScreenManager
 
             TableLayoutPanel t = NewEventTable();
             lblTsSignal = ValueLabel();
+            // (2.22.0) Training: the signal at the horn heard near the press (Kinovea plays no sound).
+            chkSignalHorn = new CheckBox { Text = SwimLang.T("🔊 στην κόρνα"), AutoSize = true, Margin = new Padding(8, 6, 3, 3) };
+            chkSignalHorn.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetSignalAtHorn(chkSignalHorn.Checked);
+            };
+            toolTip.SetToolTip(chkSignalHorn, SwimLang.T("Στην προπόνηση το G πηγαίνει μόνο του στο καρέ της κόρνας που ακούγεται κοντά στο πάτημα (από 3 s πριν ως 4 s μετά):\n") +
+                SwimLang.T("το Kinovea δεν παίζει ήχο και η κόρνα του 📣 δεν έχει φως. Πάτα G κοντά στην εκκίνηση (π.χ. με τον αθλητή ακίνητο στον βατήρα).\n") +
+                SwimLang.T("Χωρίς τσεκ: το σήμα μπαίνει στο καρέ του πατήματος."));
             AddEventRow(t, SwimLang.T("Σήμα εκκίνησης"), PlayerScreenCommands.SwimStart, SwimLang.T("Σήμα"),
-                SwimLang.T("Στο καρέ του σήματος. Στον αγώνα: t = 0. Στην προπόνηση: κάθε πάτημα ξεκινά νέα προσπάθεια εκκίνησης."), lblTsSignal);
+                SwimLang.T("Στο καρέ του σήματος. Στον αγώνα: t = 0. Στην προπόνηση: κάθε πάτημα ξεκινά νέα προσπάθεια εκκίνησης."), lblTsSignal, chkSignalHorn);
             lblTsReaction = ValueLabel();
             AddEventRow(t, SwimLang.T("Αντίδραση (πρώτη κίνηση)"), PlayerScreenCommands.SwimReaction, SwimLang.T("Αντίδραση"),
                 SwimLang.T("Η πρώτη κίνηση του αθλητή μετά το σήμα."), lblTsReaction);
@@ -730,6 +741,11 @@ namespace Kinovea.ScreenManager
                 chkSkeletonAngles.Checked = manager.Settings.SkeletonAngles;
                 chkProposeAuto.Checked = manager.Settings.ProposeAfterSkeleton;
                 chkAutoSnapshots.Checked = manager.Settings.AutoTechSnapshots;
+                if (chkSignalHorn != null)
+                {
+                    chkSignalHorn.Checked = manager.Settings.SignalAtHorn;
+                    chkSignalHorn.Visible = manager.Race == null || manager.Race.IsTraining;
+                }
                 updating = was;
             }
 

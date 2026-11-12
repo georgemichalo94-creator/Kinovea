@@ -239,6 +239,39 @@ public static class FictionalPool2
         return y;
     }
 
+    // Samples (16 kHz) with silence before and after them (s).
+    public static float[] Pad(float[] x, double before, double after)
+    {
+        int a = (int)(before * 16000), b = (int)(after * 16000);
+        float[] y = new float[a + x.Length + b];
+        Array.Copy(x, 0, y, a, x.Length);
+        return y;
+    }
+
+    // A sound of the pool (16 kHz, seconds long): noise, and horns of two tones (0.25 s) at these moments (s).
+    public static float[] Horns(double seconds, double[] at, double low, double high, int seed)
+    {
+        const int rate = 16000;
+        int n = (int)(seconds * rate);
+        Random r = new Random(seed);
+        float[] y = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            double g = Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());
+            y[i] = (float)(0.01 * g);
+        }
+        foreach (double a in at)
+        {
+            int s = (int)(a * rate), e = Math.Min(n, s + (int)(0.25 * rate));
+            for (int i = Math.Max(0, s); i < e; i++)
+            {
+                double u = (i - s) / (double)rate;
+                y[i] += (float)(0.2 * Math.Sin(2 * Math.PI * low * u) + 0.2 * Math.Sin(2 * Math.PI * high * u));
+            }
+        }
+        return y;
+    }
+
     // An image (a whole frame) against five images in a row of another video: the nearest one, as the shift from the middle (-2 … 2).
     public static int Nearest(string target, string[] frames, Rectangle area, out string details)
     {
@@ -549,6 +582,33 @@ Check ($full.Length -gt $noWords.Length -or $words.Length -eq 0) 'the words befo
 $beeps = (T 'SwimStartSound')::Find([FictionalPool2]::Heard([FictionalPool2]::ToRate($full, $sigT::Rate, 16000), 6))
 Write-Output ('     with the words, heard: ' + (($beeps | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s ' + $_.Low.ToString('0', $ci) + '/' + $_.High.ToString('0', $ci) + ' Hz score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') + ' (the horn at ' + $hornAt.ToString('0.000', $ci) + ' s)')
 Check ($beeps.Count -gt 0 -and [Math]::Abs($beeps[0].Onset - $hornAt) -le 0.06) 'with the words before it: the horn the clearest start signal, at its moment'
+
+# (2.22.0) The start key (G) of a training video goes to the horn heard near the press (Kinovea plays no sound, the horn of the 📣 has
+# no light): pressed with the swimmer still on the block (2.5 s before the horn), at the release (0.7 s after) or in the flight (3.5 s
+# after), the signal at the horn; pressed farther than the window (3 s before to 4 s after the press), none. Two horns 2 s apart: the
+# one nearest to the press. No horn: none (the signal stays at the press).
+$soundT = T 'SwimStartSound'
+$padded = [FictionalPool2]::Heard([FictionalPool2]::Pad([FictionalPool2]::ToRate($full, $sigT::Rate, 16000), 3.0, 4.0), 8)
+$hornIn = $hornAt + 3.0
+$beeps = $soundT::Find($padded)
+$offsets = [double[]]@(-2.5, 0.7, 3.5, -4.5, 4.5)
+$fromPress = @{}
+foreach ($d in $offsets) {
+  $h = $soundT::HornNear($beeps, $hornIn + $d)
+  if ($h) { $fromPress[$d] = $h.Onset - $hornIn } else { $fromPress[$d] = $null }
+}
+Write-Output ('     the horn from presses at ' + (($offsets | ForEach-Object { $_.ToString('+0.0;-0.0', $ci) + ' s: ' + $(if ($fromPress[$_] -ne $null) { $fromPress[$_].ToString('+0.000;-0.000', $ci) } else { 'none' }) }) -join ' | ') + ' (from the horn)')
+Check (@($offsets[0..2] | Where-Object { $fromPress[$_] -eq $null -or [Math]::Abs($fromPress[$_]) -gt 0.06 }).Count -eq 0) 'the start key of a training video at the horn: pressed 2.5 s before it, 0.7 s and 3.5 s after it'
+Check ($fromPress[$offsets[3]] -eq $null -and $fromPress[$offsets[4]] -eq $null) 'pressed farther from the horn than the window (3 s before to 4 s after the press): none'
+$two = [FictionalPool2]::Horns(12.0, [double[]]@(5.0, 7.0), 912.3, 1043.3, 9)
+$beeps2 = $soundT::Find($two)
+$h1 = $soundT::HornNear($beeps2, 4.6)
+$h2 = $soundT::HornNear($beeps2, 7.4)
+Write-Output ('     two horns at 5.000 and 7.000 s, heard: ' + (($beeps2 | Select-Object -First 3 | ForEach-Object { $_.Onset.ToString('0.000', $ci) + ' s score ' + $_.Score.ToString('0.0', $ci) }) -join ' | ') +
+  '; pressed at 4.6 s: ' + $(if ($h1) { $h1.Onset.ToString('0.000', $ci) } else { 'none' }) + ', at 7.4 s: ' + $(if ($h2) { $h2.Onset.ToString('0.000', $ci) } else { 'none' }))
+Check ($h1 -ne $null -and [Math]::Abs($h1.Onset - 5.0) -le 0.06 -and $h2 -ne $null -and [Math]::Abs($h2.Onset - 7.0) -le 0.06) 'two horns 2 s apart: the one nearest to the press'
+$quiet = [FictionalPool2]::Horns(10.0, [double[]]@(), 912.3, 1043.3, 10)
+Check ($soundT::HornNear($soundT::Find($quiet), 5.0) -eq $null) 'no horn in the sound: none (the signal stays at the press)'
 if ($out) { [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($out, 'gk_signal.wav'), $full) }
 
 # The own sounds of the analyst (12.11.2026: those of TEMPLO, at 44.1 kHz, two channels): fictional ones in the folder of the settings,
