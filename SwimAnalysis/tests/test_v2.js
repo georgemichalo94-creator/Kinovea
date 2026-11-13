@@ -213,6 +213,8 @@ assert.ok(call({ action: 'getImage', fileId: 'https://drive.google.com/file/d/' 
 
 // ---------------------------------------------------------------------------------------------
 // 6) Τεχνική ανάλυση προπόνησης: 3 εκκινήσεις + 14 στροφές (2 πίνακες), γωνίες, στιγμιότυπα με elite καρέ
+// (το report όπως ως την 2.16.6· η νέα μορφή της 2.17.0 στο τέλος της ενότητας και στο test_techcompare)
+G.SWIM_TECH_V2 = false;
 // ---------------------------------------------------------------------------------------------
 const phases = [];
 for (let i = 1; i <= 3; i++) phases.push({ id: 'st' + i, kind: 'start', attempt: i, values: { reaction: 0.2 + i / 100, blockTime: 0.7, flight: 0.3, t5: 1.6, t10: 3.6 + i / 50, t15: 6.0 + i / 20, kicks: 6 + i, breakoutDist: 11 + i / 2, kickRate: 2.4 } });
@@ -269,6 +271,18 @@ list = call({ action: 'analyses', query: { athleteId: '500001', style: 'fs', dis
 assert.ok(list.analyses.every(a => a.id !== 'tr1'));
 const sumIds = G._ss.getSheetByName('Αναλύσεις Αγώνων').getRange(2, 22, 20, 1).getValues().map(x => x[0]);
 assert.ok(sumIds.indexOf('tr1') < 0, 'training not in the race summary');
+// 2.17.0: η ίδια προπόνηση στη νέα μορφή: όλα τα νούμερα ανά είδος, οι τιμές κάθε προσπάθειας (οι 14 στροφές σε δύο πίνακες),
+// η ταχύτητα ανά 5μ. από τους χρόνους (εκκινήσεις και στροφές), το στιγμιότυπο με το elite καρέ του δίπλα.
+G.SWIM_TECH_V2 = true;
+const v2Race = G.swimNormalizeRace_(training);
+const v2 = G.swimBuildLayout_(v2Race, G.swimAnalyze_(v2Race), { pageHeight: w => G.swimPdfPageHeight_(reports, w) });
+checkGrid(v2, 'training v2');
+const v2texts = Object.values(v2.grid.cells).map(c => c.v);
+assert.ok(v2texts.includes('Όλα τα νούμερα της εκκίνησης') && v2texts.includes('Όλα τα νούμερα της στροφής'), 'both kinds');
+assert.strictEqual(v2texts.filter(v => typeof v === 'string' && /^Στροφές: τιμές ανά προσπάθεια \(χρόνοι από την επαφή στον τοίχο\) \(\d\/2\)$/.test(v)).length, 2, '14 turns: two tables');
+assert.strictEqual(v2.charts.filter(c => /ταχύτητα ανά τμήμα/.test(c.title)).length, 2, 'the speed of the starts and of the turns, from the times');
+const sn1 = v2.images.filter(im => im.fileId === training.tech.snapshots[0].fileId || im.fileId === training.tech.snapshots[0].eliteFileId);
+assert.ok(sn1.length === 2 && sn1[0].row === sn1[1].row, 'the snapshot and its elite frame side by side: ' + JSON.stringify(sn1));
 
 // ---------------------------------------------------------------------------------------------
 // 7) Τεχνική ενότητα στο report αγώνα (το demo) και πολλές στροφές σε 1500μ.

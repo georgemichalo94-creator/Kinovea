@@ -49,7 +49,8 @@ assert.ok(r.ok && r.rebuilt, JSON.stringify(r));
 let sh = sheetOf(r);
 let t = texts(sh);
 assert.ok(t.includes('Αξιολόγηση τεχνικής'), 'section title');
-assert.ok(t.some(v => v === 'Αξιολόγηση τεχνικής · Στροφή 1 · Δοκιμαστικό φύλλο στροφής'), 'title of the evaluation: ' + t.filter(v => /Αξιολόγηση/.test(v)).join(' | '));
+// 2.17.0: under the section «Αξιολόγηση τεχνικής» the title of each evaluation is the attempt and the sheet.
+assert.ok(t.some(v => v === 'Στροφή 1 · Δοκιμαστικό φύλλο στροφής'), 'title of the evaluation: ' + t.filter(v => /Στροφή 1/.test(v)).join(' | '));
 assert.ok(t.some(v => /^Σύνολο 1\/5 \(βαθμολογήθηκαν 3\) · Στροφή 5 μ\. μέσα \+ 10 μ\. έξω: 9\.84 s · επίπεδο 4 \(από 8 επίπεδα, 1 = καλύτερο\)/.test(v)), 'summary with the level: ' + t.filter(v => /Σύνολο/.test(v)).join(' | '));
 assert.ok(t.includes('Προσέγγιση   1/2') && t.includes('Ώθηση   0/3'), 'phase rows with their totals');
 assert.ok(t.includes('🤖✓') && t.includes('✗') && t.includes('–') && t.includes('·'), 'results: auto ✓, ✗, not visible, not scored');
@@ -128,7 +129,7 @@ assert.ok(r.ok, JSON.stringify(r));
 const layoutEn = G.swimWithLang_('en', () => { const rr = G.swimNormalizeRace_(en); return G.swimBuildLayout_(rr, G.swimAnalyze_(rr), {}); });
 const enTexts = Object.values(layoutEn.grid.cells).map(c => c.v).filter(v => typeof v === 'string' && v.length);
 const section = enTexts.filter(v => /Technique evaluation|Point|Result|Measured|What to correct|Total|target|from the program|errors on the video/.test(v));
-assert.ok(section.includes('Technique evaluation · Turn 1 · Test turn sheet'), 'English title: ' + section.join(' | '));
+assert.ok(section.includes('Technique evaluation') && enTexts.includes('Turn 1 · Test turn sheet'), 'English titles: ' + section.join(' | '));
 assert.ok(section.some(v => /^Total 1\/2 · Turn 5 m in \+ 10 m out: 9\.84 s · level 4 \(of 8 levels, 1 = best\)/.test(v)), 'English summary');
 assert.ok(section.includes('0.25 s\ntarget ≤ 0.3 s'), 'English target');
 const greekLeft = enTexts.filter(v => /[α-ωάέήίόύώ]/i.test(v) && !/ΔΟΚΙΜΑΣΤΙΚΟΣ/.test(v));

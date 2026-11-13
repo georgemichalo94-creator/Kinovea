@@ -334,13 +334,15 @@ NEW.SWIM_PDF_CHARTS = false;
 // 2.15.0: η υποβρύχια ταχύτητα των στροφών από το Kinovea (όχι μέτρα / χρόνος) κλειστή για τη σύγκριση· ελέγχεται στο test_e2e.
 NEW.SWIM_TURN_UW_SPEED = false;
 NEW.SWIM_STRICT_VALUES = false;
+// 2.17.0: η τεχνική ανάλυση της προπόνησης στη νέα μορφή κλειστή για τη σύγκριση· ελέγχεται στο test_techcompare (και στα αγγλικά εδώ).
+NEW.SWIM_TECH_V2 = false;
 const envOld = prepare(OLD), envNew = prepare(NEW);
 assert.deepStrictEqual(envOld.files, envNew.files, 'same Drive ids in both');
 const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, envNew.reference);
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.16.6');
+assert.strictEqual(vNew, '2.17.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -408,6 +410,7 @@ console.log('test_lang (a): Greek output identical to the script ' + vOld + ' ('
 const GREEK = /[Ͱ-Ͽἀ-῿]/;
 NEW.SWIM_DAK50 = true;
 NEW.SWIM_PDF_CHARTS = true;
+NEW.SWIM_TECH_V2 = true;
 const outEn = postAll(envNew, Rnew, 'en');
 assert.ok(outEn.first.ok && outEn.first.rebuilt, 'another language rebuilds the report');
 assert.strictEqual(NEW.SWIM_LANG_, 'el', 'Greek again after the request');
@@ -451,7 +454,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.16\.6$/, 'version line');
+like(/^Updated .* · version 2\.17\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');
@@ -467,7 +470,7 @@ like(/^Turn 50m: Butterfly → Backstroke$/, 'IM turn levels');
 has('Leg 1: Backstroke'); has('relay exchange');
 like(/^100yd Freestyle · Pool 25yd · Heats$/, 'yards event line');
 like(/^50m Freestyle \(relay leg\) · Pool 50m · Final · Disqualified \(DQ\)$/, 'relay leg and DQ');
-like(/^TECHNICAL ANALYSIS · STARTS & TURNS$/); like(/^Technical analysis \(training\) · Freestyle · Pool 25m$/);
+like(/^Technical analysis \(training\) · (Starts & turns|Starts|Turns)$/); like(/^Freestyle · Pool 25m$/, 'the line under the name: the style and the pool (the title says the rest)');
 assert.ok(outEn.responses.some(r => (r.warnings || []).indexOf('The time at 25m is not greater than the previous one.') >= 0), 'English warning');
 // Τα μηνύματα προς το Kinovea στα αγγλικά· το «Άγνωστη ενέργεια» ελληνικά (το αναγνωρίζει το Kinovea).
 assert.strictEqual(outEn.responses[outEn.responses.length - 2].error, 'The code of the swimmer and the name are needed.');
