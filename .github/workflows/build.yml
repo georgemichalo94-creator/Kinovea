@@ -15,6 +15,10 @@ on:
         description: 'Only read the C# of the swim module with the static analyzers (no build of the program, no release)'
         type: boolean
         default: false
+      analyze_sonar:
+        description: 'Versions of SonarAnalyzer.CSharp to try in order, with commas (empty: the latest; a 9.x also follows the values through the code)'
+        type: string
+        default: ''
 
 env:
   VERSION: 2025.2.0
@@ -583,7 +587,14 @@ jobs:
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         nuget install Microsoft.CodeAnalysis.NetAnalyzers -Version 8.0.0 -OutputDirectory $dir -NonInteractive -Verbosity quiet
         if ($LASTEXITCODE -ne 0) { nuget install Microsoft.CodeAnalysis.NetAnalyzers -OutputDirectory $dir -NonInteractive -Verbosity quiet }
-        nuget install SonarAnalyzer.CSharp -OutputDirectory $dir -NonInteractive -Verbosity quiet
+        # The latest Sonar analyzer, or the first of the versions asked that is there (the 9.x ones also follow the values through the
+        # code: a value used where it can be null, an empty list read).
+        $got = $false
+        foreach ($v in @('${{ inputs.analyze_sonar }}'.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+          nuget install SonarAnalyzer.CSharp -Version $v -OutputDirectory $dir -NonInteractive -Verbosity quiet
+          if ($LASTEXITCODE -eq 0) { $got = $true; break }
+        }
+        if (-not $got) { nuget install SonarAnalyzer.CSharp -OutputDirectory $dir -NonInteractive -Verbosity quiet }
         $dlls = @(Get-ChildItem $dir -Recurse -Filter *.dll | Where-Object { $_.FullName -match '\\analyzers\\' -and $_.FullName -notmatch '\\vb\\' -and $_.Name -notmatch 'resources|VisualBasic' })
         Write-Output ('::notice title=Analyzers::' + ((Get-ChildItem $dir -Directory | ForEach-Object { $_.Name }) -join ', ') + ': ' + (($dlls | ForEach-Object { $_.Name }) -join ', '))
         "SWIM_ANALYZERS=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
