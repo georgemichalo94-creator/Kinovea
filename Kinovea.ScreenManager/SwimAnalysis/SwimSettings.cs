@@ -271,7 +271,8 @@ namespace Kinovea.ScreenManager
             {
                 if (File.Exists(FilePath))
                 {
-                    SwimSettings settings = JsonConvert.DeserializeObject<SwimSettings>(File.ReadAllText(FilePath, Encoding.UTF8));
+                    // (2.22.0) A file that cannot be read (half written): the one of before (.bak), not the settings from the start.
+                    SwimSettings settings = SwimFiles.ReadJson<SwimSettings>(FilePath);
                     if (settings != null)
                     {
                         if (settings.TechSheetChoice == null)
@@ -299,7 +300,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented), Encoding.UTF8);
+                SwimFiles.WriteText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented), Encoding.UTF8, true);
             }
             catch (Exception e)
             {

@@ -99,7 +99,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.None), Encoding.UTF8);
+                SwimFiles.WriteText(FilePath, JsonConvert.SerializeObject(this, Formatting.None), Encoding.UTF8);
             }
             catch (Exception e)
             {

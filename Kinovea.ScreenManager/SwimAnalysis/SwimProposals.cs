@@ -202,8 +202,9 @@ namespace Kinovea.ScreenManager
             SwimLearning learning = null;
             try
             {
+                // (2.22.0) A file that cannot be read (half written): the one of before (.bak), not an empty learning written over it.
                 if (File.Exists(path))
-                    learning = JsonConvert.DeserializeObject<SwimLearning>(File.ReadAllText(path, Encoding.UTF8));
+                    learning = SwimFiles.ReadJson<SwimLearning>(path);
             }
             catch (Exception e)
             {
@@ -237,7 +238,7 @@ namespace Kinovea.ScreenManager
             {
                 string path = Path ?? DefaultPath;
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-                File.WriteAllText(path, JsonConvert.SerializeObject(this, Formatting.Indented), Encoding.UTF8);
+                SwimFiles.WriteText(path, JsonConvert.SerializeObject(this, Formatting.Indented), Encoding.UTF8, true);
             }
             catch (Exception e)
             {

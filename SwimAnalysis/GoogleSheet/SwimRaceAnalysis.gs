@@ -5607,7 +5607,8 @@ function swimTcCompareLine_(L, row) {
 /** Οι στήλες και οι θέσεις (px) των εικόνων ανά πλήθος σε μια σειρά: 1 (σε όλο το πλάτος, στο σχήμα της), 2 (όπως τα ζεύγη) ή 3. */
 function swimTcBoxes_(n, aspect) {
   if (n === 1) {
-    var w1 = 1100, h1 = Math.round(w1 / (aspect > 0 ? aspect : 16 / 9));
+    // Όχι πιο ψηλή από μια φαρδιά εικόνα (2,2:1) σε όλο το πλάτος: μια εικόνα 16:9 ή κάθετη στη στοίβα μπαίνει ολόκληρη στο πλαίσιο.
+    var w1 = 1100, h1 = Math.min(SWIM_TC_STACK_H, Math.round(w1 / (aspect > 0 ? aspect : 16 / 9)));
     return [{ x: 12, w: w1, h: h1, c: [1, 15] }];
   }
   if (n >= 3) {
@@ -5621,6 +5622,8 @@ function swimTcBoxes_(n, aspect) {
 
 /** Πολύ φαρδιά εικόνα (π.χ. οι οθόνες μιας ομάδας στη σειρά): μόνη της σε όλο το πλάτος, για να φαίνεται. */
 var SWIM_TC_WIDE = 2.2;
+/** Το μεγαλύτερο ύψος (px) μιας εικόνας μόνης της σε όλο το πλάτος (1100 / 2,2). */
+var SWIM_TC_STACK_H = 500;
 
 function swimTcAspect_(o) {
   return o && o.w > 0 && o.h > 0 ? o.w / o.h : 16 / 9;
@@ -5753,8 +5756,15 @@ function swimTcPhasesSection_(L, snapshots, row) {
     g.rowHeights[r] = 22;
     var ir = r + 1;
     if (wide) {
-      // Οι οθόνες μιας ομάδας: η μία κάτω από την άλλη, σε όλο το πλάτος.
-      cells.forEach(function (cell) { ir = swimTcImageRow_(L, ir, [cell], swimTcBoxes_(1, cell.aspect)); });
+      // Οι οθόνες μιας ομάδας: η μία κάτω από την άλλη, σε όλο το πλάτος· κάθε εικόνα ολόκληρη σε μία σελίδα (η πρώτη με τον τίτλο):
+      // όλες μαζί μπορεί να μη χωρούν σε μία.
+      cells.forEach(function (cell, k) {
+        if (k > 0) {
+          swimKeepEnd_(L, 'techPhase', ir - 1);
+          ir = swimKeep_(L, ir, 'techPhase', true);
+        }
+        ir = swimTcImageRow_(L, ir, [cell], swimTcBoxes_(1, cell.aspect));
+      });
     } else {
       ir = swimTcImageRow_(L, ir, cells, swimTcBoxes_(cells.length));
     }

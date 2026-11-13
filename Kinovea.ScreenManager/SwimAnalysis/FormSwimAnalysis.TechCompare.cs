@@ -88,17 +88,23 @@ namespace Kinovea.ScreenManager
             toolTip.SetToolTip(save, SwimLang.T("Αυτή η ανάλυση γίνεται elite αναφορά τεχνικής (φύλλο «Elite τεχνική» του Google Sheet):\n") +
                 SwimLang.T("μετά διαλέγεται στη λίστα Elite άλλων αναλύσεων, για σύγκριση με όλα τα νούμερα και τα στιγμιότυπά της."));
 
+            // Each list with its caption, the buttons together: on a narrow panel they go to the next line as one.
             row.Controls.Add(title);
-            row.Controls.Add(prevCaption);
-            row.Controls.Add(prev);
-            row.Controls.Add(Caption("Elite:"));
-            row.Controls.Add(elite);
-            row.Controls.Add(refresh);
-            row.Controls.Add(save);
+            row.Controls.Add(Together(prevCaption, prev));
+            row.Controls.Add(Together(Caption("Elite:"), elite));
+            row.Controls.Add(Together(refresh, save));
             row.Controls.Add(info);
             row.Visible = false;
             techCompareRows.Add(new TechCompareRow { Panel = row, PrevCaption = prevCaption, Prev = prev, Elite = elite, Info = info, Save = save });
             return row;
+        }
+
+        /// <summary>Controls that stay on one line of a row that wraps.</summary>
+        private static Control Together(params Control[] controls)
+        {
+            FlowLayoutPanel group = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0) };
+            group.Controls.AddRange(controls);
+            return group;
         }
 
         /// <summary>After the event of a list (its items are filled again outside of it).</summary>

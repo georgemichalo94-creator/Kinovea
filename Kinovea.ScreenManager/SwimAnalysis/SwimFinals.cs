@@ -327,7 +327,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
-                File.WriteAllText(SetPath(finals.Short), text, Encoding.UTF8);
+                SwimFiles.WriteText(SetPath(finals.Short), text, Encoding.UTF8);
             }
             catch (Exception e)
             {

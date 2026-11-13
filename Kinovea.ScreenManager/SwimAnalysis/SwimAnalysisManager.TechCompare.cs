@@ -29,6 +29,9 @@ namespace Kinovea.ScreenManager
         /// <summary>What the lists of the comparison have (or why they are empty).</summary>
         public string TechCompareMessage { get; private set; } = "";
 
+        /// <summary>What the lists were asked for (the analysis, its athlete, style and pool): another one starts with empty lists.</summary>
+        private string techListKey;
+
         /// <summary>«Ως elite αναφορά…»: the analysis waits for its sending to the Google Sheet, then becomes an elite reference.</summary>
         private string techEliteRace;
         private string techEliteName;
@@ -56,6 +59,16 @@ namespace Kinovea.ScreenManager
             if (Race == null || !Race.IsTraining)
                 return;
 
+            // The analyses of another athlete (or style, pool) are never offered while the new ones load, or when they cannot be loaded.
+            string key = string.Join("|", Race.Id, Race.AthleteId ?? "", Race.Athlete ?? "", Race.Style ?? "", Race.Pool.ToString(CultureInfo.InvariantCulture),
+                Race.IsYards ? SwimRace.UnitYards : SwimRace.UnitMeters);
+            if (key != techListKey)
+            {
+                techListKey = key;
+                TechCandidates = new List<SwimTechAnalysisItem>();
+                TechEliteRefs = new List<SwimTechElite>();
+            }
+
             if (!Settings.IsConfigured)
             {
                 TechCandidates = new List<SwimTechAnalysisItem>();
@@ -82,7 +95,8 @@ namespace Kinovea.ScreenManager
 
             client.GetAnalyses(Settings.WebAppUrl, Settings.Token, query, result =>
             {
-                if (Race == null || Race.Id != raceId)
+                // An answer for another analysis or athlete (changed meanwhile) is not for these lists.
+                if (Race == null || Race.Id != raceId || techListKey != key)
                     return;
 
                 List<SwimTechAnalysisItem> list = new List<SwimTechAnalysisItem>();

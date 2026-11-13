@@ -1111,6 +1111,7 @@
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
+    <Compile Include="SwimAnalysis\SwimFiles.cs" />
     <Compile Include="SwimAnalysis\SwimTechCompare.cs" />
     <Compile Include="SwimAnalysis\SwimEventDetector.cs" />
     <Compile Include="SwimAnalysis\SwimPose.cs" />

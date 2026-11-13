@@ -3597,11 +3597,14 @@ namespace Kinovea.ScreenManager
             if (!dirty || VideoFile == null || string.IsNullOrEmpty(videoPath))
                 return;
 
+            // (2.22.0) Whole or not at all (a crash or a disk unplugged in the middle left half a file: the analysis was lost), and the
+            // file as it was before the first save of the day is kept in the settings folder (the three latest days of each video).
             string json = JsonConvert.SerializeObject(VideoFile, Formatting.Indented);
             string primary = videoPath + ".swim.json";
             try
             {
-                File.WriteAllText(primary, json, Encoding.UTF8);
+                SwimFiles.BackupDaily(primary, BackupFolder, BackupPrefix(videoPath), BackupExtension, BackupDays, BackupBytes);
+                SwimFiles.WriteText(primary, json, Encoding.UTF8);
                 dirty = false;
                 return;
             }
@@ -3614,7 +3617,8 @@ namespace Kinovea.ScreenManager
             {
                 string fallback = FallbackPath(videoPath);
                 Directory.CreateDirectory(Path.GetDirectoryName(fallback));
-                File.WriteAllText(fallback, json, Encoding.UTF8);
+                SwimFiles.BackupDaily(fallback, BackupFolder, BackupPrefix(videoPath), BackupExtension, BackupDays, BackupBytes);
+                SwimFiles.WriteText(fallback, json, Encoding.UTF8);
                 dirty = false;
             }
             catch (Exception e)
@@ -3626,37 +3630,118 @@ namespace Kinovea.ScreenManager
 
         private SwimVideoFile Load(string path)
         {
-            foreach (string candidate in new string[] { path + ".swim.json", FallbackPath(path) })
+            // (2.22.0) A file that is there but cannot be read (half written by a crash, damaged) is not lost: a copy of it is kept before
+            // anything is written over it, and the analysis comes from the latest daily copy when there is one.
+            string unreadable = null;
+            foreach (string candidate in AnalysisFiles(path))
             {
                 try
                 {
                     if (!File.Exists(candidate))
                         continue;
 
-                    SwimVideoFile file = JsonConvert.DeserializeObject<SwimVideoFile>(File.ReadAllText(candidate, Encoding.UTF8));
-                    if (file != null && file.Races != null)
+                    SwimVideoFile file = ReadVideoFile(candidate, path);
+                    if (file != null)
                     {
-                        file.Races.RemoveAll(r => r == null);
-                        foreach (SwimRace race in file.Races)
-                            race.EnsureLists();
-                        file.Version = SwimVideoFile.CurrentVersion;
-                        file.VideoPath = path;
-                        if (file.Calibrations == null)
-                            file.Calibrations = new List<SwimCalibration>();
-                        file.Calibrations.RemoveAll(c => c == null);
+                        if (unreadable != null)
+                            SwimFiles.KeepUnreadable(unreadable, BackupFolder, BackupPrefix(path), BackupExtension);
                         Status(string.Format(SwimLang.T("Φορτώθηκαν {0} αναλύσεις για αυτό το βίντεο."), file.Races.Count), false);
                         return file;
                     }
+
+                    log.Error("The swim analysis file is empty: " + candidate);
+                    unreadable = unreadable ?? candidate;
                 }
                 catch (Exception e)
                 {
                     log.Error("Could not read swim analysis file " + candidate, e);
+                    unreadable = unreadable ?? candidate;
                 }
+            }
+
+            if (unreadable != null)
+            {
+                SwimFiles.KeepUnreadable(unreadable, BackupFolder, BackupPrefix(path), BackupExtension);
+                foreach (FileInfo copy in SwimFiles.Backups(BackupFolder, BackupPrefix(path), BackupExtension))
+                {
+                    try
+                    {
+                        SwimVideoFile file = ReadVideoFile(copy.FullName, path);
+                        if (file == null)
+                            continue;
+
+                        Status(string.Format(SwimLang.T("⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβαζόταν: φορτώθηκε το αντίγραφο ασφαλείας της {0} ({1} αναλύσεις). Έλεγξε ότι δεν λείπει κάτι."),
+                            copy.LastWriteTime.ToString("d/M/yyyy HH:mm", CultureInfo.InvariantCulture), file.Races.Count), true);
+                        return file;
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("Could not read the copy of the swim analysis " + copy.Name, e);
+                    }
+                }
+
+                Status(SwimLang.T("⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβάζεται και δεν υπάρχει αντίγραφο ασφαλείας: η ανάλυση αρχίζει από την αρχή (το αρχείο κρατήθηκε στον φάκελο των ρυθμίσεων, SwimAnalysis\\backup)."), true);
             }
 
             SwimVideoFile created = new SwimVideoFile();
             created.VideoPath = path;
             return created;
+        }
+
+        /// <summary>
+        /// The file beside the video and the one of the settings folder (written when the first cannot be: a disk that is full or read
+        /// only). (2.22.0) The one written last first: the file beside the video stays as it was when a save could only go to the settings
+        /// folder, and it is not the latest analysis any more.
+        /// </summary>
+        private static string[] AnalysisFiles(string path)
+        {
+            string primary = path + ".swim.json", fallback = FallbackPath(path);
+            try
+            {
+                if (File.Exists(primary) && File.Exists(fallback) && File.GetLastWriteTimeUtc(fallback) > File.GetLastWriteTimeUtc(primary))
+                    return new string[] { fallback, primary };
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not compare the files of the swim analysis.", e);
+            }
+
+            return new string[] { primary, fallback };
+        }
+
+        /// <summary>The analyses of a file as they are used (null: the file has none to read).</summary>
+        private static SwimVideoFile ReadVideoFile(string candidate, string path)
+        {
+            SwimVideoFile file = JsonConvert.DeserializeObject<SwimVideoFile>(File.ReadAllText(candidate, Encoding.UTF8));
+            if (file == null || file.Races == null)
+                return null;
+
+            file.Races.RemoveAll(r => r == null);
+            foreach (SwimRace race in file.Races)
+                race.EnsureLists();
+            file.Version = SwimVideoFile.CurrentVersion;
+            file.VideoPath = path;
+            if (file.Calibrations == null)
+                file.Calibrations = new List<SwimCalibration>();
+            file.Calibrations.RemoveAll(c => c == null);
+            return file;
+        }
+
+        /// <summary>(2.22.0) The daily copies of the analyses: in the settings folder, the three latest days of each video, 300 MB in all.</summary>
+        private const string BackupExtension = ".swim.json";
+        private const int BackupDays = 3;
+        private const long BackupBytes = 300L * 1024 * 1024;
+
+        private static string BackupFolder
+        {
+            get { return Path.Combine(Software.SettingsDirectory, "SwimAnalysis", "backup"); }
+        }
+
+        /// <summary>The name of the copies of the analyses of a video: its file name and the mark of its path (as FallbackPath).</summary>
+        private static string BackupPrefix(string path)
+        {
+            string hash = ((uint)path.ToLowerInvariant().GetHashCode()).ToString("x8", CultureInfo.InvariantCulture);
+            return Path.GetFileName(path) + "." + hash;
         }
 
         private static string FallbackPath(string path)
