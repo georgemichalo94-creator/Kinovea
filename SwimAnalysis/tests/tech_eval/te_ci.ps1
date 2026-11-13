@@ -559,7 +559,7 @@ Write-Output ('     the strokes of the turn: ' + ($names -join ' | '))
 Check ($names[0].StartsWith('5η χεριά πριν τον τοίχο') -and $names[1].StartsWith('2η χεριά πριν τον τοίχο') -and $names[2].StartsWith('2η χεριά μετά την έξοδο') -and
   $names[3].StartsWith('3η χεριά μετά την έξοδο')) 'the strokes of the technical pilot named by their wall: counted back before it, after the breakout after it'
 $nextIn = $tMan.GetMethod('NextInCheck', $bfs)
-$pending = [Activator]::CreateInstance(([type]'System.Collections.Generic.List`1').MakeGenericType($tProp))
+$pending = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tProp))
 foreach ($p in ($turnRace.Proposals | Sort-Object Timestamp)) { $pending.Add($p) }
 $current = & $at 6.9
 $seen = New-Object 'System.Collections.Generic.List[double]'
