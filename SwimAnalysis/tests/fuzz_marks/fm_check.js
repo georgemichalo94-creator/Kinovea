@@ -24,6 +24,9 @@ const same = (a, b) => {
   if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b));
   return a === b;
 };
+// A time of the video in whole milliseconds, never after it (as SwimCalculator.Ms): the program keeps the time of a checkpoint as
+// that of its frame (for what the video shows from it on) and computes its numbers from the milliseconds the script gets.
+const ms = t => (none(t) ? t : Math.floor(t * 1000 + 1e-6) / 1000);
 
 // What the program computed (SwimComputed) and what the script analysed (swimAnalyze_), value by value.
 const ROW = [['T', 't'], ['SegTime', 'segTime'], ['Vel', 'vel'], ['Strokes', 'strokes'], ['StrokesAuto', 'strokesAuto'], ['StrokesTyped', 'strokesTyped'],
@@ -45,7 +48,14 @@ const differ = (field, meta, at, cs, js) => {
   if (s.examples.length < 4 || (meta.plausible && s.examples.filter(e => e.plausible).length < 3))
     s.examples.push({ plausible: meta.plausible, text: `#${meta.i}${meta.plausible ? '' : ' (mutation ' + meta.mutation + ')'} ${meta.what}${at === '' ? '' : ' @' + at}: Kinovea ${JSON.stringify(cs)} / report ${JSON.stringify(js)}` });
 };
-const pairs = (section, list, meta, at, cs, js) => list.forEach(p => differ(section + '.' + p[0], meta, at, cs ? cs[p[0]] : undefined, js ? js[p[1]] : undefined));
+const pairs = (section, list, meta, at, cs, js) => list.forEach(p => {
+  let v = cs ? cs[p[0]] : undefined;
+  if (section === 'row' && p[0] === 'T') v = ms(v);
+  // The length of a stroke where the program has the time of the segment (the script gives it also without one: a segment after
+  // a checkpoint without a time, or with times out of order, where the program gives nothing).
+  if (section === 'row' && (p[0] === 'Dps' || p[0] === 'Sl') && !(cs && cs.SegTime > 0)) return;
+  differ(section + '.' + p[0], meta, at, v, js ? js[p[1]] : undefined);
+});
 
 function compare(meta, c, a) {
   const rows = {};
@@ -69,7 +79,7 @@ const files = fs.readdirSync(dir).filter(f => /^in_\d+\.json$/.test(f)).sort();
 assert.ok(files.length >= 50, 'the analyses of fm_make.js: ' + files.length);
 const failures = [];
 const refusals = {};
-let sent = 0, races = 0, trainings = 0, compared = 0, notComputed = 0;
+let sent = 0, races = 0, trainings = 0, compared = 0, notComputed = 0, noStart = 0;
 for (const f of files) {
   const meta = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
   const r0 = meta.race;
@@ -106,6 +116,8 @@ for (const f of files) {
     if (rr.kind === 'training') { trainings++; continue; }
 
     races++;
+    // Without the start signal the program computes nothing (the script lists the turns and the 50s, empty).
+    if (r0.StartTimestamp === null) { noStart++; continue; }
     compare(meta, out.computed, an);
     compared++;
   } catch (e) {
@@ -115,7 +127,7 @@ for (const f of files) {
 
 const fields = Object.keys(stats).filter(k => stats[k].differ > 0).sort((x, y) => stats[y].differ - stats[x].differ);
 const total = Object.keys(stats).reduce((n, k) => n + stats[k].compared, 0);
-console.log(`fm_check: ${sent} analyses sent to the script (${races} races, ${trainings} training videos; refused: ${JSON.stringify(refusals)}), ${compared} races compared, ${total} values`);
+console.log(`fm_check: ${sent} analyses sent to the script (${races} races, ${trainings} training videos; refused: ${JSON.stringify(refusals)}), ${compared} races compared (${noStart} without a start signal), ${total} values`);
 fields.forEach(k => {
   const s = stats[k];
   console.log(`DIFF ${k}: ${s.differ} of ${s.compared} (${s.asMarked} in analyses as marked)`);

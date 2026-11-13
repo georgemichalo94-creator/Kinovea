@@ -291,6 +291,24 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public const double OfficialNear = 0.015;
 
+        /// <summary>
+        /// (2.22.0) A time of the video in whole milliseconds, never after it: the time the Google Sheet gets (SwimPayload). The numbers
+        /// of the analysis (segments, speeds, the strokes of a segment, rates, turns, start, finish, the 50s) are computed from these
+        /// times, so the panel, the graphics of the video and the report show the same numbers. Computed from the exact times of the
+        /// frames, a segment or a turn could differ by a hundredth from the report, and a segment by half a stroke, at 29.97, 59.94 or
+        /// 119.88 fps (their frames are not whole milliseconds). The times of the marks themselves stay those of their frames (what
+        /// the video shows from a mark on starts at its frame): to the hundredth they are the same.
+        /// </summary>
+        public static double Ms(double seconds)
+        {
+            return Math.Floor(seconds * 1000.0 + 1e-6) / 1000.0;
+        }
+
+        private static double? Ms(double? seconds)
+        {
+            return seconds.HasValue ? (double?)Ms(seconds.Value) : null;
+        }
+
         public static SwimComputed Compute(SwimRace race, SwimTiming timing, double strokeRounding)
         {
             SwimComputed result = new SwimComputed();
@@ -335,6 +353,15 @@ namespace Kinovea.ScreenManager
             result.Reactions = times(SwimMarkType.Reaction);
             result.TotalPresses = result.Strokes.Count;
 
+            // (2.22.0) The numbers below from the times in whole milliseconds (Ms), as the Google Sheet gets them; the lists of the
+            // result and the times of the checkpoints keep the times of their frames.
+            List<double> msStrokes = result.Strokes.Select(x => Ms(x)).ToList();
+            List<double> msKicks = result.Kicks.Select(x => Ms(x)).ToList();
+            List<double> msBreakouts = result.Breakouts.Select(x => Ms(x)).ToList();
+            List<double> msFeetOff = result.FeetOff.Select(x => Ms(x)).ToList();
+            List<double> msEntries = result.Entries.Select(x => Ms(x)).ToList();
+            List<double> msReactions = result.Reactions.Select(x => Ms(x)).ToList();
+
             int pool = race.Pool <= 0 ? 50 : race.Pool;
             int distance = race.Distance;
 
@@ -361,7 +388,7 @@ namespace Kinovea.ScreenManager
                 {
                     row.T = timing.Seconds(split.Timestamp, origin);
                     row.Marked = true;
-                    timeAt[row.D] = row.T.Value;
+                    timeAt[row.D] = Ms(row.T.Value);
                 }
 
                 double typed;
@@ -372,14 +399,14 @@ namespace Kinovea.ScreenManager
                     row.MarkT = row.T;
                     row.T = typed;
                     row.Official = true;
-                    timeAt[row.D] = typed;
+                    timeAt[row.D] = Ms(typed);
                 }
 
                 if (result.Reference != null)
                 {
                     row.RefT = result.Reference.TimeAt(row.D);
                     if (row.T.HasValue && row.RefT.HasValue)
-                        row.Delta = row.T.Value - row.RefT.Value;
+                        row.Delta = Ms(row.T.Value) - row.RefT.Value;
                 }
 
                 result.Rows.Add(row);
@@ -396,7 +423,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimRow r in result.Rows)
             {
                 if (!double.IsNaN(r.OnVideo))
-                    videoAt[r.D] = r.OnVideo;
+                    videoAt[r.D] = Ms(r.OnVideo);
             }
 
             List<double> barriers = turnWalls.Where(w => videoAt.ContainsKey(w)).Select(w => videoAt[w]).OrderBy(t => t).ToList();
@@ -405,17 +432,18 @@ namespace Kinovea.ScreenManager
             double? lastT = null;
             foreach (SwimRow row in result.Rows)
             {
-                double? tPrev = row.Index == 0 ? 0.0 : result.Rows[row.Index - 1].T;
-                double? vPrev = row.Index == 0 ? 0.0 : double.IsNaN(result.Rows[row.Index - 1].OnVideo) ? (double?)null : result.Rows[row.Index - 1].OnVideo;
-                double? vRow = double.IsNaN(row.OnVideo) ? (double?)null : row.OnVideo;
+                double? tRow = Ms(row.T);
+                double? tPrev = row.Index == 0 ? 0.0 : Ms(result.Rows[row.Index - 1].T);
+                double? vPrev = row.Index == 0 ? 0.0 : double.IsNaN(result.Rows[row.Index - 1].OnVideo) ? (double?)null : Ms(result.Rows[row.Index - 1].OnVideo);
+                double? vRow = double.IsNaN(row.OnVideo) ? (double?)null : Ms(row.OnVideo);
                 int ppc = SwimPresets.PressesPerCycle(row.Style);
                 int lastWall = (int)Math.Floor((row.PrevD + 1e-9) / pool) * pool;
                 row.IsSwim = row.PrevD >= lastWall + 15;
                 row.IsFree = row.IsSwim && row.D <= lastWall + pool - 5;
 
-                if (row.T.HasValue && tPrev.HasValue)
+                if (tRow.HasValue && tPrev.HasValue)
                 {
-                    row.SegTime = row.T.Value - tPrev.Value;
+                    row.SegTime = tRow.Value - tPrev.Value;
                     if (row.SegTime.Value > 0)
                     {
                         // Velocities in m/s (in 25 yd pools also in yd/s).
@@ -434,18 +462,18 @@ namespace Kinovea.ScreenManager
 
                 if (hasStrokes && vRow.HasValue && vPrev.HasValue)
                 {
-                    double nA = Round(Cumulative(result.Strokes, barriers, vPrev.Value), strokeRounding);
-                    double nB = Round(Cumulative(result.Strokes, barriers, vRow.Value), strokeRounding);
+                    double nA = Round(Cumulative(msStrokes, barriers, vPrev.Value), strokeRounding);
+                    double nB = Round(Cumulative(msStrokes, barriers, vRow.Value), strokeRounding);
                     row.Strokes = Math.Max(0, Round(nB - nA, strokeRounding > 0 ? strokeRounding : 0));
 
                     // Backstroke after the dive: the first pull is the one that brings the swimmer up (the breakout); the analysts'
                     // sheets count from the next one (their own stroke marks give one more than their sheets in the first segment).
-                    if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && result.Strokes[0] <= vRow.Value)
+                    if (row.Index == 0 && row.Style == "bk" && BackstrokeBreakoutPull && msStrokes[0] <= vRow.Value)
                         row.Strokes = Math.Max(0, row.Strokes.Value - 1);
 
                     // (2.11.0) The rate from the stroke times with whole cycles (in freestyle and backstroke from a hand to the same
                     // hand), so that a difference between the two arms does not change it.
-                    row.SrExact = CycleRate(result.Strokes, barriers, vPrev.Value, vRow.Value, ppc);
+                    row.SrExact = CycleRate(msStrokes, barriers, vPrev.Value, vRow.Value, ppc);
                 }
 
                 row.StrokesAuto = row.Strokes;
@@ -500,8 +528,8 @@ namespace Kinovea.ScreenManager
 
             // Start.
             double firstWallT = barriers.Count > 0 ? barriers[0] : double.MaxValue;
-            result.ReactionTime = First(result.Reactions, t => t > 0 && t < firstWallT);
-            result.BlockTime = First(result.FeetOff, t => t > 0 && t < firstWallT);
+            result.ReactionTime = First(msReactions, t => t > 0 && t < firstWallT);
+            result.BlockTime = First(msFeetOff, t => t > 0 && t < firstWallT);
 
             // The official reaction time of the results (from the touch pads of the blocks, since 2026-10-19) is the release from the
             // block: since 2.9.5b it always stands, as the official splits (until 2.9.5 only where the mark was at it or there was none).
@@ -513,18 +541,18 @@ namespace Kinovea.ScreenManager
                 result.BlockOfficial = true;
             }
 
-            result.EntryTime = First(result.Entries, t => t > 0 && t < firstWallT);
+            result.EntryTime = First(msEntries, t => t > 0 && t < firstWallT);
 
             // The flight on the video: from the release marked (else the official one) to the entry.
             double? release = result.BlockMarkTime ?? result.BlockTime;
             if (release.HasValue && result.EntryTime.HasValue && result.EntryTime.Value > release.Value)
                 result.FlightTime = result.EntryTime.Value - release.Value;
-            result.StartUnderwaterTime = First(result.Breakouts, t => t > 0 && t < firstWallT);
-            if (result.Kicks.Count > 0)
+            result.StartUnderwaterTime = First(msBreakouts, t => t > 0 && t < firstWallT);
+            if (msKicks.Count > 0)
             {
                 double fromT = result.EntryTime ?? 0;
                 double to = result.StartUnderwaterTime ?? firstWallT;
-                int kicks = result.Kicks.Count(t => t > fromT && t <= to);
+                int kicks = msKicks.Count(t => t > fromT && t <= to);
                 // (2.15.0) None there: not marked (e.g. kicks marked only in a turn), not 0.
                 result.StartKicks = kicks > 0 ? (int?)kicks : null;
             }
@@ -533,7 +561,7 @@ namespace Kinovea.ScreenManager
             // (2.9.5b: OnVideo; the official time of a wall is for the times of the checkpoints).
             List<double> wallTimes = result.Rows
                 .Where(r => !double.IsNaN(r.OnVideo) && IsWall(r.D, pool))
-                .Select(r => r.OnVideo)
+                .Select(r => Ms(r.OnVideo))
                 .OrderBy(t => t)
                 .ToList();
 
@@ -576,9 +604,9 @@ namespace Kinovea.ScreenManager
                 double nextT = First(wallTimes, t => t > vw + 1e-9) ?? double.MaxValue;
                 double prevT = Last(wallTimes, t => t < vw - 1e-9) ?? 0;
                 double fromT = turn.Exchange ? vw - 0.5 : vw;
-                double? pushoff = First(result.FeetOff, t => t > fromT && t < nextT);
-                double? breakout = First(result.Breakouts, t => t > vw && t < nextT);
-                double? lastStroke = Last(result.Strokes, t => t < vw && t > prevT);
+                double? pushoff = First(msFeetOff, t => t > fromT && t < nextT);
+                double? breakout = First(msBreakouts, t => t > vw && t < nextT);
+                double? lastStroke = Last(msStrokes, t => t < vw && t > prevT);
                 turn.Pushoff = pushoff;
                 turn.Breakout = breakout;
                 if (lastStroke.HasValue)
@@ -597,10 +625,10 @@ namespace Kinovea.ScreenManager
                 // measure, in the same column).
                 if (breakout.HasValue && pushoff.HasValue)
                     turn.UnderwaterTime = breakout.Value - pushoff.Value;
-                if (result.Kicks.Count > 0)
+                if (msKicks.Count > 0)
                 {
                     double to = breakout ?? nextT;
-                    turn.Kicks = result.Kicks.Count(t => t > vw && t <= to);
+                    turn.Kicks = msKicks.Count(t => t > vw && t <= to);
                 }
             }
 
@@ -621,7 +649,7 @@ namespace Kinovea.ScreenManager
                 if (!videoAt.TryGetValue(distance, out vFinish))
                     vFinish = tFinish;
                 double? prevWall = Last(wallTimes, t => t < vFinish - 1e-9);
-                double? lastStroke = Last(result.Strokes, t => t < vFinish && (!prevWall.HasValue || t > prevWall.Value));
+                double? lastStroke = Last(msStrokes, t => t < vFinish && (!prevWall.HasValue || t > prevWall.Value));
                 if (lastStroke.HasValue)
                     result.FinishLastStrokeGap = vFinish - lastStroke.Value;
 
@@ -670,7 +698,7 @@ namespace Kinovea.ScreenManager
 
                 SwimBlock block = new SwimBlock { From = b, To = e, Style = SwimPresets.StyleAt(race, e) };
                 if (re.T.HasValue && (b == 0 || (rs != null && rs.T.HasValue)))
-                    block.Time = re.T.Value - (b == 0 ? 0 : rs.T.Value);
+                    block.Time = Ms(re.T.Value) - (b == 0 ? 0 : Ms(rs.T.Value));
 
                 int from = b, to = e;
                 List<SwimRow> inBlock = result.Rows.Where(r => r.PrevD >= from && r.D <= to).ToList();
@@ -719,7 +747,7 @@ namespace Kinovea.ScreenManager
                         }
                     }
 
-                    sumTime += aw.T.Value - a15.T.Value;
+                    sumTime += Ms(aw.T.Value) - Ms(a15.T.Value);
                     sumWidth += d1 - d0;
                 }
 

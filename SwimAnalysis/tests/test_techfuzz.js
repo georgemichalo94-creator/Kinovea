@@ -7,8 +7,7 @@
 const { makeContext } = require('./mock_gas');
 const assert = require('assert');
 
-let seed = 20261113;
-const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const rnd = require('./rng').makeRandom(20261113);
 const pick = a => a[Math.floor(rnd() * a.length)];
 const chance = p => rnd() < p;
 const round = (v, d) => +v.toFixed(d);

@@ -644,11 +644,14 @@ namespace Kinovea.ScreenManager
                 {
                     JObject cp = new JObject();
                     cp["d"] = row.D;
-                    cp["t"] = row.T.HasValue ? (double?)Math.Round(row.T.Value, 3) : null;
+                    // (2.22.0) The times in whole milliseconds, never after their frame (SwimCalculator.Ms): the ones the numbers of the
+                    // program are computed from, so the report shows the same. (Rounded to the nearest millisecond until now: a time of
+                    // the video such as 57.7046 went as 57.705 and the report showed 57.71, the program 57.70.)
+                    cp["t"] = row.T.HasValue ? (double?)SwimCalculator.Ms(row.T.Value) : null;
                     // (2.15.0) The mark's time on the video where an official time stands for the checkpoint a little off its frame: the
                     // script times what is timed on the video (strokes, turn, last stroke, kicks) from it, as SwimCalculator (2.9.5b).
-                    if (!double.IsNaN(row.OnVideo) && (!row.T.HasValue || Math.Abs(row.OnVideo - row.T.Value) > 0.0005))
-                        cp["v"] = Math.Round(row.OnVideo, 3);
+                    if (!double.IsNaN(row.OnVideo) && (!row.T.HasValue || Math.Abs(SwimCalculator.Ms(row.OnVideo) - SwimCalculator.Ms(row.T.Value)) > 0.0005))
+                        cp["v"] = SwimCalculator.Ms(row.OnVideo);
                     checkpoints.Add(cp);
                 }
             }
@@ -672,7 +675,7 @@ namespace Kinovea.ScreenManager
             r["kicks"] = Times(computed.Kicks);
             r["breakouts"] = Times(computed.Breakouts);
             // The release from the block at the official reaction time when it stands (since 2026-10-19).
-            List<double> feetOff = new List<double>(computed.FeetOff);
+            List<double> feetOff = computed.FeetOff.Select(x => SwimCalculator.Ms(x)).ToList();
             if (computed.BlockOfficial && computed.BlockTime.HasValue)
             {
                 if (computed.BlockMarkTime.HasValue)
@@ -685,7 +688,7 @@ namespace Kinovea.ScreenManager
             // (2.15.0) The release marked on the video when the official reaction time took its place: the flight is from it (the entry is a
             // time of the video), as in SwimCalculator.
             if (computed.BlockOfficial && computed.BlockMarkTime.HasValue)
-                r["releaseMark"] = Math.Round(computed.BlockMarkTime.Value, 3);
+                r["releaseMark"] = SwimCalculator.Ms(computed.BlockMarkTime.Value);
             r["entries"] = Times(computed.Entries);
 
             JObject manual = new JObject();
@@ -756,7 +759,7 @@ namespace Kinovea.ScreenManager
             {
                 JObject final = new JObject();
                 final["fileId"] = race.FinalFrame.FileId;
-                final["t"] = Math.Round(timing.Seconds(race.FinalFrame.Timestamp, race.StartTimestamp.Value), 3);
+                final["t"] = SwimCalculator.Ms(timing.Seconds(race.FinalFrame.Timestamp, race.StartTimestamp.Value));
                 r["finalFrame"] = final;
             }
 
@@ -1101,7 +1104,7 @@ namespace Kinovea.ScreenManager
         {
             JArray array = new JArray();
             foreach (double t in list)
-                array.Add(Math.Round(t, 3));
+                array.Add(SwimCalculator.Ms(t));
             return array;
         }
     }

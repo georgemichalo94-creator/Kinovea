@@ -363,7 +363,8 @@ namespace Kinovea.ScreenManager
                     // (2.15.0) From the wall's mark on the video (OnVideo), as every other event of the phase: an official time of the
                     // wall (SwimRow.T) a little off its frame made the contact, the underwater time and its speed off by that much.
                     SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == p.Wall);
-                    double wallVideo = wallRow != null ? wallRow.OnVideo : double.NaN;
+                    // (2.22.0) In whole milliseconds, as the push-off of the turn (SwimCalculator.Ms).
+                    double wallVideo = wallRow != null && !double.IsNaN(wallRow.OnVideo) ? SwimCalculator.Ms(wallRow.OnVideo) : double.NaN;
                     if (turn != null && turn.Pushoff.HasValue && !double.IsNaN(wallVideo) && turn.Pushoff.Value >= wallVideo)
                         p.Pushoff = turn.Pushoff.Value - wallVideo;
 

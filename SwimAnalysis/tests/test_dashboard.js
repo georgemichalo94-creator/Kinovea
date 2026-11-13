@@ -35,8 +35,7 @@ function context() {
 }
 
 // ---- Φανταστικοί αγώνες (σταθερός σπόρος: ίδιοι κάθε φορά)
-let seed = 4242;
-const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const rnd = require('./rng').makeRandom(4242);
 function race(n, o) {
   const pool = o.pool || 50, distance = o.distance || 100, v = o.v || 1.8;
   const cps = [], strokes = [], kicks = [], breakouts = [], feetOff = [0.72], entries = [1.05];

@@ -10,8 +10,7 @@ const path = require('path');
 
 const dir = process.argv[2];
 const count = +(process.argv[3] || 200);
-let seed = +(process.argv[4] || 20261113);
-const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const rnd = require('../rng').makeRandom(+(process.argv[4] || 20261113));
 const pick = a => a[Math.floor(rnd() * a.length)];
 const chance = p => rnd() < p;
 const between = (a, b) => a + rnd() * (b - a);
@@ -216,9 +215,9 @@ function makeCase(i) {
     else if (mutation === 10) { race.Reaction = pick([0, -0.2, 9]); race.UnderwaterDist = pick([0, -3, 60]); race.BreakoutDist = pick([0, -1, 80]); race.BodyLength = pick([0, -1, 12]); race.FinishLastStrokeDist = pick([0, -2, 30]);
       Object.keys(race.Turns).forEach(w => { race.Turns[w] = { UnderwaterDist: pick([0, -4, 45]), TurnTime: pick([0, -1, 20]) }; }); }
     else if (mutation === 11) race.Official = pick([[0], [10, 5, 1], [25.31, 55.2, 80.1], [-3], [59.99, 59.99]]);
-    else if (mutation === 12) { race.StrokeCounts = { 7: 3, 15: -2, 25: 400, 9999: 5, 50: 0 }; }
+    else if (mutation === 12) { race.StrokeCounts = { 7: 3, 15: 0.5, 25: 400, 9999: 5, 50: 0 }; }
     else if (mutation === 13 && !training) { race.Distance = pick([75, 30, 125, 1]); }
-    else if (mutation === 14 && !training) { race.Checkpoints = pick([[10, 25, 50], [50], [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], [25, 15, 50, 35]]); }
+    else if (mutation === 14 && !training) { race.Checkpoints = pick([[10, 25, 50], [50], [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], [15, 25, 35, 50]]); }
     else if (mutation === 15) ['Signal', 'WallContact', 'TechSplit', 'RotationStart', 'HandsOff', 'BackFoot'].forEach((type, k) => marks.push({ Id: 'odd' + k, Type: type, Timestamp: origin + Math.round((200 + 90 * k) * timing.ats), Distance: type === 'TechSplit' ? pick([-5, 5, 10, 15, 7]) : 0, Wall: pick([-1, 50, 999]) }));
   }
 

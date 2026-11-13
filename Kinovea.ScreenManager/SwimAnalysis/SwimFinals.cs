@@ -704,7 +704,7 @@ namespace Kinovea.ScreenManager
                 add(group, "5μ. πριν τον τοίχο", turn.In5, s => s.TurnAt(wall) != null ? s.TurnAt(wall).In5 : null);
                 // (2.15.0) From the wall's mark on the video (the breakout is a time of the video), not from its official time.
                 SwimRow wallRow = computed.Rows.FirstOrDefault(r => r.D == wall && !double.IsNaN(r.OnVideo));
-                double? breakout = turn.Breakout.HasValue && wallRow != null ? turn.Breakout - wallRow.OnVideo : null;
+                double? breakout = turn.Breakout.HasValue && wallRow != null ? turn.Breakout - SwimCalculator.Ms(wallRow.OnVideo) : null;
                 add(group, "Έξοδος: χρόνος από τον τοίχο", breakout, s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutTime : null).Neutral = true;
                 SwimTurnManual manual = race.GetTurn(wall, false);
                 // (2.15.0) Not the estimate from the times (it is not a measurement).

@@ -3,7 +3,7 @@
 // αγγλικά κανένα ελληνικό γράμμα (εκτός από τα ονόματα και το Δ). Σταθερός σπόρος: ίδιοι αγώνες κάθε φορά.
 const { makeContext } = require('./mock_gas');
 const assert = require('assert');
-let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const rnd = require('./rng').makeRandom(12345);
 const pick = a => a[Math.floor(rnd() * a.length)];
 function race(id) {
   const style = pick(['fs', 'bk', 'br', 'fly', 'im']);
