@@ -4833,6 +4833,13 @@ function swimTcDigits_(unit, key) {
   return unit === 'n' || unit === 'a' ? 0 : (unit === 'd' ? 1 : 2);
 }
 
+/** Ένα πλήθος (οι δελφινισμοί) ως μέσος όρος προσπαθειών μπορεί να μην είναι ακέραιο (5,3): τότε με ένα δεκαδικό, αλλιώς ακέραιο. */
+function swimTcCountDigits_(values) {
+  return (values || []).some(function (v) {
+    return v !== null && v !== undefined && isFinite(v) && Math.abs(v - Math.round(v)) > 0.049;
+  }) ? 1 : 0;
+}
+
 /** Η μορφή αριθμού ενός κελιού με d δεκαδικά (και η μορφή του Δ με πρόσημο). */
 function swimTcFmtDigits_(d, delta) {
   var base = d === 0 ? '0' : '0.' + new Array(d + 1).join('0');
@@ -5157,7 +5164,8 @@ function swimTcRows_(L, kind, phases, sides) {
       }
       var m = swimTcMetric_(key, kind);
       if (!m || !has(key)) return;
-      rows.push({ key: key, label: swimTechLabel_(m, U), unit: m.unit, best: m.best || '', digits: swimTcDigits_(m.unit, key) });
+      rows.push({ key: key, label: swimTechLabel_(m, U), unit: m.unit, best: m.best || '',
+        digits: m.unit === 'n' ? swimTcCountDigits_(sides.map(function (s) { return s && s.values ? s.values[key] : null; })) : swimTcDigits_(m.unit, key) });
     });
     if (rows.length) groups.push({ id: gr.group, group: gr.group === 'Ταχύτητα ανά 5' ? swimTF_('Ταχύτητα ανά 5{0}', U) : swimT_(gr.group), rows: rows });
   });
@@ -5252,7 +5260,7 @@ function swimTcMainTable_(L, kind, row) {
   });
   L.layout.inputs.blocks.push({ r: first, c: C.c0, values: values });
   g.box(head, 1, row - 1, W);
-  L.tcSig.push(kind + ':' + sigs.join(''));
+  L.tcSig.push(kind + ':' + sigs.join('') + ':' + groups.map(function (gr) { return gr.rows.map(function (d) { return d.digits; }).join(''); }).join(''));
   swimKeepEnd_(L, 'techMain', row - 1, Math.min(row - 1, first + 3));
   return row + 1;
 }
@@ -5346,7 +5354,7 @@ function swimTcCards_(L, kind, row, groups, title, note) {
     });
     g.box(hdr, 1, r2 - 1, W);
   }
-  L.tcSig.push(kind + ':cards' + split);
+  L.tcSig.push(kind + ':cards' + split + ':' + groups.map(function (gr) { return gr.rows.map(function (d) { return d.digits; }).join(''); }).join(''));
   swimKeepEnd_(L, 'techMain', r2 - 1, Math.min(r2 - 1, top + 3));
   return r2 + 1;
 }
@@ -5485,8 +5493,15 @@ function swimTcTiles_(L, row) {
   var add = function (kind, key, cap, sub, digits, best) {
     var m = L.means[kind];
     if (!m || m.values[key] === undefined) return;
-    tiles.push({ kind: kind, key: key, cap: cap, sub: m.n > 1 ? swimTF_('μ.ό. {0} · καλύτερη {1}', m.n, swimTcStr_(m.best[key] !== undefined ? m.best[key] : m.values[key], digits)) : sub,
-      v: m.values[key], digits: digits, best: best });
+    if (digits === null) {
+      // Ένα πλήθος: ακέραιο, ή με ένα δεκαδικό όταν ο μέσος όρος (ή η σύγκριση) δεν είναι ακέραιος.
+      var others = [cmp.prev, cmp.elite].map(function (s) { return s && s.values && s.values[kind] ? s.values[kind][key] : null; });
+      digits = swimTcCountDigits_([m.values[key]].concat(others));
+      L.tcSig.push('tile-' + key + digits);
+    }
+    // Με πολλές προσπάθειες: ο μέσος όρος, και η καλύτερη όπου υπάρχει «καλύτερη» (όχι στους δελφινισμούς ή στην απόσταση της εξόδου).
+    var many = m.n > 1 ? (m.best[key] !== undefined ? swimTF_('μ.ό. {0} · καλύτερη {1}', m.n, swimTcStr_(m.best[key], digits)) : swimTF_('μ.ό. {0} προσπαθειών', m.n)) : sub;
+    tiles.push({ kind: kind, key: key, cap: cap, sub: many, v: m.values[key], digits: digits, best: best });
   };
   var both = L.means.turn.n && L.means.start.n;
   if (L.means.turn.n) {
@@ -5501,7 +5516,7 @@ function swimTcTiles_(L, row) {
   }
   if (!both) {
     var k = L.means.turn.n ? 'turn' : 'start';
-    add(k, 'kicks', swimT_('ΔΕΛΦΙΝΙΣΜΟΙ'), swimT_('υποβρύχιοι'), 0, '');
+    add(k, 'kicks', swimT_('ΔΕΛΦΙΝΙΣΜΟΙ'), swimT_('υποβρύχιοι'), null, '');
     add(k, 'breakoutDist', swimT_('ΕΞΟΔΟΣ'), swimTF_('{0} από τον τοίχο', L.U), 1, '');
   }
   var evalTile = null;
@@ -12186,6 +12201,7 @@ var SWIM_EN_ = {
   '{0} από τον τοίχο': '{0} from the wall',
   'υποβρύχιοι': 'underwater',
   'μ.ό. {0} · καλύτερη {1}': 'mean of {0} · best {1}',
+  'μ.ό. {0} προσπαθειών': 'mean of {0} attempts',
   'ΑΞΙΟΛΟΓΗΣΗ': 'EVALUATION',
   'σωστά · {0}%': 'done well · {0}%',
   'elite: χωρίς αξιολόγηση': 'elite: no evaluation',

@@ -26,11 +26,12 @@ $write = $tFiles.GetMethod('WriteText')
 $read = $tFiles.GetMethod('ReadJson').MakeGenericMethod($tObject)
 $backup = $tFiles.GetMethod('BackupDaily'); $backups = $tFiles.GetMethod('Backups'); $unreadable = $tFiles.GetMethod('KeepUnreadable')
 
-$dir = Join-Path ([System.IO.Path]::GetTempPath()) ('swim_safe_files_' + [Guid]::NewGuid().ToString('N'))
+# (Join-Path gives a string wrapped by PowerShell, which reflection does not take for a System.String: the paths with Path.Combine.)
+$dir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'swim_safe_files_' + [Guid]::NewGuid().ToString('N'))
 [void][System.IO.Directory]::CreateDirectory($dir)
 try {
   # Whole or not at all, with the file of before as .bak when asked.
-  $f = Join-Path $dir 'fictional video.mp4.swim.json'
+  $f = [System.IO.Path]::Combine($dir, 'fictional video.mp4.swim.json')
   [void]$write.Invoke($null, @($f, '{"a":1,"name":"δοκιμή"}', $utf8, $true))
   Check ([System.IO.File]::ReadAllText($f, $utf8) -eq '{"a":1,"name":"δοκιμή"}') 'a new file is written (Greek text kept)'
   Check (-not (Test-Path ($f + '.tmp')) -and -not (Test-Path ($f + '.bak'))) 'no temporary file left, no .bak of a new file'
@@ -55,31 +56,32 @@ try {
   Check ($null -eq $read.Invoke($null, @($f, $null))) 'half a file without a .bak: nothing (no exception)'
 
   # The copy a day of an analysis.
-  $folder = Join-Path $dir 'backup'; $prefix = 'fictional video.mp4.0a1b2c3d'; $ext = '.swim.json'
+  $folder = [System.IO.Path]::Combine($dir, 'backup'); $prefix = 'fictional video.mp4.0a1b2c3d'; $ext = '.swim.json'
   [System.IO.File]::WriteAllText($f, '{"races":1}', $utf8)
   [void]$backup.Invoke($null, @($f, $folder, $prefix, $ext, 3, [long]1000000))
-  $today = Join-Path $folder ($prefix + '.' + (Get-Date).ToString('yyyyMMdd') + $ext)
+  $day = [DateTime]::Now.ToString('yyyyMMdd')
+  $today = [System.IO.Path]::Combine($folder, $prefix + '.' + $day + $ext)
   Check ((Test-Path $today) -and [System.IO.File]::ReadAllText($today, $utf8) -eq '{"races":1}') 'the copy of the day, as the file was'
   [System.IO.File]::WriteAllText($f, '{"races":2}', $utf8)
   [void]$backup.Invoke($null, @($f, $folder, $prefix, $ext, 3, [long]1000000))
   Check ([System.IO.File]::ReadAllText($today, $utf8) -eq '{"races":1}') 'once a day: the copy keeps the state before the first save'
   # Older days of this video and of another one: the three newest of each stay.
   [System.IO.File]::Delete($today)
-  foreach ($d in @('20260101', '20260102', '20260103', '20260104')) { [System.IO.File]::WriteAllText((Join-Path $folder ($prefix + '.' + $d + $ext)), '{"old":' + $d + '}', $utf8) }
+  foreach ($d in @('20260101', '20260102', '20260103', '20260104')) { [System.IO.File]::WriteAllText([System.IO.Path]::Combine($folder, $prefix + '.' + $d + $ext), '{"old":' + $d + '}', $utf8) }
   $other = 'another video.mp4.11223344'
-  [System.IO.File]::WriteAllText((Join-Path $folder ($other + '.20260101' + $ext)), '{"other":1}', $utf8)
+  [System.IO.File]::WriteAllText([System.IO.Path]::Combine($folder, $other + '.20260101' + $ext), '{"other":1}', $utf8)
   [void]$backup.Invoke($null, @($f, $folder, $prefix, $ext, 3, [long]1000000))
   $mine = @($backups.Invoke($null, @($folder, $prefix, $ext)))
   Check ($mine.Count -eq 3 -and $mine[0].Name -eq [System.IO.Path]::GetFileName($today) -and $mine[2].Name -eq ($prefix + '.20260103' + $ext)) ('the three newest copies of the video, newest first: ' + (($mine | ForEach-Object { $_.Name }) -join ', '))
-  Check (Test-Path (Join-Path $folder ($other + '.20260101' + $ext))) 'the copies of another video are not touched'
+  Check ([System.IO.File]::Exists([System.IO.Path]::Combine($folder, $other + '.20260101' + $ext))) 'the copies of another video are not touched'
   # An empty file is not copied.
-  $empty = Join-Path $dir 'empty.mp4.swim.json'; [System.IO.File]::WriteAllText($empty, '')
+  $empty = [System.IO.Path]::Combine($dir, 'empty.mp4.swim.json'); [System.IO.File]::WriteAllText($empty, '')
   [void]$backup.Invoke($null, @($empty, $folder, 'empty.mp4.00000000', $ext, 3, [long]1000000))
   Check (@($backups.Invoke($null, @($folder, 'empty.mp4.00000000', $ext))).Count -eq 0) 'an empty file is not copied'
   # The folder over its size: the oldest go, today's stays.
   [void]$backup.Invoke($null, @($f, $folder, 'third.mp4.55667788', $ext, 3, [long]20))
-  $left = @(Get-ChildItem $folder -Filter ('*' + $ext))
-  Check ((Test-Path (Join-Path $folder ('third.mp4.55667788.' + (Get-Date).ToString('yyyyMMdd') + $ext))) -and $left.Count -lt 6) ('over the size of the folder the oldest go, the new copy stays (' + $left.Count + ' left)')
+  $left = @([System.IO.Directory]::GetFiles($folder, '*' + $ext))
+  Check ([System.IO.File]::Exists([System.IO.Path]::Combine($folder, 'third.mp4.55667788.' + $day + $ext)) -and $left.Count -lt 6) ('over the size of the folder the oldest go, the new copy stays (' + $left.Count + ' left)')
 
   # A file that cannot be read is kept before anything is written over it.
   [System.IO.File]::WriteAllText($f, '{"half":', $utf8)

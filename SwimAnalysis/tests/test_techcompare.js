@@ -219,4 +219,27 @@ const leftover = texts(sh).filter(v => GREEK.test(v.replace(/(^|[^Ͱ-Ͽ])Δ(?![�
   && !/Γυναικών|μέσος όρος 8|Elite 1/.test(v));
 assert.strictEqual(leftover.length, 0, 'Greek left in the English report: ' + leftover.slice(0, 12).join(' | '));
 
-console.log('test_techcompare OK: without a comparison, the previous analysis, both with levels, an elite technique analysis, best/auto, English');
+// ---- 7) A count as the mean of attempts: 5 and 6 kicks are 5,5 (one decimal, in the card and in the tile), 5 and 5 are 5; the tile
+// of a value without a "best" says the mean of the attempts (not "best").
+const kicks = race('tcK', '14.11.2026', 0);
+kicks.tech.phases[1].values.kicks = 6;
+built = layoutOf(kicks, null);
+const kCell = Object.values(built.grid.cells).find(c => c.v === 'Υποβρύχιοι δελφινισμοί');
+const kBlock = built.inputs.blocks.find(b => b.c === 15 && b.r <= kCell.r && b.r + b.values.length > kCell.r);
+assert.strictEqual(kBlock.values[kCell.r - kBlock.r][0], 5.5, 'the mean of 5 and 6 kicks');
+assert.strictEqual(built.grid.cells[kCell.r + ':15'].fmt, '0.0', 'with one decimal: ' + built.grid.cells[kCell.r + ':15'].fmt);
+const tileSubs = built.inputs.blocks.filter(b => b.r === 10).map(b => b.values[0].join('|')).join('|');
+assert.ok(/μ\.ό\. 2 προσπαθειών/.test(tileSubs) && /μ\.ό\. 2 · καλύτερη 1,46/.test(tileSubs), 'tiles of two attempts: ' + tileSubs);
+const whole = layoutOf(race('tcK2', '14.11.2026', 0), null);
+const wCell = Object.values(whole.grid.cells).find(c => c.v === 'Υποβρύχιοι δελφινισμοί');
+assert.strictEqual(whole.grid.cells[wCell.r + ':15'].fmt, '0', '5 and 5 kicks: a whole number');
+// The decimals of a cell are its format: one more attempt changes it with a rebuild (the attempts are in the signature), and the same
+// attempts with another count too.
+r = call({ action: 'update', race: race('tcK3', '14.11.2026', 0) });
+assert.ok(r.ok && r.rebuilt, JSON.stringify(r));
+const k3 = race('tcK3', '14.11.2026', 0);
+k3.tech.phases[1].values.kicks = 6;
+r = call({ action: 'update', race: k3 });
+assert.ok(r.ok && r.rebuilt, 'a count that is not whole any more: rebuilt (the format of its cell changes)');
+
+console.log('test_techcompare OK: without a comparison, the previous analysis, both with levels, an elite technique analysis, best/auto, English, counts');
