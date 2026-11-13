@@ -1,0 +1,19 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    The static analyzers on the projects with code of the swim analysis (job "analyze" of the build), without a change in the
+    projects themselves: msbuild /p:CustomAfterMicrosoftCommonTargets=<this file> /p:SwimAnalyzersDir=<the packages>
+    /p:SwimAnalyzersConfig=<analyze.globalconfig>.
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Kinovea.ScreenManager' Or '$(MSBuildProjectName)' == 'Kinovea.Camera.GoPro' Or '$(MSBuildProjectName)' == 'Kinovea.Camera.Baumer' Or '$(MSBuildProjectName)' == 'Kinovea.Camera' Or '$(MSBuildProjectName)' == 'Kinovea.Services' Or '$(MSBuildProjectName)' == 'Kinovea'">
+    <SwimAnalyze>true</SwimAnalyze>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SwimAnalyze)' == 'true'">
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>true</RunAnalyzers>
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(SwimAnalyze)' == 'true'">
+    <Analyzer Include="$(SwimAnalyzersDir)\**\analyzers\**\*.dll" Exclude="$(SwimAnalyzersDir)\**\vb\**\*.dll;$(SwimAnalyzersDir)\**\*.resources.dll;$(SwimAnalyzersDir)\**\*VisualBasic*.dll" />
+    <EditorConfigFiles Include="$(SwimAnalyzersConfig)" />
+  </ItemGroup>
+</Project>
