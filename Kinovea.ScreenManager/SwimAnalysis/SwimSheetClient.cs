@@ -271,6 +271,18 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.22.0) A technique analysis already in the Google Sheet becomes an elite technique reference (sheet «Elite τεχνική», Apps
+        /// Script 2.17.0): it is then chosen as the elite of other technique analyses. The callback runs on the UI thread.
+        /// </summary>
+        public void SaveTechElite(string url, string token, string raceId, string name, Action<SwimSheetResult> callback)
+        {
+            JObject o = NewRequest(token, "saveTechElite");
+            o["raceId"] = raceId ?? "";
+            o["name"] = name ?? "";
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+        }
+
+        /// <summary>
         /// Upload several images of a race together (the charts of the PDF report, PNG): Raw["files"] has [{ id, fileId } or { id, error }].
         /// The callback runs on the UI thread.
         /// </summary>
@@ -722,6 +734,16 @@ namespace Kinovea.ScreenManager
 
             JObject compare = new JObject();
             compare["pb"] = race.ComparePb ?? "";
+
+            // (2.22.0) A technique analysis: the previous analysis of the athlete and the elite chosen for the report (Apps Script 2.17.0).
+            if (race.IsTraining)
+            {
+                if (!string.IsNullOrEmpty(race.TechPrev))
+                    compare["techPrev"] = race.TechPrev;
+                if (race.TechElite != null && race.TechElite.IsSet)
+                    compare["techElite"] = race.TechElite.ToJson();
+            }
+
             r["compare"] = compare;
 
             // The final of the event kept on this computer (e.g. the 8 of an Olympic final): the report compares the race with them.

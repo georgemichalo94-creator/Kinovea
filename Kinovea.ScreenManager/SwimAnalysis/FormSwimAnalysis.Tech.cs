@@ -245,6 +245,8 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(hint);
             page.Controls.Add(t);
             page.Controls.Add(bar);
+            // (2.22.0) The comparison of the report of a technique analysis, at the top.
+            page.Controls.Add(BuildTechCompareRow());
             return page;
         }
 
@@ -327,6 +329,7 @@ namespace Kinovea.ScreenManager
             page.Controls.Add(hint);
             page.Controls.Add(t);
             page.Controls.Add(bar);
+            page.Controls.Add(BuildTechCompareRow());
             return page;
         }
 

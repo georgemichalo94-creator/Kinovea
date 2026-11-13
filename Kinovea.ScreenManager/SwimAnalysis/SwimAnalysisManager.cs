@@ -3279,6 +3279,9 @@ namespace Kinovea.ScreenManager
             SyncState = e.State;
             SyncMessage = e.Message;
 
+            // (2.22.0) «Ως elite αναφορά…» waits for the analysis to be in the Google Sheet.
+            TechEliteAfterSync(e);
+
             // (2.10.0) The package for the coaches waits for the PDF of this race: an error of the sending is said in its window.
             PackageSyncFailed(e);
 

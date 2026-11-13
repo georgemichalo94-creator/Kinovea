@@ -1802,7 +1802,14 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void RefreshPbCandidates()
         {
-            if (Race == null || !Settings.IsConfigured || Race.IsTraining)
+            // (2.22.0) A technique analysis: its own comparisons (previous technique analyses and elite).
+            if (Race != null && Race.IsTraining)
+            {
+                RefreshTechCandidates();
+                return;
+            }
+
+            if (Race == null || !Settings.IsConfigured)
                 return;
 
             if (string.IsNullOrWhiteSpace(Race.AthleteId) && string.IsNullOrWhiteSpace(Race.Athlete))

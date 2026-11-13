@@ -1035,6 +1035,9 @@
     <Compile Include="SwimAnalysis\FormSwimAnalysis.Compare.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\FormSwimAnalysis.TechCompare.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.AutoPick.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.LanePick.cs" />
@@ -1043,6 +1046,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Dial.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Compare.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.TechCompare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pilot.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Proposals.cs" />
@@ -1107,6 +1111,7 @@
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
+    <Compile Include="SwimAnalysis\SwimTechCompare.cs" />
     <Compile Include="SwimAnalysis\SwimEventDetector.cs" />
     <Compile Include="SwimAnalysis\SwimPose.cs" />
     <Compile Include="SwimAnalysis\SwimTechReader.cs" />

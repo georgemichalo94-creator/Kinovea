@@ -1685,6 +1685,7 @@ namespace Kinovea.ScreenManager
 
             lblPb.Text = manager.PbMessage ?? "";
             cmbPb.Enabled = race != null && !race.IsTraining;
+            RefreshTechCompare();
         }
 
         private void CmbPb_SelectedIndexChanged(object sender, EventArgs e)
@@ -2637,8 +2638,8 @@ namespace Kinovea.ScreenManager
             manager.RaceInfoChanged(false);
             SetTechnicalView(training, true);
             RefreshPb();
-            if (!training)
-                manager.RefreshPbCandidates();
+            // (2.22.0) A technique analysis gets the lists of its comparisons (previous technique analyses and elite).
+            manager.RefreshPbCandidates();
             ShowStatus(training
                 ? SwimLang.T("Βίντεο προπόνησης: G σήμα (νέα εκκίνηση), W επαφή στον τοίχο (νέα στροφή), T για 5/10/15, H/J χέρια/πίσω πόδι, O αρχή περιστροφής, P στιγμιότυπο, A γωνία.")
                 : SwimLang.T("Βίντεο αγώνα: race analysis και τεχνική ανάλυση της εκκίνησης και των στροφών."), false);

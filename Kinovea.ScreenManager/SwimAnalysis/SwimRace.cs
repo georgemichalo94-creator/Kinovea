@@ -789,6 +789,17 @@ namespace Kinovea.ScreenManager
         public string ComparePb = "auto";
         public string ComparePbLabel = "";
 
+        /// <summary>
+        /// (2.22.0) Technique analysis (training): the comparison of the report with a previous technique analysis of the athlete: ""
+        /// (none), "auto" (the newest one before this one), "best" (the fastest) or its Race ID.
+        /// </summary>
+        public string TechPrev = "";
+        public string TechPrevLabel = "";
+
+        /// <summary>(2.22.0) Technique analysis (training): the elite of the comparison of the report, null for none.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SwimTechElite TechElite;
+
         // Technical analysis.
         public List<SwimAngle> Angles = new List<SwimAngle>();
         public List<SwimSnapshot> Snapshots = new List<SwimSnapshot>();
@@ -1190,6 +1201,14 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(Kind)) Kind = KindRace;
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
             if (ComparePb == null) ComparePb = "auto";
+            if (TechPrev == null) TechPrev = "";
+            if (TechPrevLabel == null) TechPrevLabel = "";
+            if (TechElite != null)
+            {
+                TechElite.Normalize();
+                if (!TechElite.IsSet)
+                    TechElite = null;
+            }
             if (TechNotes == null) TechNotes = "";
             if (TechEvals == null) TechEvals = new List<SwimTechEval>();
             TechEvals.RemoveAll(e => e == null || string.IsNullOrEmpty(e.PhaseId) || string.IsNullOrEmpty(e.SheetId));
