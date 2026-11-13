@@ -31,7 +31,7 @@
  *      κράτησε κάθε κομμάτι (timings: report, PDF, KOE App), που το Kinovea γράφει στο μήνυμα του PDF.
  */
 
-var SWIM_VERSION = '2.17.0';
+var SWIM_VERSION = '2.17.1';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -4970,7 +4970,7 @@ function swimTechAnalysesFor_(query) {
     if (athleteId ? String(row[3]).trim() !== athleteId : swimNormText_(row[2]) !== athlete) return;
     if (String(row[4]) !== eventLabel) return;
     var r;
-    try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { return; }
+    try { r = swimNormalizeRace_(JSON.parse(swimIndexText_(index.getRange(i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { return; }
     if (r.kind !== 'training' || !swimTechSameSetup_(r, want)) return;
     var phases = swimTechPhases_(r);
     var tm = swimTechMeans_(phases, 'turn'), sm = swimTechMeans_(phases, 'start');
@@ -6966,7 +6966,7 @@ function swimAnalysesFor_(query) {
     if (athleteId ? String(row[3]).trim() !== athleteId : swimNormText_(row[2]) !== athlete) return;
     if (String(row[4]) !== eventLabel || swimDistanceValue_(row[5]).distance !== want.distance) return;
     var r;
-    try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { return; }
+    try { r = swimNormalizeRace_(JSON.parse(swimIndexText_(index.getRange(i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { return; }
     if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) return;
     var ft = swimNum_(row[9]);
     out.push({ id: id, label: swimRaceLabel_(r, { summary: { finalTime: ft } }), finalTime: ft, date: r.date, round: r.round, competition: r.competition,
@@ -7081,7 +7081,7 @@ function swimEventCandidates_(index, last, want, gender, eventLabel) {
   var out = [];
   for (var k = 0; k < match.length && k < SWIM_EVENT_READS && out.length < SWIM_EVENT_CACHE; k++) {
     var m = match[k], r;
-    try { r = swimNormalizeRace_(JSON.parse(String(index.getRange(m.i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { continue; }
+    try { r = swimNormalizeRace_(JSON.parse(swimIndexText_(index.getRange(m.i + 2, SWIM_IDX.json + 1).getValue()))); } catch (e) { continue; }
     if (r.kind === 'training' || r.dq || !swimSameEvent_(r, want)) continue;
     if (gender && swimGenderCode_(r.gender) && swimGenderCode_(r.gender) !== gender) continue;
     var times = swimCheckpointTimes_(r);
@@ -7231,7 +7231,7 @@ function swimFindIndexEntry_(index, id) {
   if (!row) return null;
   var data = index.getRange(row, 1, 1, SWIM_INDEX_HEADERS.length).getValues()[0];
   var prevBase = null;
-  try { prevBase = swimSheetBaseName_(swimNormalizeRace_(JSON.parse(String(data[SWIM_IDX.json])))); } catch (e) { prevBase = null; }
+  try { prevBase = swimSheetBaseName_(swimNormalizeRace_(JSON.parse(swimIndexText_(data[SWIM_IDX.json])))); } catch (e) { prevBase = null; }
   return { row: row, sheetId: String(data[SWIM_IDX.sheetId]), layoutSig: String(data[SWIM_IDX.layout]), prevBaseName: prevBase };
 }
 
@@ -7244,8 +7244,7 @@ function swimSheetById_(ss, id) {
 function swimSaveIndexEntry_(index, entry, race, sheet, signature, finalTime) {
   var sheetName = sheet.getName();
   var link = '=HYPERLINK("#gid=' + sheet.getSheetId() + '","' + sheetName.replace(/"/g, '""') + '")';
-  var raw = JSON.stringify(race);
-  if (raw.length > 49000) raw = JSON.stringify(swimCompactRace_(race));
+  var raw = swimIndexCell_(race);
   var rowValues = [race.id, link, race.athlete, race.athleteId, swimIndexEventLabel_(race), race.distanceLabel,
     race.round, race.competition, race.date, finalTime === '' || finalTime === null || finalTime === undefined ? '' : finalTime,
     Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'), race.video, String(sheet.getSheetId()), signature, raw];
@@ -7263,28 +7262,103 @@ function swimIndexEventLabel_(race) {
   return race.kind === 'training' ? 'τεχνική ' + label : label;
 }
 
+/** Ό,τι χωρά σε ένα κελί του Google Sheet (όριο 50.000 χαρακτήρων). */
+var SWIM_CELL_MAX = 49000;
+
+/** Η αρχή ενός συμπιεσμένου κελιού του ευρετηρίου (gzip, base64). */
+var SWIM_PACK_PREFIX = 'gz:';
+
+/**
+ * 2.17.1: το JSON μιας ανάλυσης για το κελί της στο ευρετήριο. Όπως είναι όταν χωρά (σχεδόν πάντα)· αλλιώς ολόκληρο, συμπιεσμένο
+ * (gzip σε base64, 4-6 φορές μικρότερο: τίποτα δεν χάνεται)· και μόνο αν ούτε έτσι χωρά, με λιγότερα στοιχεία (swimCompactRace_).
+ * Ως την 2.17.0 μια τεχνική ανάλυση με πολλές προσπάθειες και αξιολογήσεις (π.χ. 6 εκκινήσεις και 6 στροφές με το φύλλο κριτηρίων)
+ * περνούσε το όριο ακόμη και με λιγότερα στοιχεία και η καταχώρισή της σταματούσε με σφάλμα του Sheets· όσες χωρούσαν με λιγότερα
+ * στοιχεία έχαναν τα στιγμιότυπά τους από το ευρετήριο (η επόμενη ανάλυση του αθλητή δεν είχε τι να δείξει δίπλα στα δικά της).
+ */
+function swimIndexCell_(race) {
+  var raw = JSON.stringify(race);
+  if (raw.length <= SWIM_CELL_MAX) return raw;
+  var packed = swimPackText_(raw);
+  if (packed && packed.length <= SWIM_CELL_MAX) return packed;
+  // Ούτε συμπιεσμένο: φεύγουν με τη σειρά τα λιγότερο αναγκαία, ώσπου να χωρέσει (όπως είναι, αλλιώς συμπιεσμένο).
+  var compact = swimCompactRace_(race, swimCellSize_);
+  raw = JSON.stringify(compact);
+  if (raw.length <= SWIM_CELL_MAX) return raw;
+  packed = swimPackText_(raw);
+  return packed && packed.length <= SWIM_CELL_MAX ? packed : raw;
+}
+
+/** Πόσους χαρακτήρες πιάνει στο κελί (όπως είναι όταν χωρά, αλλιώς συμπιεσμένο). */
+function swimCellSize_(o) {
+  var raw = JSON.stringify(o);
+  if (raw.length <= SWIM_CELL_MAX) return raw.length;
+  var packed = swimPackText_(raw);
+  return packed ? packed.length : raw.length;
+}
+
+/** Κείμενο συμπιεσμένο για ένα κελί: «gz:» και το gzip του σε base64 (null: δεν έγινε). */
+function swimPackText_(text) {
+  try {
+    var blob = Utilities.gzip(Utilities.newBlob(String(text), 'application/json', 'race.json'));
+    return SWIM_PACK_PREFIX + Utilities.base64Encode(blob.getBytes());
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Το κείμενο ενός κελιού του ευρετηρίου όπως γράφτηκε: το συμπιεσμένο ανοίγει, το άλλο μένει όπως είναι. */
+function swimIndexText_(cell) {
+  var text = String(cell === null || cell === undefined ? '' : cell);
+  if (text.indexOf(SWIM_PACK_PREFIX) !== 0) return text;
+  var bytes = Utilities.base64Decode(text.substring(SWIM_PACK_PREFIX.length));
+  return Utilities.ungzip(Utilities.newBlob(bytes, 'application/x-gzip', 'race.json.gz')).getDataAsString();
+}
+
+/**
+ * Έλεγχος της συμπίεσης από τον επεξεργαστή του Apps Script (Εκτέλεση → swimPackCheck): ένα μεγάλο κείμενο με ελληνικά συμπιέζεται,
+ * ανοίγει και βγαίνει ίδιο. Δεν γράφει πουθενά.
+ */
+function swimPackCheck() {
+  var parts = [];
+  for (var i = 0; i < 4000; i++) parts.push('{"α":"Στροφή ' + i + '","t":' + (i * 0.137).toFixed(3) + '}');
+  var text = '[' + parts.join(',') + ']';
+  var packed = swimPackText_(text);
+  var same = packed !== null && swimIndexText_(packed) === text;
+  var message = 'swimPackCheck ' + SWIM_VERSION + ': ' + text.length + ' → ' + (packed ? packed.length : 'χωρίς συμπίεση') + ' χαρακτήρες, ' +
+    (same ? 'ίδιο κείμενο μετά το άνοιγμα (εντάξει)' : 'ΔΙΑΦΟΡΕΤΙΚΟ κείμενο μετά το άνοιγμα');
+  try { console.log(message); } catch (e) { /* χωρίς κονσόλα */ }
+  return message;
+}
+
 /**
  * Πολύ μεγάλος αγώνας για ένα κελί (όριο 50.000 χαρακτήρων, π.χ. 1500μ. με όλες τις χεριές): κρατάμε ό,τι χρειάζεται
  * για να ξαναφτιαχτεί το φύλλο, με τους χρόνους σε 2 δεκαδικά και χωρίς τα στιγμιότυπα πέρα από τα στοιχεία τους.
+ * 2.17.1: size(o): πόσο πιάνει στο κελί (χωρίς αυτό: το JSON όπως είναι)· μετράει και το συμπιεσμένο (swimIndexCell_).
  */
-function swimCompactRace_(race) {
+function swimCompactRace_(race, size) {
+  var big = function (o) { return (size ? size(o) : JSON.stringify(o).length) > SWIM_CELL_MAX; };
   var c = JSON.parse(JSON.stringify(race));
   var r2 = function (arr) { return (arr || []).map(function (t) { return Math.round(t * 100) / 100; }); };
   ['strokes', 'kicks', 'breakouts', 'feetOff', 'entries'].forEach(function (k) { c[k] = r2(c[k]); });
-  if (JSON.stringify(c).length > 49000 && c.tech)
+  if (big(c) && c.tech)
     c.tech.snapshots = (c.tech.snapshots || []).map(function (s) { return { id: s.id, t: s.t, phase: s.phase, stage: s.stage, event: s.event, comment: String(s.comment || '').substring(0, 500), fileId: s.fileId, eliteFileId: s.eliteFileId, eliteLabel: s.eliteLabel }; });
   // 2.15.0: ακόμα πολύ μεγάλος (π.χ. 1500μ. με τελικό, αναφορά και στιγμιότυπα): φεύγουν με τη σειρά τα λιγότερο αναγκαία για να
   // ξαναφτιαχτεί το φύλλο, οι μετρήσεις του αγώνα (οι δελφινισμοί) στο τέλος, ώστε η καταχώριση να μη σταματά (ένα κελί πάνω από
-  // 50.000 χαρακτήρες δεν γράφεται)· ό,τι έφυγε λέγεται (compacted).
+  // 50.000 χαρακτήρες δεν γράφεται)· ό,τι έφυγε λέγεται (compacted). 2.17.1: στο τέλος και της τεχνικής ανάλυσης (τα κείμενα των
+  // φύλλων κριτηρίων, οι αξιολογήσεις, οι γωνίες), ώστε να χωρά πάντα.
   var drops = [
     ['tech.comments', function () { if (c.tech && c.tech.snapshots) c.tech.snapshots.forEach(function (s) { s.comment = ''; }); }],
     ['finals.metrics', function () { if (c.finals) delete c.finals.metrics; }],
     ['finals', function () { delete c.finals; }],
     ['tech.snapshots', function () { if (c.tech) c.tech.snapshots = []; }],
     ['reference', function () { delete c.reference; }],
-    ['kicks', function () { c.kicks = []; }]
+    ['kicks', function () { c.kicks = []; }],
+    ['tech.sheets', function () { if (c.tech) c.tech.sheets = {}; }],
+    ['tech.evals', function () { if (c.tech) c.tech.evals = []; }],
+    ['tech.angles', function () { if (c.tech) c.tech.angles = []; }],
+    ['strokes', function () { c.strokes = []; }]
   ];
-  for (var i = 0; i < drops.length && JSON.stringify(c).length > 49000; i++) {
+  for (var i = 0; i < drops.length && big(c); i++) {
     drops[i][1]();
     c.compacted = (c.compacted || []).concat([drops[i][0]]);
   }
@@ -10642,8 +10716,7 @@ function swimLibraryImport_(file) {
       errors.push(row[SWIM_LIB.athlete] + ' ' + row[SWIM_LIB.event] + ': ' + (e && e.message ? e.message : e));
       return;
     }
-    var raw = JSON.stringify(race);
-    if (raw.length > 49000) raw = JSON.stringify(swimCompactRace_(race));
+    var raw = swimIndexCell_(race);
     var ft = analysis.summary.finalTime;
     var iv = [race.id, 'χωρίς report', race.athlete, race.athleteId, swimIndexEventLabel_(race), race.distanceLabel, race.round,
       race.competition, race.date, ft === null ? '' : ft, now, '', '', '', raw];
@@ -10925,7 +10998,7 @@ function swimMergePlan_() {
       var item = { src: src, id: r.id, row: r.row, values: r.values, stamp: r.stamp, key: r.key, hasSheet: r.hasSheet, training: r.training,
         newer: !!t, race: null };
       if (r.hasSheet) {
-        try { item.race = JSON.parse(String(r.values[SWIM_IDX.json])); } catch (e) { item.race = null; }
+        try { item.race = JSON.parse(swimIndexText_(r.values[SWIM_IDX.json])); } catch (e) { item.race = null; }
         if (!item.race || typeof item.race !== 'object') { plan.skipped.push(item); return; }
       }
       // Ίδια ανάλυση σε δύο από τα άλλα αρχεία: η νεότερη.
@@ -11354,7 +11427,7 @@ function swimStoredRace_(raceId) {
   var row = swimIndexRow_(index, raceId);
   if (!row) return null;
   var data = index.getRange(row, 1, 1, SWIM_INDEX_HEADERS.length).getValues()[0];
-  try { return { row: row, race: JSON.parse(String(data[SWIM_IDX.json])), sheetId: String(data[SWIM_IDX.sheetId]) }; } catch (e) { return null; }
+  try { return { row: row, race: JSON.parse(swimIndexText_(data[SWIM_IDX.json])), sheetId: String(data[SWIM_IDX.sheetId]) }; } catch (e) { return null; }
 }
 
 function swimRaceFromSheet_(sheet) {
@@ -11366,7 +11439,7 @@ function swimRaceFromSheet_(sheet) {
   var data = index.getRange(2, 1, last - 1, SWIM_INDEX_HEADERS.length).getValues();
   for (var i = 0; i < data.length; i++) {
     if (String(data[i][SWIM_IDX.sheetId]) === String(sheet.getSheetId())) {
-      try { return JSON.parse(String(data[i][SWIM_IDX.json])); } catch (e) { return null; }
+      try { return JSON.parse(swimIndexText_(data[i][SWIM_IDX.json])); } catch (e) { return null; }
     }
   }
   return null;

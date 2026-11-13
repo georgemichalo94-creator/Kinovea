@@ -184,9 +184,10 @@ function makeSheet(ss, name, id, opts) {
         setDataValidation: v => { if (!v || !v._built) throw new Error('bad validation'); for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sheet._validations[(r + i) + ':' + (col + j)] = v; return rng; },
         clearDataValidations: () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) delete sheet._validations[(r + i) + ':' + (col + j)]; return rng; },
         setWrap: () => rng,
-        setValues: vals => { if (vals.length !== nr || vals[0].length !== nc) throw new Error(`setValues size ${vals.length}x${vals[0].length} != ${nr}x${nc}`); vals.forEach((row, i) => row.forEach((v, j) => { cells[(r + i) + ':' + (col + j)] = { v }; })); return rng; },
+        // Όπως το Sheets: ένα κελί κρατά ως 50.000 χαρακτήρες (πάνω από αυτό η εγγραφή όλης της περιοχής αποτυγχάνει).
+        setValues: vals => { if (vals.length !== nr || vals[0].length !== nc) throw new Error(`setValues size ${vals.length}x${vals[0].length} != ${nr}x${nc}`); vals.forEach(row => row.forEach(cellLimit)); vals.forEach((row, i) => row.forEach((v, j) => { cells[(r + i) + ':' + (col + j)] = { v }; })); return rng; },
         // Η τιμή αλλάζει, η μορφή του κελιού μένει (όπως στο Sheets).
-        setValue: v => { const k = r + ':' + col; cells[k] = cells[k] && cells[k].fmt ? { v, fmt: cells[k].fmt } : { v }; return rng; },
+        setValue: v => { cellLimit(v); const k = r + ':' + col; cells[k] = cells[k] && cells[k].fmt ? { v, fmt: cells[k].fmt } : { v }; return rng; },
         merge: () => { merges.push([r, col, nr, nc]); return rng; }, breakApart: () => rng,
       };
       ['setNumberFormats','setBackgrounds','setFontWeights','setFontStyles','setFontColors','setFontSizes','setHorizontalAlignments','setWraps','setVerticalAlignments'].forEach(fn => {
@@ -200,7 +201,13 @@ function makeSheet(ss, name, id, opts) {
   return sheet;
 }
 
+// Όπως το Sheets: «Your input contains more than the maximum of 50000 characters in a single cell.»
+function cellLimit(v) {
+  if (typeof v === 'string' && v.length > 50000) throw new Error('Your input contains more than the maximum of 50000 characters in a single cell.');
+}
 function makeBlob(bytes, type, name) {
+  // Όπως το Apps Script: ένα κείμενο γίνεται τα bytes του σε UTF-8.
+  if (typeof bytes === 'string') bytes = Array.from(Buffer.from(bytes, 'utf8'));
   const blob = { _bytes: bytes || [], _type: type || 'application/octet-stream', _name: name || '' };
   blob.setName = n => { blob._name = n; return blob; };
   blob.getBytes = () => blob._bytes; blob.getContentType = () => blob._type; blob.getName = () => blob._name;
@@ -436,6 +443,10 @@ function makeContext(opts) {
     Utilities: { formatDate: (d, tz, pattern) => String(pattern || 'dd/MM/yyyy HH:mm:ss').replace(/yyyy|MM|dd|HH|mm|ss/g, k => ({ yyyy: '2026', MM: '10', dd: '09', HH: '23', mm: '59', ss: '00' })[k]), getUuid: () => 'uuid-' + (++uuidSeq) + '-0000',
       base64Decode: d => Array.from(Buffer.from(String(d), 'base64')), base64Encode: b => Buffer.from(b).toString('base64'),
       newBlob: (bytes, type, name) => makeBlob(bytes, type, name), sleep: ms => { sleeps.push(ms); },
+      // gzip όπως το Apps Script: το ungzip θέλει blob τύπου application/x-gzip.
+      gzip: (blob, name) => makeBlob(Array.from(require('zlib').gzipSync(Buffer.from(blob.getBytes()))), 'application/x-gzip', name || (blob.getName() + '.gz')),
+      ungzip: blob => { if (blob.getContentType() !== 'application/x-gzip') throw new Error('Invalid argument: blob is not application/x-gzip');
+        return makeBlob(Array.from(require('zlib').gunzipSync(Buffer.from(blob.getBytes()))), 'application/octet-stream', String(blob.getName()).replace(/\.gz$/, '')); },
       DigestAlgorithm: { MD5: 'md5' },
       // Όπως το Apps Script: bytes με πρόσημο (-128…127).
       computeDigest: (alg, text) => Array.from(require('crypto').createHash(alg).update(String(text), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)) },

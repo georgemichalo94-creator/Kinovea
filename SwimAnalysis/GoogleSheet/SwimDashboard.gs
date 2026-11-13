@@ -269,7 +269,8 @@ function swimDashHead_(ctx) {
 
 function swimDashParse_(json) {
   try {
-    var raw = JSON.parse(String(json));
+    // 2.17.1: ένα πολύ μεγάλο JSON είναι συμπιεσμένο στο κελί του (swimIndexText_ το ανοίγει).
+    var raw = JSON.parse(swimIndexText_(json));
     return raw && typeof raw === 'object' ? swimNormalizeRace_(raw) : null;
   } catch (e) {
     return null;
