@@ -2497,7 +2497,7 @@ namespace Kinovea.ScreenManager
 
         public void RefreshSync()
         {
-            if (IsDisposed)
+            if (IsDisposed || Disposing || !IsHandleCreated)
                 return;
 
             Color color;

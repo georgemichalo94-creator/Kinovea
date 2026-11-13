@@ -207,7 +207,6 @@ jobs:
         Write-Output ('::notice title=Swim safe files::' + ($out | Select-Object -Last 1))
 
     - name: Swim same numbers in Kinovea and in the report
-      continue-on-error: true
       shell: pwsh
       run: |
         # (2.22.0) Fictional analyses as Kinovea keeps them (races of every kind, training videos, wrong and missing marks): computed by
@@ -217,7 +216,7 @@ jobs:
         $made = $LASTEXITCODE
         $out += @(& powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\fuzz_marks\fm_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -dir $dir 2>&1)
         $computed = $LASTEXITCODE
-        $out += @(& node .\SwimAnalysis\tests\fuzz_marks\fm_check.js $dir survey 2>&1)
+        $out += @(& node .\SwimAnalysis\tests\fuzz_marks\fm_check.js $dir 2>&1)
         $checked = $LASTEXITCODE
         $out | ForEach-Object { Write-Output $_ }
         $bad = @($out | Where-Object { "$_" -like 'FAIL *' })

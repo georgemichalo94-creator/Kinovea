@@ -3815,10 +3815,12 @@ namespace Kinovea.ScreenManager
 
         private void Form_FormClosed(object sender, FormClosedEventArgs e)
         {
+            // (2.22.0) The window is gone first: the send that waits goes now, and what it shows ("Sending…") went to the window
+            // being closed (an error of its tooltip: the send never left and the next ones waited behind it).
+            form = null;
             FlushPendingSend();
             SaveNow();
             Settings.Save();
-            form = null;
 
             // Closed to open again in the other language: the analysis stays as it is.
             if (reopeningForm)

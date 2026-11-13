@@ -61,7 +61,7 @@ namespace Kinovea.ScreenManager
             UploadCharts(race, images, 0);
         }
 
-        private void UploadCharts(SwimRace race, List<KeyValuePair<SwimChartData, byte[]>> images, int index)
+        private void UploadCharts(SwimRace race, List<KeyValuePair<SwimChartData, byte[]>> images, int index, bool again = false)
         {
             if (index >= images.Count)
             {
@@ -78,6 +78,22 @@ namespace Kinovea.ScreenManager
             client.UploadImages(Settings.WebAppUrl, Settings.Token, race.Id, files, result =>
             {
                 JArray uploaded = result.Ok && result.Raw != null ? result.Raw["files"] as JArray : null;
+                if (uploaded == null && !again)
+                {
+                    // (2.22.0) Once more after a moment: the web app of Google answers now and then with a page of its own (HTTP 404, no
+                    // JSON) and takes the next request; the charts of the batch went into the PDF as charts of Google.
+                    log.Warn("The charts of the report were not uploaded (once more in 3 s): " + result.Error);
+                    System.Windows.Forms.Timer wait = new System.Windows.Forms.Timer { Interval = 3000 };
+                    wait.Tick += (s, e) =>
+                    {
+                        wait.Stop();
+                        wait.Dispose();
+                        UploadCharts(race, images, index, true);
+                    };
+                    wait.Start();
+                    return;
+                }
+
                 if (uploaded == null)
                     log.Warn("The charts of the report were not uploaded: " + result.Error);
 

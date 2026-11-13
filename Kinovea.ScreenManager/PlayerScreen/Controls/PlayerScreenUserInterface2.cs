@@ -366,6 +366,7 @@ namespace Kinovea.ScreenManager
         private bool m_bTextEdit;
         private PointF m_DescaledMouse;    // The current mouse point expressed in the original image size coordinates.
         private bool swimPickInProgress;   // A left click on the image was consumed by the swim analysis (calibration / distance).
+        private int swimPaintErrors;       // (Swim 2.22.0) Errors while painting the image, for the log (the first ones with their cause).
         private bool showDrawings = true;
         private bool drawOnPlay = true;
         private bool defaultFadingEnabled = true;
@@ -4695,9 +4696,15 @@ namespace Kinovea.ScreenManager
                 {
                     log.Error("Error while painting image. Object is currently in use elsewhere.");
                 }
-                catch
+                catch (Exception paintError)
                 {
-                    log.Error("Error while painting image.");
+                    // (Swim 2.22.0) What failed and where, for the first ones and then one in two hundred: the log of a day of analysis
+                    // had hundreds of these lines (two videos played together) without a word about their cause.
+                    swimPaintErrors++;
+                    if (swimPaintErrors <= 5 || swimPaintErrors % 200 == 0)
+                        log.Error(string.Format("Error while painting image ({0}).", swimPaintErrors), paintError);
+                    else
+                        log.Error("Error while painting image.");
                 }
             }
             else

@@ -221,6 +221,9 @@ function makeCase(i) {
     else if (mutation === 15) ['Signal', 'WallContact', 'TechSplit', 'RotationStart', 'HandsOff', 'BackFoot'].forEach((type, k) => marks.push({ Id: 'odd' + k, Type: type, Timestamp: origin + Math.round((200 + 90 * k) * timing.ats), Distance: type === 'TechSplit' ? pick([-5, 5, 10, 15, 7]) : 0, Wall: pick([-1, 50, 999]) }));
   }
 
+  // The strokes typed for a checkpoint go with its mark (the program removes them when the mark is removed).
+  Object.keys(race.StrokeCounts).forEach(d => { if (!race.Marks.some(m => m.Type === 'Split' && m.Distance === +d)) delete race.StrokeCounts[d]; });
+
   return { i, plausible: mutation < 0, mutation, timing, race };
 }
 

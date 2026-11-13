@@ -1931,8 +1931,19 @@ namespace Kinovea.ScreenManager
             while (sweep > 180) sweep -= 360;
             while (sweep < -180) sweep += 360;
             float radius = 26 * scale;
-            using (Pen arc = new Pen(penAngleArc.Color, penAngleArc.Width * scale))
-                g.DrawArc(arc, v.X - radius, v.Y - radius, radius * 2, radius * 2, (float)a0, (float)sweep);
+            // (2.22.0) GDI+ fails on an arc of almost nothing (and says it is out of memory): the arms alone then (as the angles of the
+            // skeleton since 2.16.6). All the graphics of the frame went with the error.
+            if (!double.IsNaN(sweep) && !double.IsNaN(a0) && Math.Abs(sweep) >= 0.5 && radius > 0.5f)
+            {
+                try
+                {
+                    using (Pen arc = new Pen(penAngleArc.Color, penAngleArc.Width * scale))
+                        g.DrawArc(arc, v.X - radius, v.Y - radius, radius * 2, radius * 2, (float)a0, (float)sweep);
+                }
+                catch (OutOfMemoryException)
+                {
+                }
+            }
 
             float r = 4 * scale;
             foreach (PointF p in new PointF[] { p0, v, p2 })

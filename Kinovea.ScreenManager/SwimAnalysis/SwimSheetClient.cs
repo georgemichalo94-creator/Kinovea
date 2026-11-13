@@ -508,8 +508,20 @@ namespace Kinovea.ScreenManager
         private void Raise(SwimSyncState state, string message, string raceId, SwimSheetResult result)
         {
             EventHandler<SwimSyncEventArgs> handler = StateChanged;
-            if (handler != null)
+            if (handler == null)
+                return;
+
+            // (2.22.0) What the window does with the state must never stop the sending: an error there (the window being closed while
+            // "Sending…" is shown: a tooltip without its window) left the request marked as on its way without ever being sent, and
+            // every analysis after it waited behind it until Kinovea was started again.
+            try
+            {
                 handler(this, new SwimSyncEventArgs { State = state, Message = message, RaceId = raceId, Result = result });
+            }
+            catch (Exception e)
+            {
+                log.Error("The state of the sending could not be shown (" + state + ").", e);
+            }
         }
 
         private static SwimSheetResult Post(string url, string body, int timeout)
