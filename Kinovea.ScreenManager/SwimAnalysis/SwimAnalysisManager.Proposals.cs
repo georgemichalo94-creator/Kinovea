@@ -281,15 +281,56 @@ namespace Kinovea.ScreenManager
         private void ShowProposal(SwimProposal p, string done = null)
         {
             SeekNearest(p.Timestamp);
-            int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
+            int index, total;
+            CheckPosition(p, out index, out total);
             bool warning = done != null && done.StartsWith("⚠", StringComparison.Ordinal);
             bool pilot = PilotMarkOf(p) != null;
             Status((string.IsNullOrEmpty(done) ? "" : done + "  →  ") + string.Format(CultureInfo.InvariantCulture,
                 SwimLang.T("✨ Πρόταση {0}/{1}: {2}{3}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος{4} · Esc: τέλος."),
-                index, Race.Proposals.Count, ProposalLabel(p), pilot ? SwimLang.T(" · ✈ την έβαλε ο πιλότος (η απάντησή σου διδάσκει)") : "",
+                index, total, ProposalLabel(p, Race), pilot ? SwimLang.T(" · ✈ την έβαλε ο πιλότος (η απάντησή σου διδάσκει)") : "",
                 pilot ? SwimLang.T(" (σβήνεται)") : ""), warning);
             RefreshProposalsUi();
             InvalidatePlayer();
+        }
+
+        /// <summary>
+        /// (2.22.0) The next proposal of the check after one answered at 'after': the next one in the order of the video (at the end,
+        /// the first one waiting). After the contact of a turn of the technical pilot, which is checked first (the turn is made with
+        /// it), the check goes on from the first proposal of its reading (the approach) and then in the order of the video: one pass,
+        /// each proposal once. Until 2.22.0 it went on after the contact and came back to the approach at the end, whose strokes
+        /// (named «Χεριά 1, 2…» as those after the turn) looked asked again.
+        /// </summary>
+        internal static SwimProposal NextInCheck(List<SwimProposal> pending, long after, SwimProposal answered)
+        {
+            if (pending == null || pending.Count == 0)
+                return null;
+
+            if (answered != null && answered.Kind == KindTechWall && answered.Batch != null)
+            {
+                SwimProposal first = pending.Where(x => x.Batch == answered.Batch).OrderBy(x => x.Timestamp).FirstOrDefault();
+                if (first != null && first.Timestamp < after)
+                    return first;
+            }
+
+            return pending.Where(x => x.Timestamp > after).OrderBy(x => x.Timestamp).FirstOrDefault() ??
+                pending.OrderBy(x => x.Timestamp).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// (2.22.0) The place of a proposal: during the check, of the check («5/14»: the answers given and the proposals left, so the
+        /// number goes up to the end without coming back); else its place in the order of the video among those waiting.
+        /// </summary>
+        private void CheckPosition(SwimProposal p, out int index, out int total)
+        {
+            if (Reviewing && p != null && p.Id == reviewId)
+            {
+                index = reviewAnswered + 1;
+                total = reviewAnswered + Race.Proposals.Count;
+                return;
+            }
+
+            index = PendingProposals.FindIndex(x => p != null && x.Id == p.Id) + 1;
+            total = Race.Proposals.Count;
         }
 
         /// <summary>Stops the check (the proposals not answered wait).</summary>
@@ -398,7 +439,7 @@ namespace Kinovea.ScreenManager
             if (!InLengthOfEvent(p, timestamp))
             {
                 SystemSounds.Beep.Play();
-                Status(ProposalLabel(p) + SwimLang.T(": το καρέ είναι σε άλλο μήκος του αγώνα (το γεγονός είναι μετά τον τοίχο του μήκους του ή την εκκίνηση, και πριν από τον επόμενο τοίχο). Πήγαινε σε καρέ αυτού του μήκους, ή Delete αν δεν υπάρχει τέτοιο γεγονός."), true);
+                Status(ProposalLabel(p, Race) + SwimLang.T(": το καρέ είναι σε άλλο μήκος του αγώνα (το γεγονός είναι μετά τον τοίχο του μήκους του ή την εκκίνηση, και πριν από τον επόμενο τοίχο). Πήγαινε σε καρέ αυτού του μήκους, ή Delete αν δεν υπάρχει τέτοιο γεγονός."), true);
                 return;
             }
 
@@ -449,7 +490,7 @@ namespace Kinovea.ScreenManager
 
                 Answer(p, timestamp, true);
                 Changed(pilot != null);
-                done = "✓ " + ProposalLabel(p) + (exists ? SwimLang.T(": υπήρχε ήδη σημάδι σε αυτό το καρέ.") : ".") + again;
+                done = "✓ " + ProposalLabel(p, Race) + (exists ? SwimLang.T(": υπήρχε ήδη σημάδι σε αυτό το καρέ.") : ".") + again;
             }
             else
             {
@@ -470,10 +511,10 @@ namespace Kinovea.ScreenManager
                 // (the learning does not change) and the reason stays visible with the next one.
                 if (!Race.Marks.Any(m => m.Type == markType && SameFrame(m.Timestamp, timestamp)))
                 {
-                    string reason = "⚠ " + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) + SwimLang.T(": δεν μπήκε σημάδι.") : LastStatus);
+                    string reason = "⚠ " + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p, Race) + SwimLang.T(": δεν μπήκε σημάδι.") : LastStatus);
                     Race.Proposals.Remove(p);
                     Changed(false);
-                    NextProposal(timestamp, reason);
+                    NextProposal(timestamp, reason, p);
                     return;
                 }
 
@@ -491,14 +532,14 @@ namespace Kinovea.ScreenManager
                 Changed(estimated.Length > 0 || pilot != null);
 
                 // What the command said stays visible with the next proposal.
-                done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p) : LastStatus) + estimated;
+                done = (LastStatusIsWarning ? "⚠ " : "✓ ") + (string.IsNullOrEmpty(LastStatus) ? ProposalLabel(p, Race) : LastStatus) + estimated;
             }
 
             // The answer moves the waiting proposals of its kind (with the learning now) and the event after it (the feet off from
             // the first movement, the entry from the feet off).
             RecombineWaitingProposals(p.Kind);
             MoveEventProposals(p.Kind, p.Index, timestamp);
-            NextProposal(timestamp, done);
+            NextProposal(timestamp, done, p);
         }
 
         private void RejectProposal(SwimProposal p)
@@ -520,10 +561,11 @@ namespace Kinovea.ScreenManager
             Answer(p, at, false);
             Changed(pilot != null);
             NextProposal(at, pilotStart ? SwimLang.T("⚠ Η εκκίνηση του πιλότου μένει: βάλε τη σωστή με το «Εκκίνηση» στο καρέ του σήματος (οι χρόνοι υπολογίζονται ξανά).") :
-                ProposalLabel(p) + SwimLang.T(": δεν κρατήθηκε.") + (pilot != null ? SwimLang.T(" Το σημάδι του πιλότου σβήστηκε.") : ""));
+                ProposalLabel(p, Race) + SwimLang.T(": δεν κρατήθηκε.") + (pilot != null ? SwimLang.T(" Το σημάδι του πιλότου σβήστηκε.") : ""), p);
         }
 
-        private void NextProposal(long after, string done = null)
+        /// <summary>The next proposal of the check after one answered at 'after' (answered: that proposal, 2.22.0).</summary>
+        private void NextProposal(long after, string done = null, SwimProposal answered = null)
         {
             if (reviewId == null)
             {
@@ -543,7 +585,7 @@ namespace Kinovea.ScreenManager
             }
 
             if (next == null)
-                next = pending.FirstOrDefault(x => x.Timestamp > after) ?? pending.FirstOrDefault();
+                next = NextInCheck(pending, after, answered);
             if (next == null)
             {
                 EndReview(true, done);
@@ -631,11 +673,11 @@ namespace Kinovea.ScreenManager
             if (!resolvingProposal && p.Id == reviewId)
             {
                 // After the command of the key has finished (it still works on this frame), the next proposal.
-                string done = "✓ " + ProposalLabel(p);
+                string done = "✓ " + ProposalLabel(p, Race);
                 if (player != null && !player.IsDisposed && player.IsHandleCreated)
-                    player.BeginInvoke((Action)(() => NextProposal(timestamp, done)));
+                    player.BeginInvoke((Action)(() => NextProposal(timestamp, done, p)));
                 else
-                    NextProposal(timestamp, done);
+                    NextProposal(timestamp, done, p);
             }
         }
 
@@ -837,6 +879,43 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// (2.22.0) The name of a proposal in its analysis. A stroke of the technical pilot is named by the contact nearest to it:
+        /// «3η χεριά πριν τον τοίχο» (counted back from the wall: the last one is «Τελευταία χεριά πριν τον τοίχο») or «2η χεριά μετά
+        /// την έξοδο» (the first one is «Πρώτη χεριά μετά την έξοδο»), with the strokes marked or proposed between them; without a
+        /// contact, after the breakout of a start. Until 2.22.0 the strokes of the approach and those after the turn were both
+        /// «Χεριά 1, 2…» and looked asked twice. The others as ProposalLabel(p).
+        /// </summary>
+        public static string ProposalLabel(SwimProposal p, SwimRace race)
+        {
+            if (p == null || race == null || p.Type != SwimMarkType.Stroke || p.Kind != KindTechStroke)
+                return ProposalLabel(p);
+
+            List<long> walls = race.Marks.Where(m => m.Type == SwimMarkType.WallContact).Select(m => m.Timestamp)
+                .Concat(race.Proposals.Where(x => x.Kind == KindTechWall).Select(x => x.Timestamp)).ToList();
+            Func<long, long, int> strokesBetween = (a, b) =>
+                race.Marks.Count(m => m.Type == SwimMarkType.Stroke && m.Timestamp > a && m.Timestamp < b) +
+                race.Proposals.Count(x => x.Id != p.Id && x.Type == SwimMarkType.Stroke && x.Timestamp > a && x.Timestamp < b);
+            string name;
+            if (walls.Count > 0)
+            {
+                long wall = walls.OrderBy(w => Math.Abs(w - p.Timestamp)).First();
+                name = wall > p.Timestamp ?
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}η χεριά πριν τον τοίχο"), 1 + strokesBetween(p.Timestamp, wall)) :
+                    string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}η χεριά μετά την έξοδο"), 1 + strokesBetween(wall, p.Timestamp));
+            }
+            else if (p.Index > 0)
+            {
+                name = string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}η χεριά μετά την έξοδο"), p.Index);
+            }
+            else
+            {
+                return ProposalLabel(p);
+            }
+
+            return string.Format(CultureInfo.InvariantCulture, "{0} ({1:0}%)", name, 100 * p.Confidence);
+        }
+
         /// <summary>"Αποκόλληση ποδιών (82%)", "Δελφινισμός 3 (70%)".</summary>
         public static string ProposalLabel(SwimProposal p)
         {
@@ -894,8 +973,9 @@ namespace Kinovea.ScreenManager
                 return;
 
             long frames = (long)Math.Round((timestamp - p.Timestamp) / Math.Max(1, Timing.AverageTimestampsPerFrame));
-            int index = PendingProposals.FindIndex(x => x.Id == p.Id) + 1;
-            string title = string.Format(CultureInfo.InvariantCulture, "✨ {0}/{1}  {2}", index, Race.Proposals.Count, ProposalLabel(p));
+            int index, total;
+            CheckPosition(p, out index, out total);
+            string title = string.Format(CultureInfo.InvariantCulture, "✨ {0}/{1}  {2}", index, total, ProposalLabel(p, Race));
             string where = frames == 0 ? SwimLang.T("στο καρέ της πρότασης") : string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0:+0;−0} καρέ από την πρόταση"), frames);
             SwimMark pilotMark = PilotMarkOf(p);
             bool pilot = pilotMark != null;

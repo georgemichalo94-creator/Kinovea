@@ -532,6 +532,46 @@ $gr.Dispose(); $bmp.Dispose()
 Check $okDraw 'a skeleton with a straight joint, a NaN and a joint far away is drawn without an error'
 } else { Write-Output 'skip the drawing of a skeleton (GDI+ only on Windows)' }
 
+# (2.22.0) The check of the proposals of the technical pilot on a fictional turn: from the contact, then from the first proposal of
+# the reading in the order of the video, each one once (until 2.22.0 it went on after the contact and came back to the approach at
+# the end: its strokes, named «Χεριά 1, 2…» as those after the turn, looked asked again); the strokes named by their wall.
+$tMan = T 'SwimAnalysisManager'; $tProp = T 'SwimProposal'
+$bfs = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
+function KindOf($n) { return $tMan.GetField($n, $bfs).GetValue($null) }
+$batch = 'b1'
+$plan = @(@('KindTechStroke', 1.0, 1), @('KindTechStroke', 2.2, 2), @('KindTechStroke', 3.4, 3), @('KindTechStroke', 4.6, 4), @('KindTechLastStroke', 5.8, 0),
+  @('KindTechRotation', 6.3, 0), @('KindTechWall', 6.9, 0), @('KindTechPushoff', 7.6, 0), @('KindTechKick', 8.2, 1), @('KindTechKick', 8.7, 2),
+  @('KindTechKick', 9.2, 3), @('KindTechBreakout', 10.0, 0), @('KindTechFirstStroke', 10.4, 0), @('KindTechStroke', 11.6, 2), @('KindTechStroke', 12.8, 3))
+$typeOf = @{ KindTechStroke = 'Stroke'; KindTechLastStroke = 'Stroke'; KindTechFirstStroke = 'Stroke'; KindTechRotation = 'RotationStart'; KindTechWall = 'WallContact';
+  KindTechPushoff = 'FeetOff'; KindTechKick = 'Kick'; KindTechBreakout = 'Breakout' }
+$turnRace = [Activator]::CreateInstance($tRace)
+foreach ($row in $plan) {
+  $p = [Activator]::CreateInstance($tProp)
+  $p.Kind = KindOf $row[0]; $p.Type = [Enum]::Parse($tType, $typeOf[$row[0]]); $p.Timestamp = [long]([double]$row[1] * 1000); $p.Index = [int]$row[2]
+  $p.Batch = $batch; $p.Confidence = 0.6
+  $turnRace.Proposals.Add($p)
+}
+$labelIn = $tMan.GetMethod('ProposalLabel', [type[]]@($tProp, $tRace))
+$at = { param($s) $turnRace.Proposals | Where-Object { $_.Timestamp -eq [long]($s * 1000) } | Select-Object -First 1 }
+# (What comes out of a pipeline is wrapped for PowerShell: reflection needs the objects themselves.)
+$names = @((& $at 1.0), (& $at 4.6), (& $at 11.6), (& $at 12.8)) | ForEach-Object { $labelIn.Invoke($null, [object[]]@($_.psobject.BaseObject, $turnRace.psobject.BaseObject)) }
+Write-Output ('     the strokes of the turn: ' + ($names -join ' | '))
+Check ($names[0].StartsWith('5η χεριά πριν τον τοίχο') -and $names[1].StartsWith('2η χεριά πριν τον τοίχο') -and $names[2].StartsWith('2η χεριά μετά την έξοδο') -and
+  $names[3].StartsWith('3η χεριά μετά την έξοδο')) 'the strokes of the technical pilot named by their wall: counted back before it, after the breakout after it'
+$nextIn = $tMan.GetMethod('NextInCheck', $bfs)
+$pending = [Activator]::CreateInstance(([type]'System.Collections.Generic.List`1').MakeGenericType($tProp))
+foreach ($p in ($turnRace.Proposals | Sort-Object Timestamp)) { $pending.Add($p) }
+$current = & $at 6.9
+$seen = New-Object 'System.Collections.Generic.List[double]'
+for ($guard = 0; $current -ne $null -and $guard -lt 40; $guard++) {
+  $seen.Add($current.Timestamp / 1000.0)
+  $null = $pending.Remove($current)
+  $current = $nextIn.Invoke($null, [object[]]@($pending.psobject.BaseObject, [long]$current.Timestamp, $current.psobject.BaseObject))
+}
+$expected = @(6.9, 1.0, 2.2, 3.4, 4.6, 5.8, 6.3, 7.6, 8.2, 8.7, 9.2, 10.0, 10.4, 11.6, 12.8)
+Write-Output ('     the check of the turn: ' + (($seen | ForEach-Object { $_.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) }) -join ' '))
+Check ((($seen | ForEach-Object { $_.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) }) -join ' ') -eq (($expected | ForEach-Object { $_.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) }) -join ' ')) 'the check of the turn: the contact, then each proposal once in the order of the video'
+
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0

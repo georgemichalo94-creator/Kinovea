@@ -743,7 +743,7 @@ namespace Kinovea.ScreenManager
             btnProposalRight.Enabled = reviewing;
             btnProposalWrong.Enabled = reviewing;
             btnDeleteProposals.Enabled = pending > 0;
-            lblProposals.Text = reviewing && manager.CurrentProposal != null ? SwimLang.T("ελέγχεις: ") + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal) : manager.ProposalsDescription;
+            lblProposals.Text = reviewing && manager.CurrentProposal != null ? SwimLang.T("ελέγχεις: ") + SwimAnalysisManager.ProposalLabel(manager.CurrentProposal, manager.Race) : manager.ProposalsDescription;
             lblProposals.ForeColor = reviewing ? SwimTheme.Amber : pending > 0 ? SwimTheme.Accent : SwimTheme.Dim;
             RefreshPilot();
         }

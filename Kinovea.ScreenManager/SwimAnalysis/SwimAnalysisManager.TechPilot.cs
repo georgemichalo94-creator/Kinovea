@@ -706,10 +706,11 @@ namespace Kinovea.ScreenManager
             List<string> remarks = ev.Notes.Concat(flagNotes ?? new List<string>()).ToList();
             string notes = remarks.Count > 0 ? " · " + string.Join(" · ", remarks.Select(SwimLang.T)) : "";
             // The check starts at the wall: its mark makes the turn (W), the marks before it (the strokes of the approach, the −5,
-            // the rotation) need it; the check goes on after the wall and then comes back to them.
+            // the rotation) need it. (2.22.0) Then from the first proposal of the reading in the order of the video, each one once
+            // (NextInCheck; until 2.22.0 it went on after the wall and came back to the approach at the end).
             BeginReview(made.FirstOrDefault(p => p.Kind == KindTechWall) ?? made[0]);
             Status(string.Format(CultureInfo.InvariantCulture,
-                SwimLang.T("🤖 Στροφή ({0}): {1} προτάσεις{2}. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος."),
+                SwimLang.T("🤖 Στροφή ({0}): {1} προτάσεις{2}. Πρώτα η επαφή, μετά όλες μία φορά με τη σειρά του βίντεο. Enter: σωστό · ←/→ και Enter: διόρθωση · Delete: λάθος."),
                 kindText, made.Count, notes), ev.Notes.Count > 0);
         }
 
