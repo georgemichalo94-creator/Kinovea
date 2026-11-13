@@ -291,6 +291,21 @@ namespace Kinovea.ScreenManager
             saveTimer.Interval = 800;
             saveTimer.Tick += SaveTimer_Tick;
 
+            // (2.22.0) A change of the last moment (the save waits 0.8 s) is not lost when Kinovea closes with the analysis on the bars
+            // only (the window, when open, saves as it closes).
+            Application.ApplicationExit += (s, e) =>
+            {
+                try
+                {
+                    saveTimer.Stop();
+                    SaveNow();
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Could not save the swim analysis as Kinovea closed.", ex);
+                }
+            };
+
             // Edits of text fields are sent after a short pause instead of at every keystroke.
             sendTimer = new Timer();
             sendTimer.Interval = 1500;
@@ -3657,6 +3672,17 @@ namespace Kinovea.ScreenManager
                     log.Error("Could not read swim analysis file " + candidate, e);
                     unreadable = unreadable ?? candidate;
                 }
+
+                // The save that stopped in the middle left its whole text beside the file: the latest state of the analysis.
+                SwimVideoFile saved = ReadInterruptedSave(candidate, path);
+                if (saved != null)
+                {
+                    SwimFiles.KeepUnreadable(candidate, BackupFolder, BackupPrefix(path), BackupExtension);
+                    Status(string.Format(SwimLang.T("⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβαζόταν (μια αποθήκευση διακόπηκε): φορτώθηκε η τελευταία αποθήκευση ({0} αναλύσεις). Έλεγξε ότι δεν λείπει κάτι."),
+                        saved.Races.Count), true);
+                    dirty = true;
+                    return saved;
+                }
             }
 
             if (unreadable != null)
@@ -3707,6 +3733,21 @@ namespace Kinovea.ScreenManager
             }
 
             return new string[] { primary, fallback };
+        }
+
+        /// <summary>The analyses of the temporary file of a save that stopped in the middle (null: none, or not whole).</summary>
+        private static SwimVideoFile ReadInterruptedSave(string candidate, string path)
+        {
+            try
+            {
+                string temp = SwimFiles.TempPath(candidate);
+                return File.Exists(temp) ? ReadVideoFile(temp, path) : null;
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not read the interrupted save of " + candidate, e);
+                return null;
+            }
         }
 
         /// <summary>The analyses of a file as they are used (null: the file has none to read).</summary>

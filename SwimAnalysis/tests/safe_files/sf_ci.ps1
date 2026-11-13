@@ -1,6 +1,7 @@
 ﻿# sf_ci.ps1: the CI check of the files of the swim analysis written whole or not at all (2.22.0): the text through a temporary file,
 # the file of before kept as .bak and read when the file cannot be read (not when it was deleted), the copy a day of an analysis (once
-# a day, the newest kept, the oldest gone) and the copy of a file that cannot be read. Fictional files in a temporary folder.
+# a day, the newest kept, the oldest gone), the copy of a file that cannot be read, a write that cannot be done (the file of before
+# stays) and the analyses of a save that stopped in the middle (its whole temporary file). Fictional files in a temporary folder.
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File sf_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -88,6 +89,40 @@ try {
   $kept = $unreadable.Invoke($null, @($f, $folder, $prefix, $ext))
   Check ($null -ne $kept -and (Test-Path $kept) -and [System.IO.File]::ReadAllText($kept, $utf8) -eq '{"half":' -and [System.IO.Path]::GetFileName($kept) -like ($prefix + '.unreadable-*' + $ext)) 'the unreadable file is kept as it is'
   Check (@($backups.Invoke($null, @($folder, $prefix, $ext)) | Where-Object { $_.Name -like '*unreadable*' }).Count -eq 0) 'it is not one of the daily copies'
+  # Half a file is no copy of a day (it would take the place of a good one).
+  [void]$backup.Invoke($null, @($f, $folder, 'half.mp4.99aabbcc', $ext, 3, [long]1000000))
+  Check (@($backups.Invoke($null, @($folder, 'half.mp4.99aabbcc', $ext))).Count -eq 0) 'half a file is not copied as the copy of the day'
+  [System.IO.File]::WriteAllBytes($f, (New-Object byte[] 64))
+  [void]$backup.Invoke($null, @($f, $folder, 'half.mp4.99aabbcc', $ext, 3, [long]1000000))
+  Check (@($backups.Invoke($null, @($folder, 'half.mp4.99aabbcc', $ext))).Count -eq 0) 'nor a file of zeros'
+
+  # A write that cannot be done (its temporary file cannot be made): it says so, and the file of before is as it was.
+  $g = [System.IO.Path]::Combine($dir, 'blocked.mp4.swim.json')
+  [System.IO.File]::WriteAllText($g, '{"before":1}', $utf8)
+  $tempPath = $tFiles.GetMethod('TempPath').Invoke($null, @($g))
+  Check ($tempPath -eq ($g + '.tmp')) 'the temporary file of a path'
+  [void][System.IO.Directory]::CreateDirectory($tempPath)
+  $threw = $false
+  try { [void]$write.Invoke($null, @($g, '{"after":2}', $utf8, $false)) } catch { $threw = $true }
+  Check ($threw -and [System.IO.File]::ReadAllText($g, $utf8) -eq '{"before":1}') 'a write that cannot be done throws, the file of before stays'
+  [System.IO.Directory]::Delete($tempPath)
+  [void]$write.Invoke($null, @($g, '{"after":2}', $utf8, $false))
+  Check ([System.IO.File]::ReadAllText($g, $utf8) -eq '{"after":2}' -and -not (Test-Path $tempPath)) 'and the next write goes'
+
+  # The analyses of a save that stopped in the middle: from its whole temporary file, never from half a one.
+  $flags = [System.Reflection.BindingFlags]'NonPublic,Static'
+  $tMan = $a.GetType('Kinovea.ScreenManager.SwimAnalysisManager', $true)
+  $interrupted = $tMan.GetMethod('ReadInterruptedSave', $flags)
+  $video = [System.IO.Path]::Combine($dir, 'fictional turn.mp4'); $h = $video + '.swim.json'
+  [System.IO.File]::WriteAllText($h, '{"Races":[{"Id":"r1","Athl', $utf8)
+  Check ($null -eq $interrupted.Invoke($null, @($h, $video))) 'half an analysis file without a temporary file: nothing'
+  [System.IO.File]::WriteAllText($h + '.tmp', '{"Races":[{"Id":"r1","Athlete":"FICTIONAL ATHLETE"},{"Id":"r2"}]}', $utf8)
+  $file = $interrupted.Invoke($null, @($h, $video))
+  Check ($null -ne $file -and $file.Races.Count -eq 2 -and $file.Races[0].Id -eq 'r1' -and $file.VideoPath -eq $video) 'the whole temporary file of the save that stopped: its analyses'
+  [System.IO.File]::WriteAllText($h + '.tmp', '{"Races":[{"Id":"r1"},{"Id', $utf8)
+  Check ($null -eq $interrupted.Invoke($null, @($h, $video))) 'half a temporary file: nothing (no exception)'
+  [System.IO.File]::WriteAllText($h + '.tmp', 'null', $utf8)
+  Check ($null -eq $interrupted.Invoke($null, @($h, $video))) 'an empty temporary file: nothing'
 }
 finally {
   try { [System.IO.Directory]::Delete($dir, $true) } catch { }

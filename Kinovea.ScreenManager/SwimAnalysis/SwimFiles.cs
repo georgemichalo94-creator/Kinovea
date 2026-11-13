@@ -11,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Kinovea.ScreenManager
 {
@@ -33,13 +34,22 @@ namespace Kinovea.ScreenManager
         {
             lock (gate)
             {
-                string temp = path + ".tmp";
-                using (FileStream stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (StreamWriter writer = new StreamWriter(stream, encoding))
+                string temp = TempPath(path);
+                try
                 {
-                    writer.Write(text);
-                    writer.Flush();
-                    stream.Flush(true);
+                    using (FileStream stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+                    using (StreamWriter writer = new StreamWriter(stream, encoding))
+                    {
+                        writer.Write(text);
+                        writer.Flush();
+                        stream.Flush(true);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Half a temporary file (a full disk) is nothing to keep: the file of before is as it was.
+                    TryDelete(temp);
+                    throw;
                 }
 
                 if (!File.Exists(path))
@@ -63,6 +73,16 @@ namespace Kinovea.ScreenManager
                     TryDelete(temp);
                 }
             }
+        }
+
+        /// <summary>
+        /// The temporary file of a path: the whole new text while it takes the place of the file. It stays only when the program (or the
+        /// computer) stopped in the middle of a save that could not replace the file at once (a volume without that): then it is the
+        /// latest state, whole, while the file itself may be half copied.
+        /// </summary>
+        public static string TempPath(string path)
+        {
+            return path + ".tmp";
         }
 
         /// <summary>
@@ -102,7 +122,8 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// A copy of the file as it is now in 'folder', as "prefix.yyyyMMdd.ext", once a day: before the first save of the day changes it.
-        /// The newest 'keep' copies of the prefix stay, and the newest of all the copies up to 'maxBytes' in the folder.
+        /// The newest 'keep' copies of the prefix stay, and the newest of all the copies up to 'maxBytes' in the folder. A file that is
+        /// not whole (half written: not JSON) is no copy of a day: it would take the place of a good one (it is kept apart, KeepUnreadable).
         /// </summary>
         public static void BackupDaily(string source, string folder, string prefix, string extension, int keep, long maxBytes)
         {
@@ -112,7 +133,7 @@ namespace Kinovea.ScreenManager
                     return;
 
                 string today = Path.Combine(folder, prefix + "." + DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + extension);
-                if (File.Exists(today))
+                if (File.Exists(today) || !IsJson(source))
                     return;
 
                 Directory.CreateDirectory(folder);
@@ -133,6 +154,20 @@ namespace Kinovea.ScreenManager
             catch (Exception e)
             {
                 log.Error("Could not keep a copy of " + Path.GetFileName(source) + ".", e);
+            }
+        }
+
+        /// <summary>The file is whole JSON (not half a file, not zeros).</summary>
+        private static bool IsJson(string path)
+        {
+            try
+            {
+                JToken.Parse(File.ReadAllText(path, Encoding.UTF8));
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 

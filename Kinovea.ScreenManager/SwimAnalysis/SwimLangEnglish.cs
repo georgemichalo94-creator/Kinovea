@@ -2683,6 +2683,7 @@ namespace Kinovea.ScreenManager
             { "Όνομα στη λίστα Elite των αναλύσεων τεχνικής (π.χ. «Στροφή ελεύθερο – elite 1»):", "Name in the Elite list of the technique analyses (e.g. «Freestyle turn – elite 1»):" },
             // (2.22.0) The analysis file that cannot be read.
             { "⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβαζόταν: φορτώθηκε το αντίγραφο ασφαλείας της {0} ({1} αναλύσεις). Έλεγξε ότι δεν λείπει κάτι.", "⚠ The analysis file of this video could not be read: the backup copy of {0} was loaded ({1} analyses). Check that nothing is missing." },
+            { "⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβαζόταν (μια αποθήκευση διακόπηκε): φορτώθηκε η τελευταία αποθήκευση ({0} αναλύσεις). Έλεγξε ότι δεν λείπει κάτι.", "⚠ The analysis file of this video could not be read (a save was interrupted): the last save was loaded ({0} analyses). Check that nothing is missing." },
             { "⚠ Το αρχείο της ανάλυσης αυτού του βίντεο δεν διαβάζεται και δεν υπάρχει αντίγραφο ασφαλείας: η ανάλυση αρχίζει από την αρχή (το αρχείο κρατήθηκε στον φάκελο των ρυθμίσεων, SwimAnalysis\\backup).", "⚠ The analysis file of this video cannot be read and there is no backup copy: the analysis starts from the beginning (the file was kept in the settings folder, SwimAnalysis\\backup)." },
         };
     }
