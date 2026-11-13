@@ -351,7 +351,6 @@ namespace Kinovea.ScreenManager
         {
             // (2.14.0) A screen of a group of screens: the analysis of the group (the video of its lead) at the same moment.
             PlayerScreenUserInterface pressedOn = player;
-            long pressedAt = timestamp;
             bool inLead = !fromScreen || ToGroup(ref player, ref frameServer, ref timestamp);
             Attach(player, frameServer);
             if (Race == null)
@@ -388,15 +387,7 @@ namespace Kinovea.ScreenManager
                 case PlayerScreenCommands.SwimStart:
                     if (Race.IsTraining)
                     {
-                        // (2.22.0) A press of the analyst: the signal at the horn heard near it (Kinovea plays no sound).
-                        string heard = null;
-                        bool found = false;
-                        long pressedLead = timestamp;
-                        if (fromScreen && Settings != null && Settings.SignalAtHorn)
-                            timestamp = SignalAtHorn(pressedOn, pressedAt, timestamp, out heard, out found);
-                        AddSignal(timestamp, heard, found);
-                        if (timestamp != pressedLead)
-                            ShowMoment(timestamp);
+                        AddSignal(timestamp);
                     }
                     else if (StartKeyOwnOrigin && fromScreen && pressedOn != null && pressedOn != player && VideoScreenGroup.Contains(pressedOn) &&
                         Race.StartTimestamp.HasValue)

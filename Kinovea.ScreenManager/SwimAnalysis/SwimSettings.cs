@@ -202,12 +202,6 @@ namespace Kinovea.ScreenManager
         public bool AutoTechSnapshots = true;
 
         /// <summary>
-        /// (2.22.0) Training videos: the start key (G) puts the signal at the onset of the horn heard near the press (Kinovea plays no
-        /// sound, and the horn of the computer's signal or of a start system has no light to see); off: at the frame of the press.
-        /// </summary>
-        public bool SignalAtHorn = true;
-
-        /// <summary>
         /// Manual analysis: each mark teaches the learning as the answer to a proposal would; after one click on the swimmer the race
         /// is read in the background for the checkpoints, the walls and the breakouts.
         /// </summary>

@@ -255,16 +255,14 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Training video: every press of the start key begins a new start attempt (its own t = 0). heard (2.22.0): what the sound said
-        /// of the horn, added to the message (null: not looked for); found: the signal is at the horn heard (else a warning).
+        /// Training video: every press of the start key begins a new start attempt (its own t = 0).
         /// </summary>
-        private void AddSignal(long timestamp, string heard = null, bool found = false)
+        private void AddSignal(long timestamp)
         {
-            string note = string.IsNullOrEmpty(heard) ? "" : " " + heard;
             if (Race.Marks.Any(m => m.Type == SwimMarkType.Signal && SameFrame(m.Timestamp, timestamp)))
             {
                 SystemSounds.Beep.Play();
-                Status(SwimLang.T("Υπάρχει ήδη σήμα εκκίνησης σε αυτό το καρέ.") + note, true);
+                Status(SwimLang.T("Υπάρχει ήδη σήμα εκκίνησης σε αυτό το καρέ."), true);
                 return;
             }
 
@@ -272,144 +270,7 @@ namespace Kinovea.ScreenManager
             Race.Marks.Add(mark);
             undoStack.Add(mark.Id);
             int n = Race.Marks.Count(m => m.Type == SwimMarkType.Signal && m.Timestamp <= timestamp);
-            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Εκκίνηση {0}: σήμα (t = 0 της προσπάθειας)."), n) + note, heard != null && !found);
-        }
-
-        /// <summary>
-        /// (2.22.0) A press of the start key on a training video: the signal at the onset of the horn heard near it. Kinovea plays no
-        /// sound, and the horn of the computer's signal (📣) or of a start system has no light to see on the video: the analyst presses
-        /// near the start (the swimmer still on the block, or at the first movement) and the signal goes to the horn heard from
-        /// SwimStartSound.HornBefore before to HornAfter after the press. Its sound first from the screen pressed on (in a group: the
-        /// camera the analyst marks the start on, the one above the water), else from the video of the analysis; the time from the press
-        /// to the horn is the same on every camera of a synchronised group. Returns the timestamp of the video of the analysis (the
-        /// press when no horn is heard). heard: what the sound said, for the message (null: not looked for, the video of the analysis
-        /// slowed down: its sound is not in real time); found: at the horn.
-        /// </summary>
-        private long SignalAtHorn(PlayerScreenUserInterface pressedOn, long pressedAt, long timestamp, out string heard, out bool found)
-        {
-            heard = null;
-            found = false;
-            if (!HasVideo || frameServer == null || !frameServer.Loaded)
-                return timestamp;
-
-            if (!RealTimeSound(frameServer))
-            {
-                heard = SwimLang.T("🔊 Βίντεο αργής κίνησης: ο ήχος του δεν είναι σε πραγματικό χρόνο, το σήμα μπήκε στο καρέ του πατήματος.");
-                return timestamp;
-            }
-
-            List<KeyValuePair<FrameServerPlayer, long>> sources = new List<KeyValuePair<FrameServerPlayer, long>>();
-            if (pressedOn != null && pressedOn != player && !pressedOn.IsDisposed && pressedOn.SwimFrameServer != null && pressedOn.SwimFrameServer.Loaded)
-                sources.Add(new KeyValuePair<FrameServerPlayer, long>(pressedOn.SwimFrameServer, pressedAt));
-            sources.Add(new KeyValuePair<FrameServerPlayer, long>(frameServer, timestamp));
-
-            string unread = null;
-            System.Windows.Forms.Cursor was = System.Windows.Forms.Cursor.Current;
-            try
-            {
-                System.Windows.Forms.Cursor.Current = System.Windows.Forms.Cursors.WaitCursor;
-                foreach (KeyValuePair<FrameServerPlayer, long> source in sources)
-                {
-                    double offset;
-                    string error;
-                    SwimBeep horn = HornNear(source.Key, source.Value, out offset, out error);
-                    if (horn == null)
-                    {
-                        if (unread == null)
-                            unread = error;
-                        log.InfoFormat(CultureInfo.InvariantCulture, "Start signal of a training video: no horn heard from {0:0} s before to {1:0} s after the press ({2}){3}.",
-                            SwimStartSound.HornBefore, SwimStartSound.HornAfter, source.Key == frameServer ? "the video of the analysis" : "the screen pressed on",
-                            error != null ? ": " + error : "");
-                        continue;
-                    }
-
-                    long at = timestamp + (long)Math.Round(offset * frameServer.VideoReader.Info.AverageTimeStampsPerSeconds);
-                    if (!player.SwimInVideo(at))
-                        continue;
-
-                    found = true;
-                    string tones = horn.Single ? string.Format(CultureInfo.InvariantCulture, "{0:0} Hz", horn.Low) :
-                        string.Format(CultureInfo.InvariantCulture, "{0:0}/{1:0} Hz", horn.Low, horn.High);
-                    heard = string.Format(CultureInfo.InvariantCulture, offset <= 0 ? SwimLang.T("🔊 Στην κόρνα ({0}), {1:0.00} s πριν από το πάτημα.") :
-                        SwimLang.T("🔊 Στην κόρνα ({0}), {1:0.00} s μετά το πάτημα."), tones, Math.Abs(offset));
-                    log.InfoFormat(CultureInfo.InvariantCulture, "Start signal of a training video at the horn heard {0:+0.000;-0.000} s from the press ({1}, score {2:0.0}, {3}).",
-                        offset, tones, horn.Score, source.Key == frameServer ? "the video of the analysis" : "the screen pressed on");
-                    return at;
-                }
-            }
-            finally
-            {
-                System.Windows.Forms.Cursor.Current = was;
-            }
-
-            heard = unread != null ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("🔊 Ο ήχος του βίντεο δεν διαβάστηκε ({0}): το σήμα μπήκε στο καρέ του πατήματος."), unread) :
-                string.Format(CultureInfo.InvariantCulture, SwimLang.T("🔊 Δεν ακούστηκε κόρνα από {0:0} s πριν ως {1:0} s μετά το πάτημα: το σήμα μπήκε στο καρέ του πατήματος."),
-                    SwimStartSound.HornBefore, SwimStartSound.HornAfter);
-            return timestamp;
-        }
-
-        /// <summary>(2.22.0) The sound of the video is in real time (not a slowed-down video).</summary>
-        private static bool RealTimeSound(FrameServerPlayer server)
-        {
-            double hsf = server.Metadata.HighSpeedFactor;
-            return hsf <= 0 || Math.Abs(hsf - 1) < 0.01;
-        }
-
-        /// <summary>
-        /// (2.22.0) The horn of a start heard in the sound of a video near a frame of it (SwimStartSound.HornNear): offset, its onset from
-        /// that frame (s). Null: none; error: why the sound was not read (null: read).
-        /// </summary>
-        private static SwimBeep HornNear(FrameServerPlayer server, long at, out double offset, out string error)
-        {
-            offset = double.NaN;
-            error = null;
-            if (server == null || !server.Loaded || !RealTimeSound(server))
-                return null;
-
-            double tsPerSecond = server.VideoReader.Info.AverageTimeStampsPerSeconds;
-            string path = server.VideoReader.FilePath;
-            string ffmpeg = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
-            if (tsPerSecond <= 0 || string.IsNullOrEmpty(path) || !File.Exists(path))
-                return null;
-
-            // A second more on each side: the onset of a horn wants the sound before it (its quiet) and its own length after it.
-            double pressed = at / tsPerSecond;
-            double from = Math.Max(0, pressed - SwimStartSound.HornBefore - 1);
-            double seconds = pressed + SwimStartSound.HornAfter + 1 - from;
-            float[] samples;
-            using (System.Threading.CancellationTokenSource stop = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20)))
-                samples = SwimStartSound.Read(ffmpeg, path, from, seconds, stop.Token, out error);
-            if (samples == null)
-                return null;
-
-            error = null;
-            SwimBeep horn = SwimStartSound.HornNear(SwimStartSound.Find(samples), pressed - from);
-            if (horn != null)
-                offset = horn.Onset - (pressed - from);
-            return horn;
-        }
-
-        /// <summary>(2.22.0) The video of the analysis at a moment (its nearest frame), and the other screens of its group at the same moment.</summary>
-        private void ShowMoment(long timestamp)
-        {
-            SeekNearest(timestamp);
-            if (!InGroup || player == null)
-                return;
-
-            long time = player.SwimTimeFromOrigin(timestamp);
-            foreach (PlayerScreenUserInterface s in GroupScreens)
-            {
-                if (s == player || s.IsDisposed || s.SwimFrameServer == null || !s.SwimFrameServer.Loaded)
-                    continue;
-
-                long at = s.SwimTimestampFromOrigin(time);
-                if (!s.SwimInVideo(at))
-                    continue;
-
-                var reader = s.SwimFrameServer.VideoReader;
-                long half = (long)Math.Floor(Math.Max(1.0, reader.Info.AverageTimeStampsPerFrame) * 0.5);
-                s.ForcePosition(Math.Max(reader.WorkingZone.Start, at - half), true);
-            }
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Εκκίνηση {0}: σήμα (t = 0 της προσπάθειας)."), n), false);
         }
 
         /// <summary>
@@ -803,13 +664,6 @@ namespace Kinovea.ScreenManager
         private SwimTechPhase PhaseOf(long timestamp)
         {
             return SwimTechCalculator.PhaseAt(TechPhases, timestamp);
-        }
-
-        /// <summary>(2.22.0) The start key of a training video at the horn heard near the press (or at the frame of the press).</summary>
-        public void SetSignalAtHorn(bool on)
-        {
-            Settings.SignalAtHorn = on;
-            Settings.Save();
         }
 
         public void SetAutoSnapshots(bool on)
