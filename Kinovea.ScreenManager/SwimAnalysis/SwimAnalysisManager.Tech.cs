@@ -608,14 +608,19 @@ namespace Kinovea.ScreenManager
             SwimSnapshot same = Race.Snapshots.FirstOrDefault(x => SameFrame(x.Timestamp, timestamp));
             if (same != null)
             {
+                // (2.23.0) A group of screens: the key pressed again on another screen gives the snapshot the picture of that screen.
+                if (RetakeSnapshot(same, timestamp))
+                    return;
+
                 Status(SwimLang.T("📷 Υπάρχει ήδη στιγμιότυπο σε αυτό το καρέ") + (string.IsNullOrEmpty(same.Event) ? "" : " (" + SwimLang.Label(same.Event) + ")") +
-                    SwimLang.T(": γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα."), false);
+                    ScreenSaid(same) + SwimLang.T(": γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα.") + RetakeHint(same), false);
                 if (form != null)
                     form.SnapshotAdded(same);
                 return;
             }
 
-            Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false);
+            // (2.23.0) A group of screens: the picture of the camera of the moment (all its screens joined until its cameras are said).
+            Bitmap image = CaptureSnapshotFrame(timestamp, false, CameraRoleAt(timestamp));
             if (image == null)
                 return;
 
@@ -634,7 +639,8 @@ namespace Kinovea.ScreenManager
 
             SwimTechPhase phase = PhaseOf(timestamp);
             Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("📷 Στιγμιότυπο{0}{1}. Γράψε τα σχόλιά σου στην καρτέλα Στιγμιότυπα."),
-                phase != null ? " · " + phase.Title : "", string.IsNullOrEmpty(snapshot.Stage) ? "" : " · " + SwimLang.Label(snapshot.Stage)), false);
+                phase != null ? " · " + phase.Title : "", (string.IsNullOrEmpty(snapshot.Stage) ? "" : " · " + SwimLang.Label(snapshot.Stage)) + ScreenSaid(snapshot)) +
+                RetakeHint(snapshot) + CamerasHint(), false);
             Changed(false);
             UploadSnapshot(snapshot);
             if (form != null)
@@ -646,6 +652,9 @@ namespace Kinovea.ScreenManager
         {
             SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "", Width = image.Width, Height = image.Height };
             snapshot.Stage = SuggestStage(PhaseOf(timestamp), timestamp);
+
+            // (2.23.0) The picture of one camera of a group of screens (CaptureSnapshotFrame): its camera.
+            snapshot.Camera = image.Tag as string;
             try
             {
                 snapshot.File = Path.GetFileName(SaveSnapshotImage(image, snapshot.Id));
@@ -747,7 +756,8 @@ namespace Kinovea.ScreenManager
                 }
                 else if (MayBecomeEvent(mark))
                 {
-                    Bitmap image = CaptureFrame(timestamp, Settings.OverlayInExports, false, true);
+                    // (2.23.0) A group of screens: the picture of the camera that shows the event of the mark.
+                    Bitmap image = CaptureSnapshotFrame(timestamp, true, CameraRoleOf(mark));
                     if (image != null)
                     {
                         waitingFrames.Add(new KeyValuePair<string, Bitmap>(mark.Id, image));
@@ -790,11 +800,13 @@ namespace Kinovea.ScreenManager
                 return;
 
             // The status of the mark stays, the snapshot is said after it.
-            string said = "📷 " + string.Join(", ", taken.OrderBy(x => x.Timestamp).Select(x => SwimLang.Label(x.Event)).ToArray());
+            // (2.23.0) A group of screens: the screen each picture came from; once, that its cameras are not said yet.
+            string said = "📷 " + string.Join(", ", taken.OrderBy(x => x.Timestamp).Select(x => SwimLang.Label(x.Event) + ScreenSaid(x)).ToArray());
+            string hint = CamerasHint();
             if (commandStatus && !string.IsNullOrEmpty(LastStatus))
-                Status(LastStatus + "   " + said, LastStatusIsWarning);
+                Status(LastStatus + "   " + said + hint, LastStatusIsWarning);
             else
-                Status(said + SwimLang.T(" (στιγμιότυπο στην καρτέλα Στιγμιότυπα)"), false);
+                Status(said + SwimLang.T(" (στιγμιότυπο στην καρτέλα Στιγμιότυπα)") + hint, false);
 
             MarkDirty();
             foreach (SwimSnapshot snapshot in taken.OrderBy(x => x.Timestamp))
@@ -1527,6 +1539,14 @@ namespace Kinovea.ScreenManager
 
                 if (result.Ok && !string.IsNullOrEmpty(result.FileId))
                 {
+                    // (2.23.0) The picture of the snapshot was taken again while this one went up: the new one goes up in its place.
+                    if (retakenSnapshots.Remove(snapshot.Id))
+                    {
+                        snapshot.FileId = "";
+                        UploadSnapshot(snapshot);
+                        return;
+                    }
+
                     snapshot.FileId = result.FileId;
                     MarkDirty();
                     if (race == Race && snapshot.Event != null && snapshot.Event.StartsWith("eval:", StringComparison.Ordinal))
@@ -1543,6 +1563,7 @@ namespace Kinovea.ScreenManager
                 }
                 else
                 {
+                    retakenSnapshots.Remove(snapshot.Id);
                     uploadFailed.Add(snapshot.Id);
                     if (IsUnknownAction(result))
                         Status(SwimLang.T("Για τα στιγμιότυπα στο report χρειάζεται η νέα έκδοση του Apps Script (2.0.0): δες τον οδηγό."), true);

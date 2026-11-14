@@ -556,7 +556,8 @@ namespace Kinovea.ScreenManager
                 return same.Id;
             }
 
-            Bitmap image = CaptureFrame(ts, Settings.OverlayInExports, false);
+            // (2.23.0) A group of screens: the picture of the camera of the moment.
+            Bitmap image = CaptureSnapshotFrame(ts, false, CameraRoleAt(ts));
             if (image == null)
                 return null;
 

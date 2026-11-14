@@ -195,6 +195,11 @@ namespace Kinovea.ScreenManager
         private FlowLayoutPanel groupBar;
         private ComboBox cmbGroupGraphics;
 
+        // (2.23.0) The snapshots of a group: the camera of the moment or all its screens joined, and its cameras.
+        private Label lblGroupSnapshots;
+        private ComboBox cmbGroupSnapshots;
+        private Button btnGroupCameras;
+
         private class GroupChoice
         {
             public readonly int Value;
@@ -254,6 +259,22 @@ namespace Kinovea.ScreenManager
                 int index = choices.FindIndex(c => c.Value == current);
                 if (cmbGroupGraphics.SelectedIndex != index)
                     cmbGroupGraphics.SelectedIndex = index;
+
+                // (2.23.0) The snapshots of the group, for a training video: the choice of the settings; the cameras not said yet are
+                // marked on their button.
+                bool training = manager.Race != null && manager.Race.IsTraining;
+                lblGroupSnapshots.Visible = training;
+                cmbGroupSnapshots.Visible = training;
+                btnGroupCameras.Visible = training;
+                if (training)
+                {
+                    int snapshots = manager.Settings != null && manager.Settings.GroupSnapshots == SwimAnalysisManager.GroupSnapshotsAll ? 1 : 0;
+                    if (cmbGroupSnapshots.SelectedIndex != snapshots)
+                        cmbGroupSnapshots.SelectedIndex = snapshots;
+                    string cameras = (snapshots == 0 && manager.GroupCamerasMissing ? "⚠ " : "") + SwimLang.T("Κάμερες…");
+                    if (btnGroupCameras.Text != cameras)
+                        btnGroupCameras.Text = cameras;
+                }
             }
             finally
             {

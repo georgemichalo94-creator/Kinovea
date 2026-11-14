@@ -135,6 +135,15 @@ namespace Kinovea.ScreenManager
         public int GroupGraphics = 0;
 
         /// <summary>
+        /// (2.23.0) The snapshots of a group of screens on a training video: 0 the picture of the camera of the moment (a start from
+        /// its signal to the entry from the camera out of the water, what follows and the turns from the camera in the water), 1 the
+        /// pictures of all the screens joined (as before). GroupCameras: where each camera films from (SwimCameraPick), said once in
+        /// the window «Κάμερες της ομάδας»; while a camera of the group is not there the snapshots stay joined.
+        /// </summary>
+        public int GroupSnapshots = 0;
+        public List<SwimGroupCamera> GroupCameras = new List<SwimGroupCamera>();
+
+        /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
         /// area ("x,y"), empty for the default place (bottom right).
         /// </summary>
@@ -279,6 +288,8 @@ namespace Kinovea.ScreenManager
                             settings.TechSheetChoice = new Dictionary<string, string>();
                         if (settings.AiProUsage == null)
                             settings.AiProUsage = new Dictionary<string, SwimAiUsage>();
+                        if (settings.GroupCameras == null)
+                            settings.GroupCameras = new List<SwimGroupCamera>();
                         if (string.IsNullOrEmpty(settings.AiProModel))
                             settings.AiProModel = SwimAiModels.Opus;
                         if (settings.AiProMoments < 4)

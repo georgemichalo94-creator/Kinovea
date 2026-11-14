@@ -68,6 +68,40 @@ if ($Mode -eq 'render') {
             [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "tech charts: " + $text + "`n", [System.Text.Encoding]::UTF8)
             Write-Output $text
         }
+        # (2.23.0) The window of the cameras of a group of screens with two fictional cameras, before and after they are said, in the
+        # folder tech (in the zip only).
+        try {
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $screenManager = [System.Reflection.Assembly]::LoadFrom((Join-Path $binFull 'Kinovea.ScreenManager.dll'))
+            $camerasType = $screenManager.GetType('Kinovea.ScreenManager.FormSwimGroupCameras', $false)
+            if ($camerasType) {
+                $techOut = Join-Path $outFull 'tech'
+                New-Item -ItemType Directory -Force -Path $techOut | Out-Null
+                # "Othoni" (screen) in Greek letters and a middle dot, by their codes (this file stays ASCII).
+                $word = -join [char[]]@(0x39F, 0x3B8, 0x3CC, 0x3BD, 0x3B7)
+                $dot = '  ' + [char]0xB7 + '  '
+                $titles = [string[]]@(($word + ' 1' + $dot + 'GoPro A'), ($word + ' 2' + $dot + 'GoPro B'))
+                foreach ($case in @(@{ name = 'group_cameras_new.png'; roles = [int[]]@(0, 0) }, @{ name = 'group_cameras_set.png'; roles = [int[]]@(1, 2) })) {
+                    $window = [Activator]::CreateInstance($camerasType, [object[]]@($titles, $case.roles))
+                    try {
+                        $window.StartPosition = 'Manual'; $window.Location = New-Object System.Drawing.Point(-4000, -4000); $window.ShowInTaskbar = $false
+                        $window.Show(); [System.Windows.Forms.Application]::DoEvents()
+                        $picture = New-Object System.Drawing.Bitmap $window.Width, $window.Height
+                        $window.DrawToBitmap($picture, (New-Object System.Drawing.Rectangle 0, 0, $window.Width, $window.Height))
+                        $picture.Save((Join-Path $techOut $case.name), [System.Drawing.Imaging.ImageFormat]::Png); $picture.Dispose()
+                        Write-Output ('window: ' + $case.name)
+                    }
+                    finally { $window.Close(); $window.Dispose() }
+                }
+            }
+        }
+        catch {
+            $text = $_.Exception.ToString()
+            if ($_.Exception.InnerException) { $text = $_.Exception.InnerException.ToString() + "`n" + $text }
+            [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "cameras window: " + $text + "`n", [System.Text.Encoding]::UTF8)
+            Write-Output $text
+        }
         $result = $asm.GetType('ReelPreview').GetMethod('Render').Invoke($null, [object[]]@($outFull))
         Write-Output $result
         # The same images in English, in the folder en (in the zip only).

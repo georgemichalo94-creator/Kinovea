@@ -364,6 +364,22 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private bool HandleCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp, bool fromScreen)
         {
+            // (2.23.0) The screen the command came from, while it is carried out: the camera of a snapshot of a group of screens
+            // (SwimAnalysisManager.GroupCameras).
+            PlayerScreenUserInterface before = commandScreen;
+            commandScreen = fromScreen ? player : null;
+            try
+            {
+                return HandleScreenCommand(player, frameServer, command, timestamp, fromScreen);
+            }
+            finally
+            {
+                commandScreen = before;
+            }
+        }
+
+        private bool HandleScreenCommand(PlayerScreenUserInterface player, FrameServerPlayer frameServer, PlayerScreenCommands command, long timestamp, bool fromScreen)
+        {
             // (2.14.0) A screen of a group of screens: the analysis of the group (the video of its lead) at the same moment.
             PlayerScreenUserInterface pressedOn = player;
             bool inLead = !fromScreen || ToGroup(ref player, ref frameServer, ref timestamp);

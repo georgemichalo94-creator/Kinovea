@@ -1599,6 +1599,28 @@ namespace Kinovea.ScreenManager
                         SyncBySound();
                 };
                 menu.Items.Add(bySound);
+
+                // (2.23.0) Where each camera of the group films from (out of the water, in the water): the snapshot of each event of a
+                // start or a turn takes the picture of the camera that shows it.
+                if (SwimAnalysisManager.Current != null)
+                {
+                    ToolStripMenuItem cameras = new ToolStripMenuItem(SwimLang.T("Κάμερες της ομάδας (στιγμιότυπα)…"));
+                    cameras.ToolTipText = SwimLang.T("Από πού γράφει κάθε κάμερα της ομάδας (έξω από το νερό, μέσα στο νερό): το στιγμιότυπο κάθε γεγονότος παίρνει την εικόνα της κάμερας που το δείχνει.");
+                    cameras.Click += (s, e) =>
+                    {
+                        menu.Close(ToolStripDropDownCloseReason.CloseCalled);
+                        Action edit = () =>
+                        {
+                            if (SwimAnalysisManager.Current != null)
+                                SwimAnalysisManager.Current.EditGroupCameras();
+                        };
+                        if (view != null && view.IsHandleCreated)
+                            view.BeginInvoke(edit);
+                        else
+                            edit();
+                    };
+                    menu.Items.Add(cameras);
+                }
             }
 
             if (button != null && !button.IsDisposed)

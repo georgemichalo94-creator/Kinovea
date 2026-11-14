@@ -269,6 +269,13 @@ namespace Kinovea.ScreenManager
         /// <summary>The language of the graphics of the final frame: "en", or none for Greek (since 2.7.7).</summary>
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public string Lang;
+
+        /// <summary>
+        /// (2.23.0) A snapshot of a group of screens taken from one camera (the camera of the moment): the key of that camera
+        /// (SwimGroupCamera.Key); none for the picture of one video or of all the screens together.
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string Camera;
     }
 
     /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>

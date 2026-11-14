@@ -615,12 +615,36 @@ namespace Kinovea.ScreenManager
             };
             toolTip.SetToolTip(cmbGroupGraphics, SwimLang.T("Σε ποια οθόνη της ομάδας φαίνονται τα γραφικά της ανάλυσης (τα πάνελ με τα δεδομένα· οι γραμμές πάνω στο νερό μένουν στο βίντεο της ανάλυσης),\n") +
                 SwimLang.T("ή σε πίνακα στη θέση μιας ακόμη οθόνης μόνο με τα γραφικά και τα δεδομένα της εκκίνησης ή της στροφής.\n") +
-                SwimLang.T("Τα στιγμιότυπα με ομάδα: όλες οι οθόνες μαζί, κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ."));
+                SwimLang.T("Τα στιγμιότυπα με όλες τις οθόνες μαζί: κολλητές στο σχήμα του βίντεό τους, με τα γραφικά όπως εδώ."));
+
+            // (2.23.0) The snapshots of a group on a training video: the picture of the camera of the moment (a start out of the water
+            // until the entry, then and in the turns in the water) or all its screens joined; where each of its cameras films from.
+            lblGroupSnapshots = Caption(SwimLang.T("στιγμιότυπα:"));
+            cmbGroupSnapshots = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, Margin = new Padding(6, 6, 3, 3) };
+            cmbGroupSnapshots.Items.Add(SwimLang.T("Η κάμερα της στιγμής"));
+            cmbGroupSnapshots.Items.Add(SwimLang.T("Όλες οι οθόνες μαζί"));
+            cmbGroupSnapshots.SelectedIndexChanged += (s, e) =>
+            {
+                if (updating || cmbGroupSnapshots.SelectedIndex < 0)
+                    return;
+                manager.SetGroupSnapshots(cmbGroupSnapshots.SelectedIndex == 1 ? SwimAnalysisManager.GroupSnapshotsAll : SwimAnalysisManager.GroupSnapshotsCamera);
+            };
+            toolTip.SetToolTip(cmbGroupSnapshots, SwimLang.T("Από ποια οθόνη της ομάδας είναι η εικόνα κάθε στιγμιότυπου (βίντεο προπόνησης).\n") +
+                SwimLang.T("Η κάμερα της στιγμής: στην εκκίνηση, από το σήμα ως την είσοδο στο νερό, η κάμερα έξω από το νερό· μετά την είσοδο και σε όλη τη στροφή η κάμερα μέσα στο νερό.\n") +
+                SwimLang.T("Για την εικόνα άλλης οθόνης: κλικ στην οθόνη και 📷 δύο φορές στο ίδιο καρέ.\n") +
+                SwimLang.T("Όλες οι οθόνες μαζί: όπως πριν, όλες οι οθόνες κολλητές σε μία εικόνα."));
+            btnGroupCameras = new SwimNoFocusButton { Text = SwimLang.T("Κάμερες…"), AutoSize = true, Height = 32, Margin = new Padding(8, 2, 4, 2) };
+            btnGroupCameras.Click += (s, e) => manager.EditGroupCameras();
+            toolTip.SetToolTip(btnGroupCameras, SwimLang.T("Από πού γράφει κάθε κάμερα της ομάδας: έξω από το νερό, μέσα στο νερό, ή εικόνα μόνο όταν πατάς πάνω στην οθόνη της.\n") +
+                SwimLang.T("Το ορίζεις μία φορά για κάθε κάμερα· ως τότε τα στιγμιότυπα είναι όλες οι οθόνες μαζί."));
             Button btnGroupVideo = new SwimNoFocusButton { Text = SwimLang.T("🎬 Βίντεο όλων των οθονών"), AutoSize = true, Height = 32, Margin = new Padding(8, 2, 4, 2) };
             btnGroupVideo.Click += (s, e) => manager.ExportGroupVideo();
             toolTip.SetToolTip(btnGroupVideo, SwimLang.T("Ένα βίντεο με όλες τις οθόνες της ομάδας μαζί (όπως τα στιγμιότυπα της ομάδας), της εκκίνησης ή της στροφής που βλέπεις, αλλιώς όλης της ανάλυσης."));
             groupBar.Controls.Add(Caption(SwimLang.T("Ομάδα οθονών · γραφικά:")));
             groupBar.Controls.Add(cmbGroupGraphics);
+            groupBar.Controls.Add(lblGroupSnapshots);
+            groupBar.Controls.Add(cmbGroupSnapshots);
+            groupBar.Controls.Add(btnGroupCameras);
             groupBar.Controls.Add(btnGroupVideo);
 
             page.Controls.Add(gridAngles);

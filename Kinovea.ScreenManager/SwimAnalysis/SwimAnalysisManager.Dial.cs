@@ -237,7 +237,7 @@ namespace Kinovea.ScreenManager
                 {
                     Status(string.Format(CultureInfo.InvariantCulture,
                         SwimLang.T("Ομάδα οθονών {0}: μία ανάλυση, στο βίντεο της οθόνης {1}. Ένα σημάδι από όποια οθόνη της ομάδας μπαίνει στην ίδια στιγμή μέσω του συγχρονισμού: συγχρόνισε πρώτα τις οθόνες στο σήμα εκκίνησης."),
-                        GroupNumbers(", "), lead.SwimScreenNumber), false);
+                        GroupNumbers(", "), lead.SwimScreenNumber) + GroupCamerasSaid(), false);
                 }
 
                 // (2.16.0) The panel of the group comes or goes with the group; the page of the snapshots shows its choices.
