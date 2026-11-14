@@ -51,6 +51,23 @@ if ($Mode -eq 'render') {
             [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "charts: " + $text + "`n", [System.Text.Encoding]::UTF8)
             Write-Output $text
         }
+        # The charts of the sample technique reports (a turn and a start, each without and with a comparison; fictional values),
+        # in the folder tech (in the zip only).
+        try {
+            $techSample = [string](Join-Path $here 'charts_tech_samples.json')
+            if (Test-Path $techSample) {
+                $techOut = Join-Path $outFull 'tech'
+                New-Item -ItemType Directory -Force -Path $techOut | Out-Null
+                $tech = $asm.GetType('ReelPreview').GetMethod('RenderCharts').Invoke($null, [object[]]@($techSample, [string]$techOut))
+                Write-Output $tech
+            }
+        }
+        catch {
+            $text = $_.Exception.ToString()
+            if ($_.Exception.InnerException) { $text = $_.Exception.InnerException.ToString() + "`n" + $text }
+            [System.IO.File]::AppendAllText((Join-Path $outFull 'errors.txt'), "tech charts: " + $text + "`n", [System.Text.Encoding]::UTF8)
+            Write-Output $text
+        }
         $result = $asm.GetType('ReelPreview').GetMethod('Render').Invoke($null, [object[]]@($outFull))
         Write-Output $result
         # The same images in English, in the folder en (in the zip only).

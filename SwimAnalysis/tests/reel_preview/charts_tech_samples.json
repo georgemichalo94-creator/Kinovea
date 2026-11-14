@@ -1,0 +1,244 @@
+[
+ {
+  "key": "chart-32f1eb51",
+  "type": "column",
+  "title": "Στροφή: ταχύτητα ανά τμήμα (m/s)",
+  "vTitle": "m/s",
+  "v2Title": "",
+  "hTitle": "",
+  "stacked": false,
+  "width": 546,
+  "height": 300,
+  "colors": [
+   "#F2A900"
+  ],
+  "categories": [
+   "-5μ. → τοίχος",
+   "τοίχος → +5μ.",
+   "+5 → +10μ.",
+   "+10 → +15μ."
+  ],
+  "series": [
+   {
+    "name": "12/11",
+    "color": "#F2A900",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     1.63,
+     2.08,
+     1.65,
+     1.55
+    ],
+    "texts": [
+     "1,63",
+     "2,08",
+     "1,65",
+     "1,55"
+    ]
+   }
+  ],
+  "labelSeries": [
+   0
+  ],
+  "hash": "46e66a30"
+ },
+ {
+  "key": "chart-32f1eb51",
+  "type": "column",
+  "title": "Στροφή: ταχύτητα ανά τμήμα (m/s)",
+  "vTitle": "m/s",
+  "v2Title": "",
+  "hTitle": "",
+  "stacked": false,
+  "width": 546,
+  "height": 300,
+  "colors": [
+   "#8CA0B6",
+   "#F2A900",
+   "#00A8DB"
+  ],
+  "categories": [
+   "-5μ. → τοίχος",
+   "τοίχος → έξοδος",
+   "έξοδος → +15μ.",
+   "τοίχος → +15μ."
+  ],
+  "series": [
+   {
+    "name": "10/10",
+    "color": "#8CA0B6",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     1.59,
+     2.01,
+     1.51,
+     1.72
+    ],
+    "texts": [
+     "1,59",
+     "2,01",
+     "1,51",
+     "1,72"
+    ]
+   },
+   {
+    "name": "12/11",
+    "color": "#F2A900",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     1.63,
+     2.05,
+     1.55,
+     1.73
+    ],
+    "texts": [
+     "1,63",
+     "2,05",
+     "1,55",
+     "1,73"
+    ]
+   },
+   {
+    "name": "Elite",
+    "color": "#00A8DB",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     1.96,
+     2.58,
+     1.84,
+     2.17
+    ],
+    "texts": [
+     "1,96",
+     "2,58",
+     "1,84",
+     "2,17"
+    ]
+   }
+  ],
+  "labelSeries": [
+   0
+  ],
+  "hash": "aad90931"
+ },
+ {
+  "key": "chart-76d46bcf",
+  "type": "column",
+  "title": "Εκκίνηση: ταχύτητα ανά τμήμα (m/s)",
+  "vTitle": "m/s",
+  "v2Title": "",
+  "hTitle": "",
+  "stacked": false,
+  "width": 546,
+  "height": 300,
+  "colors": [
+   "#F2A900"
+  ],
+  "categories": [
+   "0 → 5μ.",
+   "5 → 10μ.",
+   "10 → 15μ."
+  ],
+  "series": [
+   {
+    "name": "12/11",
+    "color": "#F2A900",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     2.67,
+     1.81,
+     1.59
+    ],
+    "texts": [
+     "2,67",
+     "1,81",
+     "1,59"
+    ]
+   }
+  ],
+  "labelSeries": [
+   0
+  ],
+  "hash": "9865d163"
+ },
+ {
+  "key": "chart-76d46bcf",
+  "type": "column",
+  "title": "Εκκίνηση: ταχύτητα ανά τμήμα (m/s)",
+  "vTitle": "m/s",
+  "v2Title": "",
+  "hTitle": "",
+  "stacked": false,
+  "width": 546,
+  "height": 300,
+  "colors": [
+   "#8CA0B6",
+   "#F2A900",
+   "#00A8DB"
+  ],
+  "categories": [
+   "αποδέσμευση → έξοδος",
+   "έξοδος → 15μ.",
+   "αποδέσμευση → 15μ."
+  ],
+  "series": [
+   {
+    "name": "10/10",
+    "color": "#8CA0B6",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     3,
+     1.6,
+     2.08
+    ],
+    "texts": [
+     "3,00",
+     "1,60",
+     "2,08"
+    ]
+   },
+   {
+    "name": "12/11",
+    "color": "#F2A900",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     2.99,
+     1.6,
+     2.14
+    ],
+    "texts": [
+     "2,99",
+     "1,60",
+     "2,14"
+    ]
+   },
+   {
+    "name": "Elite",
+    "color": "#00A8DB",
+    "type": "bars",
+    "axis": 0,
+    "values": [
+     3.14,
+     1.81,
+     2.6
+    ],
+    "texts": [
+     "3,14",
+     "1,81",
+     "2,60"
+    ]
+   }
+  ],
+  "labelSeries": [
+   0
+  ],
+  "hash": "625ddcf5"
+ }
+]
