@@ -719,6 +719,15 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (Swim 2.23.0) The screen is synchronised with others and tied to them (the sync button or the sound; its origin has not
+        /// changed since): the same time from their origins is the same moment on them.
+        /// </summary>
+        public bool IsTied(PlayerScreen player)
+        {
+            return active && synching && player != null && synced.Contains(player) && Tied(player);
+        }
+
+        /// <summary>
         /// (Swim 2.14.1) The time origins of some screens set at once (the same moment in every video, found from their sound; local real
         /// time in microseconds as LocalTimeOriginPhysical), then the synchronisation set up on them as with the sync button: every screen
         /// goes to the moment the given one shows.

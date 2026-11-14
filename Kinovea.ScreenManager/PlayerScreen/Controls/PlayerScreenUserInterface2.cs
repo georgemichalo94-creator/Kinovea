@@ -2951,6 +2951,12 @@ namespace Kinovea.ScreenManager
         internal static Func<PlayerScreenUserInterface, long, bool> SwimGroupStartAsked;
 
         /// <summary>
+        /// (Swim 2.23.0) Set by the screen manager: the screen is tied to other screens by the synchronisation (the sync button or the
+        /// sound), so the same time from their origins is the same moment on them.
+        /// </summary>
+        internal static Func<PlayerScreenUserInterface, bool> SwimGroupTiedAsked;
+
+        /// <summary>
         /// (Swim 2.16.1) Set by the screen manager: the wheel on a screen of a group of screens (1 forward, -1 back) moves all the screens
         /// of the group together one frame; false when the screen is not in a group (the wheel moves this screen alone, as before).
         /// </summary>

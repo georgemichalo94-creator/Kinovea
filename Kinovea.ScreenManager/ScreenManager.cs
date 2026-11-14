@@ -240,6 +240,7 @@ namespace Kinovea.ScreenManager
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             view.SwimSwapAsked += (s, e) => SwapScreens(e.First, e.Second);
             PlayerScreenUserInterface.SwimGroupStartAsked = SwimGroupStart;
+            PlayerScreenUserInterface.SwimGroupTiedAsked = SwimGroupTied;
             PlayerScreenUserInterface.SwimGroupStepAsked = SwimGroupStep;
             view.SetSwimPlayback(SwimPlaybackNow);
 
@@ -1836,6 +1837,24 @@ namespace Kinovea.ScreenManager
             catch (Exception e)
             {
                 log.Error("The time origins of the group could not be moved to the start.", e);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.23.0) The screen is tied to other screens by the synchronisation (DualPlayerController.IsTied): the snapshots of a
+        /// group move such a screen to the moment of a mark for its picture; a screen that is not tied gives the frame it shows.
+        /// </summary>
+        private bool SwimGroupTied(PlayerScreenUserInterface screen)
+        {
+            try
+            {
+                PlayerScreen player = screenList.OfType<PlayerScreen>().FirstOrDefault(p => p.view == screen);
+                return player != null && dualPlayer.IsTied(player);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not tell whether a screen is tied by the synchronisation.", e);
                 return false;
             }
         }

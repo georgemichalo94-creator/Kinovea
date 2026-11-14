@@ -57,6 +57,13 @@ namespace Kinovea.ScreenManager
         /// <summary>Snapshots whose picture was taken again while the one before was on its way to the Drive.</summary>
         private readonly HashSet<string> retakenSnapshots = new HashSet<string>();
 
+        /// <summary>
+        /// A picture was taken from a screen that showed another moment than the one of the mark and is not tied to the screen of the
+        /// analysis by the synchronisation (the frame it showed): said with the snapshot, in full once for these cameras.
+        /// </summary>
+        private bool snapshotUntied;
+        private string untiedHinted = "";
+
         /// <summary>The snapshots of the group one camera at a time: a group of screens on a training video, with the choice of the settings.</summary>
         internal bool GroupCameraMode
         {
@@ -295,19 +302,51 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string CamerasHint()
         {
+            bool untied = snapshotUntied;
+            snapshotUntied = false;
             if (!GroupCameraMode)
                 return "";
 
             List<SwimGroupCamera> cameras = GroupCamerasOf(GroupScreens);
-            if (!cameras.Any(c => c.Role == SwimCameraPick.None))
-                return "";
-
             string set = string.Join("|", cameras.Select(c => c.Key).ToArray());
-            if (set == camerasHinted)
-                return "";
+            if (cameras.Any(c => c.Role == SwimCameraPick.None))
+            {
+                if (set == camerasHinted)
+                    return "";
 
-            camerasHinted = set;
-            return SwimLang.T(" Όλες οι οθόνες μαζί: για την κάμερα της στιγμής πες ποια κάμερα είναι έξω και ποια μέσα στο νερό («Κάμερες…» στη σελίδα Στιγμιότυπα).");
+                camerasHinted = set;
+                return SwimLang.T(" Όλες οι οθόνες μαζί: για την κάμερα της στιγμής πες ποια κάμερα είναι έξω και ποια μέσα στο νερό («Κάμερες…» στη σελίδα Στιγμιότυπα).");
+            }
+
+            // A screen that is not tied to the others showed another moment: its picture is the frame it showed.
+            if (!untied)
+                return "";
+            if (set == untiedHinted)
+                return SwimLang.T(" ⚠ Οι οθόνες δεν είναι συγχρονισμένες μεταξύ τους.");
+
+            untiedHinted = set;
+            return SwimLang.T(" ⚠ Οι οθόνες της ομάδας δεν είναι συγχρονισμένες μεταξύ τους: η εικόνα είναι το καρέ που δείχνει η οθόνη της κάμερας. Με όλες τις οθόνες στην ίδια στιγμή πάτα «Συγχρονισμός» στα κοινά χειριστήρια (ή «Συγχρονισμός από τον ήχο» στο μενού Ομάδα).");
+        }
+
+        /// <summary>
+        /// The screen is tied to the screen of the analysis by the synchronisation (the sync button or the sound): the same time from
+        /// their origins is the same moment on both, so it can be moved to the moment of a mark for its picture.
+        /// </summary>
+        private bool TiedToAnalysis(PlayerScreenUserInterface screen)
+        {
+            Func<PlayerScreenUserInterface, bool> tied = PlayerScreenUserInterface.SwimGroupTiedAsked;
+            if (tied == null || screen == null || player == null)
+                return false;
+
+            try
+            {
+                return tied(player) && (screen == player || tied(screen));
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not tell whether the screens of the group are synchronised.", e);
+                return false;
+            }
         }
 
         /// <summary>The camera that shows a moment of the video of the analysis (SwimCameraPick.RoleAt of its phase).</summary>
@@ -420,8 +459,11 @@ namespace Kinovea.ScreenManager
         /// The picture of a screen of the group at a moment of the video of the analysis, as an image of the report (at most
         /// 1280 x 720): the frame of its video at that moment (the same time from the time origin of each video, as the marks of the
         /// group), with its own drawings and the panels of the analysis (not when the group shows them on its panel). A screen that
-        /// shows another moment goes there for the picture and comes back; while the videos play it is not moved (null then, as when
-        /// its video does not have the moment). frame: the longest time between two frames of the videos of the group.
+        /// shows another moment goes there for the picture and comes back when it is tied to the screen of the analysis by the
+        /// synchronisation (the sync button or the sound); a screen that is not tied gives the frame it shows (the time from the
+        /// origins may not be the same moment on it), and the snapshot says so. A tied screen is not moved while the videos play, and
+        /// gives nothing when its video does not have the moment (null: the next screen wanted). frame: the longest time between two
+        /// frames of the videos of the group.
         /// </summary>
         private Bitmap CaptureScreenAt(PlayerScreenUserInterface screen, long timestamp, bool graphics, bool live, bool moving, long frame)
         {
@@ -430,28 +472,38 @@ namespace Kinovea.ScreenManager
 
             long moment = player.SwimTimeFromOrigin(timestamp);
             long at = screen == player ? timestamp : screen.SwimTimestampFromOrigin(moment);
-            if (!screen.SwimInVideo(at))
-                return null;
 
             // The frame of the moment: within a frame of it (while the videos play, as near as they keep together: three frames, a
             // tenth of a second at least).
             long near = frame + frame / 20;
+            bool has = screen.SwimInVideo(at);
+            bool shows = has && Math.Abs(screen.SwimTimeFromOrigin(screen.CurrentTimestamp) - moment) <= (moving ? Math.Max(3 * frame, 100000) : near);
             long back = 0;
             bool moved = false;
-            if (Math.Abs(screen.SwimTimeFromOrigin(screen.CurrentTimestamp) - moment) > (moving ? Math.Max(3 * frame, 100000) : near))
+            if (!shows)
             {
-                if (moving)
-                    return null;
-
-                // The frame nearest to the moment (the player shows the first frame at or after the time asked: half a frame earlier).
-                back = screen.CurrentTimestamp;
-                moved = true;
-                long half = (long)Math.Floor(Math.Max(1.0, screen.SwimFrameServer.VideoReader.Info.AverageTimeStampsPerFrame) * 0.5);
-                screen.ForcePosition(Math.Max(screen.SwimFrameServer.VideoReader.WorkingZone.Start, at - half), true);
-                if (Math.Abs(screen.SwimTimeFromOrigin(screen.CurrentTimestamp) - moment) > near)
+                if (!TiedToAnalysis(screen))
                 {
-                    screen.ForcePosition(back, true);
+                    // Not tied by the synchronisation (the time from the origins may not be the same moment on it): the frame it
+                    // shows, as in the picture of all the screens; the snapshot says so.
+                    snapshotUntied = true;
+                }
+                else if (moving || !has)
+                {
                     return null;
+                }
+                else
+                {
+                    // The frame nearest to the moment (the player shows the first frame at or after the time asked: half a frame earlier).
+                    back = screen.CurrentTimestamp;
+                    moved = true;
+                    long half = (long)Math.Floor(Math.Max(1.0, screen.SwimFrameServer.VideoReader.Info.AverageTimeStampsPerFrame) * 0.5);
+                    screen.ForcePosition(Math.Max(screen.SwimFrameServer.VideoReader.WorkingZone.Start, at - half), true);
+                    if (Math.Abs(screen.SwimTimeFromOrigin(screen.CurrentTimestamp) - moment) > near)
+                    {
+                        screen.ForcePosition(back, true);
+                        return null;
+                    }
                 }
             }
 
