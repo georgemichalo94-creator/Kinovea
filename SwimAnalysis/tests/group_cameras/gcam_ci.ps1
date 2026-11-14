@@ -142,6 +142,9 @@ $back = $des.Invoke($null, [object[]]@($ser.Invoke($null, [object[]]@($settings)
 Check ($back.GroupSnapshots -eq 1 -and $back.GroupCameras.Count -eq 1 -and $back.GroupCameras[0].Key -eq 'cam:gopro1' -and $back.GroupCameras[0].Role -eq $Water) 'the cameras in the file of the settings'
 $older = $des.Invoke($null, [object[]]@('{"GroupGraphics":2,"AutoTechSnapshots":true}', $tSettings))
 Check ($older.GroupSnapshots -eq 0 -and $null -ne $older.GroupCameras -and $older.GroupCameras.Count -eq 0 -and $older.GroupGraphics -eq 2) 'older settings: the camera of the moment, no camera said'
+$settings.GroupCameraRoles.Add($Above); $settings.GroupCameraRoles.Add($Water)
+$back = $des.Invoke($null, [object[]]@($ser.Invoke($null, [object[]]@($settings)), $tSettings))
+Check ((@($back.GroupCameraRoles) -join ',') -eq '1,2' -and $null -ne $older.GroupCameraRoles -and $older.GroupCameraRoles.Count -eq 0) 'the roles of the last time by screen, in the file of the settings'
 $snap = [Activator]::CreateInstance($tSnap)
 $text = [string]$ser.Invoke($null, [object[]]@($snap))
 Check ($text -notmatch '"Camera"') 'a snapshot of one video or of all the screens: no camera in its file'
@@ -165,6 +168,13 @@ try {
   $combos[1].SelectedIndex = 1
   Check ((@($form.Roles) -join ',') -eq '1,2,3' -and $okButton.Enabled -and $hint.Text -ne $before -and $hint.Text.Length -gt 20) 'every camera chosen: saving, and the rule in words'
   Check ($combos[0].Items.Count -eq 3 -and $combos.Count -eq 3) 'three choices for each of the three cameras'
+  $asked = [Activator]::CreateInstance($tForm, [object[]]@([string[]]@('Οθόνη 1  ·  Κάμερα Α', 'Οθόνη 2  ·  Κάμερα Β'), [int[]]@($Above, $Water), $true))
+  try {
+    $labels = @($asked.Controls[0].Controls | Where-Object { $_ -is [System.Windows.Forms.Label] })
+    $plain = @($form.Controls[0].Controls | Where-Object { $_ -is [System.Windows.Forms.Label] })
+    # The title, the words under it, one name for each camera, the rule; with proposals one more line asks to check them.
+    Check ((@($asked.Roles) -join ',') -eq '1,2' -and $labels.Count -eq 6 -and $plain.Count -eq 6) ('proposals: the roles are chosen and the window asks to check them (' + $labels.Count + ' / ' + $plain.Count + ' lines)')
+  } finally { $asked.Dispose() }
   if ($out) {
     try {
       $form.StartPosition = 'Manual'; $form.Location = New-Object System.Drawing.Point(-4000, -4000); $form.ShowInTaskbar = $false

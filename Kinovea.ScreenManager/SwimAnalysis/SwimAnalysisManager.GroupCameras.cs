@@ -184,14 +184,28 @@ namespace Kinovea.ScreenManager
             }
 
             List<SwimGroupCamera> cameras = GroupCamerasOf(screens);
+
+            // What is not said yet is proposed: what the name of the camera says, the other side of the surface for the second of two
+            // cameras, else the role its screen had the last time. The window asks to check a proposal.
             int[] roles = cameras.Select(c => c.Role != SwimCameraPick.None ? c.Role : SwimCameraPick.SuggestRole(c.Name)).ToArray();
             SwimCameraPick.Complete(roles);
+            List<int> last = Settings.GroupCameraRoles;
+            for (int i = 0; i < roles.Length; i++)
+            {
+                if (roles[i] == SwimCameraPick.None && last != null && i < last.Count && last[i] >= SwimCameraPick.Above && last[i] <= SwimCameraPick.Extra)
+                    roles[i] = last[i];
+            }
+
+            bool proposed = false;
+            for (int i = 0; i < roles.Length; i++)
+                proposed |= roles[i] != SwimCameraPick.None && cameras[i].Role == SwimCameraPick.None;
+
             List<string> titles = new List<string>();
             for (int i = 0; i < screens.Count; i++)
                 titles.Add(CameraTitle(screens[i], cameras[i]));
 
             int[] chosen;
-            using (FormSwimGroupCameras dialog = new FormSwimGroupCameras(titles, roles))
+            using (FormSwimGroupCameras dialog = new FormSwimGroupCameras(titles, roles, proposed))
             {
                 IWin32Window owner = DialogOwner;
                 DialogResult result = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
@@ -211,6 +225,8 @@ namespace Kinovea.ScreenManager
                 Settings.GroupCameras.RemoveAll(c => c == null || c.Key == key);
                 Settings.GroupCameras.Add(new SwimGroupCamera { Key = key, Name = cameras[i].Name, Role = chosen[i] });
             }
+
+            Settings.GroupCameraRoles = chosen.ToList();
 
             // The cameras known only by their video file: the latest ones stay.
             List<SwimGroupCamera> files = Settings.GroupCameras.Where(c => c.Key != null && c.Key.StartsWith("file:", StringComparison.Ordinal)).ToList();

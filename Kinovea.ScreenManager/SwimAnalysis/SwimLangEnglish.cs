@@ -2694,6 +2694,8 @@ namespace Kinovea.ScreenManager
             { "Μόνο όταν πατάω πάνω της", "Only when I press on it" },
             { "Εκκίνηση, από το σήμα ως την είσοδο στο νερό: η κάμερα έξω από το νερό. Μετά την είσοδο και σε όλη τη στροφή: η κάμερα μέσα στο νερό.", "Start, from the signal to the entry: the camera out of the water. After the entry and in the whole turn: the camera in the water." },
             { "Διάλεξε από πού γράφει κάθε κάμερα.", "Choose where each camera films from." },
+            { "Οι επιλογές προτείνονται (από το όνομα της κάμερας ή όπως την τελευταία φορά): έλεγξε ότι ισχύουν και για αυτά τα βίντεο.",
+                "The choices are proposals (from the name of the camera or as the last time): check that they hold for these videos too." },
             { "έξω από το νερό", "out of the water" },
             { "μέσα στο νερό", "in the water" },
             { "μόνο όταν πατάω πάνω της", "only when I press on it" },

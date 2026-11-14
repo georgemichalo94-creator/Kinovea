@@ -82,8 +82,11 @@ if ($Mode -eq 'render') {
                 $word = -join [char[]]@(0x39F, 0x3B8, 0x3CC, 0x3BD, 0x3B7)
                 $dot = '  ' + [char]0xB7 + '  '
                 $titles = [string[]]@(($word + ' 1' + $dot + 'GoPro A'), ($word + ' 2' + $dot + 'GoPro B'))
-                foreach ($case in @(@{ name = 'group_cameras_new.png'; roles = [int[]]@(0, 0) }, @{ name = 'group_cameras_set.png'; roles = [int[]]@(1, 2) })) {
-                    $window = [Activator]::CreateInstance($camerasType, [object[]]@($titles, $case.roles))
+                $cases = @(@{ name = 'group_cameras_new.png'; roles = [int[]]@(0, 0); proposed = $false },
+                    @{ name = 'group_cameras_set.png'; roles = [int[]]@(1, 2); proposed = $false },
+                    @{ name = 'group_cameras_proposed.png'; roles = [int[]]@(1, 2); proposed = $true })
+                foreach ($case in $cases) {
+                    $window = [Activator]::CreateInstance($camerasType, [object[]]@($titles, $case.roles, [bool]$case.proposed))
                     try {
                         $window.StartPosition = 'Manual'; $window.Location = New-Object System.Drawing.Point(-4000, -4000); $window.ShowInTaskbar = $false
                         $window.Show(); [System.Windows.Forms.Application]::DoEvents()

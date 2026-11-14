@@ -144,6 +144,12 @@ namespace Kinovea.ScreenManager
         public List<SwimGroupCamera> GroupCameras = new List<SwimGroupCamera>();
 
         /// <summary>
+        /// (2.23.0) The roles said the last time in the window of the cameras, by screen of the group (first, second…): what the
+        /// window proposes for the videos of cameras it does not know (the analyst checks it).
+        /// </summary>
+        public List<int> GroupCameraRoles = new List<int>();
+
+        /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
         /// area ("x,y"), empty for the default place (bottom right).
         /// </summary>
@@ -290,6 +296,8 @@ namespace Kinovea.ScreenManager
                             settings.AiProUsage = new Dictionary<string, SwimAiUsage>();
                         if (settings.GroupCameras == null)
                             settings.GroupCameras = new List<SwimGroupCamera>();
+                        if (settings.GroupCameraRoles == null)
+                            settings.GroupCameraRoles = new List<int>();
                         if (string.IsNullOrEmpty(settings.AiProModel))
                             settings.AiProModel = SwimAiModels.Opus;
                         if (settings.AiProMoments < 4)

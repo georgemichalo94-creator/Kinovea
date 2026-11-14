@@ -450,6 +450,16 @@ jobs:
             $a5 = Invoke-RestMethod $up5 -Method Post -Headers $headers -InFile gopro-takes.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release GoPro pictures::$($a5.name) $($a5.size) bytes"
           }
+          # (2.23.0) The picture of the window of the cameras of a group of screens (fictional cameras), for a look.
+          if (Test-Path group-cameras) {
+            Compress-Archive -Path group-cameras\* -DestinationPath group-cameras.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'group-cameras.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up6 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=group-cameras.zip"
+            $a6 = Invoke-RestMethod $up6 -Method Post -Headers $headers -InFile group-cameras.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release group cameras picture::$($a6.name) $($a6.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"

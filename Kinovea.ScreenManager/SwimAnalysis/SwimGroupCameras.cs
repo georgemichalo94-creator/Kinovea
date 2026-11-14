@@ -306,6 +306,16 @@ namespace Kinovea.ScreenManager
         }
 
         public FormSwimGroupCameras(IList<string> titles, IList<int> roles)
+            : this(titles, roles, false)
+        {
+        }
+
+        /// <summary>
+        /// titles: "Οθόνη 1 · GoPro A" for each camera; roles: the role of each, None for one to choose; proposed: a role there is
+        /// a proposal of the program (the name of the camera, the choice of the last time), not what was said for this camera: the
+        /// window asks to check it.
+        /// </summary>
+        public FormSwimGroupCameras(IList<string> titles, IList<int> roles, bool proposed)
         {
             int count = titles != null ? titles.Count : 0;
             Text = SwimLang.T("Κάμερες της ομάδας");
@@ -315,7 +325,7 @@ namespace Kinovea.ScreenManager
             MinimizeBox = false;
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(520, Math.Min(640, 250 + 62 * count));
+            ClientSize = new Size(520, Math.Min(640, 212 + 62 * count + (proposed ? 44 : 0)));
             BackColor = SwimTheme.Back;
             ForeColor = SwimTheme.Text;
             Font = SwimTheme.Ui(9.5f, FontStyle.Regular);
@@ -361,6 +371,18 @@ namespace Kinovea.ScreenManager
                 combo.SelectedIndexChanged += (s, e) => UpdateState();
                 combos.Add(combo);
                 t.Controls.Add(combo);
+            }
+
+            if (proposed)
+            {
+                t.Controls.Add(new Label
+                {
+                    Text = SwimLang.T("Οι επιλογές προτείνονται (από το όνομα της κάμερας ή όπως την τελευταία φορά): έλεγξε ότι ισχύουν και για αυτά τα βίντεο."),
+                    AutoSize = true,
+                    ForeColor = SwimTheme.Amber,
+                    Margin = new Padding(0, 8, 0, 0),
+                    MaximumSize = new Size(470, 0)
+                });
             }
 
             hint = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(0, 10, 0, 0), MaximumSize = new Size(470, 0) };
