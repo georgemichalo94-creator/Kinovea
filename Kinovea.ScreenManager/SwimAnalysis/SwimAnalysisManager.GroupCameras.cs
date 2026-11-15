@@ -461,7 +461,8 @@ namespace Kinovea.ScreenManager
         /// group), with its own drawings and the panels of the analysis (not when the group shows them on its panel). A screen that
         /// shows another moment goes there for the picture and comes back when it is tied to the screen of the analysis by the
         /// synchronisation (the sync button or the sound); a screen that is not tied gives the frame it shows (the time from the
-        /// origins may not be the same moment on it), and the snapshot says so. A tied screen is not moved while the videos play, and
+        /// origins may not be the same moment on it, even when it shows that time: two cameras that started at different moments and
+        /// were never synchronised), and the snapshot always says so. A tied screen is not moved while the videos play, and
         /// gives nothing when its video does not have the moment (null: the next screen wanted). frame: the longest time between two
         /// frames of the videos of the group.
         /// </summary>
@@ -480,9 +481,16 @@ namespace Kinovea.ScreenManager
             bool shows = has && Math.Abs(screen.SwimTimeFromOrigin(screen.CurrentTimestamp) - moment) <= (moving ? Math.Max(3 * frame, 100000) : near);
             long back = 0;
             bool moved = false;
+            bool tied = TiedToAnalysis(screen);
+
+            // (2.23.0) The picture of another screen that is not tied: said always (its clock may show the time of the moment while
+            // its video shows another moment).
+            if (screen != player && !tied)
+                snapshotUntied = true;
+
             if (!shows)
             {
-                if (!TiedToAnalysis(screen))
+                if (!tied)
                 {
                     // Not tied by the synchronisation (the time from the origins may not be the same moment on it): the frame it
                     // shows, as in the picture of all the screens; the snapshot says so.
@@ -679,7 +687,7 @@ namespace Kinovea.ScreenManager
                 retakenSnapshots.Add(snapshot.Id);
             snapshot.FileId = "";
             uploadFailed.Remove(snapshot.Id);
-            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("📷 Το στιγμιότυπο πήρε την εικόνα της οθόνης {0}."), screen.SwimScreenNumber), false);
+            Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("📷 Το στιγμιότυπο πήρε την εικόνα της οθόνης {0}."), screen.SwimScreenNumber) + CamerasHint(), false);
             Changed(false);
             UploadSnapshot(snapshot);
             if (form != null)

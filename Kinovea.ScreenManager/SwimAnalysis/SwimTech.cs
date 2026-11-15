@@ -156,6 +156,56 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// Phases and values of the technical analysis of starts and turns, from the marks of the video.
     /// </summary>
+    /// <summary>
+    /// (Swim 2.23.0) The stage of the movement at the event of a mark, for the snapshot of that event: the stage its moment gives with
+    /// all the events of the phase marked, without waiting for them (the analyst marks the reaction before the release, the entry and
+    /// the breakout; the moment alone gave "Κολύμβηση" then). Null when the event does not say it (a stroke, a distance: its moment does).
+    /// </summary>
+    public static class SwimStages
+    {
+        public static string OfMark(SwimMarkType type, SwimPhaseKind kind)
+        {
+            if (kind == SwimPhaseKind.Start)
+            {
+                switch (type)
+                {
+                    case SwimMarkType.Signal:
+                        return "Θέση ετοιμότητας";
+                    case SwimMarkType.Reaction:
+                    case SwimMarkType.HandsOff:
+                    case SwimMarkType.BackFoot:
+                        return "Φάση βατήρα";
+                    case SwimMarkType.FeetOff:
+                        return "Αποδέσμευση";
+                    case SwimMarkType.Entry:
+                        return "Είσοδος στο νερό";
+                    case SwimMarkType.Kick:
+                        return "Υποβρύχια φάση";
+                    case SwimMarkType.Breakout:
+                        return "Έξοδος από το νερό";
+                    default:
+                        return null;
+                }
+            }
+
+            switch (type)
+            {
+                case SwimMarkType.RotationStart:
+                    return "Περιστροφή";
+                case SwimMarkType.WallContact:
+                    return "Επαφή στον τοίχο";
+                case SwimMarkType.FeetOff:
+                    return "Αποκόλληση";
+                case SwimMarkType.Kick:
+                    return "Υποβρύχια φάση";
+                case SwimMarkType.Breakout:
+                    return "Έξοδος από το νερό";
+                default:
+                    return null;
+            }
+        }
+    }
+
     public static class SwimTechCalculator
     {
         public static readonly SwimTechMetric[] Metrics = new SwimTechMetric[]

@@ -70,6 +70,20 @@ $turn = Phase 'Turn' $null $null
 Check ((At $turn (-1.5)) -eq $Water -and (At $turn 0) -eq $Water -and (At $turn 2.5) -eq $Water) 'a turn: in the water'
 Check ([int]$roleAt.Invoke($null, [object[]]@($null, [double]1)) -eq $None) 'outside a phase the moment says nothing'
 
+# ---- The stage of the snapshot of an event: the stage of the event itself (the events after it are not marked yet).
+$ofMark = (T 'SwimStages').GetMethod('OfMark')
+function StageOf([string]$type, [string]$kind) { return $ofMark.Invoke($null, [object[]]@([Enum]::Parse($tMark, $type), [Enum]::Parse($tKind, $kind))) }
+$stagesStart = @((T 'FormSwimAnalysis').GetField('stagesStart', $all).GetValue($null))
+$stagesTurn = @((T 'FormSwimAnalysis').GetField('stagesTurn', $all).GetValue($null))
+$expect = [ordered]@{ 'Signal' = 'Θέση ετοιμότητας'; 'Reaction' = 'Φάση βατήρα'; 'HandsOff' = 'Φάση βατήρα'; 'BackFoot' = 'Φάση βατήρα'; 'FeetOff' = 'Αποδέσμευση'; 'Entry' = 'Είσοδος στο νερό'; 'Kick' = 'Υποβρύχια φάση'; 'Breakout' = 'Έξοδος από το νερό' }
+$bad = @($expect.Keys | Where-Object { (StageOf $_ 'Start') -ne $expect[$_] -or $stagesStart -notcontains $expect[$_] })
+Check ($bad.Count -eq 0) ('the events of a start: the reaction, the hands and the back foot on the block, then release, entry, kicks, breakout ' + ($bad -join ','))
+$expect = [ordered]@{ 'RotationStart' = 'Περιστροφή'; 'WallContact' = 'Επαφή στον τοίχο'; 'FeetOff' = 'Αποκόλληση'; 'Kick' = 'Υποβρύχια φάση'; 'Breakout' = 'Έξοδος από το νερό' }
+$bad = @($expect.Keys | Where-Object { (StageOf $_ 'Turn') -ne $expect[$_] -or $stagesTurn -notcontains $expect[$_] })
+Check ($bad.Count -eq 0) ('the events of a turn: rotation, wall, push-off, kicks, breakout ' + ($bad -join ','))
+$bad = @('Stroke', 'Split', 'TechSplit') | Where-Object { $null -ne (StageOf $_ 'Start') -or $null -ne (StageOf $_ 'Turn') }
+Check (@($bad).Count -eq 0) ('a stroke or a distance: its moment says the stage ' + (@($bad) -join ','))
+
 # ---- The order the screens are asked for their picture.
 $order = $pick.GetMethod('Order')
 function Ord([int[]]$roles, [int]$wanted, [int]$pressed, [int]$lead) {

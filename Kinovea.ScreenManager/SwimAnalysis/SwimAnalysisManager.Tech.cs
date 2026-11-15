@@ -651,7 +651,13 @@ namespace Kinovea.ScreenManager
         private SwimSnapshot AddSnapshot(Bitmap image, long timestamp, string autoEvent, string markId)
         {
             SwimSnapshot snapshot = new SwimSnapshot { Timestamp = timestamp, Event = autoEvent ?? "", MarkId = markId ?? "", Width = image.Width, Height = image.Height };
-            snapshot.Stage = SuggestStage(PhaseOf(timestamp), timestamp);
+
+            // (2.23.0) The snapshot of the event of a mark: the stage of that event (the events after it are not marked yet); else the
+            // stage of its moment.
+            SwimTechPhase phase = PhaseOf(timestamp);
+            SwimMark mark = string.IsNullOrEmpty(markId) ? null : Race.Marks.FirstOrDefault(m => m.Id == markId);
+            string stage = mark != null && phase != null ? SwimStages.OfMark(mark.Type, phase.Kind) : null;
+            snapshot.Stage = stage ?? SuggestStage(phase, timestamp);
 
             // (2.23.0) The picture of one camera of a group of screens (CaptureSnapshotFrame): its camera.
             snapshot.Camera = image.Tag as string;
