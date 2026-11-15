@@ -1249,7 +1249,17 @@ namespace Kinovea.ScreenManager
     /// </summary>
     internal class SwimCard : Panel
     {
+        /// <summary>(2.23.1) The height of a folded card: its title line.</summary>
+        public const int FoldedHeight = 28;
+
         private string title = "";
+        private bool foldable;
+        private bool folded;
+        private int openHeight;
+        private string summary = "";
+
+        /// <summary>(2.23.1) Folded or opened with a click on its title line (not when Folded is set by the program).</summary>
+        public event EventHandler FoldedByUser;
 
         public SwimCard()
         {
@@ -1262,6 +1272,108 @@ namespace Kinovea.ScreenManager
         {
             get { return title; }
             set { title = value ?? ""; Invalidate(); }
+        }
+
+        /// <summary>
+        /// (2.23.1) The card folds to its title line with a click on it (▸ folded, ▾ open): its controls hidden, the summary at the right of
+        /// the title. OpenHeight: its height open (the height it has when it becomes foldable).
+        /// </summary>
+        public bool Foldable
+        {
+            get { return foldable; }
+            set
+            {
+                if (foldable == value)
+                    return;
+                if (value && openHeight <= FoldedHeight)
+                    openHeight = Height;
+                foldable = value;
+                if (!foldable)
+                    Folded = false;
+                Invalidate();
+            }
+        }
+
+        public int OpenHeight
+        {
+            get { return openHeight; }
+            set
+            {
+                openHeight = Math.Max(FoldedHeight + 1, value);
+                if (!folded)
+                    Height = openHeight;
+            }
+        }
+
+        /// <summary>The words at the right of the title when the card is folded (what its controls would say).</summary>
+        public string Summary
+        {
+            get { return summary; }
+            set
+            {
+                string text = value ?? "";
+                if (summary == text)
+                    return;
+                summary = text;
+                if (folded)
+                    Invalidate();
+            }
+        }
+
+        public bool Folded
+        {
+            get { return folded; }
+            set { Fold(value); }
+        }
+
+        private void Fold(bool value)
+        {
+            if (value && !foldable)
+                value = false;
+            if (folded == value)
+                return;
+
+            if (value && Height > FoldedHeight)
+                openHeight = Height;
+            folded = value;
+            SuspendLayout();
+            foreach (Control child in Controls)
+                child.Visible = !folded;
+            Height = folded ? FoldedHeight : Math.Max(openHeight, FoldedHeight + 1);
+            ResumeLayout(true);
+            Cursor = Cursors.Default;
+            Invalidate();
+        }
+
+        private bool OnTitleLine(Point p)
+        {
+            return foldable && p.Y >= 0 && p.Y < 26;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            Cursor want = OnTitleLine(e.Location) ? Cursors.Hand : Cursors.Default;
+            if (Cursor != want)
+                Cursor = want;
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            Cursor = Cursors.Default;
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            if (e.Button != MouseButtons.Left || !OnTitleLine(e.Location))
+                return;
+
+            Fold(!folded);
+            EventHandler handler = FoldedByUser;
+            if (handler != null)
+                handler(this, EventArgs.Empty);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1277,7 +1389,27 @@ namespace Kinovea.ScreenManager
             SwimTheme.Brackets(g, r, SwimTheme.Accent, 0.8f);
             using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
                 g.FillRectangle(accent, 9, 10, 2, 9);
-            SwimTheme.TrackedText(g, SwimLang.Upper(title), SwimTheme.Ui(7.5f, FontStyle.Bold), SwimTheme.AccentLight, new Rectangle(15, 6, Width - 22, 16), 0.12f);
+
+            // (2.23.1) A foldable card: ▸ folded, ▾ open, before the title; folded, its summary after it.
+            int left = 15;
+            if (foldable)
+            {
+                TextRenderer.DrawText(g, folded ? "▸" : "▾", SwimTheme.Ui(8.5f, FontStyle.Bold), new Rectangle(14, 4, 14, 20), SwimTheme.AccentLight,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                left = 30;
+            }
+
+            int drawn = SwimTheme.TrackedText(g, SwimLang.Upper(title), SwimTheme.Ui(7.5f, FontStyle.Bold), SwimTheme.AccentLight, new Rectangle(left, 6, Width - left - 7, 16), 0.12f);
+            if (foldable && folded && summary.Length > 0)
+            {
+                int x = left + drawn + 14;
+                Rectangle box = new Rectangle(x, 5, Width - x - 12, 18);
+                if (box.Width > 60)
+                {
+                    TextRenderer.DrawText(g, summary, SwimTheme.Ui(8.25f, FontStyle.Regular), box, SwimTheme.Dim,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+                }
+            }
         }
     }
 

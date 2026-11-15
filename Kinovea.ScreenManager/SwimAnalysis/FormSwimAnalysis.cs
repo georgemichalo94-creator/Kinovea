@@ -193,6 +193,7 @@ namespace Kinovea.ScreenManager
 
         // Calibration (start, turns and finish tabs)
         private SwimCard grpCalibration;
+        private bool calibrationOpened;
         private ComboBox cmbLine1;
         private ComboBox cmbLine2;
         private TextBox tbLaneWidth;
@@ -1166,6 +1167,20 @@ namespace Kinovea.ScreenManager
             group.Controls.Add(lblCalibration);
             group.Controls.Add(row2);
             group.Controls.Add(row1);
+
+            // (2.23.1) The card folds to its title line with what the calibration says (it hid the last rows of the pages on a smaller
+            // window): a click on the title opens or folds it, as the analyst left it the next time; open while calibrating.
+            group.Foldable = true;
+            group.OpenHeight = 112;
+            group.Folded = manager.Settings == null || manager.Settings.CalibrationFolded;
+            group.FoldedByUser += (s, e) =>
+            {
+                if (manager.Settings == null)
+                    return;
+                manager.Settings.CalibrationFolded = group.Folded;
+                manager.Settings.Save();
+            };
+            toolTip.SetToolTip(group, SwimLang.T("Κλικ στον τίτλο: άνοιγμα ή κλείσιμο της βαθμονόμησης (το πρόγραμμα θυμάται πώς την άφησες)."));
             return group;
         }
 
@@ -2228,6 +2243,8 @@ namespace Kinovea.ScreenManager
                 lblCalibration.Text = text;
                 toolTip.SetToolTip(lblCalibration, text);
             }
+            if (grpCalibration != null)
+                grpCalibration.Summary = text;
 
             bool hasCalibration = manager.VideoFile != null && manager.VideoFile.Calibrations.Count > 0;
             btnDeleteCalibration.Enabled = hasCalibration;
@@ -2248,6 +2265,13 @@ namespace Kinovea.ScreenManager
             bool calibrating = manager.PickTarget == SwimPickTarget.Calibration;
             btnCalibrate.Text = calibrating ? SwimLang.T("Ακύρωση βαθμονόμησης") : SwimLang.T("Βαθμονόμηση (4 κλικ)");
             Highlight(btnCalibrate, calibrating);
+
+            // (2.23.1) The card of the calibration open while calibrating (its points, its cancel), as the analyst left it after.
+            if (calibrating != calibrationOpened && grpCalibration != null)
+            {
+                calibrationOpened = calibrating;
+                grpCalibration.Folded = !calibrating && (manager.Settings == null || manager.Settings.CalibrationFolded);
+            }
             if (btnAutoStrokes != null)
             {
                 bool strokes = manager.PickingStrokes && !manager.PickingTrack;

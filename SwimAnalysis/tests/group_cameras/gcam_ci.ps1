@@ -84,6 +84,32 @@ Check ($bad.Count -eq 0) ('the events of a turn: rotation, wall, push-off, kicks
 $bad = @('Stroke', 'Split', 'TechSplit') | Where-Object { $null -ne (StageOf $_ 'Start') -or $null -ne (StageOf $_ 'Turn') }
 Check (@($bad).Count -eq 0) ('a stroke or a distance: its moment says the stage ' + (@($bad) -join ','))
 
+# ---- (2.23.1) A card folds to its title line (the calibration of the pool), and opens to its height.
+try {
+  $tCard = T 'SwimCard'
+  $card = [Activator]::CreateInstance($tCard)
+  try {
+    $card.Height = 112
+    $card.Controls.Add((New-Object System.Windows.Forms.Label))
+    $low = [int]$tCard.GetField('FoldedHeight').GetValue($null)
+    $tCard.GetProperty('Folded').SetValue($card, $true)
+    Check ($card.Height -eq 112) 'a card that does not fold stays open'
+    $tCard.GetProperty('Foldable').SetValue($card, $true)
+    $tCard.GetProperty('Summary').SetValue($card, 'fictional summary')
+    $tCard.GetProperty('Folded').SetValue($card, $true)
+    Check ($card.Height -eq $low -and $low -ge 24 -and $low -le 32) ('folded: the title line (' + $card.Height + ' px)')
+    $tCard.GetProperty('Folded').SetValue($card, $false)
+    Check ($card.Height -eq 112 -and [int]$tCard.GetProperty('OpenHeight').GetValue($card) -eq 112) 'open again: its height'
+    $tCard.GetProperty('Folded').SetValue($card, $true)
+    $tCard.GetProperty('Foldable').SetValue($card, $false)
+    Check ($card.Height -eq 112 -and -not [bool]$tCard.GetProperty('Folded').GetValue($card)) 'no longer foldable: open'
+  } finally { $card.Dispose() }
+  $folded = [bool]$tSettings.GetField('CalibrationFolded').GetValue([Activator]::CreateInstance($tSettings))
+  Check $folded 'the calibration folded by default'
+} catch {
+  Check $false ('the card that folds: ' + $_.Exception.Message)
+}
+
 # ---- The order the screens are asked for their picture.
 $order = $pick.GetMethod('Order')
 function Ord([int[]]$roles, [int]$wanted, [int]$pressed, [int]$lead) {

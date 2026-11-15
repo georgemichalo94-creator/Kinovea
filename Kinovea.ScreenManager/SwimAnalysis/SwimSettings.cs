@@ -149,6 +149,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public List<int> GroupCameraRoles = new List<int>();
 
+        /// <summary>(2.23.1) The card of the calibration of the pool folded to its title line (as the analyst left it; open while calibrating).</summary>
+        public bool CalibrationFolded = true;
+
         /// <summary>
         /// Since 2.9.5: the place of the round button of the analysis in full screen (SwimHudDial), its centre as a fraction of the video
         /// area ("x,y"), empty for the default place (bottom right).

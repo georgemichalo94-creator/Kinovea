@@ -181,7 +181,7 @@ namespace Kinovea.ScreenManager
         /// is chosen already (the name of a camera that says it, the other side of the surface for the second of two cameras).
         /// True when the cameras were saved.
         /// </summary>
-        public bool EditGroupCameras()
+        public bool EditGroupCameras(bool offerRetake = true)
         {
             List<PlayerScreenUserInterface> screens = GroupMembers();
             if (screens.Count < 2)
@@ -245,6 +245,10 @@ namespace Kinovea.ScreenManager
             if (form != null && !form.IsDisposed)
                 form.RefreshGroupChoices();
             Status(SwimLang.T("✓ Οι κάμερες της ομάδας: ") + GroupCamerasText() + ".", false);
+
+            // (2.23.1) The snapshots taken before with all the screens together: their camera, if the analyst wants it.
+            if (offerRetake)
+                OfferRetakeJoined();
             return true;
         }
 
@@ -271,6 +275,8 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// The cameras of the group have no role: the window is shown by itself once in a session for these cameras, at a snapshot
         /// the analyst takes while the videos are still (a command of a screen; not for the marks the program puts by itself).
+        /// (2.23.1) After it, the snapshots taken before with all the screens together may get their camera (OfferRetakeJoined, once
+        /// the command is done).
         /// </summary>
         private bool AskGroupCameras(List<PlayerScreenUserInterface> screens, List<SwimGroupCamera> cameras)
         {
@@ -283,11 +289,13 @@ namespace Kinovea.ScreenManager
             bool warning = LastStatusIsWarning;
             try
             {
-                bool saved = EditGroupCameras() && !GroupCamerasMissing;
+                bool saved = EditGroupCameras(false) && !GroupCamerasMissing;
 
                 // The words of the command stay (the snapshot says the screen its picture came from).
                 if (saved && !string.IsNullOrEmpty(said))
                     Status(said, warning);
+                if (saved)
+                    PostOfferRetakeJoined();
                 return saved;
             }
             catch (Exception e)
@@ -295,6 +303,124 @@ namespace Kinovea.ScreenManager
                 log.Error("Could not ask for the cameras of the group.", e);
                 return false;
             }
+        }
+
+        /// <summary>(2.23.1) OfferRetakeJoined once the command that asked for the cameras is done (its snapshot taken).</summary>
+        private void PostOfferRetakeJoined()
+        {
+            Control host = player;
+            if (host == null || host.IsDisposed || !host.IsHandleCreated)
+                return;
+
+            host.BeginInvoke((Action)(() =>
+            {
+                try
+                {
+                    OfferRetakeJoined();
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not offer the pictures of the cameras to the snapshots.", e);
+                }
+            }));
+        }
+
+        /// <summary>
+        /// (2.23.1) The cameras of the group said: the snapshots of the analysis whose picture is all the screens together (no camera)
+        /// can get the picture of the camera of the moment, the analyst says (their comments, events and stages stay).
+        /// </summary>
+        private void OfferRetakeJoined()
+        {
+            if (!GroupCameraMode || GroupCamerasMissing || Race == null || !HasVideo || AnalysisBusy || GroupScreens.Any(s => s.IsCurrentlyPlaying))
+                return;
+
+            List<SwimSnapshot> joined = Race.Snapshots.Where(s => s != null && string.IsNullOrEmpty(s.Camera)).OrderBy(s => s.Timestamp).ToList();
+            if (joined.Count == 0)
+                return;
+
+            string text = joined.Count == 1
+                ? SwimLang.T("Ένα στιγμιότυπο αυτής της ανάλυσης έχει όλες τις οθόνες μαζί σε μία εικόνα.\nΝα πάρει την εικόνα της κάμερας της στιγμής; Τα σχόλια, το γεγονός και το στάδιο μένουν.")
+                : string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0} στιγμιότυπα αυτής της ανάλυσης έχουν όλες τις οθόνες μαζί σε μία εικόνα.\nΝα πάρει το καθένα την εικόνα της κάμερας της στιγμής; Τα σχόλια, τα γεγονότα και τα στάδια μένουν."), joined.Count);
+            IWin32Window owner = DialogOwner;
+            DialogResult answer = owner != null
+                ? MessageBox.Show(owner, text, SwimLang.T("Κάμερες της ομάδας"), MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                : MessageBox.Show(text, SwimLang.T("Κάμερες της ομάδας"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (answer == DialogResult.Yes)
+                RetakeJoined(joined);
+        }
+
+        /// <summary>
+        /// (2.23.1) Each snapshot gets the picture of the camera of its moment (the camera of the event of its mark, else of its moment):
+        /// the screen of the analysis goes to its frame, the screen of the camera to the same time from its origin (a screen not tied by
+        /// the synchronisation too: said, as with a snapshot), and back at the end. Their comments, events, stages and places in the
+        /// report stay; the pictures on the Drive are replaced.
+        /// </summary>
+        private void RetakeJoined(List<SwimSnapshot> snapshots)
+        {
+            long back = player.CurrentTimestamp;
+            int done = 0, failed = 0;
+            SwimSnapshot first = null;
+            Cursor was = Cursor.Current;
+            Cursor.Current = Cursors.WaitCursor;
+            try
+            {
+                foreach (SwimSnapshot snapshot in snapshots)
+                {
+                    if (!Race.Snapshots.Contains(snapshot))
+                        continue;
+
+                    Bitmap image = null;
+                    try
+                    {
+                        SeekNearest(snapshot.Timestamp);
+                        SwimMark mark = string.IsNullOrEmpty(snapshot.MarkId) ? null : Race.Marks.FirstOrDefault(m => m.Id == snapshot.MarkId);
+                        int wanted = mark != null ? CameraRoleOf(mark) : CameraRoleAt(snapshot.Timestamp);
+                        image = CaptureCameraOfMoment(snapshot.Timestamp, Settings.OverlayInExports, false, wanted, null, true);
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("Could not take the picture of the camera of a snapshot.", e);
+                        if (image != null)
+                            image.Dispose();
+                        image = null;
+                    }
+
+                    string error;
+                    if (image == null || !ReplacePicture(snapshot, image, out error))
+                    {
+                        failed++;
+                        continue;
+                    }
+
+                    done++;
+                    if (first == null)
+                        first = snapshot;
+                }
+            }
+            finally
+            {
+                try
+                {
+                    SeekTo(back);
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not go back to the frame of the analysis after the pictures of the snapshots.", e);
+                }
+                Cursor.Current = was;
+            }
+
+            if (done > 0)
+            {
+                Changed(false);
+                UploadPendingSnapshots();
+                if (form != null && !form.IsDisposed && first != null)
+                    form.SnapshotAdded(first);
+            }
+
+            string said = string.Format(CultureInfo.InvariantCulture, SwimLang.T("📷 {0} από {1} στιγμιότυπα πήραν την εικόνα της κάμερας της στιγμής."), done, done + failed) +
+                (failed > 0 ? SwimLang.T(" Τα άλλα έμειναν όπως ήταν (καμία κάμερα δεν είχε τη στιγμή τους).") : "");
+            Status(said + CamerasHint(), failed > 0);
         }
 
         /// <summary>
@@ -398,7 +524,7 @@ namespace Kinovea.ScreenManager
         /// (SwimCameraPick.Order) whose video has the moment. only: this screen whatever the moment (the analyst asked for its
         /// picture). Null: no camera gives it (the cameras are not said, no video has the moment), the caller takes all the screens.
         /// </summary>
-        private Bitmap CaptureCameraOfMoment(long timestamp, bool graphics, bool live, int wanted, PlayerScreenUserInterface only)
+        private Bitmap CaptureCameraOfMoment(long timestamp, bool graphics, bool live, int wanted, PlayerScreenUserInterface only, bool moveUntied = false)
         {
             List<PlayerScreenUserInterface> screens = GroupScreens;
             if (screens.Count < 2 || !screens.Contains(player))
@@ -429,7 +555,7 @@ namespace Kinovea.ScreenManager
             long frame = screens.Max(s => FrameTime(s));
             foreach (int i in order)
             {
-                Bitmap image = CaptureScreenAt(screens[i], timestamp, graphics, live, moving, frame);
+                Bitmap image = CaptureScreenAt(screens[i], timestamp, graphics, live, moving, frame, moveUntied);
                 if (image == null)
                     continue;
 
@@ -464,9 +590,10 @@ namespace Kinovea.ScreenManager
         /// origins may not be the same moment on it, even when it shows that time: two cameras that started at different moments and
         /// were never synchronised), and the snapshot always says so. A tied screen is not moved while the videos play, and
         /// gives nothing when its video does not have the moment (null: the next screen wanted). frame: the longest time between two
-        /// frames of the videos of the group.
+        /// frames of the videos of the group. moveUntied (2.23.1, the pictures of the snapshots taken before): a screen that is not tied
+        /// goes to the same time from its origin as well (still said).
         /// </summary>
-        private Bitmap CaptureScreenAt(PlayerScreenUserInterface screen, long timestamp, bool graphics, bool live, bool moving, long frame)
+        private Bitmap CaptureScreenAt(PlayerScreenUserInterface screen, long timestamp, bool graphics, bool live, bool moving, long frame, bool moveUntied = false)
         {
             if (screen == null || screen.IsDisposed || screen.SwimFrameServer == null || !screen.SwimFrameServer.Loaded)
                 return null;
@@ -490,7 +617,7 @@ namespace Kinovea.ScreenManager
 
             if (!shows)
             {
-                if (!tied)
+                if (!tied && !moveUntied)
                 {
                     // Not tied by the synchronisation (the time from the origins may not be the same moment on it): the frame it
                     // shows, as in the picture of all the screens; the snapshot says so.
@@ -623,6 +750,51 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// The new picture of a snapshot (the image is disposed): another file next to the video (the window shows the new picture, the
+        /// old one goes), its size and camera; on the Drive in the place of the one before (one on its way is followed by this one).
+        /// False when it could not be saved (error: why).
+        /// </summary>
+        private bool ReplacePicture(SwimSnapshot snapshot, Bitmap image, out string error)
+        {
+            error = "";
+            string old = SnapshotPath(snapshot);
+            try
+            {
+                snapshot.File = Path.GetFileName(SaveSnapshotImage(image, snapshot.Id + "_" + DateTime.UtcNow.Ticks.ToString("x", CultureInfo.InvariantCulture)));
+                snapshot.Width = image.Width;
+                snapshot.Height = image.Height;
+                snapshot.Camera = image.Tag as string;
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not save the new picture of the snapshot.", e);
+                error = e.Message;
+                return false;
+            }
+            finally
+            {
+                image.Dispose();
+            }
+
+            try
+            {
+                string now = SnapshotPath(snapshot);
+                if (old != null && now != null && !string.Equals(old, now, StringComparison.OrdinalIgnoreCase) && File.Exists(old))
+                    File.Delete(old);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not delete the picture the snapshot had before.", e);
+            }
+
+            if (uploading.Contains(snapshot.Id))
+                retakenSnapshots.Add(snapshot.Id);
+            snapshot.FileId = "";
+            uploadFailed.Remove(snapshot.Id);
+            return true;
+        }
+
+        /// <summary>
         /// The snapshot key at the frame of a snapshot, pressed again on the screen the status named: the snapshot gets the picture of
         /// that screen (its comments, its event and its place in the report stay; the picture on the Drive is replaced). False when
         /// this press is not that one (the caller says the snapshot is there already).
@@ -651,42 +823,13 @@ namespace Kinovea.ScreenManager
                 return true;
             }
 
-            string old = SnapshotPath(snapshot);
-            try
+            string error;
+            if (!ReplacePicture(snapshot, image, out error))
             {
-                // Another file: the window shows the new picture, the old one goes.
-                snapshot.File = Path.GetFileName(SaveSnapshotImage(image, snapshot.Id + "_" + DateTime.UtcNow.Ticks.ToString("x", CultureInfo.InvariantCulture)));
-                snapshot.Width = image.Width;
-                snapshot.Height = image.Height;
-                snapshot.Camera = image.Tag as string;
-            }
-            catch (Exception e)
-            {
-                log.Error("Could not save the new picture of the snapshot.", e);
-                Status(SwimLang.T("Δεν αποθηκεύτηκε το στιγμιότυπο: ") + e.Message, true);
+                Status(SwimLang.T("Δεν αποθηκεύτηκε το στιγμιότυπο: ") + error, true);
                 return true;
             }
-            finally
-            {
-                image.Dispose();
-            }
 
-            try
-            {
-                string now = SnapshotPath(snapshot);
-                if (old != null && now != null && !string.Equals(old, now, StringComparison.OrdinalIgnoreCase) && File.Exists(old))
-                    File.Delete(old);
-            }
-            catch (Exception e)
-            {
-                log.Error("Could not delete the picture the snapshot had before.", e);
-            }
-
-            // The new picture goes to the Drive in the place of the one before (one on its way is followed by this one).
-            if (uploading.Contains(snapshot.Id))
-                retakenSnapshots.Add(snapshot.Id);
-            snapshot.FileId = "";
-            uploadFailed.Remove(snapshot.Id);
             Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("📷 Το στιγμιότυπο πήρε την εικόνα της οθόνης {0}."), screen.SwimScreenNumber) + CamerasHint(), false);
             Changed(false);
             UploadSnapshot(snapshot);

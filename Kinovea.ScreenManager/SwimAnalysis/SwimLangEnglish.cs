@@ -2724,6 +2724,12 @@ namespace Kinovea.ScreenManager
             { "Για την εικόνα άλλης οθόνης: κλικ στην οθόνη και 📷 δύο φορές στο ίδιο καρέ.\n", "For the picture of another screen: click the screen and press 📷 twice on the same frame.\n" },
             { "Όλες οι οθόνες μαζί: όπως πριν, όλες οι οθόνες κολλητές σε μία εικόνα.", "All the screens together: as before, all the screens joined in one image." },
             { "Κάμερες…", "Cameras…" },
+            // 2.23.1: the calibration folds; the cameras asked at the start; the snapshots of before get their camera.
+            { "Κλικ στον τίτλο: άνοιγμα ή κλείσιμο της βαθμονόμησης (το πρόγραμμα θυμάται πώς την άφησες).", "Click the title: open or fold the calibration (the program remembers how you left it)." },
+            { "Ένα στιγμιότυπο αυτής της ανάλυσης έχει όλες τις οθόνες μαζί σε μία εικόνα.\nΝα πάρει την εικόνα της κάμερας της στιγμής; Τα σχόλια, το γεγονός και το στάδιο μένουν.", "One snapshot of this analysis has all the screens together in one picture.\nShould it get the picture of the camera of the moment? Its comments, event and stage stay." },
+            { "{0} στιγμιότυπα αυτής της ανάλυσης έχουν όλες τις οθόνες μαζί σε μία εικόνα.\nΝα πάρει το καθένα την εικόνα της κάμερας της στιγμής; Τα σχόλια, τα γεγονότα και τα στάδια μένουν.", "{0} snapshots of this analysis have all the screens together in one picture.\nShould each one get the picture of the camera of the moment? The comments, events and stages stay." },
+            { "📷 {0} από {1} στιγμιότυπα πήραν την εικόνα της κάμερας της στιγμής.", "📷 {0} of {1} snapshots got the picture of the camera of the moment." },
+            { " Τα άλλα έμειναν όπως ήταν (καμία κάμερα δεν είχε τη στιγμή τους).", " The others stayed as they were (no camera had their moment)." },
             { "Από πού γράφει κάθε κάμερα της ομάδας: έξω από το νερό, μέσα στο νερό, ή εικόνα μόνο όταν πατάς πάνω στην οθόνη της.\n", "Where each camera of the group films from: out of the water, in the water, or a picture only when you press on its screen.\n" },
             { "Το ορίζεις μία φορά για κάθε κάμερα· ως τότε τα στιγμιότυπα είναι όλες οι οθόνες μαζί.", "You set it once for each camera; until then the snapshots are all the screens together." },
         };
