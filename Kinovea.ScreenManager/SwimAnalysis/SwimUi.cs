@@ -1257,6 +1257,7 @@ namespace Kinovea.ScreenManager
         private bool folded;
         private int openHeight;
         private string summary = "";
+        private bool titlePressed;
 
         /// <summary>(2.23.1) Folded or opened with a click on its title line (not when Folded is set by the program).</summary>
         public event EventHandler FoldedByUser;
@@ -1364,10 +1365,20 @@ namespace Kinovea.ScreenManager
             Cursor = Cursors.Default;
         }
 
-        protected override void OnMouseClick(MouseEventArgs e)
+        // A press and a release on the title line (not the MouseClick of the panel: on the analysis computer it did not come, the
+        // window under the pointer seen as another one).
+        protected override void OnMouseDown(MouseEventArgs e)
         {
-            base.OnMouseClick(e);
-            if (e.Button != MouseButtons.Left || !OnTitleLine(e.Location))
+            base.OnMouseDown(e);
+            titlePressed = e.Button == MouseButtons.Left && OnTitleLine(e.Location);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            bool click = titlePressed && e.Button == MouseButtons.Left && OnTitleLine(e.Location);
+            titlePressed = false;
+            if (!click)
                 return;
 
             Fold(!folded);
