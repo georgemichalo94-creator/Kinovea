@@ -144,4 +144,50 @@ assert.ok(r.archive.ok, JSON.stringify(r.archive));
 r = call(G, { action: 'pdf', lang: 'en', race: race({ id: 'dddddddddddddddddddddddddddddddd', athleteId: '' }) });
 assert.ok(!r.archive.ok && /not in the KOE registry/.test(r.archive.message), JSON.stringify(r.archive));
 
+// 11. (2.18.1) A file of the app whose folder Google Drive refuses («Access denied: DriveApp», e.g. uploaded from another account):
+// the search goes on with the next file of the app and finds the folder.
+G = setup({ rows: [['a1b2c3d4', 900002, GMT, 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', PREFIX + '/a1b2c3d4.Αρχείο.100000.pdf'],
+  ['b1b2c3d4', 900002, GMT, 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', PREFIX + '/b1b2c3d4.Αρχείο.100000.pdf']],
+  uploaded: ['a1b2c3d4.Αρχείο.100000.pdf', 'b1b2c3d4.Αρχείο.100000.pdf'] });
+const denied = () => { throw new Error('Exception: Access denied: DriveApp.'); };
+let refused = 0;
+G._filesFolder._files.forEach(f => { if (/^b1b2/.test(f.getName())) f.getParents = () => { refused++; denied(); }; });
+r = call(G, { action: 'pdf', race: race() });
+assert.ok(r.archive.ok && r.archive.inFolder && !r.archive.note, JSON.stringify(r.archive));
+assert.strictEqual(refused, 1, 'the refused file was met first (the latest rows first) and passed');
+assert.ok(new RegExp('^' + PREFIX + '/01234567').test(filesRows(G)[2][4]), 'in the folder of the app: ' + filesRows(G)[2][4]);
+
+// 12. The folder of the app refuses the file (no write access): the row goes in with the link of the PDF in Drive, and the note says
+// what Drive refused.
+G = setup({ rows: [['a1b2c3d4', 900002, GMT, 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', PREFIX + '/a1b2c3d4.Αρχείο.100000.pdf']], uploaded: ['a1b2c3d4.Αρχείο.100000.pdf'] });
+G._filesFolder.createFile = denied;
+r = call(G, { action: 'pdf', race: race() });
+assert.ok(r.ok && r.pdf.url && r.archive.ok && !r.archive.inFolder, JSON.stringify(r.archive));
+assert.ok(/σύνδεσμο του PDF/.test(r.archive.note) && /εγγραφή στον φάκελο: Access denied: DriveApp\./.test(r.archive.note), r.archive.note);
+assert.strictEqual(filesRows(G)[1][4], r.pdf.url, 'the link of the PDF');
+r = call(G, { action: 'pdf', lang: 'en', race: race({ id: 'cccccccccccccccccccccccccccccccc' }) });
+assert.ok(/link of the PDF/.test(r.archive.note) && /writing in the folder: Access denied/.test(r.archive.note), r.archive.note);
+
+// 13. Every search refused (the files of the app and the folder by its name): the link of the PDF, with what was refused. The PDF of
+// the report is made as always (its own folder).
+G = setup({ rows: [['a1b2c3d4', 900002, GMT, 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', PREFIX + '/a1b2c3d4.Αρχείο.100000.pdf']], uploaded: ['a1b2c3d4.Αρχείο.100000.pdf'] });
+const byName = G._drive.getFilesByName, foldersByName = G._drive.getFoldersByName;
+G._drive.getFilesByName = n => { if (/Αρχείο\.100000/.test(n)) denied(); return byName(n); };
+G._drive.getFoldersByName = n => { if (n === PREFIX) denied(); return foldersByName(n); };
+r = call(G, { action: 'pdf', race: race() });
+assert.ok(r.ok && r.pdf.url && r.archive.ok && !r.archive.inFolder, JSON.stringify(r.archive));
+assert.ok(/αναζήτηση αρχείου της εφαρμογής: Access denied/.test(r.archive.note) && /αναζήτηση του φακέλου: Access denied/.test(r.archive.note), r.archive.note);
+G._drive.getFilesByName = byName; G._drive.getFoldersByName = foldersByName;
+
+// 14. The check from the editor: what the search finds and what Drive refused; it writes nothing.
+G = setup({ rows: [['a1b2c3d4', 900002, GMT, 'ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ', PREFIX + '/a1b2c3d4.Αρχείο.100000.pdf']], uploaded: ['a1b2c3d4.Αρχείο.100000.pdf'] });
+const before = JSON.stringify(filesRows(G)) + '|' + G._filesFolder._files.length;
+let text = G.swimFilesCheck();
+assert.ok(text.indexOf('«' + PREFIX + '»') >= 0 && /Βρέθηκε: /.test(text) && /δεν αρνήθηκε τίποτα/.test(text), text);
+G._filesFolder._files[0].getParents = denied;
+G._props.SWIM_FILES_FOLDER_ID = '';
+text = G.swimFilesCheck();
+assert.ok(/αρνήθηκε: φάκελος ενός αρχείου της εφαρμογής: Access denied/.test(text), text);
+assert.strictEqual(JSON.stringify(filesRows(G)) + '|' + G._filesFolder._files.length, before, 'the check wrote nothing');
+
 console.log('test_archive OK');

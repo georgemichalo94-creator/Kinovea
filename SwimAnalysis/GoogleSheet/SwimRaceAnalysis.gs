@@ -34,7 +34,7 @@
  *      πίνακας (μένει μόνο με σύγκριση, προηγούμενη ή elite, που ο πίνακας δεν δείχνει).
  */
 
-var SWIM_VERSION = '2.18.0';
+var SWIM_VERSION = '2.18.1';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -1321,36 +1321,76 @@ function swimFilesUid_(raceId, n) {
 /**
  * Ο φάκελος των αρχείων της εφαρμογής για τη στήλη του αρχείου («<πίνακας>_Files_»): ο φάκελος ενός αρχείου που ανέβηκε ήδη από την
  * εφαρμογή (με το όνομά του, από τις διαδρομές της στήλης), αλλιώς ο φάκελος με αυτό το όνομα· κρατιέται στο Script Property
- * SWIM_FILES_FOLDER_ID. null αν δεν βρεθεί.
+ * SWIM_FILES_FOLDER_ID. null αν δεν βρεθεί. (2.18.1) Ό,τι αρνείται το Google Drive σε ένα βήμα (π.χ. «Access denied: DriveApp» για
+ * ένα αρχείο που ανέβηκε από άλλον λογαριασμό) δεν σταματά την αναζήτηση: γράφεται στο notes (αν δοθεί) και συνεχίζει.
  */
-function swimFilesFolder_(paths, prefix) {
+function swimFilesFolder_(paths, prefix, notes) {
+  var say = function (step, e) { if (notes) notes.push(step + ': ' + swimDriveErr_(e)); };
   var props = swimProps_();
   var known = props.getProperty('SWIM_FILES_FOLDER_ID');
   if (known) {
     try {
       var f0 = DriveApp.getFolderById(known);
       if (f0 && f0.getName() === prefix) return f0;
-    } catch (e) { /* ο φάκελος άλλαξε: ξαναβρίσκεται */ }
+    } catch (e) { say(swimT_('ο φάκελος που ήταν γνωστός'), e); }
   }
   var folder = null;
   for (var i = 0; i < paths.length && i < 5 && !folder; i++) {
     var p = String(paths[i]);
     if (p.substring(0, p.lastIndexOf('/')) !== prefix) continue;
-    var files = DriveApp.getFilesByName(p.substring(p.lastIndexOf('/') + 1));
-    while (!folder && files.hasNext()) {
-      var parents = files.next().getParents();
-      while (parents.hasNext()) {
-        var parent = parents.next();
-        if (parent.getName() === prefix) { folder = parent; break; }
+    var files;
+    try {
+      files = DriveApp.getFilesByName(p.substring(p.lastIndexOf('/') + 1));
+    } catch (e) {
+      say(swimT_('αναζήτηση αρχείου της εφαρμογής'), e);
+      continue;
+    }
+    for (var guard = 0; !folder && guard < 20; guard++) {
+      var file = null;
+      try {
+        if (!files.hasNext()) break;
+        file = files.next();
+        var parents = file.getParents();
+        while (parents.hasNext()) {
+          var parent = parents.next();
+          if (parent.getName() === prefix) { folder = parent; break; }
+        }
+      } catch (e) {
+        say(swimT_('φάκελος ενός αρχείου της εφαρμογής'), e);
+        if (!file) break;
       }
     }
   }
   if (!folder) {
-    var it = DriveApp.getFoldersByName(prefix);
-    if (it.hasNext()) folder = it.next();
+    try {
+      var it = DriveApp.getFoldersByName(prefix);
+      if (it.hasNext()) folder = it.next();
+    } catch (e) { say(swimT_('αναζήτηση του φακέλου'), e); }
   }
-  if (folder) props.setProperty('SWIM_FILES_FOLDER_ID', folder.getId());
+  if (folder) {
+    try { props.setProperty('SWIM_FILES_FOLDER_ID', folder.getId()); } catch (e) { /* μένει όπως ήταν */ }
+  }
   return folder;
+}
+
+/** (2.18.1) Το μήνυμα ενός σφάλματος του Drive, χωρίς το «Exception: » μπροστά. */
+function swimDriveErr_(e) {
+  return String(e && e.message ? e.message : e).replace(/^Exception:\s*/, '');
+}
+
+/**
+ * (2.18.1) Ποιος έχει έναν φάκελο και τι δικαίωμα έχει σε αυτόν ο λογαριασμός που τρέχει το script, για το μήνυμα όταν το Drive δεν
+ * δέχεται ένα αρχείο εκεί: « (ο φάκελος ανήκει στο …· ο λογαριασμός του script … έχει: VIEW)». Κενό όταν δεν μαθαίνεται.
+ */
+function swimFolderWho_(folder) {
+  var owner = '', me = '', access = '';
+  try { owner = folder.getOwner() ? folder.getOwner().getEmail() : ''; } catch (e) { owner = ''; }
+  try { me = Session.getEffectiveUser().getEmail(); } catch (e) { me = ''; }
+  try { access = me ? String(folder.getAccess(me)) : ''; } catch (e) { access = ''; }
+  var parts = [];
+  if (owner) parts.push(swimTF_('ο φάκελος ανήκει στο {0}', owner));
+  if (me) parts.push(access ? swimTF_('ο λογαριασμός του script {0} έχει: {1}', me, access) : swimTF_('ο λογαριασμός του script: {0}', me));
+  return parts.length ? ' (' + parts.join(' · ') + ')' : '';
 }
 
 /**
@@ -1411,15 +1451,26 @@ function swimArchiveReport_(raw, pdf, blob, record) {
       if (m) part = m[1];
     }
     var link = pdf && pdf.url ? pdf.url : '';
-    var folder = swimFilesFolder_(paths, prefix);
+    // (2.18.1) Ό,τι αρνείται το Drive στον φάκελο της εφαρμογής δεν σταματά την καταχώριση: μπαίνει ο σύνδεσμος του PDF στο Drive, και
+    // το μήνυμα λέει τι αρνήθηκε (για να διορθωθεί η αιτία: π.χ. ο φάκελος ή ένα αρχείο του από άλλον λογαριασμό).
+    var notes = [];
+    var folder = swimFilesFolder_(paths, prefix, notes);
     var now = new Date();
     if (folder) {
       var fileName = uid + '.' + part + '.' + Utilities.formatDate(now, Session.getScriptTimeZone(), 'HHmmss') + '.pdf';
-      var copy = blob.copyBlob ? blob.copyBlob() : blob;
-      folder.createFile(copy.setName(fileName));
-      link = prefix + '/' + fileName;
+      try {
+        var copy = blob.copyBlob ? blob.copyBlob() : blob;
+        folder.createFile(copy.setName(fileName));
+        link = prefix + '/' + fileName;
+      } catch (e) {
+        notes.push(swimT_('εγγραφή στον φάκελο') + ': ' + swimDriveErr_(e) + swimFolderWho_(folder));
+        folder = null;
+      }
     }
-    if (!link) return { ok: false, reason: 'folder', message: swimT_('Δεν βρέθηκε ο φάκελος των αρχείων του KOE App.') };
+    if (!link) {
+      return { ok: false, reason: 'folder', message: swimT_('Δεν βρέθηκε ο φάκελος των αρχείων του KOE App.') +
+        (notes.length ? ' ' + swimT_('Το Google Drive:') + ' ' + notes.join(' · ') : '') };
+    }
 
     var profileSamples = swimColumnSamples_(rows, cols.profile);
     var numeric = profileSamples.length ? typeof profileSamples[0] === 'number' : typeof record.id === 'number';
@@ -1449,10 +1500,60 @@ function swimArchiveReport_(raw, pdf, blob, record) {
       }
       cell.setValue(date);
     }
-    return { ok: true, id: uid, row: row, updated: updated, inFolder: !!folder };
+    var out = { ok: true, id: uid, row: row, updated: updated, inFolder: !!folder };
+    if (!folder && notes.length) {
+      out.note = swimT_('Μπήκε με τον σύνδεσμο του PDF στο Drive: ο φάκελος των αρχείων του KOE App δεν το δέχτηκε.') + ' ' +
+        swimT_('Το Google Drive:') + ' ' + notes.join(' · ');
+    }
+    return out;
   } catch (e) {
     return { ok: false, reason: 'error', message: String(e && e.message ? e.message : e) };
   }
+}
+
+/**
+ * (2.18.1) Από τον επεξεργαστή του Apps Script (στο KOE App): ο φάκελος των αρχείων του «Αρχεία Αθλητών/τριων», όπως τον ψάχνει η
+ * καταχώριση ενός PDF, ποιος τον έχει και τι δικαίωμα έχει σε αυτόν ο λογαριασμός του script, και ό,τι αρνήθηκε το Google Drive. Δεν
+ * γράφει τίποτα (ούτε αρχείο ούτε γραμμή).
+ */
+function swimFilesCheck() {
+  var title = 'Αρχεία Αθλητών/τριων: έλεγχος του φακέλου';
+  var lines = [];
+  try {
+    var sh = swimFilesSheet_();
+    if (!sh) {
+      lines.push('Δεν βρέθηκε το φύλλο «' + SWIM_FILES_SHEET + '» σε αυτό το αρχείο.');
+    } else {
+      var lastCol = sh.getLastColumn(), lastRow = sh.getLastRow();
+      var header = lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+      var first = Math.max(2, lastRow - SWIM_FILES_SAMPLE + 1);
+      var rows = lastRow >= 2 && lastCol ? sh.getRange(first, 1, lastRow - first + 1, lastCol).getValues() : [];
+      var cols = swimFilesColumns_(header, rows);
+      var paths = cols.file >= 0 ? swimColumnSamples_(rows, cols.file).filter(function (v) { return typeof v === 'string' && /_Files_\//.test(v); }) : [];
+      var prefix = paths.length ? String(paths[0]).substring(0, String(paths[0]).lastIndexOf('/'))
+        : String(sh.getName()).replace(/\//g, ' ') + '_Files_';
+      lines.push('Φύλλο: «' + sh.getName() + '», ' + Math.max(0, lastRow - 1) + ' γραμμές· στήλη αρχείου: ' + (cols.file >= 0 ? '«' + header[cols.file] + '»' : 'δεν βρέθηκε'));
+      lines.push('Φάκελος της εφαρμογής: «' + prefix + '» (από ' + paths.length + ' διαδρομές των τελευταίων γραμμών)');
+      var me = '';
+      try { me = Session.getEffectiveUser().getEmail(); } catch (e) { me = ''; }
+      lines.push('Ο λογαριασμός του script: ' + (me || '(δεν φαίνεται)'));
+      var notes = [];
+      var folder = swimFilesFolder_(paths, prefix, notes);
+      if (folder) {
+        var id = '', url = '';
+        try { id = folder.getId(); url = folder.getUrl(); } catch (e) { /* χωρίς */ }
+        lines.push('Βρέθηκε: ' + id + (url ? '  ' + url : '') + swimFolderWho_(folder));
+      } else {
+        lines.push('Ο φάκελος δεν βρέθηκε: η καταχώριση βάζει τον σύνδεσμο του PDF στο Drive.');
+      }
+      lines.push(notes.length ? 'Το Google Drive αρνήθηκε: ' + notes.join(' · ') : 'Το Google Drive δεν αρνήθηκε τίποτα στην αναζήτηση.');
+    }
+  } catch (e) {
+    lines.push('Σφάλμα: ' + swimDriveErr_(e));
+  }
+  var text = lines.join('\n');
+  swimSay_(title, text);
+  return text;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -11606,6 +11707,18 @@ var SWIM_EN_ = {
   'Δεν βρέθηκε το φύλλο «Αρχεία Αθλητών/τριων» στο KOE App.': 'The sheet "Αρχεία Αθλητών/τριων" was not found in the KOE App.',
   'Το φύλλο «Αρχεία Αθλητών/τριων» δεν έχει τις στήλες unique_id, profile_id και αρχείο.':
     'The sheet "Αρχεία Αθλητών/τριων" does not have the columns unique_id, profile_id and file.',
+  // 2.18.1: what Google Drive refused in the folder of the files of the KOE App.
+  'ο φάκελος που ήταν γνωστός': 'the folder known before',
+  'αναζήτηση αρχείου της εφαρμογής': 'search for a file of the app',
+  'φάκελος ενός αρχείου της εφαρμογής': 'folder of a file of the app',
+  'αναζήτηση του φακέλου': 'search for the folder',
+  'εγγραφή στον φάκελο': 'writing in the folder',
+  'Το Google Drive:': 'Google Drive:',
+  'Μπήκε με τον σύνδεσμο του PDF στο Drive: ο φάκελος των αρχείων του KOE App δεν το δέχτηκε.':
+    'Added with the link of the PDF in Drive: the folder of the files of the KOE App did not take it.',
+  'ο φάκελος ανήκει στο {0}': 'the folder belongs to {0}',
+  'ο λογαριασμός του script {0} έχει: {1}': 'the account of the script {0} has: {1}',
+  'ο λογαριασμός του script: {0}': 'the account of the script: {0}',
   'Δεν βρέθηκε ελεύθερος κωδικός για τη γραμμή του αρχείου.': 'No free code was found for the row of the file.',
   'Δεν βρέθηκε ο φάκελος των αρχείων του KOE App.': 'The folder of the files of the KOE App was not found.',
   'Μοιάζει με αθλητή που υπάρχει ήδη στους διεθνείς.': 'Looks like a swimmer who is already among the international swimmers.',
