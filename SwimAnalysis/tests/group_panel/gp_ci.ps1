@@ -371,6 +371,49 @@ try {
   $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
   Check $false ('the panel of 2.24.0: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)
 }
+# ---- (2.24.1) A FICTIONAL turn whose speed falls at the end (the breakout late, near the +10; the means 2.38, 2.04, 1.72 m/s): the
+# line levels off at the +15 (a three-point end brought it to about 1.37) and the chart ends there. Its panel after the +15 and its
+# picture of the end.
+try {
+  $fall = [Activator]::CreateInstance($tRace)
+  $fall.Kind = 'training'; $fall.Style = 'fs'; $fall.Pool = 25; $fall.AthleteGender = 'Ανδρών'
+  $f0 = 200000
+  foreach ($mk in @(@('TechSplit', -3150, -5), @('Stroke', -1300, $null), @('RotationStart', -950, $null), @('WallContact', 0, $null), @('FeetOff', 230, $null),
+      @('Kick', 600, $null), @('Kick', 1080, $null), @('Kick', 1560, $null), @('Kick', 2040, $null), @('Kick', 2520, $null), @('Kick', 3000, $null),
+      @('TechSplit', 2100, 5), @('Breakout', 3900, $null), @('Stroke', 4250, $null), @('TechSplit', 4550, 10), @('TechSplit', 7450, 15))) {
+    $x = [Activator]::CreateInstance($tMark); $x.Type = [Enum]::Parse($tType, $mk[0]); $x.Timestamp = [long]($f0 + $mk[1]); $x.Wall = -1
+    if ($null -ne $mk[2]) { $x.Distance = [int]$mk[2] }
+    $fall.Marks.Add($x)
+    if ($mk[0] -eq 'WallContact') { $fall.GetPhaseValues($x.Id, $true).BreakoutDist = 8.6 }
+  }
+  $fComputed = $tCalc.GetMethod('Compute').Invoke($null, @($fall, $timing, 0.5))
+  $fPhases = $tTech.GetMethod('Compute').Invoke($null, @($fall, $fComputed, $timing))
+  Check ($fPhases.Count -eq 1) ('the falling turn: ' + $fPhases.Count)
+  $mt.GetField('currentRace', $all).SetValue($m, $fall.psobject.BaseObject)
+  $mt.GetProperty('TechPhases', $all).GetSetMethod($true).Invoke($m, [object[]]@(,$fPhases.psobject.BaseObject))
+  $fd = $mt.GetMethod('BuildPanel', $all).Invoke($m, [object[]]@($fPhases[0].psobject.BaseObject))
+  $ftype = $fd.GetType()
+  $fSpeed = $ftype.GetField('Speed', $all).GetValue($fd); $fTo = $ftype.GetField('SpeedTo', $all).GetValue($fd); $fChart = $ftype.GetField('ChartTo', $all).GetValue($fd)
+  $fv10 = $fSpeed.Invoke(4.55); $fvLate = $fSpeed.Invoke($fTo - 0.3); $fv15 = $fSpeed.Invoke($fTo)
+  Write-Output ('falling turn: v(+10) ' + [Math]::Round($fv10, 3) + ', v(+15 - 0.3 s) ' + [Math]::Round($fvLate, 3) + ', v(+15) ' + [Math]::Round($fv15, 3) + ' (mean 10-15: ' + [Math]::Round(5 / 2.9, 3) + ')')
+  Check ($fv15 -gt 1.55 -and $fv15 -lt 1.724 -and [Math]::Abs($fv15 - $fvLate) -lt 0.02 -and [Math]::Abs($fChart - $fTo) -lt 1e-6 -and [Math]::Abs($fTo - 7.45) -lt 0.05) ('the falling turn levels off at the +15: ' + [Math]::Round($fv15, 3) + ' m/s, the chart ends at ' + [Math]::Round($fChart, 3) + ' s')
+  $b = New-Object System.Drawing.Bitmap 1280, 720
+  $g = [System.Drawing.Graphics]::FromImage($b)
+  $mt.GetMethod('PaintGroupDashboard', $all).Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), [long]($f0 + 8070)))
+  $g.Dispose()
+  $b.Save([System.IO.Path]::Combine($out, 'panel-turn-falling.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+  $b.Dispose()
+  $b = New-Object System.Drawing.Bitmap 1280, 720
+  $g = [System.Drawing.Graphics]::FromImage($b)
+  $mt.GetMethod('PaintFinalPanel', $all).Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), $fPhases[0].psobject.BaseObject))
+  $g.Dispose()
+  $b.Save([System.IO.Path]::Combine($out, 'panel-turn-falling-final.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+  $b.Dispose()
+  Check $true 'the falling turn drawn after the +15 and at its end'
+} catch {
+  $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+  Check $false ('the falling turn of 2.24.1: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)
+}
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0
