@@ -80,6 +80,12 @@ namespace Kinovea.ScreenManager
             /// <summary>The highest speed of the line and of the segments (the top of the chart).</summary>
             public double SpeedTop;
 
+            /// <summary>
+            /// (2.24.1) The end of the time of the chart of the speed: where its line ends (the 15, or the last distance measured), else the
+            /// end of the part drawn. Nothing of the speed after it.
+            /// </summary>
+            public double ChartTo;
+
             /// <summary>The main time of the phase for the picture of its end: the 15 (or the last distance), its label.</summary>
             public double? MainTime;
             public string MainLabel;
@@ -90,13 +96,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// A monotone cubic through points (Fritsch–Carlson, the end slopes from three points as SciPy's PCHIP, or the first slope given): it
-        /// does not overshoot between the points. Its derivative is the speed when the points are the distance in time.
+        /// does not overshoot between the points. Its derivative is the speed when the points are the distance in time. (2.24.1) flatEnd:
+        /// the speed levels off at the last point (no acceleration there), instead of going on as the last segments go.
         /// </summary>
         private sealed class Pchip
         {
             private readonly double[] x, y, m;
 
-            public Pchip(IList<double> xs, IList<double> ys, double? first)
+            public Pchip(IList<double> xs, IList<double> ys, double? first, bool flatEnd = false)
             {
                 int n = xs.Count;
                 x = xs.ToArray();
@@ -123,7 +130,17 @@ namespace Kinovea.ScreenManager
                 }
 
                 m[0] = first ?? End(n, h[0], n > 2 ? h[1] : h[0], dl[0], n > 2 ? dl[1] : dl[0]);
-                m[n - 1] = End(n, h[n - 2], n > 2 ? h[n - 3] : h[n - 2], dl[n - 2], n > 2 ? dl[n - 3] : dl[n - 2]);
+                if (flatEnd)
+                {
+                    // No acceleration at the last point (the second derivative of the cubic is zero there): with the slope at the point
+                    // before it, (3 d − m) / 2. Inside 0 … 3 d, so the last piece stays monotone.
+                    double d = dl[n - 2];
+                    m[n - 1] = d > 0 ? Math.Max(0, Math.Min(3 * d, (3 * d - m[n - 2]) / 2)) : 0;
+                }
+                else
+                {
+                    m[n - 1] = End(n, h[n - 2], n > 2 ? h[n - 3] : h[n - 2], dl[n - 2], n > 2 ? dl[n - 3] : dl[n - 2]);
+                }
             }
 
             private static double End(int n, double h0, double h1, double d0, double d1)
@@ -339,7 +356,8 @@ namespace Kinovea.ScreenManager
                 MonotonePoints(points, out xs, out ys);
                 if (xs.Count >= 2 && xs[0] == move)
                 {
-                    Pchip curve = new Pchip(xs, ys, 0.0);
+                    // (2.24.1) The speed levels off at the 15 (or the last distance): it stops there, it does not go on falling.
+                    Pchip curve = new Pchip(xs, ys, 0.0, true);
                     d.Speed = t => t < move ? 0 : curve.Slope(Math.Min(t, curve.Last));
                     d.SpeedFrom = Math.Min(0, move);
                     d.SpeedTo = curve.Last;
@@ -380,6 +398,9 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // (2.24.1) The chart of the speed ends where its line ends (the 15, or the last distance measured): nothing after it.
+            double chartEnd = d.Speed != null ? d.SpeedTo : d.Segments.Count > 0 ? d.Segments.Max(s => s.To) : d.T1;
+            d.ChartTo = chartEnd > d.T0 + 0.5 ? Math.Min(d.T1, chartEnd) : d.T1;
             return d;
         }
 
@@ -438,7 +459,8 @@ namespace Kinovea.ScreenManager
                     break;
                 }
 
-                after = new Pchip(xs, ys, null);
+                // (2.24.1) The speed levels off at the +15 (or the last distance): it stops there, it does not go on falling.
+                after = new Pchip(xs, ys, null, true);
                 double next = push > 0 ? Math.Max(0, after.StartSlope) * push / 2 : 0;
                 if (Math.Abs(next - d0) < 1e-4)
                     break;
@@ -786,7 +808,7 @@ namespace Kinovea.ScreenManager
             double top = Math.Max(1.0, d.SpeedTop);
             double stepV = top <= 3.2 ? 0.5 : 1.0;
             double vmax = Math.Max(2 * stepV, Math.Ceiling(top * 1.04 / stepV) * stepV);
-            Func<double, float> px = t => plot.Left + (float)((t - d.T0) / (d.T1 - d.T0)) * plot.Width;
+            Func<double, float> px = t => plot.Left + (float)((t - d.T0) / (d.ChartTo - d.T0)) * plot.Width;
             Func<double, float> py = v => plot.Bottom - (float)(Math.Max(0, Math.Min(vmax, v)) / vmax) * plot.Height;
 
             Font axis = SwimTheme.Ui(11f, FontStyle.Regular);
@@ -806,7 +828,7 @@ namespace Kinovea.ScreenManager
                 int row = 0;
                 using (Pen dash = new Pen(Color.FromArgb(70, 100, 120), 1f) { DashStyle = DashStyle.Dash })
                 {
-                    foreach (PanelMark m in d.Lines.Where(q => q.T <= now + 1e-6 && q.T >= d.T0 && q.T <= d.T1).OrderBy(q => q.T))
+                    foreach (PanelMark m in d.Lines.Where(q => q.T <= now + 1e-6 && q.T >= d.T0 && q.T <= d.ChartTo).OrderBy(q => q.T))
                     {
                         float x = px(m.T);
                         g.DrawLine(dash, x, plot.Top, x, plot.Bottom);
@@ -814,6 +836,18 @@ namespace Kinovea.ScreenManager
                         row = x + 4 < lastRight + 6 ? row + 1 : 0;
                         g.DrawString(m.Label, small, dim, x + 4, plot.Top + 2 + 18 * row);
                         lastRight = Math.Max(lastRight, x + 4 + w);
+                    }
+
+                    // (2.24.1) Where the line of the speed ends (the 15): its line at the right, its distance at the top, left of it.
+                    PanelMark endMark = d.Speed != null ? d.Measured.FirstOrDefault(q => Math.Abs(q.T - d.ChartTo) < 1e-6) : null;
+                    if (endMark != null && endMark.T <= now + 1e-6)
+                    {
+                        float x = px(endMark.T);
+                        g.DrawLine(dash, x, plot.Top, x, plot.Bottom);
+                        float w = g.MeasureString(endMark.Label, small).Width;
+                        float left = x - 4 - w;
+                        int endRow = left < lastRight + 6 ? row + 1 : 0;
+                        g.DrawString(endMark.Label, small, dim, left, plot.Top + 2 + 18 * endRow);
                     }
                 }
             }
@@ -823,9 +857,9 @@ namespace Kinovea.ScreenManager
             using (Pen seg = new Pen(Color.FromArgb(150, 112, 40), 3f))
             using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
             {
-                foreach (PanelSegment s in d.Segments.Where(q => q.To <= now + 1e-6))
+                foreach (PanelSegment s in d.Segments.Where(q => q.To <= now + 1e-6 && q.From < d.ChartTo))
                 {
-                    float a = px(Math.Max(d.T0, s.From)), b = px(Math.Min(d.T1, s.To)), y = py(s.Speed);
+                    float a = px(Math.Max(d.T0, s.From)), b = px(Math.Min(d.ChartTo, s.To)), y = py(s.Speed);
                     if (b - a < 4)
                         continue;
                     g.DrawLine(seg, a, y, b, y);
@@ -841,7 +875,7 @@ namespace Kinovea.ScreenManager
             // The line of the speed as far as now, glowing, filled under it.
             if (d.Speed != null)
             {
-                double lo = Math.Max(d.T0, d.SpeedFrom), hi = Math.Min(d.T1, d.SpeedTo), end = Math.Min(now, hi);
+                double lo = Math.Max(d.T0, d.SpeedFrom), hi = Math.Min(d.ChartTo, d.SpeedTo), end = Math.Min(now, hi);
                 List<PointF> pts = new List<PointF>();
                 double best = -1, bestT = lo;
                 const int samples = 240;
@@ -886,7 +920,7 @@ namespace Kinovea.ScreenManager
                     Font big = SwimTheme.DisplayLight(34.5f);
                     string vt = vnow.ToString("0.00", CultureInfo.InvariantCulture);
                     SizeF vs = g.MeasureString(vt, big);
-                    float bx = Math.Min(last.X + 12, plot.Right - vs.Width), by = Math.Max(plot.Top + 22, last.Y - vs.Height - 14);
+                    float bx = Math.Min(last.X + 12, plot.Right - vs.Width - 8), by = Math.Max(plot.Top + 22, last.Y - vs.Height - 14);
                     SwimTheme.GlowText(g, vt, big, SwimTheme.Text, SwimTheme.Accent, new PointF(bx, by), 0.4f);
                     RectangleF nowBox = new RectangleF(bx, by, vs.Width, vs.Height);
 

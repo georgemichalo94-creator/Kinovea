@@ -246,6 +246,13 @@ try {
   for ($y = 230; $y -lt 700; $y += 11) { for ($xx = 40; $xx -lt 620; $xx += 13) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 160 -and $c.G -gt 160 -and $c.B -gt 160) { $lit++ } } }
   Check ($lit -gt 40) ('the end of the start: its values drawn big (' + $lit + ' white samples)')
   $b.Dispose()
+  # (2.24.1) The speed of the start stops at the 15: the chart ends there and the line levels off (it does not go on falling).
+  $dS = $mt.GetMethod('BuildPanel', $all).Invoke($m, [object[]]@($ph.psobject.BaseObject))
+  $fS = $dS.GetType()
+  $sToS = $fS.GetField('SpeedTo', $all).GetValue($dS); $cToS = $fS.GetField('ChartTo', $all).GetValue($dS); $spS = $fS.GetField('Speed', $all).GetValue($dS)
+  Check ([Math]::Abs($sToS - 5.78) -lt 0.05 -and [Math]::Abs($cToS - $sToS) -lt 1e-6) ('the chart of the start ends at the 15: ' + [Math]::Round($cToS, 3) + ' (15 m at ' + [Math]::Round($sToS, 3) + ' s)')
+  $v1S = $spS.Invoke($sToS - 0.1); $v2S = $spS.Invoke($sToS); $v3S = $spS.Invoke($sToS + 1.0)
+  Check ([Math]::Abs($v2S - $v1S) -lt 0.003 -and [Math]::Abs($v3S - $v2S) -lt 1e-9) ('the speed of the start levels off at the 15 and stays: ' + [Math]::Round($v1S, 4) + ' / ' + [Math]::Round($v2S, 4) + ' / ' + [Math]::Round($v3S, 4))
 
   $turnRace = [Activator]::CreateInstance($tRace)
   $turnRace.Kind = 'training'; $turnRace.Style = 'fs'; $turnRace.Pool = 25; $turnRace.AthleteGender = 'Ανδρών'
@@ -292,6 +299,11 @@ try {
   $sFrom = F $d 'SpeedFrom'; $sTo = F $d 'SpeedTo'; $sTop = F $d 'SpeedTop'
   for ($i = 0; $i -le 400; $i++) { $t = $sFrom + ($sTo - $sFrom) * $i / 400; $v = $speed.Invoke($t); if ($v -lt -0.01 -or $v -gt 4.5) { $neg = $true } }
   Check (-not $neg -and $sTop -gt 2 -and $sTop -lt 4) ('the speed plausible all along (top ' + [Math]::Round($sTop, 2) + ' m/s)')
+  # (2.24.1) The speed stops at the +15: the chart ends there (nothing after it) and the line levels off (it does not go on falling).
+  $cTo = F $d 'ChartTo'
+  Check ([Math]::Abs($sTo - 7.85) -lt 0.05 -and [Math]::Abs($cTo - $sTo) -lt 1e-6) ('the chart of the turn ends at the +15: ' + [Math]::Round($cTo, 3) + ' (+15 at ' + [Math]::Round($sTo, 3) + ' s)')
+  $v1 = $speed.Invoke($sTo - 0.1); $v2 = $speed.Invoke($sTo); $v3 = $speed.Invoke($sTo + 1.0)
+  Check ([Math]::Abs($v2 - $v1) -lt 0.003 -and [Math]::Abs($v3 - $v2) -lt 1e-9) ('the speed of the turn levels off at the +15 and stays: ' + [Math]::Round($v1, 4) + ' / ' + [Math]::Round($v2, 4) + ' / ' + [Math]::Round($v3, 4))
   foreach ($rel in @(-2000, 120, 1600, 5000, 8300)) {
     $b = New-Object System.Drawing.Bitmap 1280, 720
     $g = [System.Drawing.Graphics]::FromImage($b)
