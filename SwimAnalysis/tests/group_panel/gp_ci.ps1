@@ -326,7 +326,8 @@ try {
   $encT = T 'SwimVideoEncoder'
   $encoder = [Activator]::CreateInstance($encT)
   $video = [System.IO.Path]::Combine($out, 'closing.mp4')
-  $startArgs = [object[]]@($ff, $video, [int]1280, [int]720, [double]25, $null, [double]0, [double]0, $null)
+  $startArgs = [object[]]@([string]$ff, [string]$video, [int]1280, [int]720, [double]25, $null, [double]0, [double]0, $null)
+  $encoder = $encoder.psobject.BaseObject
   $started = $encT.GetMethod('Start').Invoke($encoder, $startArgs)
   Check $started ('ffmpeg for the closing: ' + $startArgs[8])
   $joined = New-Object System.Drawing.Bitmap 1280, 720, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
@@ -336,17 +337,17 @@ try {
   $job = [Activator]::CreateInstance($jobT, $true)
   $write = $mt.GetMethod('WriteClosingPanel', $all)
   $place = [Nullable[System.Drawing.Rectangle]]([System.Drawing.Rectangle]::new(640, 360, 640, 360))
-  $wargs = [object[]]@($encoder, $joined, $buffer, $place, $best.psobject.BaseObject, [double]25, $job, $null, $false)
+  $wargs = [object[]]@($encoder, $joined.psobject.BaseObject, $buffer.psobject.BaseObject, $place, $best.psobject.BaseObject, [double]25, $job.psobject.BaseObject, $null, $false)
   $frames = $write.Invoke($m, $wargs)
   $err = ''
-  $finished = $encT.GetMethod('Finish').Invoke($encoder, [object[]]@([int]60000, $err))
+  $finished = $encT.GetMethod('Finish').Invoke($encoder, [object[]]@([int]60000, [string]$err))
   $encoder.Dispose()
   Check ($wargs[8] -and $frames -eq 170) ('the closing: 1 s + 5 s + 0.8 s at 25 fps = ' + $frames + ' frames')
   Check ((Test-Path $video) -and (Get-Item $video).Length -gt 10000) ('the closing video written (' + (Get-Item $video).Length + ' bytes)')
   foreach ($at in @('0.48', '0.96', '3.00', '6.60')) {
     $png = [System.IO.Path]::Combine($out, ('closing-' + $at + '.png'))
     $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $ff -nostdin -v error -y -ss $at -i $video -frames:v 1 $png 2>&1 | Out-Null
+    & $ff -nostdin -v error -y -ss $at -i $video -frames:v 1 -update 1 $png 2>&1 | Out-Null
     $ErrorActionPreference = $old
   }
   $mid = [System.Drawing.Bitmap]::FromFile([System.IO.Path]::Combine($out, 'closing-3.00.png'))

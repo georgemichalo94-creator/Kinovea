@@ -346,11 +346,29 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            d.Last = d.T1;
+            // The part drawn: from a little before the first event to a little after the last one, inside the window of the phase (the
+            // window of a training attempt lasts 25 s after its origin: its events would be squeezed into a corner).
+            double firstEvent = 0, lastEvent = 0;
             foreach (PanelMark m in d.Events)
-                d.Last = Math.Max(d.Last, m.T);
+            {
+                firstEvent = Math.Min(firstEvent, m.T);
+                lastEvent = Math.Max(lastEvent, m.T);
+            }
+
             foreach (double kick in d.Kicks)
-                d.Last = Math.Max(d.Last, kick);
+                lastEvent = Math.Max(lastEvent, kick);
+            if (d.Speed != null)
+                lastEvent = Math.Max(lastEvent, d.SpeedTo);
+            double window0 = d.T0, window1 = d.T1;
+            d.T0 = Math.Max(window0, firstEvent - 0.6);
+            d.T1 = Math.Min(window1, Math.Max(lastEvent + 0.8, d.T0 + 2));
+            if (d.T1 <= d.T0 + 0.5)
+            {
+                d.T0 = window0;
+                d.T1 = window1;
+            }
+
+            d.Last = Math.Max(d.T1, lastEvent);
 
             d.SpeedTop = d.Segments.Count > 0 ? d.Segments.Max(s => s.Speed) : 0;
             if (d.Speed != null)
@@ -575,7 +593,7 @@ namespace Kinovea.ScreenManager
             Font clockFont = SwimTheme.DisplayLight(wide ? 60f : 48f);
             SizeF cs = g.MeasureString(clock, clockFont);
             float clockLeft = frame.Right - cs.Width - 10;
-            SwimTheme.GlowText(g, clock, clockFont, SwimTheme.AccentPale, SwimTheme.Accent, new PointF(clockLeft, wide ? 8 : 16), 1f);
+            SwimTheme.GlowText(g, clock, clockFont, SwimTheme.AccentPale, SwimTheme.Accent, new PointF(clockLeft, wide ? 8 : 16), 0.45f);
             SwimTheme.CapsIn(g, clockLabel, SwimTheme.Ui(10.5f, FontStyle.Bold), SwimTheme.Dim, new RectangleF(frame.Right - 520, 98, 504, 22), StringAlignment.Far, 0.12f);
 
             Font titleFont = SwimTheme.Ui(wide ? 27f : 24f, FontStyle.Bold);
@@ -732,11 +750,12 @@ namespace Kinovea.ScreenManager
                             continue;
                         }
 
-                        SwimTheme.GlowText(g, text, valueFont, SwimTheme.Text, SwimTheme.Accent, new PointF(x - 6, vy), 0.7f);
+                        SwimTheme.GlowText(g, text, valueFont, SwimTheme.Text, SwimTheme.Accent, new PointF(x - 6, vy), 0.3f);
                         if (!string.IsNullOrEmpty(v.Unit))
                         {
                             float vw = g.MeasureString(text, valueFont, PointF.Empty, tight).Width;
-                            g.DrawString(v.Unit, unitFont, dim, x + vw + 2, vy + vasc - uasc);
+                            float pad = Math.Max(0, (g.MeasureString(text, valueFont).Width - vw) / 2);
+                            g.DrawString(v.Unit, unitFont, dim, x - 6 + pad + vw + 4, vy + vasc - uasc);
                         }
                     }
                 }
@@ -812,7 +831,10 @@ namespace Kinovea.ScreenManager
                     g.DrawLine(seg, a, y, b, y);
                     string text = s.Speed.ToString("0.00", CultureInfo.InvariantCulture);
                     SizeF ts = g.MeasureString(text, segFont);
-                    g.DrawString(text, segFont, amber, (a + b) / 2 - ts.Width / 2, Math.Min(plot.Bottom - ts.Height, y + 5));
+                    double mid = (s.From + s.To) / 2;
+                    bool lineUnder = d.Speed != null && Math.Abs(d.Speed(mid)) < s.Speed;
+                    float ty = lineUnder ? y - ts.Height - 2 : y + 5;
+                    g.DrawString(text, segFont, amber, (a + b) / 2 - ts.Width / 2, Math.Max(plot.Top + 2, Math.Min(plot.Bottom - ts.Height, ty)));
                 }
             }
 
@@ -865,7 +887,8 @@ namespace Kinovea.ScreenManager
                     string vt = vnow.ToString("0.00", CultureInfo.InvariantCulture);
                     SizeF vs = g.MeasureString(vt, big);
                     float bx = Math.Min(last.X + 12, plot.Right - vs.Width), by = Math.Max(plot.Top + 22, last.Y - vs.Height - 14);
-                    SwimTheme.GlowText(g, vt, big, SwimTheme.Text, SwimTheme.Accent, new PointF(bx, by), 0.8f);
+                    SwimTheme.GlowText(g, vt, big, SwimTheme.Text, SwimTheme.Accent, new PointF(bx, by), 0.4f);
+                    RectangleF nowBox = new RectangleF(bx, by, vs.Width, vs.Height);
 
                     if (best > vnow + 0.05)
                     {
@@ -875,8 +898,19 @@ namespace Kinovea.ScreenManager
                         SizeF ms = g.MeasureString(mt, mf);
                         using (Pen ring = new Pen(SwimTheme.Amber, 2f))
                             g.DrawEllipse(ring, mx - 5, my - 5, 10, 10);
-                        using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
-                            g.DrawString(mt, mf, amber, Math.Min(mx + 12, plot.Right - ms.Width), Math.Max(my - 12, plot.Top + 40));
+                        // At the right of the point, else under it, else at its left; not over the speed of the moment.
+                        RectangleF[] places =
+                        {
+                            new RectangleF(Math.Min(mx + 12, plot.Right - ms.Width), Math.Max(my - 12, plot.Top + 40), ms.Width, ms.Height),
+                            new RectangleF(Math.Min(mx + 12, plot.Right - ms.Width), my + 8, ms.Width, ms.Height),
+                            new RectangleF(Math.Max(plot.Left, mx - 12 - ms.Width), Math.Max(my - 12, plot.Top + 40), ms.Width, ms.Height)
+                        };
+                        RectangleF place = places.FirstOrDefault(r => !r.IntersectsWith(nowBox) && r.Bottom <= plot.Bottom);
+                        if (!place.IsEmpty)
+                        {
+                            using (SolidBrush amber = new SolidBrush(SwimTheme.Amber))
+                                g.DrawString(mt, mf, amber, place.X, place.Y);
+                        }
                     }
                 }
 
