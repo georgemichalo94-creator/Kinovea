@@ -127,10 +127,11 @@ foreach ($sz in @(@(1920, 600), @(480, 270), @(960, 720), @(420, 560))) {
     $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new([int]$sz[0], [int]$sz[1]), [long]13500))
     $b.Save([System.IO.Path]::Combine($out, ('panel-' + $sz[0] + 'x' + $sz[1] + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
     if ($sz[0] -eq 960) {
-      # The lowest fifth of a 4:3 panel has the chart (the 16:9 drawing left it empty).
+      # (2.24.0) A 4:3 panel uses its height: the chart of the speed goes down to its bottom (its axis and its labels in the lowest
+      # part; the 16:9 drawing left it empty).
       $low = 0
-      for ($y = 560; $y -lt 690; $y += 9) { for ($xx = 40; $xx -lt 920; $xx += 17) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 80 -or $c.G -gt 120) { $low++ } } }
-      Check ($low -gt 10) ('panel 960x720 uses its height (' + $low + ' bright samples in its lowest part)')
+      for ($y = 600; $y -lt 712; $y += 1) { for ($xx = 500; $xx -lt 940; $xx += 11) { $c = $b.GetPixel($xx, $y); if ($c.G -gt 60 -and $c.B -gt 80) { $low++ } } }
+      Check ($low -gt 20) ('panel 960x720 uses its height: its chart down to the bottom (' + $low + ' samples of its axis and labels)')
     }
     Check $true ('panel ' + $sz[0] + 'x' + $sz[1])
   } catch {
