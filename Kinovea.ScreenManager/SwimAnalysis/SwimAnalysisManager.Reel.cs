@@ -598,6 +598,9 @@ namespace Kinovea.ScreenManager
                 return false;
 
             SwimRace race = Race;
+
+            // (2.24.2) A graphic missed by an earlier PDF is not said again for this one (its graphics go up now, or are up already).
+            reportGraphicsMissed.Remove(race.Id ?? "");
             Dictionary<string, byte[]> images = RenderReportGraphics();
 
             // A graphic that cannot be drawn anymore (e.g. no final for the event now) leaves the report.
