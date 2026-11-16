@@ -89,7 +89,7 @@ namespace Kinovea.ScreenManager
         /// <summary>A PDF can take minutes (the Apps Script can run 6 minutes): it is not cut and sent again meanwhile.</summary>
         private const int PdfTimeout = 330000;
         private const int UpdateTimeout = 120000;
-        private const int ImagesTimeout = 180000;
+        internal const int ImagesTimeout = 180000;
 
         public event EventHandler<SwimSyncEventArgs> StateChanged;
 
@@ -305,16 +305,17 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Upload a snapshot of the technical analysis (JPEG) to the Drive. The callback runs on the UI thread.
+        /// Upload a snapshot of the technical analysis (JPEG) to the Drive. The callback runs on the UI thread. (2.24.2) timeout: the
+        /// milliseconds it may take (the images of the report, ImagesTimeout).
         /// </summary>
-        public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] image, Action<SwimSheetResult> callback, string mime = "image/jpeg")
+        public void UploadSnapshot(string url, string token, string raceId, string snapshotId, byte[] image, Action<SwimSheetResult> callback, string mime = "image/jpeg", int timeout = 60000)
         {
             JObject o = NewRequest(token, "image");
             o["raceId"] = raceId;
             o["snapshotId"] = snapshotId;
             o["mime"] = mime;
             o["data"] = Convert.ToBase64String(image);
-            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback);
+            Send(url, o.ToString(Newtonsoft.Json.Formatting.None), callback, timeout);
         }
 
         /// <summary>

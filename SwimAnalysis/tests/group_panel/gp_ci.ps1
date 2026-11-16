@@ -253,6 +253,11 @@ try {
   Check ([Math]::Abs($sToS - 5.78) -lt 0.05 -and [Math]::Abs($cToS - $sToS) -lt 1e-6) ('the chart of the start ends at the 15: ' + [Math]::Round($cToS, 3) + ' (15 m at ' + [Math]::Round($sToS, 3) + ' s)')
   $v1S = $spS.Invoke($sToS - 0.1); $v2S = $spS.Invoke($sToS); $v3S = $spS.Invoke($sToS + 1.0)
   Check ([Math]::Abs($v2S - $v1S) -lt 0.003 -and [Math]::Abs($v3S - $v2S) -lt 1e-9) ('the speed of the start levels off at the 15 and stays: ' + [Math]::Round($v1S, 4) + ' / ' + [Math]::Round($v2S, 4) + ' / ' + [Math]::Round($v3S, 4))
+  # (2.24.2) After the 5 the line of the start is smooth: no dip under the lower of the means of 5 → 10 and 10 → 15.
+  $lowS = 99.0; $floorS = 99.0
+  foreach ($sg in $fS.GetField('Segments', $all).GetValue($dS)) { if ($sg.GetType().GetField('From', $all).GetValue($sg) -gt 1.0) { $floorS = [Math]::Min($floorS, $sg.GetType().GetField('Speed', $all).GetValue($sg)) } }
+  for ($i = 0; $i -le 400; $i++) { $t = 1.65 + ($sToS - 1.65) * $i / 400; $lowS = [Math]::Min($lowS, $spS.Invoke($t)) }
+  Check ($floorS -lt 99 -and $lowS -ge $floorS - 0.01) ('the start after the 5 without a dip: the lowest ' + [Math]::Round($lowS, 3) + ' m/s, the lower of the later means ' + [Math]::Round($floorS, 3))
 
   $turnRace = [Activator]::CreateInstance($tRace)
   $turnRace.Kind = 'training'; $turnRace.Style = 'fs'; $turnRace.Pool = 25; $turnRace.AthleteGender = 'Ανδρών'
@@ -284,21 +289,27 @@ try {
   $nValues = 0; foreach ($gr in $groups) { $nValues += (F $gr 'Values').Count }
   Check ($groups.Count -eq 4 -and $nValues -eq 14) ('the turn in four groups, 14 values: ' + $groups.Count + ' / ' + $nValues)
   Check ($null -ne $speed -and $segments.Count -eq 4) ('a line of the speed and four segments (' + $segments.Count + ')')
-  # The line goes through the distances: its mean over each segment is the one measured (within 1%).
-  $okMeans = $true; $why = ''
+  # The line keeps the mean of the approach and of wall → +5 as measured (within 1%). (2.24.2) After the +5 it goes smoothly from one
+  # mean to the next (within 4% of each) and never dips under the lower of them (the line of 2.24.1 through the breakout fell to about
+  # 1.55 m/s between the +5 and the +10 of this turn and rose again).
+  $okMeans = $true; $why = ''; $floor = 99.0
   foreach ($sg in $segments) {
     $from = F $sg 'From'; $to = F $sg 'To'; $sv = F $sg 'Speed'
     $n = 400; $sum = 0.0
     for ($i = 0; $i -lt $n; $i++) { $t = $from + ($to - $from) * ($i + 0.5) / $n; $sum += $speed.Invoke($t) }
     $mean = $sum / $n
-    if ([Math]::Abs($mean - $sv) / $sv -gt 0.01) { $okMeans = $false }
+    $tol = 0.01; if ($from -gt 0.5) { $tol = 0.04; $floor = [Math]::Min($floor, $sv) }
+    if ([Math]::Abs($mean - $sv) / $sv -gt $tol) { $okMeans = $false }
     $why += (' ' + [Math]::Round($mean, 3) + '/' + [Math]::Round($sv, 3))
   }
-  Check $okMeans ('the line keeps the mean of each segment:' + $why)
+  Check $okMeans ('the line keeps the means (to the wall and wall → +5 within 1%, after the +5 within 4%):' + $why)
   $neg = $false
   $sFrom = F $d 'SpeedFrom'; $sTo = F $d 'SpeedTo'; $sTop = F $d 'SpeedTop'
   for ($i = 0; $i -le 400; $i++) { $t = $sFrom + ($sTo - $sFrom) * $i / 400; $v = $speed.Invoke($t); if ($v -lt -0.01 -or $v -gt 4.5) { $neg = $true } }
   Check (-not $neg -and $sTop -gt 2 -and $sTop -lt 4) ('the speed plausible all along (top ' + [Math]::Round($sTop, 2) + ' m/s)')
+  $low = 99.0
+  for ($i = 0; $i -le 400; $i++) { $t = 0.24 + ($sTo - 0.24) * $i / 400; $low = [Math]::Min($low, $speed.Invoke($t)) }
+  Check ($floor -lt 99 -and $low -ge $floor - 0.01) ('the turn after the push-off without a dip: the lowest ' + [Math]::Round($low, 3) + ' m/s, the lower of the later means ' + [Math]::Round($floor, 3))
   # (2.24.1) The speed stops at the +15: the chart ends there (nothing after it) and the line levels off (it does not go on falling).
   $cTo = F $d 'ChartTo'
   Check ([Math]::Abs($sTo - 7.85) -lt 0.05 -and [Math]::Abs($cTo - $sTo) -lt 1e-6) ('the chart of the turn ends at the +15: ' + [Math]::Round($cTo, 3) + ' (+15 at ' + [Math]::Round($sTo, 3) + ' s)')
@@ -373,7 +384,7 @@ try {
 }
 # ---- (2.24.1) A FICTIONAL turn whose speed falls at the end (the breakout late, near the +10; the means 2.38, 2.04, 1.72 m/s): the
 # line levels off at the +15 (a three-point end brought it to about 1.50) and the chart ends there. Its panel after the +15 and its
-# picture of the end.
+# picture of the end. (2.24.2) The smooth line: down from the push-off to the mean of +10 → +15, level there.
 try {
   $fall = [Activator]::CreateInstance($tRace)
   $fall.Kind = 'training'; $fall.Style = 'fs'; $fall.Pool = 25; $fall.AthleteGender = 'Ανδρών'
@@ -396,7 +407,11 @@ try {
   $fSpeed = $ftype.GetField('Speed', $all).GetValue($fd); $fTo = $ftype.GetField('SpeedTo', $all).GetValue($fd); $fChart = $ftype.GetField('ChartTo', $all).GetValue($fd)
   $fv10 = $fSpeed.Invoke(4.55); $fvLate = $fSpeed.Invoke($fTo - 0.3); $fv15 = $fSpeed.Invoke($fTo)
   Write-Output ('falling turn: v(+10) ' + [Math]::Round($fv10, 3) + ', v(+15 - 0.3 s) ' + [Math]::Round($fvLate, 3) + ', v(+15) ' + [Math]::Round($fv15, 3) + ' (mean 10-15: ' + [Math]::Round(5 / 2.9, 3) + ')')
-  Check ($fv15 -gt 1.55 -and $fv15 -lt 1.724 -and [Math]::Abs($fv15 - $fvLate) -lt 0.02 -and [Math]::Abs($fChart - $fTo) -lt 1e-6 -and [Math]::Abs($fTo - 7.45) -lt 0.05) ('the falling turn levels off at the +15: ' + [Math]::Round($fv15, 3) + ' m/s, the chart ends at ' + [Math]::Round($fChart, 3) + ' s')
+  # (2.24.2) The smooth line levels off at the mean of +10 → +15; it never goes under it after the push-off (no dip).
+  Check ([Math]::Abs($fv15 - 5 / 2.9) -lt 0.002 -and [Math]::Abs($fv15 - $fvLate) -lt 0.02 -and [Math]::Abs($fChart - $fTo) -lt 1e-6 -and [Math]::Abs($fTo - 7.45) -lt 0.05) ('the falling turn levels off at the +15: ' + [Math]::Round($fv15, 3) + ' m/s, the chart ends at ' + [Math]::Round($fChart, 3) + ' s')
+  $fLow = 99.0
+  for ($i = 0; $i -le 400; $i++) { $t = 0.23 + ($fTo - 0.23) * $i / 400; $fLow = [Math]::Min($fLow, $fSpeed.Invoke($t)) }
+  Check ($fLow -ge 5 / 2.9 - 0.01 -and $fv10 -lt 5 / 2.45 -and $fv10 -gt 5 / 2.9) ('the falling turn without a dip: the lowest ' + [Math]::Round($fLow, 3) + ' m/s, at the +10 ' + [Math]::Round($fv10, 3) + ' (between the means of its segments)')
   $b = New-Object System.Drawing.Bitmap 1280, 720
   $g = [System.Drawing.Graphics]::FromImage($b)
   $mt.GetMethod('PaintGroupDashboard', $all).Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), [long]($f0 + 8070)))

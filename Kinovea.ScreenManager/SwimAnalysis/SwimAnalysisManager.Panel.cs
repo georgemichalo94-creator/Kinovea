@@ -177,6 +177,101 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// (2.24.2) A smooth monotone line through values (the slope inside from Steffen, at the ends (3 d − the slope next to it) / 2):
+        /// between two points it stays between their values, so it never dips under the lower of them (or rises over the higher one).
+        /// Here its values are speeds: it is the line of the speed itself, not the derivative of a distance.
+        /// </summary>
+        private sealed class Monotone
+        {
+            private readonly double[] x, y, m;
+
+            public Monotone(IList<double> xs, IList<double> ys)
+            {
+                int n = xs.Count;
+                x = xs.ToArray();
+                y = ys.ToArray();
+                m = new double[n];
+                double[] h = new double[n - 1], dl = new double[n - 1];
+                for (int i = 0; i < n - 1; i++)
+                {
+                    h[i] = x[i + 1] - x[i];
+                    dl[i] = (y[i + 1] - y[i]) / h[i];
+                }
+
+                for (int i = 1; i < n - 1; i++)
+                {
+                    double p = (dl[i - 1] * h[i] + dl[i] * h[i - 1]) / (h[i - 1] + h[i]);
+                    m[i] = (Math.Sign(dl[i - 1]) + Math.Sign(dl[i])) * Math.Min(Math.Min(Math.Abs(dl[i - 1]), Math.Abs(dl[i])), 0.5 * Math.Abs(p));
+                }
+
+                if (n == 2)
+                {
+                    m[0] = dl[0];
+                    m[1] = dl[0];
+                }
+                else
+                {
+                    m[0] = (3 * dl[0] - m[1]) / 2;
+                    m[n - 1] = (3 * dl[n - 2] - m[n - 2]) / 2;
+                }
+            }
+
+            public double Last
+            {
+                get { return x[x.Length - 1]; }
+            }
+
+            /// <summary>The value at t (the first one before the first point, the last one after the last point).</summary>
+            public double At(double t)
+            {
+                int n = x.Length;
+                if (t <= x[0])
+                    return y[0];
+                if (t >= x[n - 1])
+                    return y[n - 1];
+                int i = 0;
+                while (i < n - 2 && t > x[i + 1])
+                    i++;
+                double h = x[i + 1] - x[i], u = (t - x[i]) / h, u2 = u * u, u3 = u2 * u;
+                return (2 * u3 - 3 * u2 + 1) * y[i] + (u3 - 2 * u2 + u) * h * m[i] + (-2 * u3 + 3 * u2) * y[i + 1] + (u3 - u2) * h * m[i + 1];
+            }
+
+            /// <summary>The area under the line from its first point to t: with speeds, the distance covered.</summary>
+            public double Area(double t)
+            {
+                int n = x.Length;
+                double sum = 0;
+                for (int i = 0; i < n - 1 && t > x[i]; i++)
+                {
+                    double h = x[i + 1] - x[i], s = Math.Min(1, (t - x[i]) / h), s2 = s * s, s3 = s2 * s, s4 = s3 * s;
+                    sum += h * (y[i] * (s - s3 + s4 / 2) + h * m[i] * (s2 / 2 - 2 * s3 / 3 + s4 / 4) + y[i + 1] * (s3 - s4 / 2) + h * m[i + 1] * (s4 / 4 - s3 / 3));
+                }
+
+                if (t > x[n - 1])
+                    sum += y[n - 1] * (t - x[n - 1]);
+                return sum;
+            }
+        }
+
+        /// <summary>
+        /// (2.24.2) The smooth line of the speed after a first point (x0, v0): through the mean speed of each segment between the distances
+        /// (5 → 10, 10 → 15) at its middle, and level at the last distance (its mean again there). The distances in the order of time.
+        /// </summary>
+        private static Monotone SegmentLine(List<double> xs, List<double> ys, double x0, double v0)
+        {
+            List<double> kx = new List<double> { x0 }, ky = new List<double> { v0 };
+            for (int i = 1; i < xs.Count; i++)
+            {
+                kx.Add((xs[i - 1] + xs[i]) / 2);
+                ky.Add((ys[i] - ys[i - 1]) / (xs[i] - xs[i - 1]));
+            }
+
+            kx.Add(xs[xs.Count - 1]);
+            ky.Add(ky[ky.Count - 1]);
+            return new Monotone(kx, ky);
+        }
+
         private static void AddValue(PanelGroup group, string label, double? value, string format, string unit, double? at, double fallback)
         {
             if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
@@ -226,6 +321,10 @@ namespace Kinovea.ScreenManager
             d.Kicks.AddRange(p.Kicks);
             double? breakoutDist = p.BreakoutDist;
             List<KeyValuePair<double, double>> points = new List<KeyValuePair<double, double>>();
+
+            // (2.24.2) The distances of 5 m (time, metres) alone: the smooth line of the speed after the first of them goes through their
+            // segments.
+            List<KeyValuePair<double, double>> marks = new List<KeyValuePair<double, double>>();
 
             if (p.Kind == SwimPhaseKind.Turn)
             {
@@ -278,14 +377,15 @@ namespace Kinovea.ScreenManager
                 // The speed: to the wall at the mean of the approach, slowing down from the rotation (or the last 0.3 s) to the contact
                 // (the mean of −5 → wall as measured); on the wall from rest to the push-off; after it the line through the distances.
                 if (o5.HasValue)
-                    points.Add(new KeyValuePair<double, double>(o5.Value, 5 * k));
+                    marks.Add(new KeyValuePair<double, double>(o5.Value, 5 * k));
+                if (o10.HasValue)
+                    marks.Add(new KeyValuePair<double, double>(o10.Value, 10 * k));
+                if (o15.HasValue)
+                    marks.Add(new KeyValuePair<double, double>(o15.Value, 15 * k));
+                points.AddRange(marks);
                 if (p.Breakout.HasValue && breakoutDist.HasValue)
                     points.Add(new KeyValuePair<double, double>(p.Breakout.Value, breakoutDist.Value * k));
-                if (o10.HasValue)
-                    points.Add(new KeyValuePair<double, double>(o10.Value, 10 * k));
-                if (o15.HasValue)
-                    points.Add(new KeyValuePair<double, double>(o15.Value, 15 * k));
-                TurnSpeed(d, p, tIn, k, points);
+                TurnSpeed(d, p, tIn, k, marks, points);
             }
             else
             {
@@ -345,22 +445,38 @@ namespace Kinovea.ScreenManager
                 if (p.Entry.HasValue && p.EntryDist.HasValue)
                     points.Add(new KeyValuePair<double, double>(p.Entry.Value, p.EntryDist.Value * k));
                 if (t5.HasValue)
-                    points.Add(new KeyValuePair<double, double>(t5.Value, 5 * k));
+                    marks.Add(new KeyValuePair<double, double>(t5.Value, 5 * k));
                 if (t10.HasValue)
-                    points.Add(new KeyValuePair<double, double>(t10.Value, 10 * k));
+                    marks.Add(new KeyValuePair<double, double>(t10.Value, 10 * k));
+                if (t15.HasValue)
+                    marks.Add(new KeyValuePair<double, double>(t15.Value, 15 * k));
+                points.AddRange(marks);
                 if (p.Breakout.HasValue && breakoutDist.HasValue)
                     points.Add(new KeyValuePair<double, double>(p.Breakout.Value, breakoutDist.Value * k));
-                if (t15.HasValue)
-                    points.Add(new KeyValuePair<double, double>(t15.Value, 15 * k));
                 List<double> xs, ys;
                 MonotonePoints(points, out xs, out ys);
                 if (xs.Count >= 2 && xs[0] == move)
                 {
                     // (2.24.1) The speed levels off at the 15 (or the last distance): it stops there, it does not go on falling.
                     Pchip curve = new Pchip(xs, ys, 0.0, true);
-                    d.Speed = t => t < move ? 0 : curve.Slope(Math.Min(t, curve.Last));
+                    Func<double, double> line = t => curve.Slope(Math.Min(t, curve.Last));
+                    double end = curve.Last;
+
+                    // (2.24.2) To the first distance (the 5) the line through the distances; after it a smooth line from its speed there
+                    // through the mean of each later segment: no dip between the 5 and the 15 under the lower of their means.
+                    List<double> mx, my;
+                    MonotonePoints(marks, out mx, out my);
+                    if (mx.Count >= 2 && mx[0] > move + 0.1)
+                    {
+                        double first = mx[0];
+                        Monotone tail = SegmentLine(mx, my, first, Math.Max(0, curve.Slope(Math.Min(first, curve.Last))));
+                        line = t => t <= first ? curve.Slope(Math.Min(t, curve.Last)) : tail.At(t);
+                        end = Math.Max(end, tail.Last);
+                    }
+
+                    d.Speed = t => t < move ? 0 : line(t);
                     d.SpeedFrom = Math.Min(0, move);
-                    d.SpeedTo = curve.Last;
+                    d.SpeedTo = end;
                 }
             }
 
@@ -429,11 +545,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The line of the speed of a turn. To the wall: the mean speed of the approach until the rotation (or the last 0.3 s), then slowing
-        /// down to rest at the contact, so that −5 → wall takes the time measured. On the wall: from rest to the speed of the push-off. After
-        /// it: the line through the distances (+5, the breakout, +10, +15), from where the push on the wall brought the head (the distance its
-        /// speed covers there), so that wall → +5 takes the time measured too.
+        /// down to rest at the contact, so that −5 → wall takes the time measured. On the wall: from rest to the speed of the push-off.
+        /// (2.24.2) After it: a smooth line from the speed of the push-off through the mean speed of each later segment (+5 → +10, +10 → +15)
+        /// at its middle, level at the last distance; the speed of the push-off such that wall → +5 takes the time measured. It goes from
+        /// one mean to the next without a dip under the lower of them (a line through the breakout too had one, when 5 → 10 was slower than
+        /// 10 → 15); the distances after the +5 come within some centimetres. With fewer than two distances after the wall, the line through
+        /// the distances and the breakout (2.24.1), from where the push on the wall brought the head.
         /// </summary>
-        private static void TurnSpeed(PanelData d, SwimTechPhase p, double? tIn, double k, List<KeyValuePair<double, double>> points)
+        private static void TurnSpeed(PanelData d, SwimTechPhase p, double? tIn, double k, List<KeyValuePair<double, double>> marks, List<KeyValuePair<double, double>> points)
         {
             bool approach = tIn.HasValue && tIn.Value < -0.2;
             double t5 = approach ? tIn.Value : 0;
@@ -445,33 +564,70 @@ namespace Kinovea.ScreenManager
             }
 
             double push = p.Pushoff.HasValue && p.Pushoff.Value > 0 && p.Pushoff.Value < 2 ? p.Pushoff.Value : 0;
-            Pchip after = null;
-            double d0 = 0;
-            for (int i = 0; i < 6; i++)
+            Func<double, double> line = null;
+            double top = 0, end = 0;
+
+            List<double> mx, my;
+            MonotonePoints(marks, out mx, out my);
+            if (mx.Count >= 2 && mx[0] > push + 0.1)
             {
-                List<KeyValuePair<double, double>> all = new List<KeyValuePair<double, double>>(points);
-                all.Add(new KeyValuePair<double, double>(push, d0));
-                List<double> xs, ys;
-                MonotonePoints(all, out xs, out ys);
-                if (xs.Count < 2 || xs[0] != push)
+                // The area under the line to the first distance grows with the speed of the push-off: halving finds the one that covers it
+                // (on the wall the speed rises as half a cosine: its distance there is half the speed of the push-off times its time).
+                double lo = 0.3, hi = 8;
+                for (int i = 0; i < 50; i++)
                 {
-                    after = null;
-                    break;
+                    double v = (lo + hi) / 2;
+                    if (v * push / 2 + SegmentLine(mx, my, push, v).Area(mx[0]) < my[0])
+                        lo = v;
+                    else
+                        hi = v;
                 }
 
-                // (2.24.1) The speed levels off at the +15 (or the last distance): it stops there, it does not go on falling.
-                after = new Pchip(xs, ys, null, true);
-                double next = push > 0 ? Math.Max(0, after.StartSlope) * push / 2 : 0;
-                if (Math.Abs(next - d0) < 1e-4)
-                    break;
-                d0 = next;
+                top = (lo + hi) / 2;
+                Monotone smooth = SegmentLine(mx, my, push, top);
+                line = smooth.At;
+
+                // The chart goes on to a breakout after the last distance (level there).
+                List<double> xs, ys;
+                MonotonePoints(points, out xs, out ys);
+                end = Math.Max(smooth.Last, xs.Count > 0 ? xs[xs.Count - 1] : 0);
+            }
+            else
+            {
+                Pchip after = null;
+                double d0 = 0;
+                for (int i = 0; i < 6; i++)
+                {
+                    List<KeyValuePair<double, double>> all = new List<KeyValuePair<double, double>>(points);
+                    all.Add(new KeyValuePair<double, double>(push, d0));
+                    List<double> xs, ys;
+                    MonotonePoints(all, out xs, out ys);
+                    if (xs.Count < 2 || xs[0] != push)
+                    {
+                        after = null;
+                        break;
+                    }
+
+                    // (2.24.1) The speed levels off at the +15 (or the last distance): it stops there, it does not go on falling.
+                    after = new Pchip(xs, ys, null, true);
+                    double next = push > 0 ? Math.Max(0, after.StartSlope) * push / 2 : 0;
+                    if (Math.Abs(next - d0) < 1e-4)
+                        break;
+                    d0 = next;
+                }
+
+                if (after != null)
+                {
+                    Pchip curve = after;
+                    top = Math.Max(0, curve.StartSlope);
+                    line = t => curve.Slope(Math.Min(t, curve.Last));
+                    end = curve.Last;
+                }
             }
 
-            if (!approach && after == null)
+            if (!approach && line == null)
                 return;
 
-            Pchip line = after;
-            double top = after != null ? Math.Max(0, after.StartSlope) : 0;
             d.Speed = t =>
             {
                 if (t < 0)
@@ -487,10 +643,10 @@ namespace Kinovea.ScreenManager
                     return 0;
                 if (t < push)
                     return top * 0.5 * (1 - Math.Cos(Math.PI * t / push));
-                return line.Slope(Math.Min(t, line.Last));
+                return line(t);
             };
             d.SpeedFrom = t5;
-            d.SpeedTo = line != null ? line.Last : 0;
+            d.SpeedTo = line != null ? end : 0;
         }
 
         /// <summary>The stage of the movement at a time of a phase (s from its origin), as the snapshots get it (Greek).</summary>

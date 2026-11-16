@@ -398,6 +398,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The graphics of the report are being uploaded before a PDF.</summary>
         private bool reportGraphicsUploading;
 
+        /// <summary>(2.24.2) The races whose PDF went without a graphic that did not go up (twice): said with the result of the PDF.</summary>
+        private readonly HashSet<string> reportGraphicsMissed = new HashSet<string>();
+
         /// <summary>
         /// The graphics of the video for the PDF report (PNG): "summary", the summary card of the race; "versus", the race against the
         /// final of the event (or the reference) after the touch. Empty while the race has no finish. (2.24.0) A technique analysis: the
@@ -615,7 +618,7 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
-        private void UploadReportGraphic(SwimRace race, List<KeyValuePair<string, byte[]>> pending, int index, Action then)
+        private void UploadReportGraphic(SwimRace race, List<KeyValuePair<string, byte[]>> pending, int index, Action then, bool again = false)
         {
             if (index >= pending.Count)
             {
@@ -628,6 +631,9 @@ namespace Kinovea.ScreenManager
 
             string id = pending[index].Key;
             byte[] bytes = pending[index].Value;
+
+            // (2.24.2) An image of the report has the time of the images (3 minutes), not of a snapshot (1 minute): with a slow Drive the
+            // panel was left out of the PDF. One more try before the PDF goes without it.
             client.UploadSnapshot(Settings.WebAppUrl, Settings.Token, race.Id, "report-" + id, bytes, result =>
             {
                 if (result.Ok && !string.IsNullOrEmpty(result.FileId))
@@ -642,13 +648,30 @@ namespace Kinovea.ScreenManager
                     graphic.FileId = result.FileId;
                     graphic.Hash = GraphicHash(bytes);
                 }
+                else if (!again)
+                {
+                    log.Warn("A graphic of the report was not uploaded (" + id + "), it goes once more: " + result.Error);
+                    if (race == Race)
+                        Status(SwimLang.T("🎨 Ένα γραφικό του βίντεο ξαναστέλνεται για το PDF…"), false);
+                    UploadReportGraphic(race, pending, index, then, true);
+                    return;
+                }
                 else
                 {
                     log.Warn("A graphic of the report was not uploaded (" + id + "): " + result.Error);
+                    reportGraphicsMissed.Add(race.Id ?? "");
                 }
 
                 UploadReportGraphic(race, pending, index + 1, then);
-            }, "image/png");
+            }, "image/png", SwimSheetClient.ImagesTimeout);
+        }
+
+        /// <summary>(2.24.2) The note of a PDF that went without a graphic of the video ("" for the others): said once.</summary>
+        private string MissedGraphicsNote(SwimRace race)
+        {
+            return race != null && reportGraphicsMissed.Remove(race.Id ?? "")
+                ? SwimLang.T(" · ⚠ ένα γραφικό του βίντεο (ο πίνακας) δεν ανέβηκε στο Drive: το PDF βγήκε χωρίς αυτό ή με το προηγούμενο. Ξαναπάτα «PDF report».")
+                : "";
         }
         #endregion
     }

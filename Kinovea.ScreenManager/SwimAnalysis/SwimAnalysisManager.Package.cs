@@ -784,17 +784,24 @@ namespace Kinovea.ScreenManager
         private void ArchiveStatus(SwimRace race, SwimSheetResult result, string took = "")
         {
             JObject archive = result != null && result.Raw != null ? result.Raw["archive"] as JObject : null;
-            string time = string.IsNullOrEmpty(took) ? "" : SwimLang.T(" · PDF ") + took;
+
+            // (2.24.2) A graphic of the video (the panel) that did not go up: said with the PDF, as a warning.
+            string missed = MissedGraphicsNote(race);
+            string time = (string.IsNullOrEmpty(took) ? "" : SwimLang.T(" · PDF ") + took) + missed;
             if (archive == null || race == null)
             {
                 if (time.Length > 0)
-                    Status(SwimLang.T("✓ PDF ") + took, false);
+                    Status(SwimLang.T("✓ PDF ") + took + missed, missed.Length > 0);
                 return;
             }
 
             if (archive.Value<bool?>("ok") == true)
             {
-                Status(SwimLang.T("✓ Το PDF μπήκε στο «Αρχεία Αθλητών/τριων» του KOE App, με τον αριθμό μητρώου του αθλητή.") + time, false);
+                // (2.24.2) The Apps Script 2.18.1 says when the folder of the files of the KOE App refused the PDF (it went in with its
+                // link in the Drive): why, and the owner of the folder.
+                string note = archive.Value<string>("note");
+                Status(SwimLang.T("✓ Το PDF μπήκε στο «Αρχεία Αθλητών/τριων» του KOE App, με τον αριθμό μητρώου του αθλητή.") +
+                    (string.IsNullOrEmpty(note) ? "" : " · " + note) + time, missed.Length > 0);
                 return;
             }
 
@@ -804,7 +811,7 @@ namespace Kinovea.ScreenManager
             if (reason == "registry" && international)
             {
                 if (time.Length > 0)
-                    Status(SwimLang.T("✓ PDF ") + took, false);
+                    Status(SwimLang.T("✓ PDF ") + took + missed, missed.Length > 0);
                 return;
             }
             Status(SwimLang.T("Το PDF δεν μπήκε στο KOE App: ") + (archive.Value<string>("message") ?? reason) + time, true);

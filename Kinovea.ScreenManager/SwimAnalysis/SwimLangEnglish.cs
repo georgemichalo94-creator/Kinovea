@@ -1836,6 +1836,8 @@ namespace Kinovea.ScreenManager
             { "🎓 διαβάζει τον αγώνα στο παρασκήνιο (μήκος {0})…", "🎓 reading the race in the background (length {0})…" },
             { "🎓 ο αγώνας διαβάστηκε · {0} · {1} σημεία περιμένουν τα πατήματά σου", "🎓 the race has been read · {0} · {1} points await your presses" },
             { "🎨 Τα γραφικά του βίντεο ανεβαίνουν για το PDF…", "🎨 Uploading the video graphics for the PDF…" },
+            { "🎨 Ένα γραφικό του βίντεο ξαναστέλνεται για το PDF…", "🎨 A video graphic is being sent again for the PDF…" },
+            { " · ⚠ ένα γραφικό του βίντεο (ο πίνακας) δεν ανέβηκε στο Drive: το PDF βγήκε χωρίς αυτό ή με το προηγούμενο. Ξαναπάτα «PDF report».", " · ⚠ a video graphic (the panel) did not upload to the Drive: the PDF came out without it or with the previous one. Press \"PDF report\" again." },
             { "🏅 {0}: {1} τελικοί, {2} κολυμβητές.{3}", "🏅 {0}: {1} finals, {2} swimmers.{3}" },
             { "🏅 Τελικοί…", "🏅 Finals…" },
             { "🏅 Τελικός", "🏅 Final" },
