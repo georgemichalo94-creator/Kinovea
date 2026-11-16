@@ -372,7 +372,7 @@ try {
   Check $false ('the panel of 2.24.0: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)
 }
 # ---- (2.24.1) A FICTIONAL turn whose speed falls at the end (the breakout late, near the +10; the means 2.38, 2.04, 1.72 m/s): the
-# line levels off at the +15 (a three-point end brought it to about 1.37) and the chart ends there. Its panel after the +15 and its
+# line levels off at the +15 (a three-point end brought it to about 1.50) and the chart ends there. Its panel after the +15 and its
 # picture of the end.
 try {
   $fall = [Activator]::CreateInstance($tRace)
@@ -384,7 +384,7 @@ try {
     $x = [Activator]::CreateInstance($tMark); $x.Type = [Enum]::Parse($tType, $mk[0]); $x.Timestamp = [long]($f0 + $mk[1]); $x.Wall = -1
     if ($null -ne $mk[2]) { $x.Distance = [int]$mk[2] }
     $fall.Marks.Add($x)
-    if ($mk[0] -eq 'WallContact') { $fall.GetPhaseValues($x.Id, $true).BreakoutDist = 8.6 }
+    if ($mk[0] -eq 'WallContact') { $fall.GetPhaseValues($x.Id, $true).BreakoutDist = 8.7 }
   }
   $fComputed = $tCalc.GetMethod('Compute').Invoke($null, @($fall, $timing, 0.5))
   $fPhases = $tTech.GetMethod('Compute').Invoke($null, @($fall, $fComputed, $timing))
