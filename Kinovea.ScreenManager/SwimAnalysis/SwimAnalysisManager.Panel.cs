@@ -852,6 +852,21 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // (2.24.1) Where the speed of the moment is written (big, over the end of the line): the mean of a segment keeps off it (the
+            // line levels off at the 15, close to the mean of the last segment).
+            Font big = SwimTheme.DisplayLight(34.5f);
+            RectangleF nowLabel = RectangleF.Empty;
+            if (d.Speed != null)
+            {
+                double from0 = Math.Max(d.T0, d.SpeedFrom), at0 = Math.Min(now, Math.Min(d.ChartTo, d.SpeedTo));
+                if (at0 > from0)
+                {
+                    float x0 = px(at0), y0 = py(Math.Abs(d.Speed(at0)));
+                    SizeF size0 = g.MeasureString(Math.Abs(d.Speed(at0)).ToString("0.00", CultureInfo.InvariantCulture), big);
+                    nowLabel = new RectangleF(Math.Min(x0 + 12, plot.Right - size0.Width - 8), Math.Max(plot.Top + 22, y0 - size0.Height - 14), size0.Width, size0.Height);
+                }
+            }
+
             // The mean of each segment passed, with its value under it.
             Font segFont = SwimTheme.Ui(13.5f, FontStyle.Regular);
             using (Pen seg = new Pen(Color.FromArgb(150, 112, 40), 3f))
@@ -867,8 +882,20 @@ namespace Kinovea.ScreenManager
                     SizeF ts = g.MeasureString(text, segFont);
                     double mid = (s.From + s.To) / 2;
                     bool lineUnder = d.Speed != null && Math.Abs(d.Speed(mid)) < s.Speed;
-                    float ty = lineUnder ? y - ts.Height - 2 : y + 5;
-                    g.DrawString(text, segFont, amber, (a + b) / 2 - ts.Width / 2, Math.Max(plot.Top + 2, Math.Min(plot.Bottom - ts.Height, ty)));
+                    float ty = Math.Max(plot.Top + 2, Math.Min(plot.Bottom - ts.Height, lineUnder ? y - ts.Height - 2 : y + 5));
+                    float tx = (a + b) / 2 - ts.Width / 2;
+                    if (!nowLabel.IsEmpty && new RectangleF(tx, ty, ts.Width, ts.Height).IntersectsWith(nowLabel))
+                    {
+                        // At the left of its bar, else on the other side of it.
+                        tx = a + 6;
+                        if (new RectangleF(tx, ty, ts.Width, ts.Height).IntersectsWith(nowLabel))
+                        {
+                            tx = (a + b) / 2 - ts.Width / 2;
+                            ty = Math.Max(plot.Top + 2, Math.Min(plot.Bottom - ts.Height, lineUnder ? y + 5 : y - ts.Height - 2));
+                        }
+                    }
+
+                    g.DrawString(text, segFont, amber, tx, ty);
                 }
             }
 
@@ -917,7 +944,6 @@ namespace Kinovea.ScreenManager
                         g.DrawEllipse(ring, last.X - 8, last.Y - 8, 16, 16);
                     }
 
-                    Font big = SwimTheme.DisplayLight(34.5f);
                     string vt = vnow.ToString("0.00", CultureInfo.InvariantCulture);
                     SizeF vs = g.MeasureString(vt, big);
                     float bx = Math.Min(last.X + 12, plot.Right - vs.Width - 8), by = Math.Max(plot.Top + 22, last.Y - vs.Height - 14);
