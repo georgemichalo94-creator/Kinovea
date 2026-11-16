@@ -1076,6 +1076,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Lines.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Group.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.GroupCameras.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Panel.cs" />
     <Compile Include="SwimAnalysis\SwimGroupCameras.cs" />
     <Compile Include="SwimAnalysis\SwimGroupDashboard.cs" />
     <Compile Include="SwimAnalysis\SwimProgressDialog.cs" />

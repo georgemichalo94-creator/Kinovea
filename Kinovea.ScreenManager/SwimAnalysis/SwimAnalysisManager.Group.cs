@@ -233,8 +233,9 @@ namespace Kinovea.ScreenManager
         #region The panel of the group
         /// <summary>
         /// The panel of the group (in the place of one more screen, on the images and the video of the group): the start or the turn of
-        /// this moment of the video of the analysis, its title and its clock, its times as they pass, the speeds of its segments; outside a
-        /// start or a turn the race clock. Drawn in units of a 1280 x 720 panel fitted in the size.
+        /// this moment of the video of the analysis (2.24.0: its values big, in groups, and its speed as a continuous line, see
+        /// SwimAnalysisManager.Panel); outside a start or a turn the race clock. Drawn in units of a 1280 x 720 panel (900 x 1100 in a
+        /// narrow place) fitted in the size.
         /// </summary>
         internal void PaintGroupDashboard(Graphics g, Size size, long at)
         {
@@ -250,14 +251,11 @@ namespace Kinovea.ScreenManager
                 {
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                    // In the shape of its place: 16:9 beside 16:9 videos, taller beside 4:3 ones or in a narrow cell (fewer columns).
-                    float aspect = size.Width / (float)size.Height;
-                    float width = aspect >= 1.5f ? 1280f : aspect >= 1.1f ? 1100f : 860f;
-                    float height = Math.Max(560f, width / aspect);
-                    float scale = Math.Min(size.Width / width, size.Height / height);
-                    g.TranslateTransform((size.Width - width * scale) / 2f, (size.Height - height * scale) / 2f);
+                    SizeF canvas = PanelCanvas(size);
+                    float scale = Math.Min(size.Width / canvas.Width, size.Height / canvas.Height);
+                    g.TranslateTransform((size.Width - canvas.Width * scale) / 2f, (size.Height - canvas.Height * scale) / 2f);
                     g.ScaleTransform(scale, scale);
-                    PaintDashboard(g, at, width, height);
+                    PaintDashboard(g, at, canvas.Width, canvas.Height);
                 }
                 catch (Exception e)
                 {
@@ -272,16 +270,17 @@ namespace Kinovea.ScreenManager
 
         private void PaintDashboard(Graphics g, long at, float width, float height)
         {
+            SwimTechPhase phase = Race != null && TechPhases != null && Timing != null && Timing.IsValid ? SwimTechCalculator.PhaseAt(TechPhases, at) : null;
+            if (phase != null)
+            {
+                PaintPanel(g, BuildPanel(phase), Timing.Seconds(at, phase.Origin), width, height, false);
+                return;
+            }
+
             RectangleF frame = new RectangleF(16, 16, width - 32, height - 32);
             SwimTheme.HudPanel(g, frame, SwimTheme.Accent, 1f, false);
-            Font wordmark = SwimTheme.DisplayLight(15f);
-            Font title = SwimTheme.Ui(17f, FontStyle.Bold);
-            Font clockFont = SwimTheme.DisplayLight(44f);
-            Font caption = SwimTheme.Ui(11.5f, FontStyle.Bold);
-            Font value = SwimTheme.DisplayLight(34f);
-            Font small = SwimTheme.Ui(12f, FontStyle.Regular);
-
-            SwimTheme.CapsIn(g, "SWIM ANALYTICS", wordmark, SwimTheme.AccentPale, new RectangleF(40, 34, 400, 30), StringAlignment.Near, 0.2f);
+            Font small = SwimTheme.Ui(13f, FontStyle.Regular);
+            SwimTheme.CapsIn(g, "SWIM ANALYTICS", SwimTheme.DisplayLight(15f), SwimTheme.AccentPale, new RectangleF(40, 22, 400, 26), StringAlignment.Near, 0.2f);
             if (Race == null || TechPhases == null || Timing == null || !Timing.IsValid)
             {
                 using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
@@ -289,81 +288,21 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            SwimTechPhase phase;
-            double now;
-            List<KeyValuePair<string, string>> items = TechValuesAt(at, out phase, out now);
-            string head, clock;
-            if (phase != null)
-            {
-                head = SwimLang.Upper(phase.Title);
-                clock = (now < 0 ? "−" : "") + Math.Abs(now).ToString("0.00", CultureInfo.InvariantCulture) + " s";
-            }
-            else
-            {
-                // Between the start and the turns: the race clock from the start signal.
-                SwimTechPhase start = TechPhases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start);
-                double sinceStart = start != null ? Timing.Seconds(at, start.Origin) : 0;
-                head = start != null && sinceStart < 0 ? SwimLang.T("ΠΡΙΝ ΤΗΝ ΕΚΚΙΝΗΣΗ") : SwimLang.T("ΚΟΛΥΜΒΗΣΗ");
-                clock = start != null ? sinceStart.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "";
-                items = new List<KeyValuePair<string, string>>();
-            }
-
+            // Between the start and the turns: the race clock from the start signal.
+            SwimTechPhase start = TechPhases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start);
+            double sinceStart = start != null ? Timing.Seconds(at, start.Origin) : 0;
+            string head = start != null && sinceStart < 0 ? SwimLang.T("ΠΡΙΝ ΤΗΝ ΕΚΚΙΝΗΣΗ") : SwimLang.T("ΚΟΛΥΜΒΗΣΗ");
+            string clock = start != null ? sinceStart.ToString("0.00", CultureInfo.InvariantCulture) + " s" : "";
+            Font clockFont = SwimTheme.DisplayLight(width >= 1100 ? 60f : 48f);
             SizeF cs = g.MeasureString(clock, clockFont);
-            SwimTheme.GlowText(g, clock, clockFont, SwimTheme.AccentPale, SwimTheme.Accent, new PointF(frame.Right - cs.Width - 24, 30), 1f);
-            SwimTheme.CapsIn(g, head, title, SwimTheme.Amber, new RectangleF(40, 72, Math.Max(40, frame.Width - cs.Width - 80), 34), StringAlignment.Near, 0.16f);
-            using (Pen line = new Pen(Color.FromArgb(70, SwimTheme.Accent), 1.5f))
-                g.DrawLine(line, 40, 118, frame.Right - 24, 118);
-
-            // The values as they pass, in cells of five columns (four or three in a narrower panel), the speeds of the segments below them
-            // when there are some.
-            bool chart = phase != null && SegmentSpeedsAt(phase, now) > 0;
-            float gridBottom = chart ? Math.Max(228f, height * 0.58f) : height - 40;
-            int cols = width >= 1200 ? 5 : width >= 1000 ? 4 : 3;
-            float cellW = (frame.Width - 48) / cols, cellH = 92;
-            int rows = Math.Max(1, (int)((gridBottom - 136) / cellH));
-            int shown = Math.Min(items.Count, cols * rows);
-            int skip = items.Count - shown;
+            SwimTheme.GlowText(g, clock, clockFont, SwimTheme.AccentPale, SwimTheme.Accent, new PointF(frame.Right - cs.Width - 10, width >= 1100 ? 8 : 16), 1f);
+            SwimTheme.CapsIn(g, head, SwimTheme.Ui(width >= 1100 ? 27f : 24f, FontStyle.Bold), SwimTheme.Amber,
+                new RectangleF(40, 48, Math.Max(40, frame.Width - cs.Width - 80), 56), StringAlignment.Near, 0.1f);
+            using (Pen line = new Pen(Color.FromArgb(90, SwimTheme.Accent), 1.5f))
+                g.DrawLine(line, 40, 126, frame.Right - 24, 126);
             using (SolidBrush dim = new SolidBrush(SwimTheme.Dim))
-            {
-                for (int i = 0; i < shown; i++)
-                {
-                    KeyValuePair<string, string> item = items[skip + i];
-                    float cx = 40 + (i % cols) * cellW;
-                    float cy = 136 + (i / cols) * cellH;
-                    g.DrawString(item.Key, caption, dim, cx, cy);
-                    SwimTheme.GlowText(g, item.Value, value, SwimTheme.Text, SwimTheme.Accent, new PointF(cx - 2, cy + 22), 0.7f);
-                }
-
-                if (phase != null && items.Count == 0)
-                    g.DrawString(SwimLang.T("Οι χρόνοι μπαίνουν εδώ καθώς περνούν."), small, dim, 40, 140);
-                else if (phase == null)
-                    g.DrawString(SwimLang.T("Τα δεδομένα της εκκίνησης ή της στροφής φαίνονται εδώ, όταν το βίντεο φτάσει σε αυτήν."), small, dim, 40, 140);
-            }
-
-            if (chart)
-            {
-                // The chart of the speeds of the segments across the panel under the values.
-                RectangleF place = new RectangleF(40, gridBottom + 4, frame.Width - 48, frame.Bottom - 24 - (gridBottom + 4));
-                DrawSegmentSpeedChart(g, phase, now, new Size((int)width, (int)height), 1.9f, place);
-            }
-        }
-
-        /// <summary>How many segments of the phase have their speed so far (0–5, 5–10, 10–15).</summary>
-        private int SegmentSpeedsAt(SwimTechPhase phase, double now)
-        {
-            int n = 0;
-            if (phase == null || (phase.Kind == SwimPhaseKind.Turn && now < 0))
-                return 0;
-            foreach (int d in DistanceLineOffsets)
-            {
-                int offset;
-                double time;
-                double? speed;
-                if (LinePassed(phase, now, d, out offset, out time, out speed) && speed.HasValue)
-                    n++;
-            }
-
-            return n;
+                g.DrawString(SwimLang.T("Τα δεδομένα της εκκίνησης ή της στροφής φαίνονται εδώ, όταν το βίντεο φτάσει σε αυτήν."), small, dim,
+                    new RectangleF(40, 150, frame.Width - 48, 80));
         }
         #endregion
 
@@ -785,6 +724,24 @@ namespace Kinovea.ScreenManager
                         return SwimLang.T("Δεν διαβάστηκε κανένα καρέ του βίντεο.");
                     }
 
+                    // (2.24.0) The end: the panel of the last start or turn of the part grows from its place to the whole picture and
+                    // closes the video (with the graphics, a training video).
+                    SwimTechPhase closing = graphics ? ClosingPhase(from, to) : null;
+                    if (closing != null)
+                    {
+                        Rectangle? place = panel && slots.Count > 0 && slots[slots.Count - 1] < rects.Count ? rects[slots[slots.Count - 1]] : (Rectangle?)null;
+                        bool taken;
+                        count += WriteClosingPanel(encoder, joined, buffer, place, closing, fps, job, worker, out taken);
+                        if (!taken)
+                        {
+                            string stopped;
+                            if (!encoder.Finish(60000, out stopped))
+                                return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), string.IsNullOrEmpty(stopped) ? encoder.Errors : stopped);
+                            job.Frames = count;
+                            return null;
+                        }
+                    }
+
                     worker.ReportProgress(99, SwimLang.T("Το βίντεο κλείνει…"));
                     string finishError;
                     if (!encoder.Finish(300000, out finishError))
@@ -809,6 +766,86 @@ namespace Kinovea.ScreenManager
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// (2.24.0) The end of a video of the group: the panel of a start or a turn at its end (all its values, the whole line of its speed)
+        /// grows in 1 s from its place in the group (from the middle when the group has no panel) to the whole picture, over the last image
+        /// of the video getting darker; it stays 5 s and fades out in 0.8 s. The picture of the preview of a package. Returns the frames
+        /// written; taken false when ffmpeg stopped taking them.
+        /// </summary>
+        private int WriteClosingPanel(SwimVideoEncoder encoder, Bitmap joined, byte[] buffer, Rectangle? place, SwimTechPhase phase, double fps,
+            GroupVideoJob job, BackgroundWorker worker, out bool taken)
+        {
+            taken = true;
+            int width = joined.Width, height = joined.Height;
+            int grow = Math.Max(1, (int)Math.Round(1.0 * fps)), hold = Math.Max(1, (int)Math.Round(5.0 * fps)), fade = Math.Max(1, (int)Math.Round(0.8 * fps));
+            int written = 0;
+            using (Bitmap last = new Bitmap(width, height, PixelFormat.Format24bppRgb))
+            using (Bitmap big = new Bitmap(width, height, PixelFormat.Format24bppRgb))
+            {
+                using (Graphics g = Graphics.FromImage(last))
+                    g.DrawImage(joined, new Rectangle(0, 0, width, height));
+                Action draw = () =>
+                {
+                    using (Graphics g = Graphics.FromImage(big))
+                        PaintFinalPanel(g, big.Size, phase);
+                };
+                if (player != null && player.InvokeRequired)
+                    player.Invoke(draw);
+                else
+                    draw();
+
+                RectangleF from = place.HasValue ? (RectangleF)place.Value : new RectangleF(width * 0.3f, height * 0.3f, width * 0.4f, height * 0.4f);
+                Rectangle all = new Rectangle(0, 0, width, height);
+                using (Graphics g = Graphics.FromImage(joined))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    for (int i = 1; i <= grow + hold + fade; i++)
+                    {
+                        if (i <= grow)
+                        {
+                            float u = Ease(i / (float)grow);
+                            g.DrawImage(last, all);
+                            using (SolidBrush dark = new SolidBrush(Color.FromArgb((int)(190 * u), 0, 0, 0)))
+                                g.FillRectangle(dark, all);
+                            RectangleF r = new RectangleF(from.X * (1 - u), from.Y * (1 - u), from.Width + (width - from.Width) * u, from.Height + (height - from.Height) * u);
+                            g.DrawImage(big, r);
+                            CopyBgr(joined, buffer);
+                        }
+                        else if (i == grow + 1)
+                        {
+                            g.DrawImage(big, all);
+                            CopyBgr(joined, buffer);
+                            if (job.Package != null)
+                            {
+                                SwimPackageThumb thumb = new SwimPackageThumb { Label = SwimLang.T("Ο πίνακας"), Timestamp = phase.Origin, Image = ThumbOf(joined) };
+                                job.Package.Thumbs.Add(thumb);
+                                worker.ReportProgress(98, thumb);
+                            }
+                        }
+                        else if (i > grow + hold)
+                        {
+                            float u = (i - grow - hold) / (float)fade;
+                            g.DrawImage(big, all);
+                            using (SolidBrush dark = new SolidBrush(Color.FromArgb((int)(255 * Math.Min(1f, u)), 0, 0, 0)))
+                                g.FillRectangle(dark, all);
+                            CopyBgr(joined, buffer);
+                        }
+
+                        if (!encoder.Write(buffer))
+                        {
+                            taken = false;
+                            return written;
+                        }
+
+                        written++;
+                    }
+                }
+            }
+
+            return written;
         }
 
         /// <summary>

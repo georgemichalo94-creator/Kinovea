@@ -29,9 +29,12 @@
  *  12. Πιο γρήγορο report και PDF (2.16.6): οι εικόνες που δεν άλλαξαν (στιγμιότυπα, elite καρέ, γραφικά) μένουν στο φύλλο όταν
  *      ξαναφτιάχνεται (μετακινούνται, δεν κατεβαίνουν ξανά από το Drive), τα πλαίσια μπαίνουν όλα μαζί, και η απάντηση λέει πόσο
  *      κράτησε κάθε κομμάτι (timings: report, PDF, KOE App), που το Kinovea γράφει στο μήνυμα του PDF.
+ *  13. Ο πίνακας της εκκίνησης και της στροφής στην αναφορά της τεχνικής (2.18.0): η εικόνα του Kinovea, μεγάλη, στην πρώτη σελίδα
+ *      μετά τα νούμερα· η αξιολόγηση αρχίζει στην επόμενη σελίδα· το γράφημα της ταχύτητας ανά τμήμα δεν μπαίνει όταν υπάρχει ο
+ *      πίνακας (μένει μόνο με σύγκριση, προηγούμενη ή elite, που ο πίνακας δεν δείχνει).
  */
 
-var SWIM_VERSION = '2.17.1';
+var SWIM_VERSION = '2.18.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -1637,7 +1640,7 @@ function swimGraphics_(raw) {
   (Array.isArray(raw) ? raw : []).forEach(function (x) {
     if (!x || typeof x !== 'object') return;
     var id = String(x.id || ''), fileId = swimDriveId_(x.fileId);
-    if ((id === 'summary' || id === 'versus') && fileId) out[id] = fileId;
+    if ((id === 'summary' || id === 'versus' || id === 'panel-start' || id === 'panel-turn') && fileId) out[id] = fileId;
   });
   return out;
 }
@@ -2323,7 +2326,8 @@ function swimLayoutSignature_(race, extras, pageHeight) {
     bench: x.benchmarks ? swimHash_(JSON.stringify(x.benchmarks)) : '',
     tech: swimTechSignature_(race, x),
     final: race.finalFrame ? race.finalFrame.fileId : '',
-    graphics: race.graphics ? [race.graphics.summary || '', race.graphics.versus || ''].join(',') : '',
+    graphics: race.graphics ? [race.graphics.summary || '', race.graphics.versus || ''].join(',') +
+      (race.graphics['panel-start'] || race.graphics['panel-turn'] ? ',' + [race.graphics['panel-start'] || '', race.graphics['panel-turn'] || ''].join(',') : '') : '',
     page: pageHeight || 0
   };
   // Η γλώσσα (2.7.7): ένα report στην άλλη γλώσσα ξαναφτιάχνεται· τα ελληνικά χωρίς κλειδί, όπως πριν.
@@ -2530,6 +2534,17 @@ function swimFillPage_(L, row, rest) {
   for (var i = 0; i < n; i++) L.g.exactHeights[row + i] = base + (i < extra ? 1 : 0);
   L.paging.fillers += n;
   return row + n;
+}
+
+/**
+ * (2.18.0) Η γραμμή row στην αρχή της επόμενης σελίδας του PDF (κενές γραμμές ως το τέλος αυτής), εκτός αν είναι ήδη στην αρχή μιας
+ * σελίδας. Στο πρώτο πέρασμα (χωρίς ύψος σελίδας) τίποτα.
+ */
+function swimNewPage_(L, row) {
+  var P = L.paging;
+  if (!P || !(P.H > 0)) return row;
+  var y = swimPageTop_(L.g, row, P.H);
+  return y > 0 ? swimFillPage_(L, row, P.H - y) : row;
 }
 
 /** Ύψος κάθε ενότητας του πρώτου περάσματος: { id: { h, head, h1 } }. */
@@ -5486,6 +5501,36 @@ function swimTcSpeedBlock_(L, kind, row) {
   return top + used + 1;
 }
 
+/**
+ * (2.18.0) Ο πίνακας μιας εκκίνησης ή στροφής από το Kinovea (εικόνα: οι τιμές της, η ταχύτητα ως συνεχής γραμμή από τα σημεία
+ * μέτρησης και η μέση ταχύτητα κάθε τμήματος), μεγάλος, ολόκληρος σε μία σελίδα. Με πολλές προσπάθειες ο πίνακας της καλύτερης (το
+ * Kinovea τη διαλέγει· ο τίτλος της είναι πάνω στην εικόνα). Επιστρέφει την επόμενη γραμμή (την ίδια χωρίς πίνακα).
+ */
+function swimTcPanel_(L, kind, row) {
+  var gr = L.race.graphics, id = gr ? gr['panel-' + kind] : '';
+  var now = L.means[kind];
+  if (!id || !now || !now.n) return row;
+  var g = L.g, W = 15;
+  row = swimKeep_(L, row, 'techPanel', true);
+  var title = kind === 'turn' ? swimT_('Ο πίνακας της στροφής (Kinovea)') : swimT_('Ο πίνακας της εκκίνησης (Kinovea)');
+  if (now.n > 1) title += ' · ' + swimTF_(kind === 'turn' ? 'η καλύτερη από {0} στροφές' : 'η καλύτερη από {0} εκκινήσεις', now.n);
+  g.section(row, title, W);
+  var full = swimLayoutWidth_(W);
+  var top = row + 1, rows = Math.ceil((SWIM_GRAPHIC.height + 8) / SWIM_ROW_H);
+  L.layout.images.push({ fileId: id, row: top, x: Math.round((full - SWIM_GRAPHIC.width) / 2), offsetY: 4,
+    width: SWIM_GRAPHIC.width, height: SWIM_GRAPHIC.height, fit: true });
+  swimKeepEnd_(L, 'techPanel', top + rows - 1);
+  return top + rows + 1;
+}
+
+/** (2.18.0) Η ανάλυση συγκρίνεται για αυτό το είδος (με την προηγούμενη ή με elite): το γράφημα της ταχύτητας δείχνει και αυτές. */
+function swimTcHasCompare_(L, kind) {
+  var cmp = L.cmp;
+  var prev = cmp.prev && cmp.prev.n && cmp.prev.n[kind];
+  var elite = cmp.elite && cmp.elite.values && Object.keys(cmp.elite.values[kind] || {}).length;
+  return !!(prev || elite);
+}
+
 /** Οι πλακίδια της πρώτης σελίδας με τη σύγκριση από κάτω (μία γραμμή για την προηγούμενη και μία για το elite). */
 function swimTcTiles_(L, row) {
   var g = L.g, cmp = L.cmp;
@@ -5924,10 +5969,20 @@ function swimBuildTechLayout2_(race, analysis, extras, paging) {
     if (t2) cur = t2.next;
   }
   cur = swimTechLooseTable_(L, cur);
-  // 2. Η ταχύτητα ανά τμήμα (γράφημα, πίνακας και Επίπεδα).
-  cur = swimTcSpeedBlock_(L, 'start', cur);
-  cur = swimTcSpeedBlock_(L, 'turn', cur);
-  // 3. Η αξιολόγηση (με το αποτέλεσμα της προηγούμενης), η πρόοδος και οι σημειώσεις.
+  // 2. (2.18.0) Ο πίνακας της εκκίνησης και της στροφής από το Kinovea, μεγάλος, μετά τα νούμερα.
+  var panels = {};
+  ['start', 'turn'].forEach(function (kind) {
+    var next = swimTcPanel_(L, kind, cur);
+    if (next !== cur) panels[kind] = true;
+    cur = next;
+  });
+  var anyPanel = panels.start || panels.turn;
+  // Η ταχύτητα ανά τμήμα (γράφημα, πίνακας και Επίπεδα): χωρίς πίνακα εδώ, όπως πριν· με τον πίνακα μόνο με σύγκριση, μετά την
+  // αξιολόγηση (ο πίνακας δείχνει ήδη την ταχύτητα κάθε τμήματος, όχι όμως την προηγούμενη ή το elite).
+  var speedKinds = ['start', 'turn'].filter(function (kind) { return !panels[kind] || swimTcHasCompare_(L, kind); });
+  if (!anyPanel) speedKinds.forEach(function (kind) { cur = swimTcSpeedBlock_(L, kind, cur); });
+  // 3. Η αξιολόγηση (με το αποτέλεσμα της προηγούμενης), η πρόοδος και οι σημειώσεις: από την αρχή μιας σελίδας (2.18.0).
+  if (L.evalList.length) cur = swimNewPage_(L, cur);
   var sectionWriter = function (title) { return function (r) { g.section(r, title, W); return r + 1; }; };
   cur = swimTechEvals_(L, cur, W, sectionWriter(swimT_('Αξιολόγηση τεχνικής')), { noFrames: true, noPrefix: true, prev: L.cmp.prev, nowLabel: L.nowLabel });
   var notes = race.tech && race.tech.values && race.tech.values.notes ? String(race.tech.values.notes) : '';
@@ -5938,6 +5993,7 @@ function swimBuildTechLayout2_(race, analysis, extras, paging) {
     cur = swimTechNotes_(L, cur + 1, W);
     swimKeepEnd_(L, 'techNotesTitle', cur - 2);
   }
+  if (anyPanel) speedKinds.forEach(function (kind) { cur = swimTcSpeedBlock_(L, kind, cur); });
   // 4. Οι φάσεις (τα στιγμιότυπα) και 5. τα λάθη στο βίντεο.
   cur = swimTcPhasesSection_(L, swimTechSnapshotList_(race, L.phases), cur);
   cur = swimTcErrorFrames_(L, cur);
@@ -12308,5 +12364,10 @@ var SWIM_EN_ = {
   'Από τον τοίχο': 'From the wall',
   'Από τα -5{0}': 'From -5{0}',
   'Από το σήμα': 'From the signal',
-  'Χρόνοι (s)': 'Times (s)'
+  'Χρόνοι (s)': 'Times (s)',
+  // 2.18.0: ο πίνακας της εκκίνησης και της στροφής στην αναφορά της τεχνικής
+  'Ο πίνακας της στροφής (Kinovea)': 'The panel of the turn (Kinovea)',
+  'Ο πίνακας της εκκίνησης (Kinovea)': 'The panel of the start (Kinovea)',
+  'η καλύτερη από {0} στροφές': 'the best of {0} turns',
+  'η καλύτερη από {0} εκκινήσεις': 'the best of {0} starts'
 };

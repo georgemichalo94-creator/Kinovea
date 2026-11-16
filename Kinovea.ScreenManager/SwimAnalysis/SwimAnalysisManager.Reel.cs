@@ -400,10 +400,14 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The graphics of the video for the PDF report (PNG): "summary", the summary card of the race; "versus", the race against the
-        /// final of the event (or the reference) after the touch. Empty while the race has no finish.
+        /// final of the event (or the reference) after the touch. Empty while the race has no finish. (2.24.0) A technique analysis: the
+        /// panels of its best start and turn ("panel-start", "panel-turn").
         /// </summary>
         private Dictionary<string, byte[]> RenderReportGraphics()
         {
+            if (Race != null && Race.IsTraining)
+                return RenderPanelGraphics();
+
             Dictionary<string, byte[]> images = new Dictionary<string, byte[]>();
             SwimReel reel = Reel;
             if (Race == null || Race.IsTraining || Computed == null || reel == null || !reel.Finish.HasValue || !Race.StartTimestamp.HasValue || !Timing.IsValid)
@@ -587,7 +591,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private bool UploadReportGraphics(Action then)
         {
-            if (!Settings.IsConfigured || Race == null || Race.IsTraining || reportGraphicsUploading)
+            if (!Settings.IsConfigured || Race == null || reportGraphicsUploading)
                 return false;
 
             SwimRace race = Race;

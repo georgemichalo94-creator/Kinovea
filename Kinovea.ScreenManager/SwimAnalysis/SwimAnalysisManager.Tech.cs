@@ -1452,45 +1452,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string SuggestStage(SwimTechPhase phase, long timestamp)
         {
-            if (phase == null)
-                return "";
-
-            double t = Timing.Seconds(timestamp, phase.Origin);
-            const double near = 0.04;
-            Func<double?, bool> at = x => x.HasValue && Math.Abs(t - x.Value) <= near;
-            Func<double?, bool> before = x => x.HasValue && t < x.Value - near;
-            if (phase.Kind == SwimPhaseKind.Start)
-            {
-                if (t < 0.02 || before(phase.Reaction))
-                    return "Θέση ετοιμότητας";
-                if (at(phase.Block))
-                    return "Αποδέσμευση";
-                if (before(phase.Block))
-                    return "Φάση βατήρα";
-                if (at(phase.Entry))
-                    return "Είσοδος στο νερό";
-                if (before(phase.Entry))
-                    return "Πτήση";
-                if (at(phase.Breakout))
-                    return "Έξοδος από το νερό";
-                if (before(phase.Breakout))
-                    return "Υποβρύχια φάση";
-                return "Κολύμβηση";
-            }
-
-            if (Math.Abs(t) <= near)
-                return "Επαφή στον τοίχο";
-            if (t < 0)
-                return phase.RotationStart.HasValue && t >= phase.RotationStart.Value - near ? "Περιστροφή" : "Προσέγγιση";
-            if (at(phase.Pushoff))
-                return "Αποκόλληση";
-            if (before(phase.Pushoff))
-                return "Επαφή στον τοίχο";
-            if (at(phase.Breakout))
-                return "Έξοδος από το νερό";
-            if (before(phase.Breakout))
-                return "Υποβρύχια φάση";
-            return "Κολύμβηση";
+            return phase == null ? "" : StageAt(phase, Timing.Seconds(timestamp, phase.Origin));
         }
 
         public void SnapshotChanged(SwimSnapshot snapshot)

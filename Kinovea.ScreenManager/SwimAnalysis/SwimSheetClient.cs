@@ -785,7 +785,8 @@ namespace Kinovea.ScreenManager
                 graphics.Add(item);
             }
 
-            if (graphics.Count > 0 && !race.IsTraining)
+            // (2.24.0) Also the panels of the start and the turn of a technique analysis.
+            if (graphics.Count > 0)
                 r["graphics"] = graphics;
 
             // The charts of the report drawn by Kinovea (with the current drawing), with the hash of the values they show.

@@ -232,6 +232,131 @@ try {
   $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
   Check $false ('the package of a group: ' + $e.GetType().Name + ' ' + $e.Message)
 }
+# ---- (2.24.0) The panel of a start and of a turn: its values big, the speed as a line; the picture of its end (the report, the end of
+# the video of the group) and the video that closes with it. A FICTIONAL training turn, two attempts (the second the faster).
+try {
+  $paintFinal = $mt.GetMethod('PaintFinalPanel', $all)
+  $b = New-Object System.Drawing.Bitmap 1280, 720
+  $g = [System.Drawing.Graphics]::FromImage($b)
+  $paintFinal.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), $ph.psobject.BaseObject))
+  $g.Dispose()
+  $b.Save([System.IO.Path]::Combine($out, 'panel-final-start.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+  $lit = 0
+  for ($y = 230; $y -lt 700; $y += 11) { for ($xx = 40; $xx -lt 620; $xx += 13) { $c = $b.GetPixel($xx, $y); if ($c.R -gt 160 -and $c.G -gt 160 -and $c.B -gt 160) { $lit++ } } }
+  Check ($lit -gt 40) ('the end of the start: its values drawn big (' + $lit + ' white samples)')
+  $b.Dispose()
+
+  $turnRace = [Activator]::CreateInstance($tRace)
+  $turnRace.Kind = 'training'; $turnRace.Style = 'fs'; $turnRace.Pool = 25; $turnRace.AthleteGender = 'Ανδρών'
+  $contacts = @(40000, 80000)
+  foreach ($c0 in $contacts) {
+    $last15 = 7850; if ($c0 -eq 80000) { $last15 = 7650 }
+    foreach ($mk in @(@('TechSplit', -3120, -5), @('Stroke', -1280, $null), @('RotationStart', -910, $null), @('WallContact', 0, $null), @('FeetOff', 240, $null),
+        @('Kick', 620, $null), @('Kick', 1100, $null), @('Kick', 1580, $null), @('Kick', 2060, $null), @('Kick', 2550, $null), @('Kick', 3030, $null),
+        @('TechSplit', 2180, 5), @('Breakout', 3950, $null), @('Stroke', 4300, $null), @('TechSplit', 4950, 10), @('TechSplit', $last15, 15))) {
+      $x = [Activator]::CreateInstance($tMark); $x.Type = [Enum]::Parse($tType, $mk[0]); $x.Timestamp = [long]($c0 + $mk[1]); $x.Wall = -1
+      if ($null -ne $mk[2]) { $x.Distance = [int]$mk[2] }
+      $turnRace.Marks.Add($x)
+      if ($mk[0] -eq 'WallContact') { $turnRace.GetPhaseValues($x.Id, $true).BreakoutDist = 8.4 }
+    }
+  }
+  $tComputedT = $tCalc.GetMethod('Compute').Invoke($null, @($turnRace, $timing, 0.5))
+  $turnPhases = $tTech.GetMethod('Compute').Invoke($null, @($turnRace, $tComputedT, $timing))
+  Check ($turnPhases.Count -eq 2) ('two turns: ' + $turnPhases.Count)
+  $t1 = $turnPhases[0]
+  Write-Output ('turn: in5 ' + $t1.Value('in5') + ' turnTime ' + $t1.Value('turnTime') + ' out5 ' + $t1.Value('out5') + ' v0_5 ' + $t1.Value('v0_5') + ' kicks ' + $t1.Value('kicks') + ' breakoutDist ' + $t1.Value('breakoutDist'))
+  $mt.GetField('currentRace', $all).SetValue($m, $turnRace.psobject.BaseObject)
+  $mt.GetProperty('TechPhases', $all).GetSetMethod($true).Invoke($m, [object[]]@(,$turnPhases.psobject.BaseObject))
+  # The data of the panel: all the values, the speed line through the measured points, the mean of each segment as measured.
+  $build = $mt.GetMethod('BuildPanel', $all)
+  $d = $build.Invoke($m, [object[]]@($t1.psobject.BaseObject))
+  # (The data of the panel is a private class: its fields by reflection.)
+  function F($o, $name) { return $o.GetType().GetField($name, $all).GetValue($o) }
+  $groups = F $d 'Groups'; $segments = F $d 'Segments'; $speed = F $d 'Speed'
+  $nValues = 0; foreach ($gr in $groups) { $nValues += (F $gr 'Values').Count }
+  Check ($groups.Count -eq 4 -and $nValues -eq 14) ('the turn in four groups, 14 values: ' + $groups.Count + ' / ' + $nValues)
+  Check ($null -ne $speed -and $segments.Count -eq 4) ('a line of the speed and four segments (' + $segments.Count + ')')
+  # The line goes through the distances: its mean over each segment is the one measured (within 1%).
+  $okMeans = $true; $why = ''
+  foreach ($sg in $segments) {
+    $from = F $sg 'From'; $to = F $sg 'To'; $sv = F $sg 'Speed'
+    $n = 400; $sum = 0.0
+    for ($i = 0; $i -lt $n; $i++) { $t = $from + ($to - $from) * ($i + 0.5) / $n; $sum += $speed.Invoke($t) }
+    $mean = $sum / $n
+    if ([Math]::Abs($mean - $sv) / $sv -gt 0.01) { $okMeans = $false }
+    $why += (' ' + [Math]::Round($mean, 3) + '/' + [Math]::Round($sv, 3))
+  }
+  Check $okMeans ('the line keeps the mean of each segment:' + $why)
+  $neg = $false
+  $sFrom = F $d 'SpeedFrom'; $sTo = F $d 'SpeedTo'; $sTop = F $d 'SpeedTop'
+  for ($i = 0; $i -le 400; $i++) { $t = $sFrom + ($sTo - $sFrom) * $i / 400; $v = $speed.Invoke($t); if ($v -lt -0.01 -or $v -gt 4.5) { $neg = $true } }
+  Check (-not $neg -and $sTop -gt 2 -and $sTop -lt 4) ('the speed plausible all along (top ' + [Math]::Round($sTop, 2) + ' m/s)')
+  foreach ($rel in @(-2000, 120, 1600, 5000, 8300)) {
+    $b = New-Object System.Drawing.Bitmap 1280, 720
+    $g = [System.Drawing.Graphics]::FromImage($b)
+    $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), [long](40000 + $rel)))
+    $g.Dispose()
+    $b.Save([System.IO.Path]::Combine($out, ('panel-turn-' + $rel + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+    $b.Dispose()
+  }
+  foreach ($sz in @(@(960, 540), @(960, 720), @(640, 900))) {
+    $b = New-Object System.Drawing.Bitmap $sz[0], $sz[1]
+    $g = [System.Drawing.Graphics]::FromImage($b)
+    $paint.Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new([int]$sz[0], [int]$sz[1]), [long]45000))
+    $g.Dispose()
+    $b.Save([System.IO.Path]::Combine($out, ('panel-turn-' + $sz[0] + 'x' + $sz[1] + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+    $b.Dispose()
+    Check $true ('the turn in a place of ' + $sz[0] + 'x' + $sz[1])
+  }
+  # The report: the panel of the best turn (the second), at the size of the graphics of the report.
+  $best = $mt.GetMethod('BestPhase', $all).Invoke($m, [object[]]@([Enum]::Parse((T 'SwimPhaseKind'), 'Turn')))
+  Check ($best.Attempt -eq 2) ('the best turn for the report: ' + $best.Attempt)
+  $pics = $mt.GetMethod('RenderPanelGraphics', $all).Invoke($m, $null)
+  Check ($pics.ContainsKey('panel-turn') -and -not $pics.ContainsKey('panel-start')) ('the pictures of the report: ' + (@($pics.Keys) -join ', '))
+  [System.IO.File]::WriteAllBytes([System.IO.Path]::Combine($out, 'report-panel-turn.png'), $pics['panel-turn'])
+  $rp = [System.Drawing.Image]::FromFile([System.IO.Path]::Combine($out, 'report-panel-turn.png'))
+  Check ($rp.Width -eq 1280 -and $rp.Height -eq 720) ('the picture of the report: ' + $rp.Width + 'x' + $rp.Height)
+  $rp.Dispose()
+  # The closing phase of a part of the video: the last turn in it.
+  $closing = $mt.GetMethod('ClosingPhase', $all)
+  Check ($closing.Invoke($m, [object[]]@([long]30000, [long]100000)).Attempt -eq 2 -and $closing.Invoke($m, [object[]]@([long]30000, [long]50000)).Attempt -eq 1) 'the panel that closes the video: the last turn of the part'
+
+  # The end of the video of a group: the panel grows from its place (the fourth screen) to the whole picture, stays and fades out.
+  $ff = Join-Path $bin 'ffmpeg.exe'
+  $encT = T 'SwimVideoEncoder'
+  $encoder = [Activator]::CreateInstance($encT)
+  $video = [System.IO.Path]::Combine($out, 'closing.mp4')
+  $startArgs = [object[]]@($ff, $video, [int]1280, [int]720, [double]25, $null, [double]0, [double]0, $null)
+  $started = $encT.GetMethod('Start').Invoke($encoder, $startArgs)
+  Check $started ('ffmpeg for the closing: ' + $startArgs[8])
+  $joined = New-Object System.Drawing.Bitmap 1280, 720, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+  $gj = [System.Drawing.Graphics]::FromImage($joined); $gj.DrawImage($j4, 0, 0, 1280, 720); $gj.Dispose()
+  $buffer = New-Object byte[] (1280 * 720 * 3)
+  $jobT = $mt.GetNestedType('GroupVideoJob', $all)
+  $job = [Activator]::CreateInstance($jobT, $true)
+  $write = $mt.GetMethod('WriteClosingPanel', $all)
+  $place = [Nullable[System.Drawing.Rectangle]]([System.Drawing.Rectangle]::new(640, 360, 640, 360))
+  $wargs = [object[]]@($encoder, $joined, $buffer, $place, $best.psobject.BaseObject, [double]25, $job, $null, $false)
+  $frames = $write.Invoke($m, $wargs)
+  $err = ''
+  $finished = $encT.GetMethod('Finish').Invoke($encoder, [object[]]@([int]60000, $err))
+  $encoder.Dispose()
+  Check ($wargs[8] -and $frames -eq 170) ('the closing: 1 s + 5 s + 0.8 s at 25 fps = ' + $frames + ' frames')
+  Check ((Test-Path $video) -and (Get-Item $video).Length -gt 10000) ('the closing video written (' + (Get-Item $video).Length + ' bytes)')
+  foreach ($at in @('0.48', '0.96', '3.00', '6.60')) {
+    $png = [System.IO.Path]::Combine($out, ('closing-' + $at + '.png'))
+    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & $ff -nostdin -v error -y -ss $at -i $video -frames:v 1 $png 2>&1 | Out-Null
+    $ErrorActionPreference = $old
+  }
+  $mid = [System.Drawing.Bitmap]::FromFile([System.IO.Path]::Combine($out, 'closing-3.00.png'))
+  $c = $mid.GetPixel(60, 60)
+  Check ($c.R -lt 60 -and $c.G -lt 80) ('the panel over the whole picture while it stays (' + $c + ')')
+  $mid.Dispose()
+} catch {
+  $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+  Check $false ('the panel of 2.24.0: ' + $e.GetType().Name + ' ' + $e.Message + ' ' + $e.StackTrace)
+}
 Write-Output ('fails ' + $fails)
 if ($fails -gt 0) { exit 1 }
 exit 0
