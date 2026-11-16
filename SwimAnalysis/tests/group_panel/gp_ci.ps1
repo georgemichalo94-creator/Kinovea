@@ -407,11 +407,15 @@ try {
   $fSpeed = $ftype.GetField('Speed', $all).GetValue($fd); $fTo = $ftype.GetField('SpeedTo', $all).GetValue($fd); $fChart = $ftype.GetField('ChartTo', $all).GetValue($fd)
   $fv10 = $fSpeed.Invoke(4.55); $fvLate = $fSpeed.Invoke($fTo - 0.3); $fv15 = $fSpeed.Invoke($fTo)
   Write-Output ('falling turn: v(+10) ' + [Math]::Round($fv10, 3) + ', v(+15 - 0.3 s) ' + [Math]::Round($fvLate, 3) + ', v(+15) ' + [Math]::Round($fv15, 3) + ' (mean 10-15: ' + [Math]::Round(5 / 2.9, 3) + ')')
-  # (2.24.2) The smooth line levels off at the mean of +10 → +15; it never goes under it after the push-off (no dip).
-  Check ([Math]::Abs($fv15 - 5 / 2.9) -lt 0.002 -and [Math]::Abs($fv15 - $fvLate) -lt 0.02 -and [Math]::Abs($fChart - $fTo) -lt 1e-6 -and [Math]::Abs($fTo - 7.45) -lt 0.05) ('the falling turn levels off at the +15: ' + [Math]::Round($fv15, 3) + ' m/s, the chart ends at ' + [Math]::Round($fChart, 3) + ' s')
+  # (2.24.2) The smooth line levels off at the mean of +10 → +15 as measured (the times on frames of 20 ms: about 1.73); it never goes
+  # under it after the push-off (no dip), and at the +10 it is between the means of 5 → 10 and 10 → 15.
+  $fSegs = $ftype.GetField('Segments', $all).GetValue($fd)
+  $fMean = @($fSegs | ForEach-Object { $_.GetType().GetField('Speed', $all).GetValue($_) })
+  $f510 = $fMean[$fMean.Count - 2]; $f1015 = $fMean[$fMean.Count - 1]
+  Check ($fMean.Count -eq 4 -and [Math]::Abs($fv15 - $f1015) -lt 0.002 -and [Math]::Abs($fv15 - $fvLate) -lt 0.02 -and [Math]::Abs($fChart - $fTo) -lt 1e-6 -and [Math]::Abs($fTo - 7.45) -lt 0.05) ('the falling turn levels off at the +15 at the mean of +10 → +15: ' + [Math]::Round($fv15, 3) + ' / ' + [Math]::Round($f1015, 3) + ' m/s, the chart ends at ' + [Math]::Round($fChart, 3) + ' s')
   $fLow = 99.0
   for ($i = 0; $i -le 400; $i++) { $t = 0.23 + ($fTo - 0.23) * $i / 400; $fLow = [Math]::Min($fLow, $fSpeed.Invoke($t)) }
-  Check ($fLow -ge 5 / 2.9 - 0.01 -and $fv10 -lt 5 / 2.45 -and $fv10 -gt 5 / 2.9) ('the falling turn without a dip: the lowest ' + [Math]::Round($fLow, 3) + ' m/s, at the +10 ' + [Math]::Round($fv10, 3) + ' (between the means of its segments)')
+  Check ($fLow -ge $f1015 - 0.01 -and $fv10 -lt $f510 -and $fv10 -gt $f1015) ('the falling turn without a dip: the lowest ' + [Math]::Round($fLow, 3) + ' m/s, at the +10 ' + [Math]::Round($fv10, 3) + ' (between ' + [Math]::Round($f1015, 3) + ' and ' + [Math]::Round($f510, 3) + ')')
   $b = New-Object System.Drawing.Bitmap 1280, 720
   $g = [System.Drawing.Graphics]::FromImage($b)
   $mt.GetMethod('PaintGroupDashboard', $all).Invoke($m, [object[]]@($g.psobject.BaseObject, [System.Drawing.Size]::new(1280, 720), [long]($f0 + 8070)))
