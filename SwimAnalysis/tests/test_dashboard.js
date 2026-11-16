@@ -323,6 +323,42 @@ assert.strictEqual(G.swimDashHash_('abc').length, 8);
   assert.strictEqual(Object.keys(C.G._all).length, files, 'no spreadsheet created');
 }
 
+// ---- 1.0.1: μια ανάλυση που δεν χωρά στο κελί της γράφεται συμπιεσμένη (Apps Script 2.17.1, «gz:…»)· ο πίνακας τη δείχνει όπως τις
+// άλλες, και η λίστα της προσωρινής μνήμης ακολουθεί την έκδοση του SwimRaceAnalysis.gs. Με παλαιότερο SwimRaceAnalysis.gs (χωρίς
+// swimIndexText_) λείπει μόνο η συμπιεσμένη, οι άλλες φαίνονται.
+{
+  const E = context();
+  E.G.swimShowConnectionInfo = () => {};
+  E.G.swimSetup();
+  const send = body => JSON.parse(E.G.swimDoPost({ postData: { contents: JSON.stringify(Object.assign({ token: 'tok', app: 'kinovea-swim' }, body)) } }).text);
+  RACES.forEach(r => assert.ok(send({ action: 'update', race: r }).ok));
+  const idx = E.G._all[E.G._props.SWIM_REPORTS_SPREADSHEET_ID].getSheetByName('Αγώνες');
+  const cell = idx.getRange(E.G.swimIndexRow_(idx, 'dash2'), E.G.SWIM_IDX.json + 1);
+  const text = String(cell.getValue());
+  cell.setValue(E.G.swimPackText_(text));
+  assert.ok(String(cell.getValue()).indexOf('gz:') === 0, 'compressed in the index');
+  const l = E.G.swimDashList();
+  assert.ok(l.ok && l.races.length === RACES.length && l.races.some(r => r.id === 'dash2'), 'the compressed analysis is in the list');
+  same(E.G.swimDashParse_(String(cell.getValue())), E.G.swimDashParse_(text), 'read as it was sent');
+  const fr = E.G.swimDashRaces(['dash2']);
+  assert.ok(fr.ok && fr.races.length === 1, 'its measurements');
+  same(fr.races[0], f2, 'the same measurements as the plain one (the analyst\'s turn time too)');
+  // Νέος κώδικας ανάλυσης: νέα υπογραφή, άρα νέα λίστα (όχι η παλιά από την προσωρινή μνήμη).
+  const v = E.G.SWIM_VERSION;
+  E.G.SWIM_VERSION = v + '-next';
+  const l2 = E.G.swimDashList();
+  assert.ok(l2.ok && l2.sig !== l.sig && l2.sig.indexOf(v + '-next') >= 0, 'the list follows the analysis code');
+  E.G.SWIM_VERSION = v;
+  // Παλαιότερο SwimRaceAnalysis.gs στο project του πίνακα (πριν από την 2.17.1): οι άλλες αναλύσεις φαίνονται, λείπει μόνο η συμπιεσμένη.
+  const unpack = E.G.swimIndexText_;
+  E.G.swimIndexText_ = undefined;   // (μια δηλωμένη συνάρτηση δεν σβήνεται με delete)
+  E.G.SWIM_VERSION = '2.16.0';
+  const l3 = E.G.swimDashList();
+  assert.ok(l3.ok && l3.races.length === RACES.length - 1 && !l3.races.some(r => r.id === 'dash2'), 'older analysis code: only the compressed one is missing');
+  E.G.swimIndexText_ = unpack;
+  E.G.SWIM_VERSION = v;
+}
+
 // ---- Η σελίδα (το HTML δεν έχει το ίδιο όνομα με κανένα .gs του φακέλου: δύο αρχεία ενός project δεν έχουν ίδιο όνομα)
 fs.readdirSync(dir).filter(f => /\.gs$/.test(f)).forEach(f => assert.notStrictEqual(f.replace(/\.gs$/, ''), 'SwimDashboardPage', f));
 const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];

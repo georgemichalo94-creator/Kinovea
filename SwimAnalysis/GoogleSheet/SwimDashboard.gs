@@ -14,8 +14,9 @@
  * διεύθυνση του Kinovea) ανοίγει μόνο για τον ιδιοκτήτη· όποιος άλλος παίρνει απλό μήνυμα κειμένου, χωρίς σελίδα και χωρίς
  * δεδομένα, ώστε κανείς να μη διαβάζει με τα δικαιώματα του ιδιοκτήτη.
  *
- * Χρειάζεται στο ίδιο project το SwimRaceAnalysis.gs (2.15.0 ή νεότερο) και το αρχείο HTML «SwimDashboardPage» (άλλο όνομα από
- * το SwimDashboard.gs: δύο αρχεία ενός project δεν έχουν το ίδιο όνομα). Εγκατάσταση:
+ * Χρειάζεται στο ίδιο project το SwimRaceAnalysis.gs (2.17.1 ή νεότερο· με παλαιότερο οι συμπιεσμένες αναλύσεις δεν φαίνονται)
+ * και το αρχείο HTML «SwimDashboardPage» (άλλο όνομα από το SwimDashboard.gs: δύο αρχεία ενός project δεν έχουν το ίδιο όνομα).
+ * Εγκατάσταση:
  *  α) (προτείνεται) νέο Apps Script μέσα στο Google Sheet των αναλύσεων «Αναλύσεις Αγώνων Κολύμβησης (Kinovea)»
  *     (Επεκτάσεις → Apps Script): SwimRaceAnalysis.gs, SwimDashboard.gs, SwimDashboardWeb.gs και το HTML SwimDashboardPage.
  *     Δεν αλλάζει τίποτα στο KOE App ούτε στη σύνδεση με το Kinovea.
@@ -26,7 +27,7 @@
  *  account. Ένας προπονητής βλέπει τον πίνακα όταν του μοιραστείς (Προβολή) το Google Sheet των αναλύσεων.
  */
 
-var SWIM_DASH_VERSION = '1.0.0';
+var SWIM_DASH_VERSION = '1.0.1';
 /** Πόσες αναλύσεις δίνει η swimDashRaces σε μία κλήση (η σελίδα συγκρίνει ως 5). */
 var SWIM_DASH_MAX_RACES = 12;
 /** Για πόσο (s) μένουν στην προσωρινή μνήμη η λίστα και οι αναλύσεις (το μέγιστο του Apps Script: 6 ώρες). */
@@ -264,13 +265,15 @@ function swimDashHead_(ctx) {
   var last = index ? index.getLastRow() : 0;
   var vals = last >= 2 ? index.getRange(2, 1, last - 1, 11).getValues() : [];
   var text = vals.map(swimDashRowText_).join('\u0002');
-  return { last: last, vals: vals, sig: [SWIM_DASH_VERSION, ctx.ssId, last, swimDashHash_(text)].join(':') };
+  // Και η έκδοση του SwimRaceAnalysis.gs: με νέο κώδικα ανάλυσης η λίστα φτιάχνεται ξανά (όχι η παλιά από την προσωρινή μνήμη).
+  return { last: last, vals: vals, sig: [SWIM_DASH_VERSION, SWIM_VERSION, ctx.ssId, last, swimDashHash_(text)].join(':') };
 }
 
 function swimDashParse_(json) {
   try {
-    // 2.17.1: ένα πολύ μεγάλο JSON είναι συμπιεσμένο στο κελί του (swimIndexText_ το ανοίγει).
-    var raw = JSON.parse(swimIndexText_(json));
+    // 2.17.1: ένα πολύ μεγάλο JSON είναι συμπιεσμένο στο κελί του (swimIndexText_ το ανοίγει). Με παλαιότερο SwimRaceAnalysis.gs
+    // (χωρίς swimIndexText_) οι υπόλοιπες αναλύσεις διαβάζονται κανονικά και μόνο οι συμπιεσμένες λείπουν.
+    var raw = JSON.parse(typeof swimIndexText_ === 'function' ? swimIndexText_(json) : String(json));
     return raw && typeof raw === 'object' ? swimNormalizeRace_(raw) : null;
   } catch (e) {
     return null;
