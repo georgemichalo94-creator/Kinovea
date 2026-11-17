@@ -202,18 +202,43 @@ namespace Kinovea.ScreenManager
                 () => RetryPackagePdf(job),
                 (archived, signature) => SwimPackage.BodyFor(race, Computed, archived, signature, screens));
             job.Form = form;
+
+            // (2.25.0) «Συνέχισε με άλλον αθλητή»: the package finishes in the background with its screens, the next athlete on new screens
+            // (SwimAnalysisManager.Background.cs). Kinovea's question for drawings not saved cancelled: back in the window.
+            form.AllowBackground = ScreensLendAsked != null;
+            form.QueueTitle = race.DisplayName;
+            List<PlayerScreenUserInterface> lent = group ? groupScreens : new List<PlayerScreenUserInterface> { player };
             DialogResult result;
+            bool inBackground = false;
             try
             {
-                result = owner != null ? form.ShowDialog(owner) : form.ShowDialog();
+                while (true)
+                {
+                    result = owner != null ? form.ShowDialog(owner) : form.ShowDialog();
+                    if (result != DialogResult.Ignore || !form.Background)
+                        break;
+                    if (ToBackground(job, form, race, package, owner, lent, folderBefore, baseBefore, madeBefore))
+                    {
+                        inBackground = true;
+                        break;
+                    }
+
+                    form.StayHere();
+                }
             }
             finally
             {
-                job.Form = null;
-                packageJob = null;
-                packageRendering = false;
-                suppressExportOverlay = false;
+                if (!inBackground)
+                {
+                    job.Form = null;
+                    packageJob = null;
+                    packageRendering = false;
+                    suppressExportOverlay = false;
+                }
             }
+
+            if (inBackground)
+                return;
 
             if (!string.Equals(form.Signature, Settings.PackageSignature ?? "", StringComparison.Ordinal))
             {
@@ -528,6 +553,14 @@ namespace Kinovea.ScreenManager
             if (job != null && job.Form != null && !job.Form.IsDisposed)
             {
                 job.Form.PdfChanged();
+
+                // (2.25.0) A package in the background keeps the line of the KOE App with its race at once (its window may not open again).
+                if (retired && p.VideoReady && race.PackageInfo != null && string.Equals(race.PackageBase, p.BaseName, StringComparison.Ordinal))
+                {
+                    race.PackageInfo.Archived = p.Archived;
+                    race.PackageInfo.ArchiveNote = p.ArchiveNote;
+                    MarkDirty();
+                }
             }
             else
             {
@@ -554,6 +587,13 @@ namespace Kinovea.ScreenManager
 
                 if (p.PdfReady)
                     Status(string.Format(SwimLang.T("📦 Το PDF της αποστολής μπήκε στον φάκελό της: «{0}»."), p.PdfPath), false);
+            }
+
+            // (2.25.0) A package in the background: the box shows its PDF; the analysis lets go when nothing else waits.
+            if (retired && retiredPackage != null && retiredPackage.Package == p)
+            {
+                FinishIfDone(retiredPackage);
+                FormSwimPackageTray.UpdateFor(retiredPackage.Owner);
             }
 
             return true;

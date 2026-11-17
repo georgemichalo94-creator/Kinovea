@@ -246,6 +246,12 @@ namespace Kinovea.ScreenManager
 
             // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
             SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
+
+            // (Swim 2.25.0) A package for the coaches finished in the background: its screens leave the window as they are, new empty
+            // screens take their places.
+            SwimAnalysisManager.ScreensKeepAsked = SwimScreensKeep;
+            SwimAnalysisManager.ScreensLendAsked = SwimScreensLend;
+            SwimAnalysisManager.LentScreensCloseAsked = SwimLentScreensClose;
             AddCommonControlsEventHandlers();
 
             // (Swim 2.20.0) The texts that the camera modules draw on their images (GoPro) in the language of the swim analysis.
@@ -988,6 +994,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool CloseSubModules()
         {
+            // (Swim 2.25.0) A package for the coaches still being made in the background: asked first (closing stops it).
+            if (!SwimAnalysisManager.CanCloseWithBackgroundPackages())
+                return true;
+
             view.Closing = true;
             for(int i = screenList.Count - 1; i >= 0; i--)
             {
@@ -1142,6 +1152,12 @@ namespace Kinovea.ScreenManager
             dualPlayer.CommitLaunchSettings();
             OrganizeMenus();
             NotificationCenter.RaiseUpdateStatus();
+
+            // (Swim 2.25.0) The analysis of the screens after a package went to the background: it comes on the video loaded in the
+            // place of the screen of the analysis, as on the video loaded in the same screen before.
+            PlayerScreen loaded = sender as PlayerScreen;
+            if (loaded != null && loaded.view != null && SwimAnalysisManager.Current != null)
+                SwimAnalysisManager.Current.VideoLoadedIn(loaded.view, loaded.FrameServer);
             return;
         }
         private void Player_SelectionChanged(object sender, EventArgs<bool> e)
@@ -1944,10 +1960,31 @@ namespace Kinovea.ScreenManager
         private void UpdateSwimGroup(List<PlayerScreenUserInterface> members, PlayerScreenUserInterface lead)
         {
             List<PlayerScreenUserInterface> open = screenList.OfType<PlayerScreen>().Where(p => p.Full && p.view != null && !p.view.IsDisposed).Select(p => p.view).ToList();
-            List<PlayerScreenUserInterface> wanted = members ?? VideoScreenGroup.Members.ToList();
+
+            // (Swim 2.25.0) After a package went to the background with the screens of a group, the group comes back on the new screens
+            // in their places as their videos are loaded (as it stayed on the same screens when their videos were replaced), with the
+            // lead in the place of the lead. A group chosen by the analyst replaces it.
+            if (members != null)
+            {
+                swimGroupWanted = null;
+                swimGroupWantedLead = null;
+            }
+            else if (swimGroupWanted != null)
+            {
+                swimGroupWanted.RemoveAll(v => v == null || v.IsDisposed || !screenList.OfType<PlayerScreen>().Any(p => p.view == v));
+                if (swimGroupWanted.Count < 2)
+                {
+                    swimGroupWanted = null;
+                    swimGroupWantedLead = null;
+                }
+            }
+
+            List<PlayerScreenUserInterface> wanted = members ?? swimGroupWanted ?? VideoScreenGroup.Members.ToList();
             List<PlayerScreenUserInterface> next = open.Where(v => wanted.Contains(v)).ToList();
 
             PlayerScreenUserInterface nextLead = lead;
+            if (members == null && swimGroupWantedLead != null && next.Contains(swimGroupWantedLead))
+                nextLead = swimGroupWantedLead;
             if (nextLead == null || !next.Contains(nextLead))
                 nextLead = VideoScreenGroup.Lead;
             if (nextLead == null || !next.Contains(nextLead))
@@ -1957,6 +1994,14 @@ namespace Kinovea.ScreenManager
             }
 
             VideoScreenGroup.Set(next, nextLead);
+
+            // (Swim 2.25.0) All the new screens of the group have their videos: the group is whole again, it goes on as any group.
+            if (members == null && swimGroupWanted != null && swimGroupWanted.All(v => next.Contains(v)))
+            {
+                swimGroupWanted = null;
+                swimGroupWantedLead = null;
+            }
+
             if (VideoScreenGroup.Active)
             {
                 string numbers = string.Join(", ", VideoScreenGroup.Members.Select(v => v.SwimScreenNumber).OrderBy(n => n).Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray());
@@ -1965,6 +2010,126 @@ namespace Kinovea.ScreenManager
             else
             {
                 dualPlayer.View.SetGroup(false, SwimScreensIcons.GroupTip(null, 0));
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.25.0) The group of screens to make again on the new screens that took the places of the screens of a group whose package
+        /// went to the background (null: none), and its lead.
+        /// </summary>
+        private List<PlayerScreenUserInterface> swimGroupWanted;
+        private PlayerScreenUserInterface swimGroupWantedLead;
+
+        /// <summary>
+        /// (Swim 2.25.0) The screens of these views are in the window and their drawings can leave it: Kinovea's question when a video
+        /// is replaced in a screen whose drawings are not saved (save, leave them, cancel). False: a screen is not in the window, or cancelled.
+        /// </summary>
+        private bool SwimScreensKeep(List<PlayerScreenUserInterface> views)
+        {
+            if (views == null || views.Count == 0)
+                return false;
+
+            List<PlayerScreen> screens = screenList.OfType<PlayerScreen>().Where(p => p.view != null && views.Contains(p.view) && p.Full).ToList();
+            if (screens.Count != views.Distinct().Count())
+                return false;
+
+            foreach (PlayerScreen p in screens)
+            {
+                if (!p.BeforeUnloadingAnnotations())
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// (Swim 2.25.0) The screens of these views leave the window as they are, with their videos, their drawings and their time origins
+        /// (the package makes its video with them): their controls go into host (hidden, their handles kept: the graphics are drawn on
+        /// their thread). A new empty screen takes the place of each, the group of screens comes back on the new ones as their videos are
+        /// loaded. Returns each screen taken with the view of the new screen in its place (empty: none taken).
+        /// </summary>
+        private List<KeyValuePair<PlayerScreen, PlayerScreenUserInterface>> SwimScreensLend(List<PlayerScreenUserInterface> views, Control host)
+        {
+            List<KeyValuePair<PlayerScreen, PlayerScreenUserInterface>> taken = new List<KeyValuePair<PlayerScreen, PlayerScreenUserInterface>>();
+            if (views == null || host == null)
+                return taken;
+
+            List<PlayerScreenUserInterface> groupBefore = VideoScreenGroup.Active ? VideoScreenGroup.Members.ToList() : new List<PlayerScreenUserInterface>();
+            PlayerScreenUserInterface leadBefore = VideoScreenGroup.Active ? VideoScreenGroup.Lead : null;
+            AbstractScreen nextActive = null;
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                PlayerScreen p = screenList[i] as PlayerScreen;
+                if (p == null || p.view == null || !views.Contains(p.view))
+                    continue;
+
+                RemoveScreenEventHandlers(p);
+                p.Loaded -= Player_Loaded;
+                PlayerScreen fresh = new PlayerScreen();
+                fresh.RefreshUICulture();
+                AddScreenEventHandlers(fresh);
+                screenList[i] = fresh;
+                if (p == activeScreen || nextActive == null)
+                    nextActive = fresh;
+                taken.Add(new KeyValuePair<PlayerScreen, PlayerScreenUserInterface>(p, fresh.view));
+            }
+
+            if (taken.Count == 0)
+                return taken;
+
+            // Out of the window as they are: the same size, not docked anymore.
+            foreach (KeyValuePair<PlayerScreen, PlayerScreenUserInterface> kv in taken)
+            {
+                UserControl ui = kv.Key.UI;
+                if (ui == null || ui.IsDisposed)
+                    continue;
+                Size size = ui.Size;
+                ui.Dock = DockStyle.None;
+                host.Controls.Add(ui);
+                ui.Size = size;
+            }
+
+            // The group again on the new screens, with the lead in its place.
+            List<PlayerScreenUserInterface> wanted = new List<PlayerScreenUserInterface>();
+            foreach (PlayerScreenUserInterface m in groupBefore)
+            {
+                KeyValuePair<PlayerScreen, PlayerScreenUserInterface> kv = taken.FirstOrDefault(t => t.Key.view == m);
+                if (kv.Key != null)
+                    wanted.Add(kv.Value);
+                else if (m != null && !m.IsDisposed)
+                    wanted.Add(m);
+            }
+
+            KeyValuePair<PlayerScreen, PlayerScreenUserInterface> lead = taken.FirstOrDefault(t => t.Key.view == leadBefore);
+            swimGroupWanted = wanted.Count >= 2 ? wanted : null;
+            swimGroupWantedLead = swimGroupWanted == null ? null : (lead.Key != null ? lead.Value : leadBefore);
+
+            activeScreen = null;
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+            SetActiveScreen(nextActive);
+            NotificationCenter.RaiseUpdateStatus();
+            return taken;
+        }
+
+        /// <summary>(Swim 2.25.0) The screens a package made its video with in the background closed (their videos given back), quietly.</summary>
+        private void SwimLentScreensClose(List<PlayerScreen> screens)
+        {
+            if (screens == null)
+                return;
+
+            foreach (PlayerScreen p in screens)
+            {
+                try
+                {
+                    p.BeforeClose();
+                    p.AfterClose();
+                }
+                catch (Exception e)
+                {
+                    log.Error("Could not close a screen of a package made in the background.", e);
+                }
             }
         }
         #endregion

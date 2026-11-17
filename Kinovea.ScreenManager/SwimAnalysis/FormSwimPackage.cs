@@ -24,6 +24,7 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public class FormSwimPackage : Form
     {
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private readonly SwimPackage package;
         private readonly Func<BackgroundWorker, string> render;
         private readonly Action beforeRender;
@@ -51,11 +52,87 @@ namespace Kinovea.ScreenManager
         private readonly SwimButton btnOk;
         private readonly SwimButton btnClose;
         private readonly SwimButton btnFolder;
+        private readonly SwimButton btnBackground;
 
         private bool videoRunning;
         private bool videoDone;
         private string videoError;
         private bool cancelled;
+
+        // (2.25.0) The package finished in the background («Συνέχισε με άλλον αθλητή»): the window shown once (its video starts then), its
+        // video waiting for the one of another package (one video at a time), the window closed for good.
+        private bool shownOnce;
+        private bool waiting;
+        private bool closingForGood;
+        private bool leaving;
+        private readonly Timer waitTimer = new Timer { Interval = 1000 };
+
+        /// <summary>(2.25.0) The button «Συνέχισε με άλλον αθλητή» is offered (the analysis can let its package go to the background).</summary>
+        public bool AllowBackground
+        {
+            get { return allowBackground; }
+            set
+            {
+                allowBackground = value;
+                btnBackground.Visible = value;
+                UpdateState();
+            }
+        }
+
+        private bool allowBackground;
+
+        /// <summary>
+        /// (2.25.0) The package goes on in the background: its window was left with «Συνέχισε με άλλον αθλητή» (ShowDialog returns Ignore),
+        /// its video goes on; the window opens again from the box of the packages (not modal).
+        /// </summary>
+        public bool Background { get; private set; }
+
+        /// <summary>(2.25.0) The video of the package ended (made, failed or stopped): on the window's thread, after what it does then.</summary>
+        public event EventHandler VideoFinished;
+
+        /// <summary>(2.25.0) The video is being made.</summary>
+        public bool VideoRunning
+        {
+            get { return videoRunning; }
+        }
+
+        /// <summary>(2.25.0) The video waits for the one of another package.</summary>
+        public bool VideoWaiting
+        {
+            get { return waiting; }
+        }
+
+        /// <summary>(2.25.0) The video is made.</summary>
+        public bool VideoDone
+        {
+            get { return videoDone; }
+        }
+
+        /// <summary>(2.25.0) The video was not made (its error), null otherwise.</summary>
+        public string VideoFailure
+        {
+            get { return !videoRunning && !waiting && !videoDone && !cancelled && shownOnce && !ready ? (string.IsNullOrEmpty(videoError) ? SwimLang.T("Το βίντεο δεν έγινε.") : videoError) : null; }
+        }
+
+        /// <summary>(2.25.0) How much of the video is made (0 to 100) and the text of its progress.</summary>
+        public int VideoPercent
+        {
+            get { return videoDone ? 100 : videoProgress.Value; }
+        }
+
+        public string VideoText
+        {
+            get { return videoStatus.Text; }
+        }
+
+        /// <summary>(2.25.0) The package of this window.</summary>
+        public SwimPackage Package
+        {
+            get { return package; }
+        }
+
+        /// <summary>(2.25.0) Whose package this is (the line of a video that waits for this one).</summary>
+        public string QueueTitle { get; set; }
         private bool filling;
         private bool toEdited;
         private bool bodyEdited;
@@ -187,14 +264,22 @@ namespace Kinovea.ScreenManager
             btnOk = new SwimButton(true) { Text = SwimLang.T("✓ OK – Αποστολή με Smash"), AutoSize = true, Height = 34, Primary = true, Enabled = false, Dock = DockStyle.Right };
             btnClose = new SwimButton(true) { Text = SwimLang.T("Ακύρωση"), AutoSize = true, Height = 34, Dock = DockStyle.Right };
             btnFolder = new SwimButton(true) { Text = SwimLang.T("Άνοιγμα φακέλου"), AutoSize = true, Height = 34, Dock = DockStyle.Left };
+            // (2.25.0) The package finishes by itself in the background and the screens are free for the next athlete.
+            btnBackground = new SwimButton(true) { Text = SwimLang.T("⏩ Συνέχισε με άλλον αθλητή"), AutoSize = true, Height = 34, Dock = DockStyle.Left, Primary = true, Visible = false };
+            tips.SetToolTip(btnBackground, SwimLang.T("Η αποστολή τελειώνει μόνη της στο παρασκήνιο, με τις ίδιες οθόνες και την ίδια ανάλυση (κρυμμένες): οι οθόνες αδειάζουν για τον επόμενο αθλητή. Η πρόοδος φαίνεται κάτω δεξιά."));
             Panel gap = new Panel { Width = 8, Dock = DockStyle.Right };
+            Panel gapLeft = new Panel { Width = 8, Dock = DockStyle.Left };
+            // Docked from the last added: «Άνοιγμα φακέλου» on the left edge, the button of the background next to it.
             buttons.Controls.Add(btnClose);
             buttons.Controls.Add(gap);
             buttons.Controls.Add(btnOk);
+            buttons.Controls.Add(btnBackground);
+            buttons.Controls.Add(gapLeft);
             buttons.Controls.Add(btnFolder);
             btnOk.Click += (s, e) => Ok();
             btnClose.Click += (s, e) => CloseOrCancel();
             btnFolder.Click += (s, e) => OpenFolder();
+            btnBackground.Click += (s, e) => GoBackground();
 
             Controls.Add(split);
             Controls.Add(message);
@@ -215,6 +300,18 @@ namespace Kinovea.ScreenManager
                     SetBody(bodyFor != null ? bodyFor(package.Archived == true, txtSignature.Text) : txtBody.Text);
             };
 
+            // (2.25.0) The line of a video that waits follows the progress of the one it waits for.
+            waitTimer.Tick += (s, e) =>
+            {
+                if (!waiting)
+                {
+                    waitTimer.Stop();
+                    return;
+                }
+
+                videoStatus.Text = SwimPackageQueue.WaitingText();
+            };
+
             worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true };
             worker.DoWork += (s, e) => e.Result = render != null ? render((BackgroundWorker)s) : SwimLang.T("Χωρίς βίντεο.");
             worker.ProgressChanged += Worker_ProgressChanged;
@@ -222,6 +319,14 @@ namespace Kinovea.ScreenManager
 
             Shown += (s, e) =>
             {
+                // (2.25.0) Shown again (back from «Συνέχισε με άλλον αθλητή», or from the box of the packages): as it is.
+                if (shownOnce)
+                {
+                    PdfChanged();
+                    return;
+                }
+
+                shownOnce = true;
                 split.SplitterDistance = (int)(split.Width * 0.44);
                 if (ready)
                     LoadPictures();
@@ -238,6 +343,31 @@ namespace Kinovea.ScreenManager
             };
             FormClosing += (s, e) =>
             {
+                // (2.25.0) Left for the background (ShowDialog returns, the window is not closed for good): the video goes on, the window
+                // comes back from the box of the packages.
+                if (leaving)
+                {
+                    leaving = false;
+                    return;
+                }
+
+                // (2.25.0) A package in the background: its window only hides while its video is made (Ακύρωση stops it).
+                if (Background && !closingForGood && (videoRunning || waiting) && !cancelled)
+                {
+                    e.Cancel = true;
+                    Hide();
+                    return;
+                }
+
+                // (2.25.0) A video waiting for the one of another package: it does not start.
+                if (waiting)
+                {
+                    cancelled = true;
+                    waiting = false;
+                    SwimPackageQueue.Forget(this);
+                    return;
+                }
+
                 // The video is being made: it stops first (the reader of the video is given back), then the window closes.
                 if (videoRunning)
                 {
@@ -260,6 +390,8 @@ namespace Kinovea.ScreenManager
             }
 
             // The images after the controls that show them.
+            waitTimer.Stop();
+            waitTimer.Dispose();
             worker.Dispose();
             tips.Dispose();
             videoPicture.Image = null;
@@ -429,14 +561,108 @@ namespace Kinovea.ScreenManager
         #region Video
         private void StartVideo()
         {
-            if (render == null)
+            if (render == null || videoRunning || cancelled)
                 return;
+
+            // (2.25.0) One video at a time: the one of a package made in the background first.
+            if (!SwimPackageQueue.Take(this))
+            {
+                waiting = true;
+                videoStatus.Text = SwimPackageQueue.WaitingText();
+                waitTimer.Start();
+                UpdateState();
+                return;
+            }
+
+            waiting = false;
+            waitTimer.Stop();
             videoRunning = true;
             videoStatus.Text = SwimLang.T("Το βίντεο γίνεται με τα γραφικά…");
             if (beforeRender != null)
                 beforeRender();
             worker.RunWorkerAsync();
             UpdateState();
+        }
+
+        /// <summary>(2.25.0) The video of another package ended: this one starts (called on the window's thread).</summary>
+        internal void StartQueued()
+        {
+            if (IsDisposed || !waiting)
+                return;
+            waiting = false;
+            StartVideo();
+        }
+
+        /// <summary>
+        /// (2.25.0) «Συνέχισε με άλλον αθλητή»: the window is left (ShowDialog returns Ignore) and the package goes on in the background;
+        /// StayHere when it cannot.
+        /// </summary>
+        private void GoBackground()
+        {
+            if (!AllowBackground || Background || cancelled || (!videoRunning && !waiting))
+                return;
+
+            Background = true;
+            leaving = true;
+            DialogResult = DialogResult.Ignore;
+        }
+
+        /// <summary>(2.25.0) The package could not go to the background (the drawings of a screen kept by the analyst): back in its window.</summary>
+        public void StayHere()
+        {
+            Background = false;
+            leaving = false;
+            DialogResult = DialogResult.None;
+            UpdateState();
+        }
+
+        /// <summary>(2.25.0) The package is in the background: its window from the box of the packages, not modal.</summary>
+        public void ShowAgain(Form owner)
+        {
+            if (IsDisposed)
+                return;
+
+            if (!Visible)
+            {
+                DialogResult = DialogResult.None;
+                if (owner != null && !owner.IsDisposed)
+                    Show(owner);
+                else
+                    Show();
+            }
+
+            if (WindowState == FormWindowState.Minimized)
+                WindowState = FormWindowState.Normal;
+            Activate();
+        }
+
+        /// <summary>(2.25.0) A package in the background whose video ended: its window closed as with «Κλείσιμο» (from the box of the packages).</summary>
+        public void CloseForGood()
+        {
+            if (IsDisposed || videoRunning || waiting)
+                return;
+            closingForGood = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        }
+
+        /// <summary>(2.25.0) Kinovea closes: the video of a package in the background stops (true when it was being made or waited).</summary>
+        public bool StopForClose()
+        {
+            if (waiting)
+            {
+                waiting = false;
+                cancelled = true;
+                SwimPackageQueue.Forget(this);
+                return true;
+            }
+
+            if (!videoRunning)
+                return false;
+
+            cancelled = true;
+            worker.CancelAsync();
+            return true;
         }
 
         private void Worker_ProgressChanged(object sender, ProgressChangedEventArgs e)
@@ -456,8 +682,25 @@ namespace Kinovea.ScreenManager
                 afterRender();
             videoError = e.Error != null ? e.Error.Message : e.Result as string;
             videoDone = !cancelled && string.IsNullOrEmpty(videoError) && package.VideoReady;
+
+            // (2.25.0) The next video (of a package in the background, or waiting in its window) can start.
+            SwimPackageQueue.Release(this);
+            EventHandler finished = VideoFinished;
+            if (finished != null)
+            {
+                try
+                {
+                    finished(this, EventArgs.Empty);
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Error after the video of the package.", ex);
+                }
+            }
+
             if (cancelled)
             {
+                closingForGood = true;
                 DialogResult = DialogResult.Cancel;
                 Close();
                 return;
@@ -654,9 +897,17 @@ namespace Kinovea.ScreenManager
                 return;
 
             bool pdfWaiting = package.PdfWaiting && !package.PdfReady && string.IsNullOrEmpty(package.PdfError);
-            if (videoRunning)
+
+            // (2.25.0) The button of the background while the video is made or waits.
+            btnBackground.Enabled = !Background && !cancelled && (videoRunning || waiting);
+            if (videoRunning || waiting)
             {
                 btnClose.Text = SwimLang.T("Ακύρωση");
+                if (waiting)
+                {
+                    videoStatus.ForeColor = SwimTheme.Dim;
+                    videoStatus.Text = SwimPackageQueue.WaitingText();
+                }
             }
             else if (videoDone)
             {
@@ -684,6 +935,16 @@ namespace Kinovea.ScreenManager
             btnOk.Text = videoDone && pdfWaiting ? SwimLang.T("Περιμένω το PDF…") : SwimLang.T("✓ OK – Αποστολή με Smash");
             string[] files = package.Files;
             long bytes = files.Sum(f => new FileInfo(f).Length);
+
+            // (2.25.0) While the video is made, the line says what the button of the background does.
+            if (allowBackground && btnBackground.Enabled)
+            {
+                lblInfo.ForeColor = SwimTheme.AccentLight;
+                lblInfo.Text = SwimLang.T("Με «Συνέχισε με άλλον αθλητή» η αποστολή τελειώνει μόνη της στο παρασκήνιο και οι οθόνες αδειάζουν για τον επόμενο αθλητή.");
+                return;
+            }
+
+            lblInfo.ForeColor = SwimTheme.Dim;
             lblInfo.Text = SwimLang.T("Φάκελος: ") + package.Folder + (files.Length > 0 ? "   ·   " + files.Length + SwimLang.T(" αρχεία, ") + SwimPackage.SizeText(bytes) : "") +
                 (bytes > 25L * 1024 * 1024 ? SwimLang.T("   ·   μεγάλο για email: με Smash") : "");
         }
@@ -702,6 +963,7 @@ namespace Kinovea.ScreenManager
                 MessageBox.Show(this, SwimLang.T("Το μήνυμα δεν γράφτηκε στον φάκελο: ") + e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
+            closingForGood = true;
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -714,9 +976,19 @@ namespace Kinovea.ScreenManager
                 worker.CancelAsync();
                 btnClose.Enabled = false;
                 videoStatus.Text = SwimLang.T("Σταματά…");
+                UpdateState();
                 return;
             }
 
+            // (2.25.0) A video that waited for another one: it does not start.
+            if (waiting)
+            {
+                waiting = false;
+                cancelled = true;
+                SwimPackageQueue.Forget(this);
+            }
+
+            closingForGood = true;
             DialogResult = DialogResult.Cancel;
             Close();
         }
@@ -883,6 +1155,87 @@ namespace Kinovea.ScreenManager
             row.Controls.Add(box, 0, 0);
             row.Controls.Add(copy, 1, 0);
             t.Controls.Add(row);
+        }
+    }
+
+    /// <summary>
+    /// (2.25.0) One video of a package at a time (they read their screens and draw their graphics on the thread of the window): a package
+    /// whose window opens while another makes its video in the background waits for it, as does one sent to the background meanwhile.
+    /// On the UI thread.
+    /// </summary>
+    internal static class SwimPackageQueue
+    {
+        private static FormSwimPackage running;
+        private static readonly List<FormSwimPackage> waiting = new List<FormSwimPackage>();
+
+        /// <summary>The window whose video is being made (null: none).</summary>
+        public static FormSwimPackage Running
+        {
+            get { return running != null && !running.IsDisposed ? running : null; }
+        }
+
+        /// <summary>The video of this window can start now (true), else it waits its turn.</summary>
+        public static bool Take(FormSwimPackage form)
+        {
+            if (Running == null || running == form)
+            {
+                running = form;
+                waiting.Remove(form);
+                return true;
+            }
+
+            if (!waiting.Contains(form))
+                waiting.Add(form);
+            return false;
+        }
+
+        /// <summary>The video of this window ended: the next one starts.</summary>
+        public static void Release(FormSwimPackage form)
+        {
+            waiting.Remove(form);
+            if (running != form)
+                return;
+            running = null;
+            StartNext();
+        }
+
+        /// <summary>A window that waited does not wait anymore (its package stopped, Kinovea closes).</summary>
+        public static void Forget(FormSwimPackage form)
+        {
+            waiting.Remove(form);
+            if (running == form)
+            {
+                running = null;
+                StartNext();
+            }
+        }
+
+        private static void StartNext()
+        {
+            while (waiting.Count > 0)
+            {
+                FormSwimPackage next = waiting[0];
+                waiting.RemoveAt(0);
+                if (next == null || next.IsDisposed)
+                    continue;
+
+                running = next;
+                if (next.IsHandleCreated)
+                    next.BeginInvoke((Action)next.StartQueued);
+                else
+                    next.StartQueued();
+                return;
+            }
+        }
+
+        /// <summary>The line of a window whose video waits.</summary>
+        public static string WaitingText()
+        {
+            FormSwimPackage r = Running;
+            string title = r != null ? r.QueueTitle : "";
+            return string.IsNullOrEmpty(title)
+                ? SwimLang.T("⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής που φτιάχνεται στο παρασκήνιο.")
+                : string.Format(CultureInfo.InvariantCulture, SwimLang.T("⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής «{0}» ({1}%)."), title, r.VideoPercent);
         }
     }
 }

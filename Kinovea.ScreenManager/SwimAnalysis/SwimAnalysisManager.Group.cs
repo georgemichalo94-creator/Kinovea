@@ -39,10 +39,47 @@ namespace Kinovea.ScreenManager
         private bool groupDashboardPlaced;
         private bool groupRelayoutPending;
 
+        /// <summary>
+        /// (2.25.0) The group of screens of an analysis whose package went to the background, as it was then (its screens left the window
+        /// with it; the group of the window is the one of the next analysis). Null: the group of the window.
+        /// </summary>
+        private List<PlayerScreenUserInterface> frozenGroup;
+        private PlayerScreenUserInterface frozenLead;
+
+        /// <summary>The group of this analysis has two screens or more (the group of the window, or the one kept by a package in the background).</summary>
+        private bool GroupActiveNow
+        {
+            get { return frozenGroup != null ? frozenGroup.Count >= 2 && frozenLead != null : VideoScreenGroup.Active; }
+        }
+
+        /// <summary>The screen is in the group of this analysis.</summary>
+        private bool GroupHas(PlayerScreenUserInterface screen)
+        {
+            if (frozenGroup == null)
+                return VideoScreenGroup.Contains(screen);
+            return screen != null && GroupActiveNow && frozenGroup.Contains(screen);
+        }
+
+        /// <summary>The screens of the group of this analysis, in the order of the screens.</summary>
+        private IEnumerable<PlayerScreenUserInterface> GroupMembersNow
+        {
+            get { return frozenGroup != null ? (IEnumerable<PlayerScreenUserInterface>)frozenGroup : VideoScreenGroup.Members; }
+        }
+
+        /// <summary>The frame of the lead of the group of this analysis at the moment of a frame of one of its screens (VideoScreenGroup.LeadTimestamp).</summary>
+        private long GroupLeadTimestamp(PlayerScreenUserInterface screen, long timestamp)
+        {
+            if (frozenGroup == null)
+                return VideoScreenGroup.LeadTimestamp(screen, timestamp);
+            if (screen == null || frozenLead == null || screen == frozenLead)
+                return timestamp;
+            return frozenLead.SwimTimestampFromOrigin(screen.SwimTimeFromOrigin(timestamp));
+        }
+
         /// <summary>The screen of the analysis is in a group of screens.</summary>
         internal bool InGroup
         {
-            get { return player != null && !player.IsDisposed && VideoScreenGroup.Active && VideoScreenGroup.Contains(player); }
+            get { return player != null && !player.IsDisposed && GroupActiveNow && GroupHas(player); }
         }
 
         /// <summary>The screens of the group with a video, in the order of the screens (the screen of the analysis alone without a group).</summary>
@@ -52,7 +89,7 @@ namespace Kinovea.ScreenManager
             {
                 if (!InGroup)
                     return player != null && !player.IsDisposed ? new List<PlayerScreenUserInterface> { player } : new List<PlayerScreenUserInterface>();
-                return VideoScreenGroup.Members.Where(m => m != null && !m.IsDisposed && m.SwimFrameServer != null && m.SwimFrameServer.Loaded).ToList();
+                return GroupMembersNow.Where(m => m != null && !m.IsDisposed && m.SwimFrameServer != null && m.SwimFrameServer.Loaded).ToList();
             }
         }
 
@@ -114,7 +151,7 @@ namespace Kinovea.ScreenManager
             Settings.GroupGraphics = choice;
             Settings.Save();
             RequestGroupLayout();
-            foreach (PlayerScreenUserInterface s in VideoScreenGroup.Members.Where(m => m != null && !m.IsDisposed))
+            foreach (PlayerScreenUserInterface s in GroupMembersNow.Where(m => m != null && !m.IsDisposed))
                 s.Invalidate(true);
             InvalidatePlayer();
         }
@@ -167,7 +204,7 @@ namespace Kinovea.ScreenManager
             if (Race == null || size.Width <= 0 || size.Height <= 0 || (Settings != null && !Settings.VideoGraphics))
                 return;
 
-            long at = VideoScreenGroup.LeadTimestamp(screen, timestamp);
+            long at = GroupLeadTimestamp(screen, timestamp);
             lock (overlayLock)
             {
                 SmoothingMode smoothing = g.SmoothingMode;

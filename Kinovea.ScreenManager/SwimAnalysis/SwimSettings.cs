@@ -257,6 +257,19 @@ namespace Kinovea.ScreenManager
         public string PackageSignature = "";
 
         /// <summary>
+        /// (2.25.0) Where the box of the packages made in the background stands, from the bottom right corner of the window of Kinovea
+        /// ("dx,dy"; empty: its usual place). It goes where the analyst drags it.
+        /// </summary>
+        public string PackageTray = "";
+
+        /// <summary>
+        /// (2.25.0) The settings of an analysis that went to the background with its package: a copy that is never saved (the analysis of
+        /// the screens keeps the settings and saves them).
+        /// </summary>
+        [JsonIgnore]
+        public bool ReadOnly;
+
+        /// <summary>
         /// (2.11.0) The parts of the PDF of the report, as chosen at the PDF button: the short analysis (three pages for the coach) and the
         /// full one (the report with all its tables, comments at its end); both: one PDF, the short first.
         /// </summary>
@@ -317,8 +330,19 @@ namespace Kinovea.ScreenManager
             return new SwimSettings();
         }
 
+        /// <summary>(2.25.0) A copy of these settings for an analysis that went to the background: the same values, never saved.</summary>
+        public SwimSettings ReadOnlyCopy()
+        {
+            SwimSettings copy = JsonConvert.DeserializeObject<SwimSettings>(JsonConvert.SerializeObject(this)) ?? new SwimSettings();
+            copy.ReadOnly = true;
+            return copy;
+        }
+
         public void Save()
         {
+            if (ReadOnly)
+                return;
+
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));

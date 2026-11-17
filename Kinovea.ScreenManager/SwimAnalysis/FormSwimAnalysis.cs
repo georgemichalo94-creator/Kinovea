@@ -301,6 +301,28 @@ namespace Kinovea.ScreenManager
             base.OnDeactivate(e);
         }
 
+        /// <summary>
+        /// (2.25.0) The analysis of this window goes to the background with its package («Συνέχισε με άλλον αθλητή»): what is typed in it
+        /// is kept first (the checkpoints, the official time), where it stands is kept for the window of the next analysis, then it hides
+        /// and stops following the video (it goes with the package).
+        /// </summary>
+        internal void Retire()
+        {
+            CommitCheckpoints(true);
+            CommitOfficial();
+            if (WindowState == FormWindowState.Normal && !dockedBeside)
+                manager.Settings.PanelBounds = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", Left, Top, Width, Height);
+            liveTimer.Stop();
+            Hide();
+        }
+
+        /// <summary>(2.25.0) The package could not go to the background: the window as it was.</summary>
+        internal void Unretire()
+        {
+            liveTimer.Start();
+            Show();
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             CommitCheckpoints(true);

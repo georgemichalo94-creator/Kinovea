@@ -37,6 +37,15 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.25.0) A package made in the background has the graphics of its video and its PDF in the language it started in.
+            if (BackgroundBusy)
+            {
+                Status(SwimLang.T("Η γλώσσα αλλάζει όταν τελειώσει η αποστολή που φτιάχνεται στο παρασκήνιο (το βίντεο και το PDF της είναι στη γλώσσα που ξεκίνησε): πάτησε ξανά τότε."), true);
+                if (form != null && !form.IsDisposed)
+                    form.RefreshLanguageSwitch();
+                return;
+            }
+
             SwimLang.English = english;
             SwitchKinoveaLanguage(english);
         }

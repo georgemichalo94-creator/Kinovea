@@ -623,6 +623,11 @@ namespace Kinovea.ScreenManager
                 if (AnalysisBusy || PickTarget != SwimPickTarget.None)
                     return;
 
+                // (2.25.0) After a package went to the background: the analysis waits for the video of the screen in the place of the
+                // screen of the analysis (another screen activated meanwhile does not take it).
+                if (armedScreen != null && target != armedScreen && !armedScreen.IsDisposed)
+                    return;
+
                 SwitchTo(target, targetServer);
             }
             catch (Exception ex)

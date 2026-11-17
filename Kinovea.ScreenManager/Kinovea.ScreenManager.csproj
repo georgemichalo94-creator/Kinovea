@@ -1105,6 +1105,10 @@
     <Compile Include="SwimAnalysis\FormSwimPackage.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Background.cs" />
+    <Compile Include="SwimAnalysis\FormSwimPackageTray.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\FormSwimPdfChoice.cs">
       <SubType>Form</SubType>
     </Compile>

@@ -2768,6 +2768,31 @@ namespace Kinovea.ScreenManager
             { "ΣΗΜΑ → {0} {1}", "SIGNAL → {0} {1}" },
             { "μέγιστη {0}", "highest {0}" },
             { "Ο πίνακας", "The panel" },
+
+            // (2.25.0) The package in the background.
+            { "Έτοιμη αποστολή", "Ready package" },
+            { "Αργότερα", "Later" },
+            { "Βίντεο {0}%", "Video {0}%" },
+            { "Βίντεο {0}:{1:00}", "Video {0}:{1:00}" },
+            { "Η αποστολή {0} περιμένει ακόμα το PDF της από το Google Sheet.\n\nΑν κλείσει τώρα το Kinovea, το PDF δεν θα μπει στον φάκελό της (είναι στο KOE App).\n\nΝα κλείσει τώρα;", "The package {0} still waits for its PDF from the Google Sheet.\n\nIf Kinovea closes now, the PDF will not go into its folder (it is in the KOE App).\n\nClose now?" },
+            { "Η αποστολή δεν έγινε", "Package not made" },
+            { "Η αποστολή τελειώνει μόνη της στο παρασκήνιο, με τις ίδιες οθόνες και την ίδια ανάλυση (κρυμμένες): οι οθόνες αδειάζουν για τον επόμενο αθλητή. Η πρόοδος φαίνεται κάτω δεξιά.", "The package finishes by itself in the background, with the same screens and the same analysis (hidden): the screens are emptied for the next athlete. The progress shows at the bottom right." },
+            { "Η γλώσσα αλλάζει όταν τελειώσει η αποστολή που φτιάχνεται στο παρασκήνιο (το βίντεο και το PDF της είναι στη γλώσσα που ξεκίνησε): πάτησε ξανά τότε.", "The language changes when the package being made in the background is finished (its video and its PDF are in the language it started in): press again then." },
+            { "Με «Συνέχισε με άλλον αθλητή» η αποστολή τελειώνει μόνη της στο παρασκήνιο και οι οθόνες αδειάζουν για τον επόμενο αθλητή.", "With «Continue with another athlete» the package finishes by itself in the background and the screens are emptied for the next athlete." },
+            { "Φτιάχνεται ακόμα στο παρασκήνιο η αποστολή: {0}.\n\nΑν κλείσει τώρα το Kinovea, το βίντεο της σταματά (θα χρειαστεί «Νέα δημιουργία»).\n\nΝα κλείσει τώρα;", "A package is still being made in the background: {0}.\n\nIf Kinovea closes now, its video stops («Make again» will be needed).\n\nClose now?" },
+            { "αποστολή στη σειρά", "package waiting its turn" },
+            { "αποστολή στο παρασκήνιο", "package in the background" },
+            { "το βίντεο περιμένει τη σειρά του", "the video waits its turn" },
+            { "σταματά…", "stopping…" },
+            { "⏩ Συνέχισε με άλλον αθλητή", "⏩ Continue with another athlete" },
+            { "⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής «{0}» ({1}%).", "⏳ The video waits for the video of the package «{0}» to finish ({1}%)." },
+            { "⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής που φτιάχνεται στο παρασκήνιο.", "⏳ The video waits for the video of the package being made in the background to finish." },
+            { "⚠ Το βίντεο της αποστολής δεν έγινε", "⚠ The video of the package was not made" },
+            { "✓ Η αποστολή είναι έτοιμη", "✓ The package is ready" },
+            { "📦 Άνοιγμα αποστολής", "📦 Open package" },
+            { "📦 Αποστολές στο παρασκήνιο", "📦 Packages in the background" },
+            { "📦 Αποστολή στο παρασκήνιο", "📦 Package in the background" },
+            { "📦 Η αποστολή «{0}» τελειώνει στο παρασκήνιο: οι οθόνες είναι ελεύθερες για τον επόμενο αθλητή.", "📦 The package «{0}» finishes in the background: the screens are free for the next athlete." },
         };
     }
 }

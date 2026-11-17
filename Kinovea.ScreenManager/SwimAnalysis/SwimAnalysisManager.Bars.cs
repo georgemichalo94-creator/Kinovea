@@ -72,6 +72,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int LayoutVideoBars(PlayerScreenUserInterface screen, Size viewport)
         {
+            // (2.25.0) A screen of a package made in the background (out of the window): nothing of the analysis of the screens on it.
+            if (InBackground(screen))
+                return 0;
+
             // Full screen (2.9.5) or big screens (2.14.0): no room beside the image, the round button over it instead
             // (SwimAnalysisManager.Dial.cs).
             if (DialMode)

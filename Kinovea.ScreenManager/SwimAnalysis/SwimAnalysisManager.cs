@@ -276,7 +276,19 @@ namespace Kinovea.ScreenManager
             CalibrationLine2 = 5;
             SyncState = Settings.IsConfigured ? SwimSyncState.Idle : SwimSyncState.NotConfigured;
             SyncMessage = Settings.IsConfigured ? SwimLang.T("Έτοιμο") : SwimLang.T("Δεν έχει ρυθμιστεί η σύνδεση με το Google Sheet");
+            Wire();
 
+            // (2.9.7) The learning shared with the other Kinovea of the Google Sheet.
+            StartLearningSync();
+        }
+
+        /// <summary>
+        /// The connection to the Google Sheet, the handlers of the language, of the full screen and of the group of screens, the timers of
+        /// the save and of the send, and the save as Kinovea closes: the analysis of the screens (at the start, or after a package went to
+        /// the background with the analysis before, SwimAnalysisManager.Background.cs).
+        /// </summary>
+        private void Wire()
+        {
             client = new SwimSheetClient();
             client.StateChanged += Client_StateChanged;
             SwimLang.Changed += SwimLang_Changed;
@@ -310,9 +322,6 @@ namespace Kinovea.ScreenManager
             sendTimer = new Timer();
             sendTimer.Interval = 1500;
             sendTimer.Tick += SendTimer_Tick;
-
-            // (2.9.7) The learning shared with the other Kinovea of the Google Sheet.
-            StartLearningSync();
         }
 
         #region Entry points from the player screen
@@ -1842,6 +1851,10 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void DrawOverlay(PlayerScreenUserInterface screen, Graphics g, ImageTransform transform, long timestamp, Size renderingSize, Bitmap frame = null)
         {
+            // (2.25.0) A screen of a package made in the background (out of the window): nothing of the analysis of the screens on it.
+            if (InBackground(screen))
+                return;
+
             // (2.16.0) Another screen of a group that shows the graphics of the group: the panels, at the same moment of the analysis.
             if (screen != null && screen != player && Active && VideoFile != null && InGroup && GroupGraphicsScreen == screen)
             {
@@ -3262,7 +3275,7 @@ namespace Kinovea.ScreenManager
                     form.RefreshData();
             }
 
-            long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
+            long origin = AnalysisOrigin;
             string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts,
                 PackageFlags(Race));
             Race.SheetPending = true;
@@ -3285,7 +3298,7 @@ namespace Kinovea.ScreenManager
 
             SwimComputed computed = SwimCalculator.Compute(race, Timing, Settings.StrokeRounding);
             List<SwimTechPhase> tech = SwimTechCalculator.Compute(race, computed, Timing);
-            long origin = frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : 0;
+            long origin = AnalysisOrigin;
             race.SheetPending = true;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
                 Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts, PackageFlags(race)), race.Id, pdf);
@@ -3475,6 +3488,9 @@ namespace Kinovea.ScreenManager
             if (player == null || frameServer == null || !frameServer.Loaded)
                 return;
 
+            // (2.25.0) The analysis has its screen again after a package went to the background.
+            armedScreen = null;
+
             string path = frameServer.VideoReader.FilePath;
             bool sameVideo = this.player == player && string.Equals(videoPath, path, StringComparison.OrdinalIgnoreCase) && VideoFile != null;
 
@@ -3625,6 +3641,15 @@ namespace Kinovea.ScreenManager
 
         public void SaveNow()
         {
+            // (2.25.0) An analysis that went to the background with its package writes no file: what its package changed in it goes to
+            // the analysis of the screens (SwimAnalysisManager.Background.cs).
+            if (retired)
+            {
+                if (dirty)
+                    RouteBackgroundChanges();
+                return;
+            }
+
             if (!dirty || VideoFile == null || string.IsNullOrEmpty(videoPath))
                 return;
 
