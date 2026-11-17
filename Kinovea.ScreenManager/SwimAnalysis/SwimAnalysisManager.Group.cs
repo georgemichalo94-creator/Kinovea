@@ -687,7 +687,7 @@ namespace Kinovea.ScreenManager
                             string label = job.Moments[moment].Value;
                             while (moment < job.Moments.Count && ts >= job.Moments[moment].Key)
                                 moment++;
-                            SwimPackageThumb thumb = new SwimPackageThumb { Label = label, Timestamp = ts, Image = ThumbOf(joined) };
+                            SwimPackageThumb thumb = new SwimPackageThumb { Label = label, Timestamp = ts, Image = ThumbOf(joined), Seconds = count / fps };
                             job.Package.Thumbs.Add(thumb);
                             worker.ReportProgress(Percent(count, total), thumb);
                         }
@@ -731,7 +731,7 @@ namespace Kinovea.ScreenManager
                     {
                         Rectangle? place = panel && slots.Count > 0 && slots[slots.Count - 1] < rects.Count ? rects[slots[slots.Count - 1]] : (Rectangle?)null;
                         bool taken;
-                        count += WriteClosingPanel(encoder, joined, buffer, place, closing, fps, job, worker, out taken);
+                        count += WriteClosingPanel(encoder, joined, buffer, place, closing, fps, count, job, worker, out taken);
                         if (!taken)
                         {
                             string stopped;
@@ -774,7 +774,7 @@ namespace Kinovea.ScreenManager
         /// of the video getting darker; it stays 5 s and fades out in 0.8 s. The picture of the preview of a package. Returns the frames
         /// written; taken false when ffmpeg stopped taking them.
         /// </summary>
-        private int WriteClosingPanel(SwimVideoEncoder encoder, Bitmap joined, byte[] buffer, Rectangle? place, SwimTechPhase phase, double fps,
+        private int WriteClosingPanel(SwimVideoEncoder encoder, Bitmap joined, byte[] buffer, Rectangle? place, SwimTechPhase phase, double fps, int before,
             GroupVideoJob job, BackgroundWorker worker, out bool taken)
         {
             taken = true;
@@ -820,7 +820,7 @@ namespace Kinovea.ScreenManager
                             CopyBgr(joined, buffer);
                             if (job.Package != null)
                             {
-                                SwimPackageThumb thumb = new SwimPackageThumb { Label = SwimLang.T("Ο πίνακας"), Timestamp = phase.Origin, Image = ThumbOf(joined) };
+                                SwimPackageThumb thumb = new SwimPackageThumb { Label = SwimLang.T("Ο πίνακας"), Timestamp = phase.Origin, Image = ThumbOf(joined), Seconds = (before + written + hold / 2) / fps };
                                 job.Package.Thumbs.Add(thumb);
                                 worker.ReportProgress(98, thumb);
                             }

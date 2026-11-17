@@ -12,9 +12,12 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 
 namespace Kinovea.ScreenManager
 {
@@ -67,6 +70,12 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.16.4) The screens in the video: all the screens of a group joined (2 or more), else 1.</summary>
         public int VideoScreens = 1;
         public List<SwimPackageThumb> Thumbs = new List<SwimPackageThumb>();
+
+        /// <summary>(2.24.3) A package made before (Ready): the moments of the pictures of its video, taken from it by ffmpeg.</summary>
+        public List<SwimPackageMoment> Moments = new List<SwimPackageMoment>();
+
+        /// <summary>(2.24.3) The recipients, the subject and the text came from the message file of the package.</summary>
+        public bool MessageKept;
 
         public string PdfFileName
         {
@@ -177,22 +186,130 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static SwimPackage For(SwimRace race, SwimSettings settings)
         {
-            SwimPackage p = new SwimPackage { RaceId = race.Id };
-            p.Folder = FolderFor(race, settings);
+            string folder = FolderFor(race, settings);
             string wanted = BaseNameFor(race);
             string name = wanted;
-            if (!(string.Equals(race.PackageFolder, p.Folder, StringComparison.OrdinalIgnoreCase) && race.PackageBase == wanted))
+            if (!(string.Equals(race.PackageFolder, folder, StringComparison.OrdinalIgnoreCase) && race.PackageBase == wanted))
             {
-                for (int i = 2; i < 100 && (File.Exists(Path.Combine(p.Folder, name + ".mp4")) || File.Exists(Path.Combine(p.Folder, name + ".pdf"))); i++)
+                for (int i = 2; i < 100 && (File.Exists(Path.Combine(folder, name + ".mp4")) || File.Exists(Path.Combine(folder, name + ".pdf"))); i++)
                     name = wanted + " (" + i.ToString(CultureInfo.InvariantCulture) + ")";
             }
 
-            p.BaseName = name;
+            return At(race, folder, name);
+        }
+
+        /// <summary>(2.24.3) The package of a race in a folder with the name of its files (the paths of its files).</summary>
+        public static SwimPackage At(SwimRace race, string folder, string name)
+        {
+            SwimPackage p = new SwimPackage { RaceId = race.Id, Folder = folder, BaseName = name };
             p.PdfPath = Path.Combine(p.Folder, p.PdfFileName);
             p.PdfShortPath = Path.Combine(p.Folder, p.PdfShortFileName);
             p.VideoPath = Path.Combine(p.Folder, p.VideoFileName);
             p.MessagePath = Path.Combine(p.Folder, name + " - " + SwimLang.T("μήνυμα") + ".txt");
             return p;
+        }
+
+        /// <summary>
+        /// (2.24.3) The package made before for a race, as it is in its folder, for its window without making it again (null: none, or its
+        /// video is not there any more): the video (what the race kept about it, else what ffmpeg reads in it, and the moments of its
+        /// pictures), the PDF, and the recipients, the subject and the text of its message file.
+        /// </summary>
+        public static SwimPackage Ready(SwimRace race, string ffmpeg)
+        {
+            if (race == null || string.IsNullOrWhiteSpace(race.PackageFolder) || string.IsNullOrWhiteSpace(race.PackageBase))
+                return null;
+
+            SwimPackage p;
+            try
+            {
+                p = At(race, race.PackageFolder, race.PackageBase);
+                if (!File.Exists(p.VideoPath))
+                    return null;
+            }
+            catch (ArgumentException)
+            {
+                // A folder or a name the paths do not take.
+                return null;
+            }
+
+            p.VideoReady = true;
+            SwimPackageInfo info = race.PackageInfo;
+            if (info != null && info.Width > 0 && info.Height > 0)
+            {
+                p.VideoSeconds = info.Seconds;
+                p.VideoSize = new Size(info.Width, info.Height);
+                p.VideoHasSound = info.Sound;
+                p.VideoScreens = Math.Max(1, info.Screens);
+                p.Archived = info.Archived;
+                p.ArchiveNote = info.ArchiveNote;
+            }
+            else
+            {
+                // A package of an earlier version: what ffmpeg reads in its video.
+                double seconds;
+                Size size;
+                bool sound;
+                if (SwimVideoEncoder.Probe(ffmpeg, p.VideoPath, out seconds, out size, out sound))
+                {
+                    p.VideoSeconds = seconds;
+                    p.VideoSize = size;
+                    p.VideoHasSound = sound;
+                }
+            }
+
+            p.Moments = info != null && info.Pictures != null && info.Pictures.Count > 0
+                ? info.Pictures.Where(m => m != null && m.Seconds >= 0).ToList()
+                : EvenMoments(p.VideoSeconds);
+            p.PdfReady = File.Exists(p.PdfPath);
+            p.PdfShortReady = File.Exists(p.PdfShortPath);
+            if (!p.PdfReady)
+                p.PdfNote = SwimLang.T("Το PDF δεν είναι στον φάκελο της αποστολής: η «Νέα δημιουργία» το φτιάχνει.");
+            p.MessageKept = p.ReadMessage();
+            return p;
+        }
+
+        /// <summary>(2.24.3) Six moments spread over a video of that many seconds, named by their time («0:12»); none without its length.</summary>
+        public static List<SwimPackageMoment> EvenMoments(double seconds)
+        {
+            List<SwimPackageMoment> list = new List<SwimPackageMoment>();
+            if (seconds <= 0)
+                return list;
+            for (int i = 0; i < 6; i++)
+            {
+                double at = seconds * (i + 0.5) / 6.0;
+                TimeSpan t = TimeSpan.FromSeconds(at);
+                list.Add(new SwimPackageMoment { Seconds = at, Label = string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", (int)t.TotalMinutes, t.Seconds) });
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// (2.24.3) The signature of the analysis of a race: all that it keeps (the marks, the values, the notes, the evaluations, the
+        /// comparisons…) but what the program keeps about its sending (the Sheet, the PDF, the images of the report, the package) and the
+        /// proposals of the reading. Another one: the analysis changed.
+        /// </summary>
+        public static string Signature(SwimRace race)
+        {
+            if (race == null)
+                return "";
+            JObject o = JObject.FromObject(race);
+            foreach (string name in new[] { "Graphics", "ChartImages", "SheetName", "SheetUrl", "LastPdfUrl", "SheetPending", "PackageFolder",
+                "PackageBase", "PackageMade", "PackageSent", "PackageInfo", "Proposals", "QuietProposals", "QuietRead" })
+                o.Remove(name);
+            using (SHA1 sha = SHA1.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(o.ToString(Newtonsoft.Json.Formatting.None)));
+                return BitConverter.ToString(hash).Replace("-", "").Substring(0, 20);
+            }
+        }
+
+        /// <summary>(2.24.3) The analysis changed after its package was made: null when it is not known (a package of an earlier version).</summary>
+        public static bool? ChangedSince(SwimRace race)
+        {
+            if (race == null || race.PackageInfo == null || string.IsNullOrEmpty(race.PackageInfo.Sig))
+                return null;
+            return !string.Equals(race.PackageInfo.Sig, Signature(race), StringComparison.Ordinal);
         }
 
         /// <summary>The size of the video of the package: the frame at most VideoMaxSide on its longer side, even sides (H.264).</summary>
@@ -306,6 +423,35 @@ namespace Kinovea.ScreenManager
             File.WriteAllText(MessagePath, b.ToString(), new UTF8Encoding(true));
         }
 
+        /// <summary>
+        /// (2.24.3) The recipients, the subject and the text from the message file (as WriteMessage writes it: «Προς: …», «Θέμα: …», an
+        /// empty line, the text). False when there is none.
+        /// </summary>
+        public bool ReadMessage()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(MessagePath) || !File.Exists(MessagePath))
+                    return false;
+                string[] lines = File.ReadAllLines(MessagePath, Encoding.UTF8);
+                if (lines.Length < 2)
+                    return false;
+                Func<string, string> after = line =>
+                {
+                    int i = line.IndexOf(':');
+                    return i >= 0 ? line.Substring(i + 1).Trim() : line.Trim();
+                };
+                Recipients = ParseRecipients(after(lines[0]));
+                Subject = after(lines[1]);
+                Body = string.Join(Environment.NewLine, lines.Skip(3).ToArray()).TrimEnd() + Environment.NewLine;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         /// <summary>«12.4 MB».</summary>
         public static string SizeText(long bytes)
         {
@@ -336,6 +482,34 @@ namespace Kinovea.ScreenManager
         public string Label;
         public long Timestamp;
         public Bitmap Image;
+
+        /// <summary>(2.24.3) Its moment in the video of the package (seconds from its start).</summary>
+        public double Seconds;
+    }
+
+    /// <summary>
+    /// (2.24.3) What a race keeps about its package when it is made, for its window without making it again: the signature of the analysis
+    /// it was made from (SwimPackage.Signature), its video (seconds, size, sound, screens), the moments of its pictures and the line of the
+    /// KOE App.
+    /// </summary>
+    public class SwimPackageInfo
+    {
+        public string Sig = "";
+        public double Seconds;
+        public int Width;
+        public int Height;
+        public bool Sound;
+        public int Screens = 1;
+        public List<SwimPackageMoment> Pictures = new List<SwimPackageMoment>();
+        public bool? Archived;
+        public string ArchiveNote;
+    }
+
+    /// <summary>(2.24.3) A picture of the video of a package: its moment (seconds from the start of the video) and its name.</summary>
+    public class SwimPackageMoment
+    {
+        public double Seconds;
+        public string Label = "";
     }
 
     /// <summary>
@@ -436,6 +610,108 @@ namespace Kinovea.ScreenManager
             catch (Exception)
             {
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// (2.24.3) What ffmpeg reads in a video: its length, the size of its images and whether it has sound. False when it could not be
+        /// read.
+        /// </summary>
+        public static bool Probe(string ffmpeg, string video, out double seconds, out Size size, out bool sound)
+        {
+            seconds = 0;
+            size = Size.Empty;
+            sound = false;
+            if (string.IsNullOrEmpty(ffmpeg) || !File.Exists(ffmpeg) || string.IsNullOrEmpty(video) || !File.Exists(video))
+                return false;
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, "-hide_banner -nostdin -i \"" + video + "\"")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+                string text;
+                using (Process p = Process.Start(info))
+                {
+                    Task<string> err = p.StandardError.ReadToEndAsync();
+                    Task<string> outText = p.StandardOutput.ReadToEndAsync();
+                    if (!p.WaitForExit(15000))
+                    {
+                        try { p.Kill(); } catch (Exception) { }
+                        return false;
+                    }
+
+                    text = err.Result;
+                }
+
+                Match d = Regex.Match(text, @"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)");
+                if (d.Success)
+                {
+                    seconds = int.Parse(d.Groups[1].Value, CultureInfo.InvariantCulture) * 3600 + int.Parse(d.Groups[2].Value, CultureInfo.InvariantCulture) * 60 +
+                        double.Parse(d.Groups[3].Value, CultureInfo.InvariantCulture);
+                }
+
+                string videoLine = text.Split('\n').FirstOrDefault(l => l.Contains("Stream #") && l.Contains("Video:"));
+                if (videoLine != null)
+                {
+                    Match s = Regex.Match(videoLine, @"[ ,](\d{2,5})x(\d{2,5})[ ,\[]");
+                    if (s.Success)
+                        size = new Size(int.Parse(s.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(s.Groups[2].Value, CultureInfo.InvariantCulture));
+                }
+
+                sound = text.Split('\n').Any(l => l.Contains("Stream #") && l.Contains("Audio:"));
+                return d.Success;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// (2.24.3) The image of a video at a moment (seconds from its start), that many pixels wide, by ffmpeg: null when there is none (after
+        /// its end) or it could not be read.
+        /// </summary>
+        public static Bitmap Frame(string ffmpeg, string video, double seconds, int width)
+        {
+            if (string.IsNullOrEmpty(ffmpeg) || !File.Exists(ffmpeg) || string.IsNullOrEmpty(video) || !File.Exists(video))
+                return null;
+            try
+            {
+                string args = string.Format(CultureInfo.InvariantCulture, "-hide_banner -nostdin -ss {0:0.###} -i \"{1}\" -frames:v 1 -vf scale={2}:-1 -f image2pipe -vcodec bmp -",
+                    Math.Max(0, seconds), video, Math.Max(16, width));
+                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, args)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                };
+                using (Process p = Process.Start(info))
+                using (MemoryStream data = new MemoryStream())
+                {
+                    Task<string> err = p.StandardError.ReadToEndAsync();
+                    Task copy = p.StandardOutput.BaseStream.CopyToAsync(data);
+                    if (!p.WaitForExit(15000))
+                    {
+                        try { p.Kill(); } catch (Exception) { }
+                        return null;
+                    }
+
+                    if (!copy.Wait(5000) || data.Length < 64)
+                        return null;
+                    data.Position = 0;
+                    using (Bitmap read = new Bitmap(data))
+                        return new Bitmap(read);
+                }
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

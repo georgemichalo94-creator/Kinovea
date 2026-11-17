@@ -870,6 +870,13 @@ namespace Kinovea.ScreenManager
         public string PackageMade;
         public string PackageSent;
 
+        /// <summary>
+        /// (2.24.3) What the window of the package shows again without making it (the signature of the analysis it was made from, its
+        /// video, the moments of its pictures, the line of the KOE App): null when none, or made by an earlier version.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SwimPackageInfo PackageInfo;
+
         [JsonIgnore]
         public bool IsTraining
         {

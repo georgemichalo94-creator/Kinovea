@@ -82,6 +82,12 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.24.3) A package made before, its video still in its folder: its window opens as it is, nothing made again; «Νέα
+            // δημιουργία» there makes it again.
+            SwimPackage ready = SwimPackage.Ready(Race, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe"));
+            if (ready != null && !OpenReadyPackage(Race, ready))
+                return;
+
             if (!HasVideo)
             {
                 Status(SwimLang.T("Η αποστολή χρειάζεται το βίντεο της ανάλυσης ανοιχτό."), true);
@@ -137,6 +143,8 @@ namespace Kinovea.ScreenManager
 
             package.Subject = SwimPackage.SubjectFor(race);
             package.Body = SwimPackage.BodyFor(race, Computed, false, Settings.PackageSignature, screens);
+            // (2.24.3) The package the race knew: it stays the one it knows when no new video is made.
+            string folderBefore = race.PackageFolder, baseBefore = race.PackageBase, madeBefore = race.PackageMade;
             race.PackageFolder = package.Folder;
             race.PackageBase = package.BaseName;
             race.PackageMade = DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
@@ -215,11 +223,23 @@ namespace Kinovea.ScreenManager
 
             bool cancelled = form.VideoCancelled;
             form.Dispose();
+            if (cancelled || !package.VideoReady)
+            {
+                race.PackageFolder = folderBefore;
+                race.PackageBase = baseBefore;
+                race.PackageMade = madeBefore;
+                MarkDirty();
+            }
+
             if (cancelled)
             {
                 Status(SwimLang.T("Η αποστολή σταμάτησε."), false);
                 return;
             }
+
+            // (2.24.3) What the window of the package shows again without making it.
+            if (package.VideoReady)
+                RememberPackage(race, package);
 
             if (result != DialogResult.OK)
             {
@@ -227,7 +247,101 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
-            // OK: Smash in the browser, the emails in the clipboard for its first field, and the window with the files and the texts.
+            SendWithSmash(race, package);
+        }
+
+        /// <summary>
+        /// (2.24.3) The window of the package made before for a race, as it is: its video, its PDF and its message in its folder, the
+        /// pictures of the video by ffmpeg, a line on top with when it was made (amber when the analysis changed after it). OK sends it with
+        /// Smash as always. True when the analyst asks for it to be made again («Νέα δημιουργία»).
+        /// </summary>
+        private bool OpenReadyPackage(SwimRace race, SwimPackage package)
+        {
+            bool? changed = SwimPackage.ChangedSince(race);
+            int screens = package.VideoScreens;
+            if (!package.MessageKept)
+            {
+                package.Subject = SwimPackage.SubjectFor(race);
+                package.Body = SwimPackage.BodyFor(race, Computed, package.Archived == true, Settings.PackageSignature, screens);
+            }
+
+            if (!package.PdfReady && string.IsNullOrEmpty(package.PdfUrl))
+                package.PdfUrl = race.LastPdfUrl;
+
+            Form owner = player != null && !player.IsDisposed ? player.FindForm() : null;
+            FormSwimPackage form = new FormSwimPackage(package, race.DisplayName, Settings.PackageSignature, null, null, null, null,
+                (archived, signature) => SwimPackage.BodyFor(race, Computed, archived, signature, screens));
+            form.ShowReady(race.PackageMade, changed, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe"));
+            PackageJob job = new PackageJob { RaceId = race.Id, Package = package, Form = form };
+            packageJob = job;
+            DialogResult result;
+            try
+            {
+                result = owner != null ? form.ShowDialog(owner) : form.ShowDialog();
+            }
+            finally
+            {
+                job.Form = null;
+                packageJob = null;
+            }
+
+            if (!string.Equals(form.Signature, Settings.PackageSignature ?? "", StringComparison.Ordinal))
+            {
+                Settings.PackageSignature = form.Signature;
+                SaveSettingsQuietly();
+            }
+
+            bool remake = form.Remake;
+            form.Dispose();
+            if (remake)
+                return true;
+
+            if (result == DialogResult.OK)
+                SendWithSmash(race, package);
+            else
+                Status(string.Format(SwimLang.T("Η αποστολή είναι στον φάκελο «{0}»."), package.Folder), false);
+            return false;
+        }
+
+        /// <summary>
+        /// (2.24.3) What a race keeps about its package when it is made, for its window without making it again: the signature of the
+        /// analysis, its video, the moments of its pictures and the line of the KOE App.
+        /// </summary>
+        private void RememberPackage(SwimRace race, SwimPackage package)
+        {
+            SwimPackageInfo info = new SwimPackageInfo
+            {
+                Seconds = package.VideoSeconds,
+                Width = package.VideoSize.Width,
+                Height = package.VideoSize.Height,
+                Sound = package.VideoHasSound,
+                Screens = Math.Max(1, package.VideoScreens),
+                Archived = package.Archived,
+                ArchiveNote = package.ArchiveNote
+            };
+            foreach (SwimPackageThumb t in package.Thumbs)
+                info.Pictures.Add(new SwimPackageMoment { Seconds = Math.Max(0, t.Seconds), Label = t.Label ?? "" });
+            race.PackageInfo = info;
+
+            // The evaluations the program keeps up to date at each sending (its PDF may be asked after this): up to date before the
+            // signature, so that they do not count as a change.
+            if (race == Race && MergeOldTechEvals() + UpdateAutoEvals() > 0 && form != null)
+                form.RefreshData();
+            try
+            {
+                info.Sig = SwimPackage.Signature(race);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not sign the analysis of the package.", e);
+            }
+
+            MarkDirty();
+        }
+
+        /// <summary>OK of the window of the package: Smash in the browser, the emails in the clipboard for its first field, and the window with the files and the texts.</summary>
+        private void SendWithSmash(SwimRace race, SwimPackage package)
+        {
             try
             {
                 if (package.Recipients.Count > 0)
@@ -412,9 +526,36 @@ namespace Kinovea.ScreenManager
             }
 
             if (job != null && job.Form != null && !job.Form.IsDisposed)
+            {
                 job.Form.PdfChanged();
-            else if (p.PdfReady)
-                Status(string.Format(SwimLang.T("📦 Το PDF της αποστολής μπήκε στον φάκελό της: «{0}»."), p.PdfPath), false);
+            }
+            else
+            {
+                // (2.24.3) The window closed before the PDF: the line of the KOE App kept with the package, the coaches' emails in its
+                // message file (the window of the ready package has them).
+                if (race.PackageInfo != null && string.Equals(race.PackageBase, p.BaseName, StringComparison.Ordinal))
+                {
+                    race.PackageInfo.Archived = p.Archived;
+                    race.PackageInfo.ArchiveNote = p.ArchiveNote;
+                    MarkDirty();
+                }
+
+                if (p.VideoReady && p.Recipients.Count > 0)
+                {
+                    try
+                    {
+                        p.WriteMessage();
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("Could not write the message of the package.", e);
+                    }
+                }
+
+                if (p.PdfReady)
+                    Status(string.Format(SwimLang.T("📦 Το PDF της αποστολής μπήκε στον φάκελό της: «{0}»."), p.PdfPath), false);
+            }
+
             return true;
         }
 
@@ -639,7 +780,7 @@ namespace Kinovea.ScreenManager
                                 string label = moments[moment].Value;
                                 while (moment < moments.Count && frame.Timestamp >= moments[moment].Key)
                                     moment++;
-                                SwimPackageThumb thumb = new SwimPackageThumb { Label = label, Timestamp = frame.Timestamp, Image = Thumb(bgr, size) };
+                                SwimPackageThumb thumb = new SwimPackageThumb { Label = label, Timestamp = frame.Timestamp, Image = Thumb(bgr, size), Seconds = count / fps };
                                 package.Thumbs.Add(thumb);
                                 worker.ReportProgress(Percent(count, total), thumb);
                             }

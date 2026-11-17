@@ -361,12 +361,12 @@ try {
   $job = [Activator]::CreateInstance($jobT, $true)
   $write = $mt.GetMethod('WriteClosingPanel', $all)
   $place = [Nullable[System.Drawing.Rectangle]]([System.Drawing.Rectangle]::new(640, 360, 640, 360))
-  $wargs = [object[]]@($encoder, $joined.psobject.BaseObject, $buffer.psobject.BaseObject, $place, $best.psobject.BaseObject, [double]25, $job.psobject.BaseObject, $null, $false)
+  $wargs = [object[]]@($encoder, $joined.psobject.BaseObject, $buffer.psobject.BaseObject, $place, $best.psobject.BaseObject, [double]25, [int]0, $job.psobject.BaseObject, $null, $false)
   $frames = $write.Invoke($m, $wargs)
   $err = ''
   $finished = $encT.GetMethod('Finish').Invoke($encoder, [object[]]@([int]60000, [string]$err))
   $encoder.Dispose()
-  Check ($wargs[8] -and $frames -eq 170) ('the closing: 1 s + 5 s + 0.8 s at 25 fps = ' + $frames + ' frames')
+  Check ($wargs[9] -and $frames -eq 170) ('the closing: 1 s + 5 s + 0.8 s at 25 fps = ' + $frames + ' frames')
   Check ((Test-Path $video) -and (Get-Item $video).Length -gt 10000) ('the closing video written (' + (Get-Item $video).Length + ' bytes)')
   foreach ($at in @('0.48', '0.96', '3.00', '6.60')) {
     $png = [System.IO.Path]::Combine($out, ('closing-' + $at + '.png'))

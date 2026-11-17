@@ -63,6 +63,13 @@ namespace Kinovea.ScreenManager
         private string pdfShown;
         private List<Bitmap> pageImages = new List<Bitmap>();
 
+        // (2.24.3) A package made before, opened as it is: no video made, its pictures by ffmpeg.
+        private bool ready;
+        private string readyFfmpeg;
+
+        /// <summary>(2.24.3) «Νέα δημιουργία» in the window of a package made before: it is made again.</summary>
+        public bool Remake { get; private set; }
+
         /// <summary>The signature as the analyst left it (saved in the settings for the next packages).</summary>
         public string Signature
         {
@@ -216,8 +223,18 @@ namespace Kinovea.ScreenManager
             Shown += (s, e) =>
             {
                 split.SplitterDistance = (int)(split.Width * 0.44);
-                StartVideo();
+                if (ready)
+                    LoadPictures();
+                else
+                    StartVideo();
                 PdfChanged();
+            };
+            FormClosed += (s, e) =>
+            {
+                // (2.24.3) The recipients, the subject and the text kept with the package also without OK (OK writes them): the window of
+                // the ready package has them next time.
+                if (videoDone && !cancelled && !Remake && DialogResult != DialogResult.OK)
+                    KeepMessage();
             };
             FormClosing += (s, e) =>
             {
@@ -285,6 +302,128 @@ namespace Kinovea.ScreenManager
             filling = true;
             txtBody.Text = (text ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
             filling = false;
+        }
+
+        /// <summary>
+        /// (2.24.3) The window of a package made before, as it is (its video and PDF in its folder, its message from its file), called before
+        /// it is shown: a line on top with when it was made and «Νέα δημιουργία» (amber when the analysis changed after it; null: not known,
+        /// a package of an earlier version); the pictures of its video by ffmpeg.
+        /// </summary>
+        public void ShowReady(string made, bool? changed, string ffmpeg)
+        {
+            ready = true;
+            readyFfmpeg = ffmpeg;
+            videoDone = true;
+            videoProgress.Visible = false;
+            if (package.MessageKept)
+            {
+                // The recipients and the text as they were kept (not made again from the analysis).
+                toEdited = true;
+                bodyEdited = true;
+            }
+
+            bool warn = changed == true;
+            string when = string.IsNullOrWhiteSpace(made) ? "" : string.Format(SwimLang.T(" · φτιάχτηκε {0}"), made.Trim());
+            string text = warn
+                ? SwimLang.T("⚠ Η ανάλυση άλλαξε μετά την έτοιμη αποστολή: το βίντεο και το PDF της αποστολής δεν έχουν τις αλλαγές. Για να μπουν: «Νέα δημιουργία».")
+                : changed == false
+                    ? SwimLang.T("📦 Έτοιμη αποστολή") + when + SwimLang.T(" — άνοιξε όπως ήταν, το βίντεο και το PDF δεν ξαναγίνονται.")
+                    : SwimLang.T("📦 Έτοιμη αποστολή") + when + SwimLang.T(" — άνοιξε όπως ήταν· αν άλλαξες την ανάλυση μετά, «Νέα δημιουργία».");
+            Color accent = warn ? SwimTheme.Amber : SwimTheme.Accent;
+            Panel bar = new Panel { Name = "readyBar", Dock = DockStyle.Top, Height = 46, Padding = new Padding(16, 6, 10, 6), BackColor = warn ? SwimTheme.AmberDark : Color.FromArgb(7, 42, 58) };
+            bar.Paint += (s, e) =>
+            {
+                using (SolidBrush b = new SolidBrush(accent))
+                    e.Graphics.FillRectangle(b, 0, 0, 4, bar.Height);
+            };
+            Label label = new Label
+            {
+                Name = "readyText",
+                Text = text,
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = warn ? SwimTheme.Amber : SwimTheme.Text
+            };
+            SwimButton remake = new SwimButton(true) { Name = "btnRemake", Text = SwimLang.T("🔄 Νέα δημιουργία"), AutoSize = true, Height = 34, Dock = DockStyle.Right, Highlighted = warn };
+            tips.SetToolTip(remake, SwimLang.T("Το βίντεο και το PDF γίνονται ξανά από την ανάλυση όπως είναι τώρα (στη θέση των παλιών)."));
+            remake.Click += (s, e) =>
+            {
+                Remake = true;
+                DialogResult = DialogResult.Retry;
+                Close();
+            };
+            bar.Controls.Add(label);
+            bar.Controls.Add(remake);
+            Controls.Add(bar);
+            UpdateState();
+        }
+
+        /// <summary>(2.24.3) The pictures of the video of a ready package, read by ffmpeg on a thread of the pool, shown as they come.</summary>
+        private void LoadPictures()
+        {
+            List<SwimPackageMoment> moments = (package.Moments ?? new List<SwimPackageMoment>()).ToList();
+            string video = package.VideoPath;
+            string ffmpeg = readyFfmpeg;
+            if (moments.Count == 0 || string.IsNullOrEmpty(ffmpeg))
+                return;
+
+            Task.Factory.StartNew(() =>
+            {
+                foreach (SwimPackageMoment m in moments)
+                {
+                    if (IsDisposed)
+                        return;
+                    Bitmap image = SwimVideoEncoder.Frame(ffmpeg, video, m.Seconds, 480);
+                    if (image == null)
+                        continue;
+                    SwimPackageThumb thumb = new SwimPackageThumb { Label = m.Label, Seconds = m.Seconds, Image = image };
+                    Action show = () =>
+                    {
+                        if (IsDisposed)
+                        {
+                            image.Dispose();
+                            return;
+                        }
+
+                        package.Thumbs.Add(thumb);
+                        AddThumb(thumb);
+                    };
+
+                    try
+                    {
+                        if (IsDisposed || !IsHandleCreated)
+                        {
+                            image.Dispose();
+                            return;
+                        }
+
+                        BeginInvoke(show);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The window closed meanwhile.
+                        image.Dispose();
+                        return;
+                    }
+                }
+            });
+        }
+
+        /// <summary>(2.24.3) The recipients, the subject and the text of the window into the package and its message file (quietly).</summary>
+        private void KeepMessage()
+        {
+            package.Recipients = SwimPackage.ParseRecipients(txtTo.Text);
+            package.Subject = txtSubject.Text.Trim();
+            package.Body = txtBody.Text.Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            try
+            {
+                package.WriteMessage();
+            }
+            catch (Exception)
+            {
+                // Kept for the next time only: the sending does not need it.
+            }
         }
 
         #region Video
@@ -524,8 +663,11 @@ namespace Kinovea.ScreenManager
                 string size = File.Exists(package.VideoPath) ? SwimPackage.SizeText(new FileInfo(package.VideoPath).Length) : "";
                 TimeSpan d = TimeSpan.FromSeconds(Math.Max(0, package.VideoSeconds));
                 videoStatus.ForeColor = SwimTheme.Green;
-                videoStatus.Text = "✓ " + package.VideoFileName + " · " + string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", (int)d.TotalMinutes, d.Seconds) +
-                    " · " + package.VideoSize.Width + "x" + package.VideoSize.Height + " · " + size +
+                // (2.24.3) A package made before: what is known about its video.
+                videoStatus.Text = "✓ " + package.VideoFileName +
+                    (package.VideoSeconds > 0 ? " · " + string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", (int)d.TotalMinutes, d.Seconds) : "") +
+                    (package.VideoSize.Width > 0 ? " · " + package.VideoSize.Width + "x" + package.VideoSize.Height : "") +
+                    (size.Length > 0 ? " · " + size : "") +
                     (package.VideoHasSound ? SwimLang.T(" · με ήχο") : SwimLang.T(" · χωρίς ήχο")) +
                     (package.VideoScreens >= 2 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} οθόνες μαζί"), package.VideoScreens) : "");
                 btnPlay.Enabled = true;
