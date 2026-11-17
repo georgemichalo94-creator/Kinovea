@@ -351,13 +351,21 @@ namespace Kinovea.ScreenManager
                     return;
                 }
 
+                // (2.25.0) The window of a package in the background (not modal) leaves: Kinovea in front again, not another program.
+                bool front = Background && Owner != null && ActiveForm == this;
+
                 // (2.25.0) A package in the background: its window only hides while its video is made (Ακύρωση stops it).
                 if (Background && !closingForGood && (videoRunning || waiting) && !cancelled)
                 {
                     e.Cancel = true;
                     Hide();
+                    if (front)
+                        SwimAnalysisManager.FrontAgain(Owner);
                     return;
                 }
+
+                if (front && !videoRunning)
+                    SwimAnalysisManager.FrontAgain(Owner);
 
                 // (2.25.0) A video waiting for the one of another package: it does not start.
                 if (waiting)

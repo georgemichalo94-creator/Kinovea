@@ -106,6 +106,80 @@ namespace Kinovea.ScreenManager
             get { return frameServer != null && frameServer.Loaded ? frameServer.Metadata.TimeOrigin : (retired ? retiredOrigin : 0); }
         }
 
+        // The readers of videos whose frames a video of the analysis reads (a package, in its window or in the background; the video of all
+        // the cameras), with how many read each.
+        private static readonly Dictionary<Kinovea.Video.VideoReader, int> readersInUse = new Dictionary<Kinovea.Video.VideoReader, int>();
+        private static readonly object readersLock = new object();
+
+        /// <summary>
+        /// A video of the analysis reads the frames of this reader now (any thread): the screen of the video does not move it meanwhile (its
+        /// view waits), so that the frames of that video stay in their order, none twice (a screen moved out of the window would show its
+        /// frame again and take the reader back there).
+        /// </summary>
+        public static bool ReaderInUse(Kinovea.Video.VideoReader reader)
+        {
+            if (reader == null)
+                return false;
+            lock (readersLock)
+                return readersInUse.ContainsKey(reader);
+        }
+
+        /// <summary>The frames of these readers are read by a video of the analysis from now on (ReaderInUse), until GiveReaders.</summary>
+        private static void TakeReaders(IEnumerable<Kinovea.Video.VideoReader> readers)
+        {
+            lock (readersLock)
+            {
+                foreach (Kinovea.Video.VideoReader r in readers.Where(x => x != null))
+                {
+                    int n;
+                    readersInUse.TryGetValue(r, out n);
+                    readersInUse[r] = n + 1;
+                }
+            }
+        }
+
+        private static void GiveReaders(IEnumerable<Kinovea.Video.VideoReader> readers)
+        {
+            lock (readersLock)
+            {
+                foreach (Kinovea.Video.VideoReader r in readers.Where(x => x != null))
+                {
+                    int n;
+                    if (!readersInUse.TryGetValue(r, out n))
+                        continue;
+                    if (n <= 1)
+                        readersInUse.Remove(r);
+                    else
+                        readersInUse[r] = n - 1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The window of Kinovea in front again (after the window of a package left, hid or closed): Windows would else give the front to
+        /// another program, the window of the analysis being hidden. After the messages of now (the closing ends first).
+        /// </summary>
+        internal static void FrontAgain(Form owner)
+        {
+            if (owner == null || owner.IsDisposed || !owner.IsHandleCreated)
+                return;
+            try
+            {
+                owner.BeginInvoke((Action)(() =>
+                {
+                    if (owner.IsDisposed || !owner.Visible)
+                        return;
+                    if (owner.WindowState == FormWindowState.Minimized)
+                        return;
+                    owner.Activate();
+                }));
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not bring the window of Kinovea to the front.", e);
+            }
+        }
+
         /// <summary>The screen belongs to a package made in the background (it left the window).</summary>
         internal static bool InBackground(PlayerScreenUserInterface screen)
         {
@@ -258,6 +332,7 @@ namespace Kinovea.ScreenManager
 
             log.InfoFormat("Swim package in the background: {0} screen(s).", taken.Count);
             next.Status(string.Format(SwimLang.T("📦 Η αποστολή «{0}» τελειώνει στο παρασκήνιο: οι οθόνες είναι ελεύθερες για τον επόμενο αθλητή."), bp.Title), false);
+            FrontAgain(owner);
             FormSwimPackageTray.UpdateFor(owner);
             return true;
         }

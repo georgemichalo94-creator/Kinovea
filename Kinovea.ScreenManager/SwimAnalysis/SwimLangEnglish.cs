@@ -2785,6 +2785,7 @@ namespace Kinovea.ScreenManager
             { "το βίντεο περιμένει τη σειρά του", "the video waits its turn" },
             { "σταματά…", "stopping…" },
             { "⏩ Συνέχισε με άλλον αθλητή", "⏩ Continue with another athlete" },
+            { "Τα καρέ του βίντεο δεν διαβάστηκαν με τη σειρά τους. Ξανά «Νέα δημιουργία».", "The frames of the video were not read in their order: \"Make again\"." },
             { "⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής «{0}» ({1}%).", "⏳ The video waits for the video of the package «{0}» to finish ({1}%)." },
             { "⏳ Το βίντεο περιμένει να τελειώσει το βίντεο της αποστολής που φτιάχνεται στο παρασκήνιο.", "⏳ The video waits for the video of the package being made in the background to finish." },
             { "⚠ Το βίντεο της αποστολής δεν έγινε", "⚠ The video of the package was not made" },

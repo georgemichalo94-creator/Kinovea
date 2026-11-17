@@ -635,11 +635,18 @@ namespace Kinovea.ScreenManager
                 flushed.Add(null);
             DateTime began = DateTime.Now;
             int moment = 0;
+            // (2.25.0) The screens do not move their readers while their frames are read here (ReaderInUse); if the reader of the analysis
+            // was moved all the same, the video goes on from the frame after the last one written (none twice, none missing).
+            List<VideoReader> readersRead = new List<VideoReader> { reader };
+            readersRead.AddRange(others.Select(o => o.SwimFrameServer.VideoReader));
+            long last = long.MinValue;
+            int jumps = 0;
             using (SwimVideoEncoder encoder = new SwimVideoEncoder { MaxRateK = GroupVideoRate(width, height) })
             using (Bitmap joined = new Bitmap(width, height, PixelFormat.Format24bppRgb))
             {
                 try
                 {
+                    TakeReaders(readersRead);
                     reader.BeforeFrameEnumeration();
                     bool hasMore = reader.MoveTo(reader.Current != null ? reader.Current.Timestamp : from, from);
                     List<bool> otherMore = new List<bool>();
@@ -666,6 +673,23 @@ namespace Kinovea.ScreenManager
                         if (frame == null || frame.Image == null || frame.Timestamp > to)
                             break;
 
+                        if (started && frame.Timestamp < last)
+                        {
+                            log.WarnFormat("Swim group video: the reader was at {0} after {1}; back to the frame after {1}.", frame.Timestamp, last);
+                            reader.MoveTo(frame.Timestamp, last);
+                            if (++jumps > 50 || reader.Current == null || reader.Current.Timestamp != last)
+                            {
+                                encoder.Abort();
+                                return SwimLang.T("Τα καρέ του βίντεο δεν διαβάστηκαν με τη σειρά τους. Ξανά «Νέα δημιουργία».");
+                            }
+
+                            hasMore = reader.MoveNext(0, true);
+                            if (!hasMore && (reader.Current == null || reader.Current.Timestamp <= last))
+                                break;
+                            continue;
+                        }
+
+                        last = frame.Timestamp;
                         if (!started)
                         {
                             // The sound of the video of the analysis from its first frame read, as long as the images (padded, cut at their end).
@@ -796,6 +820,7 @@ namespace Kinovea.ScreenManager
                 }
                 finally
                 {
+                    GiveReaders(readersRead);
                     foreach (Bitmap b in flushed)
                     {
                         if (b != null)

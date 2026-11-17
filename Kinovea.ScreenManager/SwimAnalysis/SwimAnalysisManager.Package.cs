@@ -770,10 +770,16 @@ namespace Kinovea.ScreenManager
             Bitmap flushed = null;
             int count = 0, moment = 0;
             DateTime began = DateTime.Now;
+            // (2.25.0) The screen does not move its reader while its frames are read here (ReaderInUse); if it was moved all the same, the
+            // video goes on from the frame after the last one written (none twice, none missing).
+            Kinovea.Video.VideoReader[] readersRead = new[] { reader };
+            long last = long.MinValue;
+            int jumps = 0;
             using (SwimVideoEncoder encoder = new SwimVideoEncoder())
             {
                 try
                 {
+                    TakeReaders(readersRead);
                     reader.BeforeFrameEnumeration();
                     long current = reader.Current != null ? reader.Current.Timestamp : from;
                     bool hasMore = reader.MoveTo(current, from);
@@ -790,6 +796,23 @@ namespace Kinovea.ScreenManager
                         if (frame == null || frame.Image == null || frame.Timestamp > to)
                             break;
 
+                        if (started && frame.Timestamp < last)
+                        {
+                            log.WarnFormat("Swim package video: the reader was at {0} after {1}; back to the frame after {1}.", frame.Timestamp, last);
+                            reader.MoveTo(frame.Timestamp, last);
+                            if (++jumps > 50 || reader.Current == null || reader.Current.Timestamp != last)
+                            {
+                                encoder.Abort();
+                                return SwimLang.T("Τα καρέ του βίντεο δεν διαβάστηκαν με τη σειρά τους. Ξανά «Νέα δημιουργία».");
+                            }
+
+                            hasMore = reader.MoveNext(0, true);
+                            if (!hasMore && (reader.Current == null || reader.Current.Timestamp <= last))
+                                break;
+                            continue;
+                        }
+
+                        last = frame.Timestamp;
                         if (!started)
                         {
                             size = SwimPackage.VideoSizeFor(frame.Image.Size);
@@ -875,6 +898,7 @@ namespace Kinovea.ScreenManager
                 }
                 finally
                 {
+                    GiveReaders(readersRead);
                     if (flushed != null)
                         flushed.Dispose();
                 }

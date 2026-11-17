@@ -267,6 +267,27 @@ Check (-not $tray.Visible) 'no package: no box'
 $formB.Close(); $formC.Dispose(); $owner.Close()
 Pump 1 $null
 
+# ---- The reader of a screen read by the video of a package: the screen does not move it meanwhile (taken twice, given twice).
+$vr = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Kinovea.Video.dll'))
+$vb = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Kinovea.Video.Bitmap.dll'))
+$tReader = $vr.GetType('Kinovea.Video.VideoReader', $true)
+$fake = [System.Runtime.Serialization.FormatterServices]::GetUninitializedObject($vb.GetType('Kinovea.Video.Bitmap.VideoReaderBitmap', $true))
+$readers = [Array]::CreateInstance($tReader, 1)
+$readers.SetValue($fake, 0)
+$inUse = $tMgr.GetMethod('ReaderInUse', $all)
+$take = $tMgr.GetMethod('TakeReaders', $all)
+$give = $tMgr.GetMethod('GiveReaders', $all)
+$before = [bool]$inUse.Invoke($null, [object[]]@($fake))
+[void]$take.Invoke($null, [object[]]@(, $readers))
+[void]$take.Invoke($null, [object[]]@(, $readers))
+$taken = [bool]$inUse.Invoke($null, [object[]]@($fake))
+[void]$give.Invoke($null, [object[]]@(, $readers))
+$stillTaken = [bool]$inUse.Invoke($null, [object[]]@($fake))
+[void]$give.Invoke($null, [object[]]@(, $readers))
+$after = [bool]$inUse.Invoke($null, [object[]]@($fake))
+$none = [bool]$inUse.Invoke($null, [object[]]@($null))
+Check (-not $before -and $taken -and $stillTaken -and -not $after -and -not $none) ('the reader read by a package: ' + $before + ' ' + $taken + ' ' + $stillTaken + ' ' + $after + ' ' + $none)
+
 # ---- The English of the new texts.
 $map = (T 'SwimLangEnglish').GetField('Map', $all).GetValue($null)
 $keys = @('⏩ Συνέχισε με άλλον αθλητή', '✓ Η αποστολή είναι έτοιμη', '📦 Άνοιγμα αποστολής', 'Αργότερα', 'Έτοιμη αποστολή', 'αποστολή στο παρασκήνιο',

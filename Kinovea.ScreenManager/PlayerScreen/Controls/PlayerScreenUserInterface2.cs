@@ -874,6 +874,10 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.Loaded)
                 return;
 
+            // (Swim 2.25.0) Not while a video of the swim analysis reads the frames of this screen (the reader would change its way).
+            if (SwimAnalysisManager.ReaderInUse(m_FrameServer.VideoReader))
+                return;
+
             VideoSection newZone = new VideoSection(m_iSelStart, m_iSelEnd);
             log.DebugFormat("Working zone update. Current:{0}, Asked:{1}.", m_FrameServer.VideoReader.WorkingZone, newZone);
 
@@ -3464,6 +3468,11 @@ namespace Kinovea.ScreenManager
         private bool ShowNextFrame(long _iSeekTarget, bool _bAllowUIUpdate)
         {
             if (!m_FrameServer.VideoReader.Loaded)
+                return false;
+
+            // (Swim 2.25.0) A video of the swim analysis reads the frames of this screen (its package, maybe in the background): the screen
+            // waits, so that the frames of that video stay in their order.
+            if (SwimAnalysisManager.ReaderInUse(m_FrameServer.VideoReader))
                 return false;
 
             //if (_iSeekTarget >= 0)
