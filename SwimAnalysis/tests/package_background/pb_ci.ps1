@@ -224,7 +224,7 @@ function AddBackground($form, $p, $title) {
   SetF $bp 'Race' $p.race
   SetF $bp 'Title' $title
   SetF $bp 'Owner' $owner
-  $list.GetType().GetMethod('Add').Invoke($list, [object[]]@($bp))
+  [void]$list.GetType().GetMethod('Add').Invoke($list, [object[]]@($bp))
   return $bp
 }
 $bpA = AddBackground $formA $pa 'Αθλητής Δοκιμής · Τεχνική πεταλούδα'
