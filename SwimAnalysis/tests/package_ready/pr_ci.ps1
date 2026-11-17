@@ -202,7 +202,7 @@ Check ($null -ne $old -and $size.Width -eq 640 -and $size.Height -eq 360 -and [M
 $frameAt = $encT.GetMethod('Frame').Invoke($null, [object[]]@([string]$ff, [string]$video, [double]3.5, [int]320))
 Check ($null -ne $frameAt -and $frameAt.Width -eq 320 -and $frameAt.Height -eq 180) 'a picture of the video at 3.5 s, 320 wide'
 if ($null -ne $frameAt) { $frameAt.Dispose() }
-# The picture of its moment, not of the key image before it (every 2 s): the second by its colour (the nearest of the six).
+# The picture of its moment (not of the key image before it, every 2 s) and in its colours: the second by its colour (the nearest of the six).
 foreach ($at in @(0.5, 1.5, 2.5, 3.5, 4.5, 5.5)) {
   $pic = $encT.GetMethod('Frame').Invoke($null, [object[]]@([string]$ff, [string]$video, [double]$at, [int]320))
   if ($null -eq $pic) { Check $false ('a picture at ' + $at + ' s'); continue }
