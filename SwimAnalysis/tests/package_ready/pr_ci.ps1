@@ -68,6 +68,8 @@ $encT = T 'SwimVideoEncoder'
 $enc = ([Activator]::CreateInstance($encT)).psobject.BaseObject
 $startArgs = [object[]]@([string]$ff, [string]$video, [int]640, [int]360, [double]25, $null, [double]0, [double]0, $null)
 Check ($encT.GetMethod('Start').Invoke($enc, $startArgs)) ('ffmpeg for the fictional video: ' + $startArgs[8])
+# The preamble .NET writes first in the input of ffmpeg (the encoding of the console): ffmpeg skips it (2.24.3).
+Write-Output ('     the console: ' + [Console]::InputEncoding.WebName + ', preamble of ' + [Console]::InputEncoding.GetPreamble().Length + ' bytes')
 $w = 640; $h = 360
 $buf = New-Object byte[] ($w * $h * 3)
 $bmp = New-Object System.Drawing.Bitmap $w, $h, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)

@@ -734,7 +734,22 @@ namespace Kinovea.ScreenManager
 
             try
             {
-                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, Arguments(width, height, fps, soundSource, soundFrom, soundSeconds, output, MaxRateK))
+                // (2.24.3) The input of ffmpeg starts with the preamble of the encoding of the console (written by .NET when it opens it): in
+                // a console with one (PowerShell) the images were shifted by its bytes (the colours turned round). ffmpeg skips it.
+                string args = Arguments(width, height, fps, soundSource, soundFrom, soundSeconds, output, MaxRateK);
+                int preamble = 0;
+                try
+                {
+                    preamble = Console.InputEncoding.GetPreamble().Length;
+                }
+                catch (Exception)
+                {
+                    // No console: nothing written before the images.
+                }
+
+                if (preamble > 0)
+                    args = string.Format(CultureInfo.InvariantCulture, "-skip_initial_bytes {0} ", preamble) + args;
+                ProcessStartInfo info = new ProcessStartInfo(ffmpeg, args)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
