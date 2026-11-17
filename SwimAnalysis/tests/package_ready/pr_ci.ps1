@@ -28,7 +28,8 @@ $fails = 0
 function Check($ok, $what) { if ($ok) { Write-Output ('ok   ' + $what) } else { Write-Output ('FAIL ' + $what); $script:fails++ } }
 # Reflection gets the objects themselves, not their PowerShell wrappers.
 function B($o) { if ($null -eq $o) { return $null }; return $o.psobject.BaseObject }
-function F($o, $n) { return $o.GetType().GetField($n, $all).GetValue((B $o)) }
+# The comma: a list (even an empty one) comes out of the function as it is, not unrolled.
+function F($o, $n) { return ,($o.GetType().GetField($n, $all).GetValue((B $o))) }
 function SetF($o, $n, $v) { $o.GetType().GetField($n, $all).SetValue((B $o), (B $v)) }
 function Pump($seconds, $until) {
   $end = (Get-Date).AddSeconds($seconds)
