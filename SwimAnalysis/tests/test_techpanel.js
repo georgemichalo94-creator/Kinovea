@@ -1,7 +1,8 @@
 // 2.18.0: the panel of the start and the turn in the technique report: the picture of Kinovea, big, on the first page after the numbers;
 // the evaluation from the top of the next page; without a comparison no speed chart (the panel has the speed of each segment), with a
 // comparison the speed chart after the evaluation (it shows the previous one and elite); without a panel as before (the speed chart
-// before the evaluation). All names and values fictional.
+// before the evaluation). 2.18.2: when after the numbers the panel would not fit on the first page (many numbers: an open breaststroke
+// turn with an elite comparison), it comes before them, right after the tiles. All names and values fictional.
 const { makeContext } = require('./mock_gas');
 const assert = require('assert');
 
@@ -90,7 +91,45 @@ const ev = pageOf(b, evalTitle);
 assert.ok(ev.page === 2 && ev.y === 0, 'the evaluation at the top of page 2: ' + JSON.stringify(ev));
 assert.strictEqual(speedCharts(b).length, 0, 'no speed chart with the panel: ' + JSON.stringify(b.charts.map(c => c.title)));
 assert.ok(rowOf(b, 'Σημειώσεις') > evalTitle, 'the notes after the evaluation');
+assert.ok(!b.page.panelsFirst && !/panelsFirst/.test(b.signature), 'it fits after the numbers: the order as before');
 const withPanel = b;
+
+// ---- 2b) (2.18.2) An open breaststroke turn compared with elite: after its many numbers the panel would end on page 2 (alone there):
+// it comes before them, whole on the first page; the numbers after it; the evaluation still from the top of a page.
+{
+  const brValues = { in5: 3.70, approachVel: 1.35, lastStrokeGap: 1.60, contact: 1.20, turnTime: 1.20, underwater: 6.00, kicks: 1,
+    breakoutTime: 7.30, breakoutDist: 11.0, firstStroke: 8.10, out5: 3.10, out10: 6.80, out15: 10.40, inOut5: 6.80, inOut10: 10.50,
+    inOut15: 14.10, v0_5: 1.61, v5_10: 1.35, v10_15: 1.39 };
+  const eliteTurn = { in5: 2.90, contact: 0.95, turnTime: 0.95, out5: 2.40, out10: 6.40, out15: 8.80, inOut15: 11.70, breakoutDist: 11.4,
+    v0_5: 2.08, v5_10: 1.40, v10_15: 1.55 };
+  const br = race('tpR', '17.11.2026', { panel: panelId, notes: true });
+  br.style = 'br';
+  br.pool = 50;
+  br.tech.phases[0].values = brValues;
+  br.compare = { techElite: { type: 'final', id: 'fictional', label: 'Φανταστικό elite · 100μ. br', values: { turn: eliteTurn }, distance: 100, pool: 50 } };
+  const old = (() => {
+    // The first pass (the order of 2.18.0): where the panel would end.
+    const rr = G.swimNormalizeRace_(br);
+    const first = G.swimBuildTechLayout_(rr, G.swimAnalyze_(rr), { techCompare: G.swimTechCompare_(rr) }, G.swimNewPaging_(0, null));
+    return G.swimPanelPastFirstPage_(rr, first, G.swimPdfPageHeight_(reports, G.swimLayoutWidth_(15)));
+  })();
+  assert.ok(old, 'after the numbers the panel would not fit on the first page');
+  const bb = layoutOf(br);
+  const nb = rowOf(bb, 'Όλα τα νούμερα της στροφής');
+  const pb = rowOf(bb, 'Ο πίνακας της στροφής (Kinovea)');
+  const eb = rowOf(bb, 'Αξιολόγηση τεχνικής');
+  assert.ok(pb > 0 && nb > pb && eb > nb, 'order: the panel, the numbers, the evaluation: ' + [pb, nb, eb]);
+  const imb = bb.images.find(x => x.fileId === panelId);
+  assert.strictEqual(imb.row, pb + 1, 'the picture under its title');
+  const imbBottom = (() => { let y = 0, r = imb.row; while (y < imb.height + 4) { y += G.swimRowHeight_(bb.grid, r); r++; } return r - 1; })();
+  assert.strictEqual(pageOf(bb, imb.row).page, 1, 'the panel on the first page');
+  assert.strictEqual(pageOf(bb, imbBottom).page, 1, 'the panel whole on the first page');
+  const cmpLine = rowOf(bb, /Σύγκριση/);
+  assert.ok(cmpLine > 0 && cmpLine < pb, 'the line of the comparison above the panel: ' + [cmpLine, pb]);
+  assert.strictEqual(pageOf(bb, eb).y, 0, 'the evaluation from the top of a page');
+  assert.ok(bb.page.panelsFirst && /"panelsFirst":1/.test(bb.signature), 'said in the signature (the report is made again)');
+  assert.ok(rowOf(bb, 'Σημειώσεις') > eb, 'the notes after the evaluation');
+}
 
 // ---- 3) Without the panel: as before, the speed chart before the evaluation (and the evaluation still from a new page).
 b = layoutOf(race('tpA', '16.11.2026', { notes: true }), null);
@@ -156,4 +195,4 @@ assert.ok(r.ok, JSON.stringify(r));
 sh = sheetOf(r);
 assert.ok(texts(sh).includes('The panel of the turn (Kinovea) · the best of 2 turns'), 'English title: ' + texts(sh).filter(v => /panel/i.test(v)).join(' | '));
 
-console.log('test_techpanel OK: the panel after the numbers on the first page, the evaluation from the next page, the speed chart only with a comparison');
+console.log('test_techpanel OK: the panel on the first page (after the numbers, or before them when it would not fit after), the evaluation from the next page, the speed chart only with a comparison');

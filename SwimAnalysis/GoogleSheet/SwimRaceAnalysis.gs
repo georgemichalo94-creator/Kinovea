@@ -32,9 +32,12 @@
  *  13. Ο πίνακας της εκκίνησης και της στροφής στην αναφορά της τεχνικής (2.18.0): η εικόνα του Kinovea, μεγάλη, στην πρώτη σελίδα
  *      μετά τα νούμερα· η αξιολόγηση αρχίζει στην επόμενη σελίδα· το γράφημα της ταχύτητας ανά τμήμα δεν μπαίνει όταν υπάρχει ο
  *      πίνακας (μένει μόνο με σύγκριση, προηγούμενη ή elite, που ο πίνακας δεν δείχνει).
+ *  14. Ο πίνακας πάντα στην πρώτη σελίδα (2.18.2): όταν μετά τα νούμερα δεν θα χωρούσε εκεί (πολλά νούμερα, π.χ. μια ανοιχτή στροφή
+ *      πρόσθιο με σύγκριση), μπαίνει πριν από αυτά, αμέσως μετά τα πλακίδια· τα νούμερα ακολουθούν και η αξιολόγηση αρχίζει πάλι σε νέα
+ *      σελίδα.
  */
 
-var SWIM_VERSION = '2.18.1';
+var SWIM_VERSION = '2.18.2';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -2405,7 +2408,7 @@ function swimHash_(s) {
  * τις συγκρίσεις (οι τιμές τους γράφονται στατικά) και τη δομή της τεχνικής ανάλυσης (οι τιμές της όχι: γράφονται
  * σε κάθε ενημέρωση, όπως οι χρόνοι).
  */
-function swimLayoutSignature_(race, extras, pageHeight) {
+function swimLayoutSignature_(race, extras, pageHeight, panelsFirst) {
   var x = extras || {};
   var sig = function (o) { return o ? String(o.id || '') + ':' + swimHash_(JSON.stringify(o.race)) : ''; };
   var s = {
@@ -2433,6 +2436,8 @@ function swimLayoutSignature_(race, extras, pageHeight) {
   };
   // Η γλώσσα (2.7.7): ένα report στην άλλη γλώσσα ξαναφτιάχνεται· τα ελληνικά χωρίς κλειδί, όπως πριν.
   if (SWIM_LANG_ === 'en') s.lang = 'en';
+  // (2.18.2) Ο πίνακας του Kinovea πριν από τα νούμερα: το report ξαναφτιάχνεται (τα άλλα χωρίς κλειδί, όπως πριν).
+  if (panelsFirst) s.panelsFirst = 1;
   return JSON.stringify(s);
 }
 
@@ -2786,11 +2791,35 @@ function swimBuildLayout_(race, analysis, extras) {
   } catch (e) {
     height = swimPdfEstimatedHeight_(width);
   }
-  if (height > 0) layout = build(swimNewPaging_(height, swimPagePlan_(layout)));
+  var panelsFirst = false;
+  if (height > 0) {
+    var paging = swimNewPaging_(height, swimPagePlan_(layout));
+    // (2.18.2) Ο πίνακας του Kinovea στην πρώτη σελίδα της αναφοράς της τεχνικής: πριν από τα νούμερα όταν μετά από αυτά δεν χωρά εκεί.
+    panelsFirst = race.kind === 'training' && swimPanelPastFirstPage_(race, layout, height);
+    if (panelsFirst) paging.panelsFirst = true;
+    layout = build(paging);
+  }
   layout.page = { width: width, height: height > 0 ? height : 0, fillers: layout.paging.fillers };
-  layout.signature = swimLayoutSignature_(race, extras, layout.page.height);
+  if (panelsFirst) layout.page.panelsFirst = true;
+  layout.signature = swimLayoutSignature_(race, extras, layout.page.height, panelsFirst);
   swimPrintArea_(layout);
   return layout;
+}
+
+/**
+ * (2.18.2) Ο (πρώτος) πίνακας του Kinovea μιας αναφοράς τεχνικής, όπως τον έβαλε το πρώτο πέρασμα (μετά τα νούμερα, χωρίς αλλαγές
+ * σελίδας), τελειώνει μετά την πρώτη σελίδα του PDF (ύψος H): τότε μπαίνει πριν από τα νούμερα.
+ */
+function swimPanelPastFirstPage_(race, layout, H) {
+  var gr = race.graphics || {};
+  var ids = [gr['panel-start'], gr['panel-turn']].filter(function (x) { return x; });
+  if (!ids.length || !(H > 0)) return false;
+  var im = (layout.images || []).filter(function (x) { return ids.indexOf(x.fileId) >= 0; })
+    .sort(function (a, b) { return a.row - b.row; })[0];
+  if (!im) return false;
+  var y = 0;
+  for (var r = 1; r < im.row; r++) y += swimRowHeight_(layout.grid, r);
+  return y + (im.offsetY === undefined ? 4 : im.offsetY) + im.height > H;
 }
 
 function swimBuildRaceLayout_(race, analysis, extras, paging) {
@@ -6058,6 +6087,20 @@ function swimBuildTechLayout2_(race, analysis, extras, paging) {
   cur = swimTcCompareLine_(L, cur);
   cur = hasTimes ? swimTcTiles_(L, cur) : swimTcEvalOnlyTiles_(L, cur);
 
+  // 2. (2.18.0) Ο πίνακας της εκκίνησης και της στροφής από το Kinovea, μεγάλος, μετά τα νούμερα. (2.18.2) Πριν από τα νούμερα όταν
+  // μετά από αυτά δεν θα χωρούσε στην πρώτη σελίδα (πολλά νούμερα: μια ανοιχτή στροφή πρόσθιο με σύγκριση έβγαζε τον πίνακα μόνο του
+  // στη 2η σελίδα): το αποφασίζει το πρώτο πέρασμα (swimPanelPastFirstPage_).
+  var panels = {};
+  var placePanels = function () {
+    ['start', 'turn'].forEach(function (kind) {
+      var next = swimTcPanel_(L, kind, cur);
+      if (next !== cur) panels[kind] = true;
+      cur = next;
+    });
+  };
+  var panelsFirst = !!(paging && paging.panelsFirst);
+  if (panelsFirst) placePanels();
+
   // 1. Όλα τα νούμερα (ανά είδος) και, με περισσότερες από μία προσπάθειες, οι τιμές κάθε προσπάθειας.
   cur = swimTcMainTable_(L, 'start', cur);
   cur = swimTcMainTable_(L, 'turn', cur);
@@ -6070,13 +6113,7 @@ function swimBuildTechLayout2_(race, analysis, extras, paging) {
     if (t2) cur = t2.next;
   }
   cur = swimTechLooseTable_(L, cur);
-  // 2. (2.18.0) Ο πίνακας της εκκίνησης και της στροφής από το Kinovea, μεγάλος, μετά τα νούμερα.
-  var panels = {};
-  ['start', 'turn'].forEach(function (kind) {
-    var next = swimTcPanel_(L, kind, cur);
-    if (next !== cur) panels[kind] = true;
-    cur = next;
-  });
+  if (!panelsFirst) placePanels();
   var anyPanel = panels.start || panels.turn;
   // Η ταχύτητα ανά τμήμα (γράφημα, πίνακας και Επίπεδα): χωρίς πίνακα εδώ, όπως πριν· με τον πίνακα μόνο με σύγκριση, μετά την
   // αξιολόγηση (ο πίνακας δείχνει ήδη την ταχύτητα κάθε τμήματος, όχι όμως την προηγούμενη ή το elite).
