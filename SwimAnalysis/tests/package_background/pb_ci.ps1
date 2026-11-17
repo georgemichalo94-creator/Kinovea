@@ -65,7 +65,8 @@ Check (($names -join ',') -eq 'r1.LastPdfUrl,r1.PackageInfo,r1.SheetPending') ('
 # The analysis as it is now (the analyst opened the same video again meanwhile): a mark more, the Sheet waiting again; the second race gone.
 $current = J ('{"Version":2,"VideoPath":"C:\\Fictional\\race.mp4","ActiveRaceId":"r1","Races":[' +
   '{"Id":"r1","Athlete":"Αθλητής Δοκιμής","LastPdfUrl":null,"SheetPending":"changed by the analyst","PackageMade":"17/11/2026 22:00","Marks":[{"Timestamp":100},{"Timestamp":250}]}],"Calibrations":[]}')
-$applied = $tMgr.GetMethod('ApplyChanges', $all).Invoke($null, [object[]]@((B $current), $changes))
+# (Not through B: PowerShell would give the values of the JSON object one by one.)
+$applied = $tMgr.GetMethod('ApplyChanges', $all).Invoke($null, [object[]]@($current, $changes))
 $appliedNames = @($applied | ForEach-Object { F $_ 'Name' }) | Sort-Object
 Check (($appliedNames -join ',') -eq 'LastPdfUrl,PackageInfo') ('applied: ' + ($appliedNames -join ', ') + ' (the value the analyst changed meanwhile stays his)')
 $r1 = $current['Races'][0]
