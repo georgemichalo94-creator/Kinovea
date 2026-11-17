@@ -208,7 +208,8 @@ SetF $pc.pkg 'VideoScreens' ([int]3)
 SetF $pc.pkg 'VideoHasSound' $true
 SetF $pc.pkg 'PdfReady' $true
 SetF $pc.pkg 'Archived' $true
-$owner = New-Object System.Windows.Forms.Form
+# The form itself (New-Object gives it wrapped for PowerShell, and reflection would get the wrapper).
+$owner = [System.Windows.Forms.Form]::new()
 $owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
 $owner.Location = New-Object System.Drawing.Point 0, 0
 $owner.Size = New-Object System.Drawing.Size 1400, 860
@@ -235,15 +236,15 @@ Check (($states -join ',') -eq 'Making,Waiting,Ready') ('the rows of the box: ' 
 Check ((F $rows[2] 'Line') -like '*1:02*3*PDF ✓*KOE App ✓*') ('the ready one: ' + (F $rows[2] 'Line'))
 Check ((F $rows[0] 'Line') -like '*40%*') ('the one being made: ' + (F $rows[0] 'Line'))
 $tTray = T 'FormSwimPackageTray'
-$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@($owner))
+$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@((B $owner)))
 Pump 1 $null
 $tray = $tTray.GetField('tray', $all).GetValue($null)
 Check ($null -ne $tray -and $tray.Visible -and $tray.Width -eq 416 -and $tray.Height -eq (132 + 8 + 3 * 58 + 2 * 8)) ('the box with the notice: ' + $tray.Width + 'x' + $tray.Height)
 $inside = $owner.RectangleToScreen($owner.ClientRectangle)
 Check ($tray.Right -le $inside.Right -and $tray.Bottom -le $inside.Bottom -and $tray.Right -ge $inside.Right - 40) ('at the bottom right of Kinovea: ' + $tray.Location)
 Shot $tray 'package-box-notice.png'
-$tMgr.GetMethod('NoticedBackground', $all).Invoke($null, [object[]]@($bpC))
-$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@($owner))
+$tMgr.GetMethod('NoticedBackground', $all).Invoke($null, [object[]]@((B $bpC)))
+$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@((B $owner)))
 Pump 1 $null
 Check ($tray.Width -eq 392 -and $tray.Height -eq (3 * 58 + 2 * 8)) ('«Αργότερα»: the rows only (' + $tray.Width + 'x' + $tray.Height + ')')
 Shot $tray 'package-box.png'
@@ -260,7 +261,7 @@ $formA.CloseForGood()
 Pump 1 $null
 Check ($formA.IsDisposed) 'the first closed for good'
 $list.GetType().GetMethod('Clear').Invoke($list, $null)
-$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@($owner))
+$tTray.GetMethod('UpdateFor', $all).Invoke($null, [object[]]@((B $owner)))
 Pump 1 $null
 Check (-not $tray.Visible) 'no package: no box'
 $formB.Close(); $formC.Dispose(); $owner.Close()
