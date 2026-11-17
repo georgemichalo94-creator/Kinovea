@@ -201,10 +201,15 @@ $size = F $old 'VideoSize'
 Check ($null -ne $old -and $size.Width -eq 640 -and $size.Height -eq 360 -and [Math]::Abs((F $old 'VideoSeconds') - 6) -lt 0.2 -and (F $old 'Moments').Count -eq 6) ('an earlier package: ' + $size.Width + 'x' + $size.Height + ', ' + (F $old 'VideoSeconds') + ' s, ' + (F $old 'Moments').Count + ' pictures')
 $frameAt = $encT.GetMethod('Frame').Invoke($null, [object[]]@([string]$ff, [string]$video, [double]3.5, [int]320))
 Check ($null -ne $frameAt -and $frameAt.Width -eq 320 -and $frameAt.Height -eq 180) 'a picture of the video at 3.5 s, 320 wide'
-if ($null -ne $frameAt) {
-  $px = $frameAt.GetPixel(300, 170)
-  Check ([Math]::Abs($px.R - 90) -lt 25 -and [Math]::Abs($px.G - 40) -lt 25 -and [Math]::Abs($px.B - 130) -lt 25) ('the picture of the fourth second (its colour): ' + $px)
-  $frameAt.Dispose()
+if ($null -ne $frameAt) { $frameAt.Dispose() }
+# The picture of its moment, not of the key image before it (every 2 s): the second by its colour (the nearest of the six).
+foreach ($at in @(0.5, 1.5, 2.5, 3.5, 4.5, 5.5)) {
+  $pic = $encT.GetMethod('Frame').Invoke($null, [object[]]@([string]$ff, [string]$video, [double]$at, [int]320))
+  if ($null -eq $pic) { Check $false ('a picture at ' + $at + ' s'); continue }
+  $px = $pic.GetPixel(300, 170); $pic.Dispose()
+  $best = -1; $dist = 1e9
+  for ($k = 0; $k -lt $cols.Count; $k++) { $d = [Math]::Abs($px.R - $cols[$k][0]) + [Math]::Abs($px.G - $cols[$k][1]) + [Math]::Abs($px.B - $cols[$k][2]); if ($d -lt $dist) { $dist = $d; $best = $k } }
+  Check ($best -eq [int][Math]::Floor($at)) ('the picture at ' + $at + ' s shows the second ' + $best + ' (' + $px.R + ',' + $px.G + ',' + $px.B + ')')
 }
 $none = $encT.GetMethod('Frame').Invoke($null, [object[]]@([string]$ff, [string]$video, [double]30, [int]320))
 Check ($null -eq $none) 'no picture after the end of the video'

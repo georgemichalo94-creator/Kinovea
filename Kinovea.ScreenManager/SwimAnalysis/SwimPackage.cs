@@ -682,8 +682,12 @@ namespace Kinovea.ScreenManager
                 return null;
             try
             {
-                string args = string.Format(CultureInfo.InvariantCulture, "-hide_banner -nostdin -ss {0:0.###} -i \"{1}\" -frames:v 1 -vf scale={2}:-1 -f image2pipe -vcodec bmp -",
-                    Math.Max(0, seconds), video, Math.Max(16, width));
+                // Fast to a moment up to 3 s before (a key image of the video), then image by image to the moment itself: the ffmpeg of the
+                // program stopped at the key image before the moment with a seek in one step.
+                double at = Math.Max(0, seconds), before = Math.Min(3.0, at);
+                string args = string.Format(CultureInfo.InvariantCulture,
+                    "-hide_banner -nostdin -ss {0:0.000} -i \"{1}\" -ss {2:0.000} -frames:v 1 -vf scale={3}:-1 -f image2pipe -vcodec bmp -",
+                    at - before, video, before, Math.Max(16, width));
                 ProcessStartInfo info = new ProcessStartInfo(ffmpeg, args)
                 {
                     UseShellExecute = false,
