@@ -1421,6 +1421,35 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public string GetStatus()
         {
+            // (Swim 2.25.0) Asked from another thread than the one of the window, its texts would follow the language of that thread:
+            // written down (a few times, with where it came from) and asked again on the thread of the window.
+            if (view != null && view.IsHandleCreated && view.InvokeRequired)
+            {
+                if (statusOffThread < 3)
+                {
+                    statusOffThread++;
+                    log.WarnFormat("The status of the screens asked from the thread {0}.{1}{2}", Thread.CurrentThread.ManagedThreadId, Environment.NewLine, Environment.StackTrace);
+                }
+
+                if (!statusAgainPending)
+                {
+                    statusAgainPending = true;
+                    try
+                    {
+                        view.BeginInvoke((Action)(() =>
+                        {
+                            statusAgainPending = false;
+                            NotificationCenter.RaiseUpdateStatus();
+                        }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The window is closing.
+                        statusAgainPending = false;
+                    }
+                }
+            }
+
             String statusString = "";
             switch(screenList.Count)
             {
@@ -2019,6 +2048,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private List<PlayerScreenUserInterface> swimGroupWanted;
         private PlayerScreenUserInterface swimGroupWantedLead;
+
+        /// <summary>(Swim 2.25.0) How many times the status was asked from another thread (written down at most three times).</summary>
+        private int statusOffThread;
+
+        /// <summary>(Swim 2.25.0) The status asked again on the thread of the window, not done yet.</summary>
+        private volatile bool statusAgainPending;
 
         /// <summary>
         /// (Swim 2.25.0) The screens of these views are in the window and their drawings can leave it: Kinovea's question when a video
