@@ -29,6 +29,20 @@ using namespace System::Runtime::InteropServices;
 using namespace Kinovea::Video;
 using namespace Kinovea::Video::FFMpeg;
 
+// (Kinovea Swim 2.25.0) The name of the output file for ffmpeg, in UTF-8: ffmpeg opens its files on Windows by their UTF-8 name
+// (the reader passes its file the same way). The ANSI name of before lost every letter outside the code page of the system (a
+// Greek name on a Windows whose code page is not Greek) and the file could not be created ("File not opened, Invalid argument").
+// Freed with Marshal::FreeHGlobal as before.
+static char* Utf8FilePath(System::String^ path)
+{
+    array<System::Byte>^ bytes = System::Text::Encoding::UTF8->GetBytes(path);
+    System::IntPtr memory = Marshal::AllocHGlobal(bytes->Length + 1);
+    Marshal::Copy(bytes, 0, memory, bytes->Length);
+    char* p = static_cast<char*>(memory.ToPointer());
+    p[bytes->Length] = 0;
+    return p;
+}
+
 MJPEGWriter::MJPEGWriter()
 {
     av_register_all();
@@ -65,7 +79,7 @@ SaveResult MJPEGWriter::OpenSavingContext(String^ _filePath, VideoInfo _info, St
     
     m_SavingContext = gcnew SavingContext();
 
-    m_SavingContext->pFilePath = static_cast<char*>(Marshal::StringToHGlobalAnsi(_filePath).ToPointer());
+    m_SavingContext->pFilePath = Utf8FilePath(_filePath);
     
     // Apparently not all output size are ok, some crash sws_scale.
     // We will keep the input size and use the input pixel aspect ratio for maximum compatibility.
