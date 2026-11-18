@@ -531,7 +531,8 @@ namespace Kinovea.ScreenManager
                 r.Score = bestScore;
             }
 
-            r.Entries = Items(q, words, entries, need, r.Topic != null ? r.Topic.Target : null);
+            // With a topic found, only the items that the question names well (not every item with «βίντεο» in its name).
+            r.Entries = Items(q, words, entries, r.Topic != null ? Math.Max(need, 4.0) : need, r.Topic != null ? r.Topic.Target : null);
             if (r.Topic == null && r.Entries.Count == 0)
                 r.Guesses = Guess(q, topics);
             return r;

@@ -1016,7 +1016,7 @@ namespace Kinovea.ScreenManager
             foreach (KeyValuePair<string, string> kv in SwimAssistantKnowledge.KeyLines(panel.Host.ShortcutOf))
             {
                 int kw = KeyCap(g, kv.Key, x, y, kh, paint);
-                int tx = x + Math.Max(kw, P(86)) + P(10);
+                int tx = x + Math.Max(kw, P(104)) + P(10);
                 int th = TextRenderer.MeasureText(g, kv.Value, Body, new Size(Math.Max(P(40), x + w - tx), int.MaxValue), Wrap).Height;
                 if (paint)
                     TextRenderer.DrawText(g, kv.Value, Body, new Rectangle(tx, y + Math.Max(0, (kh - th) / 2), Math.Max(P(40), x + w - tx), th), SwimTheme.Text, Wrap);
