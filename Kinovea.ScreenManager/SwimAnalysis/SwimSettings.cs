@@ -170,6 +170,9 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool ClassicMenu = false;
 
+        /// <summary>(2.26.0) The digital assistant was opened once: the amber dot of its sign on the bar goes.</summary>
+        public bool AssistantSeen = false;
+
         /// <summary>
         /// (2.19.0) AI pro: the key of the Claude API of the owner, protected for his Windows user (DPAPI, SwimAiKey): no other user
         /// or computer can read it. Empty: no key yet.

@@ -2794,6 +2794,12 @@ namespace Kinovea.ScreenManager
             { "📦 Αποστολές στο παρασκήνιο", "📦 Packages in the background" },
             { "📦 Αποστολή στο παρασκήνιο", "📦 Package in the background" },
             { "📦 Η αποστολή «{0}» τελειώνει στο παρασκήνιο: οι οθόνες είναι ελεύθερες για τον επόμενο αθλητή.", "📦 The package «{0}» finishes in the background: the screens are free for the next athlete." },
+
+            // (2.26.0) The digital assistant (its own texts are in both languages in SwimAssistant.cs).
+            { "Ψηφιακός βοηθός", "Digital assistant" },
+            { "ΒΟΗΘΟΣ", "ASSISTANT" },
+            { "Ρώτα πού είναι κάτι στο Kinovea: ο βοηθός λέει τα βήματα και δείχνει το σημείο στο μενού.", "Ask where something is in Kinovea: the assistant gives the steps and shows the place in the menu." },
+            { "Ψηφιακός βοηθός (F1): ρώτα πού είναι το καθετί στο Kinovea.", "Digital assistant (F1): ask where anything is in Kinovea." },
         };
     }
 }

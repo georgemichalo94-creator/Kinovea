@@ -1515,6 +1515,10 @@ namespace Kinovea.ScreenManager
             inFullScreen = fullScreen;
             view.SetFullScreen(fullScreen);
 
+            // (Swim 2.26.0) The panel of the digital assistant leaves the full screen to the screens (and comes back after it).
+            if (swimMenu != null)
+                swimMenu.SetFullScreen(fullScreen);
+
             foreach (AbstractScreen screen in screenList)
                 screen.FullScreen(fullScreen || bigScreens);
 

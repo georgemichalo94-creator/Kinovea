@@ -74,7 +74,8 @@ $options = Mnu 'mnuOptions' 'Options' @((Mnu 'mnuLanguages' 'Language' @((Mnu ''
   (Mnu 'mnuVariables' 'Context' @((Mnu 'mnuImportVariables' 'Import'))), (Sep), (Mnu 'mnuPreferences' 'Preferences'))
 $updates = Mnu '' 'Check for updates'
 $debug = Mnu 'mnuEnableDebugLogs' 'Enable debug logs'
-$help = Mnu 'mnuHelp' 'Help' @((Mnu 'mnuHelpContents' 'Help'), $updates, (Mnu 'mnuTranslate2' 'Translate Kinovea'), (Sep), (Mnu 'mnuApplicationFolder' 'Open application data folder'),
+$helpContents = Mnu 'mnuHelpContents' 'Help'; $helpContents.ShortcutKeys = $keys::F1
+$help = Mnu 'mnuHelp' 'Help' @($helpContents, $updates, (Mnu 'mnuTranslate2' 'Translate Kinovea'), (Sep), (Mnu 'mnuApplicationFolder' 'Open application data folder'),
   $debug, (Sep), (Mnu 'mnuWebsite' 'www.kinovea.org'), (Mnu 'mnuAbout' 'About'))
 $plugin = Mnu 'mnuPlugin' 'A menu of a plugin' @((Mnu '' 'Its command'))
 
@@ -127,7 +128,7 @@ function TextOf($item) { return $item.Text }
 $visibleTop = @($strip.Items | Where-Object { $_.Available -and $_.Alignment -eq 'Left' } | ForEach-Object { $_.Text })
 Check (($visibleTop -join ',') -eq 'Αρχείο,Επεξεργασία,Προβολή,Αγώνας,Τεχνική,Αναφορά,Εργαλεία,Βοήθεια,A menu of a plugin') ('the menus: ' + ($visibleTop -join ', '))
 $right = @($strip.Items | Where-Object { $_.Alignment -eq 'Right' } | ForEach-Object { $_.Text })
-Check ($right.Count -eq 4 -and $right[0] -eq '⚙ Ρυθμίσεις' -and $right[1] -eq 'EN' -and $right[2] -eq 'ΕΛ' -and $right[3].Contains('Google Sheet')) ('on the right: ' + ($right -join ' | '))
+Check ($right.Count -eq 5 -and $right[0] -eq '⚙ Ρυθμίσεις' -and $right[1] -eq 'EN' -and $right[2] -eq 'ΕΛ' -and $right[3].Contains('Google Sheet') -and $right[4] -eq 'ΒΟΗΘΟΣ') ('on the right: ' + ($right -join ' | '))
 Check (-not $image.Available -and -not $video.Available -and -not $window.Available) 'Image, Video and Window are empty and hidden'
 
 $race = $strip.Items | Where-Object { $_.Text -eq 'Αγώνας' }
@@ -216,9 +217,153 @@ try {
     }
     $m.HideDropDown(); $k++
   }
-  $form.Close()
   Write-Output ('pictures: ' + @(Get-ChildItem $out -Filter *.png).Count)
 } catch { Write-Output ('note: the pictures were not drawn: ' + $_.Exception.Message) }
+
+# ---- (2.26.0) The digital assistant on the fictional menu: its place on the bar and first in Βοήθεια (F1, taken from the guide of
+# Kinovea), its panel on the right of the window between the bars, the topics of questions (Greek with and without accents, capitals,
+# a wrong letter, English), an item of the menu found by its name, nothing found, «Δείξε μου» (the menus opened, the item lit with ΕΔΩ,
+# the light gone with its menu), «Άνοιξέ το», F1, the full screen, English, and what Claude would get (the menu without names of files).
+# Pictures of the window with the panel to -out.
+$tPanel = T 'SwimAssistantPanel'; $tAi = T 'SwimAssistantAi'; $tHostI = T 'ISwimAssistantHost'; $tIcon = T 'SwimAssistantIcon'
+# (The values as they are: a list is not unrolled into the pipeline.)
+function F($o, $n) { if ($null -eq $o) { return $null }; $b = $o.psobject.BaseObject; return ,($b.GetType().GetField($n, $all).GetValue($b)) }
+function Pr($o, $n) { if ($null -eq $o) { return $null }; $b = $o.psobject.BaseObject; return ,($b.GetType().GetProperty($n, $all).GetValue($b)) }
+function Call($o, $n, $params) { $b = $o.psobject.BaseObject; return ,($b.GetType().GetMethod($n, $all).Invoke($b, $params)) }
+function Pump() { for ($i = 0; $i -lt 4; $i++) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 30 } }
+function Shot([string]$name, $drops) {
+  try {
+    Pump
+    $bmp = New-Object System.Drawing.Bitmap($form.Width, $form.Height)
+    $form.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle(0, 0, $form.Width, $form.Height)))
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    foreach ($dd in @($drops)) {
+      if ($null -eq $dd -or -not $dd.Visible) { continue }
+      $b = New-Object System.Drawing.Bitmap($dd.Width, $dd.Height)
+      $dd.DrawToBitmap($b, (New-Object System.Drawing.Rectangle(0, 0, $dd.Width, $dd.Height)))
+      $g.DrawImage($b, $dd.Left - $form.Left, $dd.Top - $form.Top); $b.Dispose()
+    }
+    $g.Dispose()
+    $bmp.Save([System.IO.Path]::Combine($out, $name), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+  } catch { Write-Output ('note: no picture ' + $name + ': ' + $_.Exception.Message) }
+}
+
+$bar = @($strip.Items | Where-Object { $_.Name -eq 'swimAssistantBar' })[0]
+$entry = @($help.DropDownItems | Where-Object { $_.Name -eq 'swimAssistant' })[0]
+Check ($null -ne $bar -and $bar.Alignment -eq 'Right' -and $bar.Text -eq 'ΒΟΗΘΟΣ' -and [bool](F $bar 'Fresh')) ('ΒΟΗΘΟΣ on the bar with its new dot: ' + $bar.Text)
+Check ($null -ne $entry -and $help.DropDownItems.IndexOf($entry) -eq 0 -and $entry.ShortcutKeys -eq $keys::F1 -and $entry.Text -eq 'Ψηφιακός βοηθός') 'Βοήθεια › Ψηφιακός βοηθός first, with F1'
+Check ($helpContents.ShortcutKeys -eq $keys::None -and $helpContents.OwnerItem -eq $help) 'the guide of Kinovea stays in Βοήθεια, its F1 given to the assistant'
+
+# The window as Kinovea's: a main view that fills what the bars leave.
+$form.FormBorderStyle = 'None'
+$form.Size = New-Object System.Drawing.Size(1440, 860)
+$mainView = New-Object System.Windows.Forms.Panel; $mainView.Dock = 'Fill'; $mainView.BackColor = [System.Drawing.Color]::FromArgb(8, 40, 56)
+$form.Controls.Add($mainView); $mainView.BringToFront()
+if (-not $form.Visible) { $form.Show() }
+Pump
+[void]$tMenu.GetMethod('OpenAssistant', $all).Invoke($menu, $null)
+Pump
+$panel = $tMenu.GetProperty('Assistant', $all).GetValue($menu)
+$pc = [System.Windows.Forms.Control]$panel
+Check ($null -ne $panel -and $pc.Visible -and $pc.Dock -eq 'Right' -and $form.Controls.GetChildIndex($pc) -eq 1) ('the panel on the right, docked after the bars (index ' + $form.Controls.GetChildIndex($pc) + ')')
+Check ($pc.Top -ge $tool.Bottom - 1 -and $pc.Right -eq $form.ClientSize.Width -and $mainView.Right -le $pc.Left + 1) ('under the bars, the main view makes room: panel ' + $pc.Bounds + ', view ' + $mainView.Bounds)
+Check ([bool](F $bar 'Open') -and -not [bool](F $bar 'Fresh')) 'ΒΟΗΘΟΣ open, its new dot gone'
+Shot 'as_1_welcome.png' @()
+
+function Ask([string]$q) { [void](Call $panel 'Ask' ([object[]]@($q))); Pump; return (Pr $panel 'Result') }
+function TopicId($r) { $t = F $r 'Topic'; if ($null -eq $t) { return '' }; return [string](F $t 'Id') }
+$expect = [ordered]@{
+  'πού είναι η εξαγωγή βίντεο;' = 'exportvideo'; 'πως στελνω το βιντεο στον προπονητη' = 'package'; 'συγχρονισμός καμερών' = 'sync'
+  'ΣΥΓΧΡΟΝΙΣΜΟΣ ΚΑΜΕΡΩΝ' = 'sync'; 'google sheet σύνδεση' = 'connection'; 'πλήκτρα' = 'keys'; 'export video' = 'exportvideo'
+  'full screen' = 'fullscreen'; 'εξαγογη βιντεο' = 'exportvideo'; 'PDF' = 'pdf'; 'νέος αθλητής στο ίδιο βίντεο' = 'newrace'
+  'γλώσσα αγγλικά' = 'language'; 'πώς ανοίγω ένα βίντεο' = 'open'; 'αποθήκευση' = 'save'; 'κινόγραμμα' = 'filters'; 'καθρέφτης' = 'image'
+  'στροφές' = 'turns'; 'βίντεο δίπλα δίπλα' = 'sidebyside'; 'πού βρίσκω το κλασικό μενού' = 'classic'; 'how do I send to the coaches' = 'package'
+}
+$wrong = @()
+foreach ($q in $expect.Keys) { $id = TopicId (Ask $q); if ($id -ne $expect[$q]) { $wrong += ($q + ' -> ' + $id + ' (not ' + $expect[$q] + ')') } }
+Check ($wrong.Count -eq 0) ('the topics of ' + $expect.Count + ' questions' + $(if ($wrong.Count -gt 0) { ': ' + ($wrong -join ' | ') } else { '' }))
+
+$r = Ask 'σειρά εικόνων'
+$entries = F $r 'Entries'
+$first = $null; if ($null -ne $entries -and $entries.Count -gt 0) { $first = $entries[0] }
+Check ($null -ne $first -and (F $first 'Name') -eq 'mnuExportImageSequence' -and (F $first 'Path') -eq 'Αναφορά › Εικόνες › Σειρά εικόνων…') ('an item of the menu found by its name: ' + (F $first 'Path'))
+Shot 'as_7_menu_items.png' @()
+$r = Ask 'ζουμ στο νερό'
+Check ((TopicId $r) -eq '' -and (F $r 'Entries').Count -eq 0 -and (F $r 'Guesses').Count -eq 3) ('nothing for «ζουμ στο νερό»: ' + (F $r 'Guesses').Count + ' guesses')
+Shot 'as_4_nothing.png' @()
+[void](Ask 'πώς στέλνω το βίντεο στον προπονητή;')
+Shot 'as_2_package.png' @()
+[void](Ask 'πλήκτρα')
+Shot 'as_5_keys.png' @()
+
+# «Δείξε μου»: the menus of the item opened from the bar, the item lit with ΕΔΩ; the light goes with its menu.
+[void](Ask 'πού είναι η εξαγωγή βίντεο;')
+[void](Call $panel 'ShowTopic' $null)
+Pump
+$videoGroup = Named 'mnuExportVideo'; $videoItem = Named 'mnuExportVideoVideo'
+$spotted = $tMenu.GetProperty('Spotted', $all).GetValue($menu)
+Check ($spotted -eq $videoItem -and $report.DropDown.Visible -and $videoGroup.DropDown.Visible -and $videoItem.ShortcutKeyDisplayString -eq 'ΕΔΩ') ('Δείξε μου: Αναφορά › Βίντεο opened, Βίντεο… lit (' + $videoItem.ShortcutKeyDisplayString + ')')
+Shot 'as_3_show_export.png' @($report.DropDown, $videoGroup.DropDown)
+$report.HideDropDown()
+Pump
+Check ($null -eq $tMenu.GetProperty('Spotted', $all).GetValue($menu) -and [string]::IsNullOrEmpty($videoItem.ShortcutKeyDisplayString)) 'the light goes when its menu closes (its keys as before)'
+
+[void](Ask 'σύνδεση με google sheet')
+[void](Call $panel 'ShowTopic' $null)
+Pump
+$conn = Named 'swimConnection'
+Check ($tMenu.GetProperty('Spotted', $all).GetValue($menu) -eq $conn -and $settings.DropDown.Visible) 'Δείξε μου in ⚙ Ρυθμίσεις, on the right of the bar'
+Shot 'as_8_show_settings.png' @($settings.DropDown)
+$settings.HideDropDown()
+Pump
+$asked0 = $script:asked.Count
+[void](Call $panel 'OpenTopic' $null)
+Pump
+$note = [string](Pr $panel 'Note')
+Check ($script:asked.Count -eq $asked0 + 1 -and $script:asked[$script:asked.Count - 1] -eq '|connection' -and $note.Contains('Σύνδεση με Google Sheet')) ('Άνοιξέ το: the page of the connection asked (' + $note + ')')
+
+# F1 and the full screen.
+$entry.PerformClick(); Pump
+$closed = -not $pc.Visible -and -not [bool](F $bar 'Open')
+$entry.PerformClick(); Pump
+Check ($closed -and $pc.Visible) 'F1 (Βοήθεια › Ψηφιακός βοηθός) closes and opens it'
+[void]$tMenu.GetMethod('SetFullScreen').Invoke($menu, [object[]]@($true)); $hidden = -not $pc.Visible
+[void]$tMenu.GetMethod('SetFullScreen').Invoke($menu, [object[]]@($false))
+Check ($hidden -and $pc.Visible) 'the full screen hides the panel, it comes back after it'
+
+# What Claude would get with «Ρώτα το AI»: the menu (no recent file, no name of a file of a screen, no drawing), the topics, the keys.
+$map = $tHostI.GetMethod('MenuMap').Invoke($menu, $null)
+$topics = Call $panel 'Topics' $null
+$pathOf = [Delegate]::CreateDelegate([Func[string, string]], $menu.psobject.BaseObject, $tHostI.GetMethod('PathOf'))
+$keyOf = [Delegate]::CreateDelegate([Func[string, string]], $menu.psobject.BaseObject, $tHostI.GetMethod('ShortcutOf'))
+$system = [string]$tAi.GetMethod('SystemPrompt', $all).Invoke($null, [object[]]@($map, $topics, $pathOf, $keyOf))
+Check ($system.Contains('Αναφορά › Βίντεο › Βίντεο…') -and $system.Contains('Αρχείο › Κλείσιμο') -and -not $system.Contains('fictional_race') -and -not $system.Contains('a fictional drawing')) ('what Claude would get: the menu without names of files (' + $system.Length + ' characters)')
+try { [System.IO.File]::WriteAllText([System.IO.Path]::Combine($out, 'as_claude_system.txt'), $system, (New-Object System.Text.UTF8Encoding($false))) } catch { }
+
+# In English.
+$lang.GetProperty('English').SetValue($null, $true); Pump
+$idEn = TopicId (Ask 'export a video')
+$pathEn = [string]$tHostI.GetMethod('PathOf').Invoke($menu, [object[]]@('mnuExportVideoVideo'))
+Check ($bar.Text -eq 'ASSISTANT' -and $idEn -eq 'exportvideo' -and $pathEn -eq 'Report › Video › Video…') ('in English: ' + $bar.Text + ', ' + $idEn + ', ' + $pathEn)
+Shot 'as_6_english.png' @()
+$lang.GetProperty('English').SetValue($null, $false); Pump
+
+# The bar with the assistant open, and the sign at its sizes.
+try {
+  $bb = New-Object System.Drawing.Bitmap($strip.Width, $strip.Height)
+  $strip.DrawToBitmap($bb, (New-Object System.Drawing.Rectangle(0, 0, $strip.Width, $strip.Height)))
+  $bb.Save([System.IO.Path]::Combine($out, 'as_0_bar_open.png'), [System.Drawing.Imaging.ImageFormat]::Png); $bb.Dispose()
+  $sheet = New-Object System.Drawing.Bitmap(400, 116)
+  $g = [System.Drawing.Graphics]::FromImage($sheet); $g.Clear([System.Drawing.Color]::FromArgb(3, 14, 23))
+  $draw = $tIcon.GetMethod('Draw', $all); $x = 10
+  foreach ($s in @(96, 64, 40, 32, 22, 16)) {
+    [void]$draw.Invoke($null, [object[]]@($g, (New-Object System.Drawing.RectangleF([single]$x, [single]10, [single]$s, [single]$s)), [single]0, [System.Drawing.Color]::FromArgb(201, 251, 255), ($s -ge 40), [single]0.6))
+    $x += $s + 12
+  }
+  $g.Dispose()
+  $sheet.Save([System.IO.Path]::Combine($out, 'as_0_sign.png'), [System.Drawing.Imaging.ImageFormat]::Png); $sheet.Dispose()
+} catch { Write-Output ('note: no picture of the sign: ' + $_.Exception.Message) }
+try { $form.Close() } catch { }
 
 Write-Output ('main menu checks: ' + $fails + ' failed')
 if ($fails -gt 0) { exit 1 }

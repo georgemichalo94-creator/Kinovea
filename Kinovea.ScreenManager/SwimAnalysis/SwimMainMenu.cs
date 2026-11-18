@@ -42,7 +42,7 @@ namespace Kinovea.ScreenManager
     /// menus Αγώνας and Τεχνική open them at their pages and give the buttons of the bars of the moment.
     /// «Κλασικό μενού του Kinovea» in ⚙ Ρυθμίσεις brings the old menu back at the next start.
     /// </summary>
-    internal sealed class SwimMainMenu
+    internal sealed partial class SwimMainMenu
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -148,8 +148,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void Apply()
         {
-            if (classic || failed || strip == null)
+            if (strip == null)
                 return;
+
+            // (2.26.0) The classic menu (chosen, or put back): only the assistant is added to it.
+            if (classic || failed)
+            {
+                ApplyClassic();
+                return;
+            }
 
             try
             {
@@ -157,7 +164,11 @@ namespace Kinovea.ScreenManager
                 {
                     // Not yet (the menus of Kinovea not there): again at the next refresh; failed (put back): the classic menu stays.
                     if (!Build())
+                    {
+                        if (failed)
+                            ApplyClassic();
                         return;
+                    }
 
                     built = true;
                     SwimLang.Changed += (s, e) => Relabel();
@@ -353,6 +364,7 @@ namespace Kinovea.ScreenManager
                     kv.Key.Visible = true;
                 }
 
+                GiveF1Back();
                 options.Alignment = ToolStripItemAlignment.Left;
                 if (optionsIndex >= 0 && strip.Items.IndexOf(options) != optionsIndex)
                 {
@@ -387,13 +399,16 @@ namespace Kinovea.ScreenManager
 
             // Προβολή: the screens, full screen, the panels; the analysis on the video; the image and the filters of the video.
             ToolStripMenuItem screens = Group("Οθόνες", Properties.Resources.television);
+            screens.Name = "swimScreens";
             Put(screens, placed, named, "mnuOnePlayer", "mnuTwoPlayers", "mnuThreePlayers", "mnuFourPlayers", "mnuFivePlayers", null,
                 "mnuOneCapture", "mnuTwoCaptures", "mnuThreeCaptures", "mnuFourCaptures", "mnuFiveCaptures", "mnuGoProScreens", "mnuTwoMixed",
                 null, "mnuVerticalLayout", "mnuSwapScreens");
             ToolStripMenuItem picture = Group("Εικόνα", Properties.Resources.image);
+            picture.Name = "swimPicture";
             if (image != null)
                 PutAll(picture, placed, had[image]);
             ToolStripMenuItem filters = Group("Φίλτρο βίντεο", null);
+            filters.Name = "swimFilters";
             if (video != null)
                 PutAll(filters, placed, had[video]);
 
@@ -411,6 +426,14 @@ namespace Kinovea.ScreenManager
             viewReel = Entry("Τεχνική στο βίντεο (reel)", null, () => Swim().SetReel(!CurrentSettings().ReelOverlay));
             viewDial = Entry("Στρογγυλό κουμπί", null, () => Swim().SetDialHidden(!CurrentSettings().DialHidden));
             Tip(viewDial, "Στην πλήρη οθόνη, όταν δεν χωρούν οι μπάρες δίπλα στο βίντεο: το στρογγυλό κουμπί πάνω στο βίντεο.");
+            viewBig.Name = "swimBigScreens";
+            screensGroup.Name = "swimScreensGroup";
+            viewGraphics.Name = "swimGraphics";
+            hud.Name = "swimHud";
+            viewHudOn.Name = "swimHudOn";
+            viewHudOff.Name = "swimHudOff";
+            viewReel.Name = "swimReel";
+            viewDial.Name = "swimDial";
             Put(view, placed, named, screens, "mnuFullScreen", viewBig, screensGroup, "mnuToggleCommonCtrls", "mnuToggleNavigationPane",
                 Header("Στο βίντεο"), viewGraphics, hud, viewReel, viewDial, null, picture, filters);
             view.DropDownOpening += (s, e) => RefreshView();
@@ -429,11 +452,19 @@ namespace Kinovea.ScreenManager
             needRace.AddRange(new ToolStripItem[] { newAthlete, closeAnalysis, deleteAnalysis, raceAi });
             ToolStripSeparator closing = new ToolStripSeparator();
             raceNowBefore = closing;
+            mnuRace.Name = "swimMenuRace";
+            racePanel.Name = "swimRacePanel";
+            newAthlete.Name = "swimNewAthlete";
+            raceInfo.Name = "swimRaceInfo";
+            finals.Name = "swimFinals";
+            raceAi.Name = "swimRaceAi";
+            closeAnalysis.Name = "swimCloseAnalysis";
+            deleteAnalysis.Name = "swimDeleteAnalysis";
             mnuRace.DropDownItems.AddRange(new ToolStripItem[] { racePanel, newAthlete, raceInfo, Header("Βήματα της ανάλυσης"),
-                Entry("Εκκίνηση", null, () => OpenAnalysis(false, "start")),
-                Entry("Κολύμβηση · περάσματα", null, () => OpenAnalysis(false, "swim")),
-                Entry("Στροφές", null, () => OpenAnalysis(false, "turns")),
-                Entry("Τερματισμός και ΔΑΚ", null, () => OpenAnalysis(false, "finish")),
+                Named(Entry("Εκκίνηση", null, () => OpenAnalysis(false, "start")), "swimRaceStart"),
+                Named(Entry("Κολύμβηση · περάσματα", null, () => OpenAnalysis(false, "swim")), "swimRaceSwim"),
+                Named(Entry("Στροφές", null, () => OpenAnalysis(false, "turns")), "swimRaceTurns"),
+                Named(Entry("Τερματισμός και ΔΑΚ", null, () => OpenAnalysis(false, "finish")), "swimRaceFinish"),
                 finals, raceAi, closing, closeAnalysis, deleteAnalysis });
             mnuRace.DropDownOpening += (s, e) => { RefreshNeedRace(); FillNow(mnuRace, raceNow, false, raceNowBefore); };
 
@@ -442,13 +473,15 @@ namespace Kinovea.ScreenManager
             ToolStripMenuItem techAi = Entry("AI pro · ανάλυση με τον Claude…", null, () => WithRace(m => m.ShowAiPro()));
             Tip(techAi, "Ο Claude αξιολογεί την εκκίνηση ή τη στροφή από τα καρέ των οθονών με τη λίστα σου· οι απαντήσεις του μπαίνουν στη λίστα ως AI για να τις επιβεβαιώσεις (με κωδικό).");
             needRace.Add(techAi);
+            mnuTech.Name = "swimMenuTech";
+            techAi.Name = "swimTechAi";
             mnuTech.DropDownItems.AddRange(new ToolStripItem[] {
-                Entry("Πίνακας τεχνικής ανάλυσης", Properties.Resources.plot_16, () => OpenAnalysis(true, null)),
+                Named(Entry("Πίνακας τεχνικής ανάλυσης", Properties.Resources.plot_16, () => OpenAnalysis(true, null)), "swimTechPanel"),
                 Header("Σελίδες"),
-                Entry("Εκκινήσεις", null, () => OpenAnalysis(true, "tech-start")),
-                Entry("Στροφές", null, () => OpenAnalysis(true, "tech-turns")),
-                Entry("Στιγμιότυπα και γωνίες", null, () => OpenAnalysis(true, "tech-media")),
-                Entry("Αξιολόγηση", null, () => OpenAnalysis(true, "tech-eval")),
+                Named(Entry("Εκκινήσεις", null, () => OpenAnalysis(true, "tech-start")), "swimTechStarts"),
+                Named(Entry("Στροφές", null, () => OpenAnalysis(true, "tech-turns")), "swimTechTurns"),
+                Named(Entry("Στιγμιότυπα και γωνίες", null, () => OpenAnalysis(true, "tech-media")), "swimTechMedia"),
+                Named(Entry("Αξιολόγηση", null, () => OpenAnalysis(true, "tech-eval")), "swimTechEval"),
                 new ToolStripSeparator(),
                 techAi });
             mnuTech.DropDownOpening += (s, e) => { RefreshNeedRace(); FillNow(mnuTech, techNow, true, null); };
@@ -460,6 +493,11 @@ namespace Kinovea.ScreenManager
             ToolStripMenuItem send = Entry("Αποστολή τώρα στο Google Sheet", null, () => WithRace(m => m.SendByUser(false)));
             reportSheet = Entry("Άνοιγμα φύλλου", null, () => WithRace(m => m.OpenSheet()));
             Tip(reportPackage, "Η αποστολή για τους προπονητές: PDF, βίντεο με τα γραφικά, μήνυμα.");
+            mnuReport.Name = "swimMenuReport";
+            pdf.Name = "swimPdf";
+            reportPackage.Name = "swimPackage";
+            send.Name = "swimSendSheet";
+            reportSheet.Name = "swimOpenSheet";
             needRace.AddRange(new ToolStripItem[] { pdf, reportPackage, send, reportSheet });
             mnuReport.DropDownItems.AddRange(new ToolStripItem[] { pdf, reportPackage, send, reportSheet });
             Put(mnuReport, placed, named, Header("Εξαγωγή"), "mnuExportVideo", "mnuExportImage", "mnuExportSpreadsheet", "mnuExportDocument");
@@ -472,13 +510,16 @@ namespace Kinovea.ScreenManager
 
             // ⚙ Ρυθμίσεις: language, time, pointer, the Google Sheet, variables; the windows of Kinovea; the preferences.
             ToolStripMenuItem connection = Entry("Σύνδεση με Google Sheet…", null, () => OpenAnalysis(null, "connection"));
+            connection.Name = "swimConnection";
             ToolStripMenuItem windows = Group("Παράθυρα", null);
+            windows.Name = "swimWindows";
             if (window != null)
                 PutAll(windows, placed, had[window]);
             Put(options, placed, named, "mnuLanguages", "mnuTimecode", "mnuPointer", connection, "mnuVariables", windows, null, "mnuPreferences");
 
-            // Βοήθεια: as it was.
+            // Βοήθεια: as it was, with the digital assistant first (2.26.0, F1).
             PutAll(help, placed, had[help]);
+            PlaceAssistant(help, named);
 
             // What the new places did not name goes to the new menu of its old group (nothing is lost).
             Dictionary<ToolStripMenuItem, ToolStripMenuItem> home = new Dictionary<ToolStripMenuItem, ToolStripMenuItem>
@@ -527,6 +568,7 @@ namespace Kinovea.ScreenManager
 
             // The classic menu of Kinovea, from the next start.
             mnuClassic = Entry("Κλασικό μενού του Kinovea (από το επόμενο άνοιγμα)", null, ToggleClassic);
+            mnuClassic.Name = "swimClassic";
             options.DropDownItems.Add(new ToolStripSeparator());
             options.DropDownItems.Add(mnuClassic);
 
@@ -554,15 +596,15 @@ namespace Kinovea.ScreenManager
             strip.Items.Add(options);
             options.Alignment = ToolStripItemAlignment.Right;
 
-            barEn = new SwimMenuToggle { Alignment = ToolStripItemAlignment.Right, Text = "EN" };
-            barEl = new SwimMenuToggle { Alignment = ToolStripItemAlignment.Right, Text = "ΕΛ" };
+            barEn = new SwimMenuToggle { Alignment = ToolStripItemAlignment.Right, Text = "EN", Name = "swimLangEn" };
+            barEl = new SwimMenuToggle { Alignment = ToolStripItemAlignment.Right, Text = "ΕΛ", Name = "swimLangEl" };
             tips[barEn] = "Η ανάλυση και το Kinovea στα αγγλικά";
             tips[barEl] = "Η ανάλυση και το Kinovea στα ελληνικά";
             barEn.Click += (s, e) => SetLanguage(true);
             barEl.Click += (s, e) => SetLanguage(false);
-            sheetChip = new SwimMenuChip { Alignment = ToolStripItemAlignment.Right };
+            sheetChip = new SwimMenuChip { Alignment = ToolStripItemAlignment.Right, Name = "swimSheetChip" };
             sheetChip.Click += (s, e) => OpenAnalysis(null, "connection");
-            foreach (ToolStripItem i in new ToolStripItem[] { barEn, barEl, sheetChip })
+            foreach (ToolStripItem i in new ToolStripItem[] { barEn, barEl, sheetChip, assistantButton })
             {
                 strip.Items.Add(i);
                 added.Add(i);
@@ -637,6 +679,13 @@ namespace Kinovea.ScreenManager
 
             while (parent.DropDownItems.Count > 0 && parent.DropDownItems[parent.DropDownItems.Count - 1] is ToolStripSeparator)
                 parent.DropDownItems.RemoveAt(parent.DropDownItems.Count - 1);
+        }
+
+        /// <summary>(2.26.0) An item with its name (the assistant finds the items of the analysis by their names).</summary>
+        private static ToolStripMenuItem Named(ToolStripMenuItem item, string name)
+        {
+            item.Name = name;
+            return item;
         }
 
         private ToolStripMenuItem TopLevel(string greek)
@@ -987,6 +1036,7 @@ namespace Kinovea.ScreenManager
 
             RefreshLanguage();
             RefreshChip();
+            RefreshAssistant();
         }
         #endregion
 
@@ -1405,6 +1455,11 @@ namespace Kinovea.ScreenManager
         /// <summary>Items of the moment shown faint (a button of the bars that waits).</summary>
         public readonly HashSet<ToolStripItem> Dim = new HashSet<ToolStripItem>();
 
+        /// <summary>(2.26.0) The item «Δείξε μου» lights: its box in the accent (its edge pulses), its text dark, its tag (ΕΔΩ) in the column of its keys.</summary>
+        public ToolStripItem Spot;
+        public string SpotTag;
+        public float SpotGlow = 1f;
+
         public SwimMenuRenderer() : base(new SwimMenuColors())
         {
             RoundedEdges = false;
@@ -1427,6 +1482,12 @@ namespace Kinovea.ScreenManager
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
+            if (Spot != null && e.Item == Spot)
+            {
+                SpotText(e);
+                return;
+            }
+
             SwimMenuChip chip = e.Item as SwimMenuChip;
             if (chip != null && e.Text != null && e.Text.StartsWith(SwimMenuChip.DotText, StringComparison.Ordinal))
             {
@@ -1451,12 +1512,18 @@ namespace Kinovea.ScreenManager
 
         protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
         {
-            e.ArrowColor = e.Item != null && e.Item.Enabled ? SwimTheme.AccentLight : SwimTheme.Faint;
+            e.ArrowColor = Spot != null && e.Item == Spot ? SwimTheme.Back : e.Item != null && e.Item.Enabled ? SwimTheme.AccentLight : SwimTheme.Faint;
             base.OnRenderArrow(e);
         }
 
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
         {
+            if (Spot != null && e.Item == Spot)
+            {
+                SpotBox(e.Graphics, e.Item, e.ToolStrip is ToolStripDropDown);
+                return;
+            }
+
             Rectangle box = new Rectangle(1, 2, e.Item.Width - 3, e.Item.Height - 5);
             SwimMenuToggle toggle = e.Item as SwimMenuToggle;
             if (toggle != null)
@@ -1520,6 +1587,45 @@ namespace Kinovea.ScreenManager
             }
 
             e.Graphics.SmoothingMode = old;
+        }
+
+        /// <summary>(2.26.0) The box of the item lit by «Δείξε μου», with a light around it that pulses.</summary>
+        private void SpotBox(Graphics g, ToolStripItem item, bool inMenu)
+        {
+            Rectangle r = inMenu ? new Rectangle(2, 1, item.Width - 5, item.Height - 3) : new Rectangle(1, 2, item.Width - 3, item.Height - 5);
+            if (r.Width <= 4 || r.Height <= 4)
+                return;
+
+            SmoothingMode old = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle halo = Rectangle.Inflate(r, 1, 1);
+            int alpha = Math.Max(0, Math.Min(255, (int)(70 + 150 * SpotGlow)));
+            using (GraphicsPath path = Rounded(halo, 5))
+            using (Pen pen = new Pen(Color.FromArgb(alpha, SwimTheme.AccentPale), 2f))
+                g.DrawPath(pen, path);
+            g.SmoothingMode = old;
+            Box(g, r, SwimTheme.Accent, SwimTheme.AccentPale);
+        }
+
+        /// <summary>(2.26.0) The text of the item lit, dark on the accent; its tag (ΕΔΩ) as a dark label on the right.</summary>
+        private void SpotText(ToolStripItemTextRenderEventArgs e)
+        {
+            string text = e.Text ?? "";
+            if (SpotTag != null && text == SpotTag)
+            {
+                const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter;
+                Size z = TextRenderer.MeasureText(e.Graphics, text, e.TextFont, Size.Empty, flags);
+                Rectangle tr = e.TextRectangle;
+                int w = z.Width + 8, h = Math.Min(Math.Max(4, tr.Height), z.Height + 2);
+                Rectangle r = new Rectangle(tr.Right - w, tr.Y + (tr.Height - h) / 2, w, h);
+                Box(e.Graphics, r, SwimTheme.Back, SwimTheme.Back);
+                TextRenderer.DrawText(e.Graphics, text, e.TextFont, r, SwimTheme.Accent, flags);
+                return;
+            }
+
+            if (e.Item is SwimMenuChip && text.StartsWith(SwimMenuChip.DotText, StringComparison.Ordinal))
+                text = text.Substring(SwimMenuChip.DotText.Length);
+            TextRenderer.DrawText(e.Graphics, text, e.TextFont, e.TextRectangle, SwimTheme.Back, e.TextFormat);
         }
 
         private static void ToolBox(Graphics g, ToolStripItem item, bool on)
