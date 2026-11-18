@@ -33,7 +33,7 @@ namespace Kinovea.ScreenManager
         private ToolStripItem spotItem;
         private string spotKeys;
         private bool spotKeysSet;
-        private ToolStripDropDown spotDropDown;
+        private readonly List<ToolStripDropDown> spotDropDowns = new List<ToolStripDropDown>();
         private Timer spotTimer;
         private DateTime spotStart;
 
@@ -151,7 +151,10 @@ namespace Kinovea.ScreenManager
             return startSettings != null && startSettings.AssistantSeen;
         }
 
-        /// <summary>The amber dot of the sign goes once the assistant was opened (kept in the settings).</summary>
+        /// <summary>
+        /// The amber dot of the sign goes once the assistant was opened (kept in the settings: those of the analysis when it is used,
+        /// else the file itself, so that the analysis is not started for this).
+        /// </summary>
         private void MarkSeen()
         {
             if (AssistantSeen())
@@ -159,7 +162,8 @@ namespace Kinovea.ScreenManager
 
             try
             {
-                SwimSettings s = Swim().Settings;
+                SwimAnalysisManager m = SwimAnalysisManager.Current;
+                SwimSettings s = m != null && m.Settings != null ? m.Settings : SwimSettings.Load();
                 if (s != null && !s.AssistantSeen)
                 {
                     s.AssistantSeen = true;
@@ -352,9 +356,12 @@ namespace Kinovea.ScreenManager
             renderer.SpotGlow = 1f;
             item.Invalidate();
 
-            spotDropDown = chain.Count > 0 ? chain[chain.Count - 1].DropDown : null;
-            if (spotDropDown != null)
-                spotDropDown.Closed += SpotClosed;
+            // Any of its menus that closes ends the light (a click anywhere closes them all).
+            foreach (ToolStripDropDownItem d in chain)
+            {
+                d.DropDown.Closed += SpotClosed;
+                spotDropDowns.Add(d.DropDown);
+            }
 
             spotStart = DateTime.Now;
             if (spotTimer == null)
@@ -395,11 +402,9 @@ namespace Kinovea.ScreenManager
         {
             if (spotTimer != null)
                 spotTimer.Stop();
-            if (spotDropDown != null)
-            {
-                spotDropDown.Closed -= SpotClosed;
-                spotDropDown = null;
-            }
+            foreach (ToolStripDropDown d in spotDropDowns)
+                d.Closed -= SpotClosed;
+            spotDropDowns.Clear();
 
             ToolStripItem old = spotItem;
             spotItem = null;

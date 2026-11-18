@@ -1004,7 +1004,7 @@ namespace Kinovea.ScreenManager
                         "ΕΛ and EN at the top right change the language of the analysis and of Kinovea.")
                     .Steps(S("Πάτα ΕΛ ή EN πάνω δεξιά."), S("Click ΕΛ or EN at the top right."))
                     .Words("γλωσσ, αγγλικ, ελληνικ, english, greek, language, μεταφρασ")
-                    .See("classic"),
+                    .OnlyShow().See("classic"),
 
                 T("classic", "swimClassic", "Κλασικό μενού του Kinovea", "Classic menu of Kinovea")
                     .Lead("Το παλιό μενού του Kinovea, από το επόμενο άνοιγμα του προγράμματος.", "The old menu of Kinovea, from the next start of the program.")
@@ -1060,6 +1060,12 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(text))
                 return "";
 
+            // A path that ends with «…» before the full stop of the sentence: one of them.
+            return Expand0(text, topic, pathOf).Replace("….", "…");
+        }
+
+        private static string Expand0(string text, SwimAssistantTopic topic, Func<string, string> pathOf)
+        {
             return Hole.Replace(text, m =>
             {
                 string kind = m.Groups[1].Value;
@@ -1097,7 +1103,7 @@ namespace Kinovea.ScreenManager
                 foreach (HotkeyCommand h in hotkeys)
                 {
                     if (h != null && h.KeyData != Keys.None && h.CommandCode == (int)c)
-                        return h.KeyData == Keys.Back ? "Backspace" : new KeysConverter().ConvertToInvariantString(h.KeyData);
+                        return Pretty(new KeysConverter().ConvertToInvariantString(h.KeyData));
                 }
             }
             catch (Exception e)
@@ -1106,6 +1112,31 @@ namespace Kinovea.ScreenManager
             }
 
             return null;
+        }
+
+        /// <summary>A key as people read it: the arrows as arrows, Back as Backspace ("Shift+Left" → "Shift+←").</summary>
+        public static string Pretty(string keys)
+        {
+            if (string.IsNullOrEmpty(keys))
+                return keys;
+
+            string[] parts = keys.Split('+');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                switch (parts[i].Trim())
+                {
+                    case "Left": parts[i] = "←"; break;
+                    case "Right": parts[i] = "→"; break;
+                    case "Up": parts[i] = "↑"; break;
+                    case "Down": parts[i] = "↓"; break;
+                    case "Back": parts[i] = "Backspace"; break;
+                    case "Return": parts[i] = "Enter"; break;
+                    case "Next": parts[i] = "PageDown"; break;
+                    case "Prior": parts[i] = "PageUp"; break;
+                }
+            }
+
+            return string.Join("+", parts);
         }
 
         /// <summary>The keys of the program now: those of the menus (their items) and those of the video (its settings).</summary>

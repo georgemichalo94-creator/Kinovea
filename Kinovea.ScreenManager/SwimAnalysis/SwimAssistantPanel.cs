@@ -427,7 +427,9 @@ namespace Kinovea.ScreenManager
                     }
                 }
 
-                SwimSettings settings = SwimAnalysisManager.Instance.Settings;
+                // The settings of the analysis when it is used, else those of the file (the analysis is not started for a question).
+                SwimAnalysisManager manager = SwimAnalysisManager.Current;
+                SwimSettings settings = manager != null && manager.Settings != null ? manager.Settings : SwimSettings.Load();
                 if (settings == null)
                     return;
 
@@ -730,6 +732,12 @@ namespace Kinovea.ScreenManager
         private const TextFormatFlags Wrap = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.Left | TextFormatFlags.Top;
         private const TextFormatFlags One = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
 
+        /// <summary>The flags to measure one line (never with the ellipsis: a text measured in no room would come back as "Α…").</summary>
+        private const TextFormatFlags Fit = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+
+        /// <summary>The flags of a text centred in a box (the chips, the buttons, the keys): measured with them too.</summary>
+        private const TextFormatFlags Centre = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
         private readonly SwimAssistantPanel panel;
         private readonly float sc;
         private readonly List<Hot> hots = new List<Hot>();
@@ -872,7 +880,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimAssistantTopic t in panel.Topics().Where(x2 => x2.IsChip))
             {
                 string text = t.ChipText;
-                int tw = TextRenderer.MeasureText(g, text, Small, Size.Empty, One).Width + P(22);
+                int tw = TextRenderer.MeasureText(g, text, Small, Size.Empty, Centre).Width + P(16);
                 if (cx > x && cx + tw > x + w)
                 {
                     cx = x;
@@ -885,7 +893,7 @@ namespace Kinovea.ScreenManager
                 bool hot = hover == id;
                 SwimAssistantDraw.Box(g, box, h / 2, on ? SwimTheme.AccentDark : hot ? SwimTheme.RaisedHover : SwimTheme.Raised, on || hot ? SwimTheme.Accent : SwimTheme.Border, 1f);
                 TextRenderer.DrawText(g, text, Small, box, on ? SwimTheme.AccentPale : SwimTheme.AccentLight,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                    Centre);
                 SwimAssistantTopic topic = t;
                 Add(id, box, () => panel.Pick(topic), null);
                 cx += tw + P(6);
@@ -947,7 +955,7 @@ namespace Kinovea.ScreenManager
             if (!string.IsNullOrEmpty(key) && !t.KeyList)
             {
                 string label = SwimAssistantKnowledge.L("Συντόμευση:", "Shortcut:");
-                int lw = TextRenderer.MeasureText(g, label, Small, Size.Empty, One).Width;
+                int lw = TextRenderer.MeasureText(g, label, Small, Size.Empty, Fit).Width;
                 int kh = P(22);
                 if (paint)
                     TextRenderer.DrawText(g, label, Small, new Rectangle(x, y, lw, kh), SwimTheme.Dim, One);
@@ -959,7 +967,7 @@ namespace Kinovea.ScreenManager
             int bh = P(38);
             int bx = x;
             string show = SwimAssistantKnowledge.L("Δείξε μου", "Show me");
-            int sw = TextRenderer.MeasureText(g, show, ButtonFont, Size.Empty, One).Width + P(46);
+            int sw = TextRenderer.MeasureText(g, show, ButtonFont, Size.Empty, Fit).Width + P(46);
             Rectangle sb = new Rectangle(bx, y, sw, bh);
             if (paint)
             {
@@ -976,7 +984,7 @@ namespace Kinovea.ScreenManager
             if (t.CanOpen && item != null && (group == null || !group.HasDropDownItems))
             {
                 string open = SwimAssistantKnowledge.L("Άνοιξέ το", "Open it");
-                int ow = TextRenderer.MeasureText(g, open, ButtonFont, Size.Empty, One).Width + P(32);
+                int ow = TextRenderer.MeasureText(g, open, ButtonFont, Size.Empty, Centre).Width + P(28);
                 if (bx + ow > x + w)
                 {
                     bx = x;
@@ -989,7 +997,7 @@ namespace Kinovea.ScreenManager
                     bool hot = hover == "open";
                     SwimAssistantDraw.Box(g, ob, P(6), hot ? SwimTheme.RaisedHover : SwimTheme.Raised, hot ? SwimTheme.Accent : SwimTheme.Border, 1f);
                     TextRenderer.DrawText(g, open, ButtonFont, ob, SwimTheme.AccentLight,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                        Centre);
                     Add("open", ob, panel.OpenTopic, null);
                 }
             }
@@ -1020,13 +1028,13 @@ namespace Kinovea.ScreenManager
 
         private int KeyCap(Graphics g, string key, int x, int y, int h, bool paint)
         {
-            int kw = TextRenderer.MeasureText(g, key, Small, Size.Empty, One).Width + P(14);
+            int kw = TextRenderer.MeasureText(g, key, Small, Size.Empty, Centre).Width + P(12);
             if (paint)
             {
                 Rectangle r = new Rectangle(x, y, kw, h);
                 SwimAssistantDraw.Box(g, r, P(4), SwimTheme.Back, SwimTheme.Border, 1f);
                 TextRenderer.DrawText(g, key, Small, r, SwimTheme.AccentPale,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                    Centre);
             }
 
             return kw;
@@ -1044,7 +1052,7 @@ namespace Kinovea.ScreenManager
                 using (Pen p = new Pen(SwimTheme.Accent, Math.Max(1f, sc)))
                     g.DrawEllipse(p, x, y, d - 1, d - 1);
                 TextRenderer.DrawText(g, n.ToString(CultureInfo.InvariantCulture), Small, new Rectangle(x, y, d, d), SwimTheme.Accent,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                    Centre);
                 TextRenderer.DrawText(g, text, Body, new Rectangle(tx, y + Math.Max(0, (d - LineHeight(g)) / 2), tw, th), SwimTheme.Text, Wrap);
             }
 
@@ -1053,7 +1061,7 @@ namespace Kinovea.ScreenManager
 
         private int LineHeight(Graphics g)
         {
-            return TextRenderer.MeasureText(g, "Ag", Body, Size.Empty, One).Height;
+            return TextRenderer.MeasureText(g, "Ag", Body, Size.Empty, Fit).Height;
         }
 
         /// <summary>The path in the menu as chips with › between them, on as many lines as it needs.</summary>
@@ -1063,7 +1071,7 @@ namespace Kinovea.ScreenManager
             int cx = x, cy = y, h = P(26), gap = P(16);
             for (int i = 0; i < parts.Length; i++)
             {
-                int tw = Math.Min(w, TextRenderer.MeasureText(g, parts[i], Small, Size.Empty, One).Width + P(18));
+                int tw = Math.Min(w, TextRenderer.MeasureText(g, parts[i], Small, Size.Empty, Centre).Width + P(14));
                 if (cx > x && cx + tw > x + w)
                 {
                     cx = x;
@@ -1075,7 +1083,7 @@ namespace Kinovea.ScreenManager
                 {
                     SwimAssistantDraw.Box(g, r, P(4), SwimTheme.Back, SwimTheme.Accent, 1f);
                     TextRenderer.DrawText(g, parts[i], Small, r, SwimTheme.AccentLight,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+                        Centre | TextFormatFlags.EndEllipsis);
                 }
 
                 cx += tw;
@@ -1096,7 +1104,7 @@ namespace Kinovea.ScreenManager
             int pad = P(10);
             int right = P(30);
             int tw = w - 2 * pad - right;
-            int h1 = TextRenderer.MeasureText(g, e.Text, Strong, Size.Empty, One).Height;
+            int h1 = TextRenderer.MeasureText(g, e.Text, Strong, Size.Empty, Fit).Height + P(2);
             int h2 = TextRenderer.MeasureText(g, e.Path, Small, new Size(tw, int.MaxValue), Wrap).Height;
             int h = pad + h1 + P(2) + h2 + pad;
             Rectangle box = new Rectangle(x, y, w, h);
@@ -1113,8 +1121,8 @@ namespace Kinovea.ScreenManager
 
         private int Link(Graphics g, int x, int y, int w, string text, string id, Action act)
         {
-            int h = Math.Max(P(26), TextRenderer.MeasureText(g, text, Body, Size.Empty, One).Height + P(6));
-            int tw = Math.Min(w - P(18), TextRenderer.MeasureText(g, text, Body, Size.Empty, One).Width);
+            int h = Math.Max(P(26), TextRenderer.MeasureText(g, text, Body, Size.Empty, Fit).Height + P(6));
+            int tw = Math.Min(w - P(18), TextRenderer.MeasureText(g, text, Body, Size.Empty, Fit).Width);
             Rectangle box = new Rectangle(x, y, P(18) + tw, h);
             bool hot = hover == id;
             SwimAssistantDraw.Chevron(g, new Rectangle(x, y, P(12), h), hot ? SwimTheme.AccentPale : SwimTheme.Accent, sc);
@@ -1137,7 +1145,7 @@ namespace Kinovea.ScreenManager
                 }
                 else
                 {
-                    y += Math.Max(P(26), TextRenderer.MeasureText(g, t.Title, Body, Size.Empty, One).Height + P(6)) + P(2);
+                    y += Math.Max(P(26), TextRenderer.MeasureText(g, t.Title, Body, Size.Empty, Fit).Height + P(6)) + P(2);
                 }
             }
 
@@ -1152,7 +1160,7 @@ namespace Kinovea.ScreenManager
                 int pad = P(16);
                 int iw = w - 2 * pad;
                 int h1 = TextRenderer.MeasureText(g, panel.AiAnswer, Body, new Size(iw, int.MaxValue), Wrap).Height;
-                int h2 = string.IsNullOrEmpty(panel.AiCost) ? 0 : TextRenderer.MeasureText(g, panel.AiCost, Small, Size.Empty, One).Height + P(8);
+                int h2 = string.IsNullOrEmpty(panel.AiCost) ? 0 : TextRenderer.MeasureText(g, panel.AiCost, Small, Size.Empty, Fit).Height + P(8);
                 int h = pad + P(16) + P(8) + h1 + h2 + pad;
                 SwimAssistantDraw.Box(g, new Rectangle(x, y, w, h), P(8), SwimTheme.Raised, SwimTheme.Amber, 1f);
                 Caps(g, "AI PRO · CLAUDE", x + pad, y + pad, SwimTheme.Amber, true);
@@ -1179,12 +1187,12 @@ namespace Kinovea.ScreenManager
                 y = Para(g, panel.AiError, Small, x, y, w, SwimTheme.Amber, true) + P(10);
 
             string ask = SwimAssistantKnowledge.L("Ρώτα το AI (AI pro)", "Ask the AI (AI pro)");
-            int bw = TextRenderer.MeasureText(g, ask, ButtonFont, Size.Empty, One).Width + P(30);
+            int bw = TextRenderer.MeasureText(g, ask, ButtonFont, Size.Empty, Centre).Width + P(28);
             Rectangle b = new Rectangle(x, y, bw, P(34));
             bool hot = hover == "ai";
             SwimAssistantDraw.Box(g, b, P(6), hot ? SwimTheme.AmberDark : SwimTheme.Surface, SwimTheme.Amber, 1f);
             TextRenderer.DrawText(g, ask, ButtonFont, b, SwimTheme.Amber,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                Centre);
             Add("ai", b, panel.AskAi, null);
             y += b.Height + P(8);
             string note = SwimAssistantKnowledge.L(
@@ -1447,10 +1455,11 @@ namespace Kinovea.ScreenManager
         {
             Size basic = base.GetPreferredSize(constrainingSize);
             int h = Math.Max(22, basic.Height);
-            Size t = TextRenderer.MeasureText(Text ?? "", Bold);
-            Size k = TextRenderer.MeasureText(Hint ?? "", SmallFont);
-            int icon = h - 4;
-            return new Size(6 + icon + 6 + t.Width + (string.IsNullOrEmpty(Hint) ? 0 : k.Width) + 10, h);
+            const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+            Size t = TextRenderer.MeasureText(Text ?? "", Bold, Size.Empty, flags);
+            Size k = TextRenderer.MeasureText(Hint ?? "", SmallFont, Size.Empty, flags);
+            int icon = h - 3;
+            return new Size(3 + icon + 6 + t.Width + (string.IsNullOrEmpty(Hint) ? 0 : 6 + k.Width) + 12, h);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1461,8 +1470,9 @@ namespace Kinovea.ScreenManager
                 return;
 
             bool hot = Selected || Pressed;
-            int icon = r.Height - 4;
-            Rectangle sign = new Rectangle(r.X + 3, r.Y + (r.Height - icon) / 2, icon, icon);
+            // The sign as big as the bar allows (a little over the capsule), centred on it.
+            int icon = Height - 3;
+            Rectangle sign = new Rectangle(r.X + 1, (Height - icon) / 2, icon, icon);
             Color text, hint;
             if (Light)
             {

@@ -348,16 +348,32 @@ Check ($bar.Text -eq 'ASSISTANT' -and $idEn -eq 'exportvideo' -and $pathEn -eq '
 Shot 'as_6_english.png' @()
 $lang.GetProperty('English').SetValue($null, $false); Pump
 
-# The bar with the assistant open, and the sign at its sizes.
+# The bar with the assistant open, closed and new (the bar wider than this screen, so that all of its right side is in the picture),
+# and the sign at its sizes.
+function Bar([string]$name) {
+  try {
+    $strip.Dock = 'None'; $strip.AutoSize = $false; $strip.Width = 1600; $strip.PerformLayout(); Pump
+    $bb = New-Object System.Drawing.Bitmap($strip.Width, $strip.Height)
+    $strip.DrawToBitmap($bb, (New-Object System.Drawing.Rectangle(0, 0, $strip.Width, $strip.Height)))
+    $bb.Save([System.IO.Path]::Combine($out, $name), [System.Drawing.Imaging.ImageFormat]::Png); $bb.Dispose()
+  } catch { Write-Output ('note: no picture ' + $name + ': ' + $_.Exception.Message) }
+  finally { $strip.AutoSize = $true; $strip.Dock = 'Top' }
+}
+Bar 'as_0_bar_open.png'
+$entry.PerformClick(); Pump
+Bar 'as_0_bar_closed.png'
+$tA = T 'SwimMenuAssistant'
+$tA.GetField('Fresh').SetValue($bar.psobject.BaseObject, $true); $bar.Invalidate()
+Bar 'as_0_bar_new.png'
+$tA.GetField('Fresh').SetValue($bar.psobject.BaseObject, $false)
 try {
-  $bb = New-Object System.Drawing.Bitmap($strip.Width, $strip.Height)
-  $strip.DrawToBitmap($bb, (New-Object System.Drawing.Rectangle(0, 0, $strip.Width, $strip.Height)))
-  $bb.Save([System.IO.Path]::Combine($out, 'as_0_bar_open.png'), [System.Drawing.Imaging.ImageFormat]::Png); $bb.Dispose()
-  $sheet = New-Object System.Drawing.Bitmap(400, 116)
+  $sheet = New-Object System.Drawing.Bitmap(420, 120)
   $g = [System.Drawing.Graphics]::FromImage($sheet); $g.Clear([System.Drawing.Color]::FromArgb(3, 14, 23))
   $draw = $tIcon.GetMethod('Draw', $all); $x = 10
   foreach ($s in @(96, 64, 40, 32, 22, 16)) {
-    [void]$draw.Invoke($null, [object[]]@($g, (New-Object System.Drawing.RectangleF([single]$x, [single]10, [single]$s, [single]$s)), [single]0, [System.Drawing.Color]::FromArgb(201, 251, 255), ($s -ge 40), [single]0.6))
+    $rect = (New-Object System.Drawing.RectangleF([single]$x, [single]10, [single]$s, [single]$s)).psobject.BaseObject
+    $dot = ([System.Drawing.Color]::FromArgb(201, 251, 255)).psobject.BaseObject
+    [void]$draw.Invoke($null, [object[]]@($g.psobject.BaseObject, $rect, [single]0, $dot, [bool]($s -ge 40), [single]0.6))
     $x += $s + 12
   }
   $g.Dispose()
