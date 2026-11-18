@@ -2065,6 +2065,10 @@ namespace Kinovea.ScreenManager
 
                 RemoveScreenEventHandlers(p);
                 p.Loaded -= Player_Loaded;
+
+                // Its view may still be synchronized with the other screens: the images it reports go nowhere now (the dual player
+                // lets go of it below, and the screen forwards them without asking whether anyone listens).
+                p.ImageChanged += (s, e) => { };
                 PlayerScreen fresh = new PlayerScreen();
                 fresh.RefreshUICulture();
                 AddScreenEventHandlers(fresh);
