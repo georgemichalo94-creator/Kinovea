@@ -309,14 +309,14 @@ namespace Kinovea.ScreenManager
                         "The button is lit in the analysis window (the bar next to the video is not shown now).");
                 else if (why != null)
                     Warning = WhyText(why, t);
-                view.Invalidate();
+                view.RevealNote();
                 return;
             }
 
             ToolStripItem item = host.FindItem(t.Target);
             if (item == null || !host.Spot(item))
                 Warning = SwimAssistantKnowledge.L("Δεν είναι στο μενού τώρα.", "It is not in the menu now.");
-            view.Invalidate();
+            view.RevealNote();
         }
 
         /// <summary>A command of the host for a button of the bars ("video" when it fails: the reason most likely).</summary>
@@ -376,7 +376,7 @@ namespace Kinovea.ScreenManager
             Warning = null;
             if (entry.Item == null || entry.Item.IsDisposed || !host.Spot(entry.Item))
                 Warning = SwimAssistantKnowledge.L("Δεν είναι στο μενού τώρα.", "It is not in the menu now.");
-            view.Invalidate();
+            view.RevealNote();
         }
 
         /// <summary>«Άνοιξέ το»: the command of the topic (a group of the menu opens instead).</summary>
@@ -396,7 +396,7 @@ namespace Kinovea.ScreenManager
                     Note = SwimAssistantKnowledge.L("Ξεκίνησε: ", "Started: ") + t.Title;
                 else
                     Warning = WhyText(why, t);
-                view.Invalidate();
+                view.RevealNote();
                 return;
             }
 
@@ -419,7 +419,7 @@ namespace Kinovea.ScreenManager
                 Warning = NeedsText(t);
             }
 
-            view.Invalidate();
+            view.RevealNote();
         }
 
         private string NeedsText(SwimAssistantTopic t)
@@ -845,6 +845,12 @@ namespace Kinovea.ScreenManager
         private int scroll;
         private int contentHeight;
 
+        // (2.26.1) The note or the warning under the buttons of the card, in the view as last painted (int.MinValue: none), and a
+        // request to scroll to it: after «Δείξε μου» or «Ξεκίνα το» it was below the bottom of a long card, unseen.
+        private int noteTop = int.MinValue;
+        private int noteBottom = int.MinValue;
+        private bool revealNote;
+
         public SwimAssistantView(SwimAssistantPanel panel, float sc)
         {
             this.panel = panel;
@@ -872,6 +878,13 @@ namespace Kinovea.ScreenManager
             scroll = 0;
         }
 
+        /// <summary>(2.26.1) Redrawn with the note or the warning of the card in sight (scrolled to it if it is below).</summary>
+        public void RevealNote()
+        {
+            revealNote = true;
+            Invalidate();
+        }
+
         public void ScrollBy(int dy)
         {
             int max = Math.Max(0, contentHeight - Height);
@@ -893,9 +906,30 @@ namespace Kinovea.ScreenManager
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.Surface);
             hots.Clear();
+            noteTop = noteBottom = int.MinValue;
             int height = Content(g, -scroll);
             contentHeight = height;
             int max = Math.Max(0, contentHeight - Height);
+            if (revealNote)
+            {
+                revealNote = false;
+                if (noteBottom != int.MinValue && Height > 0)
+                {
+                    int s = scroll;
+                    if (noteBottom + P(14) > Height)
+                        s = scroll + noteBottom + P(14) - Height;
+                    if (noteTop - P(8) < 0)
+                        s = Math.Min(s, scroll + noteTop - P(8));
+                    s = Math.Max(0, Math.Min(max, s));
+                    if (s != scroll)
+                    {
+                        scroll = s;
+                        Invalidate();
+                        return;
+                    }
+                }
+            }
+
             if (scroll > max)
             {
                 scroll = max;
@@ -1102,7 +1136,15 @@ namespace Kinovea.ScreenManager
             y += bh;
             string note = panel.Note ?? panel.Warning;
             if (!string.IsNullOrEmpty(note))
-                y = Para(g, note, Small, x, y + P(10), w, panel.Note != null ? SwimTheme.Green : SwimTheme.Amber, paint);
+            {
+                int top = y + P(10);
+                y = Para(g, note, Small, x, top, w, panel.Note != null ? SwimTheme.Green : SwimTheme.Amber, paint);
+                if (paint)
+                {
+                    noteTop = top;
+                    noteBottom = y;
+                }
+            }
 
             return y + pad - y0;
         }

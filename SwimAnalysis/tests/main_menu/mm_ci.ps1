@@ -356,6 +356,10 @@ $warn1 = [string](Pr $panel 'Warning')
 $warn2 = [string](Pr $panel 'Warning')
 Check ($warn1.Contains('άνοιξε πρώτα ένα βίντεο') -and $warn1.Contains('Αρχείο') -and $warn2 -eq $warn1 -and $script:tookUp -eq 2 -and $null -eq $tMenu.GetProperty('Spotted', $all).GetValue($menu)) ('without a video, «Δείξε μου» and «Ξεκίνα το» look for the analysis of the active screen (' + $script:tookUp + ' times) and say what it needs: ' + $warn1)
 Shot 'as_11_auto_needs.png' @()
+# (2.26.1, the test copy) Under the buttons of a long card the warning was below the bottom of the panel, unseen: now in sight.
+Pump
+$noteBottom = [int](F $view 'noteBottom'); $noteScroll = [int](F $view 'scroll')
+Check ($noteBottom -gt 0 -and $noteBottom -le $view.Height -and $noteScroll -gt 0) ('the warning in sight: the card scrolled by ' + $noteScroll + ' px, the warning ends at ' + $noteBottom + ' of ' + $view.Height + ' px')
 
 # (2.26.1) The bars do not fit next to the video (two or more screens, the assistant open): «Δείξε μου» lights the button in the
 # window of the analysis, a light that breathes in the button until a click or for a few seconds.
