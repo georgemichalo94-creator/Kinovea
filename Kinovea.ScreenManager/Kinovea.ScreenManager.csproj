@@ -1060,6 +1060,7 @@
     <Compile Include="SwimAnalysis\SwimHudPainter.Tech.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.Assistant.cs" />
+    <Compile Include="SwimAnalysis\SwimMainMenu.Layout.cs" />
     <Compile Include="SwimAnalysis\SwimAssistant.cs" />
     <Compile Include="SwimAnalysis\SwimAssistantPanel.cs" />
     <Compile Include="SwimAnalysis\SwimAiPro.cs" />

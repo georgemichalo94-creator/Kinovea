@@ -157,6 +157,9 @@ namespace Kinovea.ScreenManager
             if (strip == null)
                 return;
 
+            // (2.26.2) The work space under the bars, whatever the menu.
+            HookWorkSpace();
+
             // (2.26.0) The classic menu (chosen, or put back): only the assistant is added to it.
             if (classic || failed)
             {
@@ -440,8 +443,12 @@ namespace Kinovea.ScreenManager
             viewHudOff.Name = "swimHudOff";
             viewReel.Name = "swimReel";
             viewDial.Name = "swimDial";
+            // (2.26.2) The list of the cameras on the left, as «Κάμερες» on the toolbar.
+            ToolStripMenuItem viewCameras = Entry("Λίστα καμερών", Properties.Resources.camera_video, ShowCameras);
+            viewCameras.Name = "swimCameras";
+            Tip(viewCameras, CamerasTip);
             Put(view, placed, named, screens, "mnuFullScreen", viewBig, screensGroup, "mnuToggleCommonCtrls", "mnuToggleNavigationPane",
-                Header("Στο βίντεο"), viewGraphics, hud, viewReel, viewDial, null, picture, filters);
+                viewCameras, Header("Στο βίντεο"), viewGraphics, hud, viewReel, viewDial, null, picture, filters);
             view.DropDownOpening += (s, e) => RefreshView();
 
             // Αγώνας: the window and its steps, the buttons of the bars of the moment, closing.
@@ -1091,6 +1098,15 @@ namespace Kinovea.ScreenManager
             race.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             pdf.Image = Properties.Resources.pdfexport;
             pdf.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+
+            // (2.26.2) Κάμερες, after the buttons of the screens: the list of the cameras on the left in one click.
+            ToolStripButton cameras = ToolButton("Κάμερες", CamerasTip, ShowCameras);
+            cameras.Name = "swimCamerasBar";
+            cameras.Image = Properties.Resources.camera_video;
+            cameras.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            toolbar.Items.Add(new ToolStripSeparator());
+            toolbar.Items.Add(cameras);
+
             toolbar.Items.Add(new ToolStripSeparator());
             toolbar.Items.Add(Caption("ΑΝΑΛΥΣΗ"));
             toolbar.Items.Add(race);

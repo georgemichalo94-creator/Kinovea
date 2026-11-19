@@ -1032,7 +1032,16 @@ namespace Kinovea.ScreenManager
                     .Lead("Η εικόνα της κάμερας ζωντανά, με εγγραφή.", "The image of the camera live, with recording.")
                     .Steps(S("Πάτα {path} (ή 2 έως 5 κάμερες από το ίδιο μενού)."), S("Click {path} (or 2 to 5 cameras from the same menu)."))
                     .Words("καμερα, ζωντανα, live, capture, εγγραφ, record, webcam, usb")
-                    .See("gopro screens"),
+                    .See("gopro screens cameralist"),
+
+                // (2.26.2) The list of the cameras on the left, as «Κάμερες» on the toolbar.
+                T("cameralist", "swimCameras", "Λίστα καμερών", "Camera list")
+                    .Lead("Οι κάμερες που βρίσκει το πρόγραμμα (USB, δικτύου όπως οι Baumer, GoPro), στη λίστα αριστερά.",
+                        "The cameras the program finds (USB, network cameras such as the Baumer ones, GoPro), in the list on the left.")
+                    .Steps(S("Πάτα «{t:Κάμερες}» στην πάνω μπάρα ή {path}.", "Διπλό κλικ σε μια κάμερα: η εικόνα της ζωντανά."),
+                        S("Click «{t:Κάμερες}» on the toolbar or {path}.", "Double-click a camera: its image live."))
+                    .Words("λιστα καμερων, baumer, gige, βιομηχανικ, δικτυου, ethernet, poe, camera list, δεν βλεπω την καμερα")
+                    .See("cameras filelist"),
 
                 T("gopro", "mnuGoProScreens", "GoPro σε οθόνες (Bluetooth)", "GoPro in screens (Bluetooth)")
                     .Lead("Οι GoPro που βρίσκονται με Bluetooth, η καθεμία στη δική της οθόνη.", "The GoPro cameras found by Bluetooth, each in its own screen.")

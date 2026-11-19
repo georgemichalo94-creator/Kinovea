@@ -98,6 +98,10 @@ namespace Kinovea.FileBrowser
         {
             InitializeComponent();
 
+            // (Swim 2.26.2) Tabs with their names, a little taller, fitted to the width of the pane.
+            tabControl.Padding = new Point(6, 5);
+            tabControl.SizeChanged += (s, e) => QueueFitTabNames();
+
             // Restore UI state.
             splitExplorerFiles.SplitterDistance = (int)(splitExplorerFiles.Height * WindowManager.ActiveWindow.ExplorerFilesSplitterRatio);
             splitShortcutsFiles.SplitterDistance = (int)(splitShortcutsFiles.Height * WindowManager.ActiveWindow.ShortcutsFilesSplitterRatio);
@@ -262,6 +266,10 @@ namespace Kinovea.FileBrowser
         private void NotificationCenter_ExplorerTabChangeAsked(object sender, EventArgs<BrowserContentType> e)
         {
             if (sender == this)
+                return;
+
+            // (Swim 2.26.2) The tab already shown: no change, nothing to wait for.
+            if (tabControl.SelectedIndex == (int)e.Value)
                 return;
 
             programmaticTabChange = true;
@@ -445,21 +453,104 @@ namespace Kinovea.FileBrowser
                 UpdateFileList(PreferencesManager.FileExplorerPreferences.RecentCapturedFiles, lvCaptured, false, false);
             }
         }
+        #region Tabs with their names (Swim 2.26.2)
+        private bool fittingTabs;
+        private bool fitTabsQueued;
+
+        /// <summary>
+        /// (Swim 2.26.2) The tabs of the pane with their names next to their icons (Folders, Shortcuts, Cameras): on one row when they
+        /// fit in the width of the pane, else on two rows, so that every tab is always in sight.
+        /// </summary>
+        private void FitTabNames()
+        {
+            if (fittingTabs || tabControl.IsDisposed)
+                return;
+
+            fittingTabs = true;
+            try
+            {
+                TabPage[] pages = { tabPageClassic, tabPageShortcuts, tabPageCameras };
+                string[] names = { TabName(FileBrowserLang.lblFolders), TabName(FileBrowserLang.tabShortcuts), TabName(FileBrowserLang.lblCameras) };
+                int needed = 4;
+                for (int i = 0; i < pages.Length; i++)
+                {
+                    if (pages[i].Text != names[i])
+                        pages[i].Text = names[i];
+
+                    int icon = tabControl.ImageList != null ? tabControl.ImageList.ImageSize.Width + 4 : 0;
+                    needed += TextRenderer.MeasureText(names[i], tabControl.Font).Width + 2 * tabControl.Padding.X + icon + 6;
+                }
+
+                bool rows = needed > tabControl.ClientSize.Width;
+                if (rows && !tabControl.Multiline)
+                {
+                    tabControl.Multiline = true;
+                    tabControl.SizeMode = TabSizeMode.FillToRight;
+                }
+                else if (!rows && tabControl.Multiline)
+                {
+                    tabControl.SizeMode = TabSizeMode.Normal;
+                    tabControl.Multiline = false;
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not fit the names of the tabs of the navigation pane.", e);
+            }
+            finally
+            {
+                fittingTabs = false;
+            }
+        }
+
+        /// <summary>The fitting after the layout that changed the width of the pane (two rows or one change the tabs themselves).</summary>
+        private void QueueFitTabNames()
+        {
+            if (fitTabsQueued || fittingTabs || tabControl.IsDisposed)
+                return;
+
+            if (!tabControl.IsHandleCreated)
+            {
+                FitTabNames();
+                return;
+            }
+
+            fitTabsQueued = true;
+            try
+            {
+                tabControl.BeginInvoke((Action)(() =>
+                {
+                    fitTabsQueued = false;
+                    FitTabNames();
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                fitTabsQueued = false;
+            }
+        }
+
+        private static string TabName(string name)
+        {
+            return string.IsNullOrEmpty(name) ? "" : name.Trim().TrimEnd(':').Trim();
+        }
+        #endregion
+
         public void RefreshUICulture()
         {
             // ExpTree tab.
-            tabPageClassic.Text = "";
             lblFolders.Text = FileBrowserLang.lblFolders;
             lblVideoFiles.Text = FileBrowserLang.lblVideoFiles;
 
             // Shortcut tab.
-            tabPageShortcuts.Text = "";
             lblFavFolders.Text = lblFolders.Text;
             lblFavFiles.Text = lblVideoFiles.Text;
             etShortcuts.RootDisplayName = FileBrowserLang.tabShortcuts;
             
-            tabPageCameras.Text = "";
             label1.Text = FileBrowserLang.lblCameras;
+
+            // (Swim 2.26.2) The names of the tabs next to their icons.
+            FitTabNames();
             btnManual.Text = FileBrowserLang.FormCameraWizard_Title;
             lblCaptureHistory.Text = FileBrowserLang.lblCaptureHistory;
 

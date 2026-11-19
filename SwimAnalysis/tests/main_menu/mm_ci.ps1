@@ -179,6 +179,23 @@ Check (-not $tool.Items[2].Enabled) '↶ waits for something to undo'
 $undo.Enabled = $true; $undo.Text = 'Undo : a fictional drawing'
 Check ($tool.Items[2].Enabled -and $undo.Text -eq 'Αναίρεση : a fictional drawing' -and $tool.Items[2].ToolTipText -eq 'Αναίρεση : a fictional drawing (Ctrl+Z)') ('↶ follows the menu: ' + $tool.Items[2].ToolTipText)
 
+# (2.26.2, the test copy: the tabs of the list on the left were not in sight) «Κάμερες» after the buttons of the screens, and
+# Προβολή › Λίστα καμερών after the file list: the list on the left at its tab of the cameras in one click.
+$camBar = @($tool.Items | Where-Object { $_.Name -eq 'swimCamerasBar' })[0]
+$camMenu = Named 'swimCameras'
+$camAt = $tool.Items.IndexOf($camBar)
+Check ($null -ne $camBar -and $camBar.Text -eq 'Κάμερες' -and $null -ne $camBar.Image -and $camBar.DisplayStyle -eq 'ImageAndText' -and $camAt -gt $tool.Items.IndexOf(@($tool.Items | Where-Object { $_.Name -eq 'toolFullScreen' })[0]) -and $camAt -lt [array]::IndexOf($names, 'ΑΝΑΛΥΣΗ') -and $camBar.ToolTipText.Contains('διπλό κλικ σε μια κάμερα')) ('«Κάμερες» on the toolbar, after the screens (' + $camAt + ')')
+Check ($null -ne $camMenu -and $camMenu.OwnerItem -eq $view -and $camMenu.Text -eq 'Λίστα καμερών' -and $view.DropDownItems.IndexOf($camMenu) -eq $view.DropDownItems.IndexOf((Named 'mnuToggleNavigationPane')) + 1) 'Προβολή › Λίστα καμερών after Λίστα αρχείων'
+$svc = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Kinovea.Services.dll'))
+$tabField = $svc.GetType('Kinovea.Services.NotificationCenter', $true).GetField('BrowserContentTypeChanged')
+$script:tabAsked = @()
+$tabHandler = [System.Management.Automation.LanguagePrimitives]::ConvertTo([scriptblock]{ param($s, $e) $script:tabAsked += [string]$e.Value }, $tabField.FieldType)
+$tabField.SetValue($null, [System.Delegate]::Combine($tabField.GetValue($null), $tabHandler))
+$camBar.PerformClick()
+$camMenu.PerformClick()
+$tabField.SetValue($null, [System.Delegate]::Remove($tabField.GetValue($null), $tabHandler))
+Check (($script:tabAsked -join ',') -eq 'Cameras,Cameras') ('the list asked at its cameras: ' + ($script:tabAsked -join ','))
+
 # The pages of the window from the menus.
 $infoItem = @($race.DropDownItems | Where-Object { $_.Text -eq 'Στοιχεία και αποτελέσματα' })[0]
 $infoItem.PerformClick()
@@ -273,6 +290,16 @@ $panel = $tMenu.GetProperty('Assistant', $all).GetValue($menu)
 $pc = [System.Windows.Forms.Control]$panel
 Check ($null -ne $panel -and $pc.Visible -and $pc.Dock -eq 'Right' -and $form.Controls.GetChildIndex($pc) -eq 1) ('the panel on the right, docked after the bars (index ' + $form.Controls.GetChildIndex($pc) + ')')
 Check ($pc.Top -ge $tool.Bottom - 1 -and $pc.Right -eq $form.ClientSize.Width -and $mainView.Right -le $pc.Left + 1) ('under the bars, the main view makes room: panel ' + $pc.Bounds + ', view ' + $mainView.Bounds)
+# (2.26.2, the test copy) A bar laid out after the main view covers its top (the tabs of the list on the left, «Κάμερες»): the view
+# put first again, the panel next to it just after it, the window laid out again; then nothing more to do.
+$tool.BringToFront()
+$coveredBefore = $mainView.Top -lt $tool.Bottom
+$keep = $tMenu.GetMethod('KeepWorkSpaceUnderBars', $all)
+$done = [string]$keep.Invoke($menu, [object[]]@('test'))
+Pump
+Check ($coveredBefore -and $done -eq 'order+layout' -and $form.Controls.GetChildIndex($mainView) -eq 0 -and $form.Controls.GetChildIndex($pc) -eq 1 -and $mainView.Top -ge $tool.Bottom -and $pc.Top -ge $tool.Bottom - 1) ('the work space under the bars again (' + $done + '): view ' + $mainView.Bounds + ', bar ' + $tool.Bounds)
+$again = $keep.Invoke($menu, [object[]]@('test'))
+Check ($null -eq $again) ('nothing more to do (' + $again + ')')
 Check ([bool](F $bar 'Open') -and -not [bool](F $bar 'Fresh')) 'ΒΟΗΘΟΣ open, its new dot gone'
 Shot 'as_1_welcome.png' @()
 
@@ -284,6 +311,7 @@ $expect = [ordered]@{
   'full screen' = 'fullscreen'; 'εξαγογη βιντεο' = 'exportvideo'; 'PDF' = 'pdf'; 'νέος αθλητής στο ίδιο βίντεο' = 'newrace'
   'γλώσσα αγγλικά' = 'language'; 'πώς ανοίγω ένα βίντεο' = 'open'; 'αποθήκευση' = 'save'; 'κινόγραμμα' = 'filters'; 'καθρέφτης' = 'image'
   'στροφές' = 'turns'; 'βίντεο δίπλα δίπλα' = 'sidebyside'; 'πού βρίσκω το κλασικό μενού' = 'classic'; 'how do I send to the coaches' = 'package'
+  'λίστα καμερών' = 'cameralist'; 'κάμερα baumer δικτύου' = 'cameralist'
 }
 $wrong = @()
 foreach ($q in $expect.Keys) { $id = TopicId (Ask $q); if ($id -ne $expect[$q]) { $wrong += ($q + ' -> ' + $id + ' (not ' + $expect[$q] + ')') } }
