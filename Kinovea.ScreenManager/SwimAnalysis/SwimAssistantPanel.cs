@@ -42,8 +42,9 @@ namespace Kinovea.ScreenManager
         string VideoKind();
 
         /// <summary>
-        /// (2.26.1) «Δείξε μου» for a button of the bars next to the video: null when it is lit, else why not ("video", "race",
-        /// "training", "tech", "raceview", "bars", "busy", "hidden").
+        /// (2.26.1) «Δείξε μου» for a button of the bars next to the video (the analysis of the video taken up if it is not on it yet):
+        /// null when it is lit on its bar, "panel" when it is lit in the window of the analysis (the bars do not fit next to the video),
+        /// else why not ("video", "race", "training", "tech", "raceview", "bars", "busy", "hidden").
         /// </summary>
         string SpotButton(string id);
 
@@ -301,9 +302,12 @@ namespace Kinovea.ScreenManager
             Warning = null;
             if (!string.IsNullOrEmpty(t.Button))
             {
-                // (2.26.1) A button of the bars next to the video: lit there.
+                // (2.26.1) A button of the bars next to the video: lit there, or in the window of the analysis when the bars do not fit.
                 string why = Safely(() => host.SpotButton(t.Button));
-                if (why != null)
+                if (why == "panel")
+                    Note = SwimAssistantKnowledge.L("Το κουμπί άναψε στον πίνακα της ανάλυσης (η μπάρα δίπλα στο βίντεο δεν φαίνεται τώρα).",
+                        "The button is lit in the analysis window (the bar next to the video is not shown now).");
+                else if (why != null)
                     Warning = WhyText(why, t);
                 view.Invalidate();
                 return;
@@ -334,6 +338,9 @@ namespace Kinovea.ScreenManager
         {
             switch (why)
             {
+                case "video":
+                    return X(SwimAssistantKnowledge.L("Τώρα δεν γίνεται: άνοιξε πρώτα ένα βίντεο ({path:mnuOpenFile}).",
+                        "Not now: open a video first ({path:mnuOpenFile})."), t);
                 case "race":
                     return X(SwimAssistantKnowledge.L("Αυτό είναι για βίντεο αγώνα («{t:Είδος βίντεο}»: {path:swimRaceInfo}).",
                         "This is for a race video («{t:Είδος βίντεο}»: {path:swimRaceInfo})."), t);
@@ -347,14 +354,14 @@ namespace Kinovea.ScreenManager
                     return X(SwimAssistantKnowledge.L("Είναι στην ανάλυση αγώνα (τώρα είσαι στην τεχνική): {path:swimRacePanel}.",
                         "It is in the race analysis (the technical one is open now): {path:swimRacePanel}."), t);
                 case "bars":
-                    return SwimAssistantKnowledge.L("Η μπάρα δίπλα στο βίντεο δεν φαίνεται τώρα (πλήρης οθόνη, μεγάλες οθόνες ή στενή οθόνη). Στην πλήρη οθόνη τα κουμπιά είναι στο στρογγυλό κουμπί πάνω στο βίντεο.",
-                        "The bar next to the video is not shown now (full screen, big screens or a narrow screen). In full screen the buttons are in the round button on the video.");
+                    return SwimAssistantKnowledge.L("Σε πλήρη οθόνη και στις μεγάλες οθόνες η μπάρα δεν φαίνεται: τα κουμπιά της είναι στο στρογγυλό κουμπί πάνω στο βίντεο.",
+                        "In full screen and on the big screens the bar is not shown: its buttons are in the round button on the video.");
                 case "busy":
                     return SwimAssistantKnowledge.L("Τώρα δεν γίνεται: τρέχει άλλη ανάγνωση. Περίμενε να τελειώσει.",
                         "Not now: another reading is running. Wait for it to end.");
                 case "hidden":
-                    return SwimAssistantKnowledge.L("Το κουμπί δεν χωρά τώρα στη μπάρα: μεγάλωσε το παράθυρο, ή πάτα το στον πίνακα όπως λένε τα βήματα.",
-                        "The button does not fit in the bar now: make the window bigger, or click it in the panel as the steps say.");
+                    return SwimAssistantKnowledge.L("Το κουμπί δεν φαίνεται τώρα ούτε στη μπάρα ούτε στον πίνακα της ανάλυσης: δες τα βήματα.",
+                        "The button is not shown now, in the bar or in the analysis window: see the steps.");
                 default:
                     return NeedsText(t);
             }

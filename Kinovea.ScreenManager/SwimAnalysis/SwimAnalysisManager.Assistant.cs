@@ -65,8 +65,23 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// «Δείξε μου»: the bars on the video (as a key of the analysis brings them), the tab of the button, the button lit (null), else
-        /// why not (as BarButtonNeeds, and "bars": no bars now, "hidden": the bar does not draw the button now).
+        /// The analysis of a video taken up for the assistant, as a key of the analysis takes it up (on a screen of a group of screens:
+        /// the analysis of the group): the video of the active screen when the analysis is not on a video yet. «Δείξε μου» and «Ξεκίνα
+        /// το» then bring the bars, or the window when the bars do not fit.
+        /// </summary>
+        internal void TakeUp(PlayerScreenUserInterface player, FrameServerPlayer frameServer)
+        {
+            long unused = 0;
+            ToGroup(ref player, ref frameServer, ref unused);
+            Attach(player, frameServer);
+        }
+
+        /// <summary>
+        /// «Δείξε μου»: the bars on the video (as a key of the analysis brings them), the tab of the button, the button lit (null). When
+        /// the bars do not fit next to the video (two or more screens, the assistant open, a narrow window) or the button does not fit
+        /// in its bar, the window of the analysis at the page of the button, the button lit there ("panel"). Else why not (as
+        /// BarButtonNeeds, and "bars": in full screen or the big screens, where the round button has the buttons, "hidden": the window
+        /// does not show the button now).
         /// </summary>
         internal string SpotBarButton(string id)
         {
@@ -76,10 +91,15 @@ namespace Kinovea.ScreenManager
 
             if (!BarsVisible && Settings.VideoBars && !DialShown)
                 ShowAnalysis(false);
-            if (!BarsVisible)
+            if (BarsVisible && leftBar.Spot(id))
+                return null;
+            if (DialShown)
                 return "bars";
 
-            return leftBar.Spot(id) ? null : "hidden";
+            if (leftBar != null && !leftBar.IsDisposed)
+                leftBar.EndSpot();
+            ShowAnalysis(true);
+            return form != null && !form.IsDisposed && form.SpotButton(id, SwimVideoBar.SpotSeconds) ? "panel" : "hidden";
         }
 
         /// <summary>«Ξεκίνα το»: the button of the bars pressed, as a click on it (its reading says what it does and what it needs).</summary>

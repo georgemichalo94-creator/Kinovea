@@ -157,7 +157,7 @@ namespace Kinovea.ScreenManager
 
         #region The assistant (2.26.1)
         /// <summary>Seconds a button stays lit by «Δείξε μου» of the assistant (a click on the bar ends it before).</summary>
-        private const int SpotSeconds = 10;
+        internal const int SpotSeconds = 10;
 
         private string spotId;
         private DateTime spotEnd;

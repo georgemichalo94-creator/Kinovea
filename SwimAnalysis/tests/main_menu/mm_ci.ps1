@@ -107,6 +107,9 @@ $h = [Activator]::CreateInstance($tHost)
 $script:asked = @()
 $open = [Func[Nullable[bool], string, bool]] { param($technical, $page) $script:asked += ('' + $technical + '|' + $page); return $true }
 $tHost.GetField('OpenAnalysis').SetValue($h, $open)
+# (2.26.1) The analysis of the video of the active screen, for the buttons of the bars of the assistant: no video here.
+$script:tookUp = 0
+$tHost.GetField('TakeUpAnalysis').SetValue($h, [Func[bool]] { $script:tookUp++; return $false })
 $tHost.GetField('BigScreensOn').SetValue($h, [Func[bool]] { return $false })
 $tHost.GetField('CanBigScreens').SetValue($h, [Func[bool]] { return $true })
 # Reflection gets the objects themselves, not their PowerShell wrappers (see gp_ci.ps1).
@@ -351,8 +354,30 @@ Shot 'as_9_auto.png' @()
 $warn1 = [string](Pr $panel 'Warning')
 [void](Call $panel 'OpenTopic' $null); Pump
 $warn2 = [string](Pr $panel 'Warning')
-Check ($warn1.Contains('Αγώνας › Πίνακας ανάλυσης αγώνα') -and $warn2 -eq $warn1 -and $null -eq $tMenu.GetProperty('Spotted', $all).GetValue($menu)) ('without a video, «Δείξε μου» and «Ξεκίνα το» say what it needs: ' + $warn1)
+Check ($warn1.Contains('άνοιξε πρώτα ένα βίντεο') -and $warn1.Contains('Αρχείο') -and $warn2 -eq $warn1 -and $script:tookUp -eq 2 -and $null -eq $tMenu.GetProperty('Spotted', $all).GetValue($menu)) ('without a video, «Δείξε μου» and «Ξεκίνα το» look for the analysis of the active screen (' + $script:tookUp + ' times) and say what it needs: ' + $warn1)
 Shot 'as_11_auto_needs.png' @()
+
+# (2.26.1) The bars do not fit next to the video (two or more screens, the assistant open): «Δείξε μου» lights the button in the
+# window of the analysis, a light that breathes in the button until a click or for a few seconds.
+$tBtn = T 'SwimButton'
+$lone = New-Object System.Windows.Forms.Form
+$lone.ShowInTaskbar = $false; $lone.StartPosition = 'Manual'; $lone.Location = New-Object System.Drawing.Point(-2000, -2000)
+$btn = [System.Windows.Forms.Button]([Activator]::CreateInstance((T 'SwimNoFocusButton')))
+$btn.Text = '✈ Αυτόματος πιλότος'; $btn.Size = New-Object System.Drawing.Size(180, 30)
+$lone.Controls.Add($btn); $lone.Show(); Pump
+function ButtonShot($b) { $bm = New-Object System.Drawing.Bitmap($b.Width, $b.Height); $b.DrawToBitmap($bm, (New-Object System.Drawing.Rectangle(0, 0, $b.Width, $b.Height))); return $bm }
+$p0 = ButtonShot $btn
+[void]$tBtn.GetMethod('Spot').Invoke($btn, [object[]]@([int]10))
+$lit = [bool]$tBtn.GetProperty('Spotted').GetValue($btn)
+$p1 = ButtonShot $btn
+$p1.Save([System.IO.Path]::Combine($out, 'as_12_window_button_lit.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+[void]$tBtn.GetMethod('EndSpot').Invoke($btn, $null)
+$p2 = ButtonShot $btn
+$d01 = [SwimCi.Images]::Diff($p0, $p1, 0, 0); $d02 = [SwimCi.Images]::Diff($p0, $p2, 0, 0)
+Check ($lit -and $d01[0] -gt $d01[1] / 4 -and $d02[0] -eq 0 -and -not [bool]$tBtn.GetProperty('Spotted').GetValue($btn)) ('a button of the window lit by «Δείξε μου» (' + $d01[0] + ' of ' + $d01[1] + ' points), then as before (' + $d02[0] + ')')
+$p0.Dispose(); $p1.Dispose(); $p2.Dispose(); $lone.Close(); $lone.Dispose()
+$formSpot = (T 'FormSwimAnalysis').GetMethod('SpotButton', $all)
+Check ($null -ne $formSpot -and $formSpot.GetParameters().Count -eq 2) 'the window of the analysis lights its buttons of the automatic readings (SpotButton)'
 
 # «Δείξε μου»: the menus of the item opened from the bar, the item lit with ΕΔΩ; the light goes with its menu.
 [void](Ask 'πού είναι η εξαγωγή βίντεο;')

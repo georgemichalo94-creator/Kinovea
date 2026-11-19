@@ -129,6 +129,10 @@ namespace Kinovea.ScreenManager
         private Label lblTrack;
         private Button btnPilot;
         private Button btnRaceReview;
+
+        // (2.26.1) The buttons of the automatic readings of the start page, for «Δείξε μου» of the digital assistant.
+        private Button btnStartLight;
+        private Button btnAutoRace;
         private ComboBox cmbReference;
         private Label lblReferences;
         private ComboBox cmbPb;
@@ -564,6 +568,70 @@ namespace Kinovea.ScreenManager
                 tabs.SelectedTab = shown;
         }
 
+        /// <summary>(2.26.1) The button lit by «Δείξε μου» of the digital assistant (one at a time).</summary>
+        private SwimButton spottedButton;
+
+        /// <summary>
+        /// (2.26.1) «Δείξε μου» of the digital assistant for a button of the bars next to the video that the window has too, when the
+        /// bars do not fit next to the video (or the button does not fit in its bar): the page of the button in the view the window
+        /// shows, the button in sight and lit for a few seconds. False when the window does not show it now.
+        /// </summary>
+        internal bool SpotButton(string id, int seconds)
+        {
+            Button target;
+            string page;
+            switch (id)
+            {
+                case "auto-pilot":
+                    target = btnPilot;
+                    page = "start";
+                    break;
+                case "auto-race":
+                    target = btnAutoRace;
+                    page = "start";
+                    break;
+                case "start-light":
+                    target = btnStartLight;
+                    page = "start";
+                    break;
+                case "tech-pilot":
+                    target = btnTechPilot;
+                    page = "tech-media";
+                    break;
+                case "skeleton":
+                    target = btnSkeleton;
+                    page = "tech-media";
+                    break;
+                default:
+                    return false;
+            }
+
+            SwimButton button = target as SwimButton;
+            if (button == null || button.IsDisposed)
+                return false;
+
+            ShowView(null, page);
+            if (!button.Visible)
+                return false;
+
+            // On a short window the page scrolls to the button.
+            for (Control c = button.Parent; c != null && c != this; c = c.Parent)
+            {
+                ScrollableControl scrollable = c as ScrollableControl;
+                if (scrollable != null && scrollable.AutoScroll)
+                {
+                    scrollable.ScrollControlIntoView(button);
+                    break;
+                }
+            }
+
+            if (spottedButton != null && spottedButton != button && !spottedButton.IsDisposed)
+                spottedButton.EndSpot();
+            spottedButton = button;
+            button.Spot(seconds);
+            return true;
+        }
+
         private SwimPage PageOf(string page)
         {
             switch (page)
@@ -631,6 +699,8 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("βελάκια και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια). Μαθαίνει από τις απαντήσεις σου."));
             Button autoRace = new SwimNoFocusButton { Text = SwimLang.T("🤖 Όλος ο αγώνας"), AutoSize = true, Height = 26, Margin = new Padding(6, 2, 2, 2) };
             autoRace.Click += (s, e) => manager.BeginAutoRace();
+            btnStartLight = startLight;
+            btnAutoRace = autoRace;
             toolTip.SetToolTip(autoRace, SwimLang.T("Μετά την εκκίνηση: κλικ στο κεφάλι και στα πόδια του αθλητή μετά την έξοδο από το νερό. Το Kinovea τον ακολουθεί\n") +
                 SwimLang.T("σε όλα τα μήκη και προτείνει τα περάσματα (15/25/35/45 και τους τοίχους) από τα σημάδια των σχοινιών, για έλεγχο."));
             // The auto pilot (since 2026-10-18): the whole analysis without the analyst, then the PDF; its marks wait for the check.

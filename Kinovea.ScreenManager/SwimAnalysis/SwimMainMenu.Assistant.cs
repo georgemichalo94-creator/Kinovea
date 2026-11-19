@@ -560,17 +560,35 @@ namespace Kinovea.ScreenManager
             return m != null ? m.AssistantVideoKind() : null;
         }
 
+        /// <summary>
+        /// (2.26.1) The analysis for a button of the bars: the one in use on a video (bars, window or round button), else the analysis of
+        /// the video of the active screen (else of the first screen with a video) taken up, as a key of the analysis takes it up, else
+        /// the last one. Null without a video.
+        /// </summary>
+        private SwimAnalysisManager BarsAnalysis()
+        {
+            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            if (m != null && m.Active && m.HasVideo && m.Race != null)
+                return m;
+
+            if (host.TakeUpAnalysis != null)
+                host.TakeUpAnalysis();
+
+            m = SwimAnalysisManager.Current;
+            return m != null && m.HasVideo && m.Race != null ? m : null;
+        }
+
         string ISwimAssistantHost.SpotButton(string id)
         {
             EndSpot();
-            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            SwimAnalysisManager m = BarsAnalysis();
             return m != null ? m.SpotBarButton(id) : "video";
         }
 
         string ISwimAssistantHost.RunButton(string id)
         {
             EndSpot();
-            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            SwimAnalysisManager m = BarsAnalysis();
             if (m == null)
                 return "video";
 

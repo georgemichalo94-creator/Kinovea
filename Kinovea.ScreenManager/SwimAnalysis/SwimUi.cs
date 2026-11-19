@@ -815,6 +815,68 @@ namespace Kinovea.ScreenManager
             set { primary = value; Invalidate(); }
         }
 
+        // (2.26.1) Lit by «Δείξε μου» of the digital assistant: the accent breathes in the button for a few seconds.
+        private Timer spotTimer;
+        private DateTime spotEnd;
+        private bool spotted;
+
+        /// <summary>(2.26.1) Lit by «Δείξε μου» of the digital assistant for a few seconds; a click on it ends it.</summary>
+        public void Spot(int seconds)
+        {
+            spotEnd = DateTime.Now.AddSeconds(seconds);
+            spotted = true;
+            if (spotTimer == null)
+            {
+                spotTimer = new Timer { Interval = 60 };
+                spotTimer.Tick += (s, e) =>
+                {
+                    if (!spotted || IsDisposed || DateTime.Now >= spotEnd)
+                        EndSpot();
+                    else
+                        Invalidate();
+                };
+            }
+
+            spotTimer.Start();
+            Invalidate();
+        }
+
+        /// <summary>The button is lit by «Δείξε μου».</summary>
+        public bool Spotted
+        {
+            get { return spotted; }
+        }
+
+        public void EndSpot()
+        {
+            if (spotTimer != null)
+                spotTimer.Stop();
+            if (spotted)
+            {
+                spotted = false;
+                Invalidate();
+            }
+        }
+
+        /// <summary>The breath of the light of «Δείξε μου», 0 to 1 (a period of 1.2 s).</summary>
+        private static double SpotPulse()
+        {
+            double phase = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond % 1200) / 1200.0;
+            return (Math.Sin(phase * 2 * Math.PI) + 1) / 2;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && spotTimer != null)
+            {
+                spotTimer.Stop();
+                spotTimer.Dispose();
+                spotTimer = null;
+            }
+
+            base.Dispose(disposing);
+        }
+
         public override Size GetPreferredSize(Size proposedSize)
         {
             Size text = TextRenderer.MeasureText(Text ?? "", Font, Size.Empty, TextFormatFlags.NoPrefix);
@@ -842,6 +904,7 @@ namespace Kinovea.ScreenManager
             if (e.Button == MouseButtons.Left)
             {
                 pressed = true;
+                EndSpot();
                 Invalidate();
 
                 // A button of the panel does not take the focus: what is being typed in the window (the official times) counts before
@@ -887,12 +950,23 @@ namespace Kinovea.ScreenManager
             else if (hover && Enabled)
                 fill = primary ? SwimTheme.Mix(SwimTheme.AccentDark, accent, 0.25) : SwimTheme.RaisedHover;
 
+            // (2.26.1) Lit by «Δείξε μου» of the assistant (not over the amber of a button that waits for its click).
+            double pulse = spotted && !highlighted ? SpotPulse() : -1;
+            if (pulse >= 0)
+                fill = SwimTheme.Mix(fill, SwimTheme.Accent, 0.15 + 0.25 * pulse);
+
             // HUD (2.9.0): cut corners, a thin line in the accent that glows on the main and the hovered buttons.
-            Color border = highlighted ? SwimTheme.Amber : (hover && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.75) :
+            Color border = pulse >= 0 ? SwimTheme.AccentPale : highlighted ? SwimTheme.Amber : (hover && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.75) :
                 primary && Enabled ? SwimTheme.Mix(SwimTheme.Border, accent, 0.55) : SwimTheme.Border);
             RectangleF r = new RectangleF(1.5f, 1.5f, Width - 3.5f, Height - 3.5f);
             SwimTheme.FillRounded(g, fill, r, 6);
-            if (Enabled && (highlighted || primary || hover))
+            if (pulse >= 0)
+            {
+                using (GraphicsPath glowPath = SwimTheme.Rounded(r, 6))
+                using (Pen glow = new Pen(Color.FromArgb((int)Math.Round(110 + 120 * pulse), SwimTheme.Accent), 3f))
+                    g.DrawPath(glow, glowPath);
+            }
+            else if (Enabled && (highlighted || primary || hover))
             {
                 using (GraphicsPath glowPath = SwimTheme.Rounded(r, 6))
                 using (Pen glow = new Pen(Color.FromArgb(hover || highlighted ? 70 : 45, highlighted ? SwimTheme.Amber : accent), 3f))
@@ -902,9 +976,9 @@ namespace Kinovea.ScreenManager
             SwimTheme.DrawRounded(g, border, r, 6);
 
             // Accent on the left edge: the command buttons look like the buttons of a timing console.
-            if (highlighted || primary)
+            if (highlighted || primary || pulse >= 0)
             {
-                using (SolidBrush b = new SolidBrush(highlighted ? SwimTheme.Amber : accent))
+                using (SolidBrush b = new SolidBrush(highlighted ? SwimTheme.Amber : pulse >= 0 ? SwimTheme.AccentPale : accent))
                     g.FillRectangle(b, 3, 7, 2, Math.Max(4, Height - 14));
             }
 

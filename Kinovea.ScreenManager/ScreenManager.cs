@@ -842,6 +842,7 @@ namespace Kinovea.ScreenManager
             swimMenu = new SwimMainMenu(menu as MenuStrip, new SwimMenuHost
             {
                 OpenAnalysis = ShowSwimView,
+                TakeUpAnalysis = TakeUpSwimAnalysis,
                 BigScreensOn = () => bigScreens,
                 CanBigScreens = () => playerScreens.Count() >= 2,
                 SetBigScreens = on => BigScreens(on),
@@ -4364,6 +4365,23 @@ namespace Kinovea.ScreenManager
                 ps = screenList.OfType<PlayerScreen>().FirstOrDefault(p => p.Full);
 
             return ps != null && ps.ShowSwimAnalysis(technical, page);
+        }
+
+        /// <summary>
+        /// (Swim 2.26.1) The swim analysis of the video of the active screen (else of the first screen with a video) taken up without its
+        /// window, as a key of the analysis takes it up: the buttons of the bars of the digital assistant. False without a video.
+        /// </summary>
+        private bool TakeUpSwimAnalysis()
+        {
+            PlayerScreen ps = activeScreen as PlayerScreen;
+            if (ps == null || !ps.Full)
+                ps = screenList.OfType<PlayerScreen>().FirstOrDefault(p => p.Full);
+
+            if (ps == null || ps.view == null || ps.FrameServer == null || !ps.FrameServer.Loaded)
+                return false;
+
+            SwimAnalysisManager.Instance.TakeUp(ps.view, ps.FrameServer);
+            return true;
         }
         #endregion
 

@@ -24,6 +24,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public Func<bool?, string, bool> OpenAnalysis;
 
+        /// <summary>
+        /// (2.26.1) The analysis of the video of the active screen (else of the first screen with a video) taken up, as a key of the
+        /// analysis takes it up, without opening its window: for the buttons of the bars of the digital assistant. False without a video.
+        /// </summary>
+        public Func<bool> TakeUpAnalysis;
+
         public Func<bool> BigScreensOn;
         public Func<bool> CanBigScreens;
         public Action<bool> SetBigScreens;
