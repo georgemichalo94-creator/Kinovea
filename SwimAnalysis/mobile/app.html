@@ -1,0 +1,3464 @@
+<title>Kinovea Swim Κινητό</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sofia+Sans+Semi+Condensed:wght@600;700;800&display=swap">
+<style>
+/* Layout: one screen at a time, each a column (bar, scrolling body, actions). The video screen keeps the picture on
+   top and everything a thumb needs under it; with the phone turned, the picture takes the left and the controls the right.
+   The look is the one of the desktop program (its dark theme), by choice: a video tool, one look. */
+:root {
+  color-scheme: dark;
+  --bg: #030E17; --surface: #051622; --raised: #08202F; --line: #0E3240; --border: #134A5C;
+  --text: #EAFCFF; --dim: #7CC8D6; --accent: #38E1FF; --accent-ink: #030E17; --accent-deep: #084C63;
+  --amber: #FFBE5C; --green: #3DEBA0; --red: #FF6868; --black: #000000; --scrim: rgba(1, 8, 14, 0.72);
+  --display: "Sofia Sans Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: Inter, "Segoe UI", Roboto, system-ui, sans-serif;
+  --gl: max(16px, env(safe-area-inset-left, 0px)); --gr: max(16px, env(safe-area-inset-right, 0px));
+}
+html { box-sizing: border-box; height: 100%; }
+*, *::before, *::after { box-sizing: inherit; }
+body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--body); -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+button, input, textarea { font: inherit; color: inherit; }
+button, label { -webkit-tap-highlight-color: transparent; cursor: pointer; touch-action: manipulation; }
+h1, h2, h3, p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#app { position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: 640px; margin-inline: auto; }
+.view.under { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: -1; }
+.bar { flex: none; min-height: 52px; display: flex; align-items: center; gap: 6px; padding-left: var(--gl); padding-right: var(--gr); }
+.bar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bar-title b { font: 700 21px/1.15 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-title span { font-size: 13px; line-height: 1.3; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 16px; padding-left: var(--gl); padding-right: var(--gr); padding-block: 6px 28px; }
+.scroll > * { flex-shrink: 0; }
+.actions { flex: none; display: flex; gap: 10px; padding-left: var(--gl); padding-right: var(--gr); padding-block: 10px 12px; }
+.actions .btn { flex: 1; min-width: 0; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 8px 16px; border-radius: 14px; border: 1.5px solid var(--border); background: transparent; color: var(--text); font: 600 15px/1.2 var(--body); text-align: center; text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.btn.small { min-height: 40px; padding: 6px 14px; border-radius: 12px; font-size: 14px; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn[disabled] { opacity: 0.4; cursor: default; }
+.btn svg, .icon-btn svg { flex: none; }
+.icon-btn { flex: none; width: 44px; height: 44px; border-radius: 22px; border: 0; background: transparent; color: var(--text); display: inline-flex; align-items: center; justify-content: center; }
+.bar > .icon-btn:first-child { margin-left: -10px; }
+.icon-btn.danger { color: var(--red); }
+.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+.eyebrow { font: 600 12px/1.3 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.note { border: 1px solid var(--amber); border-radius: 14px; padding: 10px 12px; color: var(--text); font-size: 14px; display: flex; gap: 10px; align-items: flex-start; }
+.note svg { flex: none; color: var(--amber); margin-top: 1px; }
+.muted { color: var(--dim); font-size: 13px; }
+.section { display: flex; flex-direction: column; gap: 10px; }
+.file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* Home */
+.brand { min-height: 60px; gap: 10px; }
+.brand .logo { flex: none; color: var(--accent); }
+.brand-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.brand-name { font: 800 20px/1.1 var(--display); letter-spacing: 0.06em; }
+.brand-sub { font: 600 11px/1.3 var(--body); letter-spacing: 0.22em; color: var(--accent); }
+.new h1 { font: 700 28px/1.1 var(--display); text-wrap: balance; }
+.new p { color: var(--dim); }
+.new .tip { font-size: 13px; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; }
+.item .badge { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--raised); color: var(--accent); display: flex; align-items: center; justify-content: center; font: 700 15px var(--display); }
+.item .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item .who b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .who span { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .val { flex: none; text-align: right; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.item .val b { font: 700 18px/1.2 var(--display); }
+.item .val span { font-size: 12px; color: var(--dim); }
+.empty { border: 1px dashed var(--border); border-radius: 14px; padding: 18px 14px; color: var(--dim); text-align: center; }
+.foot { color: var(--dim); font-size: 13px; text-align: center; text-wrap: balance; }
+
+/* Setup */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label, .field .label { font-size: 13px; font-weight: 600; color: var(--dim); }
+.field input, .field textarea { width: 100%; min-height: 50px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 16px; }
+.field textarea { min-height: 88px; resize: vertical; line-height: 1.4; }
+.field input::placeholder, .field textarea::placeholder { color: var(--dim); opacity: 0.7; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 40px; padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: transparent; color: var(--text); font-weight: 500; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.status { gap: 10px; }
+.status-line { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+.status-line svg { flex: none; margin-top: 1px; }
+.status-line.ok svg { color: var(--green); }
+.status-line.warn svg { color: var(--amber); }
+.status-line.bad svg { color: var(--red); }
+.spin { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+/* Marking */
+#v-mark { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); max-width: none; }
+#v-mark > .bar { grid-row: 1; }
+.stage { grid-row: 2; position: relative; width: 100%; max-height: 46vh; aspect-ratio: var(--ar, 16 / 9); margin-inline: auto; background: var(--black); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.zoomer { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+#video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--black); pointer-events: none; }
+.stage-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; background: var(--scrim); }
+.flash { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; white-space: nowrap; pointer-events: none; }
+.zoom-out { position: absolute; right: 10px; top: 10px; min-width: 44px; height: 36px; border-radius: 18px; border: 1px solid var(--border); background: var(--scrim); color: var(--text); font-weight: 700; }
+.panel { grid-row: 3; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px var(--gr) 10px var(--gl); width: 100%; max-width: 640px; margin-inline: auto; }
+.readout { flex: none; display: flex; align-items: center; gap: 10px; }
+.clock { display: flex; align-items: baseline; gap: 4px; font: 700 32px/1 var(--display); font-variant-numeric: tabular-nums; }
+.clock small { font: 500 13px var(--body); color: var(--dim); }
+.frameinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; font-size: 12px; line-height: 1.35; color: var(--dim); font-variant-numeric: tabular-nums; }
+.frameinfo .link { font-size: 12px; }
+.frameinfo span.fps { color: var(--dim); }
+.strip { flex: none; display: block; width: 100%; height: 56px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); touch-action: none; }
+.scrub { flex: none; position: relative; height: 26px; touch-action: none; }
+.scrub-track { position: absolute; left: 0; right: 0; top: 10px; height: 6px; border-radius: 3px; background: var(--raised); }
+.scrub-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: var(--accent-deep); }
+.scrub-mark { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--accent); }
+.scrub-mark.signal { background: var(--amber); }
+.scrub-knob { position: absolute; top: -5px; width: 16px; height: 16px; margin-left: -8px; border-radius: 8px; background: var(--text); }
+.transport { flex: none; display: flex; gap: 6px; }
+.transport button { flex: 1; min-width: 0; height: 46px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: 700 17px var(--display); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; justify-content: center; }
+.transport #t-play { border-color: var(--accent); color: var(--accent); }
+.transport #t-rate { color: var(--dim); font-size: 15px; }
+.events { flex: 1; min-height: 46px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; }
+.ev { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 44px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; font-size: 14px; font-weight: 500; }
+.ev .n { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev .t { flex: none; display: inline-flex; align-items: center; gap: 4px; font: 700 15px var(--display); font-variant-numeric: tabular-nums; color: var(--accent); }
+.ev .t.none { color: var(--dim); font-weight: 500; }
+.ev .t.sound { color: var(--amber); }
+.ev.sel { border-color: var(--accent); background: var(--raised); box-shadow: inset 0 0 0 1px var(--accent); }
+.markrow { flex: none; display: flex; gap: 8px; align-items: center; }
+.markrow .btn.primary { flex: 1; min-width: 0; }
+.markrow .btn.here { background: transparent; color: var(--accent); }
+.markrow .icon-btn { border: 1.5px solid var(--border); border-radius: 14px; width: 52px; height: 52px; }
+.markrow .icon-btn.danger { border-color: var(--red); }
+
+@media (orientation: landscape) and (max-height: 540px) {
+  #v-mark { grid-template-columns: minmax(0, 1fr) minmax(250px, 300px); grid-template-rows: auto minmax(0, 1fr); }
+  #v-mark > .bar { grid-column: 2; grid-row: 1; min-height: 44px; padding-left: 10px; }
+  #v-mark > .bar > .icon-btn:first-child { margin-left: -4px; }
+  .stage { grid-column: 1; grid-row: 1 / span 2; max-height: none; height: 100%; width: auto; aspect-ratio: auto; margin-left: env(safe-area-inset-left, 0px); margin-right: 0; }
+  .panel { grid-column: 2; grid-row: 2; gap: 6px; padding: 0 var(--gr) 6px 10px; }
+  .clock { font-size: 26px; }
+  .clock small span { display: none; }
+  .frameinfo { white-space: nowrap; }
+  .ev { min-height: 38px; }
+  .strip { height: 44px; }
+  .scrub { height: 22px; }
+  .scrub-track { top: 8px; }
+  .transport button { height: 40px; font-size: 15px; }
+  .markrow .btn { min-height: 44px; }
+  .markrow .icon-btn { width: 44px; height: 44px; }
+}
+
+/* Results */
+.hero { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.hero .big { font: 800 64px/0.95 var(--display); font-variant-numeric: tabular-nums; }
+.hero .big small { font: 600 24px var(--display); color: var(--dim); margin-left: 4px; }
+.hero .what { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; color: var(--dim); }
+.delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; }
+.delta.better { color: var(--green); }
+.delta.worse { color: var(--amber); }
+.lane { display: block; width: 100%; height: auto; }
+.table { display: flex; flex-direction: column; }
+.trow { display: flex; align-items: baseline; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+.trow:first-child { border-top: 0; }
+.trow .k { flex: 1; min-width: 0; }
+.trow .v { flex: none; font: 700 19px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.trow .v small { font: 500 13px var(--body); color: var(--dim); margin-left: 3px; }
+.trow .d { flex: none; min-width: 58px; text-align: right; font-size: 13px; }
+.head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+/* Technique */
+.seg { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.seg .chip { flex: none; }
+.tp { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.tp-top { display: flex; align-items: center; gap: 10px; }
+.tp-name { flex: 1; min-width: 0; font-weight: 500; }
+.tp-btn { flex: none; width: 46px; height: 42px; border-radius: 12px; border: 1.5px solid var(--border); background: transparent; color: var(--dim); display: inline-flex; align-items: center; justify-content: center; }
+.tp-btn.ok.on { background: var(--green); border-color: var(--green); color: var(--accent-ink); }
+.tp-btn.fix.on { background: var(--amber); border-color: var(--amber); color: var(--accent-ink); }
+.tp-cue { font-size: 14px; color: var(--dim); }
+.tp-cue b { color: var(--amber); font-weight: 600; }
+.sum { display: flex; flex-wrap: wrap; gap: 6px 18px; font-weight: 600; }
+.sum span { display: inline-flex; align-items: center; gap: 6px; }
+.sum .good svg { color: var(--green); }
+.sum .todo svg { color: var(--amber); }
+
+/* Report */
+.preview { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--surface); min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.preview canvas, .preview img { display: block; width: 100%; height: auto; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.trend { display: block; width: 100%; height: auto; }
+
+/* Settings */
+.edit-item { display: flex; gap: 8px; align-items: flex-start; }
+.edit-item .inputs { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.edit-item input { width: 100%; min-height: 44px; padding: 9px 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); font-size: 16px; }
+.edit-item input.cue { font-size: 14px; color: var(--dim); }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { width: 46px; height: 46px; border-radius: 12px; border: 1.5px solid var(--border); background: transparent; font: 700 22px var(--display); }
+.stepper output { min-width: 86px; text-align: center; font: 700 22px var(--display); font-variant-numeric: tabular-nums; }
+.diag { font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+
+/* Sheets and messages */
+.backdrop { position: fixed; inset: 0; z-index: 40; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { width: 100%; max-width: 640px; max-height: 88%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: var(--raised); border: 1px solid var(--border); border-bottom: 0; border-radius: 20px 20px 0 0; padding: 18px var(--gr) calc(18px + env(safe-area-inset-bottom, 0px)) var(--gl); }
+.sheet h2 { font: 700 22px/1.2 var(--display); }
+.sheet .rowline { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.sheet .rowline .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sheet .rowline .txt b { font: 700 18px var(--display); font-variant-numeric: tabular-nums; }
+.sheet .rowline .txt span { font-size: 13px; color: var(--dim); }
+.toast { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px); display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 999px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 14px; box-shadow: 0 6px 24px var(--scrim); }
+.toast button { border: 0; background: none; padding: 4px 0; color: var(--accent-deep); font-weight: 700; text-decoration: underline; }
+</style>
+
+<div id="app" lang="el">
+
+<section class="view" id="v-home">
+  <header class="bar brand">
+    <svg class="logo" viewBox="0 0 32 32" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 12c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4"></path><path d="M3 20c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4"></path><path d="M3 28c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4" opacity="0.45"></path></svg>
+    <div class="brand-text"><span class="brand-name">KINOVEA SWIM</span><span class="brand-sub">ΚΙΝΗΤΟ</span></div>
+    <button class="icon-btn" id="home-settings" type="button" aria-label="Ρυθμίσεις"></button>
+  </header>
+  <div class="scroll">
+    <div class="card new">
+      <h1>Νέα ανάλυση εκκίνησης</h1>
+      <p>Τράβα τον κολυμβητή από το πλάι. Η κόρνα βρίσκεται μόνη της από τον ήχο· εσύ σημαδεύεις καρέ-καρέ την αποδέσμευση, την είσοδο και τα 5 · 10 · 15 μ.</p>
+      <label class="btn primary" for="shoot-video" id="shoot-label" tabindex="0"></label>
+      <label class="btn" for="pick-video" id="pick-label" tabindex="0"></label>
+      <p class="tip">Για ακρίβεια ±0,02 s τράβα με την κάμερα του κινητού στα 60 fps (όχι αργή κίνηση) και διάλεξε το βίντεο από τη συλλογή.</p>
+      <input class="file" type="file" id="shoot-video" accept="video/*" capture="environment" tabindex="-1">
+      <input class="file" type="file" id="pick-video" accept="video/*" tabindex="-1">
+    </div>
+    <div class="note" id="home-storage" hidden></div>
+    <div class="section">
+      <h2 class="eyebrow">Πρόσφατες αναλύσεις</h2>
+      <div class="list" id="home-list"></div>
+    </div>
+    <p class="foot">Τα βίντεο και οι αναλύσεις μένουν στο κινητό σου. Δεν ανεβαίνει τίποτα πουθενά.</p>
+  </div>
+</section>
+
+<section class="view" id="v-setup" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="setup-back" type="button" aria-label="Πίσω"></button>
+    <div class="bar-title"><b>Νέα ανάλυση</b><span>Εκκίνηση</span></div>
+  </header>
+  <div class="scroll">
+    <div class="field">
+      <label for="athlete">Αθλητής</label>
+      <input id="athlete" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" maxlength="60" placeholder="Όνομα αθλητή">
+      <div class="chips" id="athlete-chips"></div>
+    </div>
+    <div class="field">
+      <span class="label">Στυλ</span>
+      <div class="chips" id="stroke-chips"></div>
+    </div>
+    <div class="card status" id="setup-status"></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="setup-go" type="button" disabled>Έναρξη σήμανσης</button></div>
+</section>
+
+<section class="view" id="v-mark" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="mark-back" type="button" aria-label="Πίσω"></button>
+    <div class="bar-title"><b id="mark-title">Εκκίνηση</b><span id="mark-sub"></span></div>
+    <button class="btn small primary" id="mark-results" type="button">Μετρήσεις</button>
+  </header>
+  <div class="stage" id="stage">
+    <div class="zoomer" id="zoomer"><video id="video" playsinline webkit-playsinline muted preload="auto"></video></div>
+    <div class="stage-msg" id="stage-msg" hidden></div>
+    <div class="flash" id="flash" hidden></div>
+    <button class="zoom-out" id="zoom-out" type="button" hidden aria-label="Όλη η εικόνα">1×</button>
+  </div>
+  <div class="panel">
+    <div class="readout">
+      <div class="clock"><span id="clock">0,000</span><small>s<span id="clock-unit"></span></small></div>
+      <div class="frameinfo"><span id="frame-no"></span><span id="fps-slot"></span></div>
+      <button class="icon-btn" id="sound-btn" type="button" aria-label="Ήχος στην αναπαραγωγή"></button>
+    </div>
+    <canvas class="strip" id="strip" role="img" aria-label="Ο ήχος και τα καρέ γύρω από το σημείο που βλέπεις. Σύρε για καρέ-καρέ."></canvas>
+    <div class="scrub" id="scrub" role="slider" aria-label="Θέση στο βίντεο" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+      <div class="scrub-track"><div class="scrub-fill" id="scrub-fill"></div><div id="scrub-marks"></div><div class="scrub-knob" id="scrub-knob"></div></div>
+    </div>
+    <div class="transport">
+      <button id="t-b10" type="button" aria-label="10 καρέ πίσω">−10</button>
+      <button id="t-b1" type="button" aria-label="1 καρέ πίσω">−1</button>
+      <button id="t-play" type="button" aria-label="Αναπαραγωγή"></button>
+      <button id="t-f1" type="button" aria-label="1 καρέ μπροστά">+1</button>
+      <button id="t-f10" type="button" aria-label="10 καρέ μπροστά">+10</button>
+      <button id="t-rate" type="button" aria-label="Ταχύτητα αναπαραγωγής">¼×</button>
+    </div>
+    <div class="events" id="events"></div>
+    <div class="markrow">
+      <button class="btn primary" id="mark-btn" type="button">Σημάδεψε</button>
+      <button class="icon-btn" id="signal-more" type="button" aria-label="Το σήμα από τον ήχο" hidden></button>
+      <button class="icon-btn danger" id="unmark-btn" type="button" aria-label="Σβήσιμο σημαδιού" hidden></button>
+    </div>
+  </div>
+</section>
+
+<section class="view" id="v-result" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="result-back" type="button" aria-label="Αρχική"></button>
+    <div class="bar-title"><b>Εκκίνηση</b><span id="result-sub"></span></div>
+    <button class="icon-btn danger" id="result-delete" type="button" aria-label="Διαγραφή ανάλυσης"></button>
+  </header>
+  <div class="scroll" id="result-body"></div>
+  <div class="actions">
+    <button class="btn" id="result-marks" type="button">Έλεγχος σημείων</button>
+    <button class="btn primary" id="result-tech" type="button">Τεχνική</button>
+  </div>
+</section>
+
+<section class="view" id="v-tech" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="tech-back" type="button" aria-label="Μετρήσεις"></button>
+    <div class="bar-title"><b>Τεχνική αξιολόγηση</b><span id="tech-sub"></span></div>
+  </header>
+  <div class="scroll" id="tech-body"></div>
+  <div class="actions">
+    <button class="btn" id="tech-results" type="button">Μετρήσεις</button>
+    <button class="btn primary" id="tech-report" type="button">Αναφορά</button>
+  </div>
+</section>
+
+<section class="view" id="v-report" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="report-back" type="button" aria-label="Τεχνική"></button>
+    <div class="bar-title"><b>Αναφορά</b><span id="report-sub"></span></div>
+  </header>
+  <div class="scroll" id="report-body"></div>
+  <div class="actions">
+    <button class="btn" id="report-new" type="button">Αρχική</button>
+    <button class="btn primary" id="report-pdf" type="button">Αποθήκευση PDF</button>
+  </div>
+</section>
+
+<section class="view" id="v-settings" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="settings-back" type="button" aria-label="Αρχική"></button>
+    <div class="bar-title"><b>Ρυθμίσεις</b><span id="settings-sub"></span></div>
+  </header>
+  <div class="scroll" id="settings-body"></div>
+</section>
+
+</div>
+
+<div class="backdrop" id="backdrop" lang="el" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status" lang="el" hidden></div>
+<input class="file" type="file" id="reopen-video" accept="video/*" tabindex="-1">
+<input class="file" type="file" id="restore-file" accept=".json,application/json" tabindex="-1">
+
+<script>
+// ---- horn.js ----
+// The start signal heard in the sound of a video.
+// Port of the detection of the desktop program (Kinovea.ScreenManager/SwimAnalysis/SwimStartSound.cs, region "Detection"):
+// the same frames (64 ms every 5 ms at 16 kHz), the same rules and the same scores, so that a signal reads the same on
+// the phone and on the computer. The function is self-contained: it also runs in a worker from its own source.
+function swimHornFactory() {
+  'use strict';
+
+  var Rate = 16000, N = 1024, Hop = 80, Bin = Rate / N, Ratio = 8 / 7, FirstBin = 32, LastBin = 103;
+  var Bins = LastBin - FirstBin + 1;
+  var SingleFrom = 520, SingleTo = 1550, SingleAbove = 10, SingleRise = 10;
+  var SingleMinSeconds = 0.18, SingleMaxSeconds = 1.0, SingleWeight = 0.8;
+  var Sustain = 20, Lead = 50, Sequence = 70, BeforeFrom = 100, BeforeTo = 10;
+
+  /** Weaker signals than this (dB) are not a start; single tones from SingleMinScore. */
+  var MinScore = 10, SingleMinScore = 5, AmbiguousShare = 0.75;
+
+  function median(values) {
+    var v = Float64Array.from(values).sort(), n = v.length;
+    return n === 0 ? NaN : n % 2 === 1 ? v[(n - 1) / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+  }
+
+  function log10(x) { return Math.log(x) / Math.LN10; }
+
+  function roundHalfEven(x) {
+    var f = Math.floor(x), d = x - f;
+    if (d < 0.5) return f;
+    if (d > 0.5) return f + 1;
+    return f % 2 === 0 ? f : f + 1;
+  }
+
+  // In-place radix-2 FFT with the tables of one length.
+  function makeFft(n) {
+    var rev = new Uint32Array(n), cos = new Float64Array(n / 2), sin = new Float64Array(n / 2), i, j, bit;
+    for (i = 1, j = 0; i < n; i++) {
+      bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      rev[i] = j;
+    }
+    for (i = 0; i < n / 2; i++) {
+      cos[i] = Math.cos(-2 * Math.PI * i / n);
+      sin[i] = Math.sin(-2 * Math.PI * i / n);
+    }
+    return function (re, im) {
+      var a, b, k, len, half, step, tr, ti, ur, ui, vr, vi, wr, wi;
+      for (a = 1; a < n; a++) {
+        b = rev[a];
+        if (a < b) {
+          tr = re[a]; re[a] = re[b]; re[b] = tr;
+          ti = im[a]; im[a] = im[b]; im[b] = ti;
+        }
+      }
+      for (len = 2; len <= n; len <<= 1) {
+        half = len >> 1; step = n / len;
+        for (a = 0; a < n; a += len) {
+          for (k = 0; k < half; k++) {
+            wr = cos[k * step]; wi = sin[k * step];
+            b = a + k + half;
+            ur = re[a + k]; ui = im[a + k];
+            vr = re[b] * wr - im[b] * wi; vi = re[b] * wi + im[b] * wr;
+            re[a + k] = ur + vr; im[a + k] = ui + vi;
+            re[b] = ur - vr; im[b] = ui - vi;
+          }
+        }
+      }
+    };
+  }
+
+  /** Frames of 64 ms every 5 ms (Hann window): the bins of the tones, the background, the level. */
+  function analyse(x) {
+    var frames = Math.floor((x.length - N) / Hop) + 1;
+    var s = {
+      frames: frames,
+      tones: new Float32Array(frames * Bins),
+      background: new Float64Array(frames),
+      level: new Float64Array(frames),
+      valid: new Uint8Array(frames)
+    };
+    var window = new Float64Array(N), n, t, b, o, p, total, level;
+    for (n = 0; n < N; n++) window[n] = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / N);
+    var scale = 1 / ((N / 2) * (N / 2));
+    var bgFrom = Math.floor(600 / Bin), bgTo = Math.floor(1500 / Bin), m = bgTo - bgFrom;
+    var re = new Float64Array(N), im = new Float64Array(N), bg = new Float64Array(m), fft = makeFft(N);
+    for (t = 0; t < frames; t++) {
+      o = t * Hop;
+      for (n = 0; n < N; n++) { re[n] = x[o + n] * window[n]; im[n] = 0; }
+      fft(re, im);
+      total = 0; level = 0;
+      for (b = 0; b < 256; b++) {
+        p = (re[b] * re[b] + im[b] * im[b]) * scale;
+        if (b >= 5 && b < 250) total += p;
+        if (b >= 20) level += p;
+        if (b >= bgFrom && b < bgTo) bg[b - bgFrom] = p;
+        if (b >= FirstBin && b <= LastBin) s.tones[t * Bins + b - FirstBin] = p;
+      }
+      s.valid[t] = total > 1e-14 * N ? 1 : 0;
+      s.level[t] = 10 * log10(level + 1e-30);
+      bg.sort();
+      s.background[t] = (m % 2 === 1 ? bg[(m - 1) / 2] : 0.5 * (bg[m / 2 - 1] + bg[m / 2])) + 1e-30;
+    }
+    return s;
+  }
+
+  function time(t) { return (t * Hop + N / 2) / Rate; }
+  function power(s, t, bin) { return s.tones[t * Bins + bin - FirstBin]; }
+
+  /** A tone near this bin: its power and the stronger neighbour. */
+  function toneEnergy(s, t, bin) {
+    return power(s, t, bin) + Math.max(power(s, t, bin - 1), power(s, t, bin + 1));
+  }
+
+  /** Median of the 0.5–0.05 s before each frame (by steps of 4 frames), NaN without sound all along. */
+  function before(v, valid) {
+    var T = v.length, result = new Float64Array(T).fill(NaN), m = BeforeFrom - BeforeTo, buffer = new Float64Array(m);
+    // Frames without sound up to each frame, to know at once whether the half second before has sound all along.
+    var silent = new Uint32Array(T + 1), t, k, med;
+    for (t = 0; t < T; t++) silent[t + 1] = silent[t] + (valid[t] ? 0 : 1);
+    for (t = BeforeFrom; t < T; t += 4) {
+      if (silent[t - BeforeTo] - silent[t - BeforeFrom] > 0) continue;
+      for (k = 0; k < m; k++) buffer[k] = v[t - BeforeFrom + k];
+      buffer.sort();
+      med = m % 2 === 1 ? buffer[(m - 1) / 2] : 0.5 * (buffer[m / 2 - 1] + buffer[m / 2]);
+      for (k = t; k < Math.min(T, t + 4); k++) result[k] = med;
+    }
+    return result;
+  }
+
+  function fraction(on, from, count) {
+    var n = 0, c = 0, t, to = Math.min(on.length, from + count);
+    for (t = from; t < to; t++) { n++; if (on[t]) c++; }
+    return n > 0 ? c / n : 0;
+  }
+
+  /** Frames where a tone comes on and stays (most of 0.1 s). */
+  function sustained(on) {
+    var result = [], t;
+    for (t = 1; t < on.length - Sustain;) {
+      if (on[t] && !on[t - 1] && fraction(on, t, Sustain) >= 0.7) { result.push(t); t += Sustain; }
+      else t++;
+    }
+    return result;
+  }
+
+  function maxOf(a, b) { return isNaN(a) ? b : isNaN(b) ? a : Math.max(a, b); }
+
+  /** Median rise of a tone over 0.1 s from a frame (each at most 35 dB; NaN frames left out). */
+  function medianRise(rise, from) {
+    var v = [], t, to = Math.min(rise.length, from + Sustain);
+    for (t = from; t < to; t++) if (!isNaN(rise[t])) v.push(Math.min(rise[t], 35));
+    return v.length > 0 ? median(v) : NaN;
+  }
+
+  function meanPower(s, from, to) {
+    to = Math.min(s.frames, Math.max(from + 1, to));
+    var mean = new Float64Array(Bins), t, b;
+    for (t = from; t < to; t++) for (b = 0; b < Bins; b++) mean[b] += s.tones[t * Bins + b];
+    return mean;
+  }
+
+  function peak(mean, near) {
+    var b = roundHalfEven(near), k = b - 1, j;
+    for (j = b; j <= b + 1; j++) if (mean[j - FirstBin] > mean[k - FirstBin]) k = j;
+    var l0 = Math.log(mean[k - 1 - FirstBin] + 1e-30), l1 = Math.log(mean[k - FirstBin] + 1e-30), l2 = Math.log(mean[k + 1 - FirstBin] + 1e-30);
+    var den = l0 - 2 * l1 + l2, off = den < 0 ? 0.5 * (l0 - l2) / den : 0;
+    return (k + off) * Bin;
+  }
+
+  /** Exact frequency of a single tone: the strongest bin of the mean power within 3 bins, and the parabola there. */
+  function singlePeak(s, from, to, bin) {
+    var mean = meanPower(s, from, to);
+    var lo = Math.max(FirstBin + 1, bin - 3), hi = Math.min(LastBin - 1, bin + 3), pk = lo, k;
+    for (k = lo + 1; k <= hi; k++) if (mean[k - FirstBin] > mean[pk - FirstBin]) pk = k;
+    var l0 = Math.log(mean[pk - 1 - FirstBin] + 1e-30), l1 = Math.log(mean[pk - FirstBin] + 1e-30), l2 = Math.log(mean[pk + 1 - FirstBin] + 1e-30);
+    var den = l0 - 2 * l1 + l2, off = den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (l0 - l2) / den)) : 0;
+    return { hz: (pk + off) * Bin, peak: pk };
+  }
+
+  /** Share of the power of 312–3984 Hz in a tone (its bin and the two next to it) over these frames. */
+  function purity(s, from, to, pk) {
+    var tone = 0, total = 0, t;
+    for (t = from; t < Math.min(s.frames, to); t++) {
+      if (!s.valid[t]) continue;
+      tone += power(s, t, pk - 1) + power(s, t, pk) + power(s, t, pk + 1);
+      total += Math.pow(10, s.level[t] / 10);
+    }
+    return total > 0 ? Math.min(1, tone / total) : 0;
+  }
+
+  /** One event per 0.25 s: the clearest, from the first onset of them (else at its own onset). */
+  function onePerQuarter(all, fromFirst) {
+    var result = [], sorted = all.slice().sort(function (a, b) { return a.frame - b.frame; });
+    sorted.forEach(function (e) {
+      var last = result.length > 0 ? result[result.length - 1] : null;
+      if (last && time(e.frame) - time(last.frame) < 0.25) {
+        if (e.score > last.score) {
+          var first = Math.min(last.frame, e.frame);
+          result[result.length - 1] = e;
+          if (fromFirst) e.frame = first;
+        }
+      } else {
+        result.push(e);
+      }
+    });
+    return result;
+  }
+
+  /** One tone, for each bin of 520–1550 Hz (see the desktop source for the rule). */
+  function singleTones(s) {
+    var T = s.frames, result = [], gap = 10, longest = Math.floor(SingleMaxSeconds * Rate / Hop);
+    var energy = new Float64Array(T), on = new Uint8Array(T), rise = new Float64Array(T);
+    var b, t, any, c, r, bef, starts, i, t0, last, seconds, r0, f, pur, score;
+    for (b = Math.ceil(SingleFrom / Bin); b <= Math.floor(SingleTo / Bin); b++) {
+      any = false;
+      for (t = 0; t < T; t++) {
+        energy[t] = toneEnergy(s, t, b);
+        if (s.valid[t] && 10 * log10(energy[t] / (3 * s.background[t])) > SingleAbove) any = true;
+      }
+      // Most frequencies never stand out: the levels before are only needed where one does.
+      if (!any) continue;
+
+      bef = before(energy, s.valid);
+      for (t = 0; t < T; t++) {
+        c = 10 * log10(energy[t] / (3 * s.background[t]));
+        r = isNaN(bef[t]) ? NaN : 10 * log10(energy[t] / bef[t]);
+        rise[t] = r;
+        on[t] = !isNaN(r) && c > SingleAbove && r > SingleRise ? 1 : 0;
+      }
+
+      starts = sustained(on);
+      for (i = 0; i < starts.length; i++) {
+        t0 = starts[i];
+        // How long it lasts: on, with gaps of at most 50 ms (above the neighbours, not necessarily still rising).
+        last = t0; t = t0;
+        while (t < T && t - t0 <= longest + gap) {
+          c = 10 * log10(energy[t] / (3 * s.background[t]));
+          if (c > SingleAbove - 3) last = t;
+          else if (t - last > gap) break;
+          t++;
+        }
+        seconds = (last - t0 + 1) * Hop / Rate;
+        if (seconds < SingleMinSeconds || seconds > SingleMaxSeconds) continue;
+        r0 = medianRise(rise, t0);
+        if (isNaN(r0)) continue;
+        f = singlePeak(s, t0, last + 1, b);
+        if (f.hz < SingleFrom || f.hz > SingleTo) continue;
+        pur = purity(s, t0, last + 1, f.peak);
+        score = r0 * SingleWeight * (seconds >= 0.25 && seconds <= 0.75 ? 1.0 : 0.8) * pur;
+        result.push({ frame: t0, bin: f.peak, rise: r0, score: score, low: f.hz, high: f.hz, together: true, single: true, duration: seconds, purity: pur });
+      }
+    }
+    return onePerQuarter(result, false);
+  }
+
+  /** The two tones on together or one after the other, for each lower tone of 860–950 Hz; one event per 0.25 s. */
+  function events(s) {
+    var T = s.frames, all = [], b1, bc, b2a, b2b, t, i, k, e, c, r, bef, t0, t1, u, next, ra, rb, mean, low, high, off, score;
+    for (b1 = Math.floor(860 / Bin); b1 <= Math.ceil(950 / Bin); b1++) {
+      bc = b1 * Ratio; b2a = Math.floor(bc); b2b = Math.ceil(bc);
+      var energy = [new Float64Array(T), new Float64Array(T)];
+      for (t = 0; t < T; t++) {
+        energy[0][t] = toneEnergy(s, t, b1);
+        energy[1][t] = Math.max(toneEnergy(s, t, b2a), toneEnergy(s, t, b2b));
+      }
+      var on = [new Uint8Array(T), new Uint8Array(T)], rise = [new Float64Array(T), new Float64Array(T)];
+      for (i = 0; i < 2; i++) {
+        bef = before(energy[i], s.valid);
+        for (t = 0; t < T; t++) {
+          e = energy[i][t];
+          c = 10 * log10(e / (3 * s.background[t]));
+          r = isNaN(bef[t]) ? NaN : 10 * log10(e / bef[t]);
+          rise[i][t] = r;
+          on[i][t] = !isNaN(r) && c > 6 && r > 8 ? 1 : 0;
+        }
+      }
+
+      var found = [];
+
+      // Together.
+      var both = new Uint8Array(T);
+      for (t = 0; t < T; t++) both[t] = on[0][t] && on[1][t] ? 1 : 0;
+      for (t = 1; t < T - Sustain;) {
+        if (both[t] && !both[t - 1] && fraction(both, t, Sustain) >= 0.6) {
+          t0 = t;
+          for (i = 0; i < 2; i++) {
+            k = t;
+            while (k > 0 && t - k < Lead && on[i][k - 1]) k--;
+            t0 = Math.min(t0, k);
+          }
+          found.push([t0, t, true]);
+          t += Sustain;
+        } else {
+          t++;
+        }
+      }
+
+      // One after the other.
+      var starts = [sustained(on[0]), sustained(on[1])];
+      for (i = 0; i < 2; i++) {
+        for (k = 0; k < starts[i].length; k++) {
+          t = starts[i][k]; next = -1;
+          for (u = 0; u < starts[1 - i].length; u++) {
+            var v = starts[1 - i][u];
+            if (v > t && v <= t + Sequence && (next < 0 || v < next)) next = v;
+          }
+          if (next >= 0) found.push([t, next, false]);
+        }
+      }
+
+      for (k = 0; k < found.length; k++) {
+        t0 = found[k][0]; t1 = found[k][1];
+        ra = maxOf(medianRise(rise[0], t0), medianRise(rise[0], t1));
+        rb = maxOf(medianRise(rise[1], t1), medianRise(rise[1], t0));
+        if (isNaN(ra) || isNaN(rb)) continue;
+        mean = meanPower(s, t0, t1 + Sustain);
+        low = peak(mean, b1); high = peak(mean, bc);
+        r = (ra + rb) / 2;
+        off = Math.abs(high / Math.max(1e-9, low) / Ratio - 1);
+        score = r * (off <= 0.006 ? 1.0 : off <= 0.015 ? 0.7 : 0.5) * (low >= 878 && low <= 930 ? 1.0 : 0.85) * (found[k][2] ? 1.0 : 0.9);
+        all.push({ frame: t0, bin: b1, rise: r, score: score, low: low, high: high, together: found[k][2], single: false, duration: 0, purity: 0 });
+      }
+    }
+
+    // One event per 0.25 s: the clearest, from the first onset of them. The single tones apart: the two tones of a signal
+    // are each a tone too, and a sound at the onset of a single tone can look like two tones for a moment.
+    return onePerQuarter(all, true).concat(singleTones(s));
+  }
+
+  /** Second order Butterworth low pass, forward then backward (no delay). */
+  function lowPassBothWays(v, cutoff, rate) {
+    var k = Math.tan(Math.PI * cutoff / rate), norm = 1 / (1 + Math.SQRT2 * k + k * k);
+    var b0 = k * k * norm, b1 = 2 * b0, b2 = b0, a1 = 2 * (k * k - 1) * norm, a2 = (1 - Math.SQRT2 * k + k * k) * norm;
+    var pass, j, i, x0, x1, x2, y0, y1, y2, n = v.length;
+    for (pass = 0; pass < 2; pass++) {
+      // Started at the first value (as if it had always been there): no step at the edge.
+      x1 = v[pass === 0 ? 0 : n - 1]; x2 = x1; y1 = x1; y2 = x1;
+      for (j = 0; j < n; j++) {
+        i = pass === 0 ? j : n - 1 - j;
+        x0 = v[i];
+        y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+        v[i] = y0;
+      }
+    }
+  }
+
+  /**
+   * Onset of the signal near 'time' (s): envelope of the two tones (each demodulated, low pass 40 Hz forward and backward),
+   * its peak in the 0.10 s before to 0.25 s after, back to where it is below the level before + 20 % of the rise.
+   */
+  function onset(x, at, low, high) {
+    var a0 = Math.max(0, Math.floor((at - 0.45) * Rate)), b0 = Math.min(x.length, Math.floor((at + 0.45) * Rate));
+    var n = b0 - a0, i, f, phase;
+    if (n < Rate / 4) return at;
+    var envelope = new Float64Array(n), tones = [low, high], re = new Float64Array(n), im = new Float64Array(n);
+    for (f = 0; f < 2; f++) {
+      for (i = 0; i < n; i++) {
+        phase = -2 * Math.PI * tones[f] * (a0 + i) / Rate;
+        re[i] = x[a0 + i] * Math.cos(phase);
+        im[i] = x[a0 + i] * Math.sin(phase);
+      }
+      lowPassBothWays(re, 40, Rate);
+      lowPassBothWays(im, 40, Rate);
+      for (i = 0; i < n; i++) envelope[i] += re[i] * re[i] + im[i] * im[i];
+    }
+    for (i = 0; i < n; i++) envelope[i] = Math.sqrt(envelope[i]);
+
+    var i0 = Math.max(0, Math.floor((at - 0.10) * Rate) - a0), i1 = Math.min(n, Math.floor((at + 0.25) * Rate) - a0);
+    if (i1 <= i0) return at;
+    var pk = i0;
+    for (i = i0; i < i1; i++) if (envelope[i] > envelope[pk]) pk = i;
+    var n0 = Math.max(0, Math.floor((at - 0.40) * Rate) - a0), n1 = Math.max(n0 + 1, Math.floor((at - 0.08) * Rate) - a0);
+    var bef = [];
+    for (i = n0; i < Math.min(n, n1); i++) bef.push(envelope[i]);
+    var noise = bef.length > 0 ? median(bef) : 0, threshold = noise + 0.2 * (envelope[pk] - noise), k = pk;
+    while (k > 0 && envelope[k - 1] > threshold) k--;
+    return (a0 + k) / Rate;
+  }
+
+  /** The start signals heard in the sound (samples at 16 kHz), the clearest first. */
+  function find(samples) {
+    var result = [];
+    if (!samples || samples.length < N + 2 * Rate) return result;
+    var s = analyse(samples), ev = events(s), t, i;
+    if (ev.length === 0) return result;
+
+    // The quiet before the start: the level of the 0.6–0.1 s before, from the usual level of the recording.
+    var levels = [];
+    for (t = 0; t < s.frames; t++) if (s.valid[t]) levels.push(s.level[t]);
+    var usual = levels.length > 0 ? median(levels) : 0;
+    for (i = 0; i < ev.length; i++) {
+      var e = ev[i], a = Math.max(0, e.frame - 120), b = Math.max(a + 1, e.frame - 20), bef = [];
+      for (t = a; t < b && t < s.frames; t++) bef.push(s.level[t]);
+      var quiet = bef.length > 0 ? median(bef) - usual : 0;
+      result.push({
+        onset: onset(samples, time(e.frame), e.low, e.high),
+        score: e.score - 0.5 * Math.min(10, Math.max(-10, quiet)),
+        rise: e.rise, quiet: quiet, low: e.low, high: e.high, together: e.together, single: e.single,
+        duration: e.duration, purity: e.purity
+      });
+    }
+    return result.sort(function (p, q) { return q.score - p.score; });
+  }
+
+  /**
+   * The signals worth showing, the clearest first, and whether the first one can be taken without asking:
+   * two tones from MinScore, single tones from SingleMinScore; taken alone when no other one at least 0.3 s away is
+   * nearly as clear (AmbiguousShare).
+   */
+  function choose(beeps) {
+    var shown = beeps.filter(function (b) { return b.score >= (b.single ? SingleMinScore : MinScore); });
+    var two = shown.filter(function (b) { return !b.single; });
+    var list = two.length > 0 ? two.concat(shown.filter(function (b) { return b.single && b.score >= two[0].score; })) : shown;
+    list.sort(function (p, q) { return q.score - p.score; });
+    var best = list[0] || null, clear = false;
+    if (best && best.score >= MinScore) {
+      clear = !list.slice(1).some(function (b) { return Math.abs(b.onset - best.onset) >= 0.3 && b.score >= AmbiguousShare * best.score; });
+    }
+    return { list: list.slice(0, 5), best: best, clear: clear };
+  }
+
+  /** One channel at 16 kHz from the sound of a video (any rate): low pass, then the nearest samples joined by a line. */
+  function to16k(x, rate) {
+    if (rate === Rate) return x;
+    var v = Float64Array.from(x);
+    if (rate > Rate) {
+      lowPassBothWays(v, 6500, rate);
+      lowPassBothWays(v, 6500, rate);
+    }
+    var n = Math.floor(v.length * Rate / rate), out = new Float32Array(n), i, p, k, f;
+    for (i = 0; i < n; i++) {
+      p = i * rate / Rate; k = Math.floor(p); f = p - k;
+      out[i] = k + 1 < v.length ? v[k] * (1 - f) + v[k + 1] * f : v[v.length - 1];
+    }
+    return out;
+  }
+
+  /** Loudest sample of every step (s) of the sound: what the strip under the video draws. */
+  function loudness(x, rate, step) {
+    var per = Math.max(1, Math.round(rate * step)), n = Math.ceil(x.length / per), out = new Float32Array(n), i, j, m, a, end;
+    for (i = 0; i < n; i++) {
+      m = 0; end = Math.min(x.length, (i + 1) * per);
+      for (j = i * per; j < end; j++) { a = x[j] < 0 ? -x[j] : x[j]; if (a > m) m = a; }
+      out[i] = m;
+    }
+    return { values: out, step: per / rate };
+  }
+
+  return {
+    Rate: Rate, MinScore: MinScore, SingleMinScore: SingleMinScore,
+    find: find, choose: choose, to16k: to16k, loudness: loudness
+  };
+}
+
+// ---- mp4.js ----
+// The timing tables of an MP4 / MOV file, read without decoding it: the time of every frame of the video (so that a
+// step is exactly one frame and a mark carries the time of its frame) and where the sound is in the file (so that only
+// the sound is read, a few hundred kB, whatever the size of the video).
+function swimMp4Factory() {
+  'use strict';
+
+  function fourcc(dv, o) {
+    return String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+  }
+  function u64(dv, o) { return dv.getUint32(o) * 4294967296 + dv.getUint32(o + 4); }
+  function i64(dv, o) { return dv.getInt32(o) * 4294967296 + dv.getUint32(o + 4); }
+
+  /** The boxes at the top of the file, up to 'moov' (the tables): its place, and whether the file is in fragments. */
+  async function findMoov(reader) {
+    var pos = 0, size = reader.size, guard = 0, fragments = false;
+    while (pos + 8 <= size && guard++ < 100000) {
+      var head = new DataView(await reader.read(pos, Math.min(size, pos + 16)));
+      if (head.byteLength < 8) break;
+      var len = head.getUint32(0), type = fourcc(head, 4), hdr = 8;
+      if (len === 1) {
+        if (head.byteLength < 16) break;
+        len = u64(head, 8); hdr = 16;
+      } else if (len === 0) {
+        len = size - pos;
+      }
+      if (len < hdr) break;
+      if (type === 'moov') return { start: pos + hdr, end: Math.min(size, pos + len) };
+      if (type === 'moof') fragments = true;
+      pos += len;
+    }
+    return fragments ? { fragments: true } : null;
+  }
+
+  function children(dv, start, end) {
+    var out = [], o = start;
+    while (o + 8 <= end) {
+      var len = dv.getUint32(o), type = fourcc(dv, o + 4), hdr = 8;
+      if (len === 1) {
+        if (o + 16 > end) break;
+        len = u64(dv, o + 8); hdr = 16;
+      } else if (len === 0) {
+        len = end - o;
+      }
+      if (len < hdr || o + len > end) break;
+      out.push({ type: type, start: o + hdr, end: o + len });
+      o += len;
+    }
+    return out;
+  }
+
+  function find(dv, box, path) {
+    var cur = box, i, j, kids, next;
+    for (i = 0; i < path.length; i++) {
+      kids = children(dv, cur.start, cur.end); next = null;
+      for (j = 0; j < kids.length; j++) if (kids[j].type === path[i]) { next = kids[j]; break; }
+      if (!next) return null;
+      cur = next;
+    }
+    return cur;
+  }
+
+  function parseTrack(dv, trak) {
+    var t = { handler: '', enabled: true, edits: [] };
+    var tkhd = find(dv, trak, ['tkhd']);
+    if (tkhd && tkhd.end - tkhd.start >= 4) t.enabled = (dv.getUint32(tkhd.start) & 1) === 1;
+    var mdia = find(dv, trak, ['mdia']);
+    if (!mdia) return null;
+    var hdlr = find(dv, mdia, ['hdlr']);
+    if (hdlr && hdlr.end - hdlr.start >= 12) t.handler = fourcc(dv, hdlr.start + 8);
+    var mdhd = find(dv, mdia, ['mdhd']);
+    if (!mdhd || mdhd.end - mdhd.start < 20) return null;
+    if (dv.getUint8(mdhd.start) === 1) {
+      if (mdhd.end - mdhd.start < 32) return null;
+      t.timescale = dv.getUint32(mdhd.start + 20);
+    } else {
+      t.timescale = dv.getUint32(mdhd.start + 12);
+    }
+    if (!t.timescale) return null;
+    t.stbl = find(dv, mdia, ['minf', 'stbl']);
+    if (!t.stbl) return null;
+
+    var elst = find(dv, trak, ['edts', 'elst']);
+    if (elst && elst.end - elst.start >= 8) {
+      var version = dv.getUint8(elst.start), n = dv.getUint32(elst.start + 4), o = elst.start + 8, i;
+      for (i = 0; i < n; i++) {
+        if (version === 1) {
+          if (o + 20 > elst.end) break;
+          t.edits.push({ duration: u64(dv, o), mediaTime: i64(dv, o + 8) });
+          o += 20;
+        } else {
+          if (o + 12 > elst.end) break;
+          t.edits.push({ duration: dv.getUint32(o), mediaTime: dv.getInt32(o + 4) });
+          o += 12;
+        }
+      }
+    }
+    return t;
+  }
+
+  /** Where the track starts in the film (s) and from which time of its own (ticks): the empty edits, then the first real one. */
+  function start(track, movieTimescale) {
+    var empty = 0, media = 0, i, e;
+    for (i = 0; i < track.edits.length; i++) {
+      e = track.edits[i];
+      if (e.mediaTime < 0) {
+        empty += e.duration / movieTimescale;
+      } else {
+        media = e.mediaTime;
+        break;
+      }
+    }
+    return { empty: empty, media: media };
+  }
+
+  /** Decode times (ticks) of the samples and how many of them. */
+  function decodeTimes(dv, stbl, limit) {
+    var stts = find(dv, stbl, ['stts']);
+    if (!stts || stts.end - stts.start < 8) return null;
+    var n = dv.getUint32(stts.start + 4), o = stts.start + 8, total = 0, runs = [], i, j;
+    for (i = 0; i < n && o + 8 <= stts.end; i++, o += 8) {
+      runs.push([dv.getUint32(o), dv.getUint32(o + 4)]);
+      total += runs[i][0];
+    }
+    if (total === 0 || total > limit) return null;
+    var dts = new Float64Array(total), k = 0, at = 0;
+    for (i = 0; i < runs.length; i++) {
+      for (j = 0; j < runs[i][0]; j++) { dts[k++] = at; at += runs[i][1]; }
+    }
+    return { dts: dts, runs: runs, end: at };
+  }
+
+  /** Times (s, in the film) at which the frames of the video are shown, in order. */
+  function frameTimes(dv, track, movieTimescale) {
+    var d = decodeTimes(dv, track.stbl, 2000000);
+    if (!d) return null;
+    var total = d.dts.length, cts = d.dts, i, k, o;
+    var ctts = find(dv, track.stbl, ['ctts']);
+    if (ctts && ctts.end - ctts.start >= 8) {
+      cts = new Float64Array(d.dts);
+      var m = dv.getUint32(ctts.start + 4), count, offset, q;
+      o = ctts.start + 8; k = 0;
+      for (i = 0; i < m && o + 8 <= ctts.end && k < total; i++, o += 8) {
+        // Signed in both versions: the files of the phones write negative offsets in version 0 too.
+        count = dv.getUint32(o); offset = dv.getInt32(o + 4);
+        for (q = 0; q < count && k < total; q++, k++) cts[k] += offset;
+      }
+    }
+
+    var s = start(track, movieTimescale), ts = track.timescale;
+    var times = new Float64Array(total);
+    for (i = 0; i < total; i++) times[i] = s.empty + (cts[i] - s.media) / ts;
+    times.sort();
+
+    // The usual step between two frames, and whether the frames keep it.
+    var steps = new Float64Array(Math.max(0, total - 1));
+    for (i = 1; i < total; i++) steps[i - 1] = times[i] - times[i - 1];
+    var sorted = Float64Array.from(steps).sort(), step = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0, uneven = 0;
+    for (i = 0; i < steps.length; i++) if (Math.abs(steps[i] - step) > 0.02 * step) uneven++;
+
+    // The frames before the start of the film (cut by the edit) are not shown.
+    var first = 0;
+    while (first < total - 1 && times[first] < -0.5 * step) first++;
+    if (first > 0) times = times.slice(first);
+    return { times: times, step: step, fps: step > 0 ? 1 / step : 0, uneven: steps.length ? uneven / steps.length : 0 };
+  }
+
+  function descriptorLength(dv, o, end) {
+    var len = 0, n = 0, b;
+    while (o < end && n < 4) {
+      b = dv.getUint8(o++); n++;
+      len = (len << 7) | (b & 0x7F);
+      if (!(b & 0x80)) break;
+    }
+    return { len: len, next: o };
+  }
+
+  var FREQUENCIES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+
+  /** The AAC settings (kind, rate, channels) from the 'esds' box, wherever the file keeps it. */
+  function aacConfig(dv, stsd) {
+    var o, at = -1, d, flags, kind;
+    for (o = stsd.start + 16; o + 8 <= stsd.end; o++) {
+      if (dv.getUint32(o) === 0x65736473) { at = o + 8; break; }   // 'esds', then version and flags
+    }
+    if (at < 0 || at >= stsd.end || dv.getUint8(at) !== 0x03) return null;
+    d = descriptorLength(dv, at + 1, stsd.end); o = d.next;
+    if (o + 3 > stsd.end) return null;
+    flags = dv.getUint8(o + 2); o += 3;
+    if (flags & 0x80) o += 2;
+    if (flags & 0x40) { if (o >= stsd.end) return null; o += 1 + dv.getUint8(o); }
+    if (flags & 0x20) o += 2;
+    if (o >= stsd.end || dv.getUint8(o) !== 0x04) return null;
+    d = descriptorLength(dv, o + 1, stsd.end); o = d.next;
+    if (o + 13 >= stsd.end) return null;
+    kind = dv.getUint8(o); o += 13;
+    if (dv.getUint8(o) !== 0x05) return null;
+    d = descriptorLength(dv, o + 1, stsd.end); o = d.next;
+    if (d.len < 2 || o + 2 > stsd.end) return null;
+    var b0 = dv.getUint8(o), b1 = dv.getUint8(o + 1);
+    var config = { kind: kind, objectType: b0 >> 3, frequencyIndex: ((b0 & 7) << 1) | (b1 >> 7), channels: (b1 >> 3) & 0x0F };
+    config.rate = FREQUENCIES[config.frequencyIndex] || 0;
+    return config;
+  }
+
+  /** Place and size of the first samples of a track in the file. */
+  function sampleRuns(dv, stbl, limit) {
+    var stsz = find(dv, stbl, ['stsz']), stsc = find(dv, stbl, ['stsc']);
+    var stco = find(dv, stbl, ['stco']), co64 = find(dv, stbl, ['co64']), table = stco || co64;
+    if (!stsz || !stsc || !table || stsz.end - stsz.start < 12 || stsc.end - stsc.start < 8 || table.end - table.start < 8) return null;
+    var fixed = dv.getUint32(stsz.start + 4), count = dv.getUint32(stsz.start + 8);
+    if (!fixed && stsz.start + 12 + 4 * count > stsz.end) count = Math.floor((stsz.end - stsz.start - 12) / 4);
+    var chunks = dv.getUint32(table.start + 4), width = stco ? 4 : 8;
+    chunks = Math.min(chunks, Math.floor((table.end - table.start - 8) / width));
+    var entries = Math.min(dv.getUint32(stsc.start + 4), Math.floor((stsc.end - stsc.start - 8) / 12));
+    var n = Math.min(count, limit), sizes = new Uint32Array(n), offsets = new Float64Array(n), s = 0, e, o, first, per, next, c, q, off, sz;
+    for (e = 0; e < entries && s < n; e++) {
+      o = stsc.start + 8 + 12 * e;
+      first = dv.getUint32(o); per = dv.getUint32(o + 4);
+      next = e + 1 < entries ? dv.getUint32(o + 12) : chunks + 1;
+      for (c = first; c < next && c <= chunks && s < n; c++) {
+        off = stco ? dv.getUint32(table.start + 8 + 4 * (c - 1)) : u64(dv, table.start + 8 + 8 * (c - 1));
+        for (q = 0; q < per && s < n; q++, s++) {
+          sz = fixed || dv.getUint32(stsz.start + 12 + 4 * s);
+          sizes[s] = sz; offsets[s] = off; off += sz;
+        }
+      }
+    }
+    return { count: s, sizes: sizes, offsets: offsets, total: count };
+  }
+
+  /**
+   * Reads the tables of a file. reader: { size, read(start, end) → Promise<ArrayBuffer> }.
+   * Returns null when the file is not an MP4 / MOV with its tables in one piece (the caller then measures the frames
+   * from the playback), else { video: { times, step, fps, uneven }, audio: {...} or null }.
+   */
+  async function parse(reader) {
+    var moov = await findMoov(reader);
+    if (!moov || moov.fragments) return null;
+    if (moov.end - moov.start > 96 * 1048576) return null;
+    var dv = new DataView(await reader.read(moov.start, moov.end));
+    var root = { start: 0, end: dv.byteLength }, movieTimescale = 0, i;
+    var mvhd = find(dv, root, ['mvhd']);
+    if (mvhd && mvhd.end - mvhd.start >= 20) {
+      movieTimescale = dv.getUint8(mvhd.start) === 1 ? (mvhd.end - mvhd.start >= 32 ? dv.getUint32(mvhd.start + 20) : 0) : dv.getUint32(mvhd.start + 12);
+    }
+    if (!movieTimescale) return null;
+
+    var tracks = children(dv, 0, dv.byteLength).filter(function (b) { return b.type === 'trak'; })
+      .map(function (b) { return parseTrack(dv, b); }).filter(Boolean);
+
+    // The video: the track shown (enabled) with the most frames.
+    var video = null;
+    tracks.filter(function (t) { return t.handler === 'vide'; }).forEach(function (t) {
+      var f = frameTimes(dv, t, movieTimescale);
+      if (!f || f.times.length < 2 || !(f.step > 0)) return;
+      f.enabled = t.enabled;
+      if (!video || (f.enabled && !video.enabled) || (f.enabled === video.enabled && f.times.length > video.times.length)) video = f;
+    });
+
+    // The sound: the first AAC (LC) track.
+    var audio = null;
+    for (i = 0; i < tracks.length && !audio; i++) {
+      var t = tracks[i];
+      if (t.handler !== 'soun') continue;
+      var stsd = find(dv, t.stbl, ['stsd']);
+      if (!stsd || stsd.end - stsd.start < 16) continue;
+      var config = aacConfig(dv, stsd);
+      if (!config || !config.rate || config.objectType !== 2 || config.channels < 1 || config.channels > 7) continue;
+      if (config.kind !== 0x40 && config.kind !== 0x67) continue;
+      var d = decodeTimes(dv, t.stbl, 5000000);
+      if (!d || d.runs.length === 0) continue;
+      var s = start(t, movieTimescale);
+      audio = {
+        config: config, rate: config.rate, timescale: t.timescale,
+        frames: d.dts.length, frameTicks: d.runs[0][1],
+        // The first sample decoded is at this time of the film (s): before zero when the first frames only prime the decoder.
+        start: s.empty - s.media / t.timescale,
+        stbl: t.stbl, dv: dv
+      };
+    }
+
+    if (!video && !audio) return null;
+    return { video: video, audio: audio };
+  }
+
+  /**
+   * The sound of the first 'seconds' of the file as an AAC stream (ADTS: each frame behind a header of 7 bytes), read
+   * straight from its places in the file. Returns { bytes, frames } or null.
+   */
+  async function readSound(reader, audio, seconds) {
+    var perFrame = audio.frameTicks / audio.timescale;
+    var limit = Math.max(1, Math.min(audio.frames, Math.ceil(seconds / perFrame)));
+    var runs = sampleRuns(audio.dv, audio.stbl, limit);
+    if (!runs || runs.count === 0) return null;
+    var n = runs.count, total = 0, i;
+    for (i = 0; i < n; i++) {
+      if (runs.sizes[i] === 0 || runs.sizes[i] > 8184 || runs.offsets[i] + runs.sizes[i] > reader.size) return null;
+      total += runs.sizes[i] + 7;
+    }
+
+    // Pieces of the file that follow each other are read at once.
+    var pieces = [], from = 0;
+    for (i = 1; i <= n; i++) {
+      if (i === n || runs.offsets[i] !== runs.offsets[i - 1] + runs.sizes[i - 1] || runs.offsets[i] - runs.offsets[from] > 4194304) {
+        pieces.push({ from: from, to: i, start: runs.offsets[from], end: runs.offsets[i - 1] + runs.sizes[i - 1] });
+        from = i;
+      }
+    }
+
+    var out = new Uint8Array(total), c = audio.config, profile = c.objectType - 1, at = 0, p, k, buf, src, pos, len, full;
+    var positions = new Float64Array(n);
+    for (i = 0; i < n; i++) { positions[i] = at; at += runs.sizes[i] + 7; }
+    for (p = 0; p < pieces.length; p += 16) {
+      var batch = pieces.slice(p, p + 16);
+      var bufs = await Promise.all(batch.map(function (x) { return reader.read(x.start, x.end); }));
+      for (k = 0; k < batch.length; k++) {
+        buf = new Uint8Array(bufs[k]);
+        if (buf.length < batch[k].end - batch[k].start) return null;
+        src = 0;
+        for (i = batch[k].from; i < batch[k].to; i++) {
+          len = runs.sizes[i]; full = len + 7; pos = positions[i];
+          out[pos] = 0xFF;
+          out[pos + 1] = 0xF1;
+          out[pos + 2] = (profile << 6) | (c.frequencyIndex << 2) | (c.channels >> 2);
+          out[pos + 3] = ((c.channels & 3) << 6) | (full >> 11);
+          out[pos + 4] = (full >> 3) & 0xFF;
+          out[pos + 5] = ((full & 7) << 5) | 0x1F;
+          out[pos + 6] = 0xFC;
+          out.set(buf.subarray(src, src + len), pos + 7);
+          src += len;
+        }
+      }
+    }
+    return { bytes: out, frames: n };
+  }
+
+  /** A reader over a File or Blob of the browser. */
+  function fileReader(file) {
+    return {
+      size: file.size,
+      read: function (from, to) {
+        var part = file.slice(from, to);
+        if (part.arrayBuffer) return part.arrayBuffer();
+        return new Promise(function (resolve, reject) {
+          var r = new FileReader();
+          r.onload = function () { resolve(r.result); };
+          r.onerror = function () { reject(r.error); };
+          r.readAsArrayBuffer(part);
+        });
+      }
+    };
+  }
+
+  return { parse: parse, readSound: readSound, fileReader: fileReader };
+}
+
+// ---- metrics.js ----
+// The moments marked on a start and the measurements made of them. The names are the ones of the desktop program.
+function swimMetricsFactory() {
+  'use strict';
+
+  /** Speed of sound (m/s): the signal reaches the phone this much later for every metre from the loudspeaker. */
+  var SOUND = 343;
+
+  var EVENTS = [
+    { id: 'signal', name: 'Σήμα εκκίνησης', short: 'Σήμα', hint: 'Η κόρνα. Από εδώ μετράνε όλοι οι χρόνοι.' },
+    { id: 'react', name: 'Αντίδραση (πρώτη κίνηση)', short: 'Αντίδραση', hint: 'Η πρώτη κίνηση του αθλητή μετά το σήμα.' },
+    { id: 'takeoff', name: 'Αποδέσμευση από τον βατήρα', short: 'Αποδέσμευση', hint: 'Το μπροστινό πόδι αφήνει τον βατήρα.' },
+    { id: 'entry', name: 'Είσοδος στο νερό', short: 'Είσοδος', hint: 'Τα χέρια μπαίνουν στο νερό.' },
+    { id: 'm5', name: '5 μ.', short: '5 μ.', hint: 'Το κεφάλι περνά τα 5 μ.' },
+    { id: 'm10', name: '10 μ.', short: '10 μ.', hint: 'Το κεφάλι περνά τα 10 μ.' },
+    { id: 'm15', name: '15 μ.', short: '15 μ.', hint: 'Το κεφάλι περνά τα 15 μ.' },
+    { id: 'breakout', name: 'Έξοδος από το νερό (κεφάλι)', short: 'Έξοδος', hint: 'Το κεφάλι βγαίνει από το νερό.' }
+  ];
+
+  var STROKES = [
+    { id: 'fs', name: 'Ελεύθερο' }, { id: 'bk', name: 'Ύπτιο' }, { id: 'br', name: 'Πρόσθιο' }, { id: 'fly', name: 'Πεταλούδα' }
+  ];
+
+  function eventOf(id) { for (var i = 0; i < EVENTS.length; i++) if (EVENTS[i].id === id) return EVENTS[i]; return null; }
+  function strokeName(id) { for (var i = 0; i < STROKES.length; i++) if (STROKES[i].id === id) return STROKES[i].name; return ''; }
+
+  /** Time of the film (s) at which the signal was given: the onset heard, less the way of the sound to the phone. */
+  function signalTime(a) {
+    var s = a && a.signal;
+    if (!s || typeof s.t !== 'number') return null;
+    return s.src === 'sound' ? s.t - (s.dist || 0) / SOUND : s.t;
+  }
+
+  /** Time of the film of a mark (the signal included), null when it is not marked. */
+  function markTime(a, id) {
+    if (id === 'signal') return signalTime(a);
+    var m = a && a.marks && a.marks[id];
+    return m && typeof m.t === 'number' ? m.t : null;
+  }
+
+  /** Hundredths, half away from zero (as the desktop program writes its times). */
+  function round2(v) {
+    if (v === null || v === undefined || isNaN(v)) return null;
+    var s = v < 0 ? -1 : 1;
+    return s * Math.round(Math.abs(v) * 100 + 1e-7) / 100;
+  }
+
+  /**
+   * The measurements of an analysis (s and m/s, to the hundredth; null: not marked):
+   * from the signal — react, block (the official reaction time), entry, m5, m10, m15, breakout;
+   * between marks — blockPhase, flight, underwater; speeds — v510, v1015.
+   */
+  function measure(a) {
+    var t0 = signalTime(a), t = {};
+    EVENTS.forEach(function (e) { t[e.id] = markTime(a, e.id); });
+    function from(id) { return t0 !== null && t[id] !== null ? round2(t[id] - t0) : null; }
+    function between(p, q) { return t[p] !== null && t[q] !== null ? round2(t[q] - t[p]) : null; }
+    function speed(p, q, metres) {
+      if (t[p] === null || t[q] === null || !(t[q] - t[p] > 0)) return null;
+      return round2(metres / (t[q] - t[p]));
+    }
+    return {
+      react: from('react'), block: from('takeoff'), entry: from('entry'),
+      m5: from('m5'), m10: from('m10'), m15: from('m15'), breakout: from('breakout'),
+      blockPhase: between('react', 'takeoff'), flight: between('takeoff', 'entry'), underwater: between('entry', 'breakout'),
+      v510: speed('m5', 'm10', 5), v1015: speed('m10', 'm15', 5)
+    };
+  }
+
+  /** The rows shown and printed, in order: what is measured, its unit, and whether less is better (for the differences). */
+  var ROWS = [
+    { id: 'react', name: 'Αντίδραση (πρώτη κίνηση)', unit: 's', less: true },
+    { id: 'block', name: 'Αποδέσμευση από τον βατήρα', unit: 's', less: true },
+    { id: 'flight', name: 'Πτήση: αποδέσμευση → είσοδος', unit: 's', less: null },
+    { id: 'entry', name: 'Είσοδος στο νερό', unit: 's', less: null },
+    { id: 'm5', name: '5 μ.', unit: 's', less: true },
+    { id: 'm10', name: '10 μ.', unit: 's', less: true },
+    { id: 'm15', name: '15 μ.', unit: 's', less: true },
+    { id: 'breakout', name: 'Έξοδος από το νερό (κεφάλι)', unit: 's', less: null },
+    { id: 'underwater', name: 'Υποβρύχια φάση: είσοδος → έξοδος', unit: 's', less: null },
+    { id: 'v510', name: 'Ταχύτητα 5 → 10 μ.', unit: 'm/s', less: false },
+    { id: 'v1015', name: 'Ταχύτητα 10 → 15 μ.', unit: 'm/s', less: false }
+  ];
+
+  /** What does not add up in the marks, in words for the coach. */
+  function warnings(a) {
+    var out = [], chain = ['signal', 'react', 'takeoff', 'entry', 'm5', 'm10', 'm15'], i, j, p, q;
+    for (i = 0; i < chain.length; i++) {
+      p = markTime(a, chain[i]);
+      if (p === null) continue;
+      for (j = i + 1; j < chain.length; j++) {
+        q = markTime(a, chain[j]);
+        if (q !== null && q <= p) {
+          out.push('«' + eventOf(chain[j]).short + '» πριν από «' + eventOf(chain[i]).short + '»: έλεγξε τα δύο σημάδια.');
+          break;
+        }
+      }
+    }
+    var entry = markTime(a, 'entry'), out2 = markTime(a, 'breakout');
+    if (entry !== null && out2 !== null && out2 <= entry) out.push('«Έξοδος» πριν από «Είσοδος»: έλεγξε τα δύο σημάδια.');
+    var m = measure(a);
+    if (m.block !== null && m.block > 0 && (m.block < 0.45 || m.block > 1.1)) {
+      out.push('Αποδέσμευση στα ' + fmt(m.block) + ' s από το σήμα (συνήθως 0,55–0,95 s). Έλεγξε το καρέ του σήματος εκκίνησης.');
+    }
+    if (m.react !== null && m.react >= 0 && m.react < 0.1) {
+      out.push('Πρώτη κίνηση στα ' + fmt(m.react) + ' s από το σήμα: πολύ νωρίς. Έλεγξε το σήμα εκκίνησης.');
+    }
+    return out;
+  }
+
+  /** A number with a comma, as written in Greek. */
+  function fmt(v, digits) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    return v.toFixed(digits === undefined ? 2 : digits).replace('.', ',').replace('-', '−');
+  }
+
+  /** A difference with its sign: +0,03 or −0,11 (0,00 when the two are equal to the hundredth); empty without both. */
+  function fmtDelta(now, before) {
+    if (now === null || before === null || now === undefined || before === undefined) return '';
+    var d = round2(now - before);
+    if (d === 0) return '0,00';
+    return (d > 0 ? '+' : '−') + Math.abs(d).toFixed(2).replace('.', ',');
+  }
+
+  /** The analysis of the same athlete just before this one that has this measurement. */
+  function previous(list, a, id) {
+    var name = (a.athlete || '').trim().toLocaleLowerCase('el'), best = null, i, b, v;
+    if (!name) return null;
+    for (i = 0; i < list.length; i++) {
+      b = list[i];
+      if (b.id === a.id || (b.athlete || '').trim().toLocaleLowerCase('el') !== name) continue;
+      if (!(b.created < a.created)) continue;
+      v = measure(b)[id];
+      if (v === null) continue;
+      if (!best || b.created > best.created) best = b;
+    }
+    return best;
+  }
+
+  /** The last analyses of the athlete (this one included, the oldest first) that have this measurement. */
+  function history(list, a, id, count) {
+    var name = (a.athlete || '').trim().toLocaleLowerCase('el');
+    var rows = list.filter(function (b) {
+      return b.id === a.id || (name && (b.athlete || '').trim().toLocaleLowerCase('el') === name && b.created <= a.created);
+    }).map(function (b) { return { id: b.id, created: b.created, value: measure(b)[id] }; })
+      .filter(function (r) { return r.value !== null; })
+      .sort(function (p, q) { return p.created < q.created ? -1 : p.created > q.created ? 1 : 0; });
+    return rows.slice(Math.max(0, rows.length - count));
+  }
+
+  /** The one number that sums an analysis up, for the lists: the furthest distance timed. */
+  function headline(a) {
+    var m = measure(a);
+    if (m.m15 !== null) return { label: '15 μ.', value: m.m15, unit: 's', id: 'm15' };
+    if (m.m10 !== null) return { label: '10 μ.', value: m.m10, unit: 's', id: 'm10' };
+    if (m.m5 !== null) return { label: '5 μ.', value: m.m5, unit: 's', id: 'm5' };
+    if (m.block !== null) return { label: 'Αποδέσμευση', value: m.block, unit: 's', id: 'block' };
+    if (m.flight !== null) return { label: 'Πτήση', value: m.flight, unit: 's', id: 'flight' };
+    return null;
+  }
+
+  /** The analysis in a few lines of text, to paste in a message. */
+  function summary(a, tech) {
+    var m = measure(a), lines = [], parts;
+    var who = (a.athlete || 'Αθλητής') + (a.stroke ? ' · ' + strokeName(a.stroke).toLocaleLowerCase('el') : '');
+    lines.push('Εκκίνηση — ' + who + ' · ' + dateText(a.created));
+    parts = [];
+    if (m.react !== null) parts.push('Αντίδραση ' + fmt(m.react) + ' s');
+    if (m.block !== null) parts.push('Αποδέσμευση ' + fmt(m.block) + ' s');
+    if (m.flight !== null) parts.push('Πτήση ' + fmt(m.flight) + ' s');
+    if (m.entry !== null) parts.push('Είσοδος ' + fmt(m.entry) + ' s');
+    if (parts.length) lines.push(parts.join(' · '));
+    parts = [];
+    if (m.m5 !== null) parts.push('5 μ. ' + fmt(m.m5) + ' s');
+    if (m.m10 !== null) parts.push('10 μ. ' + fmt(m.m10) + ' s');
+    if (m.m15 !== null) parts.push('15 μ. ' + fmt(m.m15) + ' s');
+    if (parts.length) lines.push(parts.join(' · '));
+    parts = [];
+    if (m.breakout !== null) parts.push('Έξοδος ' + fmt(m.breakout) + ' s');
+    if (m.underwater !== null) parts.push('Υποβρύχια ' + fmt(m.underwater) + ' s');
+    if (m.v510 !== null) parts.push('5→10 μ. ' + fmt(m.v510) + ' m/s');
+    if (m.v1015 !== null) parts.push('10→15 μ. ' + fmt(m.v1015) + ' m/s');
+    if (parts.length) lines.push(parts.join(' · '));
+    if (tech && tech.checked > 0) {
+      lines.push('Τεχνική: ' + tech.ok + ' από ' + tech.checked + ' σημεία σωστά.' + (tech.fix.length ? ' Θέλουν δουλειά: ' + tech.fix.join(', ') + '.' : ''));
+    }
+    if (a.notes && a.notes.trim()) lines.push('Σημειώσεις: ' + a.notes.trim());
+    return lines.join('\n');
+  }
+
+  function dateText(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    function two(n) { return (n < 10 ? '0' : '') + n; }
+    return two(d.getDate()) + '/' + two(d.getMonth() + 1) + '/' + d.getFullYear();
+  }
+
+  return {
+    SOUND: SOUND, EVENTS: EVENTS, STROKES: STROKES, ROWS: ROWS,
+    eventOf: eventOf, strokeName: strokeName, signalTime: signalTime, markTime: markTime, round2: round2,
+    measure: measure, warnings: warnings, fmt: fmt, fmtDelta: fmtDelta, previous: previous, history: history,
+    headline: headline, summary: summary, dateText: dateText
+  };
+}
+
+// ---- pdf.js ----
+// A one-page PDF (A4) that carries the report as a picture: written by hand, so that the page needs no library and
+// the Greek text is exactly what was drawn.
+function swimPdfFactory() {
+  'use strict';
+
+  function ascii(s) {
+    var out = new Uint8Array(s.length), i;
+    for (i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xFF;
+    return out;
+  }
+
+  /** A text of any language as a PDF string (UTF-16BE in hex). */
+  function hexText(s) {
+    var out = 'FEFF', i, c;
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i).toString(16).toUpperCase();
+      out += '0000'.slice(c.length) + c;
+    }
+    return '<' + out + '>';
+  }
+
+  /**
+   * jpeg: Uint8Array of a JPEG (as a canvas writes it), width × height its pixels, title the name of the document.
+   * The picture fills an A4 page (the canvas of the report has its proportions).
+   */
+  function fromJpeg(jpeg, width, height, title) {
+    var W = 595.28, H = 841.89, scale = Math.min(W / width, H / height);
+    var w = (width * scale).toFixed(2), h = (height * scale).toFixed(2);
+    var x = ((W - width * scale) / 2).toFixed(2), y = ((H - height * scale) / 2).toFixed(2);
+    var content = 'q ' + w + ' 0 0 ' + h + ' ' + x + ' ' + y + ' cm /Im0 Do Q';
+    var parts = [], offsets = [], length = 0;
+    function push(bytes) { parts.push(bytes); length += bytes.length; }
+    function object(n, body) { offsets[n] = length; push(ascii(n + ' 0 obj\n' + body + '\nendobj\n')); }
+
+    push(ascii('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+    object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    object(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+    object(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>');
+    offsets[4] = length;
+    push(ascii('4 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + width + ' /Height ' + height +
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpeg.length + ' >>\nstream\n'));
+    push(jpeg);
+    push(ascii('\nendstream\nendobj\n'));
+    object(5, '<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream');
+    object(6, '<< /Title ' + hexText(title || '') + ' /Producer (Kinovea Swim) >>');
+
+    var xref = length, table = 'xref\n0 7\n0000000000 65535 f \n', n, o;
+    for (n = 1; n <= 6; n++) {
+      o = String(offsets[n]);
+      table += '0000000000'.slice(o.length) + o + ' 00000 n \n';
+    }
+    push(ascii(table + 'trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n' + xref + '\n%%EOF\n'));
+
+    var out = new Uint8Array(length), at = 0;
+    parts.forEach(function (p) { out.set(p, at); at += p.length; });
+    return out;
+  }
+
+  return { fromJpeg: fromJpeg };
+}
+
+// ---- player.js ----
+// The video, one frame at a time. A step shows exactly the next frame and a mark carries the time of the frame on
+// screen: the times of the frames come from the tables of the file (mp4.js); without them they are measured from the
+// playback. Where the browser tells which frame it has just drawn, every step waits for that frame and is checked
+// against it.
+function swimPlayerFactory(Mp4) {
+  'use strict';
+
+  var video = null, table = null, step = 1 / 30, first = 0, count = 1, offset = 0, k = 0;
+  var source = 'none';             // 'tables' (of the file), 'measured' (from the playback), 'guess' (30 per second)
+  var canWatch = typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  var echo = null;                 // true: the browser reports the time asked, false: the time of the frame, null: unknown
+  var busy = false, want = null, asked = 0, askedAt = 0, timer = 0;
+  var shown = NaN, shownAt = 0, anchor = null, playing = false, corrected = 0;
+  var loaded = false, primed = false, steady = false, url = null, generation = 0;
+  var handlers = { frame: [], state: [] }, waiters = [];
+
+  // The usual rates of cameras: a rate measured from the playback is one of them when it is within 1.5 %.
+  var RATES = [24, 25, 30, 48, 50, 60, 90, 100, 120, 240];
+
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+  function clock() { return typeof performance !== 'undefined' ? performance.now() : Date.now(); }
+  function emit(name) { handlers[name].forEach(function (f) { try { f(); } catch (e) { /* a listener must not stop the video */ } }); }
+  function on(name, f) { handlers[name].push(f); }
+
+  /** Time of the film (s) of frame i, and of the frame after it. */
+  function T(i) { return table ? table[i] : first + i * step; }
+  function after(i) { return i + 1 < count ? T(i + 1) : T(i) + step; }
+
+  /** The frame on screen at time t of the film: the last one that starts at or before it. */
+  function frameAt(t) {
+    // Without tables the times that the browser reports are rounded (to the millisecond in some files): a quarter of a frame of room.
+    if (!table) return clamp(Math.floor((t - first) / step + 0.25), 0, count - 1);
+    var eps = Math.min(1e-4, step / 4), lo = 0, hi = count - 1, mid;
+    while (lo < hi) {
+      mid = (lo + hi + 1) >> 1;
+      if (table[mid] <= t + eps) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  /**
+   * Where to seek to see frame i, on the clock of the browser: the middle of its time on screen. Without tables, a
+   * frame near the one on screen is counted from the time that the browser reported for that one.
+   */
+  function target(i) {
+    if (!table && anchor && Math.abs(i - anchor.frame) <= 12) return anchor.time + (i - anchor.frame + 0.5) * step;
+    return T(i) + 0.5 * (after(i) - T(i)) + offset;
+  }
+
+  /** Time of the film (s) of the frame on screen. */
+  function current() {
+    if (!table && anchor && anchor.frame === k) return anchor.time - offset;
+    return T(k);
+  }
+
+  function settle() {
+    var list = waiters; waiters = [];
+    list.forEach(function (f) { f(); });
+  }
+
+  /**
+   * After a seek: waits until the browser has drawn the frame asked. If it keeps showing another one, that one is
+   * the frame on screen (and the one that a mark would get).
+   */
+  function confirm(g) {
+    var started = clock();
+    (function look() {
+      if (g !== generation || busy || playing) return;
+      var fresh = shownAt > askedAt && !isNaN(shown), i = fresh ? frameAt(shown - offset) : -1;
+      if (fresh && i === k) {
+        if (!table) anchor = { frame: k, time: shown };
+        steady = true;
+        return settle();
+      }
+      if (clock() - started > 180) {
+        if (fresh && (table ? Math.abs(T(i) + offset - shown) < 0.3 * step : true)) {
+          corrected++; k = i;
+          if (!table) anchor = { frame: k, time: shown };
+          emit('frame');
+        }
+        steady = true;
+        return settle();
+      }
+      setTimeout(look, 12);
+    })();
+  }
+
+  function finish(g) {
+    if (!busy || g !== generation) return;
+    clearTimeout(timer);
+    busy = false; k = asked;
+    emit('frame');
+    if (want !== null) pump();
+    else if (canWatch && echo === false) confirm(g);
+    else { steady = true; settle(); }
+  }
+
+  function pump() {
+    if (busy || want === null || playing || !loaded) return;
+    var i = want, g = generation, t;
+    want = null; asked = i; askedAt = clock();
+    t = clamp(target(i), 0, Math.max(0, (video.duration || 1e9) - 0.001));
+    busy = true; steady = false;
+    timer = setTimeout(function () { finish(g); }, 2500);
+    try { video.currentTime = t; } catch (e) { finish(g); return; }
+    if (!video.seeking) setTimeout(function () { finish(g); }, 0);
+  }
+
+  /** Shows frame i (the last one asked wins when the steps come faster than the phone seeks). */
+  function go(i) {
+    if (!loaded) return;
+    if (playing) pause();
+    want = clamp(Math.round(i), 0, count - 1);
+    pump();
+  }
+
+  /** Resolves when the frame asked is on screen. */
+  function shownFrame(i) {
+    return new Promise(function (resolve) {
+      if (!loaded) return resolve();
+      // Already on screen (and checked): nothing to wait for.
+      if (steady && !busy && !playing && want === null && clamp(Math.round(i), 0, count - 1) === k) return resolve();
+      waiters.push(resolve);
+      go(i);
+    });
+  }
+
+  function watch() {
+    if (!canWatch || !video) return;
+    var g = generation;
+    video.requestVideoFrameCallback(function (t, meta) {
+      if (g !== generation) return;
+      shown = meta.mediaTime; shownAt = clock();
+      if (playing) {
+        var i = frameAt(shown - offset);
+        if (i !== k) { k = i; emit('frame'); }
+      }
+      watch();
+    });
+  }
+
+  function poll() {
+    if (!playing || canWatch) return;
+    var i = frameAt(video.currentTime - offset);
+    if (i !== k) { k = i; emit('frame'); }
+    requestAnimationFrame(poll);
+  }
+
+  function play(rate) {
+    if (!loaded || playing) return;
+    if (busy || want !== null) { waiters.push(function () { play(rate); }); return; }
+    if (k >= count - 2) { try { video.currentTime = Math.max(0, T(0) + offset); } catch (e) { /* stays where it is */ } }
+    playing = true; anchor = null; steady = false;
+    settle();
+    try { video.playbackRate = rate || 1; } catch (e) { /* the phone keeps its own speed */ }
+    var p = video.play();
+    if (p && p.then) p.then(function () { primed = true; }, function () { playing = false; emit('state'); });
+    emit('state');
+    poll();
+  }
+
+  /**
+   * Called from a tap: some phones draw nothing (and refuse to play by themselves) until the person has started the
+   * video once. A moment of playback, then back to the frame.
+   */
+  function prime() {
+    if (!loaded || primed || playing || busy) return;
+    var i = k, p;
+    try { p = video.play(); } catch (e) { return; }
+    if (p && p.then) p.then(function () { primed = true; video.pause(); want = i; pump(); }, function () { /* stays as it is */ });
+  }
+
+  function pause() {
+    if (!playing) return;
+    playing = false;
+    video.pause();
+    var t = canWatch && !isNaN(shown) && echo !== true ? shown : video.currentTime;
+    k = frameAt(t - offset);
+    emit('state');
+    want = k; pump();
+  }
+
+  function seekTo(t) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function end() { if (done) return; done = true; video.removeEventListener('seeked', end); resolve(); }
+      video.addEventListener('seeked', end);
+      setTimeout(end, 2500);
+      try { video.currentTime = t; } catch (e) { end(); }
+      if (!video.seeking) setTimeout(end, 0);
+    });
+  }
+
+  /** The time of the frame drawn after 'since', as the browser reports it (NaN when it does not). */
+  function drawn(since) {
+    return new Promise(function (resolve) {
+      var tries = 0;
+      (function look() {
+        if (shownAt > since) return resolve(shown);
+        if (!canWatch || ++tries > 24) return resolve(NaN);
+        setTimeout(look, 25);
+      })();
+    });
+  }
+
+  /** Length of a frame (s) from a short playback, when the file has no tables to read. */
+  function measure() {
+    return new Promise(function (resolve) {
+      if (!canWatch) return resolve(null);
+      var times = [], g = generation, stopped = false;
+      function stop() {
+        if (stopped) return;
+        stopped = true;
+        video.pause();
+        var d = [], i, min, steps = 0, fps, best = 0;
+        for (i = 1; i < times.length; i++) if (times[i] - times[i - 1] > 1e-4) d.push(times[i] - times[i - 1]);
+        if (d.length < 6) return resolve(null);
+        // The shortest steps are one frame; a longer one is as many frames as it holds of them. The whole stretch
+        // over its frames is the length of one (the times of some files are rounded, each step alone is not exact).
+        min = d.slice().sort(function (a, b) { return a - b; })[Math.floor(d.length / 4)];
+        for (i = 0; i < d.length; i++) steps += Math.max(1, Math.round(d[i] / min));
+        fps = steps / (times[times.length - 1] - times[0]);
+        RATES.forEach(function (r) { if (Math.abs(r - fps) < Math.abs(best - fps)) best = r; });
+        resolve({ step: Math.abs(best - fps) <= 0.015 * best ? 1 / best : 1 / fps });
+      }
+      (function listen() {
+        video.requestVideoFrameCallback(function (t, meta) {
+          if (g !== generation || stopped) return;
+          if (times.length === 0 || meta.mediaTime > times[times.length - 1]) times.push(meta.mediaTime);
+          if (times.length >= 40) stop(); else listen();
+        });
+      })();
+      try { video.playbackRate = 0.5; } catch (e) { /* its own speed */ }
+      var p = video.play();
+      if (p && p.catch) p.catch(stop);
+      setTimeout(stop, 1800);
+    });
+  }
+
+  function unload() {
+    generation++;
+    clearTimeout(timer);
+    busy = false; want = null; playing = false; loaded = false; steady = false; settle();
+    table = null; step = 1 / 30; first = 0; count = 1; offset = 0; k = 0; source = 'none'; echo = null; anchor = null;
+    shown = NaN; shownAt = 0; corrected = 0; primed = false;
+    if (video) { try { video.pause(); video.removeAttribute('src'); video.load(); } catch (e) { /* nothing to free */ } }
+    if (url) { try { URL.revokeObjectURL(url); } catch (e) { /* already gone */ } url = null; }
+  }
+
+  /**
+   * Opens a video file. element: the <video> of the page. Returns { info (tables of the file or null), width, height,
+   * duration }; rejects with a message for the coach when the phone cannot play the file.
+   */
+  async function load(element, file) {
+    if (video !== element) {
+      video = element;
+      video.addEventListener('seeked', function () { finish(generation); });
+      video.addEventListener('ended', function () { if (playing) { playing = false; k = count - 1; emit('state'); emit('frame'); } });
+    }
+    unload();
+    var g = generation, other = 'Άνοιξε άλλο βίντεο.';
+    url = URL.createObjectURL(file);
+    video.muted = true; video.playsInline = true; video.preload = 'auto';
+
+    await new Promise(function (resolve, reject) {
+      var done = false;
+      function ok() { if (done) return; done = true; clear(); resolve(); }
+      function bad() {
+        if (done) return;
+        done = true; clear();
+        reject(new Error('Το κινητό δεν μπορεί να παίξει αυτό το βίντεο. Δοκίμασε να το τραβήξεις ή να το αποθηκεύσεις ως MP4 (H.264).'));
+      }
+      function clear() { video.removeEventListener('loadedmetadata', ok); video.removeEventListener('error', bad); clearTimeout(t); }
+      var t = setTimeout(bad, 20000);
+      video.addEventListener('loadedmetadata', ok);
+      video.addEventListener('error', bad);
+      video.src = url;
+      video.load();
+    });
+    if (g !== generation) throw new Error(other);
+
+    var info = null;
+    try { info = await Mp4.parse(Mp4.fileReader(file)); } catch (e) { info = null; }
+    if (g !== generation) throw new Error(other);
+
+    // The phones draw nothing before the first playback: a moment of it, without sound.
+    try { await video.play(); video.pause(); primed = true; } catch (e) { primed = false; }
+    if (g !== generation) throw new Error(other);
+
+    var duration = isFinite(video.duration) ? video.duration : 0, measured = null;
+    if (info && info.video) {
+      var t = info.video.times, end = t[t.length - 1] + info.video.step;
+      // Tables that tell quite another length than the phone plays (a retimed slow motion) are not the frames shown.
+      if (duration > 0 && (end > duration + 0.5 || end < 0.8 * duration - 0.5)) info.video = null;
+    }
+    if (info && info.video) {
+      table = info.video.times; step = info.video.step; count = table.length; source = 'tables';
+    } else {
+      measured = await measure();
+      if (g !== generation) throw new Error(other);
+      if (measured) { step = measured.step; source = 'measured'; } else { step = 1 / 30; source = 'guess'; }
+      first = 0;
+      count = Math.max(1, Math.round(duration / step));
+    }
+    watch();
+
+    // The clock of the browser against the times of the file: the first frame, then one in the middle of its time.
+    var since = clock();
+    await seekTo(0);
+    var m0 = await drawn(since);
+    if (count > 4) {
+      since = clock();
+      var t3 = T(3) + 0.5 * (after(3) - T(3));
+      await seekTo(t3);
+      var m3 = await drawn(since);
+      echo = isNaN(m3) || isNaN(m0) ? null : Math.abs(m3 - t3) < 2e-5;
+      if (echo === false) {
+        if (table) {
+          var d = m0 - T(0);
+          offset = Math.abs(d) < 1 && Math.abs(d) > 1e-4 ? d : 0;
+        } else {
+          first = m0 > 0 && m0 < 1 ? m0 : 0;
+        }
+      }
+    }
+    if (g !== generation) throw new Error(other);
+    loaded = true;
+    k = 0;
+    await shownFrame(0);
+    if (g !== generation) throw new Error(other);
+    return { info: info, width: video.videoWidth, height: video.videoHeight, duration: duration };
+  }
+
+  /** Changes the frames per second by hand (only when they could not be read from the file). */
+  function setFps(fps) {
+    if (table || !loaded || !(fps > 0)) return;
+    var t = current();
+    step = 1 / fps; source = 'guess'; anchor = null;
+    count = Math.max(1, Math.round((isFinite(video.duration) ? video.duration : 0) / step));
+    go(frameAt(t));
+    emit('state');
+  }
+
+  /** A picture of frame i, at most 'width' pixels wide (for the report). */
+  async function capture(i, width) {
+    await shownFrame(i);
+    await new Promise(function (resolve) { requestAnimationFrame(function () { requestAnimationFrame(resolve); }); });
+    var w = video.videoWidth || 16, h = video.videoHeight || 9, s = Math.min(1, width / w);
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  return {
+    load: load, unload: unload, on: on, go: go, shownFrame: shownFrame, capture: capture, setFps: setFps,
+    step: function (d) { go((want !== null ? want : busy ? asked : k) + d); },
+    play: play, pause: pause, prime: prime,
+    time: T, frameAt: frameAt, current: current,
+    state: function () {
+      return {
+        loaded: loaded, frame: want !== null ? want : busy ? asked : k, shown: k, count: count, step: step, fps: 1 / step,
+        source: source, playing: playing, busy: busy, duration: video && isFinite(video.duration) ? video.duration : 0
+      };
+    },
+    diagnostics: function () {
+      return {
+        source: source, fps: 1 / step, frames: count, watch: !canWatch ? 'none' : echo === null ? 'unknown' : echo ? 'echo' : 'frame',
+        offset: offset, corrected: corrected, primed: primed
+      };
+    }
+  };
+}
+
+// ---- sound.js ----
+// The sound of a video in the browser: read from its place in the file (mp4.js), decoded, and searched for the start
+// signal (horn.js). The time of every sample in the film is known from the tables of the file, and from a tiny sound
+// with a click at a known place that tells how many samples the decoder of this phone drops at the start of a stream.
+function swimSoundFactory(Mp4, hornFactory) {
+  'use strict';
+
+  var Horn = hornFactory();
+
+  // 0.3 s of silence at 48 kHz with one click, as AAC (ADTS). Decoded with nothing trimmed, the click is at sample 8224.
+  var CLICK = '//FMQAOf/N4CAExhdmM2MC4zMS4xMDIAAjBADv/xTEABf/wBGCAH//FMQAF//AEYIAf/8UxAAX/8ARggB//xTEABf/wBGCAH//FMQAF//AEYIAf/8UxAAX/8ARhAB//xTEAdn/wBGJuMPr+v4PgH319L+//9wB94/H0CcABAMDAHkxPs9pATbEWTCus0EAJoAudzSuLKgvHP4e9/OJUeTQ6WzEADlwn6fYZcI40IgCThxCRAEIULARk2M/DEBi0zo+e8X7EwAPIpMYOPsAFq37PlYpBht6M7rFgZLcOQUElAvErrSMO8RtJJRLhKsUjEsEaICUOpY0sjBnUDFJOjy04iqBaiCRUy2IiEfKn4KqyK1dyfFH9FWXk0HNBIIeL//HEPmozwlAOgJEJW4iLEVAQkw0pjIoD/0JVINQomUmWyIwz8olBPbr+A//FMQAF//AEY4Af/8UxAAX/8ARggB//xTEABf/wBGCAH//FMQAF//AEYIAf/8UxAAX/8ARggB//xTEABf/wBGCAH//FMQAF//AEYIAf/8UxAAX/8ARggBw==';
+  var CLICK_AT = 8224, CLICK_RATE = 48000;
+  var lead = null;
+
+  function bytes(base64) {
+    var s = atob(base64), out = new Uint8Array(s.length), i;
+    for (i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  function decode(buffer, rate) {
+    var Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext, ctx;
+    if (!Ctx) return Promise.reject(new Error('no decoder'));
+    try { ctx = new Ctx(1, 1, rate); } catch (e) { ctx = new Ctx(1, 1, 44100); }
+    return new Promise(function (resolve, reject) {
+      var p = ctx.decodeAudioData(buffer, resolve, reject);
+      if (p && p.then) p.then(resolve, reject);
+    });
+  }
+
+  /** Samples that the decoder of this browser drops at the start of an AAC stream (0 when it gives every frame whole). */
+  async function decoderLead() {
+    if (lead !== null) return lead;
+    var buf = await decode(bytes(CLICK).buffer, CLICK_RATE), x = buf.getChannelData(0), p = 0, i;
+    for (i = 1; i < x.length; i++) if (Math.abs(x[i]) > Math.abs(x[p])) p = i;
+    if (Math.abs(x[p]) < 0.2) throw new Error('click not found');
+    var l = Math.round(CLICK_AT - p * CLICK_RATE / buf.sampleRate);
+    if (l < -2200 || l > 4300) throw new Error('lead ' + l);
+    lead = l;
+    return l;
+  }
+
+  function mono(buf, seconds) {
+    var n = seconds ? Math.min(buf.length, Math.floor(seconds * buf.sampleRate)) : buf.length;
+    var out = new Float32Array(n), channels = buf.numberOfChannels, c, ch, i;
+    for (c = 0; c < channels; c++) {
+      ch = buf.getChannelData(c);
+      for (i = 0; i < n; i++) out[i] += ch[i];
+    }
+    if (channels > 1) for (i = 0; i < n; i++) out[i] /= channels;
+    return out;
+  }
+
+  function workerSource() {
+    return 'var H = (' + hornFactory.toString() + ')();\n' +
+      'onmessage = function (e) {\n' +
+      '  try {\n' +
+      '    var x = e.data.samples, r = e.data.rate, l = H.loudness(x, r, 0.002), beeps = H.find(H.to16k(x, r));\n' +
+      '    postMessage({ beeps: beeps, values: l.values, step: l.step }, [l.values.buffer]);\n' +
+      '  } catch (err) { postMessage({ error: String(err) }); }\n' +
+      '};\n';
+  }
+
+  /** The signals heard and the loudness of the sound, worked out away from the screen where the phone allows it. */
+  function detect(samples, rate) {
+    return new Promise(function (resolve) {
+      function direct() {
+        setTimeout(function () {
+          var l = Horn.loudness(samples, rate, 0.002);
+          resolve({ beeps: Horn.find(Horn.to16k(samples, rate)), values: l.values, step: l.step, worker: false });
+        }, 30);
+      }
+      var w, url, done = false, timer;
+      try {
+        url = URL.createObjectURL(new Blob([workerSource()], { type: 'text/javascript' }));
+        w = new Worker(url);
+      } catch (e) {
+        return direct();
+      }
+      function end(result) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { w.terminate(); URL.revokeObjectURL(url); } catch (e) { /* gone already */ }
+        if (result) resolve(result); else direct();
+      }
+      timer = setTimeout(function () { end(null); }, 90000);
+      w.onmessage = function (e) {
+        if (e.data && e.data.beeps) end({ beeps: e.data.beeps, values: e.data.values, step: e.data.step, worker: true });
+        else end(null);
+      };
+      w.onerror = function () { end(null); };
+      var copy = new Float32Array(samples);
+      w.postMessage({ samples: copy, rate: rate }, [copy.buffer]);
+    });
+  }
+
+  /**
+   * The sound of a video: { status: 'ok' | 'none', path, start, lead, seconds, loud: { values, step, start },
+   * beeps: [...each with 'at': its onset in the film (s)], choice: { list, best, clear }, note }.
+   * info: the tables of the file (or null: the whole file is decoded, when it is small enough).
+   */
+  async function analyse(file, info, seconds) {
+    var r = { status: 'none', path: '', start: 0, lead: 0, seconds: 0, note: '', beeps: [], choice: { list: [], best: null, clear: false } };
+    var samples = null, rate = 0, limit = seconds || 120;
+    if (info && info.audio) {
+      try {
+        var l = await decoderLead(), a = info.audio;
+        var sound = await Mp4.readSound(Mp4.fileReader(file), a, limit);
+        if (sound) {
+          var buf = await decode(sound.bytes.buffer, a.rate), expect = sound.frames * a.frameTicks / a.timescale;
+          // What the decoder gives must be the sound that was read: every frame, less what it drops at the start.
+          if (Math.abs(buf.duration - (expect - l / a.rate)) < 0.06) {
+            samples = mono(buf); rate = buf.sampleRate;
+            r.path = 'stream'; r.lead = l; r.start = a.start + l / a.rate;
+          } else {
+            r.note = 'sound of ' + buf.duration.toFixed(3) + ' s for ' + expect.toFixed(3) + ' s read';
+          }
+        }
+      } catch (e) {
+        r.note = String((e && e.message) || e);
+      }
+    }
+    if (!samples && file.size <= 150 * 1048576) {
+      try {
+        var whole = await decode(await Mp4.fileReader(file).read(0, file.size), 48000);
+        samples = mono(whole, limit); rate = whole.sampleRate;
+        r.path = 'file'; r.start = 0; r.lead = 0;
+      } catch (e) {
+        r.note = (r.note ? r.note + '; ' : '') + String((e && e.message) || e);
+      }
+    }
+    if (!samples || samples.length < rate) return r;
+
+    var d = await detect(samples, rate);
+    r.status = 'ok';
+    r.seconds = samples.length / rate;
+    r.worker = d.worker;
+    r.loud = { values: d.values, step: d.step, start: r.start };
+    r.beeps = d.beeps.map(function (b) { b.at = b.onset + r.start; return b; });
+    r.choice = Horn.choose(r.beeps);
+    return r;
+  }
+
+  return { analyse: analyse, decoderLead: decoderLead };
+}
+
+// ---- report.js ----
+// The report of a start as one picture of the proportions of A4 (1240 × 1754): what is saved as PDF or as an image.
+// Light paper, for reading on any screen and for printing.
+function swimReportFactory(M) {
+  'use strict';
+
+  var W = 1240, H = 1754, L = 84, R = W - 84;
+  var DISPLAY = '"Sofia Sans Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif';
+  var BODY = 'Inter, "Segoe UI", Roboto, system-ui, sans-serif';
+  var PAPER = '#FFFFFF', INK = '#06202E', SOFT = '#4C6A77', RULE = '#D5E3EA', TINT = '#EEF6F9', BAND = '#06283A';
+  var ACCENT = '#0A8FB3', BRIGHT = '#38E1FF', PALE = '#A9DCE8', GOOD = '#0B7F55', WARN = '#A65F00';
+
+  /**
+   * a: the analysis; o: { thumbs: [{ id, canvas }], list: all the analyses (for the differences), tech: the summary of
+   * the technique { ok, checked, items: [{ name, cue }] }, version }. Returns the canvas.
+   */
+  function draw(a, o) {
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var g = c.getContext('2d'), m = M.measure(a), y, i;
+
+    function font(weight, size, display) { g.font = weight + ' ' + size + 'px ' + (display ? DISPLAY : BODY); }
+    function put(s, x, yy, color, align) { g.fillStyle = color; g.textAlign = align || 'left'; g.fillText(s, x, yy); }
+    function width(s) { return g.measureText(s).width; }
+    function spacing(px) { if ('letterSpacing' in g) g.letterSpacing = px + 'px'; }
+    function fit(s, max) {
+      if (width(s) <= max) return s;
+      while (s.length > 1 && width(s + '…') > max) s = s.slice(0, -1);
+      return s + '…';
+    }
+    function lines(s, max) {
+      var out = [];
+      String(s).split('\n').forEach(function (part) {
+        var words = part.split(/\s+/), line = '', test, n;
+        for (n = 0; n < words.length; n++) {
+          test = line ? line + ' ' + words[n] : words[n];
+          if (line && width(test) > max) { out.push(line); line = words[n]; } else line = test;
+        }
+        if (line) out.push(line);
+      });
+      return out;
+    }
+    function wrap(s, x, yy, max, lineHeight, color, most) {
+      var all = lines(s, max), n;
+      if (most && all.length > most) { all = all.slice(0, most); all[most - 1] = fit(all[most - 1] + ' …', max); }
+      for (n = 0; n < all.length; n++) put(all[n], x, yy + n * lineHeight, color);
+      return yy + all.length * lineHeight;
+    }
+    function label(s, x, yy, color, align) { font(700, 20, false); spacing(2.5); put(s, x, yy, color, align); spacing(0); }
+    function difference(row, value) {
+      var before = M.previous(o.list || [], a, row.id), prev = before ? M.measure(before)[row.id] : null;
+      if (value === null || prev === null) return null;
+      var d = M.round2(value - prev);
+      return { text: M.fmtDelta(value, prev), prev: prev, color: row.less === null || d === 0 ? SOFT : (d < 0) === row.less ? GOOD : WARN };
+    }
+
+    g.textBaseline = 'alphabetic';
+    g.fillStyle = PAPER; g.fillRect(0, 0, W, H);
+
+    // The band at the top: who, when.
+    g.fillStyle = BAND; g.fillRect(0, 0, W, 214);
+    label('ΑΝΑΛΥΣΗ ΕΚΚΙΝΗΣΗΣ', L, 76, BRIGHT);
+    font(800, 72, true);
+    put(fit((a.athlete || '').trim() || 'Χωρίς όνομα', R - L - 320), L, 156, PAPER);
+    font(600, 28, false); put(M.dateText(a.created), R, 104, PAPER, 'right');
+    font(400, 25, false); if (a.stroke) put(M.strokeName(a.stroke), R, 142, PALE, 'right');
+    label('KINOVEA SWIM', R, 184, BRIGHT, 'right');
+    y = 214;
+
+    // The number that sums it up.
+    var head = M.headline(a);
+    if (head) {
+      y += 150;
+      var big = M.fmt(head.value), x;
+      font(800, 136, true); put(big, L, y, INK); x = L + width(big) + 14;
+      font(700, 46, true); put(head.unit, x, y, SOFT); x += width(head.unit) + 34;
+      font(600, 34, false);
+      put(head.id === 'flight' || head.id === 'block' ? head.label : 'στα ' + head.label, x, y - 52, INK);
+      var hd = difference({ id: head.id, less: head.id === 'flight' ? null : true }, head.value);
+      if (hd) { font(600, 26, false); put(hd.text + ' s από την προηγούμενη (' + M.fmt(hd.prev) + ')', x, y - 10, hd.color); }
+      y += 30;
+    }
+
+    // The frames of the marks.
+    var thumbs = (o.thumbs || []).slice(0, 3);
+    if (thumbs.length) {
+      y += 34;
+      var gap = 22, tw = (R - L - 2 * gap) / 3, ratio = thumbs[0].canvas.height / Math.max(1, thumbs[0].canvas.width);
+      var th = Math.round(Math.min(250, tw * ratio)), t0 = M.signalTime(a);
+      thumbs.forEach(function (t, n) {
+        var bx = L + n * (tw + gap), s = Math.min(tw / t.canvas.width, th / t.canvas.height);
+        var dw = t.canvas.width * s, dh = t.canvas.height * s, time = M.markTime(a, t.id);
+        g.fillStyle = INK; g.fillRect(bx, y, tw, th);
+        g.drawImage(t.canvas, bx + (tw - dw) / 2, y + (th - dh) / 2, dw, dh);
+        font(600, 23, false); put(fit(M.eventOf(t.id).short, tw - 110), bx, y + th + 34, INK);
+        if (t0 !== null && time !== null) { font(700, 26, true); put(M.fmt(time - t0) + ' s', bx + tw, y + th + 34, ACCENT, 'right'); }
+      });
+      y += th + 56;
+    }
+
+    // The measurements.
+    var rows = M.ROWS.filter(function (r) { return m[r.id] !== null; }), anyDifference = false;
+    if (rows.length) {
+      y += 46;
+      label('ΜΕΤΡΗΣΕΙΣ', L, y, SOFT);
+      var top = y;
+      y += 18;
+      rows.forEach(function (r, n) {
+        var d = difference(r, m[r.id]), value = M.fmt(m[r.id]);
+        if (n % 2 === 0) { g.fillStyle = TINT; g.fillRect(L, y, R - L, 50); }
+        font(500, 24, false); put(r.name, L + 18, y + 33, INK);
+        font(700, 30, true); put(value, R - 236, y + 35, INK, 'right');
+        font(500, 21, false); put(r.unit, R - 226, y + 33, SOFT);
+        if (d) { anyDifference = true; font(600, 22, false); put(d.text, R - 18, y + 33, d.color, 'right'); }
+        y += 50;
+      });
+      if (anyDifference) { font(400, 19, false); put('διαφορά από την προηγούμενη', R, top, SOFT, 'right'); }
+      g.fillStyle = RULE; g.fillRect(L, y, R - L, 2);
+      y += 2;
+    }
+
+    // What does not add up, said as on the screen.
+    var warnings = M.warnings(a);
+    if (warnings.length && y < H - 260) {
+      y += 40;
+      font(500, 22, false);
+      warnings.slice(0, 2).forEach(function (wtext) { y = wrap('! ' + wtext, L, y, R - L, 30, WARN, 2) + 4; });
+      y -= 12;
+    }
+
+    // The technique.
+    var tech = o.tech;
+    if (tech && tech.checked > 0 && y < H - 240) {
+      y += 60;
+      label('ΤΕΧΝΙΚΗ', L, y, SOFT);
+      y += 44;
+      font(600, 27, false);
+      put(tech.ok + ' από ' + tech.checked + ' σημεία σωστά' + (tech.items.length ? ' · ' + (tech.items.length === 1 ? '1 θέλει δουλειά' : tech.items.length + ' θέλουν δουλειά') : ''), L, y, INK);
+      y += 14;
+      for (i = 0; i < tech.items.length; i++) {
+        if (y > H - 230) { font(400, 21, false); put('… και ' + (tech.items.length - i) + ' ακόμα', L + 26, y + 34, SOFT); y += 34; break; }
+        y += 38;
+        g.fillStyle = WARN; g.fillRect(L, y - 17, 12, 12);
+        font(600, 23, false); put(fit(tech.items[i].name, R - L - 30), L + 26, y, INK);
+        if (tech.items[i].cue) { font(400, 21, false); y = wrap('Διόρθωση: ' + tech.items[i].cue, L + 26, y + 30, R - L - 30, 28, SOFT, 2) - 28; }
+      }
+    }
+
+    // The notes of the coach.
+    if (a.notes && a.notes.trim() && y < H - 210) {
+      y += 62;
+      label('ΣΗΜΕΙΩΣΕΙΣ', L, y, SOFT);
+      font(400, 23, false);
+      y = wrap(a.notes.trim(), L, y + 42, R - L, 32, INK, Math.max(1, Math.floor((H - 130 - y - 42) / 32)));
+    }
+
+    // The foot: how exact, from what.
+    g.fillStyle = RULE; g.fillRect(L, H - 96, R - L, 2);
+    font(400, 18, false);
+    var v = a.video, s = a.signal, foot = [];
+    if (v && v.fps) foot.push('Βίντεο ' + (Math.abs(v.fps - Math.round(v.fps)) < 0.02 ? Math.round(v.fps) : v.fps.toFixed(2).replace('.', ',')) + ' fps: κάθε σημάδι ±' + M.fmt(1 / v.fps, v.fps > 100 ? 3 : 2) + ' s');
+    if (s && s.src === 'sound') foot.push('Σήμα από τον ήχο' + (s.dist ? ', ' + s.dist + ' μ. από το ηχείο' : ''));
+    else if (s) foot.push('Σήμα σημαδεμένο στο καρέ');
+    put(fit(foot.join(' · '), R - L - 300), L, H - 58, SOFT);
+    put('Kinovea Swim Κινητό ' + (o.version || ''), R, H - 58, SOFT, 'right');
+    return c;
+  }
+
+  return { draw: draw, width: W, height: H };
+}
+
+// ---- app.js ----
+// The screens of the phone app: home, new analysis, marking on the video, measurements, technique, report, settings.
+// Everything stays on the phone: the video is read where it is, the analyses are kept in the storage of the browser.
+function swimAppStart(boot) {
+  'use strict';
+
+  var VERSION = '0.1.0';
+  var M = swimMetricsFactory(), Mp4 = swimMp4Factory(), Player = swimPlayerFactory(Mp4);
+  var Sound = swimSoundFactory(Mp4, swimHornFactory), Pdf = swimPdfFactory(), Report = swimReportFactory(M);
+
+  // ---------------------------------------------------------------- small tools
+  function $(id) { return document.getElementById(id); }
+  var NS = 'http://www.w3.org/2000/svg';
+  var ICONS = {
+    back: 'M15 5l-7 7 7 7', next: 'M9 5l7 7-7 7', check: 'M5 12.5l4.5 4.5L19 7', cross: 'M6 6l12 12M18 6L6 18',
+    sliders: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
+    camera: 'M4 8h3.2l1.6-2.5h6.4L16.8 8H20v11H4z|M12 16.3a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+    gallery: 'M4 5h16v14H4z|M4 15.5l4.5-4.5 4 4 2.5-2.5 5 5|M8.5 9.5h.01',
+    play: '*M8 5.5v13l11-6.5z', pause: '*M7 5h3.6v14H7zM13.4 5H17v14h-3.6z',
+    trash: 'M5 7h14M10 7V5h4v2M7.5 7l.8 12h7.4l.8-12',
+    sound: 'M4 10v4h3l4 3.5v-11L7 10z|M15 9.5a3.5 3.5 0 0 1 0 5|M17.5 7a7 7 0 0 1 0 10',
+    mute: 'M4 10v4h3l4 3.5v-11L7 10z|M16 9.5l5 5M21 9.5l-5 5',
+    wave: 'M3 12h2l2-5 3 11 3-14 3 11 2-3h3',
+    warn: 'M12 4l9 16H3z|M12 10v4.5|M12 17.5h.01',
+    save: 'M12 15V4M8 8l4-4 4 4|M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5',
+    copy: 'M9 9h10v11H9z|M5 15V4h10', plus: 'M12 5v14M5 12h14',
+    down: 'M12 5v14M6 13l6 6 6-6', up: 'M12 19V5M6 11l6-6 6 6', home: 'M4 11l8-7 8 7|M6 10v10h12V10'
+  };
+
+  function icon(name, size) {
+    var s = document.createElementNS(NS, 'svg'), d = ICONS[name] || '', fill = d.charAt(0) === '*';
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('width', size || 22); s.setAttribute('height', size || 22);
+    s.setAttribute('fill', fill ? 'currentColor' : 'none');
+    s.setAttribute('stroke', fill ? 'none' : 'currentColor');
+    s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    (fill ? d.slice(1) : d).split('|').forEach(function (p) {
+      var e = document.createElementNS(NS, 'path');
+      e.setAttribute('d', p);
+      s.appendChild(e);
+    });
+    return s;
+  }
+
+  function h(tag, props, kids) {
+    var e = document.createElement(tag), k;
+    for (k in (props || {})) {
+      if (props[k] === null || props[k] === undefined || props[k] === false) continue;
+      if (k === 'class') e.className = props[k];
+      else if (k === 'text') e.textContent = props[k];
+      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), props[k]);
+      else if (k === 'disabled' || k === 'hidden' || k === 'value') e[k] = props[k];
+      else e.setAttribute(k, props[k] === true ? '' : props[k]);
+    }
+    (kids || []).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return e;
+  }
+
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); return node; }
+  function fill(node, kids) { clear(node); (kids || []).forEach(function (c) { if (c) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); }); return node; }
+  var tokens = {};
+  function css(name) {
+    if (!tokens[name]) tokens[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return tokens[name];
+  }
+  function fmt3(v) { return v.toFixed(3).replace('.', ',').replace('-', '−'); }
+  function seconds(v) { return M.fmt(v, v >= 100 ? 0 : 1) + ' s'; }
+  /** How exact a mark is: one frame of the video (s). */
+  function frameText(fps) { return M.fmt(1 / fps, fps > 100 ? 3 : 2) + ' s'; }
+  function fpsText(fps) {
+    var r = Math.round(fps);
+    return (Math.abs(fps - r) < 0.02 ? String(r) : fps.toFixed(2).replace('.', ',')) + ' fps';
+  }
+
+  // ---------------------------------------------------------------- what is kept on the phone
+  var KEY = 'kinovea-swim-mobile', storageFailed = false;
+  var DB = { v: 1, analyses: [], tech: null, settings: {} };
+
+  var EXAMPLE_TECH = {
+    example: true,
+    phases: [
+      { id: 'block', name: 'Βατήρας', items: [
+        { id: 'b1', name: 'Ισχία ψηλά, βάρος μπροστά στη θέση ετοιμότητας', cue: 'Φέρε τους γοφούς πάνω από το μπροστινό πόδι.' },
+        { id: 'b2', name: 'Τα χέρια τραβούν τον βατήρα με το σήμα', cue: 'Τράβα τον βατήρα προς τα πίσω μόλις ακούσεις το σήμα.' },
+        { id: 'b3', name: 'Ώθηση και από τα δύο πόδια', cue: 'Σπρώξε πρώτα με το πίσω πόδι, τέλειωσε με το μπροστινό.' }
+      ] },
+      { id: 'flight', name: 'Πτήση', items: [
+        { id: 'f1', name: 'Σώμα τεντωμένο στην πτήση', cue: 'Σφιχτός κορμός, ψηλά οι γοφοί.' },
+        { id: 'f2', name: 'Κεφάλι ανάμεσα στα χέρια πριν την είσοδο', cue: 'Το βλέμμα κάτω, τα αυτιά ανάμεσα στα μπράτσα.' }
+      ] },
+      { id: 'entry', name: 'Είσοδος', items: [
+        { id: 'e1', name: 'Όλο το σώμα μπαίνει από το ίδιο σημείο', cue: 'Χέρια, κεφάλι, γοφοί και πόδια από την ίδια «τρύπα» στο νερό.' },
+        { id: 'e2', name: 'Χέρια ενωμένα, το ένα πάνω στο άλλο', cue: 'Κλείδωσε τις παλάμες πριν αγγίξεις το νερό.' }
+      ] },
+      { id: 'under', name: 'Υποβρύχια', items: [
+        { id: 'u1', name: 'Streamline μετά την είσοδο', cue: 'Τεντωμένα χέρια και σφιχτό σώμα ως τον πρώτο δελφινισμό.' },
+        { id: 'u2', name: 'Έξοδος με ταχύτητα', cue: 'Κράτα το κεφάλι κάτω στην πρώτη χεριά.' }
+      ] }
+    ]
+  };
+
+  function loadDb() {
+    try {
+      var raw = window.localStorage.getItem(KEY), d = raw ? JSON.parse(raw) : null;
+      if (d && d.v === 1 && Array.isArray(d.analyses)) DB = d;
+    } catch (e) {
+      storageFailed = true;
+    }
+    DB.settings = DB.settings || {};
+    if (typeof DB.settings.hornDist !== 'number') DB.settings.hornDist = 0;
+    if (typeof DB.settings.soundFix !== 'number') DB.settings.soundFix = 0;
+  }
+
+  function saveDb() {
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(DB));
+      storageFailed = false;
+    } catch (e) {
+      storageFailed = true;
+    }
+  }
+
+  function techList() { return DB.tech || EXAMPLE_TECH; }
+  function byId(id) { for (var i = 0; i < DB.analyses.length; i++) if (DB.analyses[i].id === id) return DB.analyses[i]; return null; }
+  function kept(a) { return !!a && DB.analyses.indexOf(a) >= 0; }
+  function touch(a) { a.updated = new Date().toISOString(); S.report = null; S.reportError = ''; if (kept(a)) saveDb(); }
+  function soundFix() { return (DB.settings.soundFix || 0) / 1000; }
+
+  function newAnalysis() {
+    return {
+      id: 'a' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36), kind: 'start',
+      created: new Date().toISOString(), athlete: '', stroke: '', video: null, signal: null, marks: {}, tech: {}, notes: ''
+    };
+  }
+
+  function title(a) { return (a.athlete || '').trim() || 'Χωρίς όνομα'; }
+  function subtitle(a) {
+    return 'Εκκίνηση' + (a.stroke ? ' · ' + M.strokeName(a.stroke).toLocaleLowerCase('el') : '') + ' · ' + M.dateText(a.created);
+  }
+
+  function techSummary(a) {
+    var ok = 0, checked = 0, fix = [], items = [];
+    techList().phases.forEach(function (p) {
+      p.items.forEach(function (it) {
+        var v = a.tech && a.tech[it.id];
+        if (!v) return;
+        checked++;
+        if (v === 'ok') ok++; else { fix.push(it.name); items.push({ name: it.name, cue: it.cue || '', phase: p.name }); }
+      });
+    });
+    return { ok: ok, checked: checked, fix: fix, items: items };
+  }
+
+  // ---------------------------------------------------------------- the session
+  var S = {
+    view: 'home', A: null, file: null, loadedFor: null, loading: false, loadError: '', info: null,
+    sound: null, soundBusy: false, sel: 'signal', rate: 0.25, phase: 0, reportToken: 0, report: null, reportBusy: false, reportError: ''
+  };
+  var VIEWS = ['home', 'setup', 'mark', 'result', 'tech', 'report', 'settings'];
+  var RENDER = {};
+  var downloads = null, wakeLock = null;
+
+  function show(name) {
+    if (S.view === 'mark' && name !== 'mark') Player.pause();
+    VIEWS.forEach(function (v) {
+      var e = $('v-' + v);
+      if (v === 'mark' && name !== 'mark' && (S.loading || S.loadedFor)) {
+        // The video stays drawn (unseen) under the other screens: the phone keeps its frames ready for the report.
+        e.hidden = false; e.classList.add('under');
+      } else {
+        e.classList.remove('under'); e.hidden = v !== name;
+      }
+    });
+    S.view = name;
+    closeSheet();
+    wake(name === 'mark');
+    if (RENDER[name]) RENDER[name]();
+  }
+
+  function wake(on) {
+    try {
+      if (on && navigator.wakeLock && !wakeLock) {
+        navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; l.addEventListener('release', function () { wakeLock = null; }); }, function () { /* not granted */ });
+      } else if (!on && wakeLock) {
+        wakeLock.release(); wakeLock = null;
+      }
+    } catch (e) { /* no wake lock on this phone */ }
+  }
+
+  // ---------------------------------------------------------------- messages
+  var toastTimer = 0;
+  function toast(text, action, run) {
+    var t = $('toast');
+    fill(t, [h('span', { text: text }), action ? h('button', { type: 'button', text: action, onclick: function () { t.hidden = true; run(); } }) : null]);
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, action ? 6000 : 2600);
+  }
+
+  var flashTimer = 0;
+  function flash(text) {
+    var f = $('flash');
+    f.textContent = text; f.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { f.hidden = true; }, 1400);
+  }
+
+  function openSheet(kids) { fill($('sheet'), kids); $('backdrop').hidden = false; }
+  function closeSheet() { $('backdrop').hidden = true; clear($('sheet')); }
+
+  function confirmSheet(titleText, body, yes, run, danger) {
+    openSheet([
+      h('h2', { text: titleText }), body ? h('p', { class: 'muted', text: body }) : null,
+      h('button', { class: 'btn ' + (danger ? 'danger' : 'primary'), type: 'button', text: yes, onclick: function () { closeSheet(); run(); } }),
+      h('button', { class: 'btn', type: 'button', text: 'Άκυρο', onclick: closeSheet })
+    ]);
+  }
+
+  // ---------------------------------------------------------------- home
+  RENDER.home = function () {
+    var list = DB.analyses.slice().sort(function (a, b) { return a.created < b.created ? 1 : -1; });
+    var box = clear($('home-list'));
+    if (list.length === 0) {
+      box.appendChild(h('div', { class: 'empty', text: 'Καμία ανάλυση ακόμα. Η πρώτη σου θα φανεί εδώ, με τον χρόνο στα 15 μ.' }));
+    }
+    list.slice(0, 40).forEach(function (a) {
+      var head = M.headline(a), stroke = a.stroke ? M.strokeName(a.stroke).slice(0, 2).toLocaleUpperCase('el') : 'ΕΚ';
+      box.appendChild(h('button', { class: 'item', type: 'button', onclick: function () { S.A = a; show('result'); } }, [
+        h('span', { class: 'badge', text: stroke }),
+        h('span', { class: 'who' }, [h('b', { text: title(a) }), h('span', { text: subtitle(a) })]),
+        h('span', { class: 'val' }, head
+          ? [h('b', { text: M.fmt(head.value) + ' ' + head.unit }), h('span', { text: head.label })]
+          : [h('span', { text: 'Θέλει σημάδια' })])
+      ]));
+    });
+    var note = $('home-storage');
+    note.hidden = !storageFailed;
+    if (storageFailed) fill(note, [icon('warn', 20), h('span', { text: 'Εδώ το κινητό δεν κρατάει αποθηκευμένες αναλύσεις: θα χαθούν όταν κλείσεις τη σελίδα. Αποθήκευσε την αναφορά πριν φύγεις.' })]);
+  };
+
+  function pickedVideo(input, reopen) {
+    var file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if (reopen && S.A) {
+      var v = S.A.video;
+      if (v && v.size && v.size !== file.size) {
+        confirmSheet('Άλλο βίντεο;', 'Αυτό το βίντεο δεν έχει το μέγεθος εκείνου της ανάλυσης. Αν είναι άλλο, τα σημάδια δεν θα ταιριάζουν.', 'Άνοιγμα', function () { openVideo(file, S.A, true); });
+      } else {
+        openVideo(file, S.A, true);
+      }
+      return;
+    }
+    S.A = newAnalysis();
+    show('setup');
+    openVideo(file, S.A, false);
+  }
+
+  // ---------------------------------------------------------------- the video and its sound
+  async function openVideo(file, a, toMark) {
+    S.file = file; S.loading = true; S.loadedFor = null; S.loadError = ''; S.info = null; S.sound = null; S.soundBusy = false;
+    S.report = null;
+    Zoom.reset();
+    if (toMark) show('mark'); else show(S.view);
+    try {
+      var r = await Player.load($('video'), file);
+      if (S.file !== file) return;
+      var st = Player.state();
+      S.info = r.info; S.loadedFor = a.id; S.loading = false;
+      a.video = {
+        size: file.size, duration: Math.round(r.duration * 1000) / 1000, fps: Math.round(st.fps * 1000) / 1000, frames: st.count,
+        source: st.source, width: r.width, height: r.height
+      };
+      if (r.width > 0 && r.height > 0) $('stage').style.setProperty('--ar', r.width + ' / ' + r.height);
+      touch(a);
+      S.soundBusy = true;
+      refresh();
+      if (a.signal && S.view === 'mark') Player.go(Player.frameAt(a.signal.t));
+    } catch (e) {
+      if (S.file !== file) return;
+      S.loading = false; S.soundBusy = false; S.loadError = (e && e.message) || String(e);
+      refresh();
+      return;
+    }
+
+    // The sound, apart: whatever happens to it, the video is open and can be marked.
+    var s = null;
+    try {
+      s = await Promise.race([
+        Sound.analyse(file, S.info, 120),
+        new Promise(function (resolve) { setTimeout(function () { resolve({ status: 'none', path: '', start: 0, lead: 0, seconds: 0, beeps: [], choice: { list: [], best: null, clear: false }, note: 'too long' }); }, 75000); })
+      ]);
+    } catch (e) {
+      s = { status: 'none', path: '', start: 0, lead: 0, seconds: 0, beeps: [], choice: { list: [], best: null, clear: false }, note: String((e && e.message) || e) };
+    }
+    if (S.file !== file) return;
+    S.sound = s; S.soundBusy = false;
+    heard(a);
+    refresh();
+  }
+
+  function refresh() { if (RENDER[S.view]) RENDER[S.view](); }
+
+  function fromBeep(b, auto) {
+    return {
+      t: b.at + soundFix(), src: 'sound', dist: DB.settings.hornDist || 0, low: Math.round(b.low), high: Math.round(b.high),
+      single: !!b.single, score: Math.round(b.score * 10) / 10, auto: !!auto
+    };
+  }
+
+  /** The sound has been read: the loudest sample for the strip, and the signal taken when it is clear and none is marked. */
+  function heard(a) {
+    var s = S.sound;
+    if (!s || s.status !== 'ok') return;
+    var peak = 1e-4, i, v = s.loud.values;
+    for (i = 0; i < v.length; i++) if (v[i] > peak) peak = v[i];
+    s.peak = peak;
+    if (a.signal) return;
+    if (!s.choice.best || !s.choice.clear) {
+      if (S.view === 'mark' && s.choice.list.length > 0) signalSheet();
+      return;
+    }
+    a.signal = fromBeep(s.choice.best, true);
+    touch(a);
+    if (S.view === 'mark') {
+      if (S.sel === 'signal') S.sel = nextUnmarked('signal') || 'signal';
+      if (Player.state().frame === 0) Player.go(Player.frameAt(a.signal.t));
+      toast('Το σήμα εκκίνησης βρέθηκε στον ήχο');
+    }
+  }
+
+  function beepText(b) {
+    var tones = b.single ? 'ένας τόνος ' + Math.round(b.low) + ' Hz' : 'δύο τόνοι ' + Math.round(b.low) + ' / ' + Math.round(b.high) + ' Hz';
+    return tones + ' · ' + (b.score >= 20 ? 'πολύ καθαρό' : b.score >= 10 ? 'καθαρό' : 'αχνό');
+  }
+
+  // ---------------------------------------------------------------- new analysis
+  function statusLine(kind, text) {
+    return h('div', { class: 'status-line ' + kind }, [
+      kind === 'busy' ? h('span', { class: 'spin' }) : icon(kind === 'ok' ? 'check' : 'warn', 18), h('span', { text: text })
+    ]);
+  }
+
+  function videoStatus() {
+    var a = S.A, lines = [], st = Player.state(), v = a && a.video;
+    if (S.loadError) return [statusLine('bad', S.loadError)];
+    if (S.loading || !v || S.loadedFor !== a.id) return [statusLine('busy', 'Ανοίγει το βίντεο…')];
+    lines.push(statusLine('ok', 'Βίντεο ' + seconds(v.duration) + ' · ' + v.width + '×' + v.height));
+    if (st.source === 'tables') {
+      lines.push(statusLine(v.fps >= 49 ? 'ok' : 'warn', fpsText(v.fps) + ' · ' + v.frames + ' καρέ, διαβασμένα από το αρχείο' +
+        (v.fps >= 49 ? '. Κάθε σημάδι ±' + frameText(v.fps) + '.' : '. Κάθε σημάδι ±' + frameText(v.fps) + ': στα 60 fps είναι ±0,02 s.')));
+    } else if (st.source === 'measured') {
+      lines.push(statusLine('warn', 'Περίπου ' + fpsText(v.fps) + ', μετρημένα από την αναπαραγωγή (το αρχείο δεν δίνει τα καρέ του).'));
+    } else {
+      lines.push(statusLine('warn', 'Τα καρέ ανά δευτερόλεπτο δεν διαβάστηκαν: υπολογίζω 30. Άλλαξέ το στην οθόνη της σήμανσης αν το βίντεο είναι αλλιώς.'));
+    }
+    var s = S.sound;
+    if (S.soundBusy) {
+      lines.push(statusLine('busy', 'Ψάχνω την κόρνα στον ήχο…'));
+    } else if (!s || s.status !== 'ok') {
+      lines.push(statusLine('warn', 'Ο ήχος του βίντεο δεν διαβάστηκε. Το σήμα εκκίνησης το σημαδεύεις εσύ στο καρέ του.'));
+    } else if (a.signal && a.signal.src === 'sound') {
+      lines.push(statusLine('ok', 'Σήμα εκκίνησης από τον ήχο στα ' + M.fmt(a.signal.t) + ' s του βίντεο (' + beepText(a.signal) + ').'));
+    } else if (s.choice.list.length > 0) {
+      lines.push(statusLine('warn', 'Ακούστηκαν ' + s.choice.list.length + ' πιθανά σήματα. Διάλεξε το σωστό στην οθόνη της σήμανσης.'));
+    } else {
+      lines.push(statusLine('warn', 'Δεν ακούστηκε κόρνα. Το σήμα εκκίνησης το σημαδεύεις εσύ: φαίνεται στη λωρίδα του ήχου.'));
+    }
+    return lines;
+  }
+
+  RENDER.setup = function () {
+    var a = S.A;
+    if (!a) return show('home');
+    var names = [], seen = {};
+    DB.analyses.slice().sort(function (p, q) { return p.created < q.created ? 1 : -1; }).forEach(function (b) {
+      var n = (b.athlete || '').trim(), key = n.toLocaleLowerCase('el');
+      if (n && !seen[key]) { seen[key] = 1; names.push(n); }
+    });
+    fill($('athlete-chips'), names.slice(0, 6).map(function (n) {
+      return h('button', { class: 'chip', type: 'button', text: n, onclick: function () { $('athlete').value = n; a.athlete = n; } });
+    }));
+    fill($('stroke-chips'), M.STROKES.map(function (s) {
+      return h('button', {
+        class: 'chip' + (a.stroke === s.id ? ' on' : ''), type: 'button', text: s.name, 'aria-pressed': a.stroke === s.id ? 'true' : 'false',
+        onclick: function () { a.stroke = a.stroke === s.id ? '' : s.id; RENDER.setup(); }
+      });
+    }));
+    if (document.activeElement !== $('athlete')) $('athlete').value = a.athlete || '';
+    fill($('setup-status'), videoStatus().concat(S.loadError ? [
+      h('label', { class: 'btn', for: 'pick-video', text: 'Άλλο βίντεο' })
+    ] : []));
+    $('setup-go').disabled = !(S.loadedFor === a.id && !S.loading);
+  };
+
+  function startMarking() {
+    var a = S.A;
+    a.athlete = $('athlete').value.trim();
+    if (!kept(a)) DB.analyses.push(a);
+    touch(a);
+    Player.prime();
+    S.sel = a.signal ? (nextUnmarked('signal') || 'signal') : 'signal';
+    show('mark');
+    if (a.signal) Player.go(Player.frameAt(a.signal.t));
+    else if (S.sound && S.sound.status === 'ok' && S.sound.choice.list.length > 0) signalSheet();
+    if (!DB.settings.hinted) {
+      DB.settings.hinted = true; saveDb();
+      toast('Σύρε τη λωρίδα του ήχου για καρέ-καρέ. Δύο αγγίγματα στην εικόνα: ζουμ.');
+    }
+  }
+
+  // ---------------------------------------------------------------- zoom of the picture
+  var Zoom = (function () {
+    var s = 1, tx = 0, ty = 0, points = {}, pinch = null, tap = null, lastTap = null, moved = false;
+    function stage() { return $('stage'); }
+    function apply() {
+      var r = stage().getBoundingClientRect();
+      s = Math.max(1, Math.min(6, s));
+      tx = Math.min(0, Math.max(r.width * (1 - s), tx));
+      ty = Math.min(0, Math.max(r.height * (1 - s), ty));
+      $('zoomer').style.transform = s === 1 ? '' : 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+      $('zoom-out').hidden = s === 1;
+      if (s !== 1) $('zoom-out').textContent = M.fmt(s, 1) + '×';
+    }
+    function reset() { s = 1; tx = 0; ty = 0; apply(); }
+    function at(e) { var r = stage().getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    function ids() { return Object.keys(points); }
+    function zoomAt(p, to) {
+      var cx = (p.x - tx) / s, cy = (p.y - ty) / s;
+      s = to; tx = p.x - cx * s; ty = p.y - cy * s; apply();
+    }
+    function down(e) {
+      if (e.target.closest && e.target.closest('button,label,.stage-msg')) return;
+      points[e.pointerId] = at(e);
+      try { stage().setPointerCapture(e.pointerId); } catch (x) { /* older phones */ }
+      var list = ids();
+      if (list.length === 1) { tap = { x: points[e.pointerId].x, y: points[e.pointerId].y, t: Date.now() }; moved = false; }
+      if (list.length === 2) {
+        var a = points[list[0]], b = points[list[1]];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: s, cx: ((a.x + b.x) / 2 - tx) / s, cy: ((a.y + b.y) / 2 - ty) / s };
+        tap = null;
+      }
+    }
+    function move(e) {
+      var before = points[e.pointerId];
+      if (!before) return;
+      var p = at(e), list = ids();
+      points[e.pointerId] = p;
+      if (list.length >= 2 && pinch) {
+        var a = points[list[0]], b = points[list[1]], d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        s = Math.max(1, Math.min(6, pinch.s * d / pinch.d));
+        tx = (a.x + b.x) / 2 - pinch.cx * s; ty = (a.y + b.y) / 2 - pinch.cy * s;
+        apply();
+      } else if (list.length === 1) {
+        if (tap && Math.hypot(p.x - tap.x, p.y - tap.y) > 8) moved = true;
+        if (s > 1) { tx += p.x - before.x; ty += p.y - before.y; apply(); }
+      }
+    }
+    function up(e) {
+      if (!points[e.pointerId]) return;
+      var p = points[e.pointerId];
+      delete points[e.pointerId];
+      if (ids().length < 2) pinch = null;
+      if (tap && !moved && Date.now() - tap.t < 320 && ids().length === 0) {
+        if (lastTap && Date.now() - lastTap.t < 340 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 36) {
+          lastTap = null;
+          if (s > 1) reset(); else zoomAt(p, 2.5);
+        } else {
+          lastTap = { x: p.x, y: p.y, t: Date.now() };
+        }
+      }
+      tap = null;
+    }
+    return { reset: reset, apply: apply, down: down, move: move, up: up };
+  })();
+
+  // ---------------------------------------------------------------- marking
+  var PX = 6;   // pixels of the strip for one frame
+  var strip = { ctx: null, w: 0, h: 0, dpr: 1 };
+
+  function firstUnmarked() { return nextUnmarked(M.EVENTS[M.EVENTS.length - 1].id); }
+
+  function nextUnmarked(after) {
+    var ids = M.EVENTS.map(function (e) { return e.id; }), i = ids.indexOf(after), n;
+    for (n = 1; n <= ids.length; n++) {
+      var id = ids[(i + n) % ids.length];
+      if (M.markTime(S.A, id) === null) return id;
+    }
+    return null;
+  }
+
+  /** The frame that a mark sits on (the signal heard: the frame on screen at its onset). */
+  function markFrame(id) {
+    var a = S.A, t = id === 'signal' ? (a.signal ? a.signal.t : null) : M.markTime(a, id);
+    return t === null ? -1 : Player.frameAt(t);
+  }
+
+  function renderEvents() {
+    var a = S.A, t0 = M.signalTime(a);
+    fill($('events'), M.EVENTS.map(function (e) {
+      var t = M.markTime(a, e.id), label, cls = 't';
+      if (t === null) { label = '—'; cls += ' none'; }
+      else if (e.id === 'signal') { label = a.signal.src === 'sound' ? 'ήχος' : 'καρέ'; if (a.signal.src === 'sound') cls += ' sound'; }
+      else label = t0 !== null ? M.fmt(t - t0) : '';
+      return h('button', {
+        class: 'ev' + (S.sel === e.id ? ' sel' : ''), type: 'button', title: e.hint, 'aria-pressed': S.sel === e.id ? 'true' : 'false',
+        onclick: function () { selectEvent(e.id); }
+      }, [h('span', { class: 'n', text: e.short }), h('span', { class: cls }, [t !== null ? icon('check', 14) : null, label])]);
+    }));
+    var marks = clear($('scrub-marks')), d = Player.state().duration;
+    if (d > 0) {
+      M.EVENTS.forEach(function (e) {
+        var t = e.id === 'signal' ? (a.signal ? a.signal.t : null) : M.markTime(a, e.id);
+        if (t === null) return;
+        var m = h('div', { class: 'scrub-mark' + (e.id === 'signal' ? ' signal' : '') });
+        m.style.left = (100 * Math.max(0, Math.min(1, t / d))).toFixed(2) + '%';
+        marks.appendChild(m);
+      });
+    }
+  }
+
+  function renderFrame() {
+    var a = S.A, st = Player.state();
+    if (!a) return;
+    var k = st.frame, t = !st.loaded ? 0 : k === st.shown ? Player.current() : Player.time(k), t0 = M.signalTime(a);
+    if (!st.loaded) {
+      $('clock').textContent = '—';
+      $('clock-unit').textContent = '';
+    } else if (t0 !== null) {
+      var rel = t - t0;
+      $('clock').textContent = (rel >= 0 ? '+' : '') + fmt3(rel);
+      $('clock-unit').textContent = ' από το σήμα';
+    } else {
+      $('clock').textContent = fmt3(t);
+      $('clock-unit').textContent = ' βίντεο';
+    }
+    $('frame-no').textContent = st.loaded ? 'καρέ ' + (k + 1) + ' / ' + st.count : '';
+    var frac = st.count > 1 ? k / (st.count - 1) : 0;
+    $('scrub-fill').style.width = (100 * frac).toFixed(2) + '%';
+    $('scrub-knob').style.left = (100 * frac).toFixed(2) + '%';
+    $('scrub').setAttribute('aria-valuenow', String(Math.round(100 * frac)));
+
+    var e = M.eventOf(S.sel), mf = markFrame(S.sel), btn = $('mark-btn');
+    btn.disabled = !st.loaded;
+    btn.classList.toggle('here', mf === k);
+    if (mf < 0) btn.textContent = 'Σημάδεψε: ' + e.name;
+    else if (mf === k) btn.textContent = '✓ ' + e.short + ' σε αυτό το καρέ';
+    else btn.textContent = 'Μετακίνηση εδώ: ' + e.short;
+    $('unmark-btn').hidden = mf < 0;
+    $('signal-more').hidden = S.sel !== 'signal';
+    drawStrip();
+  }
+
+  function renderPlayState() {
+    var st = Player.state();
+    fill($('t-play'), [icon(st.playing ? 'pause' : 'play', 24)]);
+    $('t-play').setAttribute('aria-label', st.playing ? 'Παύση' : 'Αναπαραγωγή');
+    $('t-rate').textContent = S.rate === 1 ? '1×' : S.rate === 0.5 ? '½×' : '¼×';
+    fill($('sound-btn'), [icon($('video').muted ? 'mute' : 'sound')]);
+    var slot = clear($('fps-slot'));
+    if (!st.loaded) return;
+    if (st.source === 'tables') slot.appendChild(h('span', { class: 'fps', text: fpsText(st.fps) }));
+    else slot.appendChild(h('button', { class: 'link', type: 'button', text: '≈ ' + fpsText(st.fps) + ' · άλλαξε', onclick: fpsSheet }));
+  }
+
+  RENDER.mark = function () {
+    var a = S.A;
+    if (!a) return show('home');
+    if (S.loadedFor && S.loadedFor !== a.id && !S.loading) {
+      // The video on screen belongs to another analysis: its frames must not be marked into this one.
+      Player.unload();
+      S.file = null; S.loadedFor = null; S.info = null; S.sound = null; S.soundBusy = false; S.loadError = '';
+    }
+    $('mark-title').textContent = title(a);
+    $('mark-sub').textContent = 'Εκκίνηση' + (a.stroke ? ' · ' + M.strokeName(a.stroke).toLocaleLowerCase('el') : '');
+    var msg = $('stage-msg');
+    if (S.loadError) {
+      fill(msg, [h('p', { text: S.loadError }), h('label', { class: 'btn small', for: 'reopen-video', text: 'Άλλο βίντεο' })]);
+      msg.hidden = false;
+    } else if (S.loading) {
+      fill(msg, [h('span', { class: 'spin' }), h('p', { text: 'Ανοίγει το βίντεο…' })]);
+      msg.hidden = false;
+    } else if (S.loadedFor !== a.id) {
+      fill(msg, [h('p', { text: 'Για να δεις τα καρέ, διάλεξε ξανά το βίντεο αυτής της ανάλυσης.' }), h('label', { class: 'btn small primary', for: 'reopen-video', text: 'Διάλεξε το βίντεο' })]);
+      msg.hidden = false;
+    } else {
+      msg.hidden = true;
+    }
+    if (M.markTime(a, S.sel) === null && !M.eventOf(S.sel)) S.sel = 'signal';
+    renderEvents();
+    renderPlayState();
+    renderFrame();
+  };
+
+  function selectEvent(id) {
+    S.sel = id;
+    var f = markFrame(id);
+    if (f >= 0 && Player.state().loaded) Player.go(f);
+    renderEvents();
+    renderFrame();
+  }
+
+  async function markHere() {
+    var a = S.A, st = Player.state(), id = S.sel, e = M.eventOf(id);
+    if (!st.loaded || !a) return;
+    await Player.shownFrame(st.frame);
+    var k = Player.state().shown, t = Player.current();
+    if (markFrame(id) === k) return;
+    var before = id === 'signal' ? a.signal : a.marks[id];
+    if (id === 'signal') a.signal = { t: t, src: 'frame' }; else a.marks[id] = { t: t };
+    touch(a);
+    var t0 = M.signalTime(a);
+    flash('✓ ' + e.short + (id !== 'signal' && t0 !== null ? ' · ' + M.fmt(t - t0) + ' s' : ''));
+    toast('Σημαδεύτηκε: ' + e.short, 'Αναίρεση', function () {
+      if (id === 'signal') a.signal = before || null; else if (before) a.marks[id] = before; else delete a.marks[id];
+      touch(a); S.sel = id; RENDER.mark();
+    });
+    var next = nextUnmarked(id);
+    if (next) S.sel = next;
+    renderEvents();
+    renderFrame();
+  }
+
+  function unmark() {
+    var a = S.A, id = S.sel, e = M.eventOf(id), before = id === 'signal' ? a.signal : a.marks[id];
+    if (!before) return;
+    if (id === 'signal') a.signal = null; else delete a.marks[id];
+    touch(a);
+    toast('Σβήστηκε: ' + e.short, 'Αναίρεση', function () {
+      if (id === 'signal') a.signal = before; else a.marks[id] = before;
+      touch(a); RENDER.mark();
+    });
+    renderEvents();
+    renderFrame();
+  }
+
+  function sizeStrip() {
+    var c = $('strip'), r = c.getBoundingClientRect(), dpr = Math.min(3, window.devicePixelRatio || 1);
+    if (!r.width || !r.height) return false;
+    var w = Math.round(r.width * dpr), hh = Math.round(r.height * dpr);
+    if (c.width !== w || c.height !== hh) { c.width = w; c.height = hh; }
+    strip.w = r.width; strip.h = r.height; strip.dpr = dpr; strip.ctx = c.getContext('2d');
+    return true;
+  }
+
+  /** The strip under the picture: the sound and the frames around the frame on screen, which stays in the middle. */
+  function drawStrip() {
+    if (S.view !== 'mark' || !sizeStrip()) return;
+    var g = strip.ctx, w = strip.w, hh = strip.h, st = Player.state(), a = S.A;
+    g.setTransform(strip.dpr, 0, 0, strip.dpr, 0, 0);
+    g.clearRect(0, 0, w, hh);
+    if (!st.loaded || !a) return;
+    var k = st.frame, now = Player.time(k), cx = Math.round(w / 2), perSecond = PX / st.step;
+    function X(t) { return cx + (t - now) * perSecond; }
+
+    g.fillStyle = css('--accent-deep');
+    g.fillRect(cx, 0, PX, hh);
+
+    var s = S.sound, loud = s && s.status === 'ok' ? s.loud : null, x, i;
+    if (loud) {
+      var mid = (hh - 8) / 2, amp = (hh - 14) / 2, fix = soundFix(), from, to, v, y;
+      g.fillStyle = css('--dim');
+      for (x = 0; x < w; x++) {
+        from = Math.floor((now + (x - cx) / perSecond - loud.start - fix) / loud.step);
+        to = Math.max(from + 1, Math.ceil((now + (x + 1 - cx) / perSecond - loud.start - fix) / loud.step));
+        if (to <= 0 || from >= loud.values.length) continue;
+        v = 0;
+        for (i = Math.max(0, from); i < Math.min(loud.values.length, to); i++) if (loud.values[i] > v) v = loud.values[i];
+        y = Math.max(0.5, Math.pow(Math.min(1, v / s.peak), 0.6) * amp);
+        g.fillRect(x, mid - y, 1, 2 * y);
+      }
+    }
+
+    g.fillStyle = css('--border');
+    var first = Math.max(0, k - Math.ceil(cx / PX) - 1), last = Math.min(st.count - 1, k + Math.ceil((w - cx) / PX) + 1), f, tall;
+    for (f = first; f <= last; f++) {
+      tall = f % 10 === 0;
+      g.fillRect(Math.round(X(Player.time(f))), hh - (tall ? 9 : 5), 1, tall ? 9 : 5);
+    }
+
+    if (s && s.status === 'ok') {
+      g.fillStyle = css('--amber');
+      s.choice.list.forEach(function (b) {
+        var bx = Math.round(X(b.at + soundFix())), yy;
+        if (bx < -2 || bx > w + 2) return;
+        for (yy = 0; yy < hh; yy += 6) g.fillRect(bx, yy, 1, 3);
+      });
+    }
+
+    g.font = '600 10px ' + css('--body');
+    g.textBaseline = 'top';
+    M.EVENTS.forEach(function (e) {
+      var t = e.id === 'signal' ? (a.signal ? a.signal.t : null) : M.markTime(a, e.id);
+      if (t === null) return;
+      var mx = Math.round(X(t));
+      if (mx < -40 || mx > w + 40) return;
+      g.fillStyle = css(e.id === 'signal' ? '--amber' : '--accent');
+      g.fillRect(mx, 0, 2, hh);
+      g.fillText(e.short, mx + 5, 3);
+    });
+
+    g.fillStyle = css('--text');
+    g.fillRect(cx - 1, 0, 2, hh);
+  }
+
+  function fpsSheet() {
+    openSheet([
+      h('h2', { text: 'Καρέ ανά δευτερόλεπτο' }),
+      h('p', { class: 'muted', text: 'Το κινητό δεν διάβασε τα καρέ του αρχείου. Διάλεξε με πόσα τραβήχτηκε το βίντεο: από αυτό βγαίνουν οι χρόνοι.' }),
+      h('div', { class: 'chips' }, [24, 25, 30, 50, 60, 100, 120, 240].map(function (f) {
+        return h('button', { class: 'chip', type: 'button', text: String(f), onclick: function () { Player.setFps(f); if (S.A && S.A.video) { S.A.video.fps = f; touch(S.A); } closeSheet(); RENDER.mark(); } });
+      })),
+      h('button', { class: 'btn', type: 'button', text: 'Κλείσιμο', onclick: closeSheet })
+    ]);
+  }
+
+  function distanceStepper(onChange) {
+    var out = h('output', { text: (DB.settings.hornDist || 0) + ' μ.' });
+    function set(d) {
+      DB.settings.hornDist = Math.max(0, Math.min(60, d));
+      out.textContent = DB.settings.hornDist + ' μ.';
+      saveDb();
+      if (onChange) onChange();
+    }
+    return h('div', { class: 'stepper' }, [
+      h('button', { type: 'button', text: '−', 'aria-label': '1 μέτρο λιγότερο', onclick: function () { set(DB.settings.hornDist - 1); } }), out,
+      h('button', { type: 'button', text: '+', 'aria-label': '1 μέτρο περισσότερο', onclick: function () { set(DB.settings.hornDist + 1); } })
+    ]);
+  }
+
+  function signalSheet() {
+    var a = S.A, s = S.sound, kids = [h('h2', { text: 'Σήμα εκκίνησης' })];
+    if (S.soundBusy) {
+      kids.push(statusLine('busy', 'Ψάχνω την κόρνα στον ήχο…'));
+    } else if (s && s.status === 'ok' && s.choice.list.length > 0) {
+      kids.push(h('p', { class: 'muted', text: 'Ό,τι ακούστηκε σαν σήμα εκκίνησης στον ήχο του βίντεο:' }));
+      s.choice.list.slice().sort(function (p, q) { return p.at - q.at; }).forEach(function (b) {
+        var used = a.signal && a.signal.src === 'sound' && Math.abs(a.signal.t - (b.at + soundFix())) < 1e-3;
+        kids.push(h('div', { class: 'rowline' }, [
+          h('div', { class: 'txt' }, [h('b', { text: M.fmt(b.at + soundFix()) + ' s' }), h('span', { text: beepText(b) })]),
+          h('button', { class: 'btn small', type: 'button', text: 'Δες', onclick: function () { closeSheet(); Player.go(Player.frameAt(b.at + soundFix())); } }),
+          h('button', {
+            class: 'btn small primary', type: 'button', text: used ? '✓' : 'Χρήση', disabled: used,
+            onclick: function () {
+              a.signal = fromBeep(b, false); touch(a); closeSheet();
+              Player.go(Player.frameAt(a.signal.t)); RENDER.mark();
+              toast('Σήμα εκκίνησης από τον ήχο');
+            }
+          })
+        ]));
+      });
+    } else {
+      kids.push(h('p', { class: 'muted', text: s && s.status === 'ok'
+        ? 'Δεν ακούστηκε κόρνα στο βίντεο. Πήγαινε στο καρέ όπου ξεκινά ο ήχος του σήματος (φαίνεται στη λωρίδα κάτω από την εικόνα) και πάτα «Σημάδεψε».'
+        : 'Ο ήχος του βίντεο δεν διαβάστηκε. Πήγαινε στο καρέ του σήματος και πάτα «Σημάδεψε».' }));
+    }
+    kids.push(h('div', { class: 'section' }, [
+      h('h3', { class: 'eyebrow', text: 'Απόσταση από το ηχείο της κόρνας' }),
+      distanceStepper(function () {
+        if (a.signal && a.signal.src === 'sound') { a.signal.dist = DB.settings.hornDist; touch(a); RENDER.mark(); }
+      }),
+      h('p', { class: 'muted', text: 'Ο ήχος θέλει 0,03 s για κάθε 10 μέτρα ως το κινητό. Όσο αντιστοιχεί στην απόσταση αφαιρείται από το σήμα που ακούστηκε.' })
+    ]));
+    kids.push(h('button', { class: 'btn', type: 'button', text: 'Κλείσιμο', onclick: closeSheet }));
+    openSheet(kids);
+  }
+
+  // ---------------------------------------------------------------- measurements
+  function deltaNode(row, now, before) {
+    if (now === null || !before) return null;
+    var prev = M.measure(before)[row.id];
+    if (prev === null) return null;
+    var d = M.round2(now - prev), cls = 'delta';
+    if (row.less !== null && d !== 0) cls += (d < 0) === row.less ? ' better' : ' worse';
+    return h('span', { class: cls }, [d === 0 ? null : icon(d < 0 ? 'down' : 'up', 13), M.fmtDelta(now, prev)]);
+  }
+
+  /** The lane from the wall to 15 m: the time at each distance marked and the speed of each 5 m between two of them. */
+  function laneSvg(m) {
+    var W = 358, H = 96, x0 = 22, x1 = W - 22, y = 52, svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'lane'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Οι χρόνοι στα 5, 10 και 15 μέτρα και η ταχύτητα ανάμεσά τους');
+    function add(tag, attrs, text) {
+      var e = document.createElementNS(NS, tag), k;
+      for (k in attrs) e.setAttribute(k, attrs[k]);
+      if (text !== undefined) e.textContent = text;
+      svg.appendChild(e);
+      return e;
+    }
+    function X(metres) { return x0 + (x1 - x0) * metres / 15; }
+    add('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: css('--border'), 'stroke-width': 3, 'stroke-linecap': 'round' });
+    [[0, 'σήμα', m.m5 !== null || m.m10 !== null || m.m15 !== null ? 0 : null], [5, '5 μ.', m.m5], [10, '10 μ.', m.m10], [15, '15 μ.', m.m15]].forEach(function (p) {
+      var x = X(p[0]), has = p[2] !== null;
+      add('circle', { cx: x, cy: y, r: has ? 6 : 4, fill: has ? css('--accent') : css('--bg'), stroke: has ? css('--accent') : css('--border'), 'stroke-width': 2 });
+      add('text', { x: x, y: y + 26, 'text-anchor': 'middle', fill: css('--dim'), 'font-size': 12, 'font-family': css('--body') }, p[1]);
+      if (has) add('text', { x: x, y: y - 16, 'text-anchor': p[0] === 0 ? 'start' : p[0] === 15 ? 'end' : 'middle', fill: css('--text'), 'font-size': 17, 'font-weight': 700, 'font-family': css('--display') }, M.fmt(p[2]));
+    });
+    [[5, 10, m.v510], [10, 15, m.v1015]].forEach(function (p) {
+      if (p[2] === null) return;
+      add('line', { x1: X(p[0]) + 8, y1: y, x2: X(p[1]) - 8, y2: y, stroke: css('--accent'), 'stroke-width': 3, 'stroke-linecap': 'round' });
+      add('text', { x: (X(p[0]) + X(p[1])) / 2, y: y + 44, 'text-anchor': 'middle', fill: css('--accent'), 'font-size': 12, 'font-weight': 600, 'font-family': css('--body') }, M.fmt(p[2]) + ' m/s');
+    });
+    return svg;
+  }
+
+  function accuracyText(a) {
+    var parts = [], v = a.video, s = a.signal;
+    if (v && v.fps) parts.push('Βίντεο ' + fpsText(v.fps) + ': κάθε σημάδι ±' + frameText(v.fps) + '.');
+    if (s && s.src === 'sound') {
+      parts.push('Σήμα από τον ήχο (' + (s.single ? 'τόνος ' + s.low + ' Hz' : 'τόνοι ' + s.low + ' / ' + s.high + ' Hz') + ')' +
+        (s.dist ? ', ' + s.dist + ' μ. από το ηχείο: −' + M.fmt(s.dist / M.SOUND) + ' s.' : '.'));
+    } else if (s) {
+      parts.push('Σήμα σημαδεμένο στο καρέ.');
+    }
+    return parts.join(' ');
+  }
+
+  RENDER.result = function () {
+    var a = S.A;
+    if (!a) return show('home');
+    $('result-sub').textContent = title(a) + ' · ' + subtitle(a).replace('Εκκίνηση · ', '');
+    var m = M.measure(a), head = M.headline(a), body = clear($('result-body')), any = false;
+
+    if (head) {
+      var prevHead = M.previous(DB.analyses, a, head.id);
+      body.appendChild(h('div', { class: 'hero' }, [
+        h('div', { class: 'big' }, [M.fmt(head.value), h('small', { text: head.unit })]),
+        h('div', { class: 'what' }, [
+          h('span', { text: head.label === 'Πτήση' || head.label === 'Αποδέσμευση' ? head.label : 'στα ' + head.label }),
+          prevHead ? h('span', {}, [deltaNode({ id: head.id, less: head.id === 'flight' ? null : true }, head.value, prevHead), ' από την προηγούμενη']) : null
+        ])
+      ]));
+    }
+    if (m.m5 !== null || m.m10 !== null || m.m15 !== null || m.v510 !== null || m.v1015 !== null) body.appendChild(laneSvg(m));
+
+    M.warnings(a).forEach(function (w) { body.appendChild(h('div', { class: 'note' }, [icon('warn', 20), h('span', { text: w })])); });
+    if (!a.signal) {
+      body.appendChild(h('div', { class: 'note' }, [icon('warn', 20), h('span', { text: 'Χωρίς το σήμα εκκίνησης μετριούνται μόνο όσα είναι ανάμεσα σε δύο σημάδια (πτήση, ταχύτητες).' })]));
+    }
+
+    var rows = [], anyDelta = false;
+    M.ROWS.forEach(function (row) {
+      var v = m[row.id];
+      if (v === null) return;
+      any = true;
+      var d = deltaNode(row, v, M.previous(DB.analyses, a, row.id));
+      if (d) anyDelta = true;
+      rows.push(h('div', { class: 'trow' }, [
+        h('span', { class: 'k', text: row.name }),
+        h('span', { class: 'v' }, [M.fmt(v), h('small', { text: row.unit })]),
+        h('span', { class: 'd' }, [d])
+      ]));
+    });
+    if (any) {
+      body.appendChild(h('div', { class: 'section' }, [
+        h('div', { class: 'head-row' }, [h('h2', { class: 'eyebrow', text: 'Μετρήσεις' }), anyDelta ? h('span', { class: 'muted', text: 'διαφορά από την προηγούμενη' }) : null]),
+        h('div', { class: 'table' }, rows)
+      ]));
+    } else {
+      body.appendChild(h('div', { class: 'empty', text: 'Δεν υπάρχουν ακόμα μετρήσεις. Σημάδεψε το σήμα και τουλάχιστον ένα ακόμα σημείο στο βίντεο.' }));
+    }
+    var acc = accuracyText(a);
+    if (acc) body.appendChild(h('p', { class: 'muted', text: acc }));
+
+    var notes = h('textarea', { id: 'notes', rows: '3', placeholder: 'Τι είδες, τι να δουλέψει ο αθλητής…', value: a.notes || '' });
+    notes.addEventListener('input', function () { a.notes = notes.value; touch(a); S.report = null; });
+    body.appendChild(h('div', { class: 'field' }, [h('label', { for: 'notes', text: 'Σημειώσεις' }), notes]));
+  };
+
+  // ---------------------------------------------------------------- technique
+  RENDER.tech = function () {
+    var a = S.A;
+    if (!a) return show('home');
+    var list = techList(), sum = techSummary(a), body = clear($('tech-body'));
+    $('tech-sub').textContent = 'Εκκίνηση · ' + title(a);
+    if (S.phase >= list.phases.length) S.phase = 0;
+
+    body.appendChild(h('div', { class: 'sum' }, sum.checked === 0
+      ? [h('span', { class: 'muted', text: 'Σημείωσε σε κάθε σημείο αν είναι σωστό ή αν θέλει δουλειά.' })]
+      : [h('span', { class: 'good' }, [icon('check', 18), sum.ok + ' από ' + sum.checked + ' σημεία σωστά']),
+        sum.fix.length ? h('span', { class: 'todo' }, [icon('warn', 18), sum.fix.length === 1 ? '1 σημείο θέλει δουλειά' : sum.fix.length + ' σημεία θέλουν δουλειά']) : null]));
+
+    body.appendChild(h('div', { class: 'seg', role: 'tablist' }, list.phases.map(function (p, i) {
+      return h('button', { class: 'chip' + (i === S.phase ? ' on' : ''), type: 'button', role: 'tab', 'aria-selected': i === S.phase ? 'true' : 'false', text: p.name, onclick: function () { S.phase = i; RENDER.tech(); } });
+    })));
+
+    var phase = list.phases[S.phase];
+    if (phase.items.length === 0) body.appendChild(h('div', { class: 'empty', text: 'Κανένα σημείο σε αυτή τη φάση. Πρόσθεσε στις Ρυθμίσεις.' }));
+    phase.items.forEach(function (it) {
+      var v = a.tech[it.id];
+      function set(to) {
+        if (a.tech[it.id] === to) delete a.tech[it.id]; else a.tech[it.id] = to;
+        touch(a); S.report = null; RENDER.tech();
+      }
+      body.appendChild(h('div', { class: 'tp' }, [
+        h('div', { class: 'tp-top' }, [
+          h('span', { class: 'tp-name', text: it.name }),
+          h('button', { class: 'tp-btn ok' + (v === 'ok' ? ' on' : ''), type: 'button', 'aria-label': 'Σωστό: ' + it.name, 'aria-pressed': v === 'ok' ? 'true' : 'false', onclick: function () { set('ok'); } }, [icon('check', 20)]),
+          h('button', { class: 'tp-btn fix' + (v === 'fix' ? ' on' : ''), type: 'button', 'aria-label': 'Θέλει δουλειά: ' + it.name, 'aria-pressed': v === 'fix' ? 'true' : 'false', onclick: function () { set('fix'); } }, [icon('cross', 20)])
+        ]),
+        v === 'fix' && it.cue ? h('div', { class: 'tp-cue' }, [h('b', { text: 'Διόρθωση: ' }), it.cue]) : null
+      ]));
+    });
+    body.appendChild(h('p', { class: 'muted', text: list.example
+      ? 'Αυτή είναι μια λίστα-παράδειγμα. Γράψε τα δικά σου σημεία και διορθώσεις στις Ρυθμίσεις.'
+      : 'Τα σημεία και οι διορθώσεις είναι από τη λίστα σου στις Ρυθμίσεις.' }));
+  };
+
+  // ---------------------------------------------------------------- report
+  function fileName(a, ext) {
+    var name = ('Εκκίνηση ' + title(a) + ' ' + a.created.slice(0, 10)).replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return name + '.' + ext;
+  }
+
+  async function buildReport() {
+    var a = S.A, token = ++S.reportToken, thumbs = [];
+    S.reportBusy = true; S.report = null; S.reportError = '';
+    RENDER.report();
+    try {
+      if (S.loadedFor === a.id && Player.state().loaded) {
+        var want = ['takeoff', 'entry', 'breakout', 'm15', 'm5', 'm10', 'react'].filter(function (id) { return M.markTime(a, id) !== null; }).slice(0, 3)
+          .sort(function (p, q) { return M.markTime(a, p) - M.markTime(a, q); });
+        var keep = Player.state().frame, i;
+        for (i = 0; i < want.length; i++) {
+          var c = await Player.capture(Player.frameAt(M.markTime(a, want[i])), 520);
+          if (token !== S.reportToken) return;
+          thumbs.push({ id: want[i], canvas: c });
+        }
+        Player.go(keep);
+      }
+      if (document.fonts && document.fonts.load) {
+        await Promise.race([
+          Promise.all([document.fonts.load('800 60px "Sofia Sans Semi Condensed"', 'Αθλητής 0,42'), document.fonts.load('600 20px Inter', 'Αθλητής 0,42'), document.fonts.load('400 20px Inter', 'Αθλητής 0,42')]),
+          new Promise(function (r) { setTimeout(r, 1800); })
+        ]).catch(function () { /* the fonts of the phone will do */ });
+      }
+      if (token !== S.reportToken) return;
+      S.report = { id: a.id, canvas: Report.draw(a, { thumbs: thumbs, list: DB.analyses, tech: techSummary(a), version: VERSION }), thumbs: thumbs.length };
+    } catch (e) {
+      S.report = null;
+      S.reportError = String((e && e.message) || e);
+    }
+    if (token !== S.reportToken) return;
+    S.reportBusy = false;
+    if (S.view === 'report') RENDER.report();
+  }
+
+  function trendSvg(rows) {
+    var W = 358, H = 150, x0 = 30, x1 = W - 30, y0 = 44, y1 = 104, svg = document.createElementNS(NS, 'svg'), i;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('class', 'trend'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Οι τελευταίες ' + rows.length + ' μετρήσεις: ' + rows.map(function (r) { return M.fmt(r.value); }).join(', '));
+    function add(tag, attrs, text) {
+      var e = document.createElementNS(NS, tag), k;
+      for (k in attrs) e.setAttribute(k, attrs[k]);
+      if (text !== undefined) e.textContent = text;
+      svg.appendChild(e);
+    }
+    var lo = Infinity, hi = -Infinity;
+    rows.forEach(function (r) { lo = Math.min(lo, r.value); hi = Math.max(hi, r.value); });
+    if (hi - lo < 0.05) { hi += 0.03; lo -= 0.03; }
+    function X(n) { return rows.length === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * n / (rows.length - 1); }
+    function Y(v) { return y0 + (y1 - y0) * (v - lo) / (hi - lo); }   // faster (less time) is higher
+    add('line', { x1: x0 - 14, y1: y1 + 14, x2: x1 + 14, y2: y1 + 14, stroke: css('--line'), 'stroke-width': 1 });
+    var d = '';
+    for (i = 0; i < rows.length; i++) d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(rows[i].value).toFixed(1);
+    if (rows.length > 1) add('path', { d: d, fill: 'none', stroke: css('--border'), 'stroke-width': 2, 'stroke-linejoin': 'round' });
+    rows.forEach(function (r, n) {
+      var lastOne = n === rows.length - 1;
+      add('circle', { cx: X(n), cy: Y(r.value), r: lastOne ? 6 : 4.5, fill: lastOne ? css('--accent') : css('--dim'), stroke: css('--bg'), 'stroke-width': 2 });
+      add('text', { x: X(n), y: Y(r.value) - 12, 'text-anchor': 'middle', fill: css('--text'), 'font-size': lastOne ? 15 : 13, 'font-weight': lastOne ? 700 : 500, 'font-family': css('--body') }, M.fmt(r.value));
+      add('text', { x: X(n), y: y1 + 32, 'text-anchor': 'middle', fill: lastOne ? css('--text') : css('--dim'), 'font-size': 11, 'font-family': css('--body') }, lastOne ? 'αυτή' : M.dateText(r.created).slice(0, 5));
+    });
+    return svg;
+  }
+
+  RENDER.report = function () {
+    var a = S.A;
+    if (!a) return show('home');
+    $('report-sub').textContent = 'Εκκίνηση · ' + title(a);
+    if ((!S.report || S.report.id !== a.id) && !S.reportBusy && !S.reportError) { buildReport(); return; }
+    var body = clear($('report-body')), ready = !!S.report && S.report.id === a.id;
+    $('report-pdf').disabled = !ready || !downloads;
+
+    if (S.reportError && !ready) {
+      body.appendChild(h('div', { class: 'note' }, [icon('warn', 20), h('span', { text: 'Η αναφορά δεν φτιάχτηκε (' + S.reportError + ').' })]));
+      body.appendChild(h('button', { class: 'btn', type: 'button', text: 'Δοκίμασε ξανά', onclick: function () { S.reportError = ''; RENDER.report(); } }));
+    } else {
+      var preview = h('div', { class: 'preview' });
+      if (ready) preview.appendChild(S.report.canvas); else preview.appendChild(h('span', { class: 'spin' }));
+      body.appendChild(preview);
+    }
+    if (ready && S.report.thumbs === 0) {
+      body.appendChild(h('p', { class: 'muted', text: S.loadedFor === a.id ? 'Σημάδεψε την αποδέσμευση ή την είσοδο για να μπουν καρέ στην αναφορά.' : 'Για να μπουν καρέ στην αναφορά, άνοιξε ξανά το βίντεο από τον «Έλεγχο σημείων».' }));
+    }
+
+    if (!downloads) {
+      body.appendChild(h('div', { class: 'note' }, [icon('warn', 20), h('span', { text: 'Σε αυτή την προβολή το κινητό δεν αφήνει αποθήκευση αρχείων. Άνοιξε τη σελίδα μέσα από το Claude ή αντίγραψε το κείμενο της ανάλυσης.' })]));
+    }
+    body.appendChild(h('div', { class: 'stack' }, [
+      h('button', { class: 'btn', type: 'button', disabled: !ready || !downloads, onclick: function () { saveReport('png'); } }, [icon('save'), 'Αποθήκευση ως εικόνα']),
+      h('button', { class: 'btn', type: 'button', onclick: copySummary }, [icon('copy'), 'Αντιγραφή κειμένου για μήνυμα'])
+    ]));
+
+    var head = M.headline(a), rows = head ? M.history(DB.analyses, a, head.id, 5) : [];
+    if (rows.length >= 2) {
+      body.appendChild(h('div', { class: 'card' }, [
+        h('div', { class: 'head-row' }, [
+          h('h2', { class: 'eyebrow', text: head.label + ' · οι ' + rows.length + ' τελευταίες' }),
+          h('span', {}, [deltaNode({ id: head.id, less: head.id === 'flight' ? null : true }, head.value, byId(rows[rows.length - 2].id))])
+        ]),
+        trendSvg(rows),
+        h('p', { class: 'muted', text: 'Χρόνος σε δευτερόλεπτα: πιο ψηλά στο γράφημα σημαίνει πιο γρήγορα.' })
+      ]));
+    }
+  };
+
+  function saveError(e) {
+    var code = e && e.code;
+    if (code === 'declined') toast('Δεν αποθηκεύτηκε');
+    else if (code === 'rate_limited') toast('Περίμενε λίγο και δοκίμασε ξανά');
+    else toast('Η αποθήκευση δεν είναι διαθέσιμη εδώ');
+  }
+
+  async function saveReport(kind) {
+    var a = S.A;
+    if (!S.report || S.report.id !== a.id || !downloads) return;
+    var canvas = S.report.canvas;
+    try {
+      var blob = await new Promise(function (resolve) { canvas.toBlob(resolve, kind === 'png' ? 'image/png' : 'image/jpeg', 0.92); });
+      if (!blob) throw new Error('no picture');
+      var data = blob;
+      if (kind === 'pdf') {
+        var jpeg = new Uint8Array(await new Response(blob).arrayBuffer());
+        data = new Blob([Pdf.fromJpeg(jpeg, canvas.width, canvas.height, 'Εκκίνηση ' + title(a))], { type: 'application/pdf' });
+      }
+      var r = await downloads.save({ filename: fileName(a, kind), data: data });
+      toast(r && r.status === 'saved' ? 'Η αναφορά αποθηκεύτηκε' : 'Η αναφορά στάλθηκε');
+    } catch (e) {
+      saveError(e);
+    }
+  }
+
+  function copySummary() {
+    var text = M.summary(S.A, techSummary(S.A));
+    function fallback() {
+      var area = h('textarea', { rows: '8', readonly: true, value: text });
+      openSheet([h('h2', { text: 'Κείμενο της ανάλυσης' }), h('p', { class: 'muted', text: 'Κράτα πατημένο το κείμενο και διάλεξε «Αντιγραφή».' }),
+        h('div', { class: 'field' }, [area]), h('button', { class: 'btn', type: 'button', text: 'Κλείσιμο', onclick: closeSheet })]);
+      try { area.focus(); area.select(); } catch (e) { /* the person selects it */ }
+    }
+    try {
+      navigator.clipboard.writeText(text).then(function () { toast('Το κείμενο αντιγράφηκε'); }, fallback);
+    } catch (e) {
+      fallback();
+    }
+  }
+
+  // ---------------------------------------------------------------- settings
+  function editableTech() {
+    if (!DB.tech) { DB.tech = JSON.parse(JSON.stringify(EXAMPLE_TECH)); delete DB.tech.example; }
+    return DB.tech;
+  }
+
+  RENDER.settings = function () {
+    var body = clear($('settings-body')), list = techList();
+    $('settings-sub').textContent = 'Έκδοση ' + VERSION;
+
+    var tech = h('div', { class: 'section' }, [
+      h('h2', { class: 'eyebrow', text: 'Λίστα τεχνικής για την εκκίνηση' }),
+      h('p', { class: 'muted', text: list.example ? 'Λίστα-παράδειγμα. Άλλαξε τα σημεία και τις διορθώσεις όπως τα λες εσύ στους αθλητές σου.' : 'Τα σημεία που ελέγχεις σε κάθε εκκίνηση και η διόρθωση που προτείνεις.' })
+    ]);
+    list.phases.forEach(function (p, pi) {
+      tech.appendChild(h('h3', { text: p.name }));
+      p.items.forEach(function (it, ii) {
+        var name = h('input', { type: 'text', id: 'tp-' + it.id + '-name', value: it.name, maxlength: '90', 'aria-label': 'Σημείο' });
+        var cue = h('input', { type: 'text', class: 'cue', id: 'tp-' + it.id + '-cue', value: it.cue || '', maxlength: '140', placeholder: 'Διόρθωση', 'aria-label': 'Διόρθωση' });
+        function keep() {
+          var t = editableTech().phases[pi].items[ii];
+          t.name = name.value.trim() || t.name; t.cue = cue.value.trim(); saveDb(); S.report = null;
+        }
+        name.addEventListener('change', keep); cue.addEventListener('change', keep);
+        tech.appendChild(h('div', { class: 'edit-item' }, [
+          h('div', { class: 'inputs' }, [name, cue]),
+          h('button', { class: 'icon-btn danger', type: 'button', 'aria-label': 'Σβήσιμο σημείου', onclick: function () { editableTech().phases[pi].items.splice(ii, 1); saveDb(); RENDER.settings(); } }, [icon('trash')])
+        ]));
+      });
+      tech.appendChild(h('button', { class: 'btn small', type: 'button', onclick: function () {
+        var t = editableTech();
+        t.phases[pi].items.push({ id: 'p' + Date.now().toString(36), name: 'Νέο σημείο', cue: '' });
+        saveDb(); RENDER.settings();
+      } }, [icon('plus', 18), 'Σημείο στη φάση «' + p.name + '»']));
+    });
+    if (!list.example) {
+      tech.appendChild(h('button', { class: 'btn small', type: 'button', text: 'Επαναφορά της λίστας-παραδείγματος', onclick: function () {
+        confirmSheet('Επαναφορά λίστας;', 'Τα σημεία που έγραψες θα αντικατασταθούν από το παράδειγμα.', 'Επαναφορά', function () { DB.tech = null; saveDb(); RENDER.settings(); }, true);
+      } }));
+    }
+    body.appendChild(tech);
+
+    var fix = h('output', { text: (DB.settings.soundFix || 0) + ' ms' });
+    function setFix(v) { DB.settings.soundFix = Math.max(-200, Math.min(200, v)); fix.textContent = DB.settings.soundFix + ' ms'; saveDb(); }
+    body.appendChild(h('div', { class: 'section' }, [
+      h('h2', { class: 'eyebrow', text: 'Σήμα εκκίνησης από τον ήχο' }),
+      h('h3', { text: 'Απόσταση από το ηχείο της κόρνας' }),
+      distanceStepper(null),
+      h('p', { class: 'muted', text: 'Πόσο μακριά στέκεσαι συνήθως από το ηχείο. Ο ήχος θέλει 0,03 s για κάθε 10 μέτρα· αφαιρείται από το σήμα σε κάθε νέα ανάλυση.' }),
+      h('h3', { text: 'Διόρθωση ήχου – εικόνας' }),
+      h('div', { class: 'stepper' }, [
+        h('button', { type: 'button', text: '−', 'aria-label': '5 ms λιγότερο', onclick: function () { setFix(DB.settings.soundFix - 5); } }), fix,
+        h('button', { type: 'button', text: '+', 'aria-label': '5 ms περισσότερο', onclick: function () { setFix(DB.settings.soundFix + 5); } })
+      ]),
+      h('p', { class: 'muted', text: 'Έλεγχος με παλαμάκι: τράβα ένα βίντεο όπου χτυπάς παλαμάκια και δες αν η κορυφή του ήχου στη λωρίδα πέφτει στο καρέ όπου ενώνονται τα χέρια. Αν ο ήχος έρχεται πιο αργά, βάλε αρνητική διόρθωση.' })
+    ]));
+
+    body.appendChild(h('div', { class: 'section' }, [
+      h('h2', { class: 'eyebrow', text: 'Αντίγραφο ασφαλείας' }),
+      h('p', { class: 'muted', text: 'Οι αναλύσεις κρατιούνται μόνο σε αυτό το κινητό (' + DB.analyses.length + ' ως τώρα). Αν σβηστούν τα δεδομένα της εφαρμογής, χάνονται: κράτα πού και πού ένα αντίγραφο.' }),
+      h('button', { class: 'btn', type: 'button', disabled: !downloads || DB.analyses.length === 0, onclick: backup }, [icon('save'), 'Αποθήκευση αντιγράφου']),
+      h('label', { class: 'btn', for: 'restore-file', tabindex: '0' }, [icon('up'), 'Επαναφορά από αντίγραφο']),
+      h('button', { class: 'btn danger', type: 'button', disabled: DB.analyses.length === 0, text: 'Διαγραφή όλων των αναλύσεων', onclick: function () {
+        confirmSheet('Διαγραφή όλων;', 'Θα σβηστούν και οι ' + DB.analyses.length + ' αναλύσεις από αυτό το κινητό. Δεν αναιρείται.', 'Διαγραφή όλων', function () {
+          DB.analyses = []; S.A = null; saveDb(); RENDER.settings(); toast('Οι αναλύσεις σβήστηκαν');
+        }, true);
+      } })
+    ]));
+
+    var d = Player.diagnostics(), s = S.sound;
+    body.appendChild(h('div', { class: 'section' }, [
+      h('h2', { class: 'eyebrow', text: 'Για τον έλεγχο του τελευταίου βίντεο' }),
+      h('div', { class: 'diag', text: 'καρέ: ' + d.source + ' · ' + d.fps.toFixed(3) + ' fps · ' + d.frames + '\n' +
+        'έλεγχος καρέ: ' + d.watch + ' · μετατόπιση ' + (d.offset * 1000).toFixed(1) + ' ms · διορθώσεις ' + d.corrected + ' · εκκίνηση ' + (d.primed ? 'ναι' : 'όχι') + '\n' +
+        'ήχος: ' + (s ? s.status + ' · ' + (s.path || '—') + ' · αρχή ' + (s.start * 1000).toFixed(1) + ' ms · αποκωδικοποιητής ' + s.lead + ' · ' + s.seconds.toFixed(1) + ' s · σήματα ' + s.beeps.length + (s.note ? ' · ' + s.note : '') : 'όχι ακόμα') + '\n' +
+        'αποθήκευση: ' + (storageFailed ? 'όχι' : 'ναι') + ' · αρχεία: ' + (downloads ? 'ναι' : 'όχι') })
+    ]));
+  };
+
+  async function backup() {
+    if (!downloads) return;
+    var data = JSON.stringify({ format: 'kinovea-swim-mobile', version: 1, saved: new Date().toISOString(), analyses: DB.analyses, tech: DB.tech, settings: DB.settings });
+    try {
+      await downloads.save({ filename: 'kinovea-swim-kinito-' + new Date().toISOString().slice(0, 10) + '.json', data: data });
+      toast('Το αντίγραφο αποθηκεύτηκε');
+    } catch (e) {
+      saveError(e);
+    }
+  }
+
+  function restore(input) {
+    var file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    var r = new FileReader();
+    r.onerror = function () { toast('Το αρχείο δεν διαβάστηκε'); };
+    r.onload = function () {
+      var d = null, added = 0;
+      try { d = JSON.parse(String(r.result)); } catch (e) { d = null; }
+      if (!d || d.format !== 'kinovea-swim-mobile' || !Array.isArray(d.analyses)) { toast('Αυτό δεν είναι αντίγραφο της εφαρμογής'); return; }
+      d.analyses.forEach(function (a) {
+        if (!a || typeof a.id !== 'string' || typeof a.created !== 'string') return;
+        var mine = byId(a.id);
+        if (!mine) { DB.analyses.push(a); added++; }
+        else if ((a.updated || '') > (mine.updated || '')) { DB.analyses[DB.analyses.indexOf(mine)] = a; added++; }
+      });
+      if (!DB.tech && d.tech && Array.isArray(d.tech.phases)) DB.tech = d.tech;
+      saveDb();
+      refresh();
+      toast(added === 1 ? 'Επαναφέρθηκε 1 ανάλυση' : 'Επαναφέρθηκαν ' + added + ' αναλύσεις');
+    };
+    r.readAsText(file);
+  }
+
+  // ---------------------------------------------------------------- wiring
+  function labelKey(id) {
+    $(id).addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $($(id).getAttribute('for')).click(); }
+    });
+  }
+
+  function wire() {
+    fill($('home-settings'), [icon('sliders')]);
+    fill($('shoot-label'), [icon('camera'), 'Λήψη βίντεο']);
+    fill($('pick-label'), [icon('gallery'), 'Βίντεο από τη συλλογή']);
+    ['setup-back', 'mark-back', 'result-back', 'tech-back', 'report-back', 'settings-back'].forEach(function (id) { fill($(id), [icon('back', 24)]); });
+    fill($('result-delete'), [icon('trash')]);
+    fill($('unmark-btn'), [icon('trash')]);
+    fill($('signal-more'), [icon('wave')]);
+    labelKey('shoot-label'); labelKey('pick-label');
+
+    $('shoot-video').addEventListener('change', function () { pickedVideo(this, false); });
+    $('pick-video').addEventListener('change', function () { pickedVideo(this, false); });
+    $('reopen-video').addEventListener('change', function () { pickedVideo(this, true); });
+    $('restore-file').addEventListener('change', function () { restore(this); });
+    $('home-settings').addEventListener('click', function () { show('settings'); });
+    $('settings-back').addEventListener('click', function () { show('home'); });
+
+    $('setup-back').addEventListener('click', function () {
+      if (S.A && !kept(S.A)) { Player.unload(); S.file = null; S.loadedFor = null; S.loading = false; S.A = null; }
+      show('home');
+    });
+    $('athlete').addEventListener('input', function () { if (S.A) S.A.athlete = this.value; });
+    $('setup-go').addEventListener('click', startMarking);
+
+    $('mark-back').addEventListener('click', function () { show('home'); });
+    $('mark-results').addEventListener('click', function () { show('result'); });
+    // A tap is one step; a finger kept on the button keeps stepping.
+    [['t-b10', -10], ['t-b1', -1], ['t-f1', 1], ['t-f10', 10]].forEach(function (pair) {
+      var b = $(pair[0]), d = pair[1], wait = 0, repeat = 0, held = false;
+      function stop() { clearTimeout(wait); clearInterval(repeat); wait = 0; repeat = 0; }
+      b.addEventListener('pointerdown', function () {
+        stop(); held = false;
+        wait = setTimeout(function () { held = true; Player.step(d); repeat = setInterval(function () { Player.step(d); }, 110); }, 420);
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (n) { b.addEventListener(n, stop); });
+      b.addEventListener('click', function () { if (held) { held = false; return; } Player.step(d); });
+      b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    });
+    $('t-play').addEventListener('click', function () { if (Player.state().playing) Player.pause(); else Player.play(S.rate); });
+    $('t-rate').addEventListener('click', function () {
+      S.rate = S.rate === 0.25 ? 1 : S.rate === 1 ? 0.5 : 0.25;
+      if (Player.state().playing) { try { $('video').playbackRate = S.rate; } catch (e) { /* keeps its speed */ } }
+      renderPlayState();
+    });
+    $('sound-btn').addEventListener('click', function () { $('video').muted = !$('video').muted; renderPlayState(); });
+    $('mark-btn').addEventListener('click', markHere);
+    $('unmark-btn').addEventListener('click', unmark);
+    $('signal-more').addEventListener('click', signalSheet);
+    $('zoom-out').addEventListener('click', Zoom.reset);
+
+    var stage = $('stage');
+    stage.addEventListener('pointerdown', Zoom.down);
+    stage.addEventListener('pointermove', Zoom.move);
+    stage.addEventListener('pointerup', Zoom.up);
+    stage.addEventListener('pointercancel', Zoom.up);
+
+    // The strip: a drag moves the frames with the finger, 6 pixels each.
+    var jog = null, canvas = $('strip');
+    canvas.addEventListener('pointerdown', function (e) {
+      if (!Player.state().loaded) return;
+      Player.pause();
+      jog = { x: e.clientX, frame: Player.state().frame, id: e.pointerId };
+      try { canvas.setPointerCapture(e.pointerId); } catch (x) { /* older phones */ }
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!jog || e.pointerId !== jog.id) return;
+      Player.go(jog.frame + Math.round((jog.x - e.clientX) / PX));
+    });
+    function endJog(e) { if (jog && e.pointerId === jog.id) jog = null; }
+    canvas.addEventListener('pointerup', endJog);
+    canvas.addEventListener('pointercancel', endJog);
+
+    // The bar of the whole video.
+    var scrub = $('scrub'), scrubbing = false;
+    function scrubTo(e) {
+      var r = scrub.getBoundingClientRect(), st = Player.state();
+      if (!st.loaded || !r.width) return;
+      Player.go(Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (st.count - 1)));
+    }
+    scrub.addEventListener('pointerdown', function (e) {
+      scrubbing = true;
+      try { scrub.setPointerCapture(e.pointerId); } catch (x) { /* older phones */ }
+      scrubTo(e);
+    });
+    scrub.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e); });
+    scrub.addEventListener('pointerup', function () { scrubbing = false; });
+    scrub.addEventListener('pointercancel', function () { scrubbing = false; });
+    scrub.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') { Player.step(-10); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { Player.step(10); e.preventDefault(); }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (S.view !== 'mark' || !$('backdrop').hidden) return;
+      var tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target === scrub) return;
+      if (e.key === 'ArrowLeft') { Player.step(e.shiftKey ? -10 : -1); e.preventDefault(); }
+      else if (e.key === 'ArrowRight') { Player.step(e.shiftKey ? 10 : 1); e.preventDefault(); }
+      else if (e.key === ' ' && tag !== 'BUTTON') { if (Player.state().playing) Player.pause(); else Player.play(S.rate); e.preventDefault(); }
+      else if (e.key === 'Enter' && tag !== 'BUTTON') { markHere(); e.preventDefault(); }
+    });
+
+    $('result-back').addEventListener('click', function () { show('home'); });
+    $('result-marks').addEventListener('click', function () {
+      S.sel = firstUnmarked() || 'signal';
+      show('mark');
+      if (S.loadedFor === S.A.id && S.A.signal && Player.state().frame === 0) Player.go(Player.frameAt(S.A.signal.t));
+    });
+    $('result-tech').addEventListener('click', function () { show('tech'); });
+    $('result-delete').addEventListener('click', function () {
+      var a = S.A;
+      confirmSheet('Διαγραφή ανάλυσης;', title(a) + ' · ' + subtitle(a) + '. Δεν αναιρείται.', 'Διαγραφή', function () {
+        var i = DB.analyses.indexOf(a);
+        if (i >= 0) DB.analyses.splice(i, 1);
+        saveDb();
+        if (S.loadedFor === a.id) { Player.unload(); S.file = null; S.loadedFor = null; }
+        S.A = null;
+        show('home');
+        toast('Η ανάλυση σβήστηκε');
+      }, true);
+    });
+    $('tech-back').addEventListener('click', function () { show('result'); });
+    $('tech-results').addEventListener('click', function () { show('result'); });
+    $('tech-report').addEventListener('click', function () { show('report'); });
+    $('report-back').addEventListener('click', function () { show('tech'); });
+    $('report-new').addEventListener('click', function () { show('home'); });
+    $('report-pdf').addEventListener('click', function () { saveReport('pdf'); });
+
+    $('backdrop').addEventListener('click', function (e) { if (e.target === $('backdrop')) closeSheet(); });
+    window.addEventListener('resize', function () { Zoom.apply(); drawStrip(); });
+
+    Player.on('frame', function () { if (S.view === 'mark') renderFrame(); });
+    Player.on('state', function () { if (S.view === 'mark') { renderPlayState(); renderFrame(); } });
+  }
+
+  // ---------------------------------------------------------------- start
+  loadDb();
+  wire();
+  var hot = window.claude && window.claude.hot;
+  if (hot && hot.snapshot) { try { hot.snapshot(function () { return { id: S.A && kept(S.A) ? S.A.id : null }; }); } catch (e) { /* no snapshot here */ } }
+  if (window.claude && window.claude.use) {
+    window.claude.use('downloads').then(function (d) { downloads = d || null; if (S.view === 'report' || S.view === 'settings') refresh(); }, function () { downloads = null; });
+  }
+  var again = boot && boot.id ? byId(boot.id) : null;
+  if (again) { S.A = again; show('result'); } else show('home');
+
+  return { state: S, db: function () { return DB; }, player: Player, show: show, version: VERSION };
+}
+
+// Start. A page that was open during an update comes back to the analysis it was showing.
+(function () {
+  var hot = window.claude && window.claude.hot;
+  function start(data) { window.swimApp = swimAppStart(data || {}); }
+  if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+})();
+
+</script>

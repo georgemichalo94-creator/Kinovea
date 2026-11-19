@@ -1,0 +1,356 @@
+<title>Kinovea Swim Κινητό</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sofia+Sans+Semi+Condensed:wght@600;700;800&display=swap">
+<style>
+/* Layout: one screen at a time, each a column (bar, scrolling body, actions). The video screen keeps the picture on
+   top and everything a thumb needs under it; with the phone turned, the picture takes the left and the controls the right.
+   The look is the one of the desktop program (its dark theme), by choice: a video tool, one look. */
+:root {
+  color-scheme: dark;
+  --bg: #030E17; --surface: #051622; --raised: #08202F; --line: #0E3240; --border: #134A5C;
+  --text: #EAFCFF; --dim: #7CC8D6; --accent: #38E1FF; --accent-ink: #030E17; --accent-deep: #084C63;
+  --amber: #FFBE5C; --green: #3DEBA0; --red: #FF6868; --black: #000000; --scrim: rgba(1, 8, 14, 0.72);
+  --display: "Sofia Sans Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: Inter, "Segoe UI", Roboto, system-ui, sans-serif;
+  --gl: max(16px, env(safe-area-inset-left, 0px)); --gr: max(16px, env(safe-area-inset-right, 0px));
+}
+html { box-sizing: border-box; height: 100%; }
+*, *::before, *::after { box-sizing: inherit; }
+body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--body); -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+button, input, textarea { font: inherit; color: inherit; }
+button, label { -webkit-tap-highlight-color: transparent; cursor: pointer; touch-action: manipulation; }
+h1, h2, h3, p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#app { position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: 640px; margin-inline: auto; }
+.view.under { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: -1; }
+.bar { flex: none; min-height: 52px; display: flex; align-items: center; gap: 6px; padding-left: var(--gl); padding-right: var(--gr); }
+.bar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bar-title b { font: 700 21px/1.15 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-title span { font-size: 13px; line-height: 1.3; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 16px; padding-left: var(--gl); padding-right: var(--gr); padding-block: 6px 28px; }
+.scroll > * { flex-shrink: 0; }
+.actions { flex: none; display: flex; gap: 10px; padding-left: var(--gl); padding-right: var(--gr); padding-block: 10px 12px; }
+.actions .btn { flex: 1; min-width: 0; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 8px 16px; border-radius: 14px; border: 1.5px solid var(--border); background: transparent; color: var(--text); font: 600 15px/1.2 var(--body); text-align: center; text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.btn.small { min-height: 40px; padding: 6px 14px; border-radius: 12px; font-size: 14px; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn[disabled] { opacity: 0.4; cursor: default; }
+.btn svg, .icon-btn svg { flex: none; }
+.icon-btn { flex: none; width: 44px; height: 44px; border-radius: 22px; border: 0; background: transparent; color: var(--text); display: inline-flex; align-items: center; justify-content: center; }
+.bar > .icon-btn:first-child { margin-left: -10px; }
+.icon-btn.danger { color: var(--red); }
+.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+.eyebrow { font: 600 12px/1.3 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.note { border: 1px solid var(--amber); border-radius: 14px; padding: 10px 12px; color: var(--text); font-size: 14px; display: flex; gap: 10px; align-items: flex-start; }
+.note svg { flex: none; color: var(--amber); margin-top: 1px; }
+.muted { color: var(--dim); font-size: 13px; }
+.section { display: flex; flex-direction: column; gap: 10px; }
+.file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* Home */
+.brand { min-height: 60px; gap: 10px; }
+.brand .logo { flex: none; color: var(--accent); }
+.brand-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.brand-name { font: 800 20px/1.1 var(--display); letter-spacing: 0.06em; }
+.brand-sub { font: 600 11px/1.3 var(--body); letter-spacing: 0.22em; color: var(--accent); }
+.new h1 { font: 700 28px/1.1 var(--display); text-wrap: balance; }
+.new p { color: var(--dim); }
+.new .tip { font-size: 13px; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; }
+.item .badge { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--raised); color: var(--accent); display: flex; align-items: center; justify-content: center; font: 700 15px var(--display); }
+.item .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item .who b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .who span { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .val { flex: none; text-align: right; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.item .val b { font: 700 18px/1.2 var(--display); }
+.item .val span { font-size: 12px; color: var(--dim); }
+.empty { border: 1px dashed var(--border); border-radius: 14px; padding: 18px 14px; color: var(--dim); text-align: center; }
+.foot { color: var(--dim); font-size: 13px; text-align: center; text-wrap: balance; }
+
+/* Setup */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label, .field .label { font-size: 13px; font-weight: 600; color: var(--dim); }
+.field input, .field textarea { width: 100%; min-height: 50px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 16px; }
+.field textarea { min-height: 88px; resize: vertical; line-height: 1.4; }
+.field input::placeholder, .field textarea::placeholder { color: var(--dim); opacity: 0.7; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 40px; padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: transparent; color: var(--text); font-weight: 500; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.status { gap: 10px; }
+.status-line { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+.status-line svg { flex: none; margin-top: 1px; }
+.status-line.ok svg { color: var(--green); }
+.status-line.warn svg { color: var(--amber); }
+.status-line.bad svg { color: var(--red); }
+.spin { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+/* Marking */
+#v-mark { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); max-width: none; }
+#v-mark > .bar { grid-row: 1; }
+.stage { grid-row: 2; position: relative; width: 100%; max-height: 46vh; aspect-ratio: var(--ar, 16 / 9); margin-inline: auto; background: var(--black); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.zoomer { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+#video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--black); pointer-events: none; }
+.stage-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; background: var(--scrim); }
+.flash { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 14px; white-space: nowrap; pointer-events: none; }
+.zoom-out { position: absolute; right: 10px; top: 10px; min-width: 44px; height: 36px; border-radius: 18px; border: 1px solid var(--border); background: var(--scrim); color: var(--text); font-weight: 700; }
+.panel { grid-row: 3; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px var(--gr) 10px var(--gl); width: 100%; max-width: 640px; margin-inline: auto; }
+.readout { flex: none; display: flex; align-items: center; gap: 10px; }
+.clock { display: flex; align-items: baseline; gap: 4px; font: 700 32px/1 var(--display); font-variant-numeric: tabular-nums; }
+.clock small { font: 500 13px var(--body); color: var(--dim); }
+.frameinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; font-size: 12px; line-height: 1.35; color: var(--dim); font-variant-numeric: tabular-nums; }
+.frameinfo .link { font-size: 12px; }
+.frameinfo span.fps { color: var(--dim); }
+.strip { flex: none; display: block; width: 100%; height: 56px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); touch-action: none; }
+.scrub { flex: none; position: relative; height: 26px; touch-action: none; }
+.scrub-track { position: absolute; left: 0; right: 0; top: 10px; height: 6px; border-radius: 3px; background: var(--raised); }
+.scrub-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: var(--accent-deep); }
+.scrub-mark { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--accent); }
+.scrub-mark.signal { background: var(--amber); }
+.scrub-knob { position: absolute; top: -5px; width: 16px; height: 16px; margin-left: -8px; border-radius: 8px; background: var(--text); }
+.transport { flex: none; display: flex; gap: 6px; }
+.transport button { flex: 1; min-width: 0; height: 46px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font: 700 17px var(--display); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; justify-content: center; }
+.transport #t-play { border-color: var(--accent); color: var(--accent); }
+.transport #t-rate { color: var(--dim); font-size: 15px; }
+.events { flex: 1; min-height: 46px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; }
+.ev { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 44px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; font-size: 14px; font-weight: 500; }
+.ev .n { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev .t { flex: none; display: inline-flex; align-items: center; gap: 4px; font: 700 15px var(--display); font-variant-numeric: tabular-nums; color: var(--accent); }
+.ev .t.none { color: var(--dim); font-weight: 500; }
+.ev .t.sound { color: var(--amber); }
+.ev.sel { border-color: var(--accent); background: var(--raised); box-shadow: inset 0 0 0 1px var(--accent); }
+.markrow { flex: none; display: flex; gap: 8px; align-items: center; }
+.markrow .btn.primary { flex: 1; min-width: 0; }
+.markrow .btn.here { background: transparent; color: var(--accent); }
+.markrow .icon-btn { border: 1.5px solid var(--border); border-radius: 14px; width: 52px; height: 52px; }
+.markrow .icon-btn.danger { border-color: var(--red); }
+
+@media (orientation: landscape) and (max-height: 540px) {
+  #v-mark { grid-template-columns: minmax(0, 1fr) minmax(250px, 300px); grid-template-rows: auto minmax(0, 1fr); }
+  #v-mark > .bar { grid-column: 2; grid-row: 1; min-height: 44px; padding-left: 10px; }
+  #v-mark > .bar > .icon-btn:first-child { margin-left: -4px; }
+  .stage { grid-column: 1; grid-row: 1 / span 2; max-height: none; height: 100%; width: auto; aspect-ratio: auto; margin-left: env(safe-area-inset-left, 0px); margin-right: 0; }
+  .panel { grid-column: 2; grid-row: 2; gap: 6px; padding: 0 var(--gr) 6px 10px; }
+  .clock { font-size: 26px; }
+  .clock small span { display: none; }
+  .frameinfo { white-space: nowrap; }
+  .ev { min-height: 38px; }
+  .strip { height: 44px; }
+  .scrub { height: 22px; }
+  .scrub-track { top: 8px; }
+  .transport button { height: 40px; font-size: 15px; }
+  .markrow .btn { min-height: 44px; }
+  .markrow .icon-btn { width: 44px; height: 44px; }
+}
+
+/* Results */
+.hero { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.hero .big { font: 800 64px/0.95 var(--display); font-variant-numeric: tabular-nums; }
+.hero .big small { font: 600 24px var(--display); color: var(--dim); margin-left: 4px; }
+.hero .what { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; color: var(--dim); }
+.delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; }
+.delta.better { color: var(--green); }
+.delta.worse { color: var(--amber); }
+.lane { display: block; width: 100%; height: auto; }
+.table { display: flex; flex-direction: column; }
+.trow { display: flex; align-items: baseline; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+.trow:first-child { border-top: 0; }
+.trow .k { flex: 1; min-width: 0; }
+.trow .v { flex: none; font: 700 19px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.trow .v small { font: 500 13px var(--body); color: var(--dim); margin-left: 3px; }
+.trow .d { flex: none; min-width: 58px; text-align: right; font-size: 13px; }
+.head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+/* Technique */
+.seg { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.seg .chip { flex: none; }
+.tp { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.tp-top { display: flex; align-items: center; gap: 10px; }
+.tp-name { flex: 1; min-width: 0; font-weight: 500; }
+.tp-btn { flex: none; width: 46px; height: 42px; border-radius: 12px; border: 1.5px solid var(--border); background: transparent; color: var(--dim); display: inline-flex; align-items: center; justify-content: center; }
+.tp-btn.ok.on { background: var(--green); border-color: var(--green); color: var(--accent-ink); }
+.tp-btn.fix.on { background: var(--amber); border-color: var(--amber); color: var(--accent-ink); }
+.tp-cue { font-size: 14px; color: var(--dim); }
+.tp-cue b { color: var(--amber); font-weight: 600; }
+.sum { display: flex; flex-wrap: wrap; gap: 6px 18px; font-weight: 600; }
+.sum span { display: inline-flex; align-items: center; gap: 6px; }
+.sum .good svg { color: var(--green); }
+.sum .todo svg { color: var(--amber); }
+
+/* Report */
+.preview { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--surface); min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.preview canvas, .preview img { display: block; width: 100%; height: auto; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.trend { display: block; width: 100%; height: auto; }
+
+/* Settings */
+.edit-item { display: flex; gap: 8px; align-items: flex-start; }
+.edit-item .inputs { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.edit-item input { width: 100%; min-height: 44px; padding: 9px 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); font-size: 16px; }
+.edit-item input.cue { font-size: 14px; color: var(--dim); }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button { width: 46px; height: 46px; border-radius: 12px; border: 1.5px solid var(--border); background: transparent; font: 700 22px var(--display); }
+.stepper output { min-width: 86px; text-align: center; font: 700 22px var(--display); font-variant-numeric: tabular-nums; }
+.diag { font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+
+/* Sheets and messages */
+.backdrop { position: fixed; inset: 0; z-index: 40; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { width: 100%; max-width: 640px; max-height: 88%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: var(--raised); border: 1px solid var(--border); border-bottom: 0; border-radius: 20px 20px 0 0; padding: 18px var(--gr) calc(18px + env(safe-area-inset-bottom, 0px)) var(--gl); }
+.sheet h2 { font: 700 22px/1.2 var(--display); }
+.sheet .rowline { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.sheet .rowline .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sheet .rowline .txt b { font: 700 18px var(--display); font-variant-numeric: tabular-nums; }
+.sheet .rowline .txt span { font-size: 13px; color: var(--dim); }
+.toast { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px); display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 999px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 14px; box-shadow: 0 6px 24px var(--scrim); }
+.toast button { border: 0; background: none; padding: 4px 0; color: var(--accent-deep); font-weight: 700; text-decoration: underline; }
+</style>
+
+<div id="app" lang="el">
+
+<section class="view" id="v-home">
+  <header class="bar brand">
+    <svg class="logo" viewBox="0 0 32 32" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 12c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4"></path><path d="M3 20c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4"></path><path d="M3 28c4.3 0 4.3-4 8.7-4s4.3 4 8.6 4 4.4-4 8.7-4" opacity="0.45"></path></svg>
+    <div class="brand-text"><span class="brand-name">KINOVEA SWIM</span><span class="brand-sub">ΚΙΝΗΤΟ</span></div>
+    <button class="icon-btn" id="home-settings" type="button" aria-label="Ρυθμίσεις"></button>
+  </header>
+  <div class="scroll">
+    <div class="card new">
+      <h1>Νέα ανάλυση εκκίνησης</h1>
+      <p>Τράβα τον κολυμβητή από το πλάι. Η κόρνα βρίσκεται μόνη της από τον ήχο· εσύ σημαδεύεις καρέ-καρέ την αποδέσμευση, την είσοδο και τα 5 · 10 · 15 μ.</p>
+      <label class="btn primary" for="shoot-video" id="shoot-label" tabindex="0"></label>
+      <label class="btn" for="pick-video" id="pick-label" tabindex="0"></label>
+      <p class="tip">Για ακρίβεια ±0,02 s τράβα με την κάμερα του κινητού στα 60 fps (όχι αργή κίνηση) και διάλεξε το βίντεο από τη συλλογή.</p>
+      <input class="file" type="file" id="shoot-video" accept="video/*" capture="environment" tabindex="-1">
+      <input class="file" type="file" id="pick-video" accept="video/*" tabindex="-1">
+    </div>
+    <div class="note" id="home-storage" hidden></div>
+    <div class="section">
+      <h2 class="eyebrow">Πρόσφατες αναλύσεις</h2>
+      <div class="list" id="home-list"></div>
+    </div>
+    <p class="foot">Τα βίντεο και οι αναλύσεις μένουν στο κινητό σου. Δεν ανεβαίνει τίποτα πουθενά.</p>
+  </div>
+</section>
+
+<section class="view" id="v-setup" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="setup-back" type="button" aria-label="Πίσω"></button>
+    <div class="bar-title"><b>Νέα ανάλυση</b><span>Εκκίνηση</span></div>
+  </header>
+  <div class="scroll">
+    <div class="field">
+      <label for="athlete">Αθλητής</label>
+      <input id="athlete" type="text" autocomplete="off" autocapitalize="words" spellcheck="false" maxlength="60" placeholder="Όνομα αθλητή">
+      <div class="chips" id="athlete-chips"></div>
+    </div>
+    <div class="field">
+      <span class="label">Στυλ</span>
+      <div class="chips" id="stroke-chips"></div>
+    </div>
+    <div class="card status" id="setup-status"></div>
+  </div>
+  <div class="actions"><button class="btn primary" id="setup-go" type="button" disabled>Έναρξη σήμανσης</button></div>
+</section>
+
+<section class="view" id="v-mark" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="mark-back" type="button" aria-label="Πίσω"></button>
+    <div class="bar-title"><b id="mark-title">Εκκίνηση</b><span id="mark-sub"></span></div>
+    <button class="btn small primary" id="mark-results" type="button">Μετρήσεις</button>
+  </header>
+  <div class="stage" id="stage">
+    <div class="zoomer" id="zoomer"><video id="video" playsinline webkit-playsinline muted preload="auto"></video></div>
+    <div class="stage-msg" id="stage-msg" hidden></div>
+    <div class="flash" id="flash" hidden></div>
+    <button class="zoom-out" id="zoom-out" type="button" hidden aria-label="Όλη η εικόνα">1×</button>
+  </div>
+  <div class="panel">
+    <div class="readout">
+      <div class="clock"><span id="clock">0,000</span><small>s<span id="clock-unit"></span></small></div>
+      <div class="frameinfo"><span id="frame-no"></span><span id="fps-slot"></span></div>
+      <button class="icon-btn" id="sound-btn" type="button" aria-label="Ήχος στην αναπαραγωγή"></button>
+    </div>
+    <canvas class="strip" id="strip" role="img" aria-label="Ο ήχος και τα καρέ γύρω από το σημείο που βλέπεις. Σύρε για καρέ-καρέ."></canvas>
+    <div class="scrub" id="scrub" role="slider" aria-label="Θέση στο βίντεο" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+      <div class="scrub-track"><div class="scrub-fill" id="scrub-fill"></div><div id="scrub-marks"></div><div class="scrub-knob" id="scrub-knob"></div></div>
+    </div>
+    <div class="transport">
+      <button id="t-b10" type="button" aria-label="10 καρέ πίσω">−10</button>
+      <button id="t-b1" type="button" aria-label="1 καρέ πίσω">−1</button>
+      <button id="t-play" type="button" aria-label="Αναπαραγωγή"></button>
+      <button id="t-f1" type="button" aria-label="1 καρέ μπροστά">+1</button>
+      <button id="t-f10" type="button" aria-label="10 καρέ μπροστά">+10</button>
+      <button id="t-rate" type="button" aria-label="Ταχύτητα αναπαραγωγής">¼×</button>
+    </div>
+    <div class="events" id="events"></div>
+    <div class="markrow">
+      <button class="btn primary" id="mark-btn" type="button">Σημάδεψε</button>
+      <button class="icon-btn" id="signal-more" type="button" aria-label="Το σήμα από τον ήχο" hidden></button>
+      <button class="icon-btn danger" id="unmark-btn" type="button" aria-label="Σβήσιμο σημαδιού" hidden></button>
+    </div>
+  </div>
+</section>
+
+<section class="view" id="v-result" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="result-back" type="button" aria-label="Αρχική"></button>
+    <div class="bar-title"><b>Εκκίνηση</b><span id="result-sub"></span></div>
+    <button class="icon-btn danger" id="result-delete" type="button" aria-label="Διαγραφή ανάλυσης"></button>
+  </header>
+  <div class="scroll" id="result-body"></div>
+  <div class="actions">
+    <button class="btn" id="result-marks" type="button">Έλεγχος σημείων</button>
+    <button class="btn primary" id="result-tech" type="button">Τεχνική</button>
+  </div>
+</section>
+
+<section class="view" id="v-tech" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="tech-back" type="button" aria-label="Μετρήσεις"></button>
+    <div class="bar-title"><b>Τεχνική αξιολόγηση</b><span id="tech-sub"></span></div>
+  </header>
+  <div class="scroll" id="tech-body"></div>
+  <div class="actions">
+    <button class="btn" id="tech-results" type="button">Μετρήσεις</button>
+    <button class="btn primary" id="tech-report" type="button">Αναφορά</button>
+  </div>
+</section>
+
+<section class="view" id="v-report" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="report-back" type="button" aria-label="Τεχνική"></button>
+    <div class="bar-title"><b>Αναφορά</b><span id="report-sub"></span></div>
+  </header>
+  <div class="scroll" id="report-body"></div>
+  <div class="actions">
+    <button class="btn" id="report-new" type="button">Αρχική</button>
+    <button class="btn primary" id="report-pdf" type="button">Αποθήκευση PDF</button>
+  </div>
+</section>
+
+<section class="view" id="v-settings" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="settings-back" type="button" aria-label="Αρχική"></button>
+    <div class="bar-title"><b>Ρυθμίσεις</b><span id="settings-sub"></span></div>
+  </header>
+  <div class="scroll" id="settings-body"></div>
+</section>
+
+</div>
+
+<div class="backdrop" id="backdrop" lang="el" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status" lang="el" hidden></div>
+<input class="file" type="file" id="reopen-video" accept="video/*" tabindex="-1">
+<input class="file" type="file" id="restore-file" accept=".json,application/json" tabindex="-1">
+
+<script>
+/*SCRIPTS*/
+</script>
