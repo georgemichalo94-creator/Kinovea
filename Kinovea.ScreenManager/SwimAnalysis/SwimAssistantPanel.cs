@@ -36,6 +36,20 @@ namespace Kinovea.ScreenManager
         /// <summary>«Άνοιξέ το»: the item clicked after its state was asked again (false: not enabled now).</summary>
         bool Run(ToolStripItem item);
 
+        /// <summary>
+        /// (2.26.1) The video open with its analysis: "race", "race-tech" (a race in the technical view), "training", or null (no video).
+        /// </summary>
+        string VideoKind();
+
+        /// <summary>
+        /// (2.26.1) «Δείξε μου» for a button of the bars next to the video: null when it is lit, else why not ("video", "race",
+        /// "training", "tech", "raceview", "bars", "busy", "hidden").
+        /// </summary>
+        string SpotButton(string id);
+
+        /// <summary>(2.26.1) «Ξεκίνα το»: the button of the bars pressed (null), else why not (as SpotButton).</summary>
+        string RunButton(string id);
+
         void CloseAssistant();
     }
 
@@ -244,7 +258,18 @@ namespace Kinovea.ScreenManager
                 map = new List<SwimAssistantEntry>();
             }
 
-            SwimAssistantResult r = SwimAssistantSearch.Find(text, topics, map);
+            // (2.26.1) The video open decides between answers as good («αυτόματη ανάλυση»: of the race, or of the turn of a training video).
+            string kind = null;
+            try
+            {
+                kind = host.VideoKind();
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not read the video of the analysis for the assistant.", e);
+            }
+
+            SwimAssistantResult r = SwimAssistantSearch.Find(text, topics, map, kind == "race-tech" ? "race" : kind, kind == "race-tech");
             if (chosen != null)
             {
                 SwimAssistantTopic t = topics.FirstOrDefault(x => x.Id == chosen);
@@ -274,10 +299,65 @@ namespace Kinovea.ScreenManager
 
             Note = null;
             Warning = null;
+            if (!string.IsNullOrEmpty(t.Button))
+            {
+                // (2.26.1) A button of the bars next to the video: lit there.
+                string why = Safely(() => host.SpotButton(t.Button));
+                if (why != null)
+                    Warning = WhyText(why, t);
+                view.Invalidate();
+                return;
+            }
+
             ToolStripItem item = host.FindItem(t.Target);
             if (item == null || !host.Spot(item))
                 Warning = SwimAssistantKnowledge.L("Δεν είναι στο μενού τώρα.", "It is not in the menu now.");
             view.Invalidate();
+        }
+
+        /// <summary>A command of the host for a button of the bars ("video" when it fails: the reason most likely).</summary>
+        private string Safely(Func<string> command)
+        {
+            try
+            {
+                return command();
+            }
+            catch (Exception e)
+            {
+                log.Error("A button of the bars could not be reached for the assistant.", e);
+                return "video";
+            }
+        }
+
+        /// <summary>(2.26.1) Why a button of the bars cannot be shown or pressed now, as the card says it.</summary>
+        private string WhyText(string why, SwimAssistantTopic t)
+        {
+            switch (why)
+            {
+                case "race":
+                    return X(SwimAssistantKnowledge.L("Αυτό είναι για βίντεο αγώνα («{t:Είδος βίντεο}»: {path:swimRaceInfo}).",
+                        "This is for a race video («{t:Είδος βίντεο}»: {path:swimRaceInfo})."), t);
+                case "training":
+                    return X(SwimAssistantKnowledge.L("Αυτό είναι για βίντεο προπόνησης, στροφή ή εκκίνηση («{t:Είδος βίντεο}»: {path:swimRaceInfo}).",
+                        "This is for a training video, a turn or a start («{t:Είδος βίντεο}»: {path:swimRaceInfo})."), t);
+                case "tech":
+                    return X(SwimAssistantKnowledge.L("Είναι στην τεχνική ανάλυση: {path:swimTechPanel}.",
+                        "It is in the technical analysis: {path:swimTechPanel}."), t);
+                case "raceview":
+                    return X(SwimAssistantKnowledge.L("Είναι στην ανάλυση αγώνα (τώρα είσαι στην τεχνική): {path:swimRacePanel}.",
+                        "It is in the race analysis (the technical one is open now): {path:swimRacePanel}."), t);
+                case "bars":
+                    return SwimAssistantKnowledge.L("Η μπάρα δίπλα στο βίντεο δεν φαίνεται τώρα (πλήρης οθόνη, μεγάλες οθόνες ή στενή οθόνη). Στην πλήρη οθόνη τα κουμπιά είναι στο στρογγυλό κουμπί πάνω στο βίντεο.",
+                        "The bar next to the video is not shown now (full screen, big screens or a narrow screen). In full screen the buttons are in the round button on the video.");
+                case "busy":
+                    return SwimAssistantKnowledge.L("Τώρα δεν γίνεται: τρέχει άλλη ανάγνωση. Περίμενε να τελειώσει.",
+                        "Not now: another reading is running. Wait for it to end.");
+                case "hidden":
+                    return SwimAssistantKnowledge.L("Το κουμπί δεν χωρά τώρα στη μπάρα: μεγάλωσε το παράθυρο, ή πάτα το στον πίνακα όπως λένε τα βήματα.",
+                        "The button does not fit in the bar now: make the window bigger, or click it in the panel as the steps say.");
+                default:
+                    return NeedsText(t);
+            }
         }
 
         internal void ShowEntry(SwimAssistantEntry entry)
@@ -301,6 +381,18 @@ namespace Kinovea.ScreenManager
 
             Note = null;
             Warning = null;
+            if (!string.IsNullOrEmpty(t.Button))
+            {
+                // (2.26.1) A button of the bars next to the video: pressed, as a click on it.
+                string why = Safely(() => host.RunButton(t.Button));
+                if (why == null)
+                    Note = SwimAssistantKnowledge.L("Ξεκίνησε: ", "Started: ") + t.Title;
+                else
+                    Warning = WhyText(why, t);
+                view.Invalidate();
+                return;
+            }
+
             ToolStripItem item = host.FindItem(t.Target);
             ToolStripDropDownItem group = item as ToolStripDropDownItem;
             if (item == null)
@@ -785,23 +877,16 @@ namespace Kinovea.ScreenManager
         }
 
         #region Paint
+        /// <summary>
+        /// The content is drawn at its place in the view (its top at −scroll), not through a transform of the Graphics: the texts of
+        /// TextRenderer (GDI) do not follow a TranslateTransform (2.26.0: when scrolled, the boxes moved and their texts stayed).
+        /// </summary>
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             g.Clear(SwimTheme.Surface);
             hots.Clear();
-            GraphicsState state = g.Save();
-            g.TranslateTransform(0, -scroll);
-            int height;
-            try
-            {
-                height = Content(g);
-            }
-            finally
-            {
-                g.Restore(state);
-            }
-
+            int height = Content(g, -scroll);
             contentHeight = height;
             int max = Math.Max(0, contentHeight - Height);
             if (scroll > max)
@@ -820,12 +905,13 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private int Content(Graphics g)
+        /// <summary>The content from its top (in the view; −scroll); its height.</summary>
+        private int Content(Graphics g, int top)
         {
             SwimAssistantResult r = panel.Result;
             int x = P(16);
             int w = Math.Max(P(120), Width - P(32) - P(4));
-            int y = P(12);
+            int y = top + P(12);
 
             y = Chips(g, x, y, w, r) + P(14);
 
@@ -871,7 +957,7 @@ namespace Kinovea.ScreenManager
             if (r.Asked)
                 y = Ai(g, x, y, w);
 
-            return y + P(10);
+            return y + P(10) - top;
         }
 
         private int Chips(Graphics g, int x, int y, int w, SwimAssistantResult r)
@@ -933,7 +1019,9 @@ namespace Kinovea.ScreenManager
             if (lead.Length > 0)
                 y = Para(g, lead, Body, x, y, w, SwimTheme.AccentPale, paint) + P(12);
 
-            string path = panel.Host.PathOf(t.Target);
+            // (2.26.1) A button of the bars next to the video: its place on the bar, not a path in the menu.
+            bool bar = !string.IsNullOrEmpty(t.Button);
+            string path = bar ? panel.X(t.PlaceText, t) : panel.Host.PathOf(t.Target);
             if (!string.IsNullOrEmpty(path))
             {
                 y = Caps(g, SwimAssistantKnowledge.L("ΠΟΥ ΤΟ ΒΡΙΣΚΕΙΣ", "WHERE IT IS"), x, y, SwimTheme.Dim, paint) + P(6);
@@ -975,15 +1063,17 @@ namespace Kinovea.ScreenManager
                 SwimAssistantDraw.Box(g, sb, P(6), hot ? SwimTheme.AccentLight : SwimTheme.Accent, hot ? SwimTheme.AccentPale : SwimTheme.Accent, 1f);
                 SwimAssistantDraw.Target(g, new Rectangle(sb.X + P(12), sb.Y + (bh - P(16)) / 2, P(16), P(16)), SwimTheme.Back, sc);
                 TextRenderer.DrawText(g, show, ButtonFont, new Rectangle(sb.X + P(34), sb.Y, sb.Width - P(40), bh), SwimTheme.Back, One);
-                Add("show", sb, panel.ShowTopic, SwimAssistantKnowledge.L("Ανοίγει το μενού και ανάβει το σημείο (Enter)", "Opens the menu and lights up the place (Enter)"));
+                Add("show", sb, panel.ShowTopic, bar
+                    ? SwimAssistantKnowledge.L("Ανάβει το κουμπί στη μπάρα δίπλα στο βίντεο (Enter)", "Lights up the button in the bar next to the video (Enter)")
+                    : SwimAssistantKnowledge.L("Ανοίγει το μενού και ανάβει το σημείο (Enter)", "Opens the menu and lights up the place (Enter)"));
             }
 
             bx += sw + P(8);
-            ToolStripItem item = panel.Host.FindItem(t.Target);
+            ToolStripItem item = bar ? null : panel.Host.FindItem(t.Target);
             ToolStripDropDownItem group = item as ToolStripDropDownItem;
-            if (t.CanOpen && item != null && (group == null || !group.HasDropDownItems))
+            if (t.CanOpen && (bar || (item != null && (group == null || !group.HasDropDownItems))))
             {
-                string open = SwimAssistantKnowledge.L("Άνοιξέ το", "Open it");
+                string open = t.RunText ?? SwimAssistantKnowledge.L("Άνοιξέ το", "Open it");
                 int ow = TextRenderer.MeasureText(g, open, ButtonFont, Size.Empty, Centre).Width + P(28);
                 if (bx + ow > x + w)
                 {
@@ -1231,10 +1321,10 @@ namespace Kinovea.ScreenManager
         #region Mouse
         private Hot HotAt(Point p)
         {
-            Point q = new Point(p.X, p.Y + scroll);
+            // The boxes are where they were drawn, in the view.
             for (int i = hots.Count - 1; i >= 0; i--)
             {
-                if (hots[i].Box.Contains(q))
+                if (hots[i].Box.Contains(p))
                     return hots[i];
             }
 

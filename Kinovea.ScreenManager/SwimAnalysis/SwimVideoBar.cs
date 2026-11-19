@@ -142,10 +142,122 @@ namespace Kinovea.ScreenManager
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
                 toolTip.Dispose();
+                if (spotTimer != null)
+                {
+                    spotTimer.Stop();
+                    spotTimer.Dispose();
+                    spotTimer = null;
+                }
+            }
 
             base.Dispose(disposing);
         }
+
+        #region The assistant (2.26.1)
+        /// <summary>Seconds a button stays lit by «Δείξε μου» of the assistant (a click on the bar ends it before).</summary>
+        private const int SpotSeconds = 10;
+
+        private string spotId;
+        private DateTime spotEnd;
+        private Timer spotTimer;
+
+        /// <summary>
+        /// «Δείξε μου» of the digital assistant for a button of this bar: its tab shown (a race: the start light in ΕΚΚ., the whole race
+        /// in ΚΟΛ., the pilot in either), the button lit with «ΕΔΩ» for some seconds. False when the bar does not draw it now.
+        /// </summary>
+        internal bool Spot(string id)
+        {
+            SwimRace race = manager.Race;
+            if (!left || race == null || IsDisposed || !IsHandleCreated || !Visible)
+                return false;
+
+            bool tech = race.IsTraining || manager.TechnicalView;
+            if (!tech)
+            {
+                int automatic;
+                int shown = ShownTab(false, out automatic);
+                int tab = id == "start-light" ? 0 : id == "auto-race" ? 1 : id == "auto-pilot" ? (shown <= 1 ? shown : 1) : shown;
+                if (tab != shown)
+                    ChooseTab(tab, automatic);
+            }
+
+            spotId = id;
+            spotEnd = DateTime.Now.AddSeconds(SpotSeconds);
+            Refresh();
+            if (!items.Any(i => i.Id == id))
+            {
+                EndSpot();
+                return false;
+            }
+
+            if (spotTimer == null)
+            {
+                spotTimer = new Timer { Interval = 60 };
+                spotTimer.Tick += SpotTick;
+            }
+
+            spotTimer.Start();
+            return true;
+        }
+
+        /// <summary>The button lit now (null: none).</summary>
+        internal string Spotted
+        {
+            get { return spotId; }
+        }
+
+        internal void EndSpot()
+        {
+            if (spotTimer != null)
+                spotTimer.Stop();
+            if (spotId != null)
+            {
+                spotId = null;
+                Invalidate();
+            }
+        }
+
+        private void SpotTick(object sender, EventArgs e)
+        {
+            if (spotId == null || IsDisposed || DateTime.Now >= spotEnd)
+            {
+                EndSpot();
+                return;
+            }
+
+            Item item = items.FirstOrDefault(i => i.Id == spotId);
+            if (item == null)
+                return;
+
+            RectangleF around = item.Bounds;
+            around.Inflate(S(10), S(14));
+            Invalidate(Rectangle.Round(around));
+        }
+
+        /// <summary>The button lit by «Δείξε μου»: a glow that breathes, a clear edge and the tag «ΕΔΩ» on its corner.</summary>
+        private void DrawSpot(Graphics g, RectangleF r)
+        {
+            double phase = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond % 1200) / 1200.0;
+            int alpha = Math.Max(40, Math.Min(230, (int)Math.Round(135 + 95 * Math.Sin(phase * 2 * Math.PI))));
+            RectangleF outer = RectangleF.Inflate(r, S(3), S(3));
+            using (GraphicsPath path = SwimTheme.Rounded(outer, 8))
+            using (Pen glow = new Pen(Color.FromArgb(alpha, SwimTheme.Accent), S(3)))
+                g.DrawPath(glow, path);
+            SwimTheme.DrawRounded(g, SwimTheme.AccentPale, r, 6);
+
+            string tag = SwimLang.English ? "HERE" : "ΕΔΩ";
+            Font font = SwimTheme.Ui(7f, FontStyle.Bold);
+            Size ts = TextRenderer.MeasureText(g, tag, font, Size.Empty, TextFormatFlags.NoPadding);
+            float tw = ts.Width + S(10), th = ts.Height + S(4);
+            RectangleF box = new RectangleF(r.Right - tw - S(6), r.Top - th / 2, tw, th);
+            if (box.Top < S(1))
+                box.Y = r.Top + S(2);
+            SwimTheme.FillRounded(g, SwimTheme.Accent, box, 3);
+            Write(g, tag, font, box, SwimTheme.Back, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        }
+        #endregion
 
         protected override void WndProc(ref Message m)
         {
@@ -250,6 +362,7 @@ namespace Kinovea.ScreenManager
 
             // As a click on the video: this screen is the active one and gets the keys.
             manager.BarClicked();
+            EndSpot();
             Item item = HitTest(e.Location);
             pressedId = item != null && item.Click != null ? item.Id : null;
             Invalidate();
@@ -1545,6 +1658,10 @@ namespace Kinovea.ScreenManager
                 RectangleF tr = new RectangleF(textLeft, r.Top, Math.Max(4, right - textLeft), r.Height);
                 Write(g, text, font, tr, textColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
             }
+
+            // (2.26.1) The button that «Δείξε μου» of the assistant lit.
+            if (id != null && id == spotId)
+                DrawSpot(g, r);
 
             list.Add(new Item { Id = id, Bounds = r, Tip = tip, Click = click });
         }

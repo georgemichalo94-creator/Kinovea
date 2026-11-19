@@ -48,6 +48,23 @@ namespace Kinovea.ScreenManager
         /// <summary>Its steps are the keys of the program now (menus and video).</summary>
         public bool KeyList;
 
+        /// <summary>
+        /// (2.26.1) A button of the bars next to the video, not in the menu (the automatic readings): «Δείξε μου» lights it on the bar,
+        /// «Ξεκίνα το» presses it.
+        /// </summary>
+        public string Button;
+
+        /// <summary>(2.26.1) Where that button is, as the chips of «ΠΟΥ ΤΟ ΒΡΙΣΚΕΙΣ» (parts joined by " › "; {t:…} in the language of the program).</summary>
+        public string PlaceEl;
+        public string PlaceEn;
+
+        /// <summary>(2.26.1) The video it is for: "race", "training", "tech" (a training video or the technical view), or null.</summary>
+        public string Video;
+
+        /// <summary>(2.26.1) The text of the button that runs it, when it is not «Άνοιξέ το» (a reading starts: «Ξεκίνα το»).</summary>
+        public string RunEl;
+        public string RunEn;
+
         private List<string> searchKeys;
 
         public string Title
@@ -68,6 +85,17 @@ namespace Kinovea.ScreenManager
         public string[] StepTexts
         {
             get { return SwimLang.English ? StepsEn : StepsEl; }
+        }
+
+        public string PlaceText
+        {
+            get { return SwimLang.English ? PlaceEn : PlaceEl; }
+        }
+
+        /// <summary>The text of the button that runs it (null: «Άνοιξέ το»).</summary>
+        public string RunText
+        {
+            get { return SwimLang.English ? RunEn : RunEl; }
         }
 
         public bool IsChip
@@ -154,6 +182,40 @@ namespace Kinovea.ScreenManager
         {
             KeyList = true;
             return this;
+        }
+
+        /// <summary>(2.26.1) A button of the bars next to the video, and where it is.</summary>
+        public SwimAssistantTopic OnBar(string button, string placeEl, string placeEn)
+        {
+            Button = button;
+            PlaceEl = placeEl;
+            PlaceEn = placeEn;
+            return this;
+        }
+
+        /// <summary>(2.26.1) The video it is for ("race", "training", "tech").</summary>
+        public SwimAssistantTopic For(string video)
+        {
+            Video = video;
+            return this;
+        }
+
+        /// <summary>(2.26.1) The text of the button that runs it.</summary>
+        public SwimAssistantTopic RunLabel(string el, string en)
+        {
+            RunEl = el;
+            RunEn = en;
+            return this;
+        }
+
+        /// <summary>(2.26.1) It is for this video ("race", "training"; the technical view of a race is "tech" too).</summary>
+        public bool Fits(string video, bool technicalView)
+        {
+            if (string.IsNullOrEmpty(Video) || string.IsNullOrEmpty(video))
+                return false;
+            if (Video == "tech")
+                return video == "training" || technicalView;
+            return Video == video && !(Video == "race" && technicalView);
         }
     }
 
@@ -498,7 +560,18 @@ namespace Kinovea.ScreenManager
     /// <summary>(2.26.0) The search of the assistant: the topic of a question, the items of the menu it names, the guesses.</summary>
     internal static class SwimAssistantSearch
     {
+        /// <summary>
+        /// (2.26.1) A topic for the video open (a race, a training video) is preferred between answers as good: «αυτόματη ανάλυση» in a
+        /// training video is its turn or start, in a race the race.
+        /// </summary>
+        public const double VideoBonus = 0.75;
+
         public static SwimAssistantResult Find(string query, IList<SwimAssistantTopic> topics, IList<SwimAssistantEntry> entries)
+        {
+            return Find(query, topics, entries, null, false);
+        }
+
+        public static SwimAssistantResult Find(string query, IList<SwimAssistantTopic> topics, IList<SwimAssistantEntry> entries, string video, bool technicalView)
         {
             SwimAssistantResult r = new SwimAssistantResult { Query = (query ?? "").Trim() };
             string q = SwimAssistantText.Normalize(r.Query);
@@ -516,6 +589,8 @@ namespace Kinovea.ScreenManager
                 {
                     int strong;
                     double s = SwimAssistantText.Score(q, words, t.SearchKeys, out strong);
+                    if (s >= need && t.Fits(video, technicalView))
+                        s += VideoBonus;
                     if (s > bestScore + 1e-9 || (best != null && Math.Abs(s - bestScore) < 1e-9 && strong > bestStrong))
                     {
                         best = t;
@@ -707,7 +782,7 @@ namespace Kinovea.ScreenManager
                         S("Open the video of the race ({path:mnuOpenFile}).",
                             "Click {path} ({key:SwimShowPanel}).",
                             "In «{t:Στοιχεία και αποτελέσματα}» fill in the athlete and the event; then mark with the buttons of the bars or with the keys."))
-                    .Words("αναλυσ, αγων, πινακ, μπαρ, race, analysis, panel, νεα αναλυση, ξεκινω, ξεκιν, start analysis")
+                    .Words("αναλυσ, αγων, πινακ, μπαρ, race, analysis, panel, νεα αναλυση, αναλυση αγωνα, race analysis, ξεκινω, ξεκιν, start analysis")
                     .Need("video").See("newrace keys raceinfo"),
 
                 T("keys", "mnuPreferences", "Πλήκτρα συντόμευσης", "Keyboard shortcuts")
@@ -796,7 +871,7 @@ namespace Kinovea.ScreenManager
                         "Starts and turns frame by frame, snapshots, angles and evaluation.")
                     .Steps(S("Πάτα {path}.", "Οι σελίδες του είναι και στο μενού: Εκκινήσεις, Στροφές, Στιγμιότυπα και γωνίες, Αξιολόγηση."),
                         S("Click {path}.", "Its pages are also in the menu: Starts, Turns, Snapshots and angles, Evaluation."))
-                    .Words("τεχνικ, technique, technical, tech, καρε καρε, εκκινησεισ, προπονησ")
+                    .Words("τεχνικ, technique, technical, tech, τεχνικη αναλυση, technical analysis, καρε καρε, εκκινησεισ, προπονησ")
                     .Need("video").See("snapshots techeval aipro"),
 
                 T("snapshots", "swimTechMedia", "Στιγμιότυπα και γωνίες", "Snapshots and angles")
@@ -811,6 +886,89 @@ namespace Kinovea.ScreenManager
                     .Steps(S("Πάτα {path}."), S("Click {path}."))
                     .Words("αξιολογησ, evaluation, evaluate, λιστα, checklist, βαθμολογ")
                     .Need("video").See("techpanel aipro"),
+
+                // ---- (2.26.1) The automatic readings: buttons of the bars next to the video, not in the menu.
+                T("autopilot", null, "Αυτόματη ανάλυση αγώνα (✈ Αυτόματος πιλότος)", "Automatic race analysis (✈ Autopilot)")
+                    .OnBar("auto-pilot", "Μπάρα αριστερά του βίντεο › {t:ΚΟΛ.} › {t:✈ Αυτόματος πιλότος}",
+                        "Bar on the left of the video › {t:ΚΟΛ.} › {t:✈ Αυτόματος πιλότος}")
+                    .For("race")
+                    .Lead("Όλη η ανάλυση του αγώνα μόνη της: η εκκίνηση, ο αθλητής που ακολουθεί η κάμερα, περάσματα, τοίχοι, έξοδοι, χεριές και στο τέλος το PDF. Ρωτά μόνο όταν δεν είναι σίγουρη.",
+                        "The whole analysis of the race by itself: the start, the swimmer the camera follows, splits, walls, breakouts, strokes and at the end the PDF. It asks only when it is not sure.")
+                    .Steps(S("Άνοιξε το βίντεο του αγώνα με την ανάλυσή του ({path:swimRacePanel}): «{t:Είδος βίντεο}» αγώνας, πισίνα 50 ή 25 μ.",
+                            "Πάτα «{t:✈ Αυτόματος πιλότος}» στη μπάρα αριστερά του βίντεο (καρτέλα {t:ΕΚΚ.} ή {t:ΚΟΛ.}) ή στον πίνακα, καρτέλα «{t:1 · Εκκίνηση}».",
+                            "Όσο διαβάζει, ρωτά μόνο ό,τι δεν ξέρει (π.χ. τον αθλητή): Enter για την πρότασή του.",
+                            "Στο τέλος ο «✨ Έλεγχος» των αβέβαιων: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος."),
+                        S("Open the video of the race with its analysis ({path:swimRacePanel}): «{t:Είδος βίντεο}» race, pool of 50 or 25 m.",
+                            "Click «{t:✈ Αυτόματος πιλότος}» in the bar on the left of the video (tab {t:ΕΚΚ.} or {t:ΚΟΛ.}) or in the panel, tab «{t:1 · Εκκίνηση}».",
+                            "While it reads it asks only what it does not know (e.g. the swimmer): Enter for its proposal.",
+                            "At the end the «✨ Review» of the doubtful ones: Enter right, ←/→ and Enter corrected, Delete wrong."))
+                    .Words("αυτοματη αναλυση, αυτοματη αναλυση αγωνα, αυτοματοσ πιλοτοσ, αυτοματοσ, αυτοματ, πιλοτ, μονη τησ, μονο του, " +
+                        "χωρισ κλικ, autopilot, auto pilot, pilot, automatic, automatic analysis, automatic race, by itself")
+                    .RunLabel("Ξεκίνα το", "Start it")
+                    .Need("analysis").See("wholerace startlight techauto"),
+
+                T("techauto", null, "Αυτόματη ανάλυση στροφής ή εκκίνησης (🤖 Αυτόματα)", "Automatic analysis of a turn or a start (🤖 Automatic)")
+                    .OnBar("tech-pilot", "Μπάρα αριστερά του βίντεο › {t:🤖 Αυτόματα}", "Bar on the left of the video › {t:🤖 Αυτόματα}")
+                    .For("training")
+                    .Lead("Η στροφή ή η εκκίνηση ενός βίντεο προπόνησης διαβάζεται μόνη της: ο κολυμβητής, ο σκελετός του και τα γεγονότα (επαφή, αποκόλληση, δελφινισμοί, έξοδος, χεριές) προτείνονται για έλεγχο.",
+                        "The turn or the start of a training video is read by itself: the swimmer, his skeleton and the events (contact, push-off, kicks, breakout, strokes) are proposed for the check.")
+                    .Steps(S("Βίντεο από την υποβρύχια πλάγια κάμερα, με «{t:Είδος βίντεο}» προπόνηση ({path:swimRaceInfo}). Για εκκίνηση πρώτα το σήμα (G).",
+                            "Πάτα «{t:🤖 Αυτόματα}» στη μπάρα αριστερά του βίντεο ή στον πίνακα: {path:swimTechMedia}.",
+                            "Με το βίντεο της εξωτερικής κάμερας στον ίδιο φάκελο βρίσκει και το κεφάλι στα −5 και +5 μ.",
+                            "Μετά ο έλεγχος, από την επαφή στον τοίχο: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος."),
+                        S("A video of the underwater side camera, with «{t:Είδος βίντεο}» training ({path:swimRaceInfo}). For a start the signal first (G).",
+                            "Click «{t:🤖 Αυτόματα}» in the bar on the left of the video or in the panel: {path:swimTechMedia}.",
+                            "With the video of the external camera in the same folder it also finds the head at −5 and +5 m.",
+                            "Then the check, from the contact with the wall: Enter right, ←/→ and Enter corrected, Delete wrong."))
+                    .Words("αυτοματη αναλυση, αυτοματη αναλυση τεχνικησ, αυτοματη τεχνικη, αυτοματη στροφη, αυτοματη εκκινηση, αυτοματα, αυτοματ, τεχνικ, " +
+                        "προπονησ, υποβρυχι, μονη τησ, μονο του, automatic, automatic analysis, automatic technique, automatic turn, technique, robot, by itself")
+                    .RunLabel("Ξεκίνα το", "Start it")
+                    .Need("analysis").See("skeleton techpanel autopilot"),
+
+                T("wholerace", null, "Όλος ο αγώνας ενός αθλητή (🤖 Όλος ο αγώνας)", "The whole race of one swimmer (🤖 Whole race)")
+                    .OnBar("auto-race", "Μπάρα αριστερά του βίντεο › {t:ΚΟΛ.} › {t:🤖 Όλος ο αγώνας}",
+                        "Bar on the left of the video › {t:ΚΟΛ.} › {t:🤖 Όλος ο αγώνας}")
+                    .For("race")
+                    .Lead("Διαβάζει όλα τα μήκη του αθλητή που διαλέγεις και προτείνει τα περάσματα και τους τοίχους για έλεγχο.",
+                        "Reads all the lengths of the swimmer you choose and proposes the splits and the walls for the check.")
+                    .Steps(S("Με την εκκίνηση βαλμένη, πάτα «{t:🤖 Όλος ο αγώνας}» (μπάρα αριστερά του βίντεο, καρτέλα {t:ΚΟΛ.}, ή στον πίνακα, καρτέλα «{t:1 · Εκκίνηση}»).",
+                            "Enter για τον αθλητή που προτείνει (κίτρινη λωρίδα), ή κλικ στο κεφάλι και στα πόδια άλλου σε ένα καρέ μετά την έξοδο από το νερό.",
+                            "Μετά ο έλεγχος: Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος."),
+                        S("With the start set, click «{t:🤖 Όλος ο αγώνας}» (bar on the left of the video, tab {t:ΚΟΛ.}, or in the panel, tab «{t:1 · Εκκίνηση}»).",
+                            "Enter for the swimmer it proposes (yellow band), or click the head and then the feet of another one in a frame after the breakout.",
+                            "Then the check: Enter right, ←/→ and Enter corrected, Delete wrong."))
+                    .Words("ολοσ ο αγωνασ, ολοσ αγωνασ, ολο τον αγωνα, ολα τα μηκη, whole race, all the lengths, read the race")
+                    .RunLabel("Ξεκίνα το", "Start it")
+                    .Need("analysis").See("autopilot start"),
+
+                T("startlight", null, "Αυτόματη εύρεση του σήματος εκκίνησης (φως)", "Find the start signal automatically (light)")
+                    .OnBar("start-light", "Μπάρα αριστερά του βίντεο › {t:ΕΚΚ.} › {t:💡 Εκκίνηση από το φως}",
+                        "Bar on the left of the video › {t:ΕΚΚ.} › {t:💡 Εκκίνηση από το φως}")
+                    .For("race")
+                    .Lead("Βρίσκει το καρέ που ανάβουν τα φώτα εκκίνησης και το προτείνει για έλεγχο.",
+                        "Finds the frame where the start lights come on and proposes it for the check.")
+                    .Steps(S("Πάτα «{t:💡 Εκκίνηση από το φως}» (μπάρα αριστερά του βίντεο, καρτέλα {t:ΕΚΚ.}, ή στον πίνακα «{t:💡 Αυτόματα (φως)}», καρτέλα «{t:1 · Εκκίνηση}»).",
+                            "Enter σωστό, ←/→ και Enter διόρθωση, Delete λάθος (δείχνει την επόμενη υποψήφια)."),
+                        S("Click «{t:💡 Εκκίνηση από το φως}» (bar on the left of the video, tab {t:ΕΚΚ.}, or in the panel «{t:💡 Αυτόματα (φως)}», tab «{t:1 · Εκκίνηση}»).",
+                            "Enter right, ←/→ and Enter corrected, Delete wrong (it shows the next candidate)."))
+                    .Words("φωσ, φωτα, φωτα εκκινησησ, σημα εκκινησησ αυτοματα, βρεσ την εκκινηση, ευρεση εκκινησησ, start light, lights, find the start")
+                    .RunLabel("Ξεκίνα το", "Start it")
+                    .Need("analysis").See("start autopilot"),
+
+                T("skeleton", null, "Σκελετός του κολυμβητή", "Skeleton of the swimmer")
+                    .OnBar("skeleton", "Μπάρα αριστερά του βίντεο › {t:Σκελετός}", "Bar on the left of the video › {t:Σκελετός}")
+                    .For("tech")
+                    .Lead("Ο σκελετός του αθλητή πάνω στο βίντεο, με τις γωνίες γονάτου, ισχίου και αγκώνα.",
+                        "The skeleton of the swimmer on the video, with the angles of the knee, the hip and the elbow.")
+                    .Steps(S("Στην τεχνική ανάλυση ({path:swimTechPanel}) πάτα «{t:Σκελετός}» στη μπάρα αριστερά του βίντεο ή στον πίνακα: {path:swimTechMedia}.",
+                            "Κλικ πάνω στον αθλητή σε ένα καθαρό καρέ: το βίντεο διαβάζεται από εκεί, όσο φαίνεται.",
+                            "«{t:Γωνίες}»: οι γωνίες του σκελετού σε αυτό το καρέ μπαίνουν στην ανάλυση."),
+                        S("In the technical analysis ({path:swimTechPanel}) click «{t:Σκελετός}» in the bar on the left of the video or in the panel: {path:swimTechMedia}.",
+                            "Click on the swimmer in a clear frame: the video is read from there, as long as he is seen.",
+                            "«{t:Γωνίες}»: the angles of the skeleton at that frame go into the analysis."))
+                    .Words("σκελετ, skeleton, pose, ποζα, αρθρωσ, γονατ, ισχι, αγκων, σωμα, body")
+                    .RunLabel("Ξεκίνα το", "Start it")
+                    .Need("analysis").See("snapshots techauto"),
 
                 // ---- The report.
                 T("pdf", "swimPdf", "PDF report", "PDF report")
@@ -1239,6 +1397,10 @@ namespace Kinovea.ScreenManager
                     b.Append("- ").Append(t.Title).Append(": ").Append(SwimAssistantKnowledge.Expand(t.LeadText, t, pathOf));
                     foreach (string s in t.StepTexts)
                         b.Append(" / ").Append(SwimAssistantKnowledge.Expand(s, t, pathOf));
+
+                    // (2.26.1) A button of the bars next to the video (not in the MENU list): where it is.
+                    if (!string.IsNullOrEmpty(t.Button))
+                        b.Append(" / BUTTON (bar next to the video, not in the menu): ").Append(SwimAssistantKnowledge.Expand(t.PlaceText, t, pathOf));
                     b.AppendLine();
                 }
             }

@@ -554,6 +554,46 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
+        string ISwimAssistantHost.VideoKind()
+        {
+            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            return m != null ? m.AssistantVideoKind() : null;
+        }
+
+        string ISwimAssistantHost.SpotButton(string id)
+        {
+            EndSpot();
+            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            return m != null ? m.SpotBarButton(id) : "video";
+        }
+
+        string ISwimAssistantHost.RunButton(string id)
+        {
+            EndSpot();
+            SwimAnalysisManager m = SwimAnalysisManager.Current;
+            if (m == null)
+                return "video";
+
+            string why = m.BarButtonNeeds(id);
+            if (why != null)
+                return why;
+
+            // After the click on the card is over: the reading may open its window of progress.
+            Control c = assistant != null && !assistant.IsDisposed && assistant.IsHandleCreated ? (Control)assistant : strip;
+            c.BeginInvoke((Action)(() =>
+            {
+                try
+                {
+                    m.RunBarButton(id);
+                }
+                catch (Exception e)
+                {
+                    log.Error("A button of the bars pressed by the assistant failed.", e);
+                }
+            }));
+            return null;
+        }
+
         void ISwimAssistantHost.CloseAssistant()
         {
             CloseAssistantPanel();

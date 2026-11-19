@@ -299,6 +299,61 @@ Shot 'as_2_package.png' @()
 [void](Ask 'πλήκτρα')
 Shot 'as_5_keys.png' @()
 
+# (2.26.1, the recording of the user) Scrolled, the texts move with their boxes: 2.26.0 drew the boxes through a transform of the
+# Graphics that the texts of TextRenderer do not follow (the keys and the buttons left behind, black boxes over the chips).
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+namespace SwimCi {
+  public static class Images {
+    // The points of b that differ from a moved up by shift (one in two, the right edge left out: the scroll bar): {differ, compared}.
+    public static int[] Diff(System.Drawing.Bitmap a, System.Drawing.Bitmap b, int shift, int right) {
+      int diff = 0, total = 0;
+      for (int y = 0; y + shift < a.Height && y < b.Height; y += 2)
+        for (int x = 0; x < a.Width - right && x < b.Width; x += 2) { total++; if (a.GetPixel(x, y + shift).ToArgb() != b.GetPixel(x, y).ToArgb()) diff++; }
+      return new int[] { diff, total };
+    }
+  }
+}
+'@
+$view = [System.Windows.Forms.Control](F $panel 'view')
+$vw = $view.Width; $vh = $view.Height
+$b0 = New-Object System.Drawing.Bitmap($vw, $vh); $view.DrawToBitmap($b0, (New-Object System.Drawing.Rectangle(0, 0, $vw, $vh)))
+[void](Call $view 'ScrollBy' ([object[]]@([int]120))); Pump
+$sc1 = [int](F $view 'scroll')
+$b1 = New-Object System.Drawing.Bitmap($vw, $vh); $view.DrawToBitmap($b1, (New-Object System.Drawing.Rectangle(0, 0, $vw, $vh)))
+$d = [SwimCi.Images]::Diff($b0, $b1, $sc1, 16)
+Check ($sc1 -gt 40 -and $d[1] -gt 1000 -and $d[0] -le $d[1] / 500) ('scrolled by ' + $sc1 + ' px: the texts move with their boxes (' + $d[0] + ' of ' + $d[1] + ' points differ)')
+Shot 'as_10_keys_scrolled.png' @()
+$b0.Dispose(); $b1.Dispose()
+
+# (2.26.1) The automatic readings, buttons of the bars next to the video (not in the menu): found with «αυτόματη ανάλυση»; between
+# the race and the turn of a training video the video open decides.
+$expect2 = [ordered]@{
+  'πως κάνω αυτόματη ανάλυση τεχνικής' = 'techauto'; 'αυτόματη ανάλυση αγώνα' = 'autopilot'; 'αυτόματος πιλότος' = 'autopilot'
+  'όλος ο αγώνας' = 'wholerace'; 'εκκίνηση από το φως' = 'startlight'; 'σκελετός' = 'skeleton'; 'automatic technique analysis' = 'techauto'
+}
+$wrong = @()
+foreach ($q in $expect2.Keys) { $id = TopicId (Ask $q); if ($id -ne $expect2[$q]) { $wrong += ($q + ' -> ' + $id + ' (not ' + $expect2[$q] + ')') } }
+Check ($wrong.Count -eq 0) ('the automatic readings: ' + $expect2.Count + ' questions' + $(if ($wrong.Count -gt 0) { ': ' + ($wrong -join ' | ') } else { '' }))
+$find5 = (T 'SwimAssistantSearch').GetMethods($all) | Where-Object { $_.Name -eq 'Find' -and $_.GetParameters().Count -eq 5 } | Select-Object -First 1
+$topicsNow = Call $panel 'Topics' $null
+$mapNow = $tHostI.GetMethod('MenuMap').Invoke($menu, $null)
+function FindIn([string]$q, [string]$video) { return TopicId ($find5.Invoke($null, [object[]]@($q, $topicsNow, $mapNow, $video, $false))) }
+$inTraining = FindIn 'πως κάνω αυτόματη ανάλυση' 'training'; $inRace = FindIn 'πως κάνω αυτόματη ανάλυση' 'race'
+$plainRace = FindIn 'ανάλυση αγώνα' 'race'; $plainTech = FindIn 'τεχνική ανάλυση' 'training'
+Check ($inTraining -eq 'techauto' -and $inRace -eq 'autopilot' -and $plainRace -eq 'racepanel' -and $plainTech -eq 'techpanel') ('«αυτόματη ανάλυση» in a training video ' + $inTraining + ', in a race ' + $inRace + '; «ανάλυση αγώνα» ' + $plainRace + ', «τεχνική ανάλυση» ' + $plainTech)
+$r = Ask 'πως κάνω αυτόματη ανάλυση τεχνικής'
+$auto = F $r 'Topic'
+$place = [string](Call $panel 'X' ([object[]]@([string](Pr $auto 'PlaceText'), $auto)))
+$hotIds = @((F $view 'hots') | ForEach-Object { [string](F $_ 'Id') })
+Check ($place -eq 'Μπάρα αριστερά του βίντεο › 🤖 Αυτόματα' -and $hotIds -contains 'show' -and $hotIds -contains 'open' -and [string](Pr $auto 'RunText') -eq 'Ξεκίνα το') ('its card: where it is (' + $place + '), «Δείξε μου» and «Ξεκίνα το»')
+Shot 'as_9_auto.png' @()
+[void](Call $panel 'ShowTopic' $null); Pump
+$warn1 = [string](Pr $panel 'Warning')
+[void](Call $panel 'OpenTopic' $null); Pump
+$warn2 = [string](Pr $panel 'Warning')
+Check ($warn1.Contains('Αγώνας › Πίνακας ανάλυσης αγώνα') -and $warn2 -eq $warn1 -and $null -eq $tMenu.GetProperty('Spotted', $all).GetValue($menu)) ('without a video, «Δείξε μου» and «Ξεκίνα το» say what it needs: ' + $warn1)
+Shot 'as_11_auto_needs.png' @()
+
 # «Δείξε μου»: the menus of the item opened from the bar, the item lit with ΕΔΩ; the light goes with its menu.
 [void](Ask 'πού είναι η εξαγωγή βίντεο;')
 [void](Call $panel 'ShowTopic' $null)
