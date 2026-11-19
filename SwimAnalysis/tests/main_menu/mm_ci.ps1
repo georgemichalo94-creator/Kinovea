@@ -253,6 +253,9 @@ $entry = @($help.DropDownItems | Where-Object { $_.Name -eq 'swimAssistant' })[0
 Check ($null -ne $bar -and $bar.Alignment -eq 'Right' -and $bar.Text -eq 'ΒΟΗΘΟΣ' -and [bool](F $bar 'Fresh')) ('ΒΟΗΘΟΣ on the bar with its new dot: ' + $bar.Text)
 Check ($null -ne $entry -and $help.DropDownItems.IndexOf($entry) -eq 0 -and $entry.ShortcutKeys -eq $keys::F1 -and $entry.Text -eq 'Ψηφιακός βοηθός') 'Βοήθεια › Ψηφιακός βοηθός first, with F1'
 Check ($helpContents.ShortcutKeys -eq $keys::None -and $helpContents.OwnerItem -eq $help) 'the guide of Kinovea stays in Βοήθεια, its F1 given to the assistant'
+# (Found in the test copy of Kinovea: F1 did nothing, taken out of the keys of Βοήθεια when the guide was given no key after the entry.)
+$keyTable = [System.Windows.Forms.ToolStrip].GetProperty('Shortcuts', $all).GetValue($help.DropDown.psobject.BaseObject)
+Check ($null -ne $keyTable -and $keyTable[$keys::F1] -eq $entry) 'F1 in the keys of Βοήθεια is the assistant''s'
 
 # The window as Kinovea's: a main view that fills what the bars leave.
 $form.FormBorderStyle = 'None'
@@ -327,6 +330,19 @@ $entry.PerformClick(); Pump
 $closed = -not $pc.Visible -and -not [bool](F $bar 'Open')
 $entry.PerformClick(); Pump
 Check ($closed -and $pc.Visible) 'F1 (Βοήθεια › Ψηφιακός βοηθός) closes and opens it'
+# F1 pressed as in Kinovea (the key into the queue of the window, through the keys of the menus): in the main view, and in the box of
+# the question; then ΒΟΗΘΟΣ on the bar.
+Add-Type -Namespace SwimCi -Name Keyboard -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, int msg, System.IntPtr wParam, System.IntPtr lParam);'
+function PressF1($c) { [void][SwimCi.Keyboard]::PostMessage($c.Handle, 0x100, [IntPtr]0x70, [IntPtr]0x3B0001); Pump }
+$box = [System.Windows.Forms.Control](F (F $panel 'query') 'Box')
+PressF1 $mainView; $k1 = -not $pc.Visible
+PressF1 $mainView; $k2 = $pc.Visible
+PressF1 $box; $k3 = -not $pc.Visible
+Check ($k1 -and $k2 -and $k3) ('the key F1 closes and opens it, in the box of the question too (' + $k1 + ', ' + $k2 + ', ' + $k3 + ')')
+$bar.PerformClick(); Pump; $b1 = $pc.Visible -and [bool](F $bar 'Open')
+$bar.PerformClick(); Pump; $b2 = -not $pc.Visible -and -not [bool](F $bar 'Open')
+$bar.PerformClick(); Pump
+Check ($b1 -and $b2 -and $pc.Visible) ('ΒΟΗΘΟΣ on the bar opens and closes it (' + $b1 + ', ' + $b2 + ')')
 [void]$tMenu.GetMethod('SetFullScreen').Invoke($menu, [object[]]@($true)); $hidden = -not $pc.Visible
 [void]$tMenu.GetMethod('SetFullScreen').Invoke($menu, [object[]]@($false))
 Check ($hidden -and $pc.Visible) 'the full screen hides the panel, it comes back after it'

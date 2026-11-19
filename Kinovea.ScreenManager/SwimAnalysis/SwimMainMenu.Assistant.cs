@@ -58,13 +58,14 @@ namespace Kinovea.ScreenManager
         /// <summary>The assistant first in Βοήθεια (F1) and its button for the bar (put on the bar with ΕΛ | EN and the Google Sheet).</summary>
         private void PlaceAssistant(ToolStripMenuItem help, Func<string, ToolStripItem> named)
         {
+            TakeF1(named("mnuHelpContents") as ToolStripMenuItem);
             assistantEntry = Entry("Ψηφιακός βοηθός", SwimAssistantIcon.Picture(16), ToggleAssistant);
             assistantEntry.Name = "swimAssistant";
             assistantEntry.ShortcutKeys = Keys.F1;
             Tip(assistantEntry, "Ρώτα πού είναι κάτι στο Kinovea: ο βοηθός λέει τα βήματα και δείχνει το σημείο στο μενού.");
             help.DropDownItems.Insert(0, assistantEntry);
             help.DropDownItems.Insert(1, new ToolStripSeparator());
-            TakeF1(named("mnuHelpContents") as ToolStripMenuItem);
+            OwnF1();
 
             assistantButton = new SwimMenuAssistant { Name = "swimAssistantBar", Fresh = !AssistantSeen() };
             SetLabel(assistantButton, "ΒΟΗΘΟΣ");
@@ -72,7 +73,11 @@ namespace Kinovea.ScreenManager
             assistantButton.Click += (s, e) => Run(ToggleAssistant);
         }
 
-        /// <summary>F1 goes to the assistant (the guide of Kinovea keeps its place in Βοήθεια, without a key).</summary>
+        /// <summary>
+        /// F1 goes to the assistant (the guide of Kinovea keeps its place in Βοήθεια, without a key). Called before the entry is put in
+        /// Βοήθεια: a menu keeps one table of its keys, and the guide set to no key takes F1 out of it, whoever has it there (in the first
+        /// build of 2.26.0 the entry went in first, and F1 did nothing).
+        /// </summary>
         private void TakeF1(ToolStripMenuItem contents)
         {
             if (contents == null || contents.ShortcutKeys != Keys.F1)
@@ -81,6 +86,16 @@ namespace Kinovea.ScreenManager
             helpContents = contents;
             contents.ShortcutKeys = Keys.None;
             helpF1 = true;
+        }
+
+        /// <summary>F1 in the table of the keys of the menu of the entry, its own (set again: the last item given a key in a menu has it).</summary>
+        private void OwnF1()
+        {
+            if (assistantEntry == null || assistantEntry.IsDisposed)
+                return;
+
+            assistantEntry.ShortcutKeys = Keys.None;
+            assistantEntry.ShortcutKeys = Keys.F1;
         }
 
         /// <summary>The classic menu put back: F1 to the guide of Kinovea again.</summary>
@@ -109,11 +124,12 @@ namespace Kinovea.ScreenManager
                         return;
 
                     classicAssistant = true;
+                    TakeF1(Find(help.DropDownItems, "mnuHelpContents") as ToolStripMenuItem);
                     assistantEntry = new ToolStripMenuItem { Name = "swimAssistant", Image = SwimAssistantIcon.Picture(16), ShortcutKeys = Keys.F1 };
                     assistantEntry.Click += (s, e) => Run(ToggleAssistant);
                     help.DropDownItems.Insert(0, assistantEntry);
                     help.DropDownItems.Insert(1, new ToolStripSeparator());
-                    TakeF1(Find(help.DropDownItems, "mnuHelpContents") as ToolStripMenuItem);
+                    OwnF1();
 
                     assistantButton = new SwimMenuAssistant { Name = "swimAssistantBar", Light = true, Fresh = !AssistantSeen() };
                     assistantButton.Click += (s, e) => Run(ToggleAssistant);
