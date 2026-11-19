@@ -300,6 +300,18 @@ Pump
 Check ($coveredBefore -and $done -eq 'order+layout' -and $form.Controls.GetChildIndex($mainView) -eq 0 -and $form.Controls.GetChildIndex($pc) -eq 1 -and $mainView.Top -ge $tool.Bottom -and $pc.Top -ge $tool.Bottom - 1) ('the work space under the bars again (' + $done + '): view ' + $mainView.Bounds + ', bar ' + $tool.Bounds)
 $again = $keep.Invoke($menu, [object[]]@('test'))
 Check ($null -eq $again) ('nothing more to do (' + $again + ')')
+# (2.26.3, the test copy: the list on the left dragged to the side down to a line, «Κάμερες» seemed to do nothing) The list wide
+# again with «Κάμερες»; then nothing more, and nothing when the list is closed.
+$split = New-Object System.Windows.Forms.SplitContainer
+$split.Name = 'splitWorkSpace'; $split.Size = New-Object System.Drawing.Size(1200, 600); $split.Panel1MinSize = 4; $split.SplitterDistance = 4
+$widen = $tMenu.GetMethod('WidenList', $all)
+$wide = [bool]$widen.Invoke($null, [object[]]@($split.psobject.BaseObject))
+$wideAt = $split.SplitterDistance
+$wideAgain = [bool]$widen.Invoke($null, [object[]]@($split.psobject.BaseObject))
+$split.SplitterDistance = 4; $split.Panel1Collapsed = $true
+$wideClosed = [bool]$widen.Invoke($null, [object[]]@($split.psobject.BaseObject))
+Check ($wide -and $wideAt -eq 260 -and -not $wideAgain -and -not $wideClosed) ('the list dragged down to a line, wide again: ' + $wideAt + ' points (then nothing more, nothing when closed)')
+$split.Dispose()
 Check ([bool](F $bar 'Open') -and -not [bool](F $bar 'Fresh')) 'ΒΟΗΘΟΣ open, its new dot gone'
 Shot 'as_1_welcome.png' @()
 

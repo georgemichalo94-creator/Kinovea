@@ -175,7 +175,12 @@ namespace Kinovea.ScreenManager
                         b.Append(": ").Append(found);
                     if (done != null)
                         b.Append(" | done: ").Append(done).Append(" -> ").Append(Describe(form, view));
-                    log.Info(b.ToString());
+
+                    // (2.26.3) What was done as a warning: the log keeps it without the debug logs of the program.
+                    if (done != null)
+                        log.Warn(b.ToString());
+                    else
+                        log.Info(b.ToString());
                 }
 
                 return done;
@@ -316,6 +321,39 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.26.3) The list on the left shown wide enough for its tabs when it was dragged to the side, down to a line (narrower than
+        /// 150 points): 260 points wide, at most two fifths of the work space. True when it was widened.
+        /// </summary>
+        internal static bool WidenList(SplitContainer work)
+        {
+            const int narrow = 150;
+            const int wide = 260;
+            if (work == null || work.Panel1Collapsed || work.Orientation != Orientation.Vertical || work.SplitterDistance >= narrow)
+                return false;
+
+            int room = work.Width - work.Panel2MinSize - work.SplitterWidth;
+            int target = Math.Min(wide, room * 2 / 5);
+            if (target < narrow || target <= work.SplitterDistance || target < work.Panel1MinSize)
+                return false;
+
+            try
+            {
+                work.SplitterDistance = target;
+                return true;
+            }
+            catch (ArgumentException e)
+            {
+                log.Error("Could not widen the list on the left.", e);
+                return false;
+            }
+            catch (InvalidOperationException e)
+            {
+                log.Error("Could not widen the list on the left.", e);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// «Κάμερες» (the toolbar, Προβολή): the list on the left shown (as Προβολή › Λίστα αρχείων) at its tab of the cameras, the
         /// thumbnails (with no screen open) at the cameras too: a double click on a camera opens it live.
         /// </summary>
@@ -330,6 +368,9 @@ namespace Kinovea.ScreenManager
                 if (pane != null)
                     pane.Checked = !work.Panel1Collapsed;
             }
+
+            // (2.26.3) A list dragged to the side, down to a line: wide again (else «Κάμερες» seems to do nothing).
+            WidenList(work);
 
             NotificationCenter.RaiseBrowserContentTypeChanged(this, BrowserContentType.Cameras);
 
