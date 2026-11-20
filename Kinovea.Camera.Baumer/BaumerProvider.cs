@@ -68,6 +68,10 @@ namespace Kinovea.Camera.Baumer
         private static readonly object usersLock = new object();
         private static readonly Dictionary<string, BaumerProvider> users = new Dictionary<string, BaumerProvider>();
         private string userKey;
+
+        // (Swim 2.26.4) GigE systems of the API already set for several cameras (see ConfigureSystem), and the socket buffer asked for.
+        private static readonly HashSet<string> configuredSystems = new HashSet<string>();
+        private const long streamSocketSize = 32L * 1024 * 1024;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
@@ -136,6 +140,8 @@ namespace Kinovea.Camera.Baumer
                 if (system == null || !system.IsOpen)
                     return false;
 
+                ConfigureSystem(systemKey);
+
                 system.Interfaces.Refresh(100);
                 foreach (KeyValuePair<string, BGAPI2.Interface> interfacePair in system.Interfaces)
                 {
@@ -203,6 +209,14 @@ namespace Kinovea.Camera.Baumer
                 }
 
                 opened = true;
+
+                // (Swim 2.26.4) How the frames travel, in the log at each connection of a capture screen.
+                if (!BriefUse)
+                {
+                    log.InfoFormat("Baumer {0}: stream: {1}; packets: {2}.", DeviceName(),
+                        BaumerHelper.DescribeNodes(dataStream.NodeList, "StreamDriverModel", "FilterDriverBufferCount"),
+                        BaumerHelper.DescribeNodes(device.NodeList, "DeviceStreamChannelPacketSize"));
+                }
             }
             catch (Exception e)
             {
@@ -477,10 +491,63 @@ namespace Kinovea.Camera.Baumer
 
                 if (counts.Length > 0)
                     log.InfoFormat("Baumer {0}: counts of the stream at the stop:{1}.", DeviceName(), counts);
+
+                log.InfoFormat("Baumer {0}: statistics of the stream at the stop: {1}.", DeviceName(),
+                    BaumerHelper.DescribeNodes(dataStream.NodeList, "DataBlockComplete", "DataBlockInComplete", "DataBlockMissing",
+                    "DataBlockDroppedBufferUnderrun", "DataBlockDroppedResendUnderrun", "PacketReceiveIncomplete", "PacketResendRequestSingle",
+                    "PacketResendRequestRange", "PacketResendReceive", "StreamDriverModel"));
             }
             catch (Exception e)
             {
                 log.DebugFormat("Baumer {0}: no counts of the stream. {1}", DeviceName(), e.Message);
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.26.4) The GigE system of the API, once per program, before its first camera is opened: a socket buffer of 32 MB per
+        /// stream (a third of a second of one camera at 50 fps) so that a busy moment of the computer does not lose packets (with five
+        /// cameras, frames arrived incomplete while recording), and the automatic size of the packets (larger packets when the network
+        /// card allows them). The values go to the log.
+        /// </summary>
+        private void ConfigureSystem(string systemKey)
+        {
+            lock (configuredSystems)
+            {
+                if (configuredSystems.Contains(systemKey))
+                    return;
+
+                configuredSystems.Add(systemKey);
+            }
+
+            try
+            {
+                NodeMap nodes = system.NodeList;
+                Node socketSize = BaumerHelper.GetNode(nodes, "StreamSocketSize");
+                if (socketSize != null && socketSize.IsReadable && socketSize.IsWriteable)
+                {
+                    long current = socketSize.Value;
+                    long max = socketSize.Max;
+                    long wanted = Math.Min(streamSocketSize, max);
+                    if (wanted > current)
+                        socketSize.Value = wanted;
+                }
+
+                Node mtuDetection = BaumerHelper.GetNode(nodes, "UseMTUDetection");
+                if (mtuDetection != null && mtuDetection.IsReadable && mtuDetection.IsWriteable)
+                {
+                    bool detection = mtuDetection.Value;
+                    if (!detection)
+                        mtuDetection.Value = true;
+                }
+
+                string described = BaumerHelper.DescribeNodes(nodes, "StreamSocketSize", "UseMTUDetection", "DeviceStreamChannelPacketSizeMax",
+                    "DeviceStreamChannelPacketSizeFix");
+                if (!string.IsNullOrEmpty(described))
+                    log.InfoFormat("Baumer system {0}: {1}.", system.DisplayName, described);
+            }
+            catch (Exception e)
+            {
+                log.WarnFormat("Baumer system {0}: could not be set for several cameras. {1}", systemKey, e.Message);
             }
         }
 

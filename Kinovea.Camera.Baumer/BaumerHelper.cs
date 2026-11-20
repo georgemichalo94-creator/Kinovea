@@ -58,16 +58,22 @@ namespace Kinovea.Camera.Baumer
         /// </summary>
         public static string Describe(Device device)
         {
-            string[] names = { "PixelFormat", "Width", "Height", "AcquisitionFrameRateEnable", "AcquisitionFrameRate", "ExposureAuto",
-                "ExposureTime", "ReadOutTime", "GainAuto", "Gain", "DeviceLinkSpeed", "GevLinkSpeed", "DeviceLinkThroughputLimitMode",
-                "DeviceLinkThroughputLimit", "GevSCPSPacketSize", "GevSCPD", "ImageCompressionMode" };
+            return DescribeNodes(device.RemoteNodeList, "PixelFormat", "Width", "Height", "AcquisitionFrameRateEnable", "AcquisitionFrameRate",
+                "ExposureAuto", "ExposureTime", "ReadOutTime", "GainAuto", "Gain", "DeviceLinkSpeed", "GevLinkSpeed",
+                "DeviceLinkThroughputLimitMode", "DeviceLinkThroughputLimit", "GevSCPSPacketSize", "GevSCPD", "ImageCompressionMode");
+        }
 
+        /// <summary>
+        /// (Swim 2.26.4) "Name=value" for the readable nodes of a node map among the given names, for the log.
+        /// </summary>
+        public static string DescribeNodes(NodeMap map, params string[] names)
+        {
             System.Text.StringBuilder text = new System.Text.StringBuilder();
             foreach (string name in names)
             {
                 try
                 {
-                    Node node = GetNode(device.RemoteNodeList, name);
+                    Node node = GetNode(map, name);
                     if (node == null || !node.IsReadable)
                         continue;
 
