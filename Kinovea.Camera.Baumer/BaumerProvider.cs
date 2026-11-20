@@ -72,6 +72,10 @@ namespace Kinovea.Camera.Baumer
         // (Swim 2.26.4) GigE systems of the API already set for several cameras (see ConfigureSystem), and the socket buffer asked for.
         private static readonly HashSet<string> configuredSystems = new HashSet<string>();
         private const long streamSocketSize = 32L * 1024 * 1024;
+
+        // (Swim 2.26.4) Memory of the filter driver of the API for the packets of one stream: 30 MB, a third of a second of a camera
+        // at 50 fps with standard packets (the API gives 5000 packets, 70 ms).
+        private const long filterDriverBytes = 30L * 1000 * 1000;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
@@ -190,6 +194,9 @@ namespace Kinovea.Camera.Baumer
                     CloseDevice();
                     return false;
                 }
+
+                if (!BriefUse)
+                    ConfigureFilterDriver();
 
                 // Use buffers internal to the API.
                 bufferList = dataStream.BufferList;
@@ -548,6 +555,41 @@ namespace Kinovea.Camera.Baumer
             catch (Exception e)
             {
                 log.WarnFormat("Baumer system {0}: could not be set for several cameras. {1}", systemKey, e.Message);
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.26.4) The packets of a stream wait in the filter driver of the API until the program takes them: 5000 packets by default,
+        /// 70 ms of a camera at 50 fps with standard packets of 1500 bytes. With five cameras, the frames that arrived incomplete came in
+        /// the busy moments of the computer (start, recording). The count goes up to 30 MB of packets of the current size (20000 packets
+        /// of 1500 bytes, the default with jumbo packets of 9000), before the acquisition starts.
+        /// </summary>
+        private void ConfigureFilterDriver()
+        {
+            try
+            {
+                Node count = BaumerHelper.GetNode(dataStream.NodeList, "FilterDriverBufferCount");
+                if (count == null || !count.IsReadable || !count.IsWriteable)
+                    return;
+
+                long packetSize = 1500;
+                Node packetSizeNode = BaumerHelper.GetNode(device.NodeList, "DeviceStreamChannelPacketSize");
+                if (packetSizeNode != null && packetSizeNode.IsReadable)
+                {
+                    long value = packetSizeNode.Value;
+                    if (value >= 576)
+                        packetSize = value;
+                }
+
+                long current = count.Value;
+                long max = count.Max;
+                long wanted = Math.Min(max, filterDriverBytes / packetSize);
+                if (wanted > current)
+                    count.Value = wanted;
+            }
+            catch (Exception e)
+            {
+                log.WarnFormat("Baumer {0}: the filter driver could not be given more packets. {1}", DeviceName(), e.Message);
             }
         }
 
