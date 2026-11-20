@@ -51,6 +51,71 @@ namespace Kinovea.Camera.Baumer
             return resultingFramerate;
         }
 
+        /// <summary>
+        /// (Swim 2.26.4) The settings of the camera that decide how many frames reach the program, for the log: why a camera gives
+        /// fewer frames than asked (link at 100 Mb/s, limit of bandwidth, long exposure, size of the packets). Only the nodes the
+        /// camera has.
+        /// </summary>
+        public static string Describe(Device device)
+        {
+            string[] names = { "PixelFormat", "Width", "Height", "AcquisitionFrameRateEnable", "AcquisitionFrameRate", "ExposureAuto",
+                "ExposureTime", "ReadOutTime", "GainAuto", "Gain", "DeviceLinkSpeed", "GevLinkSpeed", "DeviceLinkThroughputLimitMode",
+                "DeviceLinkThroughputLimit", "GevSCPSPacketSize", "GevSCPD", "ImageCompressionMode" };
+
+            System.Text.StringBuilder text = new System.Text.StringBuilder();
+            foreach (string name in names)
+            {
+                try
+                {
+                    Node node = GetNode(device.RemoteNodeList, name);
+                    if (node == null || !node.IsReadable)
+                        continue;
+
+                    text.AppendFormat("{0}={1} ", name, NodeText(node));
+                }
+                catch
+                {
+                }
+            }
+
+            return text.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// The value of a node as text, whatever its type.
+        /// </summary>
+        private static string NodeText(Node node)
+        {
+            try
+            {
+                string value = node.Value;
+                return value;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                double value = node.Value;
+                return value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                bool value = node.Value;
+                return value ? "true" : "false";
+            }
+            catch
+            {
+            }
+
+            return "?";
+        }
+
         public static Node GetNode(NodeMap map, string name)
         {
             bool present = map.GetNodePresent(name);

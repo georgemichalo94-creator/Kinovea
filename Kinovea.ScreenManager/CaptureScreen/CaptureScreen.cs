@@ -165,6 +165,12 @@ namespace Kinovea.ScreenManager
         private ImageDescriptor imageDescriptor = ImageDescriptor.Invalid;
         
         private CameraSummary cameraSummary;
+
+        // (Swim 2.26.4) The cameras loaded in the capture screens (type and identifier, with the number of screens). Cameras of one model
+        // have the same name until they are renamed: a screen restored by name took the camera of another screen, waited for it and
+        // gave up. A camera of another screen is now the last choice.
+        private static readonly Dictionary<string, int> camerasInScreens = new Dictionary<string, int>();
+        private string cameraInScreenKey;
         private CameraManager cameraManager;
         private ICaptureSource cameraGrabber;
         // (Swim 2.26.4) The frames that the camera plugin counts as lost on the way (a "LostFrames" property, read by
@@ -823,7 +829,8 @@ namespace Kinovea.ScreenManager
             // Get a proper camera summary (live state of a connected camera),
             // by doing one step of discovery on that specific manager.
             var summaries = cameraManager.DiscoverCameras(cameraBlurbs);
-            var connectedSummary = summaries.FirstOrDefault(s => s.Alias == requestedCameraSummary.Alias);
+            var connectedSummary = summaries.FirstOrDefault(s => s.Alias == requestedCameraSummary.Alias && !InOtherScreen(s)) ??
+                summaries.FirstOrDefault(s => s.Alias == requestedCameraSummary.Alias);
             if (connectedSummary == null)
             {
                 log.ErrorFormat("The requested camera is not connected.");
@@ -854,6 +861,7 @@ namespace Kinovea.ScreenManager
 
             UpdateTitle();
             cameraLoaded = true;
+            EnterCameraInScreens();
 
             // (Swim 2.20.0) A camera that records on its own card tells its screen when it starts or stops.
             AttachRemote();
@@ -1070,10 +1078,13 @@ namespace Kinovea.ScreenManager
                 return;
 
             // Go through all cameras and see if we find our match.
+            // (Swim 2.26.4) A camera loaded in another screen is the last choice (cameras of one model have the same name until renamed).
             bool discovered = false;
+            CameraSummary match = e.Summaries.FirstOrDefault(s => s.Alias == cameraSummary.Alias && !InOtherScreen(s)) ??
+                e.Summaries.FirstOrDefault(s => s.Alias == cameraSummary.Alias);
             foreach (CameraSummary summary in e.Summaries)
             {
-                if (summary.Alias != cameraSummary.Alias)
+                if (summary != match)
                     continue;
 
                 // We found our camera.
@@ -1128,6 +1139,63 @@ namespace Kinovea.ScreenManager
             UpdateRecordingIndicator();
             UpdateTitle();
             cameraLoaded = false;
+            LeaveCameraInScreens();
+        }
+
+        private static string CameraInScreensKey(CameraSummary summary)
+        {
+            if (summary == null || summary.Manager == null)
+                return null;
+
+            return summary.Manager.CameraType + "|" + summary.Identifier;
+        }
+
+        private void EnterCameraInScreens()
+        {
+            LeaveCameraInScreens();
+            cameraInScreenKey = CameraInScreensKey(cameraSummary);
+            if (cameraInScreenKey == null)
+                return;
+
+            lock (camerasInScreens)
+            {
+                int count;
+                camerasInScreens.TryGetValue(cameraInScreenKey, out count);
+                camerasInScreens[cameraInScreenKey] = count + 1;
+            }
+        }
+
+        private void LeaveCameraInScreens()
+        {
+            if (cameraInScreenKey == null)
+                return;
+
+            lock (camerasInScreens)
+            {
+                int count;
+                if (camerasInScreens.TryGetValue(cameraInScreenKey, out count))
+                {
+                    if (count <= 1)
+                        camerasInScreens.Remove(cameraInScreenKey);
+                    else
+                        camerasInScreens[cameraInScreenKey] = count - 1;
+                }
+            }
+
+            cameraInScreenKey = null;
+        }
+
+        /// <summary>
+        /// Whether the camera is loaded in another capture screen.
+        /// </summary>
+        private bool InOtherScreen(CameraSummary summary)
+        {
+            string key = CameraInScreensKey(summary);
+            if (key == null || key == cameraInScreenKey)
+                return false;
+
+            lock (camerasInScreens)
+                return camerasInScreens.ContainsKey(key);
         }
 
         /// <summary>

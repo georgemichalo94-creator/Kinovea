@@ -87,6 +87,10 @@ namespace Kinovea.Camera.Baumer
             // Get the configured framerate for recording support.
             resultingFramerate = BaumerHelper.GetResultingFramerate(device);
 
+            // (Swim 2.26.4) What decides the frames that reach the program, in the log at each connection.
+            log.InfoFormat("Baumer {0} ({1}): {2}. Resulting framerate: {3:0.##} fps.", summary.Alias, summary.Identifier,
+                BaumerHelper.Describe(device), resultingFramerate);
+
             bool hasWidth = BaumerHelper.NodeIsReadable(device, "Width");
             bool hasHeight = BaumerHelper.NodeIsReadable(device, "Height");
             bool hasPixelFormat = BaumerHelper.NodeIsReadable(device, "PixelFormat");

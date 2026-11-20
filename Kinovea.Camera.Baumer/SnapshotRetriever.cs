@@ -60,7 +60,7 @@ namespace Kinovea.Camera.Baumer
         private ImageDescriptor imageDescriptor = ImageDescriptor.Invalid;
         private CameraSummary summary;
         private EventWaitHandle waitHandle = new AutoResetEvent(false);
-        private BaumerProvider baumerProvider = new BaumerProvider();
+        private BaumerProvider baumerProvider = new BaumerProvider { BriefUse = true };
         private bool wasJpegEnabled;
         private volatile bool cancelled;
         private bool hadError;

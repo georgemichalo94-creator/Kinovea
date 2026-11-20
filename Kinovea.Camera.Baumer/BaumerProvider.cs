@@ -29,6 +29,12 @@ namespace Kinovea.Camera.Baumer
         }
 
         /// <summary>
+        /// (Swim 2.26.4) The camera is used for a moment only (a picture of the camera list): a capture screen that wants it waits for
+        /// it. Behind a capture screen there is nothing to wait for.
+        /// </summary>
+        public bool BriefUse { get; set; }
+
+        /// <summary>
         /// Frames of the camera that never reached the program since the start of the streaming: frames that arrived
         /// incomplete (packets lost on the network) and frames missing between two that arrived (frame numbers skipped).
         /// </summary>
@@ -303,11 +309,16 @@ namespace Kinovea.Camera.Baumer
             // of the camera here does not get out: on the thread of the picture it closed the program.
             started = false;
             grabThreadRun = false;
+            bool continuous = grabThread != null;
             if (grabThread != null && grabThread.IsAlive && grabThread != Thread.CurrentThread)
             {
                 if (!grabThread.Join(5000))
                     log.ErrorFormat("Baumer {0}: the reading of the frames did not stop in time.", DeviceName());
             }
+
+            grabThread = null;
+            if (continuous)
+                LogStreamCounts();
 
             try
             {
@@ -449,6 +460,31 @@ namespace Kinovea.Camera.Baumer
         }
 
         /// <summary>
+        /// (Swim 2.26.4) The counts of the stream of the Baumer API at the stop, for the log: frames started and delivered, and frames
+        /// lost because no buffer was free (underrun). Read by name: not every version of the API has them.
+        /// </summary>
+        private void LogStreamCounts()
+        {
+            try
+            {
+                StringBuilder counts = new StringBuilder();
+                foreach (string name in new string[] { "StartedCount", "DeliveredCount", "UnderrunCount" })
+                {
+                    System.Reflection.PropertyInfo property = dataStream.GetType().GetProperty(name);
+                    if (property != null)
+                        counts.AppendFormat(" {0}={1}", name, property.GetValue(dataStream, null));
+                }
+
+                if (counts.Length > 0)
+                    log.InfoFormat("Baumer {0}: counts of the stream at the stop:{1}.", DeviceName(), counts);
+            }
+            catch (Exception e)
+            {
+                log.DebugFormat("Baumer {0}: no counts of the stream. {1}", DeviceName(), e.Message);
+            }
+        }
+
+        /// <summary>
         /// Take the camera for this provider, waiting up to waitMS for another user of the program to let it go.
         /// </summary>
         private bool Claim(string key, int waitMS)
@@ -460,7 +496,7 @@ namespace Kinovea.Camera.Baumer
                 while (users.TryGetValue(key, out user) && user != this)
                 {
                     int left = waitMS - (int)stopwatch.ElapsedMilliseconds;
-                    if (left <= 0)
+                    if (left <= 0 || !user.BriefUse)
                         return false;
 
                     System.Threading.Monitor.Wait(usersLock, left);
