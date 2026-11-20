@@ -539,12 +539,26 @@ namespace Kinovea.Camera.Baumer
                         socketSize.Value = wanted;
                 }
 
+                // A fixed packet size when the file Baumer.packetsize.txt next to the plugin holds a number of bytes (576 to 16380): jumbo
+                // packets through a network that the automatic detection does not trust. Otherwise the automatic detection.
+                long fixedPacketSize = ReadFixedPacketSize();
                 Node mtuDetection = BaumerHelper.GetNode(nodes, "UseMTUDetection");
                 if (mtuDetection != null && mtuDetection.IsReadable && mtuDetection.IsWriteable)
                 {
                     bool detection = mtuDetection.Value;
-                    if (!detection)
+                    if (fixedPacketSize > 0)
+                    {
+                        if (detection)
+                            mtuDetection.Value = false;
+
+                        Node fix = BaumerHelper.GetNode(nodes, "DeviceStreamChannelPacketSizeFix");
+                        if (fix != null && fix.IsWriteable)
+                            fix.Value = fixedPacketSize;
+                    }
+                    else if (!detection)
+                    {
                         mtuDetection.Value = true;
+                    }
                 }
 
                 string described = BaumerHelper.DescribeNodes(nodes, "StreamSocketSize", "UseMTUDetection", "DeviceStreamChannelPacketSizeMax",
@@ -556,6 +570,35 @@ namespace Kinovea.Camera.Baumer
             {
                 log.WarnFormat("Baumer system {0}: could not be set for several cameras. {1}", systemKey, e.Message);
             }
+        }
+
+        /// <summary>
+        /// (Swim 2.26.4) The packet size written in Baumer.packetsize.txt next to the plugin, 0 without the file or with a number out of
+        /// the range of the API (576 to 16380 bytes).
+        /// </summary>
+        private static long ReadFixedPacketSize()
+        {
+            try
+            {
+                string folder = System.IO.Path.GetDirectoryName(typeof(BaumerProvider).Assembly.Location);
+                string file = System.IO.Path.Combine(folder, "Baumer.packetsize.txt");
+                if (!System.IO.File.Exists(file))
+                    return 0;
+
+                long value;
+                string text = System.IO.File.ReadAllText(file).Trim();
+                if (long.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out value) &&
+                    value >= 576 && value <= 16380)
+                    return value;
+
+                log.WarnFormat("Baumer: Baumer.packetsize.txt does not hold a packet size between 576 and 16380 bytes: \"{0}\".", text);
+            }
+            catch (Exception e)
+            {
+                log.WarnFormat("Baumer: Baumer.packetsize.txt could not be read. {0}", e.Message);
+            }
+
+            return 0;
         }
 
         /// <summary>
