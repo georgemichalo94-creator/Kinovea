@@ -167,6 +167,11 @@ namespace Kinovea.ScreenManager
         private CameraSummary cameraSummary;
         private CameraManager cameraManager;
         private ICaptureSource cameraGrabber;
+        // (Swim 2.26.4) The frames that the camera plugin counts as lost on the way (a "LostFrames" property, read by
+        // reflection so the plugins without it keep working): added to the dropped frames, so that a gap in a recording shows.
+        private Type lostFramesType;
+        private System.Reflection.PropertyInfo lostFramesProperty;
+        private long lostFramesBase;
         private Stopwatch stopwatchDiscovery = new Stopwatch();
         private const long discoveryTimeout = 5000;
         private ScreenDescriptorCapture screenDescriptor = new ScreenDescriptorCapture();
@@ -786,6 +791,7 @@ namespace Kinovea.ScreenManager
             {
                 cameraManager = cameraSummary.Manager;
                 cameraGrabber = cameraManager.CreateCaptureSource(cameraSummary);
+                lostFramesBase = 0;
                 AssociateCamera(true);
                 return;
             }
@@ -834,6 +840,7 @@ namespace Kinovea.ScreenManager
             cameraSummary = connectedSummary;
             cameraManager = cameraSummary.Manager;
             cameraGrabber = cameraManager.CreateCaptureSource(cameraSummary);
+            lostFramesBase = 0;
             bool connect = screenDescriptor != null ? screenDescriptor.Autostream : true;
             AssociateCamera(connect);
             
@@ -1082,6 +1089,7 @@ namespace Kinovea.ScreenManager
                 cameraSummary = summary;
                 cameraManager = cameraSummary.Manager;
                 cameraGrabber = cameraManager.CreateCaptureSource(cameraSummary);
+                lostFramesBase = 0;
                 bool connect = screenDescriptor != null ? screenDescriptor.Autostream : true;
                 AssociateCamera(connect);
                 break;
@@ -1552,9 +1560,54 @@ namespace Kinovea.ScreenManager
             bandwidth = bandwidth.PadLeft(12);
             string strLoad = string.Format(" {0:0} %", load);
             strLoad = strLoad.PadLeft(6);
-            string drops = string.Format(" {0}", pipelineManager.Drops);
+            string drops = string.Format(" {0}", Drops());
             view.UpdateInfo(signal, bandwidth, strLoad, drops);
             view.UpdateLoadStatus(load);
+        }
+
+        /// <summary>
+        /// (Swim 2.26.4) Frames lost by the camera plugin since the connection (0 when the plugin does not count them).
+        /// </summary>
+        private long CameraLostFrames()
+        {
+            ICaptureSource grabber = cameraGrabber;
+            if (grabber == null)
+                return 0;
+
+            try
+            {
+                Type type = grabber.GetType();
+                if (type != lostFramesType)
+                {
+                    lostFramesType = type;
+                    lostFramesProperty = type.GetProperty("LostFrames");
+                    if (lostFramesProperty != null && lostFramesProperty.PropertyType != typeof(long))
+                        lostFramesProperty = null;
+                }
+
+                return lostFramesProperty == null ? 0 : (long)lostFramesProperty.GetValue(grabber, null);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// (Swim 2.26.4) Frames dropped by the program plus those lost by the camera on the way, since the start of the
+        /// recording (or of the connection, before any).
+        /// </summary>
+        private long Drops()
+        {
+            long lost = CameraLostFrames() - lostFramesBase;
+            if (lost < 0)
+            {
+                // The camera was connected again: its count started over.
+                lostFramesBase = 0;
+                lost = CameraLostFrames();
+            }
+
+            return pipelineManager.Drops + Math.Max(0, lost);
         }
 
         private void ChangeAspectRatio(ImageAspectRatio aspectRatio)
@@ -2147,6 +2200,7 @@ namespace Kinovea.ScreenManager
                 if (recordingMode != CaptureRecordingMode.Scheduled)
                 {
                     double interval = 1000.0 / framerate;
+                    lostFramesBase = CameraLostFrames();
                     result = pipelineManager.StartRecord(path, interval, delay, ImageRotation);
                     recording = result == SaveResult.Success;
                 }
@@ -2214,8 +2268,9 @@ namespace Kinovea.ScreenManager
                 }
 
                 recording = false;
-                string dropMessage = string.Format("Dropped frames: {0}.", pipelineManager.Drops);
-                if (pipelineManager.Drops > 0)
+                long lostByCamera = Math.Max(0, CameraLostFrames() - lostFramesBase);
+                string dropMessage = string.Format("Dropped frames: {0} (lost by the camera on the way: {1}).", pipelineManager.Drops + lostByCamera, lostByCamera);
+                if (pipelineManager.Drops + lostByCamera > 0)
                     log.Warn(dropMessage);
                 else
                     log.Debug(dropMessage);

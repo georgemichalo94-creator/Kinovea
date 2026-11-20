@@ -28,6 +28,15 @@ namespace Kinovea.Camera.Baumer
             get { return device; }
         }
 
+        /// <summary>
+        /// Frames of the camera that never reached the program since the start of the streaming: frames that arrived
+        /// incomplete (packets lost on the network) and frames missing between two that arrived (frame numbers skipped).
+        /// </summary>
+        public long LostFrames
+        {
+            get { return Interlocked.Read(ref lostFrames); }
+        }
+
         private ulong bufferFilledTimeoutMS = 1000;
         private BGAPI2.System system;
         private BGAPI2.Interface interf;
@@ -38,6 +47,14 @@ namespace Kinovea.Camera.Baumer
         private bool started;
         private bool grabThreadRun = true;
         private Thread grabThread;
+
+        // (Swim 2.26.4) Buffers for the frames on their way: 4 were too few for several cameras at 50 fps (80 ms).
+        private const int countBuffers = 16;
+        private long lostFrames;
+        private long incompleteFrames;
+        private ulong lastFrameId;
+        private bool haveFrameId;
+        private bool frameIdUnavailable;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
@@ -118,7 +135,6 @@ namespace Kinovea.Camera.Baumer
 
                 // Use buffers internal to the API.
                 bufferList = dataStream.BufferList;
-                int countBuffers = 4;
                 for (int i = 0; i < countBuffers; i++)
                 {
                     BGAPI2.Buffer buffer = new BGAPI2.Buffer();
@@ -219,8 +235,12 @@ namespace Kinovea.Camera.Baumer
             started = true;
 
             // TODO: use ThreadPool instead ?
+            Interlocked.Exchange(ref lostFrames, 0);
+            Interlocked.Exchange(ref incompleteFrames, 0);
+            haveFrameId = false;
             grabThreadRun = true;
             grabThread = new Thread(Grab);
+            grabThread.IsBackground = true;
             grabThread.Start();
         }
 
@@ -247,40 +267,127 @@ namespace Kinovea.Camera.Baumer
         /// </summary>
         private void Grab()
         {
-            // raise event start grabbing.
-            try
+            // (Swim 2.26.4) The thread used to end for good at the first frame that arrived incomplete (one packet lost on the
+            // network) or at the first second without a frame: the image of the camera froze without a word, as soon as
+            // several cameras streamed together. Now a lost frame is counted and the stream goes on; a pause is waited out.
+            string name = DeviceName();
+            int secondsWithoutFrame = 0;
+            long reported = 0;
+
+            while (grabThreadRun)
             {
-                // setup.
-
-                while (grabThreadRun)
+                BGAPI2.Buffer bufferFilled = null;
+                try
                 {
-                    // Wait for the next buffer.
-                    BGAPI2.Buffer bufferFilled = dataStream.GetFilledBuffer(1000);
-                    if (bufferFilled == null || bufferFilled.IsIncomplete || bufferFilled.MemPtr == IntPtr.Zero)
-                    {
-                        // Grab timeout or error.
-                        throw new Exception("A grab timeout or error occurred.");
-                    }
-
-                    // Post image event.
-                    if (BufferProduced != null)
-                        BufferProduced(this, new BufferEventArgs(bufferFilled));
-
-                    // Make the buffer available to Baumer internals again.
-                    bufferFilled.QueueBuffer();
+                    bufferFilled = dataStream.GetFilledBuffer(bufferFilledTimeoutMS);
+                }
+                catch (Exception e)
+                {
+                    // The stream itself refused (camera unplugged, stream stopped): try again in a moment, until stopped.
+                    log.WarnFormat("Baumer {0}: error while waiting for a frame. {1}", name, e.Message);
+                    Thread.Sleep(200);
+                    continue;
                 }
 
-                // Normal cancellation of the grabbing thread.
-                // Cleanup.
+                if (bufferFilled == null)
+                {
+                    // No frame for a second (no light on the trigger, camera busy): keep waiting.
+                    secondsWithoutFrame++;
+                    if (secondsWithoutFrame == 1 || secondsWithoutFrame % 30 == 0)
+                        log.WarnFormat("Baumer {0}: no frame for {1} s.", name, secondsWithoutFrame);
+                    continue;
+                }
+
+                if (secondsWithoutFrame > 0)
+                {
+                    log.WarnFormat("Baumer {0}: frames again after {1} s without.", name, secondsWithoutFrame);
+                    secondsWithoutFrame = 0;
+                }
+
+                try
+                {
+                    CountSkippedFrames(bufferFilled);
+
+                    if (bufferFilled.IsIncomplete || bufferFilled.MemPtr == IntPtr.Zero)
+                    {
+                        // Packets lost on the network: the frame cannot be used.
+                        Interlocked.Increment(ref lostFrames);
+                        Interlocked.Increment(ref incompleteFrames);
+                    }
+                    else if (BufferProduced != null)
+                    {
+                        BufferProduced(this, new BufferEventArgs(bufferFilled));
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.ErrorFormat("Baumer {0}: error while handling a frame. {1}", name, e.Message);
+                }
+                finally
+                {
+                    // Make the buffer available to Baumer internals again, whatever happened to the frame.
+                    try
+                    {
+                        bufferFilled.QueueBuffer();
+                    }
+                    catch (Exception e)
+                    {
+                        log.ErrorFormat("Baumer {0}: could not give the buffer back. {1}", name, e.Message);
+                    }
+                }
+
+                long lost = Interlocked.Read(ref lostFrames);
+                if (lost > reported && (reported == 0 || lost - reported >= 100))
+                {
+                    log.WarnFormat("Baumer {0}: {1} frames lost since the start ({2} arrived incomplete).",
+                        name, lost, Interlocked.Read(ref incompleteFrames));
+                    reported = lost;
+                }
             }
-            catch(Exception)
+
+            long total = Interlocked.Read(ref lostFrames);
+            if (total > 0)
+                log.WarnFormat("Baumer {0}: stopped, {1} frames lost in all ({2} arrived incomplete).",
+                    name, total, Interlocked.Read(ref incompleteFrames));
+        }
+
+        /// <summary>
+        /// Frames that never arrived between the previous one and this one, from the frame numbers of the camera.
+        /// The number goes back to the start when it overflows (16 bits on GigE) or when the camera restarts: no count then.
+        /// </summary>
+        private void CountSkippedFrames(BGAPI2.Buffer buffer)
+        {
+            if (frameIdUnavailable)
+                return;
+
+            ulong id;
+            try
             {
-                grabThreadRun = false;
-
-                // Cleanup.
+                id = buffer.FrameID;
+            }
+            catch
+            {
+                frameIdUnavailable = true;
+                return;
             }
 
-            // Normal thread death.
+            if (haveFrameId && id > lastFrameId + 1 && id - lastFrameId < 10000)
+                Interlocked.Add(ref lostFrames, (long)(id - lastFrameId - 1));
+
+            lastFrameId = id;
+            haveFrameId = true;
+        }
+
+        private string DeviceName()
+        {
+            try
+            {
+                return string.Format("{0} {1}", device.Model, device.SerialNumber);
+            }
+            catch
+            {
+                return "camera";
+            }
         }
 
         private void DiscardBuffers()

@@ -31,6 +31,15 @@ namespace Kinovea.Camera.Baumer
             // We eventually get an approximate value good enough for the purpose.
             get { return dataRateAverager.Average; }
         }
+
+        /// <summary>
+        /// (Swim 2.26.4) Frames of the camera lost on the way since the start of the streaming (read by the capture screen,
+        /// which adds them to the dropped frames it shows).
+        /// </summary>
+        public long LostFrames
+        {
+            get { return baumerProvider.LostFrames; }
+        }
         #endregion
 
         #region Members
