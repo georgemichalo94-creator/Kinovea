@@ -56,18 +56,15 @@ namespace Kinovea.Camera.Baumer
         }
 
         #region Members
-        private static readonly int timeoutGrabbing = 5000;
-
         private Bitmap image;
         private ImageDescriptor imageDescriptor = ImageDescriptor.Invalid;
         private CameraSummary summary;
         private EventWaitHandle waitHandle = new AutoResetEvent(false);
         private BaumerProvider baumerProvider = new BaumerProvider();
         private bool wasJpegEnabled;
-        private bool cancelled;
+        private volatile bool cancelled;
         private bool hadError;
         private Thread snapperThread;
-        private object locker = new object();
         private Stopwatch stopwatch = new Stopwatch();
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
@@ -87,81 +84,100 @@ namespace Kinovea.Camera.Baumer
         /// <summary>
         /// Start the device for a frame grab, wait a bit and then return the result.
         /// This method MUST raise a CameraThumbnailProduced event, even in case of error.
+        /// (Swim 2.26.4) The thread lets the camera go by itself whatever happens, and no error gets out of it (one closed the
+        /// program): Cancel only asks it to stop. A camera used by a capture screen is not opened a second time (BaumerProvider)
+        /// and keeps its picture in the list.
         /// </summary>
         public void Run(object data)
         {
             log.DebugFormat("Starting {0} for thumbnail.", summary.Alias);
 
             SpecificInfo specific = summary.Specific as SpecificInfo;
-            bool opened = baumerProvider.Open(specific.SystemKey, specific.InterfaceKey, specific.DeviceKey);
+            bool opened = false;
+            try
+            {
+                if (!cancelled && specific != null)
+                    opened = baumerProvider.Open(specific.SystemKey, specific.InterfaceKey, specific.DeviceKey);
+            }
+            catch (Exception e)
+            {
+                LogError(e, null);
+            }
 
             if (!opened)
             {
                 log.DebugFormat("Could not open {0} for thumbnail.", summary.Alias);
-                if (CameraThumbnailProduced != null)
-                    CameraThumbnailProduced(this, new CameraThumbnailProducedEventArgs(summary, null, ImageDescriptor.Invalid, true, false));
-
+                RaiseThumbnailProduced(new CameraThumbnailProducedEventArgs(summary, null, ImageDescriptor.Invalid, true, cancelled));
                 return;
             }
 
-            baumerProvider.BufferProduced += BaumerProducer_BufferProduced;
-
-            // Do not use JPEG compression for the thumbnail.
-            wasJpegEnabled = BaumerHelper.GetJPEG(baumerProvider.Device);
-            if (wasJpegEnabled)
-                BaumerHelper.SetJPEG(baumerProvider.Device, false);
-
             try
             {
-                baumerProvider.AcquireOne();
+                baumerProvider.BufferProduced += BaumerProducer_BufferProduced;
+
+                // Do not use JPEG compression for the thumbnail.
+                wasJpegEnabled = BaumerHelper.GetJPEG(baumerProvider.Device);
+                if (wasJpegEnabled)
+                    BaumerHelper.SetJPEG(baumerProvider.Device, false);
+
+                // The frame comes back within AcquireOne, through BufferProduced: there is nothing more to wait for after it.
+                if (!cancelled)
+                    baumerProvider.AcquireOne();
             }
             catch (Exception e)
             {
                 hadError = true;
                 LogError(e, null);
             }
-
-            if (!hadError)
-                waitHandle.WaitOne(timeoutGrabbing, false);
-
-            lock (locker)
+            finally
             {
-                if (!cancelled)
+                baumerProvider.BufferProduced -= BaumerProducer_BufferProduced;
+                try
                 {
-                    baumerProvider.BufferProduced -= BaumerProducer_BufferProduced;
                     baumerProvider.Stop();
                     if (wasJpegEnabled)
                         BaumerHelper.SetJPEG(baumerProvider.Device, true);
-                    
+                }
+                catch (Exception e)
+                {
+                    LogError(e, null);
+                }
+
+                try
+                {
                     Close();
                     log.DebugFormat("{0} closed.", summary.Alias);
                 }
+                catch (Exception e)
+                {
+                    LogError(e, null);
+                }
             }
 
-            if (CameraThumbnailProduced != null)
-                CameraThumbnailProduced(this, new CameraThumbnailProducedEventArgs(summary, image, imageDescriptor, hadError, cancelled));
+            RaiseThumbnailProduced(new CameraThumbnailProducedEventArgs(summary, image, imageDescriptor, hadError, cancelled));
         }
 
         public void Cancel()
         {
             log.DebugFormat("Cancelling thumbnail for {0}.", Alias);
 
-            if (!baumerProvider.IsOpen)
-                return;
-
-            lock (locker)
-            {
-                baumerProvider.BufferProduced -= BaumerProducer_BufferProduced;
-                baumerProvider.Stop();
-                if (wasJpegEnabled)
-                    BaumerHelper.SetJPEG(baumerProvider.Device, true);
-
-                Close();
-
-                cancelled = true;
-            }
-
+            // (Swim 2.26.4) Only ask: the thread of the picture stops and lets the camera go by itself (Run). Closing the camera from
+            // here while that thread waited for its frame could take the program down.
+            cancelled = true;
             waitHandle.Set();
+        }
+
+        private void RaiseThumbnailProduced(CameraThumbnailProducedEventArgs e)
+        {
+            try
+            {
+                if (CameraThumbnailProduced != null)
+                    CameraThumbnailProduced(this, e);
+            }
+            catch (Exception ex)
+            {
+                LogError(ex, null);
+            }
         }
 
         private void Close()

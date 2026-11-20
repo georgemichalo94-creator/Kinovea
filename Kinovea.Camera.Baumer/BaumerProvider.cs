@@ -55,15 +55,61 @@ namespace Kinovea.Camera.Baumer
         private ulong lastFrameId;
         private bool haveFrameId;
         private bool frameIdUnavailable;
+
+        // (Swim 2.26.4) One user per camera at a time in the program (see Open). SdkLock: the lists of the Baumer API are refreshed,
+        // and the cameras opened and closed, by one thread at a time.
+        internal static readonly object SdkLock = new object();
+        private static readonly object usersLock = new object();
+        private static readonly Dictionary<string, BaumerProvider> users = new Dictionary<string, BaumerProvider>();
+        private string userKey;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
-        /// Open a specific device and allocate buffers.
+        /// Open a specific device and allocate buffers. Gives up at once if the camera is used elsewhere in the program.
         /// </summary>
         public bool Open(string systemKey, string interfaceKey, string deviceKey)
         {
+            return Open(systemKey, interfaceKey, deviceKey, 0);
+        }
+
+        /// <summary>
+        /// Open a specific device and allocate buffers.
+        /// (Swim 2.26.4) A camera has one user at a time in the program. The objects of the Baumer API are shared by the whole
+        /// program: the picture of the camera list and a capture screen used to open the same camera together, and the one that
+        /// failed closed the camera under the other (the program closed a few seconds after the start, with the screens of five
+        /// cameras to reconnect). waitMS: how long to wait for the other user to let the camera go (a picture for the camera list
+        /// takes about a second); 0 gives up at once.
+        /// </summary>
+        public bool Open(string systemKey, string interfaceKey, string deviceKey, int waitMS)
+        {
             Close();
 
+            string key = string.Format("{0}|{1}|{2}", systemKey, interfaceKey, deviceKey);
+            if (!Claim(key, waitMS))
+            {
+                log.DebugFormat("Baumer: camera {0} is used elsewhere in the program, not opened a second time.", deviceKey);
+                return false;
+            }
+
+            try
+            {
+                lock (SdkLock)
+                    OpenDevice(systemKey, interfaceKey, deviceKey);
+            }
+            finally
+            {
+                if (!opened)
+                    Release();
+            }
+
+            return opened;
+        }
+
+        /// <summary>
+        /// Look for the device, open it and allocate buffers.
+        /// </summary>
+        private bool OpenDevice(string systemKey, string interfaceKey, string deviceKey)
+        {
             try
             {
                 // Look for the device.
@@ -176,11 +222,16 @@ namespace Kinovea.Camera.Baumer
 
             opened = false;
 
-            DiscardBuffers();
-            CloseDataStream();
-            CloseDevice();
-            //CloseInterface();
-            //CloseSystem();
+            lock (SdkLock)
+            {
+                DiscardBuffers();
+                CloseDataStream();
+                CloseDevice();
+                //CloseInterface();
+                //CloseSystem();
+            }
+
+            Release();
         }
 
         /// <summary>
@@ -195,9 +246,9 @@ namespace Kinovea.Camera.Baumer
                 Stop();
 
             dataStream.StartAcquisition();
+            started = true;
             //device.RemoteNodeList["AcquisitionMode"].Value = "Continuous";
             device.RemoteNodeList["AcquisitionStart"].Execute();
-            started = true;
 
             // Wait for one frame.
             BGAPI2.Buffer bufferFilled = dataStream.GetFilledBuffer(bufferFilledTimeoutMS);
@@ -229,10 +280,9 @@ namespace Kinovea.Camera.Baumer
 
             // setup
             dataStream.StartAcquisition();
+            started = true;
             device.RemoteNodeList["AcquisitionMode"].Value = "Continuous";
             device.RemoteNodeList["AcquisitionStart"].Execute();
-
-            started = true;
 
             // TODO: use ThreadPool instead ?
             Interlocked.Exchange(ref lostFrames, 0);
@@ -249,17 +299,36 @@ namespace Kinovea.Camera.Baumer
             if (!opened || !started)
                 return;
 
-            if (grabThread != null && grabThread.IsAlive)
+            // (Swim 2.26.4) A camera is stopped once (Close and the picture of the camera list used to stop it again), and an error
+            // of the camera here does not get out: on the thread of the picture it closed the program.
+            started = false;
+            grabThreadRun = false;
+            if (grabThread != null && grabThread.IsAlive && grabThread != Thread.CurrentThread)
             {
-                grabThreadRun = false;
-                grabThread.Join();
+                if (!grabThread.Join(5000))
+                    log.ErrorFormat("Baumer {0}: the reading of the frames did not stop in time.", DeviceName());
             }
 
-            if (device.RemoteNodeList.GetNodePresent("AcquisitionAbort"))
-                device.RemoteNodeList["AcquisitionAbort"].Execute();
+            try
+            {
+                if (device.RemoteNodeList.GetNodePresent("AcquisitionAbort"))
+                    device.RemoteNodeList["AcquisitionAbort"].Execute();
 
-            device.RemoteNodeList["AcquisitionStop"].Execute();
-            dataStream.StopAcquisition();
+                device.RemoteNodeList["AcquisitionStop"].Execute();
+            }
+            catch (Exception e)
+            {
+                log.WarnFormat("Baumer {0}: the camera did not take the order to stop. {1}", DeviceName(), e.Message);
+            }
+
+            try
+            {
+                dataStream.StopAcquisition();
+            }
+            catch (Exception e)
+            {
+                log.WarnFormat("Baumer {0}: the stream did not stop. {1}", DeviceName(), e.Message);
+            }
         }
         
         /// <summary>
@@ -283,10 +352,11 @@ namespace Kinovea.Camera.Baumer
                 }
                 catch (Exception e)
                 {
-                    // The stream itself refused (camera unplugged, stream stopped): try again in a moment, until stopped.
-                    log.WarnFormat("Baumer {0}: error while waiting for a frame. {1}", name, e.Message);
-                    Thread.Sleep(200);
-                    continue;
+                    // The stream itself refused (camera unplugged, stream closed): the reading ends here, as it always did. Asking a
+                    // stream that is gone again and again could take the program down.
+                    log.ErrorFormat("Baumer {0}: the camera stopped sending frames. {1}", name, e.Message);
+                    grabThreadRun = false;
+                    break;
                 }
 
                 if (bufferFilled == null)
@@ -376,6 +446,48 @@ namespace Kinovea.Camera.Baumer
 
             lastFrameId = id;
             haveFrameId = true;
+        }
+
+        /// <summary>
+        /// Take the camera for this provider, waiting up to waitMS for another user of the program to let it go.
+        /// </summary>
+        private bool Claim(string key, int waitMS)
+        {
+            lock (usersLock)
+            {
+                System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                BaumerProvider user;
+                while (users.TryGetValue(key, out user) && user != this)
+                {
+                    int left = waitMS - (int)stopwatch.ElapsedMilliseconds;
+                    if (left <= 0)
+                        return false;
+
+                    System.Threading.Monitor.Wait(usersLock, left);
+                }
+
+                users[key] = this;
+                userKey = key;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Let the camera go, for another user that waits for it.
+        /// </summary>
+        private void Release()
+        {
+            lock (usersLock)
+            {
+                BaumerProvider user;
+                if (userKey != null && users.TryGetValue(userKey, out user) && user == this)
+                {
+                    users.Remove(userKey);
+                    System.Threading.Monitor.PulseAll(usersLock);
+                }
+
+                userKey = null;
+            }
         }
 
         private string DeviceName()

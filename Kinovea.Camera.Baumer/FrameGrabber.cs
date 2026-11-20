@@ -236,7 +236,8 @@ namespace Kinovea.Camera.Baumer
 
             try
             {
-                baumerProvider.Open(specific.SystemKey, specific.InterfaceKey, specific.DeviceKey);
+                // (Swim 2.26.4) Waits for the picture of the camera list if one of this camera is being taken (about a second).
+                baumerProvider.Open(specific.SystemKey, specific.InterfaceKey, specific.DeviceKey, 6000);
             }
             catch (Exception e)
             {

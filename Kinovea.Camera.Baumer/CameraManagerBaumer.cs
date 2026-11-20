@@ -75,6 +75,14 @@ namespace Kinovea.Camera.Baumer
 
         public override List<CameraSummary> DiscoverCameras(IEnumerable<CameraBlurb> blurbs)
         {
+            // (Swim 2.26.4) The lists of the Baumer API are not refreshed while a camera is opened or closed on another thread
+            // (the pictures of the camera list).
+            lock (BaumerProvider.SdkLock)
+                return DiscoverCamerasLocked(blurbs);
+        }
+
+        private List<CameraSummary> DiscoverCamerasLocked(IEnumerable<CameraBlurb> blurbs)
+        {
             List<CameraSummary> summaries = new List<CameraSummary>();
             List<CameraSummary> found = new List<CameraSummary>();
 
@@ -253,13 +261,19 @@ namespace Kinovea.Camera.Baumer
 
         public override void StopAllThumbnails()
         {
+            // (Swim 2.26.4) All are asked to stop at once and waited for together, and a late one ends by itself: it lets its camera
+            // go on its own, and a capture screen that wants the camera waits for it (BaumerProvider). The thread used to be aborted
+            // in the middle of the calls to the camera.
+            foreach (SnapshotRetriever snapper in snapshotting)
+                snapper.Cancel();
+
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
             for (int i = snapshotting.Count - 1; i >= 0; i--)
             {
                 SnapshotRetriever snapper = snapshotting[i];
-                snapper.Cancel();
-                snapper.Thread.Join(500);
-                if (snapper.Thread.IsAlive)
-                    snapper.Thread.Abort();
+                int left = Math.Max(0, 1500 - (int)stopwatch.ElapsedMilliseconds);
+                if (snapper.Thread != null && !snapper.Thread.Join(left))
+                    log.DebugFormat("The thumbnail of {0} ends on its own.", snapper.Alias);
 
                 snapper.CameraThumbnailProduced -= SnapshotRetriever_CameraThumbnailProduced;
                 snapshotting.RemoveAt(i);
