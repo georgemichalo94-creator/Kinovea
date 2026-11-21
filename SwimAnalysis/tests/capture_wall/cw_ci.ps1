@@ -36,12 +36,12 @@ $back = [System.Drawing.Color]$tTheme.GetField('Back').GetValue($null)
 $wide = 16.0 / 9
 
 function Aspects([double[]]$values) {
-  $list = New-Object 'System.Collections.Generic.List[double]'
+  $list = [System.Collections.Generic.List[double]]::new()
   foreach ($v in $values) { $list.Add($v) }
   return ,$list
 }
 function L([int]$w, [int]$h, [double[]]$aspects, [bool]$info, [int]$solo) {
-  return $layoutOf.Invoke($null, [object[]]@((New-Object System.Drawing.Rectangle 0, 0, $w, $h), (Aspects $aspects), $info, $solo, [single]1))
+  return $layoutOf.Invoke($null, [object[]]@(([System.Drawing.Rectangle]::new(0, 0, $w, $h)), (Aspects $aspects), $info, $solo, [single]1))
 }
 function Rows($layout) { return (@($layout.Rows) -join ',') }
 function Same([double]$x, [double]$y, [double]$tolerance) { return [Math]::Abs($x - $y) -le $tolerance }
@@ -49,7 +49,7 @@ function Same([double]$x, [double]$y, [double]$tolerance) { return [Math]::Abs($
 # The images of a layout: none over another, all inside the area, joined in each row, all of the same height.
 function Joined($layout, [int]$w, [int]$h) {
   $cells = @($layout.Cells)
-  $area = New-Object System.Drawing.Rectangle 0, 0, $w, $h
+  $area = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
   for ($i = 0; $i -lt $cells.Count; $i++) {
     if (-not $area.Contains($cells[$i])) { return 'cell ' + $i + ' outside ' + $cells[$i] }
     if ($cells[$i].Height -ne $cells[0].Height) { return 'cell ' + $i + ' of another height' }
@@ -112,11 +112,11 @@ Check (@($lt.Cells | Where-Object { $_.Width -gt 0 }).Count -eq 0) 'an area too 
 
 # ---- The time of a recording, the buttons over an image.
 Check (($clock.Invoke($null, [object[]]@([double]12.44, $true))) -eq '00:12.4' -and ($clock.Invoke($null, [object[]]@([double]75.9, $false))) -eq '01:15' -and ($clock.Invoke($null, [object[]]@([double](-3), $true))) -eq '00:00.0') 'the time of a recording (00:12.4, 01:15)'
-$img = New-Object System.Drawing.Rectangle 100, 50, 640, 360
+$img = [System.Drawing.Rectangle]::new(100, 50, 640, 360)
 $places = @($buttons.Invoke($null, [object[]]@($img, [single]1)))
 $inside = @($places | Where-Object { -not $img.Contains($_) }).Count -eq 0
-$hits = @(0, 1, 2 | ForEach-Object { $p = $places[$_]; [int]$hit.Invoke($null, [object[]]@($img, [single]1, (New-Object System.Drawing.Point ($p.Left + $p.Width / 2), ($p.Top + $p.Height / 2)))) })
-$miss = [int]$hit.Invoke($null, [object[]]@($img, [single]1, (New-Object System.Drawing.Point 120, 70)))
+$hits = @(0, 1, 2 | ForEach-Object { $p = $places[$_]; [int]$hit.Invoke($null, [object[]]@($img, [single]1, [System.Drawing.Point]::new([int]($p.Left + $p.Width / 2), [int]($p.Top + $p.Height / 2)))) })
+$miss = [int]$hit.Invoke($null, [object[]]@($img, [single]1, [System.Drawing.Point]::new(120, 70)))
 Check ($inside -and ($hits -join ',') -eq '0,1,2' -and $miss -eq -1 -and $places[2].Right -le $img.Right -and $places[0].Left -lt $places[1].Left) ('three buttons at the bottom right of the image: alone, snapshot, settings (' + ($hits -join ',') + ')')
 
 # ---- Pictures of the wall on fictional cameras.
@@ -155,7 +155,7 @@ function Picture([string]$file, [int]$w, [int]$h, $cams, [double[]]$aspects, [in
   $g = [System.Drawing.Graphics]::FromImage($b)
   try {
     $g.Clear($back)
-    $layout = $layoutOf.Invoke($null, [object[]]@((New-Object System.Drawing.Rectangle 0, 0, $w, $h), (Aspects $aspects), $true, $solo, [single]1))
+    $layout = $layoutOf.Invoke($null, [object[]]@(([System.Drawing.Rectangle]::new(0, 0, $w, $h)), (Aspects $aspects), $true, $solo, [single]1))
     $cells = @($layout.Cells)
     for ($i = 0; $i -lt $cells.Count; $i++) {
       $r = $cells[$i]
@@ -187,7 +187,7 @@ function Finish($pic, [string]$file, $cams, [bool]$recording, [bool]$swap) {
     try {
       $bar.WallAvailable = $true; $bar.WallOn = $true; $bar.SwapAvailable = $swap
       if ($recording) { $bar.SetRecording($true); Start-Sleep -Milliseconds 1300 }
-      $bar.Draw($g, (New-Object System.Drawing.Rectangle 0, ($b.Height - $pic.Bar), $b.Width, $pic.Bar))
+      $bar.Draw($g, [System.Drawing.Rectangle]::new(0, $b.Height - $pic.Bar, $b.Width, $pic.Bar))
     } finally { $bar.Dispose() }
   } catch {
     Check $false ($file + ': ' + $_.Exception.ToString())
