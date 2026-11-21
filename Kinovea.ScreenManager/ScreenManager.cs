@@ -87,6 +87,11 @@ namespace Kinovea.ScreenManager
         // (Swim 2.14.0) Big screens: with two or more screens each shows only its image in the window (VideoBigScreens).
         private bool bigScreens;
 
+        // (Swim 2.27.0) The wall of cameras: asked for (the button of the common controls, on by default), shown now, and its live panel.
+        private bool captureWallWanted = true;
+        private bool captureWallActive;
+        private SwimLivePanel swimLivePanel;
+
         /// <summary>(Swim 2.18.0) The main menu of Kinovea Swim (the menus of Kinovea in groups by task, or the classic menu).</summary>
         private SwimMainMenu swimMenu;
         private List<string> camerasToDiscover = new List<string>();
@@ -246,6 +251,7 @@ namespace Kinovea.ScreenManager
 
             // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
             SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
+            SwimCaptureWall.RecheckAsked = SwimCaptureWallRecheck;
 
             // (Swim 2.25.0) A package for the coaches finished in the background: its screens leave the window as they are, new empty
             // screens take their places.
@@ -1209,6 +1215,13 @@ namespace Kinovea.ScreenManager
             dualCapture.View.SwapAsked += CCtrl_SwapAsked;
             dualPlayer.View.BigScreensAsked += (s, e) => BigScreens(!bigScreens);
             dualPlayer.View.GroupAsked += (s, e) => ShowGroupMenu(s as Control);
+
+            // (Swim 2.27.0) The wall of cameras on or off.
+            dualCapture.View.WallAsked += (s, e) =>
+            {
+                captureWallWanted = !captureWallWanted;
+                OrganizeScreens();
+            };
         }
         private void CCtrl_SwapAsked(object sender, EventArgs e)
         {
@@ -1367,8 +1380,12 @@ namespace Kinovea.ScreenManager
                     screen.FullScreen(true);
             }
 
+            // (Swim 2.27.0) The wall of cameras: two capture screens or more, and nothing else.
+            bool wall = CaptureWallEligible();
+            ApplyCaptureWall(wall);
+
             // (Swim 2.16.0) The panel of a group of screens in one more cell of the grid, when its graphics are shown there.
-            view.SetSwimExtraCell(SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.GroupDashboardCell : null);
+            view.SetSwimExtraCell(!wall && SwimAnalysisManager.Current != null ? SwimAnalysisManager.Current.GroupDashboardCell : null);
             view.OrganizeScreens(screenList);
             UpdateVideoFullScreen();
             UpdateVideoBigScreens();
@@ -1551,6 +1568,64 @@ namespace Kinovea.ScreenManager
 
             UpdateVideoBigScreens();
         }
+
+        #region Swim: wall of cameras (2.27.0)
+        /// <summary>
+        /// The screens make a wall of cameras: asked for, two capture screens or more and nothing else, none with a camera that records
+        /// on its own card (a GoPro keeps its buttons on its screen).
+        /// </summary>
+        private bool CaptureWallEligible()
+        {
+            return captureWallWanted && screenList.Count >= 2 && screenList.All(s => s is CaptureScreen) && !captureScreens.Any(s => s.RecordsOnCamera);
+        }
+
+        /// <summary>The wall of cameras on or off: each capture screen with its place on the wall, the live panel, the button of the wall.</summary>
+        private void ApplyCaptureWall(bool wall)
+        {
+            if (wall && swimLivePanel == null)
+            {
+                swimLivePanel = new SwimLivePanel();
+                swimLivePanel.SetProvider(() => captureScreens.Select(s => s.SwimWallState()).ToList());
+            }
+
+            int number = 0;
+            foreach (AbstractScreen screen in screenList)
+            {
+                number++;
+                CaptureScreen capture = screen as CaptureScreen;
+                if (capture != null)
+                    capture.SwimWall(wall, number);
+            }
+
+            if (wall != captureWallActive)
+                log.DebugFormat("Wall of cameras {0} ({1} screens).", wall ? "on" : "off", screenList.Count);
+
+            captureWallActive = wall;
+            view.SetCaptureWall(wall, wall ? swimLivePanel : null);
+            bool available = screenList.Count >= 2 && screenList.All(s => s is CaptureScreen);
+            dualCapture.View.SetWall(captureWallWanted, available, screenList.Count == 2);
+        }
+
+        /// <summary>A screen got or lost a camera that records on its own card: the screens are organized again if the wall changes.</summary>
+        private void SwimCaptureWallRecheck()
+        {
+            if (view == null || view.IsDisposed || !view.IsHandleCreated)
+                return;
+
+            try
+            {
+                view.BeginInvoke((Action)(() =>
+                {
+                    if (!view.IsDisposed && CaptureWallEligible() != captureWallActive)
+                        OrganizeScreens();
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                // The window is closing.
+            }
+        }
+        #endregion
 
         #region Swim: group of screens (2.14.0)
         /// <summary>

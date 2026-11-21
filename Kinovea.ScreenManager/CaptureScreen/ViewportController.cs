@@ -499,6 +499,12 @@ namespace Kinovea.ScreenManager
             if (Activated != null)
                 Activated(this, EventArgs.Empty);
         }
+
+        /// <summary>(Swim 2.27.0) A click on the image on the wall of cameras makes its screen the active one.</summary>
+        public void SwimActivate()
+        {
+            Poke();
+        }
         
         /// <summary>
         /// Set up the correct list of menus to show and customize the text.

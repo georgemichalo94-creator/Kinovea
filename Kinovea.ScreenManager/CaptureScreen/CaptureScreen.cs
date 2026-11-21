@@ -178,6 +178,10 @@ namespace Kinovea.ScreenManager
         private Type lostFramesType;
         private System.Reflection.PropertyInfo lostFramesProperty;
         private long lostFramesBase;
+
+        // (Swim 2.27.0) The place of this screen on the wall of cameras (1 to 5; 0: not on the wall) and the last load of its frames.
+        private int swimWallNumber;
+        private float swimLastLoad;
         private Stopwatch stopwatchDiscovery = new Stopwatch();
         private const long discoveryTimeout = 5000;
         private ScreenDescriptorCapture screenDescriptor = new ScreenDescriptorCapture();
@@ -365,6 +369,32 @@ namespace Kinovea.ScreenManager
         public bool RecordsOnCamera
         {
             get { return cameraGrabber is IRemoteRecordingSource; }
+        }
+
+        /// <summary>(Swim 2.27.0) The wall of cameras on or off for this screen, with its place on the wall (1 to 5).</summary>
+        public void SwimWall(bool on, int number)
+        {
+            swimWallNumber = on ? number : 0;
+            if (view != null)
+                view.SwimWall(on);
+        }
+
+        /// <summary>(Swim 2.27.0) The state of the camera of this screen, for its image on the wall of cameras and the live panel.</summary>
+        public SwimWallCamera SwimWallState()
+        {
+            SwimWallCamera state = new SwimWallCamera();
+            state.Number = swimWallNumber;
+            state.Name = cameraSummary != null && cameraSummary.Alias != null ? cameraSummary.Alias : "";
+            state.Loaded = cameraLoaded;
+            state.Connected = cameraConnected;
+            state.Grabbing = cameraGrabber != null && cameraGrabber.Grabbing;
+            state.Recording = recording;
+            state.OnCamera = RecordsOnCamera;
+            state.Fps = cameraConnected ? pipelineManager.Frequency : 0;
+            state.Drops = cameraConnected ? Drops() : 0;
+            state.Load = cameraConnected ? swimLastLoad : 0;
+            state.RecordingSeconds = recording ? stopwatchRecording.Elapsed.TotalSeconds : 0;
+            return state;
         }
 
         public void PerformSnapshot()
@@ -869,6 +899,9 @@ namespace Kinovea.ScreenManager
             view.SetRecordsOnCamera(remoteSource != null, cameraGrabber is ILivePreviewSource, presetSource != null ? presetSource.CameraPresets : null,
                 cameraGrabber is IRemoteMediaSource);
 
+            // (Swim 2.27.0) A camera that records on its own card keeps the classic screens (their buttons): the wall looks again.
+            SwimCaptureWall.Recheck();
+
             RaiseActivated(EventArgs.Empty);
 
             if (connect)
@@ -1131,6 +1164,8 @@ namespace Kinovea.ScreenManager
             DetachRemote();
             if (view != null)
                 view.SetRecordsOnCamera(false, false);
+
+            SwimCaptureWall.Recheck();
 
             cameraGrabber = null;
 
@@ -1622,6 +1657,7 @@ namespace Kinovea.ScreenManager
             }
 
             float load = (ellapsed / (1000.0f / (float)pipelineManager.Frequency)) * 100;
+            swimLastLoad = load;
              
             string signal = string.Format(" {0:0.00} fps", pipelineManager.Frequency);
             string bandwidth = string.Format(" {0:0.00} MB/s", cameraGrabber.LiveDataRate);

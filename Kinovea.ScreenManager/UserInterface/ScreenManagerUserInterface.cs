@@ -90,6 +90,12 @@ namespace Kinovea.ScreenManager
 
         // (Swim 2.16.1) The playback bar of the full screen, at the bottom over the screens (shown when the mouse moves).
         private readonly SwimPlaybackBar playbackBar = new SwimPlaybackBar();
+
+        // (Swim 2.27.0) The wall of cameras: the capture screens (two or more, nothing else) show only their images, whole and joined
+        // edge to edge; the live panel takes the free place; a double click puts one camera alone on the wall.
+        private bool captureWall;
+        private Control wallInfo;
+        private int wallSolo = -1;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -125,9 +131,17 @@ namespace Kinovea.ScreenManager
         public void ShowCommonControls(bool show, Pair<Type, Type> types, CommonControlsPlayers cctrlsPlayers, CommonControlsCapture cctrlsCapture)
         {
             if (fullScreen)
+            {
                 memoCommonControlsCollapsed = !show;
+
+                // (Swim 2.27.0) The wall of cameras keeps its row in full screen: its buttons are the only ones.
+                if (captureWall)
+                    splitScreensPanel.Panel2Collapsed = memoCommonControlsCollapsed;
+            }
             else
+            {
                 splitScreensPanel.Panel2Collapsed = !show;
+            }
 
             if (types == null)
                 return;
@@ -142,9 +156,15 @@ namespace Kinovea.ScreenManager
         public void ToggleCommonControls()
         {
             if (fullScreen)
+            {
                 memoCommonControlsCollapsed = !memoCommonControlsCollapsed;
+                if (captureWall)
+                    splitScreensPanel.Panel2Collapsed = memoCommonControlsCollapsed;
+            }
             else
+            {
                 splitScreensPanel.Panel2Collapsed = !splitScreensPanel.Panel2Collapsed;
+            }
         }
         public void OrganizeScreens(List<AbstractScreen> screenList)
         {
@@ -176,7 +196,7 @@ namespace Kinovea.ScreenManager
                 // Full screen: the grid also for one or two screens, the images joined without gaps. (Swim 2.16.0) The panel of a
                 // group of screens is one more cell of the grid.
                 int cells = screenList.Count + (swimExtraCell != null ? 1 : 0);
-                if (cells <= 2 && !fullScreen)
+                if (cells <= 2 && !fullScreen && !captureWall)
                 {
                     ClearGrid(false);
                     pnlGrid.Visible = false;
@@ -217,8 +237,10 @@ namespace Kinovea.ScreenManager
                 memoCommonControlsCollapsed = splitScreensPanel.Panel2Collapsed;
 
             fullScreen = isFullScreen;
-            splitScreensPanel.Panel2Collapsed = fullScreen || memoCommonControlsCollapsed;
-            splitScreensPanel.BorderStyle = fullScreen ? BorderStyle.None : BorderStyle.FixedSingle;
+
+            // (Swim 2.27.0) The wall of cameras keeps its row in full screen.
+            splitScreensPanel.Panel2Collapsed = (fullScreen && !captureWall) || memoCommonControlsCollapsed;
+            splitScreensPanel.BorderStyle = fullScreen || captureWall ? BorderStyle.None : BorderStyle.FixedSingle;
             UncoverScreens();
 
             // (Swim 2.16.1) The playback bar at the bottom: shown now and when the mouse moves, hidden 5 s after it stopped.
@@ -249,6 +271,64 @@ namespace Kinovea.ScreenManager
         public void SetSwimExtraCell(Control cell)
         {
             swimExtraCell = cell;
+        }
+
+        /// <summary>
+        /// (Swim 2.27.0) The wall of cameras on or off (set by the screen manager, which then organizes the screens again), with its
+        /// live panel (null: none). The screens in the grid even when they are two, nothing between them, in the dark of the wall.
+        /// </summary>
+        public void SetCaptureWall(bool on, Control info)
+        {
+            if (!on)
+                info = null;
+
+            if (wallInfo != null && wallInfo != info && wallInfo.Parent == pnlGrid)
+            {
+                wallInfo.Visible = false;
+                pnlGrid.Controls.Remove(wallInfo);
+            }
+
+            wallInfo = info;
+            if (wallInfo != null)
+            {
+                if (wallInfo.Parent != pnlGrid)
+                {
+                    wallInfo.Visible = false;
+                    pnlGrid.Controls.Add(wallInfo);
+                }
+            }
+
+            if (on == captureWall)
+                return;
+
+            captureWall = on;
+            wallSolo = -1;
+            ApplyWallLook();
+        }
+
+        /// <summary>(Swim 2.27.0) The colors and the borders around the screens: the dark of the wall, or the classic ones.</summary>
+        private void ApplyWallLook()
+        {
+            pnlGrid.BackColor = captureWall ? SwimTheme.Back : SystemColors.ControlDark;
+            foreach (Panel cell in gridCells)
+                cell.BackColor = captureWall ? SwimTheme.Back : Color.White;
+
+            if (captureWall)
+            {
+                splitScreensPanel.BackColor = SwimTheme.Back;
+                splitScreensPanel.Panel1.BackColor = SwimTheme.Back;
+                splitScreensPanel.Panel2.BackColor = SwimTheme.Surface;
+            }
+            else
+            {
+                splitScreensPanel.ResetBackColor();
+                splitScreensPanel.Panel1.ResetBackColor();
+                splitScreensPanel.Panel2.BackColor = Color.White;
+            }
+
+            splitScreensPanel.BorderStyle = fullScreen || captureWall ? BorderStyle.None : BorderStyle.FixedSingle;
+            if (fullScreen)
+                splitScreensPanel.Panel2Collapsed = !captureWall || memoCommonControlsCollapsed;
         }
 
         /// <summary>
@@ -430,7 +510,7 @@ namespace Kinovea.ScreenManager
             {
                 int index = gridCells.Count;
                 Panel cell = new Panel();
-                cell.BackColor = Color.White;
+                cell.BackColor = captureWall ? SwimTheme.Back : Color.White;
                 cell.AllowDrop = true;
                 cell.DragOver += DroppableArea_DragOver;
                 cell.DragDrop += (s, e) => Drop(e, index);
@@ -455,6 +535,16 @@ namespace Kinovea.ScreenManager
                 if (player != null)
                     player.SwimInGrid(true);
 
+                // (Swim 2.27.0) A capture screen asks to be alone on the wall, or its image changes shape.
+                CaptureScreenView capture = screenUI as CaptureScreenView;
+                if (capture != null)
+                {
+                    capture.SwimSoloAsked -= Capture_SwimSoloAsked;
+                    capture.SwimSoloAsked += Capture_SwimSoloAsked;
+                    capture.SwimAspectChanged -= Capture_SwimAspectChanged;
+                    capture.SwimAspectChanged += Capture_SwimAspectChanged;
+                }
+
                 screenUI.Dock = DockStyle.Fill;
                 gridCells[i].Controls.Add(screenUI);
             }
@@ -477,6 +567,13 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void LayoutGrid()
         {
+            // (Swim 2.27.0) The wall of cameras.
+            if (captureWall)
+            {
+                LayoutWall();
+                return;
+            }
+
             if (gridCount < (fullScreen ? 1 : 3))
                 return;
 
@@ -711,6 +808,81 @@ namespace Kinovea.ScreenManager
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// (Swim 2.27.0) The wall of cameras: the images whole and joined, in the rows that make them biggest (SwimCaptureWall.Layout),
+        /// the live panel in the free place, or one camera alone on the wall.
+        /// </summary>
+        private void LayoutWall()
+        {
+            if (gridCount < 1)
+                return;
+
+            List<double> aspects = new List<double>();
+            for (int i = 0; i < gridCount; i++)
+            {
+                CaptureScreenView capture = gridCells[i].Controls.Count > 0 ? gridCells[i].Controls[0] as CaptureScreenView : null;
+                aspects.Add(capture != null ? capture.SwimImageAspect : 0);
+            }
+
+            if (wallSolo >= gridCount)
+                wallSolo = -1;
+
+            SwimWallLayout layout = SwimCaptureWall.Layout(pnlGrid.ClientRectangle, aspects, wallInfo != null, wallSolo, Math.Max(1f, DeviceDpi / 96f));
+            if (pnlGrid.BackColor != SwimTheme.Back)
+                pnlGrid.BackColor = SwimTheme.Back;
+
+            for (int i = 0; i < gridCount; i++)
+            {
+                Rectangle place = i < layout.Cells.Length ? layout.Cells[i] : Rectangle.Empty;
+                bool shown = place.Width > 0 && place.Height > 0;
+                if (shown && gridCells[i].Bounds != place)
+                    gridCells[i].Bounds = place;
+
+                if (gridCells[i].Visible != shown)
+                    gridCells[i].Visible = shown;
+
+                CaptureScreenView capture = gridCells[i].Controls.Count > 0 ? gridCells[i].Controls[0] as CaptureScreenView : null;
+                if (capture != null)
+                    capture.SwimWallSolo(i == wallSolo);
+            }
+
+            if (wallInfo != null)
+            {
+                bool shown = layout.Info.Width > 0 && layout.Info.Height > 0;
+                if (shown)
+                {
+                    if (wallInfo.Bounds != layout.Info)
+                        wallInfo.Bounds = layout.Info;
+
+                    wallInfo.BringToFront();
+                }
+
+                if (wallInfo.Visible != shown)
+                    wallInfo.Visible = shown;
+            }
+        }
+
+        /// <summary>(Swim 2.27.0) A double click on a camera of the wall: alone on the wall, or all the cameras back.</summary>
+        private void Capture_SwimSoloAsked(object sender, EventArgs e)
+        {
+            if (!captureWall)
+                return;
+
+            Control screen = sender as Control;
+            int index = screen == null ? -1 : gridCells.FindIndex(c => c.Controls.Contains(screen));
+            if (index < 0 || index >= gridCount)
+                return;
+
+            wallSolo = wallSolo == index ? -1 : index;
+            LayoutGrid();
+        }
+
+        private void Capture_SwimAspectChanged(object sender, EventArgs e)
+        {
+            if (captureWall)
+                LayoutGrid();
         }
 
         private void ClearGrid(bool dispose)

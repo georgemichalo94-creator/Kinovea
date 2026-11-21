@@ -317,6 +317,29 @@ jobs:
         path: group-cameras
         if-no-files-found: ignore
 
+    - name: Swim capture wall
+      continue-on-error: true
+      shell: pwsh
+      timeout-minutes: 6
+      run: |
+        # (2.27.0) The wall of cameras on fictional cameras: the places of the images and of the live panel for two to five cameras and
+        # one camera alone, the time of a recording, the buttons over an image, the English of the new texts; its pictures as an artifact.
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\capture_wall\cw_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -out capture-wall 2>&1
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim capture wall::exit ' + $code + ' | ' + (($bad + ($out | Select-Object -Last 6)) -join ' | ')); exit 1 }
+        Write-Output ('::notice title=Swim capture wall::' + ($out | Select-Object -Last 1))
+
+    - name: Swim capture wall images
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: capture-wall
+        path: capture-wall
+        if-no-files-found: ignore
+
     - name: Swim main menu
       shell: pwsh
       timeout-minutes: 6

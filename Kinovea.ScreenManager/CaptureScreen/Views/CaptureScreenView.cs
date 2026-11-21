@@ -72,10 +72,28 @@ namespace Kinovea.ScreenManager
         {
             get { return changingContext; }
         }
+
+        /// <summary>(Swim 2.27.0) Width over height of the image of the camera (0 before the first image).</summary>
+        public double SwimImageAspect
+        {
+            get { return viewport != null ? viewport.SwimImageAspect : 0; }
+        }
+
+        /// <summary>(Swim 2.27.0) The screen is on the wall of cameras (only its image).</summary>
+        public bool SwimWallOn
+        {
+            get { return swimWall; }
+        }
         #endregion
 
         #region Events
         public event EventHandler<EventArgs<HotkeyCommand>> DualCommandReceived;
+
+        /// <summary>(Swim 2.27.0) The image asks to be alone on the wall of cameras (or for all the cameras back).</summary>
+        public event EventHandler SwimSoloAsked;
+
+        /// <summary>(Swim 2.27.0) The shape of the image changed (the wall places the screen again).</summary>
+        public event EventHandler SwimAspectChanged;
         #endregion
 
         #region Members
@@ -106,6 +124,12 @@ namespace Kinovea.ScreenManager
         private bool changingContext;
         private Func<bool, string> buildRecordingPath;
         private string memoContext = "";
+
+        // (Swim 2.27.0) The wall of cameras: only the image of the camera, the rows of the screen hidden (the list of the recorded
+        // videos comes back as it was when the wall ends).
+        private Viewport viewport;
+        private bool swimWall;
+        private bool swimCapturedShown;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
 
@@ -177,8 +201,83 @@ namespace Kinovea.ScreenManager
 
         public void SetViewport(Viewport viewport)
         {
+            this.viewport = viewport;
             pnlViewport.Controls.Add(viewport);
             viewport.Dock = DockStyle.Fill;
+
+            // (Swim 2.27.0) The wall of cameras.
+            viewport.SwimWallSource = () => presenter != null ? presenter.SwimWallState() : null;
+            viewport.SwimSoloAsked += (s, e) => SwimSoloAsked?.Invoke(this, EventArgs.Empty);
+            viewport.SwimAspectChanged += (s, e) => SwimAspectChanged?.Invoke(this, EventArgs.Empty);
+            viewport.SwimButtonClicked += Viewport_SwimButtonClicked;
+        }
+
+        /// <summary>
+        /// (Swim 2.27.0) The wall of cameras on or off: only the image of the camera (its number, its name and its state over it), or
+        /// the screen with all its rows again.
+        /// </summary>
+        public void SwimWall(bool on)
+        {
+            if (viewport != null)
+                viewport.SwimWall(on);
+
+            if (on == swimWall)
+                return;
+
+            SuspendLayout();
+            if (on)
+            {
+                swimCapturedShown = pnlCapturedVideos.Visible;
+                swimWall = true;
+                pnlTitle.Visible = false;
+                pnlDrawingToolsBar.Visible = false;
+                pnlCapturedVideos.Visible = false;
+                pnlControls.Visible = false;
+                pnlViewport.Dock = DockStyle.Fill;
+            }
+            else
+            {
+                swimWall = false;
+                pnlViewport.Dock = DockStyle.None;
+                pnlViewport.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+                pnlViewport.Left = 0;
+                pnlViewport.Width = ClientSize.Width;
+                pnlTitle.Visible = true;
+                pnlControls.Visible = true;
+                pnlDrawingToolsBar.Visible = true;
+                pnlCapturedVideos.Visible = swimCapturedShown;
+            }
+
+            ResumeLayout(true);
+            if (!on)
+                AfterCapturedVideosChange();
+        }
+
+        /// <summary>(Swim 2.27.0) The screen is alone on the wall (the button over its image then puts all the cameras back).</summary>
+        public void SwimWallSolo(bool solo)
+        {
+            if (viewport != null)
+                viewport.SwimWallSolo(solo);
+        }
+
+        private void Viewport_SwimButtonClicked(int button)
+        {
+            if (presenter == null)
+                return;
+
+            switch (button)
+            {
+                case SwimCaptureWall.ButtonSolo:
+                    SwimSoloAsked?.Invoke(this, EventArgs.Empty);
+                    break;
+                case SwimCaptureWall.ButtonSnapshot:
+                    presenter.View_SnapshotAsked();
+                    break;
+                case SwimCaptureWall.ButtonConfigure:
+                    if (!recording)
+                        presenter.View_Configure();
+                    break;
+            }
         }
         public void SetCapturedFilesView(CapturedFilesView capturedFilesView)
         {
@@ -810,6 +909,15 @@ namespace Kinovea.ScreenManager
         
         public void ShowThumbnails()
         {
+            // (Swim 2.27.0) On the wall of cameras the list of the recorded videos shows when the wall ends.
+            if (swimWall)
+            {
+                if (!capturedFilesPanelForceCollapsed)
+                    swimCapturedShown = true;
+
+                return;
+            }
+
             if(!pnlCapturedVideos.Visible && !capturedFilesPanelForceCollapsed)
                 ToggleCapturedVideosPanel();
         }
@@ -921,11 +1029,21 @@ namespace Kinovea.ScreenManager
         #region Private methods (pure Form logic)
         private void ToggleCapturedVideosPanel()
         {
+            if (swimWall)
+            {
+                swimCapturedShown = !swimCapturedShown;
+                return;
+            }
+
             pnlCapturedVideos.Visible = !pnlCapturedVideos.Visible;
             AfterCapturedVideosChange();
         }
         private void AfterCapturedVideosChange()
         {
+            // (Swim 2.27.0) On the wall of cameras the image fills the screen.
+            if (swimWall)
+                return;
+
             if(pnlCapturedVideos.Visible)
             {
                 btnFoldCapturedVideosPanel.BackgroundImage = Properties.Capture.section_fold;
@@ -943,6 +1061,9 @@ namespace Kinovea.ScreenManager
 
         private void FitViewport()
         {
+            if (swimWall)
+                return;
+
             pnlViewport.Top = pnlTitle.Bottom;
             pnlViewport.Height = pnlDrawingToolsBar.Top - pnlViewport.Top;
         }

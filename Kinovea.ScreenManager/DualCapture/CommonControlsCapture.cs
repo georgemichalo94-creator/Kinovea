@@ -35,32 +35,48 @@ namespace Kinovea.ScreenManager
         public event EventHandler<EventArgs<bool>> GrabbingChanged;
         public event EventHandler SnapshotAsked;
         public event EventHandler<EventArgs<bool>> RecordingChanged;
+
+        /// <summary>(Swim 2.27.0) The wall of cameras on or off (its button on the right of the row).</summary>
+        public event EventHandler WallAsked;
         #endregion
 
         #region Properties
         public bool Grabbing
         {
             get { return grabbing; }
-            set { grabbing = value; }
+            set { grabbing = value; RefreshGrabbingButton(); }
         }
 
         public bool Recording
         {
             get { return recording; }
-            set { recording = value; }
+            set { recording = value; RefreshRecordingButton(); }
         }
         #endregion
 
         #region Members
         private bool grabbing = true;
         private bool recording;
+
+        // (Swim 2.27.0) The row drawn in the colors of Kinovea Swim (the buttons of the designer stay, hidden).
+        private SwimCaptureBar bar;
         #endregion
 
         public CommonControlsCapture()
         {
             InitializeComponent();
-            BackColor = Color.White;
             this.Hotkeys = HotkeySettingsManager.LoadHotkeys("DualCapture");
+
+            // (Swim 2.27.0) The row of Kinovea Swim: record, pause, snapshot, swap, and the wall of cameras on the right.
+            BackColor = SwimTheme.Surface;
+            foreach (Control c in new Control[] { btnGrab, btnRecord, btnSnapshot, btnSwap, lblInfo })
+                c.Visible = false;
+
+            bar = new SwimCaptureBar();
+            bar.Dock = DockStyle.Fill;
+            bar.PartClicked += Bar_PartClicked;
+            Controls.Add(bar);
+            bar.BringToFront();
         }
 
         public void RefreshUICulture()
@@ -69,12 +85,53 @@ namespace Kinovea.ScreenManager
             lblInfo.Text = ScreenManagerLang.lblInfo_Text;
 
             // ToolTips
+            if (bar != null)
+                bar.Invalidate();
         }
 
         public void UpdateRecordingStatus(bool status)
         {
             recording = status;
             RefreshRecordingButton();
+        }
+
+        /// <summary>
+        /// (Swim 2.27.0) The button of the wall of cameras: asked for or not, and shown only when the screens can make a wall (two capture
+        /// screens or more); the swap only with two screens.
+        /// </summary>
+        public void SetWall(bool on, bool available, bool swap)
+        {
+            if (bar == null)
+                return;
+
+            bar.WallOn = on;
+            bar.WallAvailable = available;
+            bar.SwapAvailable = swap;
+            bar.Invalidate();
+        }
+
+        private void Bar_PartClicked(int part)
+        {
+            switch (part)
+            {
+                case SwimCaptureBar.PartRecord:
+                    ToggleRecording();
+                    break;
+                case SwimCaptureBar.PartGrab:
+                    ToggleGrabbing();
+                    break;
+                case SwimCaptureBar.PartSnapshot:
+                    TakeSnapshot();
+                    break;
+                case SwimCaptureBar.PartSwap:
+                    if (SwapAsked != null)
+                        SwapAsked(this, EventArgs.Empty);
+                    break;
+                case SwimCaptureBar.PartWall:
+                    if (WallAsked != null)
+                        WallAsked(this, EventArgs.Empty);
+                    break;
+            }
         }
 
         #region Commands
@@ -160,11 +217,18 @@ namespace Kinovea.ScreenManager
         {
             btnGrab.Image = grabbing ? Properties.Capture.pause_16 : Properties.Capture.circled_play_16;
             btnRecord.Enabled = grabbing;
+            if (bar != null)
+            {
+                bar.Grabbing = grabbing;
+                bar.Invalidate();
+            }
         }
 
         private void RefreshRecordingButton()
         {
             btnRecord.Image = recording ? Properties.Capture.record_stop : Properties.Capture.circle_16;
+            if (bar != null)
+                bar.SetRecording(recording);
         }
         #endregion
     }

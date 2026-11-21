@@ -51,6 +51,17 @@ namespace Kinovea.ScreenManager
         private RecordingStatus recordingStatus;
         private float recordingStatusProgress = 1.0f;
         private MessageToaster toaster;
+
+        // (Swim 2.27.0) The wall of cameras: the image fitted in the viewport (the display rectangle of the screen stays for the
+        // classic screen), its number, the name and the state of its camera over it, its buttons while the mouse is over it; no
+        // resizers, no moving of the image, no drawing with the mouse.
+        private bool swimWall;
+        private bool swimSolo;
+        private bool swimHover;
+        private int swimHoverButton = -1;
+        private SwimWallCamera swimCamera = new SwimWallCamera();
+        private int swimStateTick;
+        private bool swimStateRead;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -74,12 +85,17 @@ namespace Kinovea.ScreenManager
         
         public void InitializeDisplayRectangle(Rectangle saved, Size referenceSize)
         {
+            double aspect = SwimImageAspect;
             this.referenceSize = referenceSize;
             InitializeDisplayRectangle(saved);
             if (displayRectangle != saved)
                 controller.UpdateDisplayRectangle(displayRectangle);
             
             ForceZoomValue();
+
+            // (Swim 2.27.0) The place of the screen on the wall of cameras follows the shape of its image.
+            if (Math.Abs(aspect - SwimImageAspect) > 0.001 && SwimAspectChanged != null)
+                SwimAspectChanged(this, EventArgs.Empty);
         }
         
         public void IncreaseZoom()
@@ -116,11 +132,190 @@ namespace Kinovea.ScreenManager
             this.recordingStatus = status;
             this.recordingStatusProgress = progress;
         }
+
+        #region Swim: wall of cameras (2.27.0)
+        /// <summary>A double click on the image asks for it alone on the wall (or for all the cameras back).</summary>
+        public event EventHandler SwimSoloAsked;
+
+        /// <summary>A button over the image was clicked (SwimCaptureWall.ButtonSolo, ButtonSnapshot, ButtonConfigure).</summary>
+        public event Action<int> SwimButtonClicked;
+
+        /// <summary>The shape of the image changed (the place of the screen on the wall follows it).</summary>
+        public event EventHandler SwimAspectChanged;
+
+        /// <summary>Where the state of the camera is read for the wall.</summary>
+        public Func<SwimWallCamera> SwimWallSource { get; set; }
+
+        /// <summary>Width over height of the image (0 before the first image).</summary>
+        public double SwimImageAspect
+        {
+            get { return referenceSize.Width > 0 && referenceSize.Height > 0 ? (double)referenceSize.Width / referenceSize.Height : 0; }
+        }
+
+        public bool SwimWallOn
+        {
+            get { return swimWall; }
+        }
+
+        /// <summary>The wall of cameras on or off: only the image, fitted, with the state of the camera over it.</summary>
+        public void SwimWall(bool on)
+        {
+            if (on == swimWall)
+                return;
+
+            swimWall = on;
+            swimHover = false;
+            swimHoverButton = -1;
+            swimStateRead = false;
+            BackColor = on ? SwimTheme.Back : Color.FromArgb(255, 44, 44, 44);
+            Cursor = on ? Cursors.Default : controller.GetCursor(zoomHelper.Value);
+            Invalidate();
+        }
+
+        /// <summary>The image is alone on the wall (its button then puts all the cameras back).</summary>
+        public void SwimWallSolo(bool solo)
+        {
+            if (solo == swimSolo)
+                return;
+
+            swimSolo = solo;
+            Invalidate();
+        }
+
+        private float SwimScale
+        {
+            get { return Math.Max(1f, DeviceDpi / 96f); }
+        }
+
+        /// <summary>The place of the image on the wall: as big as it fits, in the middle (the whole viewport before the first image).</summary>
+        private Rectangle SwimImageRectangle()
+        {
+            if (controller.Bitmap == null || referenceSize.Width <= 0 || referenceSize.Height <= 0 || ClientSize.Width <= 0 || ClientSize.Height <= 0)
+                return ClientRectangle;
+
+            return SwimCaptureWall.Fit((double)referenceSize.Width / referenceSize.Height, ClientRectangle);
+        }
+
+        /// <summary>The state of the camera, read again a few times a second (the stream draws the image many times a second).</summary>
+        private SwimWallCamera SwimState()
+        {
+            int now = Environment.TickCount;
+            int age = unchecked(now - swimStateTick);
+            if (!swimStateRead || age >= SwimCaptureWall.StateMilliseconds || age < 0)
+            {
+                swimStateRead = true;
+                swimStateTick = now;
+                try
+                {
+                    Func<SwimWallCamera> source = SwimWallSource;
+                    SwimWallCamera state = source != null ? source() : null;
+                    if (state != null)
+                        swimCamera = state;
+                }
+                catch (Exception e)
+                {
+                    log.Error("Error while reading the state of the camera for the wall of cameras.", e);
+                }
+            }
+
+            return swimCamera;
+        }
+
+        private bool SwimRecording(SwimWallCamera state)
+        {
+            return recordingStatus == RecordingStatus.Recording || (state != null && state.Recording);
+        }
+
+        /// <summary>The button under the mouse (-1: none, or a screen without a camera, whose buttons are not shown).</summary>
+        private int SwimHit(Point location)
+        {
+            SwimWallCamera state = SwimState();
+            if (!state.Loaded || recordingStatus == RecordingStatus.Disconnected)
+                return -1;
+
+            return SwimCaptureWall.HitButton(SwimImageRectangle(), SwimScale, location);
+        }
+
+        private void PaintWall(Graphics canvas)
+        {
+            Rectangle image = SwimImageRectangle();
+            bool hasImage = controller.Bitmap != null && referenceSize.Width > 0 && referenceSize.Height > 0;
+            if (hasImage)
+            {
+                ConfigureCanvas(canvas);
+                try
+                {
+                    canvas.DrawImage(controller.Bitmap, image);
+                }
+                catch (Exception e)
+                {
+                    log.ErrorFormat(e.Message);
+                }
+
+                controller.DrawKVA(canvas, image.Location, (float)image.Width / referenceSize.Width);
+            }
+
+            SwimCaptureWall.PaintOverlay(canvas, image, SwimState(), recordingStatus, recordingStatusProgress, hasImage, swimHover, swimHoverButton, swimSolo, SwimScale);
+            toaster.Draw(canvas);
+        }
+
+        private void SwimMouseDown(MouseEventArgs e)
+        {
+            Focus();
+            if (e.Button == MouseButtons.Left)
+            {
+                controller.SwimActivate();
+                int button = SwimHit(e.Location);
+                if (button == SwimCaptureWall.ButtonConfigure && SwimRecording(SwimState()))
+                    return;
+
+                if (button >= 0 && SwimButtonClicked != null)
+                    SwimButtonClicked(button);
+            }
+            else if (e.Button == MouseButtons.Right && controller.Bitmap != null && referenceSize.Width > 0)
+            {
+                // The menu of the right click (the settings of the camera, the drawings) for the place of the image on the wall.
+                Rectangle image = SwimImageRectangle();
+                controller.OnMouseRightDown(e.Location, image.Location, (float)image.Width / referenceSize.Width);
+            }
+        }
+
+        private void SwimMouseMove(Point location)
+        {
+            int button = SwimHit(location);
+            bool hover = ClientRectangle.Contains(location);
+            if (hover == swimHover && button == swimHoverButton)
+                return;
+
+            swimHover = hover;
+            swimHoverButton = button;
+            Cursor = button >= 0 ? Cursors.Hand : Cursors.Default;
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (!swimWall || (!swimHover && swimHoverButton < 0))
+                return;
+
+            swimHover = false;
+            swimHoverButton = -1;
+            Invalidate();
+        }
+        #endregion
         
         #region Drawing
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
+
+            // (Swim 2.27.0) The wall of cameras.
+            if (swimWall)
+            {
+                PaintWall(e.Graphics);
+                return;
+            }
 
             if (showRecordingIndicator)
                 DrawRecordingIndicator(e.Graphics);
@@ -228,6 +423,13 @@ namespace Kinovea.ScreenManager
         {
             base.OnMouseDown(e);
 
+            // (Swim 2.27.0) On the wall of cameras: the buttons over the image and the menu of the right click only.
+            if (swimWall)
+            {
+                SwimMouseDown(e);
+                return;
+            }
+
             if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Middle)
                 OnMouseLeftDown(e);
             else if (e.Button == MouseButtons.Right)
@@ -237,6 +439,14 @@ namespace Kinovea.ScreenManager
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+
+            // (Swim 2.27.0) On the wall of cameras the mouse shows the buttons of the image (and does not take the keyboard).
+            if (swimWall)
+            {
+                SwimMouseMove(e.Location);
+                return;
+            }
+
             this.Focus();
 
             if (controller.Bitmap == null)
@@ -270,7 +480,7 @@ namespace Kinovea.ScreenManager
         {
             base.OnMouseUp(e);
             
-            if(controller.Bitmap == null)
+            if(controller.Bitmap == null || swimWall)
                 return;
 
             imageManipulator.End();
@@ -294,6 +504,16 @@ namespace Kinovea.ScreenManager
         
         protected override void OnDoubleClick(EventArgs e)
         {
+            // (Swim 2.27.0) On the wall of cameras: the camera alone on the wall, or all the cameras back (not on its buttons).
+            if (swimWall)
+            {
+                base.OnDoubleClick(e);
+                if (SwimHit(PointToClient(Control.MousePosition)) < 0 && SwimSoloAsked != null)
+                    SwimSoloAsked(this, EventArgs.Empty);
+
+                return;
+            }
+
             if(controller.Bitmap == null)
                 return;
                 
@@ -315,7 +535,7 @@ namespace Kinovea.ScreenManager
         
         private void Viewport_MouseWheel(object sender, MouseEventArgs e)
         {
-            if(controller.Bitmap == null)
+            if(controller.Bitmap == null || swimWall)
                 return;
                 
             if ((ModifierKeys & Keys.Control) == Keys.Control)

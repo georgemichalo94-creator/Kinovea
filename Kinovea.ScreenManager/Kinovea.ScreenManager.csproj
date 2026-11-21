@@ -1122,6 +1122,10 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Hud.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
     <Compile Include="SwimAnalysis\SwimCalibration.cs" />
+    <Compile Include="SwimAnalysis\SwimCaptureWall.cs" />
+    <Compile Include="SwimAnalysis\SwimCaptureWallPanels.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
     <Compile Include="SwimAnalysis\SwimFiles.cs" />
     <Compile Include="SwimAnalysis\SwimTechCompare.cs" />
