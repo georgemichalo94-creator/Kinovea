@@ -124,6 +124,9 @@ namespace Kinovea.ScreenManager
                 bool wide = r.Width > r.Height * 2.3f;
                 float s = Math.Max(1f, scale) * Math.Max(0.8f, Math.Min(1.45f, wide ? r.Height / 230f : Math.Min(r.Width / 380f, r.Height / 300f)));
                 float pad = 18 * s;
+
+                // The fonts (in points, which already follow the DPI) only with the size of the panel.
+                float fs = s / Math.Max(1f, scale);
                 SwimTheme.Brackets(g, RectangleF.Inflate(r, -6 * s, -6 * s), SwimTheme.Accent, 0.55f);
 
                 RectangleF state, rows;
@@ -141,7 +144,7 @@ namespace Kinovea.ScreenManager
                     rows = RectangleF.Empty;
                 }
 
-                float bottom = DrawState(g, state, list, wide, s);
+                float bottom = DrawState(g, state, list, wide, s, fs);
                 if (!wide)
                 {
                     float hintHeight = 22 * s;
@@ -151,10 +154,10 @@ namespace Kinovea.ScreenManager
                         g.DrawLine(line, r.Left + pad, bottom + 5 * s, r.Right - pad, bottom + 5 * s);
 
                     if (withHint)
-                        DrawHint(g, new RectangleF(r.Left + pad, r.Bottom - pad - hintHeight + 4 * s, r.Width - 2 * pad, hintHeight), s);
+                        DrawHint(g, new RectangleF(r.Left + pad, r.Bottom - pad - hintHeight + 4 * s, r.Width - 2 * pad, hintHeight), fs);
                 }
 
-                DrawRows(g, rows, list, s);
+                DrawRows(g, rows, list, s, fs);
             }
             catch (Exception e)
             {
@@ -168,7 +171,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The title and the state of all the cameras; returns the bottom of what was drawn.</summary>
-        private static float DrawState(Graphics g, RectangleF r, List<SwimWallCamera> list, bool wide, float s)
+        private static float DrawState(Graphics g, RectangleF r, List<SwimWallCamera> list, bool wide, float s, float fs)
         {
             int loaded = list.Count(c => c.Loaded);
             int streaming = list.Count(c => c.Loaded && c.Connected && c.Grabbing && c.Fps > 0);
@@ -177,7 +180,7 @@ namespace Kinovea.ScreenManager
             bool paused = loaded > 0 && list.Where(c => c.Loaded).All(c => !c.Grabbing);
 
             float y = r.Top;
-            Font title = SwimCaptureWall.Display(9.5f * s);
+            Font title = SwimCaptureWall.Display(9.5f * fs);
             using (SolidBrush accent = new SolidBrush(SwimTheme.Accent))
                 SwimTheme.Tracked(g, SwimLang.Upper(SwimLang.T("Ζωντανή εικόνα")), title, accent, r.Left, y);
 
@@ -230,7 +233,7 @@ namespace Kinovea.ScreenManager
                 sub = SwimLang.F($"{streaming} από {loaded} κάμερες με εικόνα");
             }
 
-            Font labelFont = SwimCaptureWall.Display(10f * s);
+            Font labelFont = SwimCaptureWall.Display(10f * fs);
             float dot = 9 * s;
             float labelHeight = labelFont.GetHeight(g);
             using (SolidBrush brush = new SolidBrush(labelColor))
@@ -251,24 +254,24 @@ namespace Kinovea.ScreenManager
             }
 
             y += labelHeight + 2 * s;
-            Font big = SwimCaptureWall.FontOf(SwimTheme.LightFamily, (wide ? 30f : 32f) * s);
+            Font big = SwimCaptureWall.FontOf(SwimTheme.LightFamily, (wide ? 30f : 32f) * fs);
             SwimTheme.GlowText(g, value, big, valueColor, glow, new PointF(r.Left - 3 * s, y), recording ? 1f : 0.35f);
             y += big.GetHeight(g) + 2 * s;
 
-            Font subFont = SwimCaptureWall.Display(9.5f * s);
+            Font subFont = SwimCaptureWall.Display(9.5f * fs);
             using (SolidBrush brush = new SolidBrush(!recording && loaded > 0 && streaming < loaded ? SwimTheme.Amber : SwimTheme.Dim))
             using (StringFormat format = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
                 g.DrawString(sub, subFont, brush, new RectangleF(r.Left, y, Math.Max(10, r.Width), subFont.GetHeight(g) + 2), format);
 
             y += subFont.GetHeight(g);
             if (wide && r.Bottom - y > 30 * s)
-                DrawHint(g, new RectangleF(r.Left, r.Bottom - 20 * s, r.Width, 20 * s), s);
+                DrawHint(g, new RectangleF(r.Left, r.Bottom - 20 * s, r.Width, 20 * s), fs);
 
             return y;
         }
 
         /// <summary>One line per camera: its number, its name and its state, in one or two columns.</summary>
-        private static void DrawRows(Graphics g, RectangleF r, List<SwimWallCamera> list, float s)
+        private static void DrawRows(Graphics g, RectangleF r, List<SwimWallCamera> list, float s, float fs)
         {
             if (list.Count == 0 || r.Width < 60 || r.Height < 14)
                 return;
@@ -289,18 +292,18 @@ namespace Kinovea.ScreenManager
 
                 int line = i % perColumn;
                 RectangleF row = new RectangleF(r.Left + column * columnWidth + (column > 0 ? 10 * s : 0), r.Top + line * rowHeight, columnWidth - (column > 0 ? 10 * s : 0), rowHeight);
-                DrawRow(g, row, list[i], rs);
+                DrawRow(g, row, list[i], rs, fs * rs / s);
             }
         }
 
-        private static void DrawRow(Graphics g, RectangleF row, SwimWallCamera camera, float s)
+        private static void DrawRow(Graphics g, RectangleF row, SwimWallCamera camera, float s, float fs)
         {
             float box = Math.Min(row.Height - 4 * s, 20 * s);
             float cy = row.Top + row.Height / 2f;
             RectangleF square = new RectangleF(row.Left, cy - box / 2f, box, box);
-            Font numberFont = SwimCaptureWall.Display(9.5f * s);
-            Font font = SwimCaptureWall.Display(10f * s);
-            Font small = SwimCaptureWall.Display(9f * s);
+            Font numberFont = SwimCaptureWall.Display(9.5f * fs);
+            Font font = SwimCaptureWall.Display(10f * fs);
+            Font small = SwimCaptureWall.Display(9f * fs);
 
             SwimTheme.FillRounded(g, camera.Loaded ? SwimTheme.AccentDark : SwimTheme.Raised, square, 3 * s);
             using (SolidBrush brush = new SolidBrush(camera.Loaded ? SwimTheme.AccentPale : SwimTheme.Faint))
@@ -376,9 +379,9 @@ namespace Kinovea.ScreenManager
                 g.DrawString(name, font, brush, new RectangleF(nameLeft, row.Top, Math.Max(10, x - nameLeft - 6 * s), row.Height), format);
         }
 
-        private static void DrawHint(Graphics g, RectangleF r, float s)
+        private static void DrawHint(Graphics g, RectangleF r, float fs)
         {
-            Font font = SwimCaptureWall.Display(8.5f * s);
+            Font font = SwimCaptureWall.Display(8.5f * fs);
             using (SolidBrush brush = new SolidBrush(SwimTheme.Faint))
             using (StringFormat format = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
                 g.DrawString(SwimLang.T("Διπλό κλικ σε μια κάμερα: μόνη της σε όλη την οθόνη"), font, brush, r, format);
@@ -565,8 +568,8 @@ namespace Kinovea.ScreenManager
                 float height = Math.Min(32 * s, r.Height - 10 * s);
                 float top = r.Top + (r.Height - height) / 2f;
                 float x = r.Left + 14 * s;
-                Font font = SwimCaptureWall.Display(10f * s);
-                Font caption = SwimCaptureWall.Display(8.5f * s);
+                Font font = SwimCaptureWall.Display(10f);
+                Font caption = SwimCaptureWall.Display(8.5f);
 
                 string all = SwimLang.Upper(SwimLang.T("Όλες οι κάμερες"));
                 float captionWidth = SwimTheme.TrackedWidth(g, all, caption);

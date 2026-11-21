@@ -352,13 +352,16 @@ namespace Kinovea.ScreenManager
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.CompositingQuality = CompositingQuality.HighQuality;
 
+                // Sizes in pixels follow the DPI and the size of the image; the sizes of the fonts (in points) only the size of the image,
+                // the points already follow the DPI.
                 float s = OverlayScale(image, scale);
+                float fs = s / Math.Max(1f, scale);
                 bool recording = status == RecordingStatus.Recording || camera.Recording;
                 bool paused = !recording && status == RecordingStatus.Paused;
                 bool empty = !camera.Loaded || status == RecordingStatus.Disconnected;
 
                 if (!hasImage)
-                    PaintWaiting(g, image, camera, empty, paused, s);
+                    PaintWaiting(g, image, camera, empty, paused, s, fs);
 
                 if (hasImage && recording)
                     PaintRecordingFrame(g, image, progress, s);
@@ -367,12 +370,12 @@ namespace Kinovea.ScreenManager
                 Color bracket = recording ? SwimTheme.Red : SwimTheme.Accent;
                 SwimTheme.Brackets(g, inner, bracket, hover ? 0.95f : (recording ? 0.85f : 0.45f));
 
-                PaintBadge(g, image, camera, s);
+                PaintBadge(g, image, camera, s, fs);
                 if (!empty)
-                    PaintState(g, image, camera, recording, paused, hasImage, s);
+                    PaintState(g, image, camera, recording, paused, hasImage, s, fs);
 
                 if (hover && !empty)
-                    PaintButtons(g, image, hoverButton, solo, recording, scale, s);
+                    PaintButtons(g, image, hoverButton, solo, recording, scale, s, fs);
             }
             catch (Exception e)
             {
@@ -387,7 +390,7 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private static void PaintWaiting(Graphics g, Rectangle image, SwimWallCamera camera, bool empty, bool paused, float s)
+        private static void PaintWaiting(Graphics g, Rectangle image, SwimWallCamera camera, bool empty, bool paused, float s, float fs)
         {
             using (LinearGradientBrush back = new LinearGradientBrush(image, SwimTheme.Surface, SwimTheme.Back, LinearGradientMode.Vertical))
                 g.FillRectangle(back, image);
@@ -401,8 +404,8 @@ namespace Kinovea.ScreenManager
 
             string number = camera.Number > 0 ? camera.Number.ToString(CultureInfo.InvariantCulture) : "";
             string title = empty ? SwimLang.T("Χωρίς κάμερα") : (paused ? SwimLang.T("Σε παύση") : SwimLang.T("Σύνδεση…"));
-            Font big = FontOf(SwimTheme.LightFamily, Math.Min(64f, Math.Max(22f, image.Height / 5.5f)));
-            Font label = Display(10f * s);
+            Font big = FontOf(SwimTheme.LightFamily, Math.Min(48f, Math.Max(18f, image.Height / 9f / Math.Max(1f, s / fs))));
+            Font label = Display(10f * fs);
             SizeF numberSize = string.IsNullOrEmpty(number) ? SizeF.Empty : g.MeasureString(number, big);
             float labelWidth = SwimTheme.TrackedWidth(g, SwimLang.Upper(title), label);
             float total = numberSize.Height * 0.9f + 8 * s + label.GetHeight(g);
@@ -434,14 +437,14 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private static void PaintBadge(Graphics g, Rectangle image, SwimWallCamera camera, float s)
+        private static void PaintBadge(Graphics g, Rectangle image, SwimWallCamera camera, float s, float fs)
         {
             float x = image.Left + 12 * s, y = image.Top + 12 * s;
             float box = 26 * s;
             string number = camera.Number > 0 ? camera.Number.ToString(CultureInfo.InvariantCulture) : "·";
             string name = string.IsNullOrEmpty(camera.Name) ? "" : camera.Name;
-            Font numberFont = Display(12.5f * s);
-            Font nameFont = Display(10.5f * s);
+            Font numberFont = Display(12.5f * fs);
+            Font nameFont = Display(10.5f * fs);
 
             float nameWidth = 0;
             if (name.Length > 0)
@@ -466,11 +469,11 @@ namespace Kinovea.ScreenManager
                 g.DrawString(number, numberFont, brush, new RectangleF(square.Left, square.Top + 0.5f * s, square.Width, square.Height), format);
         }
 
-        private static void PaintState(Graphics g, Rectangle image, SwimWallCamera camera, bool recording, bool paused, bool hasImage, float s)
+        private static void PaintState(Graphics g, Rectangle image, SwimWallCamera camera, bool recording, bool paused, bool hasImage, float s, float fs)
         {
             float right = image.Right - 12 * s, y = image.Top + 12 * s;
             float height = 26 * s;
-            Font font = Display(10.5f * s);
+            Font font = Display(10.5f * fs);
             string text;
             Color fill, ink, dot;
             if (recording)
@@ -531,7 +534,7 @@ namespace Kinovea.ScreenManager
             if (camera.Drops > 0 && !camera.OnCamera)
             {
                 string lost = string.Format(CultureInfo.CurrentCulture, "{0} {1}", camera.Drops, SwimLang.Upper(SwimLang.T(camera.Drops == 1 ? "χαμένο καρέ" : "χαμένα καρέ")));
-                Font small = Display(9f * s);
+                Font small = Display(9f * fs);
                 float width = g.MeasureString(lost, small).Width + 16 * s;
                 RectangleF line = new RectangleF(right - width, chip.Bottom + 5 * s, width, 21 * s);
                 SwimTheme.FillRounded(g, Color.FromArgb(225, SwimTheme.AmberDark), line, 4 * s);
@@ -541,7 +544,7 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private static void PaintButtons(Graphics g, Rectangle image, int hoverButton, bool solo, bool recording, float scale, float s)
+        private static void PaintButtons(Graphics g, Rectangle image, int hoverButton, bool solo, bool recording, float scale, float s, float fs)
         {
             Rectangle[] places = Buttons(image, scale);
             for (int i = 0; i < places.Length; i++)
@@ -565,7 +568,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             string label = ButtonLabel(hoverButton, solo, recording);
-            Font font = Display(10f * s);
+            Font font = Display(10f * fs);
             float width = g.MeasureString(label, font).Width + 18 * s;
             RectangleF plate = new RectangleF(places[0].Left - 8 * s - width, places[0].Top + (places[0].Height - 24 * s) / 2f, width, 24 * s);
             if (plate.Left < image.Left + 4)
