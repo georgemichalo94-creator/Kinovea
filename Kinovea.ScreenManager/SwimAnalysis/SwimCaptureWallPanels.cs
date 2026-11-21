@@ -121,8 +121,11 @@ namespace Kinovea.ScreenManager
                         g.DrawLine(scan, r.Left + 1, y, r.Right - 1, y);
                 }
 
+                // Its size from its shape: wide (below the images), tall and narrow (beside them), or about the shape of an image.
                 bool wide = r.Width > r.Height * 2.3f;
-                float s = Math.Max(1f, scale) * Math.Max(0.8f, Math.Min(1.45f, wide ? r.Height / 230f : Math.Min(r.Width / 380f, r.Height / 300f)));
+                bool tall = r.Height > r.Width * 1.6f;
+                float size = wide ? r.Height / 230f : (tall ? r.Width / 290f : Math.Min(r.Width / 380f, r.Height / 300f));
+                float s = Math.Max(1f, scale) * Math.Max(0.8f, Math.Min(1.45f, size));
                 float pad = 18 * s;
 
                 // The fonts (in points, which already follow the DPI) only with the size of the panel.
@@ -198,7 +201,7 @@ namespace Kinovea.ScreenManager
             Color labelColor, valueColor, glow;
             if (recording)
             {
-                label = SwimLang.T("Εγγραφή");
+                label = SwimLang.T("Γίνεται εγγραφή");
                 labelColor = SwimTheme.Red;
                 value = SwimCaptureWall.Clock(seconds, true);
                 valueColor = SwimTheme.Text;

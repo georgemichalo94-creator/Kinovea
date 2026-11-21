@@ -86,8 +86,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The least room for the live panel at 96 DPI: below the images (height) and beside them (width).</summary>
         public const int InfoBelowMinimum = 110, InfoSideMinimum = 220;
 
-        /// <summary>The highest the live panel goes below the images, as a share of the height of an image.</summary>
+        /// <summary>The highest the live panel goes below the images, as a share of the height of an image, and at most (96 DPI).</summary>
         public const double InfoBelowShare = 0.6;
+        public const int InfoBelowMaximum = 240;
 
         /// <summary>The state of a camera is read again this often for its image (the stream draws it many times per second).</summary>
         public const int StateMilliseconds = 250;
@@ -212,7 +213,7 @@ namespace Kinovea.ScreenManager
                 else if (area.Height - blockHeight >= below)
                 {
                     layout.InfoPlace = "below";
-                    int height = Math.Min(area.Height - blockHeight, Math.Max(below, (int)Math.Round(image * InfoBelowShare)));
+                    int height = Math.Min(area.Height - blockHeight, Math.Max(below, Math.Min((int)Math.Round(InfoBelowMaximum * scale), (int)Math.Round(image * InfoBelowShare))));
                     info = new Size(blockWidth, height);
                     groupHeight += height;
                 }
@@ -403,7 +404,7 @@ namespace Kinovea.ScreenManager
             }
 
             string number = camera.Number > 0 ? camera.Number.ToString(CultureInfo.InvariantCulture) : "";
-            string title = empty ? SwimLang.T("Χωρίς κάμερα") : (paused ? SwimLang.T("Σε παύση") : SwimLang.T("Σύνδεση…"));
+            string title = empty ? SwimLang.T("Χωρίς κάμερα") : (paused ? SwimLang.T("Σε παύση") : SwimLang.T("Σύνδεση με την κάμερα"));
             Font big = FontOf(SwimTheme.LightFamily, Math.Min(48f, Math.Max(18f, image.Height / 9f / Math.Max(1f, s / fs))));
             Font label = Display(10f * fs);
             SizeF numberSize = string.IsNullOrEmpty(number) ? SizeF.Empty : g.MeasureString(number, big);
@@ -422,7 +423,7 @@ namespace Kinovea.ScreenManager
 
         private static void PaintRecordingFrame(Graphics g, Rectangle image, float progress, float s)
         {
-            float width = Math.Max(2f, 3f * s);
+            float width = Math.Max(2f, 2.5f * s);
             using (Pen pen = new Pen(Color.FromArgb(230, SwimTheme.Red), width))
                 g.DrawRectangle(pen, image.Left + width / 2f, image.Top + width / 2f, image.Width - width, image.Height - width);
 

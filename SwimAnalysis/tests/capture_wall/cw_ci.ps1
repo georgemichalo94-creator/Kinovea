@@ -90,7 +90,7 @@ Check ((Rows $l3) -eq '2,1' -and $l3.InfoPlace -eq 'slot' -and (Joined $l3 1880 
 $l2 = L 1880 900 @($wide, $wide) $true (-1)
 $c2 = @($l2.Cells)
 Check ((Rows $l2) -eq '2' -and $l2.InfoPlace -eq 'below' -and (Joined $l2 1880 900) -eq '' -and $l2.Info.Top -eq $c2[0].Bottom -and $l2.Info.Width -eq ($c2[1].Right - $c2[0].Left)) ('two cameras side by side, the live panel below (' + (Rows $l2) + ' ' + $l2.InfoPlace + ' ' + $l2.Info + ')')
-Check ($l2.Info.Height -ge 110 -and $l2.Info.Height -le [int]($c2[0].Height * 0.6) + 1) ('the panel below at most 0.6 of an image high (' + $l2.Info.Height + ')')
+Check ($l2.Info.Height -ge 110 -and $l2.Info.Height -le 240) ('the panel below at most 240 px high (' + $l2.Info.Height + ')')
 $tight = L 1600 900 @($wide, $wide, $wide, $wide) $true (-1)
 Check ((Rows $tight) -eq '2,2' -and $tight.Info.IsEmpty) ('no room for the live panel: the images stay as big (' + (Rows $tight) + ' ' + $tight.InfoPlace + ')')
 
@@ -237,7 +237,7 @@ try {
 # ---- The English of the new texts.
 $map = (T 'SwimLangEnglish').GetField('Map', $all).GetValue($null)
 $keys = @('Ζωντανή εικόνα', 'Έτοιμο για εγγραφή', 'Εγγραφή', 'Στοπ', 'Παύση', 'Έναρξη', 'Εναλλαγή', 'Τοίχος καμερών', 'Όλες οι κάμερες', 'Χωρίς κάμερα',
-  'Σύνδεση…', 'Σε παύση', 'Μόνη της σε όλη την οθόνη', 'Πίσω σε όλες τις κάμερες', 'Ρυθμίσεις κάμερας', 'Ρυθμίσεις κάμερας (όχι στην εγγραφή)',
+  'Σύνδεση με την κάμερα', 'Γίνεται εγγραφή', 'Σε παύση', 'Μόνη της σε όλη την οθόνη', 'Πίσω σε όλες τις κάμερες', 'Ρυθμίσεις κάμερας', 'Ρυθμίσεις κάμερας (όχι στην εγγραφή)',
   'Διπλό κλικ σε μια κάμερα: μόνη της σε όλη την οθόνη', '{0} από {1} κάμερες με εικόνα', '{0} κάμερες', 'χαμένα καρέ', 'χαμένο καρέ', 'Κενή οθόνη')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts' + ($(if ($missing.Count -gt 0) { ': missing ' + ($missing -join ' | ') } else { '' })))
