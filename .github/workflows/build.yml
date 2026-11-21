@@ -523,6 +523,16 @@ jobs:
             $a6 = Invoke-RestMethod $up6 -Method Post -Headers $headers -InFile group-cameras.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release group cameras picture::$($a6.name) $($a6.size) bytes"
           }
+          # (2.27.0) The pictures of the wall of cameras (fictional cameras), for a look.
+          if (Test-Path capture-wall) {
+            Compress-Archive -Path capture-wall\* -DestinationPath capture-wall.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'capture-wall.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up7 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=capture-wall.zip"
+            $a7 = Invoke-RestMethod $up7 -Method Post -Headers $headers -InFile capture-wall.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release capture wall pictures::$($a7.name) $($a7.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
