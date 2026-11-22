@@ -547,9 +547,8 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            // (No figure for the scale of the cycles: it fell on the lowest of the speed; the card gives the distance of the last cycle.)
             double dpsTop = DpsScale(reel.Cycles.Select(c => c.Dps));
-            Text(g, dpsTop.ToString("0.0", CultureInfo.InvariantCulture), axis, Fade(SwimTheme.Amber, 0.75f), plot.Left - 6 * k, plot.Bottom - barH,
-                StringAlignment.Far, StringAlignment.Center);
 
             // Where the swimmer is: its tag under the chart's line (the labels give way to it).
             bool showSwimmer = t >= 0 && !finished;
