@@ -442,6 +442,9 @@ namespace Kinovea.ScreenManager
                 SaveKva(finalFilename);
                 log.DebugFormat("Start signal: the horn {0:0.000} s after the start of the recording (frame {1:0.0}), the zero of the time of the video ({2} horns).",
                     seconds, swimHornFrames, after.Count);
+
+                // (2.30.0) The line of a camera under the water read again in the file, every image, from the frame of the horn in it.
+                SwimLineFromFile(finalFilename, after[0]);
             }
             catch (Exception e)
             {
@@ -505,6 +508,39 @@ namespace Kinovea.ScreenManager
         private void SwimWallPlaces_Changed()
         {
             swimPlaceCamera = null;
+        }
+
+        /// <summary>
+        /// (2.30.0) The file of the recording that ended, of a camera under the water: its line read again in the background, every image,
+        /// timed as the analysis times it (from the frame of the horn written in its companion KVA, at the images per second of the
+        /// capture), and the time and the places of the attempt of this horn replaced by those of the file.
+        /// </summary>
+        private void SwimLineFromFile(string path, DateTime horn)
+        {
+            try
+            {
+                string camera = CameraAlias;
+                if (swimPlace == null || !swimPlace.Under || string.IsNullOrEmpty(camera) || metadata == null || metadata.AverageTimeStampsPerFrame <= 0)
+                    return;
+
+                double hornFrame = metadata.TimeOrigin / (double)metadata.AverageTimeStampsPerFrame;
+                double fps = metadata.CalibrationHelper.CaptureFramesPerSecond;
+                float line = swimPlace.Line;
+                int way = swimLine != null ? swimLine.Way : 0;
+                double crossed = swimLine != null ? swimLine.Crossed : double.NaN;
+                Control owner = view;
+                SwimLineFile.ReadLater(path, hornFrame, fps, line, way, crossed, read =>
+                {
+                    if (read == null || owner == null || owner.IsDisposed || !owner.IsHandleCreated)
+                        return;
+
+                    owner.BeginInvoke((Action)(() => SwimLiveAttempts.SetExact(horn, camera, read)));
+                });
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while asking for the line of the recorded file.", e);
+            }
         }
 
         /// <summary>An image shown by this screen on the wall: to the watch of its line, with its time from the horn of the attempt.</summary>

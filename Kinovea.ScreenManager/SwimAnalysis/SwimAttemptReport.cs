@@ -595,7 +595,9 @@ namespace Kinovea.ScreenManager
 
             // How it was measured.
             Font note = SwimCaptureWall.Display(8.5f * fs);
-            string noteText = SwimLang.T("≈ από τη ζωντανή εικόνα. Ο ακριβής χρόνος ελέγχεται καρέ καρέ στην ανάλυση.");
+            // (2.30.0) Once every line was read again in its recorded file, the times are to the frame.
+            string noteText = attempt.Exact ? SwimLang.T("Οι χρόνοι από τα αρχεία των καμερών, καρέ καρέ.")
+                : SwimLang.T("≈ από τη ζωντανή εικόνα. Ο ακριβής χρόνος ελέγχεται καρέ καρέ στην ανάλυση.");
             if (attempt.Estimated)
                 noteText += " " + SwimLang.T("Η ταχύτητα με εκτίμηση της κλίμακας των καμερών.");
 

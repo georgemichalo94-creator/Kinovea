@@ -8,6 +8,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Threading;
+using Kinovea.Video;
 
 namespace Kinovea.ScreenManager
 {
@@ -539,6 +541,136 @@ namespace Kinovea.ScreenManager
         private static unsafe float Grey(byte* p)
         {
             return 0.114f * p[0] + 0.587f * p[1] + 0.299f * p[2];
+        }
+    }
+
+    /// <summary>
+    /// (Swim 2.30.0) The line of a camera read again in its recorded file once the recording stopped: every image of the file (the live
+    /// watch sees only the images shown), each timed from the horn as the analysis times it (its frame from the horn's frame, at the
+    /// images per second of the capture). The time of the line and the places of the head to the frame. One file at a time, below the
+    /// priority of the recording, so that the next attempt loses no image.
+    /// </summary>
+    public static class SwimLineFile
+    {
+        /// <summary>
+        /// Seconds read before the time of the line seen live: the water is learned while nobody passes (a swimmer at 2 m/s enters an
+        /// image of 3 m 0.75 s before its middle).
+        /// </summary>
+        public const double LeadIn = 2.5;
+
+        /// <summary>Seconds read after the time of the line seen live (the head goes on to the edge of the image).</summary>
+        public const double After = 1.0;
+
+        /// <summary>Without the line seen live: from this long before the horn to Longest seconds after it.</summary>
+        public const double Before = 0.5;
+        public const double Longest = 20.0;
+
+        private static readonly object queue = new object();
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        /// <summary>
+        /// The line of a recorded file read again in the background; 'done' gets the watch that read it (null: the file could not be read)
+        /// on the thread of the reading. 'hornFrame': the frame of the horn in the file (the frames from its first image); 'fps': the
+        /// images per second of the capture; 'way': the way the swimmer went live (0: not known); 'crossed': the time of the line live.
+        /// </summary>
+        public static void ReadLater(string path, double hornFrame, double fps, float line, int way, double crossed, Action<SwimLineWatch> done)
+        {
+            Thread thread = new Thread(() =>
+            {
+                SwimLineWatch watch = null;
+                try
+                {
+                    lock (queue)
+                        watch = Read(path, hornFrame, fps, line, way, crossed);
+                }
+                catch (Exception e)
+                {
+                    log.Error("Error while reading the line of a camera in its recorded file.", e);
+                    watch = null;
+                }
+
+                if (done != null)
+                    done(watch);
+            });
+            thread.IsBackground = true;
+            thread.Priority = ThreadPriority.BelowNormal;
+            thread.Name = "Swim line file";
+            thread.Start();
+        }
+
+        /// <summary>The line of a recorded file read again (see ReadLater); null when the file cannot be read.</summary>
+        public static SwimLineWatch Read(string path, double hornFrame, double fps, float line, int way, double crossed)
+        {
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path) || fps <= 0 || double.IsNaN(hornFrame) || hornFrame < 0)
+                return null;
+
+            VideoReader reader = null;
+            try
+            {
+                reader = VideoTypeManager.GetVideoReader(System.IO.Path.GetExtension(path));
+                if (reader == null)
+                    return null;
+
+                reader.Options = VideoOptions.Default;
+                if (reader.Open(path) != OpenVideoResult.Success)
+                    return null;
+
+                VideoInfo info = reader.Info;
+                double perFrame = info.AverageTimeStampsPerFrame;
+                if (perFrame <= 0)
+                    return null;
+
+                bool seen = !double.IsNaN(crossed);
+                double fromFrame = Math.Max(0, hornFrame + (seen ? Math.Max(-Before, crossed - LeadIn) : -Before) * fps);
+                double toFrame = hornFrame + (seen ? crossed + After : Longest) * fps;
+                long from = info.FirstTimeStamp + (long)Math.Round(fromFrame * perFrame);
+                long to = info.FirstTimeStamp + (long)Math.Round(toFrame * perFrame);
+
+                SwimLineWatch watch = new SwimLineWatch { Line = line, Direction = way };
+                int images = 0;
+                reader.BeforeFrameEnumeration();
+                try
+                {
+                    bool more = reader.MoveTo(from, from);
+                    while (true)
+                    {
+                        VideoFrame frame = reader.Current;
+                        if (frame == null || frame.Image == null || frame.Timestamp > to)
+                            break;
+
+                        double index = (frame.Timestamp - info.FirstTimeStamp) / perFrame;
+                        watch.Feed(frame.Image, (index - hornFrame) / fps);
+                        images++;
+                        if (!more)
+                            break;
+
+                        more = reader.MoveNext(0, true);
+                    }
+                }
+                finally
+                {
+                    reader.AfterFrameEnumeration();
+                }
+
+                log.DebugFormat("Line read again in its file: {0} images, line at {1:0.000} s (live {2:0.000} s), {3} places of the head.",
+                    images, watch.Crossed, crossed, watch.Samples.Count);
+                return images > 0 ? watch : null;
+            }
+            finally
+            {
+                if (reader != null)
+                {
+                    try
+                    {
+                        if (reader.Loaded)
+                            reader.Close();
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("Could not close the recorded file read for its line.", e);
+                    }
+                }
+            }
         }
     }
 }

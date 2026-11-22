@@ -212,6 +212,9 @@ namespace Kinovea.ScreenManager
         public double Crossed = double.NaN;
         public List<SwimLineSample> Samples = new List<SwimLineSample>();
 
+        /// <summary>(2.30.0) The time and the places read again in the recorded file, every image (not ≈ from the live images).</summary>
+        public bool Exact;
+
         /// <summary>The metres from the wall of the start of a place of the head in the image.</summary>
         public double Metres(float head)
         {
@@ -295,6 +298,22 @@ namespace Kinovea.ScreenManager
         public List<double> Lines
         {
             get { return Tracks.Where(t => SwimWallPlaces.Under(t.Distance)).Select(t => t.Distance).Distinct().OrderBy(d => d).ToList(); }
+        }
+
+        /// <summary>(2.30.0) Every line seen was read again in its recorded file: the times are to the frame.</summary>
+        public bool Exact
+        {
+            get
+            {
+                List<SwimLiveTrack> seen = Tracks.Where(t => SwimWallPlaces.Under(t.Distance) && !double.IsNaN(t.Crossed)).ToList();
+                return seen.Count > 0 && seen.All(t => t.Exact);
+            }
+        }
+
+        /// <summary>(2.30.0) The speeds are computed again (a line read again in its file).</summary>
+        internal void Forget()
+        {
+            speed = null;
         }
 
         /// <summary>A camera of the attempt has no measured width: its speeds are an estimate.</summary>
@@ -383,6 +402,9 @@ namespace Kinovea.ScreenManager
         public static event Action Changed;
 
         private static readonly List<SwimLiveAttempt> attempts = new List<SwimLiveAttempt>();
+
+        /// <summary>(2.30.0) Lines read again in their files before their attempt ended (by its horn), kept for its end.</summary>
+        private static readonly List<KeyValuePair<DateTime, SwimLiveTrack>> exact = new List<KeyValuePair<DateTime, SwimLiveTrack>>();
         private static readonly object locker = new object();
         private static int next = 1;
         private static SwimLiveAttempt current;
@@ -443,6 +465,9 @@ namespace Kinovea.ScreenManager
                     return null;
 
                 ended.Tracks = tracks == null ? new List<SwimLiveTrack>() : tracks.Where(t => t != null).ToList();
+                foreach (KeyValuePair<DateTime, SwimLiveTrack> read in exact.Where(p => SameHorn(p.Key, ended.Horn)).ToList())
+                    Apply(ended, read.Value);
+                exact.RemoveAll(p => SameHorn(p.Key, ended.Horn) || (DateTime.Now - p.Key).TotalMinutes > 10);
                 attempts.Add(ended);
                 next = ended.Number + 1;
                 while (attempts.Count > Max)
@@ -461,6 +486,7 @@ namespace Kinovea.ScreenManager
             lock (locker)
             {
                 attempts.Clear();
+                exact.Clear();
                 current = null;
                 next = 1;
                 report = false;
@@ -498,6 +524,60 @@ namespace Kinovea.ScreenManager
             }
 
             Raise();
+        }
+
+        /// <summary>
+        /// (2.30.0) The line of a camera read again in its recorded file: the time of its line, the places of the head and the way, to the
+        /// frame, into the attempt of that horn (kept for its end when it has not ended yet). On the thread of the window.
+        /// </summary>
+        public static void SetExact(DateTime horn, string camera, SwimLineWatch read)
+        {
+            if (read == null || string.IsNullOrEmpty(camera))
+                return;
+
+            SwimLiveTrack track = new SwimLiveTrack { Camera = camera, Crossed = read.Crossed, Way = read.Way, Samples = new List<SwimLineSample>(read.Samples) };
+            bool applied;
+            lock (locker)
+            {
+                SwimLiveAttempt attempt = attempts.LastOrDefault(a => SameHorn(a.Horn, horn));
+                if (attempt == null)
+                {
+                    exact.Add(new KeyValuePair<DateTime, SwimLiveTrack>(horn, track));
+                    return;
+                }
+
+                applied = Apply(attempt, track);
+            }
+
+            if (applied)
+                Raise();
+        }
+
+        /// <summary>A line read again into the track of its camera in an attempt (true when it changed it).</summary>
+        private static bool Apply(SwimLiveAttempt attempt, SwimLiveTrack read)
+        {
+            SwimLiveTrack track = attempt.Tracks.FirstOrDefault(t => t.Camera == read.Camera && SwimWallPlaces.Under(t.Distance));
+            if (track == null)
+                return false;
+
+            // The time of the line: the one of the file when it saw it (to the frame), else the live one stays.
+            if (!double.IsNaN(read.Crossed))
+            {
+                track.Crossed = read.Crossed;
+                track.Exact = true;
+            }
+
+            if (read.Samples.Count >= 4)
+                track.Samples = read.Samples;
+            if (read.Way != 0)
+                track.Way = read.Way;
+            attempt.Forget();
+            return true;
+        }
+
+        private static bool SameHorn(DateTime a, DateTime b)
+        {
+            return Math.Abs((a - b).TotalMilliseconds) < 1;
         }
 
         /// <summary>The best time at a distance among the attempts (NaN: none) and its attempt.</summary>

@@ -2897,6 +2897,7 @@ namespace Kinovea.ScreenManager
             { "Λίστα: {0} αθλητές, μόνο οι διεθνείς: το μητρώο δεν βρέθηκε.", "List: {0} swimmers, only the international ones: the registry was not found." },
             { "🔗 Ο σύνδεσμος είναι για {0}· ο αγώνας έμεινε {1}: δεν μπήκαν επίσημοι χρόνοι.", "🔗 The link is for {0}; the race stays {1}: no official times went in." },
             { "σύρε τη γραμμή στο σημάδι της πισίνας", "drag the line onto the mark of the pool" },
+            { "Οι χρόνοι από τα αρχεία των καμερών, καρέ καρέ.", "The times from the files of the cameras, frame by frame." },
             { "εικόνα {0:0.00} m", "image {0:0.00} m" },
             { "Κλίμακα: κλικ στο ένα σημάδι του κονταριού (δεξί κλικ: ακύρωση)", "Scale: click one mark of the pole (right click: cancel)" },
             { "Κλίμακα: κλικ στο άλλο σημάδι του κονταριού", "Scale: click the other mark of the pole" },

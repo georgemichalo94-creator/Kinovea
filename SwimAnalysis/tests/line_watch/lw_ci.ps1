@@ -169,6 +169,21 @@ public static class LineScene
         return (n * sumTX - sumT * sumX) / (n * sumTT - sumT * sumT);
     }
 
+    // (2.30.0) The images of a recorded file of a camera as PNG files for ffmpeg: a swimmer crossing the line Cross s after the horn,
+    // the horn at the frame 'hornFrame' of the file.
+    public static int WriteFrames(string folder, double fps, double hornFrame, double seconds, double v, int way, double noise, int seed)
+    {
+        Random r = new Random(seed);
+        int n = (int)Math.Round(seconds * fps);
+        for (int k = 0; k < n; k++)
+        {
+            double t = (k - hornFrame) / fps;
+            using (Bitmap bmp = ToBitmap(Render(t, v, way, 200, 40, 0.5, null, noise, r), PixelFormat.Format24bppRgb))
+                bmp.Save(System.IO.Path.Combine(folder, string.Format("f{0:00000}.png", k)), ImageFormat.Png);
+        }
+        return n;
+    }
+
     // The small grey images of the same picture in 24 and 32 bits: the largest difference.
     public static double SmallSame()
     {
@@ -233,6 +248,40 @@ Check ($same -le 1.0) ('the small grey image of 24 and 32 bit pictures: largest 
 $reset = $wp
 $reset.Reset()
 Check ([double]::IsNaN($reset.Crossed) -and $reset.Samples.Count -eq 0) 'a new attempt forgets the time and the places'
+
+# ---- (2.30.0) The line read again in a recorded file: a fictional camera of 50 images/s made by the ffmpeg of the build, the horn at
+# its frame 40.5, a swimmer at 2.2 m/s on the line 1.30 s after the horn; read as Kinovea reads a video.
+$ff = Join-Path $bin 'ffmpeg.exe'
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('swim_lw_' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+try {
+  $fps = 50.0; $hornFrame = 40.5
+  $n = [LineScene]::WriteFrames($tmp, $fps, $hornFrame, 3.6, 2.2, 1, 3, 11)
+  $video = Join-Path $tmp 'camera.avi'
+  $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  try { & $ff -nostdin -v error -framerate 50 -i (Join-Path $tmp 'f%05d.png') -c:v mjpeg -q:v 2 -y $video 2>&1 | ForEach-Object { Write-Output ('info ffmpeg: ' + $_) } } finally { $ErrorActionPreference = $old }
+  if (-not (Test-Path $video)) { Check $false 'the fictional recorded file made by ffmpeg' } else {
+    $env:PATH = $bin + ';' + $env:PATH
+    $va = [System.Reflection.Assembly]::LoadFrom((Join-Path $bin 'Kinovea.Video.dll'))
+    $fa = [System.Reflection.Assembly]::LoadFrom((Join-Path $bin 'Kinovea.Video.FFMpeg.dll'))
+    $readers = New-Object 'System.Collections.Generic.List[Type]'
+    $readers.Add($fa.GetType('Kinovea.Video.FFMpeg.VideoReaderFFMpeg', $true))
+    [void]$va.GetType('Kinovea.Video.VideoTypeManager', $true).GetMethod('LoadVideoReaders', [Type[]]@($readers.GetType())).Invoke($null, [object[]]@(,$readers))
+    $read = $a.GetType('Kinovea.ScreenManager.SwimLineFile', $true).GetMethod('Read')
+    # As after a live attempt: the line seen at about its time, the way known.
+    $w = $read.Invoke($null, [object[]]@([string]$video, [double]$hornFrame, [double]$fps, [single]0.5, [int]1, [double]1.32))
+    $e = $(if ($w -eq $null) { [double]::NaN } else { $w.Crossed - [LineScene]::Cross })
+    Check ($w -ne $null -and -not [double]::IsNaN($e) -and [Math]::Abs($e) -le 0.02) ('the line read again in the file: head on the line ' + $(if ([double]::IsNaN($e)) { 'not found' } else { '{0:+0.000;-0.000} s' -f $e }) + ' (' + $n + ' images)')
+    $places = $(if ($w -ne $null) { $w.Samples.Count } else { 0 })
+    Check ($places -ge 40) ('every image of the file: ' + $places + ' places of the head')
+    # The line not seen live: read from the horn.
+    $w2 = $read.Invoke($null, [object[]]@([string]$video, [double]$hornFrame, [double]$fps, [single]0.5, [int]0, [double]::NaN))
+    $e2 = $(if ($w2 -eq $null) { [double]::NaN } else { $w2.Crossed - [LineScene]::Cross })
+    Check ($w2 -ne $null -and -not [double]::IsNaN($e2) -and [Math]::Abs($e2) -le 0.02) ('the line not seen live, read from the horn: ' + $(if ([double]::IsNaN($e2)) { 'not found' } else { '{0:+0.000;-0.000} s' -f $e2 }))
+    $none = $read.Invoke($null, [object[]]@([string](Join-Path $tmp 'missing.avi'), [double]$hornFrame, [double]$fps, [single]0.5, [int]1, [double]1.32))
+    Check ($none -eq $null) 'a file that is not there: nothing read'
+  }
+} catch { Check $false ('the line read again in a file: ' + $_.Exception.ToString()) } finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
 
 if ($fails -gt 0) { Write-Output ('FAILED ' + $fails + ' line watch checks'); exit 1 }
 Write-Output 'all line watch checks passed'

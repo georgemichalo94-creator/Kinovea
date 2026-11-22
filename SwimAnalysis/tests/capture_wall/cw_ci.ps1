@@ -382,7 +382,8 @@ try {
   $marks = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
   $marks.Add((New-Object System.Drawing.PointF ([single]($cell.Left + $cell.Width * 0.3)), ([single]($cell.Top + $cell.Height * 0.62))))
   $mouse = New-Object System.Drawing.Point ([int]($cell.Left + $cell.Width * 0.72)), ([int]($cell.Top + $cell.Height * 0.6))
-  [void]$tWall.GetMethod('PaintPole').Invoke($null, [object[]]@($gp, $cell, $marks, $mouse, [single]1))
+  # (The objects of New-Object come wrapped for PowerShell: Invoke wants them as they are.)
+  [void]$tWall.GetMethod('PaintPole').Invoke($null, [object[]]@($gp, $cell, $marks.psobject.BaseObject, $mouse.psobject.BaseObject, [single]1))
   Check $true 'the marks of the pole drawn over an image'
 } catch { Check $false ('the marks of the pole: ' + $_.Exception.ToString()) } finally { $gp.Dispose() }
 Finish $p 'wall-5-scale.png' $scale $false $false
