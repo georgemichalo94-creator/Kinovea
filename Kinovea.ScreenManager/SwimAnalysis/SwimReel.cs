@@ -152,13 +152,13 @@ namespace Kinovea.ScreenManager
             reel.knotD.Add(0);
             foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
             {
-                double race = row.T.Value;
-                double video = double.IsNaN(row.OnVideo) ? race : row.OnVideo;
+                double raceTime = row.T.Value;
+                double video = double.IsNaN(row.OnVideo) ? raceTime : row.OnVideo;
                 int last = reel.knotT.Count - 1;
-                if (video <= reel.knotV[last] + 1e-6 || race <= reel.knotT[last] + 1e-6 || row.D <= reel.knotD[last])
+                if (video <= reel.knotV[last] + 1e-6 || raceTime <= reel.knotT[last] + 1e-6 || row.D <= reel.knotD[last])
                     continue;
 
-                reel.knotT.Add(race);
+                reel.knotT.Add(raceTime);
                 reel.knotV.Add(video);
                 reel.knotD.Add(row.D);
             }
