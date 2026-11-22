@@ -584,7 +584,67 @@ namespace Kinovea.ScreenManager
             middle.Enabled = swimPlace != null && swimPlace.Under && Math.Abs(swimPlace.Line - 0.5f) > 0.001f;
             middle.Click += (s, e) => SwimWallPlaces.SetLine(camera, 0.5f);
             place.DropDownItems.Add(middle);
+
+            // (2.29.0) The scale of the image: the two marks of a pole of known length held along the lane at the depth of the swimmer.
+            bool measured = swimPlace != null && swimPlace.Width > 0;
+            ToolStripMenuItem pole = new ToolStripMenuItem(measured
+                ? string.Format(System.Globalization.CultureInfo.InvariantCulture, SwimLang.T("Κλίμακα με κοντάρι… (τώρα: εικόνα {0:0.00} m)"), swimPlace.Width)
+                : SwimLang.T("Κλίμακα με κοντάρι…"));
+            pole.Enabled = swimPlace != null && swimPlace.Under && cameraConnected && !recording;
+            pole.Click += (s, e) =>
+            {
+                if (view != null)
+                    view.SwimMeasurePole();
+            };
+            place.DropDownItems.Add(pole);
+            if (measured)
+            {
+                ToolStripMenuItem estimate = new ToolStripMenuItem(SwimLang.T("Χωρίς κλίμακα (εκτίμηση 3 m)"));
+                estimate.Click += (s, e) => SwimWallPlaces.SetWidth(camera, 0);
+                place.DropDownItems.Add(estimate);
+            }
+
             return new ToolStripItem[] { place };
+        }
+
+        /// <summary>(2.29.0) The line of the camera dragged onto the mark of its distance in the pool.</summary>
+        public void SwimLineMoved(float line)
+        {
+            string camera = CameraAlias;
+            if (swimPlace == null || !swimPlace.Under || string.IsNullOrEmpty(camera))
+                return;
+
+            SwimWallPlaces.SetLine(camera, line);
+            log.InfoFormat("The line of a camera of the wall moved to {0:0.000} of the width of its image.", line);
+        }
+
+        /// <summary>
+        /// (2.29.0) The two marks of the pole clicked on the image of the camera: their length in metres asked (the last one first), then
+        /// the metres of the lane across the image.
+        /// </summary>
+        public void SwimPoleMeasured(PointF a, PointF b, int imageWidth)
+        {
+            string camera = CameraAlias;
+            if (swimPlace == null || !swimPlace.Under || string.IsNullOrEmpty(camera) || imageWidth <= 0)
+                return;
+
+            IWin32Window owner = view != null ? view.FindForm() : null;
+            double pixels = Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+            if (pixels < 20)
+            {
+                MessageBox.Show(owner, SwimLang.T("Τα δύο σημάδια είναι πολύ κοντά: κάνε κλικ στις δύο άκρες του κονταριού."), SwimLang.T("Κλίμακα με κοντάρι"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            double? metres = SwimPoleDialog.Ask(owner, SwimWallPlaces.PoleLength);
+            if (!metres.HasValue)
+                return;
+
+            SwimWallPlaces.PoleLength = metres.Value;
+            double width = metres.Value * imageWidth / pixels;
+            SwimWallPlaces.SetWidth(camera, width);
+            log.InfoFormat("The scale of a camera of the wall: {0:0.00} m across its image ({1:0} pixels for {2:0.00} m).", width, pixels, metres.Value);
         }
         #endregion
 
@@ -607,6 +667,7 @@ namespace Kinovea.ScreenManager
             {
                 state.Distance = swimPlace.Distance;
                 state.Line = swimPlace.Line;
+                state.Width = swimPlace.Width;
             }
 
             state.Crossed = swimLine != null ? swimLine.Crossed : double.NaN;

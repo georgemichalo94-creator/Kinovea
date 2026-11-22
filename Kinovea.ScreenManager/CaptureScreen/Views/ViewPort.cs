@@ -62,6 +62,15 @@ namespace Kinovea.ScreenManager
         private SwimWallCamera swimCamera = new SwimWallCamera();
         private int swimStateTick;
         private bool swimStateRead;
+
+        // (Swim 2.29.0) The line of a camera under the water dragged onto the mark of its distance in the pool, and the two marks of a
+        // pole clicked for the scale of its image (in pixels of the image).
+        private bool swimLineHover;
+        private bool swimLineDrag;
+        private float swimLineDragValue = float.NaN;
+        private bool swimPole;
+        private readonly List<PointF> swimPolePoints = new List<PointF>();
+        private Point? swimPoleMouse;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -167,6 +176,11 @@ namespace Kinovea.ScreenManager
             swimHover = false;
             swimHoverButton = -1;
             swimStateRead = false;
+            swimLineHover = false;
+            swimLineDrag = false;
+            swimLineDragValue = float.NaN;
+            swimPole = false;
+            swimPolePoints.Clear();
             BackColor = on ? SwimTheme.Back : Color.FromArgb(255, 44, 44, 44);
             Cursor = on ? Cursors.Default : controller.GetCursor(zoomHelper.Value);
             Invalidate();
@@ -255,7 +269,21 @@ namespace Kinovea.ScreenManager
                 controller.DrawKVA(canvas, image.Location, (float)image.Width / referenceSize.Width);
             }
 
-            SwimCaptureWall.PaintOverlay(canvas, image, SwimState(), recordingStatus, recordingStatusProgress, hasImage, swimHover, swimHoverButton, swimSolo, SwimScale);
+            // (2.29.0) The line where the mouse drags it, solid while the mouse is on it; the marks of the pole being clicked.
+            SwimWallCamera state = SwimState();
+            state.LineActive = swimLineDrag || swimLineHover;
+            if (swimLineDrag && !float.IsNaN(swimLineDragValue))
+                state.Line = swimLineDragValue;
+
+            SwimCaptureWall.PaintOverlay(canvas, image, state, recordingStatus, recordingStatusProgress, hasImage, swimHover, swimHoverButton, swimSolo, SwimScale);
+            if (swimPole)
+            {
+                List<PointF> marks = new List<PointF>();
+                foreach (PointF p in swimPolePoints)
+                    marks.Add(SwimToViewport(p, image));
+                SwimCaptureWall.PaintPole(canvas, image, marks, swimPoleMouse, SwimScale);
+            }
+
             toaster.Draw(canvas);
         }
 
@@ -265,12 +293,40 @@ namespace Kinovea.ScreenManager
             if (e.Button == MouseButtons.Left)
             {
                 controller.SwimActivate();
+
+                // (2.29.0) The marks of the pole first, then the line taken to be dragged (the buttons stay over it).
+                if (swimPole)
+                {
+                    SwimPoleClick(e.Location);
+                    return;
+                }
+
                 int button = SwimHit(e.Location);
+                if (button < 0 && SwimOnLine(e.Location))
+                {
+                    swimLineDrag = true;
+                    swimLineDragValue = SwimLineAt(e.Location.X);
+                    Cursor = Cursors.SizeWE;
+                    Invalidate();
+                    return;
+                }
+
                 if (button == SwimCaptureWall.ButtonConfigure && SwimRecording(SwimState()))
                     return;
 
                 if (button >= 0 && SwimButtonClicked != null)
                     SwimButtonClicked(button);
+            }
+            else if (e.Button == MouseButtons.Right && (swimPole || swimLineDrag))
+            {
+                // (2.29.0) A right click stops the measure of the pole or the drag of the line (the line stays where it was).
+                if (swimPole)
+                    SwimPoleEnd();
+
+                swimLineDrag = false;
+                swimLineDragValue = float.NaN;
+                Cursor = Cursors.Default;
+                Invalidate();
             }
             else if (e.Button == MouseButtons.Right && controller.Bitmap != null && referenceSize.Width > 0)
             {
@@ -282,25 +338,132 @@ namespace Kinovea.ScreenManager
 
         private void SwimMouseMove(Point location)
         {
+            // (2.29.0) The line follows the mouse while it is dragged; the line of the pole from its first mark to the mouse.
+            if (swimLineDrag)
+            {
+                swimLineDragValue = SwimLineAt(location.X);
+                Invalidate();
+                return;
+            }
+
+            if (swimPole)
+            {
+                swimPoleMouse = location;
+                Cursor = Cursors.Cross;
+                if (swimPolePoints.Count > 0)
+                    Invalidate();
+                return;
+            }
+
             int button = SwimHit(location);
+            bool onLine = button < 0 && SwimOnLine(location);
             bool hover = ClientRectangle.Contains(location);
-            if (hover == swimHover && button == swimHoverButton)
+            if (hover == swimHover && button == swimHoverButton && onLine == swimLineHover)
                 return;
 
             swimHover = hover;
             swimHoverButton = button;
-            Cursor = button >= 0 ? Cursors.Hand : Cursors.Default;
+            swimLineHover = onLine;
+            Cursor = button >= 0 ? Cursors.Hand : (onLine ? Cursors.SizeWE : Cursors.Default);
             Invalidate();
+        }
+
+        /// <summary>(2.29.0) The line of the camera was dragged to a new place: a part of the width of the image.</summary>
+        public event Action<float> SwimLineMoved;
+
+        /// <summary>(2.29.0) The two marks of the pole were clicked: in pixels of the image, with the width of the image in pixels.</summary>
+        public event Action<PointF, PointF, int> SwimPoleMeasured;
+
+        /// <summary>(2.29.0) The two marks of a pole are clicked next on the image, for its scale; a right click stops it.</summary>
+        public void SwimMeasurePole()
+        {
+            if (!swimWall || controller.Bitmap == null || referenceSize.Width <= 0)
+                return;
+
+            swimPole = true;
+            swimPolePoints.Clear();
+            swimPoleMouse = null;
+            swimLineDrag = false;
+            Cursor = Cursors.Cross;
+            Invalidate();
+        }
+
+        private void SwimPoleEnd()
+        {
+            swimPole = false;
+            swimPolePoints.Clear();
+            swimPoleMouse = null;
+            Cursor = Cursors.Default;
+            Invalidate();
+        }
+
+        /// <summary>A place of the viewport in pixels of the image.</summary>
+        private PointF SwimToImage(Point location, Rectangle image)
+        {
+            return new PointF((location.X - image.Left) * (float)referenceSize.Width / Math.Max(1, image.Width),
+                (location.Y - image.Top) * (float)referenceSize.Height / Math.Max(1, image.Height));
+        }
+
+        /// <summary>A place in pixels of the image in the viewport.</summary>
+        private PointF SwimToViewport(PointF point, Rectangle image)
+        {
+            return new PointF(image.Left + point.X * image.Width / Math.Max(1f, referenceSize.Width),
+                image.Top + point.Y * image.Height / Math.Max(1f, referenceSize.Height));
+        }
+
+        private void SwimPoleClick(Point location)
+        {
+            Rectangle image = SwimImageRectangle();
+            if (!image.Contains(location) || referenceSize.Width <= 0 || referenceSize.Height <= 0)
+                return;
+
+            swimPolePoints.Add(SwimToImage(location, image));
+            if (swimPolePoints.Count < 2)
+            {
+                Invalidate();
+                return;
+            }
+
+            PointF a = swimPolePoints[0], b = swimPolePoints[1];
+            int width = referenceSize.Width;
+            SwimPoleEnd();
+            Action<PointF, PointF, int> measured = SwimPoleMeasured;
+            if (measured != null)
+                measured(a, b, width);
+        }
+
+        /// <summary>
+        /// (2.29.0) The line of the camera can be taken from this place: on it or its chip, a camera under the water with an image, not
+        /// while it records.
+        /// </summary>
+        private bool SwimOnLine(Point location)
+        {
+            SwimWallCamera state = SwimState();
+            if (!state.Loaded || !SwimWallPlaces.Under(state.Distance) || SwimRecording(state) || controller.Bitmap == null || referenceSize.Width <= 0)
+                return false;
+
+            Rectangle image = SwimImageRectangle();
+            float s = SwimCaptureWall.OverlayScale(image, SwimScale);
+            float x = image.Left + Math.Max(0.02f, Math.Min(0.98f, state.Line)) * image.Width;
+            return Math.Abs(location.X - x) <= 9 * s && location.Y >= image.Top + 40 * s && location.Y <= image.Bottom - 20 * s;
+        }
+
+        /// <summary>(2.29.0) The place of the line for a place of the mouse: a part of the width of the image.</summary>
+        private float SwimLineAt(int x)
+        {
+            Rectangle image = SwimImageRectangle();
+            return Math.Max(0.02f, Math.Min(0.98f, (x - image.Left) / (float)Math.Max(1, image.Width)));
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            if (!swimWall || (!swimHover && swimHoverButton < 0))
+            if (!swimWall || (!swimHover && swimHoverButton < 0 && !swimLineHover))
                 return;
 
             swimHover = false;
             swimHoverButton = -1;
+            swimLineHover = false;
             Invalidate();
         }
         #endregion
@@ -479,6 +642,23 @@ namespace Kinovea.ScreenManager
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+
+            // (Swim 2.29.0) The line dragged on the wall of cameras goes to its new place.
+            if (swimWall && swimLineDrag)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    swimLineDrag = false;
+                    float line = swimLineDragValue;
+                    swimLineDragValue = float.NaN;
+                    Action<float> moved = SwimLineMoved;
+                    if (!float.IsNaN(line) && moved != null)
+                        moved(line);
+                    Invalidate();
+                }
+
+                return;
+            }
             
             if(controller.Bitmap == null || swimWall)
                 return;
@@ -508,7 +688,8 @@ namespace Kinovea.ScreenManager
             if (swimWall)
             {
                 base.OnDoubleClick(e);
-                if (SwimHit(PointToClient(Control.MousePosition)) < 0 && SwimSoloAsked != null)
+                Point mouse = PointToClient(Control.MousePosition);
+                if (!swimPole && SwimHit(mouse) < 0 && !SwimOnLine(mouse) && SwimSoloAsked != null)
                     SwimSoloAsked(this, EventArgs.Empty);
 
                 return;

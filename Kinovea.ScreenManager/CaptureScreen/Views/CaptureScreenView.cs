@@ -210,6 +210,25 @@ namespace Kinovea.ScreenManager
             viewport.SwimSoloAsked += (s, e) => SwimSoloAsked?.Invoke(this, EventArgs.Empty);
             viewport.SwimAspectChanged += (s, e) => SwimAspectChanged?.Invoke(this, EventArgs.Empty);
             viewport.SwimButtonClicked += Viewport_SwimButtonClicked;
+
+            // (Swim 2.29.0) The line dragged onto its mark in the pool, the two marks of the pole for the scale of the image.
+            viewport.SwimLineMoved += line =>
+            {
+                if (presenter != null)
+                    presenter.SwimLineMoved(line);
+            };
+            viewport.SwimPoleMeasured += (a, b, width) =>
+            {
+                if (presenter != null)
+                    presenter.SwimPoleMeasured(a, b, width);
+            };
+        }
+
+        /// <summary>(Swim 2.29.0) The two marks of a pole are clicked next on the image of the camera (its scale).</summary>
+        public void SwimMeasurePole()
+        {
+            if (viewport != null)
+                viewport.SwimMeasurePole();
         }
 
         /// <summary>

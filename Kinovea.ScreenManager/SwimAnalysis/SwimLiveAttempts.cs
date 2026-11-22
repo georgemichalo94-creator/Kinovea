@@ -51,6 +51,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The metres of the lane across an image not measured (a camera on the side wall of the pool, near the lane).</summary>
         public const double EstimatedWidth = 3.0;
 
+        /// <summary>(2.29.0) The length of the pole said last (metres between its two marks), the first answer of the next measure.</summary>
+        public static double PoleLength = 2.0;
+
         /// <summary>A place of a camera changed (its distance, its line or its width).</summary>
         public static event Action Changed;
 

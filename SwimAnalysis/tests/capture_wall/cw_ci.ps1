@@ -361,6 +361,38 @@ $tAttempts.GetMethod('Begin').Invoke($null, [object[]]@([DateTime]::Now.AddSecon
 $p = Picture 'wall-5-lines.png' 1880 900 $lines $five (-1) (-1) (-1) $true
 Finish $p 'wall-5-lines.png' $lines $true $false
 $hornField.SetValue($null, [DateTime]::MinValue)
+
+# ---- (2.29.0) The line dragged onto the mark of its distance and the scale of an image from a pole (fictional cameras).
+$lineLabel = $tWall.GetMethod('LineLabel')
+$c = Cam 3 'Κάμερα 3' $true $true $true $false 50 0 0
+$c.Distance = 5
+Check (($lineLabel.Invoke($null, [object[]]@($c))) -eq '5 m') 'the chip of a line: its distance'
+$c.Width = 2.84
+Check (($lineLabel.Invoke($null, [object[]]@($c))) -eq '5 m · εικόνα 2.84 m') 'the chip of a measured line: the metres across its image'
+$c.LineActive = $true
+Check (($lineLabel.Invoke($null, [object[]]@($c))) -eq '5 m · σύρε τη γραμμή στο σημάδι της πισίνας') 'the chip of a line under the mouse: how to move it'
+$scale = @(0..4 | ForEach-Object { Cam ($_ + 1) $names[$_] $true $true $true $false 50 0 0 })
+for ($i = 0; $i -lt 5; $i++) { $scale[$i].Distance = $distances[$i] }
+$scale[1].LineActive = $true; $scale[1].Line = [single]0.42
+$scale[3].Width = 2.84
+$p = Picture 'wall-5-scale.png' 1880 900 $scale $five (-1) (-1) (-1) $false
+$cell = @($p.Layout.Cells)[4]
+$gp = [System.Drawing.Graphics]::FromImage($p.Bitmap)
+try {
+  $marks = New-Object 'System.Collections.Generic.List[System.Drawing.PointF]'
+  $marks.Add((New-Object System.Drawing.PointF ([single]($cell.Left + $cell.Width * 0.3)), ([single]($cell.Top + $cell.Height * 0.62))))
+  $mouse = New-Object System.Drawing.Point ([int]($cell.Left + $cell.Width * 0.72)), ([int]($cell.Top + $cell.Height * 0.6))
+  [void]$tWall.GetMethod('PaintPole').Invoke($null, [object[]]@($gp, $cell, $marks, $mouse, [single]1))
+  Check $true 'the marks of the pole drawn over an image'
+} catch { Check $false ('the marks of the pole: ' + $_.Exception.ToString()) } finally { $gp.Dispose() }
+Finish $p 'wall-5-scale.png' $scale $false $false
+$aw = Attempt 4 1.0 0.0 0.64
+Check (-not $aw.Estimated) 'an attempt whose cameras are measured: its speed is not an estimate'
+$aw.Tracks[2].Width = 0
+Check ($aw.Estimated) 'a camera under the water not measured: the speed is said to be an estimate'
+$poleLength = $tPlaces.GetField('PoleLength')
+Check ($poleLength -ne $null -and [Math]::Abs([double]$poleLength.GetValue($null) - 2.0) -lt 1e-9) 'the pole: 2 m until said otherwise'
+
 $tAttempts.GetMethod('Clear').Invoke($null, $null)
 Check (-not $tAttempts.GetProperty('Report').GetValue($null) -and $tAttempts.GetProperty('List').GetValue($null).Count -eq 0) 'a new swimmer: the attempts go'
 
@@ -374,7 +406,10 @@ $keys = @('Ζωντανή εικόνα', 'Έτοιμο για εγγραφή', '
   'Αναφορά μετά την προσπάθεια', 'Προσπάθεια {0}', 'εκκίνηση έως τα {0}', 'Μέγιστη ταχύτητα', 'Αντίδραση', 'Πίσω στις κάμερες', 'Νέος κολυμβητής',
   'Ταχύτητα κατά μήκος της πισίνας', 'Χρόνοι από την κόρνα', 'Τμήματα · προσπάθεια {0}', 'στα {0} από την προσπάθεια {1}', 'πριν {0}',
   '{0}/{1} κάμερες γράφουν', '{0} χαμένα καρέ', 'Αυτόματο στοπ', 'Αναφορά', 'Θέση στην πισίνα', 'Πάνω από το νερό', 'Υποβρύχια', 'Χωρίς θέση',
-  'Η γραμμή στη μέση της εικόνας', 'Το επόμενο «Σήμα εκκίνησης» γυρίζει μόνο του στις κάμερες.')
+  'Η γραμμή στη μέση της εικόνας', 'Το επόμενο «Σήμα εκκίνησης» γυρίζει μόνο του στις κάμερες.',
+  'σύρε τη γραμμή στο σημάδι της πισίνας', 'εικόνα {0:0.00} m', 'Κλίμακα: κλικ στο ένα σημάδι του κονταριού (δεξί κλικ: ακύρωση)',
+  'Κλίμακα: κλικ στο άλλο σημάδι του κονταριού', 'Κλίμακα με κοντάρι', 'Κλίμακα με κοντάρι…', 'Κλίμακα με κοντάρι… (τώρα: εικόνα {0:0.00} m)',
+  'Χωρίς κλίμακα (εκτίμηση 3 m)', 'Πόσα μέτρα απέχουν τα δύο σημάδια του κονταριού;', 'Τα δύο σημάδια είναι πολύ κοντά: κάνε κλικ στις δύο άκρες του κονταριού.')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts' + ($(if ($missing.Count -gt 0) { ': missing ' + ($missing -join ' | ') } else { '' })))
 

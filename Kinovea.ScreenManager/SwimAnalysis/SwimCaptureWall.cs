@@ -10,6 +10,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Globalization;
+using System.Windows.Forms;
 
 namespace Kinovea.ScreenManager
 {
@@ -56,6 +57,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>(2.28.0) The time of its line in the attempt going on, seconds from the horn (NaN: not yet).</summary>
         public double Crossed = double.NaN;
+
+        /// <summary>(2.29.0) The metres of the lane across its image, measured with a pole (0: not measured).</summary>
+        public double Width;
+
+        /// <summary>(2.29.0) The mouse is on its line (it can be dragged) or drags it.</summary>
+        public bool LineActive;
     }
 
     /// <summary>(2.27.0) Where the images of the wall of cameras and its live panel go.</summary>
@@ -450,20 +457,28 @@ namespace Kinovea.ScreenManager
             if (bottom - top < 30 * s)
                 return;
 
-            using (Pen shade = new Pen(Color.FromArgb(110, SwimTheme.Back), 3.6f * s))
+            // (2.29.0) Solid and thicker while the mouse is on it (it can be dragged) or drags it.
+            bool active = camera.LineActive;
+            using (Pen shade = new Pen(Color.FromArgb(110, SwimTheme.Back), (active ? 5f : 3.6f) * s))
                 g.DrawLine(shade, x, top, x, bottom);
-            using (Pen pen = new Pen(Color.FromArgb(235, SwimTheme.Accent), 1.6f * s) { DashStyle = DashStyle.Dash })
+            using (Pen pen = new Pen(Color.FromArgb(235, SwimTheme.Accent), (active ? 2.4f : 1.6f) * s))
+            {
+                if (!active)
+                    pen.DashStyle = DashStyle.Dash;
                 g.DrawLine(pen, x, top, x, bottom);
+            }
 
             Font font = Display(10f * fs);
             string label = SwimWallPlaces.Label(camera.Distance);
-            SizeF size = g.MeasureString(label, font);
+            string chipText = LineLabel(camera);
+            SizeF size = g.MeasureString(chipText, font);
             RectangleF chip = new RectangleF(x - size.Width / 2f - 7 * s, top - size.Height - 6 * s, size.Width + 14 * s, size.Height + 4 * s);
-            SwimTheme.FillRounded(g, Color.FromArgb(200, SwimTheme.Back), chip, 3 * s);
+            chip.X = Math.Max(image.Left + 4 * s, Math.Min(image.Right - 4 * s - chip.Width, chip.X));
+            SwimTheme.FillRounded(g, Color.FromArgb(active ? 235 : 200, SwimTheme.Back), chip, 3 * s);
             SwimTheme.DrawRounded(g, SwimTheme.Accent, chip, 3 * s);
             using (SolidBrush brush = new SolidBrush(SwimTheme.Accent))
             using (StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                g.DrawString(label, font, brush, chip, center);
+                g.DrawString(chipText, font, brush, chip, center);
 
             if (double.IsNaN(camera.Crossed))
                 return;
@@ -480,6 +495,86 @@ namespace Kinovea.ScreenManager
             using (SolidBrush brush = new SolidBrush(SwimTheme.Back))
             using (StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
                 g.DrawString(time, big, brush, badge, center);
+        }
+
+        /// <summary>
+        /// (2.29.0) The chip over a line: its distance, the metres its image spans once measured with a pole, how to move it while the
+        /// mouse is on it.
+        /// </summary>
+        public static string LineLabel(SwimWallCamera camera)
+        {
+            string label = SwimWallPlaces.Label(camera.Distance);
+            if (camera.LineActive)
+                return label + " · " + SwimLang.T("σύρε τη γραμμή στο σημάδι της πισίνας");
+            if (camera.Width > 0)
+                return label + " · " + string.Format(CultureInfo.InvariantCulture, SwimLang.T("εικόνα {0:0.00} m"), camera.Width);
+            return label;
+        }
+
+        /// <summary>
+        /// (2.29.0) The measure of the scale of an image with a pole: what to click (over the image, near its top), the marks clicked and
+        /// the line from the first one to the mouse. 'points' and 'mouse' in the viewport.
+        /// </summary>
+        public static void PaintPole(Graphics g, Rectangle image, IList<PointF> points, Point? mouse, float scale)
+        {
+            if (g == null || points == null || image.Width < 24 || image.Height < 24)
+                return;
+
+            SmoothingMode smoothing = g.SmoothingMode;
+            TextRenderingHint hint = g.TextRenderingHint;
+            try
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                float s = OverlayScale(image, scale);
+                float fs = s / Math.Max(1f, scale);
+                string text = points.Count == 0
+                    ? SwimLang.T("Κλίμακα: κλικ στο ένα σημάδι του κονταριού (δεξί κλικ: ακύρωση)")
+                    : SwimLang.T("Κλίμακα: κλικ στο άλλο σημάδι του κονταριού");
+                Font font = Display(11f * fs);
+                SizeF size = g.MeasureString(text, font);
+                if (size.Width + 20 * s > image.Width - 8 * s)
+                {
+                    font = Display(9f * fs);
+                    size = g.MeasureString(text, font);
+                }
+
+                float width = Math.Min(size.Width + 20 * s, image.Width - 8 * s);
+                RectangleF chip = new RectangleF(image.Left + (image.Width - width) / 2f, image.Top + 44 * s, width, size.Height + 10 * s);
+                SwimTheme.FillRounded(g, SwimTheme.Amber, chip, 4 * s);
+                using (SolidBrush brush = new SolidBrush(SwimTheme.Back))
+                using (StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter })
+                    g.DrawString(text, font, brush, chip, center);
+
+                using (Pen shade = new Pen(Color.FromArgb(150, SwimTheme.Back), 4.5f * s))
+                using (Pen pen = new Pen(SwimTheme.Amber, 2f * s))
+                {
+                    if (points.Count > 0 && mouse.HasValue)
+                    {
+                        g.DrawLine(shade, points[0], mouse.Value);
+                        using (Pen dash = new Pen(SwimTheme.Amber, 2f * s) { DashStyle = DashStyle.Dash })
+                            g.DrawLine(dash, points[0], mouse.Value);
+                    }
+
+                    foreach (PointF p in points)
+                    {
+                        float r = 7 * s, arm = 12 * s;
+                        g.DrawEllipse(shade, p.X - r, p.Y - r, 2 * r, 2 * r);
+                        g.DrawEllipse(pen, p.X - r, p.Y - r, 2 * r, 2 * r);
+                        g.DrawLine(pen, p.X - arm, p.Y, p.X + arm, p.Y);
+                        g.DrawLine(pen, p.X, p.Y - arm, p.X, p.Y + arm);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while drawing the measure of a pole over an image of the wall of cameras.", e);
+            }
+            finally
+            {
+                g.SmoothingMode = smoothing;
+                g.TextRenderingHint = hint;
+            }
         }
 
         private static void PaintRecordingFrame(Graphics g, Rectangle image, float progress, float s)
@@ -756,5 +851,35 @@ namespace Kinovea.ScreenManager
         #endregion
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+    }
+
+    /// <summary>(Swim 2.29.0) The length between the two marks of the pole clicked on an image (metres; null: cancelled).</summary>
+    public static class SwimPoleDialog
+    {
+        public static double? Ask(IWin32Window owner, double initial)
+        {
+            using (Form f = new Form())
+            {
+                f.Text = SwimLang.T("Κλίμακα με κοντάρι");
+                f.StartPosition = owner != null ? FormStartPosition.CenterParent : FormStartPosition.CenterScreen;
+                f.FormBorderStyle = FormBorderStyle.FixedDialog;
+                f.AutoScaleMode = AutoScaleMode.Font;
+                f.ClientSize = new Size(430, 150);
+                f.MinimizeBox = false;
+                f.MaximizeBox = false;
+                f.ShowInTaskbar = false;
+                Label question = new Label { Text = SwimLang.T("Πόσα μέτρα απέχουν τα δύο σημάδια του κονταριού;"), AutoSize = false, Location = new Point(12, 14), Size = new Size(406, 40) };
+                NumericUpDown value = new NumericUpDown { DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.20m, Maximum = 10m, Location = new Point(12, 58), Width = 120 };
+                value.Value = (decimal)Math.Max(0.2, Math.Min(10.0, initial));
+                Label unit = new Label { Text = "m", AutoSize = true, Location = new Point(138, 61) };
+                Button ok = new Button { Text = SwimLang.T("Εντάξει"), DialogResult = DialogResult.OK, Location = new Point(242, 108), Width = 85 };
+                Button cancel = new Button { Text = SwimLang.T("Άκυρο"), DialogResult = DialogResult.Cancel, Location = new Point(333, 108), Width = 85 };
+                f.Controls.AddRange(new Control[] { question, value, unit, ok, cancel });
+                f.AcceptButton = ok;
+                f.CancelButton = cancel;
+                f.Shown += (s, e) => value.Select(0, value.Text.Length);
+                return f.ShowDialog(owner) == DialogResult.OK ? (double)value.Value : (double?)null;
+            }
+        }
     }
 }
