@@ -38,6 +38,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>(Swim 2.27.0) The wall of cameras on or off (its button on the right of the row).</summary>
         public event EventHandler WallAsked;
+
+        /// <summary>(Swim 2.27.0) The menu of the capture folder of all the cameras is asked for (its button in the row).</summary>
+        public event EventHandler FolderAsked;
+
+        /// <summary>(Swim 2.27.0) The start signal is asked for (its button in the row): the cameras record, the words, the horn.</summary>
+        public event EventHandler SignalAsked;
         #endregion
 
         #region Properties
@@ -110,10 +116,53 @@ namespace Kinovea.ScreenManager
             bar.Invalidate();
         }
 
+        /// <summary>(Swim 2.27.0) Where the row reads the capture folder of all the cameras (its text, and whether a camera has none).</summary>
+        public void SetFolderProvider(Func<string> text, Func<bool> missing)
+        {
+            if (bar == null)
+                return;
+
+            bar.FolderText = text;
+            bar.FolderMissing = missing;
+            bar.Invalidate();
+        }
+
+        /// <summary>(Swim 2.27.0) The menu of the capture folder, above its button.</summary>
+        public void ShowFolderMenu(ContextMenuStrip menu)
+        {
+            if (bar == null || menu == null)
+                return;
+
+            RectangleF place = bar.PartPlace(SwimCaptureBar.PartFolder);
+            menu.Show(bar, new Point((int)place.Left, (int)place.Top), ToolStripDropDownDirection.AboveRight);
+        }
+
+        /// <summary>(Swim 2.27.0) The capture folder of the cameras changed: the row shows it again.</summary>
+        public void RefreshFolder()
+        {
+            if (bar != null)
+                bar.Invalidate();
+        }
+
+        /// <summary>(Swim 2.27.0) The cameras record, as the record button does (nothing when they already do).</summary>
+        public void SwimRecordAll()
+        {
+            if (!recording)
+                ToggleRecording();
+        }
+
         private void Bar_PartClicked(int part)
         {
             switch (part)
             {
+                case SwimCaptureBar.PartSignal:
+                    if (SignalAsked != null)
+                        SignalAsked(this, EventArgs.Empty);
+                    break;
+                case SwimCaptureBar.PartFolder:
+                    if (FolderAsked != null)
+                        FolderAsked(this, EventArgs.Empty);
+                    break;
                 case SwimCaptureBar.PartRecord:
                     ToggleRecording();
                     break;

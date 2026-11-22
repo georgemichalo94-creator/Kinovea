@@ -253,6 +253,18 @@ namespace Kinovea.ScreenManager
                 AfterCapturedVideosChange();
         }
 
+        /// <summary>(Swim 2.27.0) The capture folder chosen for all the cameras in the common row.</summary>
+        public void SwimSetCaptureFolder(Guid id)
+        {
+            SelectCaptureFolder(id);
+        }
+
+        /// <summary>(Swim 2.27.0) The pattern of the file names (the common row makes the names of the cameras that share a folder different).</summary>
+        public void SwimSetFilename(string pattern)
+        {
+            tbFilename.Text = pattern ?? "";
+        }
+
         /// <summary>(Swim 2.27.0) The screen is alone on the wall (the button over its image then puts all the cameras back).</summary>
         public void SwimWallSolo(bool solo)
         {

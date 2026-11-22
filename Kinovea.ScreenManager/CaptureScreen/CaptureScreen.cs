@@ -182,6 +182,12 @@ namespace Kinovea.ScreenManager
         // (Swim 2.27.0) The place of this screen on the wall of cameras (1 to 5; 0: not on the wall) and the last load of its frames.
         private int swimWallNumber;
         private float swimLastLoad;
+
+        // (Swim 2.27.0) The start of the recording going on (clock of the computer), the horns of the start signal during it, and the
+        // frame of the horn written as the zero of the time of the video (-1: none).
+        private DateTime swimRecordingStart = DateTime.MinValue;
+        private List<DateTime> swimHorns = new List<DateTime>();
+        private double swimHornFrames = -1;
         private Stopwatch stopwatchDiscovery = new Stopwatch();
         private const long discoveryTimeout = 5000;
         private ScreenDescriptorCapture screenDescriptor = new ScreenDescriptorCapture();
@@ -369,6 +375,80 @@ namespace Kinovea.ScreenManager
         public bool RecordsOnCamera
         {
             get { return cameraGrabber is IRemoteRecordingSource; }
+        }
+
+        /// <summary>(Swim 2.27.0) The capture folder of this screen (Guid.Empty: none), as the common row of the screens shows and sets it.</summary>
+        public Guid SwimCaptureFolderId
+        {
+            get { return view != null && view.CaptureFolder != null ? view.CaptureFolder.Id : Guid.Empty; }
+        }
+
+        public void SwimSetCaptureFolder(Guid id)
+        {
+            if (view != null)
+                view.SwimSetCaptureFolder(id);
+        }
+
+        /// <summary>(Swim 2.27.0) The pattern of the file names of this screen (with its variables).</summary>
+        public string SwimFilenamePattern
+        {
+            get { return view != null ? view.CurrentFilename : ""; }
+        }
+
+        public void SwimSetFilenamePattern(string pattern)
+        {
+            if (view != null)
+                view.SwimSetFilename(pattern);
+        }
+
+        /// <summary>(Swim 2.27.0) The horn of the start signal, while this screen records: kept for the zero of the time of its video.</summary>
+        public void SwimAddHorn(DateTime horn)
+        {
+            if (recording && horn != DateTime.MinValue)
+                swimHorns.Add(horn);
+        }
+
+        /// <summary>
+        /// (Swim 2.27.0) The first horn of the recording that ended: the zero of the time of its video (the time origin of its companion
+        /// KVA, written again), so that the analysis measures from the horn. The cameras write no sound: the horn is placed by the clock
+        /// of the computer (from the start of the recording, at the frames per second received), within a frame or two.
+        /// </summary>
+        private void SwimSaveHornOrigin(string finalFilename)
+        {
+            try
+            {
+                if (swimHorns.Count == 0 || swimRecordingStart == DateTime.MinValue || string.IsNullOrEmpty(finalFilename))
+                    return;
+
+                List<DateTime> after = swimHorns.Where(h => h >= swimRecordingStart).ToList();
+                if (after.Count == 0)
+                    return;
+
+                double seconds = (after[0] - swimRecordingStart).TotalSeconds;
+                double fps = pipelineManager.Frequency > 0 ? pipelineManager.Frequency : cameraGrabber.Framerate;
+                if (seconds < 0 || fps <= 0)
+                    return;
+
+                swimHornFrames = seconds * fps;
+                SaveKva(finalFilename);
+                log.DebugFormat("Start signal: the horn {0:0.000} s after the start of the recording (frame {1:0.0}), the zero of the time of the video ({2} horns).",
+                    seconds, swimHornFrames, after.Count);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while writing the horn of the start signal in the companion KVA.", e);
+            }
+            finally
+            {
+                swimHornFrames = -1;
+                swimHorns.Clear();
+            }
+        }
+
+        /// <summary>(Swim 2.27.0) A camera that writes on the computer is in this screen without a capture folder: its recording cannot start.</summary>
+        public bool SwimNeedsCaptureFolder
+        {
+            get { return cameraLoaded && !RecordsOnCamera && SwimCaptureFolderId == Guid.Empty; }
         }
 
         /// <summary>(Swim 2.27.0) The wall of cameras on or off for this screen, with its place on the wall (1 to 5).</summary>
@@ -2305,6 +2385,10 @@ namespace Kinovea.ScreenManager
                 {
                     double interval = 1000.0 / framerate;
                     lostFramesBase = CameraLostFrames();
+
+                    // (Swim 2.27.0) The start of the recording on the clock of the computer: the horn of the start signal is placed from it.
+                    swimHorns.Clear();
+                    swimRecordingStart = DateTime.Now;
                     result = pipelineManager.StartRecord(path, interval, delay, ImageRotation);
                     recording = result == SaveResult.Success;
                 }
@@ -2401,6 +2485,9 @@ namespace Kinovea.ScreenManager
 
         private void AfterStopRecording(string finalFilename)
         { 
+            // (Swim 2.27.0) The horn of the start signal: the zero of the time of the video.
+            SwimSaveHornOrigin(finalFilename);
+
             if (recordingThumbnail != null)
             {
                 AddCapturedFile(finalFilename, recordingThumbnail, true);
@@ -2449,6 +2536,10 @@ namespace Kinovea.ScreenManager
             {
                 metadata.TimeOrigin = (long)Math.Round(delay * metadata.AverageTimeStampsPerFrame);
             }
+
+            // (Swim 2.27.0) The horn of the start signal of the common row: the zero of the time of the video.
+            if (swimHornFrames >= 0)
+                metadata.TimeOrigin += (long)Math.Round(swimHornFrames * metadata.AverageTimeStampsPerFrame);
 
             string contextString = null;
             if (PreferencesManager.CapturePreferences.ContextEnabled && VariablesRepository.HasVariables)

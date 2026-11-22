@@ -106,6 +106,12 @@ namespace Kinovea.ScreenManager
                 recheck();
         }
 
+        /// <summary>
+        /// The start signal of the common row («Take your marks», 1 s, the horn): the horn on the clock of the computer (MinValue: none
+        /// yet), the zero of the time of the attempt for the live panel (the videos keep it in their companion KVA).
+        /// </summary>
+        public static DateTime SignalHorn = DateTime.MinValue;
+
         #region Layout
         /// <summary>
         /// The places of the images of the wall in 'area': the rows (one to three, the extra images in the first rows) whose images are
@@ -604,6 +610,21 @@ namespace Kinovea.ScreenManager
                     g.DrawLines(pen, new[] { new PointF(cx - d - l, cy + d), new PointF(cx - d, cy + d), new PointF(cx - d, cy + d + l) });
                     g.DrawLines(pen, new[] { new PointF(cx + d, cy + d + l), new PointF(cx + d, cy + d), new PointF(cx + d + l, cy + d) });
                 }
+            }
+        }
+
+        /// <summary>A megaphone (the start signal): its mouth opening to the right, its handle and two waves of sound.</summary>
+        internal static void IconHorn(Graphics g, RectangleF r, Color ink, float s)
+        {
+            using (SolidBrush brush = new SolidBrush(ink))
+            using (Pen pen = new Pen(ink, Math.Max(1.2f, 1.4f * s)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                float cy = r.Top + r.Height / 2f;
+                g.FillPolygon(brush, new[] { new PointF(r.Left, cy - r.Height * 0.16f), new PointF(r.Left + r.Width * 0.22f, cy - r.Height * 0.16f),
+                    new PointF(r.Left + r.Width * 0.62f, r.Top + r.Height * 0.05f), new PointF(r.Left + r.Width * 0.62f, r.Bottom - r.Height * 0.05f),
+                    new PointF(r.Left + r.Width * 0.22f, cy + r.Height * 0.16f), new PointF(r.Left, cy + r.Height * 0.16f) });
+                g.DrawArc(pen, r.Left + r.Width * 0.52f, cy - r.Height * 0.25f, r.Width * 0.3f, r.Height * 0.5f, -50, 100);
+                g.DrawArc(pen, r.Left + r.Width * 0.56f, cy - r.Height * 0.42f, r.Width * 0.44f, r.Height * 0.84f, -50, 100);
             }
         }
 

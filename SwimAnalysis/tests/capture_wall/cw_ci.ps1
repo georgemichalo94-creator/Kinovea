@@ -119,6 +119,30 @@ $hits = @(0, 1, 2 | ForEach-Object { $p = $places[$_]; [int]$hit.Invoke($null, [
 $miss = [int]$hit.Invoke($null, [object[]]@($img, [single]1, [System.Drawing.Point]::new(120, 70)))
 Check ($inside -and ($hits -join ',') -eq '0,1,2' -and $miss -eq -1 -and $places[2].Right -le $img.Right -and $places[0].Left -lt $places[1].Left) ('three buttons at the bottom right of the image: alone, snapshot, settings (' + ($hits -join ',') + ')')
 
+# ---- The capture folder of all the cameras: different file names for the cameras that share a folder and a pattern.
+$tFolders = T 'SwimCaptureFolders'
+$distinct = $tFolders.GetMethod('DistinctPatterns')
+function Patterns([string[]]$names, [string[]]$folderKeys) {
+  $pl = New-Object 'System.Collections.Generic.List[string]'
+  foreach ($n in $names) { $pl.Add($n) }
+  $fl = New-Object 'System.Collections.Generic.List[guid]'
+  $map = @{}
+  foreach ($k in $folderKeys) { if (-not $map.ContainsKey($k)) { $map[$k] = [guid]::NewGuid() }; $fl.Add($map[$k]) }
+  return @($distinct.Invoke($null, [object[]]@($pl.ToArray(), $fl.ToArray())))
+}
+$d1 = Patterns @('%dateb%-%time%', '%dateb%-%time%', 'cam3-%dateb%') @('a', 'a', 'a')
+Check (($d1 -join ' | ') -eq '%dateb%-%time%-%camalias% | %dateb%-%time%-%camalias% | cam3-%dateb%') ('same folder and pattern: the name of the camera added (' + ($d1 -join ' | ') + ')')
+$d2 = Patterns @('%camalias%-%time%', '%camalias%-%time%') @('a', 'a')
+Check (($d2 -join ' | ') -eq '%camalias%-%time% | %camalias%-%time%') 'patterns with the name of the camera stay as they are'
+$d3 = Patterns @('%dateb%-%time%', '%dateb%-%time%') @('a', 'b')
+Check (($d3 -join ' | ') -eq '%dateb%-%time% | %dateb%-%time%') 'different folders: the names stay as they are'
+$folderText = $tFolders.GetMethod('Text')
+$none = [System.Collections.Generic.List[guid]]::new()
+$none.Add([guid]::Empty); $none.Add([guid]::Empty)
+$mixed2 = [System.Collections.Generic.List[guid]]::new()
+$mixed2.Add([guid]::NewGuid()); $mixed2.Add([guid]::Empty)
+Check (($folderText.Invoke($null, [object[]]@($none))) -eq 'Φάκελος εγγραφής: κανένας' -and ($folderText.Invoke($null, [object[]]@($mixed2))) -eq 'Φάκελος εγγραφής: διαφορετικός ανά κάμερα') 'the text of the folder button (none, different per camera)'
+
 # ---- Pictures of the wall on fictional cameras.
 function Cam([int]$n, [string]$name, [bool]$loaded, [bool]$connected, [bool]$grabbing, [bool]$recording, [double]$fps, [long]$drops, [double]$seconds) {
   $c = [Activator]::CreateInstance($tCam)
@@ -186,6 +210,9 @@ function Finish($pic, [string]$file, $cams, [bool]$recording, [bool]$swap) {
     $bar = [Activator]::CreateInstance($tBar)
     try {
       $bar.WallAvailable = $true; $bar.WallOn = $true; $bar.SwapAvailable = $swap
+      $text = $script:folderLabel; $missing = $script:folderMissing
+      $bar.FolderText = [Func[string]]{ $text }.GetNewClosure()
+      $bar.FolderMissing = [Func[bool]]{ $missing }.GetNewClosure()
       if ($recording) { $bar.SetRecording($true); Start-Sleep -Milliseconds 1300 }
       $bar.Draw($g, [System.Drawing.Rectangle]::new(0, $b.Height - $pic.Bar, $b.Width, $pic.Bar))
     } finally { $bar.Dispose() }
@@ -197,6 +224,9 @@ function Finish($pic, [string]$file, $cams, [bool]$recording, [bool]$swap) {
   Check $true ('picture ' + $file)
 }
 
+$script:folderLabel = 'Φάκελος: Δοκιμές εκκινήσεων'
+$script:folderMissing = $false
+$hornField = $tWall.GetField('SignalHorn')
 $names = @('Πάνω από το νερό', 'Υποβρύχια 1', 'Υποβρύχια 2', 'Υποβρύχια 3', 'Υποβρύχια 4')
 $five = @($wide, $wide, $wide, $wide, $wide)
 $ready = @(0..4 | ForEach-Object { Cam ($_ + 1) $names[$_] $true $true $true $false 50 0 0 })
@@ -209,10 +239,23 @@ $rec[4].Drops = 12
 $p = Picture 'wall-5-recording.png' 1880 900 $rec $five (-1) 1 2 $true
 Finish $p 'wall-5-recording.png' $rec $true $false
 
+# The start signal: the words (the horn in 1.2 s), then the time from the horn (3.2 s ago, the recording 12.4 s).
+$hornField.SetValue($null, [DateTime]::Now.AddSeconds(1.2))
+$p = Picture 'wall-5-signal-marks.png' 1880 900 $rec $five (-1) (-1) (-1) $true
+Finish $p 'wall-5-signal-marks.png' $rec $true $false
+$hornField.SetValue($null, [DateTime]::Now.AddSeconds(-3.2))
+$p = Picture 'wall-5-signal-horn.png' 1880 900 $rec $five (-1) (-1) (-1) $true
+Finish $p 'wall-5-signal-horn.png' $rec $true $false
+$hornField.SetValue($null, [DateTime]::MinValue)
+
+$script:folderLabel = 'Φάκελος εγγραφής: κανένας'
+$script:folderMissing = $true
 $mixed = @((Cam 1 $names[0] $true $true $true $false 50 0 0), (Cam 2 $names[1] $true $false $true $false 0 0 0), (Cam 3 '' $false $false $false $false 0 0 0), (Cam 4 $names[3] $true $true $false $false 0 0 0), (Cam 5 '' $false $false $false $false 0 0 0))
 $p = Picture 'wall-5-empty-screens.png' 1880 900 $mixed $five (-1) (-1) (-1) $false
 Finish $p 'wall-5-empty-screens.png' $mixed $false $false
 
+$script:folderLabel = 'Φάκελος: Δοκιμές εκκινήσεων'
+$script:folderMissing = $false
 $p = Picture 'wall-5-alone.png' 1880 900 $ready $five 2 2 0 $false
 Finish $p 'wall-5-alone.png' $ready $false $false
 
@@ -238,7 +281,9 @@ try {
 $map = (T 'SwimLangEnglish').GetField('Map', $all).GetValue($null)
 $keys = @('Ζωντανή εικόνα', 'Έτοιμο για εγγραφή', 'Εγγραφή', 'Στοπ', 'Παύση', 'Έναρξη', 'Εναλλαγή', 'Τοίχος καμερών', 'Όλες οι κάμερες', 'Χωρίς κάμερα',
   'Σύνδεση με την κάμερα', 'Γίνεται εγγραφή', 'Σε παύση', 'Μόνη της σε όλη την οθόνη', 'Πίσω σε όλες τις κάμερες', 'Ρυθμίσεις κάμερας', 'Ρυθμίσεις κάμερας (όχι στην εγγραφή)',
-  'Διπλό κλικ σε μια κάμερα: μόνη της σε όλη την οθόνη', '{0} από {1} κάμερες με εικόνα', '{0} κάμερες', 'χαμένα καρέ', 'χαμένο καρέ', 'Κενή οθόνη')
+  'Διπλό κλικ σε μια κάμερα: μόνη της σε όλη την οθόνη', '{0} από {1} κάμερες με εικόνα', '{0} κάμερες', 'χαμένα καρέ', 'χαμένο καρέ', 'Κενή οθόνη',
+  'Φάκελος εγγραφής: κανένας', 'Φάκελος εγγραφής: διαφορετικός ανά κάμερα', 'Φάκελος: {0}', 'Φάκελοι εγγραφής…', 'Δεν έχει οριστεί φάκελος εγγραφής',
+  'Σήμα εκκίνησης', 'Από την κόρνα', 'η κόρνα σε {0:0.0} s', 'εγγραφή {0}')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts' + ($(if ($missing.Count -gt 0) { ': missing ' + ($missing -join ' | ') } else { '' })))
 

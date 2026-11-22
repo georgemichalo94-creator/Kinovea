@@ -13,6 +13,7 @@ using System.Drawing.Text;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using Kinovea.Services;
 
 namespace Kinovea.ScreenManager
 {
@@ -74,6 +75,10 @@ namespace Kinovea.ScreenManager
                     log.Error("Error while reading the cameras for the live panel of the wall.", e);
                 }
             }
+
+            int interval = cameras.Any(c => c != null && c.Recording) ? 100 : TickMilliseconds;
+            if (timer.Interval != interval)
+                timer.Interval = interval;
 
             Invalidate();
         }
@@ -199,7 +204,31 @@ namespace Kinovea.ScreenManager
 
             string label, value, sub;
             Color labelColor, valueColor, glow;
-            if (recording)
+            float valueSize = wide ? 30f : 32f;
+            DateTime now = DateTime.Now;
+            DateTime horn = SwimCaptureWall.SignalHorn;
+            bool marks = recording && horn != DateTime.MinValue && now < horn && (horn - now).TotalSeconds < 10;
+            bool fromHorn = recording && horn != DateTime.MinValue && now >= horn && (now - horn).TotalSeconds <= seconds + 0.5;
+            if (marks)
+            {
+                label = SwimLang.T("Σήμα εκκίνησης");
+                labelColor = SwimTheme.Amber;
+                value = "TAKE YOUR MARKS";
+                valueColor = SwimTheme.Amber;
+                glow = SwimTheme.Amber;
+                valueSize = wide ? 22f : 24f;
+                sub = SwimLang.F($"η κόρνα σε {(horn - now).TotalSeconds:0.0} s");
+            }
+            else if (fromHorn)
+            {
+                label = SwimLang.T("Από την κόρνα");
+                labelColor = SwimTheme.Accent;
+                value = SwimCaptureWall.Clock((now - horn).TotalSeconds, true);
+                valueColor = SwimTheme.Text;
+                glow = SwimTheme.Accent;
+                sub = SwimLang.F($"εγγραφή {SwimCaptureWall.Clock(seconds, true)}");
+            }
+            else if (recording)
             {
                 label = SwimLang.T("Γίνεται εγγραφή");
                 labelColor = SwimTheme.Red;
@@ -241,7 +270,7 @@ namespace Kinovea.ScreenManager
             float labelHeight = labelFont.GetHeight(g);
             using (SolidBrush brush = new SolidBrush(labelColor))
             {
-                if (recording)
+                if (recording && !fromHorn)
                 {
                     double phase = (Environment.TickCount & int.MaxValue) % 1000 / 1000.0;
                     int alpha = (int)Math.Round(150 + 105 * Math.Cos(phase * 2 * Math.PI));
@@ -257,7 +286,7 @@ namespace Kinovea.ScreenManager
             }
 
             y += labelHeight + 2 * s;
-            Font big = SwimCaptureWall.FontOf(SwimTheme.LightFamily, (wide ? 30f : 32f) * fs);
+            Font big = SwimCaptureWall.FontOf(SwimTheme.LightFamily, valueSize * fs);
             SwimTheme.GlowText(g, value, big, valueColor, glow, new PointF(r.Left - 3 * s, y), recording ? 1f : 0.35f);
             y += big.GetHeight(g) + 2 * s;
 
@@ -392,13 +421,117 @@ namespace Kinovea.ScreenManager
     }
 
     /// <summary>
+    /// (2.27.0) The capture folder of all the cameras, chosen in the common row (on the wall the row of each screen is hidden): the
+    /// text of its button, its menu, one message when cameras have none, and different file names for the cameras that share it.
+    /// </summary>
+    public static class SwimCaptureFolders
+    {
+        public const string CameraVariable = "%camalias%";
+
+        /// <summary>The text of the folder button for the folders of the screens (Guid.Empty: none).</summary>
+        public static string Text(IList<Guid> ids)
+        {
+            if (ids == null || ids.Count == 0 || ids.All(id => id == Guid.Empty))
+                return SwimLang.T("Φάκελος εγγραφής: κανένας");
+
+            if (ids.Distinct().Count() > 1)
+                return SwimLang.T("Φάκελος εγγραφής: διαφορετικός ανά κάμερα");
+
+            CaptureFolder folder = Find(ids[0]);
+            return folder == null ? SwimLang.T("Φάκελος εγγραφής: κανένας") : SwimLang.F($"Φάκελος: {folder.FriendlyName}");
+        }
+
+        /// <summary>The capture folder of the preferences with this id (null: none).</summary>
+        public static CaptureFolder Find(Guid id)
+        {
+            if (id == Guid.Empty)
+                return null;
+
+            List<CaptureFolder> folders = PreferencesManager.CapturePreferences.CapturePathConfiguration.CaptureFolders;
+            return folders == null ? null : folders.FirstOrDefault(f => f != null && f.Id == id);
+        }
+
+        /// <summary>The menu of the folder button: the capture folders of the preferences (the one of all the cameras checked) and their settings.</summary>
+        public static void Fill(ContextMenuStrip menu, Guid current, Action<CaptureFolder> choose, Action manage)
+        {
+            List<ToolStripItem> old = menu.Items.Cast<ToolStripItem>().ToList();
+            menu.Items.Clear();
+            foreach (ToolStripItem item in old)
+                item.Dispose();
+
+            menu.Items.Add(new ToolStripMenuItem(SwimLang.T("Φάκελος εγγραφής για όλες τις κάμερες")) { Enabled = false });
+            List<CaptureFolder> folders = PreferencesManager.CapturePreferences.CapturePathConfiguration.CaptureFolders ?? new List<CaptureFolder>();
+            foreach (CaptureFolder folder in folders.Where(f => f != null))
+            {
+                CaptureFolder chosen = folder;
+                ToolStripMenuItem item = new ToolStripMenuItem(folder.FriendlyName);
+                item.Checked = folder.Id == current;
+                item.ToolTipText = folder.Path;
+                item.Click += (s, e) => choose(chosen);
+                menu.Items.Add(item);
+            }
+
+            if (folders.Count == 0)
+                menu.Items.Add(new ToolStripMenuItem(SwimLang.T("Κανένας φάκελος στις ρυθμίσεις")) { Enabled = false });
+
+            menu.Items.Add(new ToolStripSeparator());
+            ToolStripMenuItem settings = new ToolStripMenuItem(SwimLang.T("Φάκελοι εγγραφής…"));
+            settings.Click += (s, e) => manage();
+            menu.Items.Add(settings);
+        }
+
+        /// <summary>One message for the cameras without a capture folder (instead of one per screen about a list hidden on the wall).</summary>
+        public static void AlertNoFolder(IList<string> cameras)
+        {
+            string names = cameras == null ? "" : string.Join(", ", cameras.Where(n => !string.IsNullOrEmpty(n)));
+            string text = SwimLang.T("Δεν έχει οριστεί φάκελος εγγραφής") + (names.Length > 0 ? ": " + names : "") + ".\n\n" +
+                SwimLang.T("Διάλεξε φάκελο για όλες τις κάμερες από το κουμπί «Φάκελος» της κάτω μπάρας.");
+            MessageBox.Show(text, "Kinovea Swim", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        /// <summary>
+        /// The file names of cameras that write in the same folder with the same pattern: those without the name of their camera get it
+        /// at the end (-%camalias%), so that the files of one start never have the same name. The others stay as they are.
+        /// </summary>
+        public static string[] DistinctPatterns(IList<string> patterns, IList<Guid> folders)
+        {
+            int count = patterns == null ? 0 : patterns.Count;
+            string[] result = new string[count];
+            for (int i = 0; i < count; i++)
+                result[i] = patterns[i] ?? "";
+
+            for (int i = 0; i < count; i++)
+            {
+                if (result[i].IndexOf(CameraVariable, StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                bool shared = false;
+                for (int j = 0; j < count && !shared; j++)
+                {
+                    shared = j != i && folders != null && j < folders.Count && i < folders.Count && folders[j] == folders[i] &&
+                        string.Equals(patterns[j] ?? "", patterns[i] ?? "", StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (shared)
+                    result[i] = result[i] + "-" + CameraVariable;
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
     /// (2.27.0) The row of the common controls of the capture screens in the colors of Kinovea Swim: the recording of all the cameras
-    /// (with its time), pause / start of all the cameras, a snapshot of all, the swap of two screens, and on the right the wall of
-    /// cameras on or off. It never takes the keyboard focus.
+    /// (with its time), pause / start of all the cameras, a snapshot of all, the swap of two screens, the capture folder of all the
+    /// cameras, and on the right the wall of cameras on or off. It never takes the keyboard focus.
     /// </summary>
     public sealed class SwimCaptureBar : Control
     {
-        public const int PartRecord = 0, PartGrab = 1, PartSnapshot = 2, PartSwap = 3, PartWall = 4, PartCount = 5;
+        public const int PartRecord = 0, PartGrab = 1, PartSnapshot = 2, PartSwap = 3, PartWall = 4, PartFolder = 5, PartSignal = 6, PartCount = 7;
+
+        /// <summary>The text of the folder button (the folder of all the cameras), and whether a camera has none (amber).</summary>
+        public Func<string> FolderText;
+        public Func<bool> FolderMissing;
 
         /// <summary>A part of the bar was clicked (one of the Part constants).</summary>
         public event Action<int> PartClicked;
@@ -513,6 +646,12 @@ namespace Kinovea.ScreenManager
             base.Dispose(disposing);
         }
 
+        /// <summary>The place of a part in the bar (empty when it is not shown), for the menu of the folder.</summary>
+        public RectangleF PartPlace(int part)
+        {
+            return part >= 0 && part < places.Length ? places[part] : RectangleF.Empty;
+        }
+
         private int Hit(Point point)
         {
             for (int i = 0; i < places.Length; i++)
@@ -528,6 +667,7 @@ namespace Kinovea.ScreenManager
         {
             switch (part)
             {
+                case PartSignal: return (Grabbing || recording) && !SwimStartSignal.Playing;
                 case PartRecord: return Grabbing || recording;
                 case PartSwap: return SwapAvailable;
                 case PartWall: return WallAvailable;
@@ -542,6 +682,8 @@ namespace Kinovea.ScreenManager
                 case PartRecord: return recording ? SwimLang.T("Σταματά την εγγραφή σε όλες τις κάμερες μαζί.") : SwimLang.T("Ξεκινά την εγγραφή σε όλες τις κάμερες μαζί.");
                 case PartGrab: return Grabbing ? SwimLang.T("Παύση της εικόνας όλων των καμερών.") : SwimLang.T("Η εικόνα όλων των καμερών συνεχίζει.");
                 case PartSnapshot: return SwimLang.T("Στιγμιότυπο από όλες τις κάμερες.");
+                case PartFolder: return SwimLang.T("Ο φάκελος όπου γράφουν όλες οι κάμερες. Πάτησε για να τον αλλάξεις.");
+                case PartSignal: return SwimLang.T("«Take your marks», 1 s, κόρνα: ξεκινά την εγγραφή όλων των καμερών (αν δεν γράφουν) και η κόρνα γίνεται το 0 του χρόνου των βίντεο.");
                 case PartSwap: return SwimLang.T("Οι δύο οθόνες αλλάζουν θέση.");
                 case PartWall: return WallOn ? SwimLang.T("Τοίχος καμερών: μόνο οι εικόνες, ενωμένες. Πάτησε για τις κλασικές οθόνες με τα κουμπιά τους.") :
                     SwimLang.T("Κλασικές οθόνες. Πάτησε για τον τοίχο καμερών: μόνο οι εικόνες, ενωμένες, με τα στοιχεία τους πάνω τους.");
@@ -583,6 +725,13 @@ namespace Kinovea.ScreenManager
                     x += captionWidth + 16 * s;
                 }
 
+                // The start signal, first: the cameras record, «Take your marks», 1 s, the horn.
+                bool signalPlaying = SwimStartSignal.Playing;
+                string signalText = signalPlaying ? "TAKE YOUR MARKS" : SwimLang.Upper(SwimLang.T("Σήμα εκκίνησης"));
+                float signalWidth = Math.Max(SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Σήμα εκκίνησης")), font, 0.08f), SwimTheme.TrackedWidth(g, "TAKE YOUR MARKS", font, 0.08f)) + 50 * s;
+                next[PartSignal] = new RectangleF(x, top, signalWidth, height);
+                x += signalWidth + 8 * s;
+
                 string recordText = recording ? SwimLang.Upper(SwimLang.T("Στοπ")) + "  " + SwimCaptureWall.Clock(watch.Elapsed.TotalSeconds, true) : SwimLang.Upper(SwimLang.T("Εγγραφή"));
                 float recordWidth = Math.Max(SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Εγγραφή")), font, 0.08f),
                     SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Στοπ")) + "  00:00.0", font, 0.08f)) + 52 * s;
@@ -608,14 +757,42 @@ namespace Kinovea.ScreenManager
                 }
 
                 string wallText = SwimLang.Upper(SwimLang.T("Τοίχος καμερών"));
+                float wallLeft = r.Right - 14 * s;
                 if (WallAvailable)
                 {
                     float wallWidth = SwimTheme.TrackedWidth(g, wallText, font, 0.08f) + 48 * s;
-                    float wallLeft = Math.Max(x + 8 * s, r.Right - 14 * s - wallWidth);
+                    wallLeft = Math.Max(x + 8 * s, r.Right - 14 * s - wallWidth);
                     next[PartWall] = new RectangleF(wallLeft, top, wallWidth, height);
                 }
 
+                // The capture folder of all the cameras, after the buttons (its name cut if the row is short).
+                string folderText = null;
+                bool folderMissing = false;
+                try
+                {
+                    folderText = FolderText != null ? FolderText() : null;
+                    folderMissing = FolderMissing != null && FolderMissing();
+                }
+                catch (Exception e)
+                {
+                    log.Error("Error while reading the capture folder of the cameras.", e);
+                }
+
+                Font folderFont = SwimCaptureWall.Display(10f);
+                if (!string.IsNullOrEmpty(folderText))
+                {
+                    float folderLeft = x + 10 * s;
+                    float folderWidth = Math.Min(g.MeasureString(folderText, folderFont).Width + 58 * s, Math.Min(380 * s, wallLeft - 12 * s - folderLeft));
+                    if (folderWidth > 90 * s)
+                        next[PartFolder] = new RectangleF(folderLeft, top, folderWidth, height);
+                }
+
                 places = next;
+
+                bool signalOn = PartEnabled(PartSignal);
+                DrawButton(g, next[PartSignal], signalPlaying ? Color.FromArgb(200, 150, 92, 20) : (signalOn ? Color.FromArgb(60, SwimTheme.AmberDark) : SwimTheme.Raised),
+                    signalPlaying || signalOn ? SwimTheme.Amber : SwimTheme.Border, signalPlaying ? Color.White : (signalOn ? SwimTheme.Amber : SwimTheme.Faint), signalText, font, s,
+                    (gg, icon, ink) => SwimCaptureWall.IconHorn(gg, icon, ink, s), hover == PartSignal && signalOn);
 
                 // The recording: red with its time while it goes on.
                 RectangleF rec = next[PartRecord];
@@ -659,6 +836,9 @@ namespace Kinovea.ScreenManager
                     }, hover == PartSwap);
                 }
 
+                if (!next[PartFolder].IsEmpty)
+                    DrawFolder(g, next[PartFolder], folderText, folderMissing, folderFont, hover == PartFolder, s);
+
                 if (WallAvailable)
                 {
                     DrawButton(g, next[PartWall], WallOn ? SwimTheme.AccentDark : SwimTheme.Raised, WallOn ? SwimTheme.Accent : SwimTheme.Border, WallOn ? SwimTheme.AccentPale : SwimTheme.Text, wallText, font, s, (gg, icon, ink) =>
@@ -690,6 +870,33 @@ namespace Kinovea.ScreenManager
                 g.SmoothingMode = smoothing;
                 g.TextRenderingHint = hint;
             }
+        }
+
+        /// <summary>The folder button: a folder icon, the name of the folder (amber when a camera has none) and a small arrow of its menu.</summary>
+        private static void DrawFolder(Graphics g, RectangleF r, string text, bool missing, Font font, bool hot, float s)
+        {
+            Color ink = missing ? SwimTheme.Amber : SwimTheme.Text;
+            SwimTheme.FillRounded(g, hot ? SwimTheme.RaisedHover : (missing ? Color.FromArgb(120, SwimTheme.AmberDark) : SwimTheme.Raised), r, 6 * s);
+            SwimTheme.DrawRounded(g, hot ? SwimTheme.Accent : (missing ? SwimTheme.Amber : SwimTheme.Border), r, 6 * s);
+
+            // The folder icon: its tab and its body.
+            float size = 14 * s;
+            RectangleF icon = new RectangleF(r.Left + 12 * s, r.Top + (r.Height - size * 0.8f) / 2f, size, size * 0.8f);
+            using (Pen pen = new Pen(ink, Math.Max(1.3f, 1.5f * s)) { LineJoin = LineJoin.Round })
+            {
+                g.DrawLines(pen, new[] { new PointF(icon.Left, icon.Bottom), new PointF(icon.Left, icon.Top), new PointF(icon.Left + icon.Width * 0.38f, icon.Top),
+                    new PointF(icon.Left + icon.Width * 0.5f, icon.Top + icon.Height * 0.2f), new PointF(icon.Right, icon.Top + icon.Height * 0.2f),
+                    new PointF(icon.Right, icon.Bottom), new PointF(icon.Left, icon.Bottom) });
+            }
+
+            // The arrow of the menu, on the right.
+            float ax = r.Right - 14 * s, ay = r.Top + r.Height / 2f;
+            using (SolidBrush brush = new SolidBrush(SwimTheme.Dim))
+                g.FillPolygon(brush, new[] { new PointF(ax - 4 * s, ay - 2 * s), new PointF(ax + 4 * s, ay - 2 * s), new PointF(ax, ay + 3 * s) });
+
+            using (SolidBrush brush = new SolidBrush(ink))
+            using (StringFormat format = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
+                g.DrawString(text, font, brush, new RectangleF(icon.Right + 8 * s, r.Top, Math.Max(10, ax - 10 * s - (icon.Right + 8 * s)), r.Height), format);
         }
 
         /// <summary>A button of the bar: its shape with the corners cut, an icon on the left and its text in spaced capitals.</summary>
