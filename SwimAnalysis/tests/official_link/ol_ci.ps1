@@ -30,6 +30,8 @@ $cities = @(
   @('ΕΑΚΚΑ.A. (ΜΑΡΟΥΣΙ)', 'ΟΑΚΑ', 'Μαρούσι', 'a city with its accent back'),
   @('Ν.ΣΜΥΡΝΗΣ (Ν. ΣΜΥΡΝΗ)', 'ΝΕΑ ΣΜΥΡΝΗ', 'Νέα Σμύρνη', 'a city shortened by the results'),
   @('ΑΓ.ΝΙΚΟΛΑΟΥ (ΑΓΙΟΣ ΝΙΚΟΛΑΟΣ)', 'ΑΓΝΙΚΟΛ', 'Άγιος Νικόλαος', 'a city of two words'),
+  @('ΕΘΝΙΚΟ ΒΟΛΟΥ (ΒΟΛΟΣ)', 'ΒΟΛΟΥ', 'Βόλος', 'a city that ends in a final sigma'),
+  @('ΠΕΙΡΑΙΑ (ΠΕΙΡΑΙΑΣ)', 'ΠΕΙΡΑΙΑΣ', 'Πειραιάς', 'a city with its accent on the end'),
   @('ΑΓΝΩΣΤΗ ΠΙΣΙΝΑ', 'DUBLIN', 'Dublin', 'a pool not named: the short place'),
   @('ΑΓΝΩΣΤΗ ΠΙΣΙΝΑ', 'PARIS (FR)', 'Paris', 'a short place with its country'),
   @('MELBOURNE, AUSTRALIA', 'MELBOURNE', 'Melbourne, Australia', 'a place with its country'),
@@ -37,7 +39,7 @@ $cities = @(
   @('', '', '', 'no place: none'))
 foreach ($c in $cities) {
   $got = $results::KoeCity($c[0], $c[1])
-  Check ($got -eq $c[2]) ('city: ' + $c[3])
+  Check ($got -ceq $c[2]) ('city: ' + $c[3] + $(if ($got -cne $c[2]) { ' (got ' + (($got.ToCharArray() | ForEach-Object { 'U+{0:X4}' -f [int]$_ }) -join ' ') + ')' } else { '' }))
 }
 
 # ---- A link searched as soon as it is pasted (fictional codes).
@@ -120,7 +122,7 @@ try {
   $today = [DateTime]::Today
   $season = $(if ($today.Month -ge 9) { $today.Year + 1 } else { $today.Year })
   $comps = @()
-  foreach ($s in @($season, $season - 1)) { $comps += @($results::KoeCompetitions($s)) }
+  foreach ($s in @($season, ($season - 1))) { $comps += @($results::KoeCompetitions($s)) }
   $comps = @($comps | Where-Object { $_.From -ne $null -and $_.From -lt $today } | Sort-Object { $_.From } -Descending | Select-Object -First 8)
   Write-Output ('info competitions read: ' + $comps.Count)
   foreach ($c in $comps) {

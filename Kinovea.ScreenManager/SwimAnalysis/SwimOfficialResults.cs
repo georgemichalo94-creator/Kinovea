@@ -266,16 +266,19 @@ namespace Kinovea.ScreenManager
             return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(c.ToLowerInvariant());
         }
 
-        /// <summary>A name in capitals without accents, its signs as spaces ("Ν. Σμύρνη" → "Ν ΣΜΥΡΝΗ").</summary>
+        /// <summary>A name in capitals without accents, its signs as spaces ("Ν. Σμύρνη" → "Ν ΣΜΥΡΝΗ", "Άγιος" → "ΑΓΙΟΣ").</summary>
         private static string CityKey(string s)
         {
-            string d = (s ?? "").ToUpperInvariant().Normalize(NormalizationForm.FormD);
+            string d = (s ?? "").Normalize(NormalizationForm.FormD);
             StringBuilder b = new StringBuilder(d.Length);
             foreach (char ch in d)
             {
                 if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
                     continue;
-                b.Append(char.IsLetter(ch) ? ch : ' ');
+
+                // The final sigma is not made a capital by every table of .NET: Σ.
+                char up = ch == '\u03C2' ? '\u03A3' : char.ToUpperInvariant(ch);
+                b.Append(char.IsLetter(up) ? up : ' ');
             }
 
             return Regex.Replace(b.ToString(), @"\s+", " ").Trim();
