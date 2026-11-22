@@ -181,6 +181,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Why the official times typed could not be put in (shown until they are corrected), null: none.</summary>
         private string officialError;
+
+        /// <summary>(2.28.0) The results link before its last change (a paste is searched at once) and the short wait after a paste.</summary>
+        private string resultsLinkBefore = "";
+        private Timer resultsLinkPaste;
         private Button btnFinalFrame;
         private Label lblFinalFrame;
         private TextBox tbFinishDist;
@@ -381,6 +385,12 @@ namespace Kinovea.ScreenManager
         {
             liveTimer.Stop();
             liveTimer.Dispose();
+            if (resultsLinkPaste != null)
+            {
+                resultsLinkPaste.Stop();
+                resultsLinkPaste.Dispose();
+            }
+
             toolTip.Dispose();
             if (boldGridFont != null)
                 boldGridFont.Dispose();
@@ -1358,20 +1368,20 @@ namespace Kinovea.ScreenManager
             // The official results on the web (since 2026-10-19): the competition's link (KOE live results, a Microplus results site,
             // a World Aquatics competition), or none (the KOE live results by the date). What was typed in the official times box and not put in goes: these replace it.
             tbResultsLink = new TextBox { Dock = DockStyle.Fill };
-            tbResultsLink.TextChanged += (s, e) => CommitRaceInfo(false);
-            Button btnResults = new SwimNoFocusButton { Text = SwimLang.T("🔗 Επίσημα αποτελέσματα"), AutoSize = true, Height = 26 };
-            btnResults.Click += (s, e) =>
+            tbResultsLink.TextChanged += (s, e) =>
             {
-                officialEditRace = null;
-                officialError = null;
-                manager.LinkOfficialResults(tbResultsLink.Text);
+                CommitRaceInfo(false);
+                ResultsLinkChanged();
             };
+            Button btnResults = new SwimNoFocusButton { Text = SwimLang.T("🔗 Επίσημα αποτελέσματα"), AutoSize = true, Height = 26 };
+            btnResults.Click += (s, e) => SearchOfficial();
             string resultsHelp = SwimLang.T("Βρίσκει τον αγώνα στα επίσημα αποτελέσματα: της ΚΟΕ (live.koe.org.gr), μιας σελίδας αποτελεσμάτων της ") +
                 SwimLang.T("Microplus (results.microplustimingservices.com) ή μιας διοργάνωσης της World Aquatics (worldaquatics.com/competitions/…). Τη ") +
                 SwimLang.T("διοργάνωση από τον σύνδεσμο που επικολλάς εδώ (ή, αν τον αφήσεις κενό, από ") +
                 SwimLang.T("την ημερομηνία και το όνομα της διοργάνωσης στα live της ΚΟΕ), το αγώνισμα από το στυλ και την απόσταση, τη φάση από τη φάση ") +
                 SwimLang.T("και την ημέρα, τον αθλητή από το μητρώο του (αλλιώς από το όνομα ή τον διάδρομο).\nΠαίρνει τους επίσημους ενδιάμεσους, τον ") +
-                SwimLang.T("τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.");
+                SwimLang.T("τελικό χρόνο, τον χρόνο αντίδρασης όπου δημοσιεύεται και τον διάδρομο, και τον αθλητή από το μητρώο· πριν μπουν, σου δείχνει τι βρήκε.") +
+                SwimLang.T("\nΜόλις επικολλήσεις τον σύνδεσμο, η αναζήτηση ξεκινά μόνη της. Ο σύνδεσμος ενός τελικού ή μιας σειράς των live της ΚΟΕ δίνει και το αγώνισμα, τη φάση, την ημερομηνία, τη διοργάνωση και τον τόπο.");
             toolTip.SetToolTip(tbResultsLink, resultsHelp);
             toolTip.SetToolTip(btnResults, resultsHelp);
 
@@ -2664,6 +2674,53 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Διαγραφή ανάλυσης"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (answer == DialogResult.Yes)
                 manager.DeleteRace();
+        }
+
+        /// <summary>The race found in the official results of the link (the button «🔗 Επίσημα αποτελέσματα», or a link pasted).</summary>
+        private void SearchOfficial()
+        {
+            officialEditRace = null;
+            officialError = null;
+            manager.LinkOfficialResults(tbResultsLink.Text);
+        }
+
+        /// <summary>
+        /// (2.28.0) A results link pasted in «Αποτελέσματα (σύνδεσμος)» (many letters at once, not typed) is searched at once, as with
+        /// «🔗 Επίσημα αποτελέσματα»: a link of a heat or final of the KOE live results gives the race's details too.
+        /// </summary>
+        private void ResultsLinkChanged()
+        {
+            string before = resultsLinkBefore ?? "";
+            string now = tbResultsLink.Text ?? "";
+            resultsLinkBefore = now;
+            if (updating || manager.Race == null || !tbResultsLink.Focused || !PastedText(before, now) || !SwimAnalysisManager.IsResultsLink(now))
+                return;
+
+            if (resultsLinkPaste == null)
+            {
+                resultsLinkPaste = new Timer { Interval = 350 };
+                resultsLinkPaste.Tick += (s, e) =>
+                {
+                    resultsLinkPaste.Stop();
+                    if (!IsDisposed && manager.Race != null && SwimAnalysisManager.IsResultsLink(tbResultsLink.Text))
+                        SearchOfficial();
+                };
+            }
+
+            resultsLinkPaste.Stop();
+            resultsLinkPaste.Start();
+        }
+
+        /// <summary>(2.28.0) Many letters changed at once (a paste, not typing): the part changed between what stayed the same at both ends.</summary>
+        private static bool PastedText(string before, string now)
+        {
+            int prefix = 0;
+            while (prefix < before.Length && prefix < now.Length && before[prefix] == now[prefix])
+                prefix++;
+            int suffix = 0;
+            while (suffix < before.Length - prefix && suffix < now.Length - prefix && before[before.Length - 1 - suffix] == now[now.Length - 1 - suffix])
+                suffix++;
+            return now.Length - prefix - suffix >= 8;
         }
 
         private void CommitRaceInfo(bool structureChanged)

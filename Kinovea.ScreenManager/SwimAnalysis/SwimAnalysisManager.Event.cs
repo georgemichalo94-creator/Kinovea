@@ -4,6 +4,7 @@ Copyright © Kinovea contributors. Swim race analysis module.
 This file is part of Kinovea and is distributed under the terms of the GNU General Public License v2.
 */
 #endregion
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
@@ -91,7 +92,7 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The round, the gender (when not typed), the competition and the city (when not typed, or one or two letters) of an event
-        /// into the race (see ApplyEvent): what changed. (2.15.0) Those of the title of pasted results only when its times are taken
+        /// into the race (see ApplyEvent), and (2.28.0) the day of the heat or final a link names: what changed. (2.15.0) Those of the title of pasted results only when its times are taken
         /// (OfferOfficial: «Αναίρεση» puts them back with the times; a «Όχι» left the round of another race).
         /// </summary>
         private static List<string> ApplyEventDetails(SwimRace r, SwimEventInfo ev)
@@ -122,6 +123,17 @@ namespace Kinovea.ScreenManager
             {
                 r.Location = ev.Location;
                 done.Add(ev.Location);
+            }
+
+            // (2.28.0) The day of the heat or final a link names.
+            if (ev.Date.HasValue)
+            {
+                DateTime? day = ParseRaceDate(r.Date);
+                if (!day.HasValue || day.Value.Date != ev.Date.Value.Date)
+                {
+                    r.Date = ev.Date.Value.ToString("d.M.yyyy", CultureInfo.InvariantCulture);
+                    done.Add(r.Date);
+                }
             }
 
             return done;

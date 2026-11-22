@@ -111,14 +111,20 @@ namespace Kinovea.ScreenManager
         public string OrganizationId = "";
         public string Name = "";
         public string NameLatin = "";
+
+        /// <summary>The short place as published (cut at ten letters: "ΘΕΣΣΑΛΟΝΙΚ").</summary>
         public string Place = "";
+
+        /// <summary>(2.28.0) The pool and its city as published ("ΠΟΣΕΙΔΩΝΙΟ-1- (ΘΕΣΣΑΛΟΝΙΚΗ)") and the city read from them ("Θεσσαλονίκη").</summary>
+        public string Venue = "";
+        public string City = "";
         public DateTime? From;
         public DateTime? To;
         public int Season;
 
         public override string ToString()
         {
-            return string.Format(CultureInfo.InvariantCulture, "{0} · {1:d/M/yyyy} · {2}", Name, From, Place);
+            return string.Format(CultureInfo.InvariantCulture, "{0} · {1:d/M/yyyy} · {2}", Name, From, City.Length > 0 ? City : Place);
         }
     }
 
@@ -199,6 +205,8 @@ namespace Kinovea.ScreenManager
                     Name = Str(t["Description"]),
                     NameLatin = Str(t["Description_ENG"]),
                     Place = Str(t["Place_Short"]),
+                    Venue = Str(t["Place"]),
+                    City = KoeCity(Str(t["Place"]), Str(t["Place_Short"])),
                     From = Date(t["DateOfStart"]),
                     To = Date(t["DateOfEnd"]),
                     Season = Int(t["RacingSeason"])
@@ -206,6 +214,106 @@ namespace Kinovea.ScreenManager
             }
 
             return list;
+        }
+
+        /// <summary>
+        /// (2.28.0) The city of a competition of the KOE live results: the one in brackets after its pool ("ΠΟΣΕΙΔΩΝΙΟ-1- (ΘΕΣΣΑΛΟΝΙΚΗ)"),
+        /// else its place as published ("MELBOURNE, AUSTRALIA"), else, for a pool not named ("ΑΓΝΩΣΤΗ ΠΙΣΙΝΑ"), its short place
+        /// ("DUBLIN"; cut at ten letters, so last). The Greek cities with their accents ("Θεσσαλονίκη"), a Latin name in small letters
+        /// with capitals ("Dublin"), another Greek name as published. "" when none.
+        /// </summary>
+        public static string KoeCity(string venue, string place)
+        {
+            string v = Regex.Replace(venue ?? "", @"\s+", " ").Trim();
+            string p = Regex.Replace(place ?? "", @"\s+", " ").Trim();
+            Match m = Regex.Match(v, @"\(([^()]+)\)\s*$");
+            string inBrackets = m.Success ? m.Groups[1].Value.Trim() : "";
+
+            // "(GRE)", "(FR)": a country after the place, not a city.
+            bool country = Regex.IsMatch(inBrackets, @"^[A-Za-z]{2,3}$");
+            string city;
+            if (inBrackets.Length > 0 && !country)
+                city = inBrackets;
+            else if (v.Length > 0 && !UnnamedPool(v))
+                city = (m.Success ? v.Substring(0, m.Index) : v).Trim().TrimEnd(',').Trim();
+            else
+                city = Regex.Replace(p, @"\s*\([A-Za-z]{2,3}\)\s*$", "").Trim();
+            return CityName(city);
+        }
+
+        /// <summary>A place of the KOE live results that names no pool: the city is in the short place then.</summary>
+        private static bool UnnamedPool(string venue)
+        {
+            string key = CityKey(venue);
+            return key.Contains("ΑΓΝΩΣΤΗ") || key.Contains("AGNOSTI") || key == "ALSTERS";
+        }
+
+        /// <summary>
+        /// (2.28.0) A city as the results write it (capitals, no accents) as it is written: the Greek cities of the competitions with
+        /// their accents, a Latin name in small letters with capitals, another Greek name as published.
+        /// </summary>
+        public static string CityName(string city)
+        {
+            string c = Regex.Replace(city ?? "", @"\s+", " ").Trim();
+            if (c.Length == 0)
+                return "";
+
+            string known;
+            if (GreekCities.TryGetValue(CityKey(c), out known))
+                return known;
+            if (c.Any(ch => ch >= '\u0370' && ch <= '\u03FF'))
+                return c;
+            return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(c.ToLowerInvariant());
+        }
+
+        /// <summary>A name in capitals without accents, its signs as spaces ("Ν. Σμύρνη" → "Ν ΣΜΥΡΝΗ").</summary>
+        private static string CityKey(string s)
+        {
+            string d = (s ?? "").ToUpperInvariant().Normalize(NormalizationForm.FormD);
+            StringBuilder b = new StringBuilder(d.Length);
+            foreach (char ch in d)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark)
+                    continue;
+                b.Append(char.IsLetter(ch) ? ch : ' ');
+            }
+
+            return Regex.Replace(b.ToString(), @"\s+", " ").Trim();
+        }
+
+        /// <summary>The cities of the Greek competitions as they are written, by their name in capitals without accents.</summary>
+        private static readonly Dictionary<string, string> GreekCities = GreekCityNames();
+
+        private static Dictionary<string, string> GreekCityNames()
+        {
+            string[] names =
+            {
+                "Αθήνα", "Θεσσαλονίκη", "Πειραιάς", "Πάτρα", "Ηράκλειο", "Χανιά", "Ρέθυμνο", "Άγιος Νικόλαος", "Λάρισα", "Βόλος", "Λαμία",
+                "Ιωάννινα", "Καβάλα", "Χαλκίδα", "Χίος", "Καλαμάτα", "Τρίκαλα", "Καρδίτσα", "Αγρίνιο", "Μαρούσι", "Χαλάνδρι", "Χαϊδάρι",
+                "Αιγάλεω", "Βουλιαγμένη", "Ηλιούπολη", "Περιστέρι", "Νέα Σμύρνη", "Γλυφάδα", "Άλιμος", "Καλλιθέα", "Νίκαια", "Άνω Λιόσια",
+                "Μεταμόρφωση", "Αλεξανδρούπολη", "Ορεστιάδα", "Κομοτηνή", "Ξάνθη", "Δράμα", "Σέρρες", "Κατερίνη", "Βέροια", "Νάουσα",
+                "Κοζάνη", "Πτολεμαΐδα", "Καστοριά", "Φλώρινα", "Έδεσσα", "Γιαννιτσά", "Κιλκίς", "Πολύγυρος", "Κέρκυρα", "Άρτα", "Πρέβεζα",
+                "Ηγουμενίτσα", "Μεσολόγγι", "Ναύπακτος", "Πύργος", "Τρίπολη", "Σπάρτη", "Ναύπλιο", "Άργος", "Κόρινθος", "Λουτράκι", "Αίγιο",
+                "Λιβαδειά", "Θήβα", "Καρπενήσι", "Αργοστόλι", "Ζάκυνθος", "Λευκάδα", "Ρόδος", "Κως", "Κάλυμνος", "Σύρος", "Ερμούπολη",
+                "Μυτιλήνη", "Σάμος", "Λήμνος", "Νάξος", "Πάρος", "Σαλαμίνα", "Ελευσίνα", "Μέγαρα", "Κηφισιά", "Αγία Παρασκευή", "Παλλήνη",
+                "Βύρωνας", "Ζωγράφου", "Γαλάτσι", "Παλαιό Φάληρο", "Κερατσίνι", "Πέραμα", "Κορυδαλλός", "Αχαρνές", "Καλαμαριά", "Εύοσμος",
+                "Πυλαία", "Θέρμη", "Νεάπολη", "Σταυρούπολη", "Νέα Ιωνία", "Νέα Φιλαδέλφεια", "Χολαργός", "Γέρακας", "Ασπρόπυργος",
+                "Ίλιον", "Πετρούπολη", "Αγία Βαρβάρα", "Άγιος Δημήτριος", "Δάφνη", "Μοσχάτο", "Κορωπί", "Σητεία", "Ιεράπετρα", "Τύρναβος",
+                "Ελασσόνα", "Άμφισσα", "Αμαλιάδα", "Μεγαλόπολη", "Γρεβενά", "Λαγκαδάς", "Ωραιόκαστρο", "Κέρκυρα", "Λευκίμμη", "Σκιάθος"
+            };
+            Dictionary<string, string> d = new Dictionary<string, string>();
+            foreach (string name in names)
+                d[CityKey(name)] = name;
+
+            // As the results shorten them.
+            d["Ν ΣΜΥΡΝΗ"] = "Νέα Σμύρνη";
+            d["Ν ΙΩΝΙΑ"] = "Νέα Ιωνία";
+            d["Ν ΦΙΛΑΔΕΛΦΕΙΑ"] = "Νέα Φιλαδέλφεια";
+            d["ΑΓ ΝΙΚΟΛΑΟΣ"] = "Άγιος Νικόλαος";
+            d["ΘΕΣ ΝΙΚΗ"] = "Θεσσαλονίκη";
+            d["ΑΛΕΞ ΛΗ"] = "Αλεξανδρούπολη";
+            d["ΑΘΗΝΑΙ"] = "Αθήνα";
+            return d;
         }
 
         /// <summary>The heats and finals of a competition of the KOE live results, without their results.</summary>

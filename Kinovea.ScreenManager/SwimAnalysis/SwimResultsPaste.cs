@@ -86,9 +86,12 @@ namespace Kinovea.ScreenManager
         public string Location = "";
         public int Pool;
 
+        /// <summary>(2.28.0) The day of the heat or final (a link of the KOE live results that names it); null when not known.</summary>
+        public DateTime? Date;
+
         public bool Any
         {
-            get { return Distance > 0 || Style.Length > 0 || Gender.Length > 0 || Round.Length > 0 || Competition.Length > 0 || Location.Length > 0 || Pool > 0; }
+            get { return Distance > 0 || Style.Length > 0 || Gender.Length > 0 || Round.Length > 0 || Competition.Length > 0 || Location.Length > 0 || Pool > 0 || Date.HasValue; }
         }
 
         /// <summary>The event itself (distance and style) is known.</summary>

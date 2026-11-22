@@ -2895,6 +2895,9 @@ namespace Kinovea.ScreenManager
             { "Το Google Sheet έστειλε μόνο {0} αθλητές αντί για {1}: κρατήθηκε η προηγούμενη λίστα.", "The Google Sheet sent only {0} swimmers instead of {1}: the previous list was kept." },
             { "Έλεγξε στο KOE App το φύλλο «Στοιχεία Αθλητών/τριων» (1η γραμμή: unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ) και ξαναπάτα ↻.", "Check the sheet «Στοιχεία Αθλητών/τριων» in KOE App (first row: unique_id and ΟΝΟΜΑΤΕΠΩΝΥΜΟ) and press ↻ again." },
             { "Λίστα: {0} αθλητές, μόνο οι διεθνείς: το μητρώο δεν βρέθηκε.", "List: {0} swimmers, only the international ones: the registry was not found." },
+            { "🔗 Ο σύνδεσμος είναι για {0}· ο αγώνας έμεινε {1}: δεν μπήκαν επίσημοι χρόνοι.", "🔗 The link is for {0}; the race stays {1}: no official times went in." },
+            { "\nΜόλις επικολλήσεις τον σύνδεσμο, η αναζήτηση ξεκινά μόνη της. Ο σύνδεσμος ενός τελικού ή μιας σειράς των live της ΚΟΕ δίνει και το αγώνισμα, τη φάση, την ημερομηνία, τη διοργάνωση και τον τόπο.",
+                "\nAs soon as you paste the link, the search starts by itself. The link of a final or a heat of the KOE live results also gives the event, the round, the date, the competition and the place." },
         };
     }
 }

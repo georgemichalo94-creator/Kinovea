@@ -87,6 +87,15 @@ namespace Kinovea.ScreenManager
 
             /// <summary>The competition of a results page whose results are not read (its title; since 2.8.2), null when not read.</summary>
             public SwimEventInfo PageEvent;
+
+            /// <summary>
+            /// (2.28.0) The heat or final the link names (…/#/swimming-result/1/8745/&lt;unit&gt;): the race's, whatever its event (its event,
+            /// round and day become the race's).
+            /// </summary>
+            public SwimOfficialUnit LinkUnit;
+
+            /// <summary>(2.28.0) The competition is the one of the link (its code), not one found by the date.</summary>
+            public bool CompetitionOfLink;
         }
 
         private BackgroundWorker officialWorker;
@@ -446,16 +455,36 @@ namespace Kinovea.ScreenManager
             if (units == null)
             {
                 units = SwimOfficialResults.KoeSchedule(code);
+
+                // (2.28.0) The competition of a link too (its name and city go into the race's details), from the season of its days.
+                if (found.Competition == null)
+                {
+                    found.Competition = KoeCompetitionOf(code, units, q);
+                    found.CompetitionOfLink = found.Competition != null;
+                }
+
                 if (found.Source.Length == 0)
                     found.Source = found.Competition != null ? found.Competition.Name : SwimLang.T("ΚΟΕ live (") + code.ToString(CultureInfo.InvariantCulture) + ")";
             }
 
-            units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && GenderFits(u.Gender, q.Gender)).ToList();
-            if (!string.IsNullOrEmpty(unitCode) && units.Any(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)))
-                units = units.Where(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)).ToList();
-            string round = RaceRound(q.Round);
-            if (round.Length > 0 && units.Any(u => u.Round == round || (round == "final" && u.Round == "timed")))
-                units = units.Where(u => u.Round == round || (round == "final" && u.Round == "timed")).ToList();
+            // (2.28.0) The heat or final the link names is the race's whatever the event of the race (the link's becomes the race's):
+            // only it. Not the unit of a link kept from another race of the competition (another event).
+            SwimOfficialUnit linked = unitCode.Length == 0 || q.LinkRemembered ? null
+                : units.FirstOrDefault(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase));
+            if (linked != null)
+            {
+                found.LinkUnit = linked;
+                units = new List<SwimOfficialUnit> { linked };
+            }
+            else
+            {
+                units = units.Where(u => u.Distance == q.Distance && u.Style == q.Style && u.Relay == q.Relay && GenderFits(u.Gender, q.Gender)).ToList();
+                if (!string.IsNullOrEmpty(unitCode) && units.Any(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)))
+                    units = units.Where(u => string.Equals(u.UnitCode, unitCode, StringComparison.OrdinalIgnoreCase)).ToList();
+                string round = RaceRound(q.Round);
+                if (round.Length > 0 && units.Any(u => u.Round == round || (round == "final" && u.Round == "timed")))
+                    units = units.Where(u => u.Round == round || (round == "final" && u.Round == "timed")).ToList();
+            }
 
             // The day of the race: a link kept from another race of the competition must have races that day (else it is another
             // meet of the same name); a link typed for the race is taken even on another day (the date typed can be wrong: the
@@ -551,6 +580,16 @@ namespace Kinovea.ScreenManager
             found.AthleteNotFound = q.AthleteId.Length > 0 || q.Athlete.Length > 0;
             if (q.Lane <= 0)
             {
+                // (2.28.0) The heat or final of a link: its swimmers to choose from (the nearest to the time read first, else in the
+                // order of the results).
+                List<KeyValuePair<SwimOfficialUnit, SwimOfficialEntry>> withTime = all.Where(x => x.Value.Time.HasValue).ToList();
+                if (found.LinkUnit != null && withTime.Count > 0)
+                {
+                    found.Choices = q.Final.HasValue ? withTime.OrderBy(x => Math.Abs(x.Value.Time.Value - q.Final.Value)).ToList()
+                        : withTime.OrderBy(x => x.Value.Time.Value).ToList();
+                    return found;
+                }
+
                 found.Error = found.AthleteNotFound ? SwimLang.T("ο αθλητής δεν βρέθηκε στο αγώνισμα (έλεγξε τη φάση και το όνομα, ή γράψε τον διάδρομο)")
                     : SwimLang.T("διάλεξε πρώτα τον αθλητή ή γράψε τον διάδρομο");
                 return found;
@@ -599,6 +638,55 @@ namespace Kinovea.ScreenManager
 
             return all.Where(c => c.From.HasValue && c.From.Value.Date <= day.AddDays(1) && (c.To ?? c.From).Value.Date >= day.AddDays(-1))
                 .GroupBy(c => c.Code).Select(g => g.First()).ToList();
+        }
+
+        /// <summary>
+        /// (2.28.0) The competition of a code of the KOE live results (its name, city and days): in the season of its days (the day of
+        /// its first heat, else the race's, else the video's; the season of a competition is the year it ends in: from September the
+        /// next one first). Null when not found.
+        /// </summary>
+        private static SwimKoeCompetition KoeCompetitionOf(int code, List<SwimOfficialUnit> units, OfficialQuery q)
+        {
+            DateTime? day = units.Where(u => u.Date.HasValue).Select(u => u.Date).FirstOrDefault() ?? q.Date ?? q.VideoDate;
+            if (code <= 0 || !day.HasValue)
+                return null;
+
+            int year = day.Value.Year;
+            foreach (int season in day.Value.Month >= 9 ? new[] { year + 1, year } : new[] { year, year + 1 })
+            {
+                SwimKoeCompetition c = SwimOfficialResults.KoeCompetitions(season).FirstOrDefault(x => x.Code == code);
+                if (c != null)
+                    return c;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// (2.28.0) The link of the competition of a link of the KOE live results that names a heat or final (kept for the next races of
+        /// the competition: their events are others); other links as they are.
+        /// </summary>
+        private static string CompetitionLink(string link)
+        {
+            Match m = Regex.Match(link ?? "", @"koe\.org\.gr/?#/[a-z\-]+/\d+/(\d+)/[0-9A-Fa-f\-]{36}", RegexOptions.IgnoreCase);
+            int code;
+            return m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out code) ? KoeLink(code) : link;
+        }
+
+        /// <summary>
+        /// (2.28.0) A link whose official results are read (searched as soon as it is pasted): a competition of the KOE live results, a
+        /// Microplus results site, a World Aquatics competition, a results page that names its event.
+        /// </summary>
+        public static bool IsResultsLink(string text)
+        {
+            string s = (text ?? "").Trim();
+            if (s.Length < 12 || s.IndexOf(' ') >= 0 || !Regex.IsMatch(s, @"^(https?://)?[\w\-]+(\.[\w\-]+)+(/|#|$)", RegexOptions.IgnoreCase))
+                return false;
+
+            return (s.IndexOf("koe.org.gr", StringComparison.OrdinalIgnoreCase) >= 0 && Regex.IsMatch(s, @"#/[a-z\-]+/\d+/\d+", RegexOptions.IgnoreCase)) ||
+                s.IndexOf(SwimOfficialResults.MicroplusHost, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                SwimOfficialResults.WorldAquaticsCompetition(s) > 0 ||
+                SwimResultsPaste.EventFromLink(s) != null;
         }
 
         /// <summary>How alike the name typed and a competition's names (Greek, Latin) are (0-1).</summary>
@@ -683,6 +771,11 @@ namespace Kinovea.ScreenManager
                 LinkOfficialResults(KoeLink(found.Competitions[i].Code));
                 return;
             }
+
+            // (2.28.0) What the link gives goes into the race's details at once, whatever is done with the times: the event, round and
+            // day of its heat or final, its competition and city. A race that keeps another event takes none of its times.
+            if ((found.LinkUnit != null || found.CompetitionOfLink) && !LinkDetails(found))
+                return;
 
             if (found.Entry == null && found.Choices.Count > 0)
             {
@@ -800,6 +893,10 @@ namespace Kinovea.ScreenManager
                 if ((Race.Location ?? "").Trim().Length < 3 && SwimResultsPaste.CityOf(found.Source).Length > 0)
                     Race.Location = SwimResultsPaste.CityOf(found.Source);
             }
+
+            // (2.28.0) The city of the competition of the KOE live results too (from the place of its pool).
+            if ((Race.Location ?? "").Trim().Length < 3 && found.Competition != null && !string.IsNullOrEmpty(found.Competition.City))
+                Race.Location = found.Competition.City;
             OfficialChanged(times, e.Reaction, detailsBack);
             if (titleDetails)
                 RaceInfoChanged(false);
@@ -809,7 +906,7 @@ namespace Kinovea.ScreenManager
             if (link.Length > 0)
             {
                 Race.ResultsLink = link;
-                RememberResultsLink(Race.Competition, found.Unit.Date ?? ParseRaceDate(Race.Date), link);
+                RememberResultsLink(Race.Competition, found.Unit.Date ?? ParseRaceDate(Race.Date), CompetitionLink(link));
             }
 
             if (form != null)
@@ -818,6 +915,50 @@ namespace Kinovea.ScreenManager
             // The registry learns from it (a sure match only): a Latin spelling of our athlete, an international athlete's code.
             if (!keepAthlete)
                 RememberOfficialAthlete(e, athlete, found.ByAthlete, found.Unit.Source == "paste");
+        }
+
+        /// <summary>
+        /// (2.28.0) The race's details from its link as soon as it is read (whatever is done with the times): the heat or final it names
+        /// gives the event (asked first when the race has marks of another event), the round, the gender (when not typed) and the day;
+        /// its competition the name and the city (when not typed). False when the race keeps another event than the link's: the
+        /// times of the link are not its own then.
+        /// </summary>
+        private bool LinkDetails(OfficialFound found)
+        {
+            if (Race == null)
+                return false;
+
+            SwimEventInfo ev = new SwimEventInfo();
+            SwimOfficialUnit u = found.LinkUnit;
+            if (u != null)
+            {
+                ev.Distance = u.Distance;
+                ev.Relay = u.Relay;
+                ev.Style = u.Style ?? "";
+                ev.Gender = u.Gender == "M" || u.Gender == "F" ? u.Gender : "";
+                ev.Round = u.Round == "timed" ? "final" : (u.Round ?? "");
+                ev.Date = u.Date;
+            }
+
+            if (found.Competition != null)
+            {
+                ev.Competition = (found.Competition.Name ?? "").Trim();
+                ev.Location = found.Competition.City ?? "";
+            }
+
+            declinedEvent = null;
+            ApplyEvent(ev, SwimLang.T("τον σύνδεσμο"));
+            if (Race == null)
+                return false;
+
+            if (ev.HasEvent && (Race.Distance != ev.Distance || Race.Relay != ev.Relay || Race.Style != ev.Style))
+            {
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🔗 Ο σύνδεσμος είναι για {0}· ο αγώνας έμεινε {1}: δεν μπήκαν επίσημοι χρόνοι."),
+                    EventText(ev.Distance, ev.Relay, ev.Style, Race.Pool), EventText(Race.Distance, Race.Relay, Race.Style, Race.Pool)), true);
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>" (δεν διαβάστηκαν όλα τα αποτελέσματα)" when some heats were not read or left out.</summary>
