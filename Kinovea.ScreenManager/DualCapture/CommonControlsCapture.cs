@@ -44,6 +44,10 @@ namespace Kinovea.ScreenManager
 
         /// <summary>(Swim 2.27.0) The start signal is asked for (its button in the row): the cameras record, the words, the horn.</summary>
         public event EventHandler SignalAsked;
+
+        /// <summary>(Swim 2.28.0) The report of the attempts shown or put away; the automatic stop after the last line on or off.</summary>
+        public event EventHandler ReportAsked;
+        public event EventHandler AutoStopAsked;
         #endregion
 
         #region Properties
@@ -151,6 +155,34 @@ namespace Kinovea.ScreenManager
                 ToggleRecording();
         }
 
+        /// <summary>(Swim 2.28.0) The cameras stop recording, as the stop button does (the automatic stop after the last line).</summary>
+        public void SwimStopAll()
+        {
+            if (recording)
+                ToggleRecording();
+        }
+
+        /// <summary>(Swim 2.28.0) The button of the report: there is a report, it is shown.</summary>
+        public void SetReport(bool available, bool on)
+        {
+            if (bar == null)
+                return;
+
+            bar.ReportAvailable = available;
+            bar.ReportOn = on && available;
+            bar.Invalidate();
+        }
+
+        /// <summary>(Swim 2.28.0) The automatic stop on or off.</summary>
+        public void SetAutoStop(bool on)
+        {
+            if (bar == null)
+                return;
+
+            bar.AutoStopOn = on;
+            bar.Invalidate();
+        }
+
         private void Bar_PartClicked(int part)
         {
             switch (part)
@@ -179,6 +211,14 @@ namespace Kinovea.ScreenManager
                 case SwimCaptureBar.PartWall:
                     if (WallAsked != null)
                         WallAsked(this, EventArgs.Empty);
+                    break;
+                case SwimCaptureBar.PartReport:
+                    if (ReportAsked != null)
+                        ReportAsked(this, EventArgs.Empty);
+                    break;
+                case SwimCaptureBar.PartAutoStop:
+                    if (AutoStopAsked != null)
+                        AutoStopAsked(this, EventArgs.Empty);
                     break;
             }
         }

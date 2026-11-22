@@ -47,6 +47,15 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The duration of the recording going on (0 without one).</summary>
         public double RecordingSeconds;
+
+        /// <summary>(2.28.0) Its distance in the pool from the wall of the start (NaN: not said; 0: out of the water at the blocks).</summary>
+        public double Distance = double.NaN;
+
+        /// <summary>(2.28.0) Its line, where its distance is: a part of the width of the image.</summary>
+        public float Line = 0.5f;
+
+        /// <summary>(2.28.0) The time of its line in the attempt going on, seconds from the horn (NaN: not yet).</summary>
+        public double Crossed = double.NaN;
     }
 
     /// <summary>(2.27.0) Where the images of the wall of cameras and its live panel go.</summary>
@@ -373,6 +382,9 @@ namespace Kinovea.ScreenManager
                 if (hasImage && recording)
                     PaintRecordingFrame(g, image, progress, s);
 
+                if (hasImage && SwimWallPlaces.Under(camera.Distance))
+                    PaintLine(g, image, camera, s, fs);
+
                 RectangleF inner = RectangleF.Inflate(image, -7 * s, -7 * s);
                 Color bracket = recording ? SwimTheme.Red : SwimTheme.Accent;
                 SwimTheme.Brackets(g, inner, bracket, hover ? 0.95f : (recording ? 0.85f : 0.45f));
@@ -427,6 +439,49 @@ namespace Kinovea.ScreenManager
                 SwimTheme.Tracked(g, SwimLang.Upper(title), label, brush, image.Left + (image.Width - labelWidth) / 2f, y0 + numberSize.Height * 0.9f + 8 * s);
         }
 
+        /// <summary>
+        /// (2.28.0) The line of a camera under the water at its distance (dashed, its distance on top) and, once the head of the swimmer
+        /// passed it in the attempt going on, its time from the horn (≈: from the live image) at its foot.
+        /// </summary>
+        private static void PaintLine(Graphics g, Rectangle image, SwimWallCamera camera, float s, float fs)
+        {
+            float x = image.Left + Math.Max(0.02f, Math.Min(0.98f, camera.Line)) * image.Width;
+            float top = image.Top + 70 * s, bottom = image.Bottom - 20 * s;
+            if (bottom - top < 30 * s)
+                return;
+
+            using (Pen shade = new Pen(Color.FromArgb(110, SwimTheme.Back), 3.6f * s))
+                g.DrawLine(shade, x, top, x, bottom);
+            using (Pen pen = new Pen(Color.FromArgb(235, SwimTheme.Accent), 1.6f * s) { DashStyle = DashStyle.Dash })
+                g.DrawLine(pen, x, top, x, bottom);
+
+            Font font = Display(10f * fs);
+            string label = SwimWallPlaces.Label(camera.Distance);
+            SizeF size = g.MeasureString(label, font);
+            RectangleF chip = new RectangleF(x - size.Width / 2f - 7 * s, top - size.Height - 6 * s, size.Width + 14 * s, size.Height + 4 * s);
+            SwimTheme.FillRounded(g, Color.FromArgb(200, SwimTheme.Back), chip, 3 * s);
+            SwimTheme.DrawRounded(g, SwimTheme.Accent, chip, 3 * s);
+            using (SolidBrush brush = new SolidBrush(SwimTheme.Accent))
+            using (StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                g.DrawString(label, font, brush, chip, center);
+
+            if (double.IsNaN(camera.Crossed))
+                return;
+
+            Font big = Display(11.5f * fs);
+            string time = label + " · ≈" + camera.Crossed.ToString("0.00", CultureInfo.InvariantCulture) + " s";
+            SizeF timeSize = g.MeasureString(time, big);
+            float left = x + 8 * s;
+            if (left + timeSize.Width + 16 * s > image.Right - 8 * s)
+                left = x - 8 * s - timeSize.Width - 16 * s;
+
+            RectangleF badge = new RectangleF(left, bottom - timeSize.Height - 14 * s, timeSize.Width + 16 * s, timeSize.Height + 8 * s);
+            SwimTheme.FillRounded(g, SwimTheme.Accent, badge, 3 * s);
+            using (SolidBrush brush = new SolidBrush(SwimTheme.Back))
+            using (StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                g.DrawString(time, big, brush, badge, center);
+        }
+
         private static void PaintRecordingFrame(Graphics g, Rectangle image, float progress, float s)
         {
             float width = Math.Max(2f, 2.5f * s);
@@ -450,6 +505,8 @@ namespace Kinovea.ScreenManager
             float box = 26 * s;
             string number = camera.Number > 0 ? camera.Number.ToString(CultureInfo.InvariantCulture) : "·";
             string name = string.IsNullOrEmpty(camera.Name) ? "" : camera.Name;
+            if (!double.IsNaN(camera.Distance))
+                name = (name.Length > 0 ? name + " · " : "") + SwimWallPlaces.Label(camera.Distance);
             Font numberFont = Display(12.5f * fs);
             Font nameFont = Display(10.5f * fs);
 

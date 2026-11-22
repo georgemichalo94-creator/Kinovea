@@ -96,6 +96,10 @@ namespace Kinovea.ScreenManager
         private bool captureWall;
         private Control wallInfo;
         private int wallSolo = -1;
+
+        // (Swim 2.28.0) The report of the attempts over the whole wall, shown after an attempt.
+        private Control wallReport;
+        private bool wallReportShown;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -277,10 +281,26 @@ namespace Kinovea.ScreenManager
         /// (Swim 2.27.0) The wall of cameras on or off (set by the screen manager, which then organizes the screens again), with its
         /// live panel (null: none). The screens in the grid even when they are two, nothing between them, in the dark of the wall.
         /// </summary>
-        public void SetCaptureWall(bool on, Control info)
+        public void SetCaptureWall(bool on, Control info, Control report)
         {
             if (!on)
+            {
                 info = null;
+                report = null;
+            }
+
+            if (wallReport != null && wallReport != report && wallReport.Parent == pnlGrid)
+            {
+                wallReport.Visible = false;
+                pnlGrid.Controls.Remove(wallReport);
+            }
+
+            wallReport = report;
+            if (wallReport != null && wallReport.Parent != pnlGrid)
+            {
+                wallReport.Visible = false;
+                pnlGrid.Controls.Add(wallReport);
+            }
 
             if (wallInfo != null && wallInfo != info && wallInfo.Parent == pnlGrid)
             {
@@ -304,6 +324,23 @@ namespace Kinovea.ScreenManager
             captureWall = on;
             wallSolo = -1;
             ApplyWallLook();
+        }
+
+        /// <summary>(Swim 2.28.0) The report of the attempts over the whole wall, or the cameras.</summary>
+        public void ShowWallReport(bool show)
+        {
+            wallReportShown = show;
+            if (wallReport == null)
+                return;
+
+            if (captureWall && show)
+            {
+                LayoutGrid();
+            }
+            else if (wallReport.Visible)
+            {
+                wallReport.Visible = false;
+            }
         }
 
         /// <summary>(Swim 2.27.0) The colors and the borders around the screens: the dark of the wall, or the classic ones.</summary>
@@ -861,6 +898,22 @@ namespace Kinovea.ScreenManager
 
                 if (wallInfo.Visible != shown)
                     wallInfo.Visible = shown;
+            }
+
+            // (Swim 2.28.0) The report of the attempts over the whole wall.
+            if (wallReport != null)
+            {
+                bool shown = wallReportShown && pnlGrid.ClientRectangle.Width > 0 && pnlGrid.ClientRectangle.Height > 0;
+                if (shown)
+                {
+                    if (wallReport.Bounds != pnlGrid.ClientRectangle)
+                        wallReport.Bounds = pnlGrid.ClientRectangle;
+
+                    wallReport.BringToFront();
+                }
+
+                if (wallReport.Visible != shown)
+                    wallReport.Visible = shown;
             }
         }
 

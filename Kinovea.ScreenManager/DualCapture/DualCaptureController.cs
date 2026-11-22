@@ -27,6 +27,9 @@ namespace Kinovea.ScreenManager
 
         // (Swim 2.27.0) The menu of the capture folder of all the cameras (its items are made again each time it opens).
         private ContextMenuStrip folderMenu = new ContextMenuStrip();
+
+        // (Swim 2.28.0) The automatic stop of the recording of an attempt after its last line.
+        private Timer swimAutoStop = new Timer { Interval = 200 };
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         
         #endregion
@@ -44,6 +47,18 @@ namespace Kinovea.ScreenManager
             view.FolderAsked += CCtrl_FolderAsked;
             view.SetFolderProvider(SwimFolderText, SwimFolderMissing);
             view.SignalAsked += CCtrl_SignalAsked;
+
+            // (Swim 2.28.0) The attempts measured live: the report after an attempt and the automatic stop after the last line.
+            view.ReportAsked += (s, e) => SwimLiveAttempts.ShowReport(!SwimLiveAttempts.Report);
+            view.AutoStopAsked += (s, e) =>
+            {
+                SwimLiveAttempts.AutoStop = !SwimLiveAttempts.AutoStop;
+                view.SetAutoStop(SwimLiveAttempts.AutoStop);
+                log.DebugFormat("Automatic stop after the last line: {0}.", SwimLiveAttempts.AutoStop ? "on" : "off");
+            };
+            view.SetAutoStop(SwimLiveAttempts.AutoStop);
+            SwimLiveAttempts.Changed += () => view.SetReport(SwimLiveAttempts.List.Count > 0, SwimLiveAttempts.Report);
+            swimAutoStop.Tick += SwimAutoStop_Tick;
         }
         #endregion
 
@@ -74,7 +89,10 @@ namespace Kinovea.ScreenManager
         private void Screen_RecordingStopped(object sender, EventArgs e)
         {
             if (screens.All(s => !s.Recording))
+            {
                 view.UpdateRecordingStatus(false);
+                SwimEndAttempt();
+            }
         }
         #endregion
 
@@ -158,6 +176,10 @@ namespace Kinovea.ScreenManager
             // (Swim 2.27.0) The common button shows a recording only while a screen records.
             if (e.Value && screens.All(s => !s.Recording))
                 view.UpdateRecordingStatus(false);
+
+            // (Swim 2.28.0) The stop of the cameras ends the attempt going on.
+            if (!e.Value && screens.All(s => !s.Recording))
+                SwimEndAttempt();
         }
 
         #region Swim: the start signal of the common row (2.27.0)
@@ -193,8 +215,70 @@ namespace Kinovea.ScreenManager
             if (screens.Any(s => s.Recording && s.RecordsOnCamera))
                 SwimGoProTakes.AddSignal(horn);
 
+            // (Swim 2.28.0) A new attempt from this horn: the lines of the cameras watch for the swimmer again.
+            SwimLiveAttempts.Begin(horn);
+            foreach (CaptureScreen screen in screens)
+                screen.SwimLineReset();
+
+            swimAutoStop.Start();
+
             log.DebugFormat("Start signal of the common row: the horn in {0:0.00} s, {1} cameras recording.", (horn - asked).TotalSeconds, screens.Count(s => s.Recording));
             view.RefreshFolder();
+        }
+        #endregion
+
+        #region Swim: the attempts measured live (2.28.0)
+        /// <summary>The recording of the attempt going on stopped: what each camera saw is kept, and the report is asked for.</summary>
+        private void SwimEndAttempt()
+        {
+            swimAutoStop.Stop();
+            if (SwimLiveAttempts.Current == null)
+                return;
+
+            try
+            {
+                List<SwimLiveTrack> tracks = screens.Select(s => s.SwimTrack()).Where(t => t != null).ToList();
+                SwimLiveAttempt attempt = SwimLiveAttempts.End(tracks);
+                if (attempt != null)
+                {
+                    log.DebugFormat("Attempt {0} ended: {1} cameras with a place, lines seen {2}/{3}, {4} places of the head.", attempt.Number, tracks.Count,
+                        tracks.Count(t => SwimWallPlaces.Under(t.Distance) && !double.IsNaN(t.Crossed)), tracks.Count(t => SwimWallPlaces.Under(t.Distance)),
+                        tracks.Sum(t => t.Samples.Count));
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while keeping the attempt.", e);
+            }
+        }
+
+        /// <summary>
+        /// The recording of the attempt stops by itself AutoStopAfter seconds after the time of its farthest line, else AutoStopLatest
+        /// seconds after its horn.
+        /// </summary>
+        private void SwimAutoStop_Tick(object sender, EventArgs e)
+        {
+            SwimLiveAttempt attempt = SwimLiveAttempts.Current;
+            if (attempt == null || !screens.Any(s => s.Recording))
+            {
+                swimAutoStop.Stop();
+                return;
+            }
+
+            if (!SwimLiveAttempts.AutoStop)
+                return;
+
+            double since = (DateTime.Now - attempt.Horn).TotalSeconds;
+            List<SwimWallCamera> lines = screens.Select(s => s.SwimWallState()).Where(c => SwimWallPlaces.Under(c.Distance)).ToList();
+            double farthest = lines.Count > 0 ? lines.Max(c => c.Distance) : double.NaN;
+            double crossed = lines.Where(c => Math.Abs(c.Distance - farthest) < 0.01).Select(c => c.Crossed).Where(t => !double.IsNaN(t)).DefaultIfEmpty(double.NaN).Min();
+            bool after = !double.IsNaN(crossed) && since >= crossed + SwimLiveAttempts.AutoStopAfter;
+            if (after || since >= SwimLiveAttempts.AutoStopLatest)
+            {
+                swimAutoStop.Stop();
+                log.DebugFormat("Automatic stop {0:0.0} s after the horn ({1}).", since, after ? "after the last line" : "the last line not seen");
+                view.SwimStopAll();
+            }
         }
         #endregion
 

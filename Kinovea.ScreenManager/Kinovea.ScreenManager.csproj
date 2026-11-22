@@ -1127,6 +1127,10 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimLineWatch.cs" />
+    <Compile Include="SwimAnalysis\SwimLiveAttempts.cs" />
+    <Compile Include="SwimAnalysis\SwimAttemptReport.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
     <Compile Include="SwimAnalysis\SwimFiles.cs" />
     <Compile Include="SwimAnalysis\SwimTechCompare.cs" />

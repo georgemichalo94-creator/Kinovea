@@ -188,6 +188,13 @@ namespace Kinovea.ScreenManager
         private DateTime swimRecordingStart = DateTime.MinValue;
         private List<DateTime> swimHorns = new List<DateTime>();
         private double swimHornFrames = -1;
+
+        // (Swim 2.28.0) The number of screens of the wall, the place of the camera in the pool (for the name it had then) and the watch
+        // of its line (a camera under the water on the wall).
+        private int swimWallCount;
+        private SwimWallPlace swimPlace;
+        private string swimPlaceCamera;
+        private SwimLineWatch swimLine;
         private Stopwatch stopwatchDiscovery = new Stopwatch();
         private const long discoveryTimeout = 5000;
         private ScreenDescriptorCapture screenDescriptor = new ScreenDescriptorCapture();
@@ -283,6 +290,8 @@ namespace Kinovea.ScreenManager
             displayTimer.Tick += displayTimer_Tick;
             pipelineManager.FrameSignaled += pipelineManager_FrameSignaled;
             SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
+            SwimWallPlaces.Changed += SwimWallPlaces_Changed;
+            viewportController.SwimMenu = SwimPlaceMenu;
 
             shortId = this.id.ToString().Substring(0, 4);
 
@@ -451,13 +460,133 @@ namespace Kinovea.ScreenManager
             get { return cameraLoaded && !RecordsOnCamera && SwimCaptureFolderId == Guid.Empty; }
         }
 
-        /// <summary>(Swim 2.27.0) The wall of cameras on or off for this screen, with its place on the wall (1 to 5).</summary>
-        public void SwimWall(bool on, int number)
+        /// <summary>(Swim 2.27.0) The wall of cameras on or off for this screen, with its place on the wall (1 to 5) and the number of its screens.</summary>
+        public void SwimWall(bool on, int number, int count)
         {
             swimWallNumber = on ? number : 0;
+            swimWallCount = on ? count : 0;
+            swimPlaceCamera = null;
+            SwimPlaceRefresh();
             if (view != null)
                 view.SwimWall(on);
         }
+
+        #region Swim: the place of the camera in the pool and its line (2.28.0)
+        /// <summary>
+        /// The place of the camera of this screen in the pool (said for it, else the place of its number on a wall of five cameras) and,
+        /// under the water, the watch of its line (kept while the camera and its place stay the same).
+        /// </summary>
+        private void SwimPlaceRefresh()
+        {
+            string camera = CameraAlias;
+            swimPlaceCamera = camera ?? "";
+            if (swimWallNumber <= 0 || string.IsNullOrEmpty(camera) || RecordsOnCamera)
+            {
+                swimPlace = null;
+                swimLine = null;
+                return;
+            }
+
+            SwimWallPlace place = SwimWallPlaces.Of(camera, swimWallNumber, swimWallCount);
+            bool same = swimPlace != null && swimPlace.Camera == place.Camera && swimPlace.Distance.Equals(place.Distance);
+            swimPlace = place;
+            if (!place.Under)
+            {
+                swimLine = null;
+                return;
+            }
+
+            if (swimLine == null || !same)
+                swimLine = new SwimLineWatch();
+
+            swimLine.Line = place.Line;
+        }
+
+        private void SwimWallPlaces_Changed()
+        {
+            swimPlaceCamera = null;
+        }
+
+        /// <summary>An image shown by this screen on the wall: to the watch of its line, with its time from the horn of the attempt.</summary>
+        private void SwimLineFeed(Bitmap image, double age)
+        {
+            try
+            {
+                if (swimPlaceCamera == null || swimPlaceCamera != (CameraAlias ?? ""))
+                    SwimPlaceRefresh();
+
+                if (swimLine == null || image == null)
+                    return;
+
+                DateTime horn = SwimCaptureWall.SignalHorn;
+                double seconds = horn == DateTime.MinValue ? double.NaN : (DateTime.Now - horn).TotalSeconds - age;
+                swimLine.Feed(image, seconds);
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while watching the line of a camera of the wall.", e);
+                swimLine = null;
+            }
+        }
+
+        /// <summary>A new attempt (the horn of the start signal): the time of the line and the places of the swimmer go.</summary>
+        public void SwimLineReset()
+        {
+            if (swimLine != null)
+                swimLine.Reset();
+        }
+
+        /// <summary>What the camera of this screen saw of the attempt (null: no place in the pool).</summary>
+        public SwimLiveTrack SwimTrack()
+        {
+            if (swimPlace == null)
+                return null;
+
+            SwimLiveTrack track = new SwimLiveTrack();
+            track.Number = swimWallNumber;
+            track.Camera = swimPlace.Camera;
+            track.Distance = swimPlace.Distance;
+            track.Line = swimPlace.Line;
+            track.Width = swimPlace.Width;
+            if (swimLine != null)
+            {
+                track.Way = swimLine.Way;
+                track.Crossed = swimLine.Crossed;
+                track.Samples = swimLine.Samples.ToList();
+            }
+
+            return track;
+        }
+
+        /// <summary>The menu of the place of the camera in the pool, at the top of its right click on the wall (none off the wall).</summary>
+        private ToolStripItem[] SwimPlaceMenu()
+        {
+            string camera = CameraAlias;
+            if (swimWallNumber <= 0 || string.IsNullOrEmpty(camera) || RecordsOnCamera)
+                return null;
+
+            double current = swimPlace != null ? swimPlace.Distance : double.NaN;
+            ToolStripMenuItem place = new ToolStripMenuItem(SwimLang.T("Θέση στην πισίνα"));
+            foreach (double d in SwimWallPlaces.Choices)
+            {
+                double distance = d;
+                string text = d < 0.01 ? SwimLang.T("Πάνω από το νερό") + " · 0 m" : SwimLang.T("Υποβρύχια") + " · " + SwimWallPlaces.Label(d);
+                ToolStripMenuItem item = new ToolStripMenuItem(text) { Checked = !double.IsNaN(current) && Math.Abs(current - d) < 0.01 };
+                item.Click += (s, e) => SwimWallPlaces.SetDistance(camera, distance);
+                place.DropDownItems.Add(item);
+            }
+
+            ToolStripMenuItem none = new ToolStripMenuItem(SwimLang.T("Χωρίς θέση")) { Checked = double.IsNaN(current) };
+            none.Click += (s, e) => SwimWallPlaces.SetDistance(camera, double.NaN);
+            place.DropDownItems.Add(none);
+            place.DropDownItems.Add(new ToolStripSeparator());
+            ToolStripMenuItem middle = new ToolStripMenuItem(SwimLang.T("Η γραμμή στη μέση της εικόνας"));
+            middle.Enabled = swimPlace != null && swimPlace.Under && Math.Abs(swimPlace.Line - 0.5f) > 0.001f;
+            middle.Click += (s, e) => SwimWallPlaces.SetLine(camera, 0.5f);
+            place.DropDownItems.Add(middle);
+            return new ToolStripItem[] { place };
+        }
+        #endregion
 
         /// <summary>(Swim 2.27.0) The state of the camera of this screen, for its image on the wall of cameras and the live panel.</summary>
         public SwimWallCamera SwimWallState()
@@ -474,6 +603,13 @@ namespace Kinovea.ScreenManager
             state.Drops = cameraConnected ? Drops() : 0;
             state.Load = cameraConnected ? swimLastLoad : 0;
             state.RecordingSeconds = recording ? stopwatchRecording.Elapsed.TotalSeconds : 0;
+            if (swimPlace != null)
+            {
+                state.Distance = swimPlace.Distance;
+                state.Line = swimPlace.Line;
+            }
+
+            state.Crossed = swimLine != null ? swimLine.Crossed : double.NaN;
             return state;
         }
 
@@ -635,6 +771,8 @@ namespace Kinovea.ScreenManager
 
             metadata.Dispose();
             SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
+            SwimWallPlaces.Changed -= SwimWallPlaces_Changed;
+            viewportController.SwimMenu = null;
 
             log.DebugFormat("Capture screen ready to be closed.");
         }
@@ -1901,6 +2039,10 @@ namespace Kinovea.ScreenManager
             int target = 0;
             bool showDelayed = delayedDisplay && remoteSource == null;
             Bitmap displayFrame = showDelayed ? delayer.GetWeak(delay, ImageRotation, Mirrored, out target) : delayer.GetWeak(0, ImageRotation, Mirrored, out target);
+
+            // (Swim 2.28.0) The images of the camera to the watch of its line on the wall (not the image that waits for the delay).
+            if (displayFrame != null && swimWallNumber > 0)
+                SwimLineFeed(displayFrame, showDelayed ? AgeToSeconds(delay) : 0);
 
             if (displayFrame == null && target < 0)
                 displayFrame = CreateWaitImage(-target);

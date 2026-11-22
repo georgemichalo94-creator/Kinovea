@@ -49,6 +49,10 @@ namespace Kinovea.ScreenManager
         public event EventHandler ReloadDefaultCaptureAnnotationsAsked;
         public event EventHandler ReloadLinkedAnnotationsAsked;
         public event EventHandler CloseAsked;
+
+        /// <summary>(Swim 2.28.0) The items of the screen at the top of its right click (the place of the camera on the wall); null: none.</summary>
+        public Func<ToolStripItem[]> SwimMenu;
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         //public event EventHandler KVAImported;
         //public event EventHandler ExportImageAsked;
         //public event EventHandler ExportVideoAsked;
@@ -569,6 +573,22 @@ namespace Kinovea.ScreenManager
             });
 
             mnuSaveDefaultPlayerAnnotations.Available = DynamicPathResolver.CanSaveCrossDefaultKVA(false);
+
+            // (Swim 2.28.0) The items of the screen first (on the wall: the place of the camera in the pool).
+            try
+            {
+                ToolStripItem[] swim = SwimMenu != null ? SwimMenu() : null;
+                if (swim != null && swim.Length > 0)
+                {
+                    popMenu.Items.Insert(0, new ToolStripSeparator());
+                    for (int i = swim.Length - 1; i >= 0; i--)
+                        popMenu.Items.Insert(0, swim[i]);
+                }
+            }
+            catch (Exception e)
+            {
+                log.Error("Error while adding the items of the wall to the menu of a capture screen.", e);
+            }
         }
 
         /// <summary>

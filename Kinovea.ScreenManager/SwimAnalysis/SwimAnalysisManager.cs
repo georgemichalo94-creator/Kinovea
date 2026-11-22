@@ -2776,11 +2776,31 @@ namespace Kinovea.ScreenManager
                     }
 
                     list.BuildIndex();
+
+                    // (2.28.0) A list much smaller than the one kept (the sheet of the registry not read: renamed, its first row changed)
+                    // never replaces it: the list of before stays and the message says what to check in the Google Sheet.
+                    int before = Athletes != null && Athletes.Athletes != null ? Athletes.Athletes.Count : 0;
+                    bool registry = !string.IsNullOrEmpty(list.Sheet);
+                    if (before >= 20 && list.Athletes.Count < before / 2)
+                    {
+                        log.WarnFormat("The athlete list of the sheet came with {0} athletes instead of {1} (registry sheet {2}): the list of before is kept.",
+                            list.Athletes.Count, before, registry ? "found" : "not found");
+                        AthletesMessage = SwimLang.F($"Το Google Sheet έστειλε μόνο {list.Athletes.Count} αθλητές αντί για {before}: κρατήθηκε η προηγούμενη λίστα.") + " " +
+                            SwimLang.T("Έλεγξε στο KOE App το φύλλο «Στοιχεία Αθλητών/τριων» (1η γραμμή: unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ) και ξαναπάτα ↻.");
+                        if (form != null)
+                            form.RefreshAthletes();
+
+                        return;
+                    }
+
                     Athletes = list;
                     Athletes.Save();
                     AthletesMessage = AthletesSummary();
                     if (list.Athletes.Count == 0)
                         AthletesMessage = SwimLang.T("Δεν βρέθηκαν αθλητές: το Google Sheet χρειάζεται φύλλο με στήλες unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ.");
+                    else if (!registry)
+                        AthletesMessage = SwimLang.F($"Λίστα: {list.Athletes.Count} αθλητές, μόνο οι διεθνείς: το μητρώο δεν βρέθηκε.") + " " +
+                            SwimLang.T("Έλεγξε στο KOE App το φύλλο «Στοιχεία Αθλητών/τριων» (1η γραμμή: unique_id και ΟΝΟΜΑΤΕΠΩΝΥΜΟ) και ξαναπάτα ↻.");
                 }
                 else
                 {

@@ -194,24 +194,25 @@ function Pass([string]$what, [int]$way, [double]$v, [double]$swimmer, [double]$l
   $e = [LineScene]::Run($way, $v, $swimmer, $line, $fps, $seed, $trail, $cloud, $noise, $direction, [ref]$w)
   $ok = -not [double]::IsNaN($e) -and [Math]::Abs($e) -le $tolerance -and $w.Way -eq $way
   Check $ok ($what + ': head on the line ' + $(if ([double]::IsNaN($e)) { 'not found' } else { '{0:+0.000;-0.000} s' -f $e }) + ', way ' + $w.Way)
-  return $w
+  $script:watch = $w
 }
 
-$wp = Pass 'swimmer to the right, 2.2 m/s, 30 images/s' 1 2.2 40 0.5 30 1 $true $false 3 0 0.02
+Pass 'swimmer to the right, 2.2 m/s, 30 images/s' 1 2.2 40 0.5 30 1 $true $false 3 0 0.02
+$wp = $script:watch
 $speed = [LineScene]::Speed($wp)
 Check ([Math]::Abs($speed - 2.2 * 200 / 640) -le 0.06) ('his speed from the places of the head: {0:0.000} widths/s (truth {1:0.000})' -f $speed, (2.2 * 200 / 640))
 Check ($wp.Samples.Count -ge 20) ('places of the head kept after the horn: ' + $wp.Samples.Count)
 Check ([LineScene]::Run(1, 2.2, 40, 0.5, 30, 1, $true, $false, 3, 0, [ref]$null) -eq [LineScene]::Run(1, 2.2, 40, 0.5, 30, 1, $true, $false, 3, 0, [ref]$null)) 'the same images give the same time'
-$null = Pass 'swimmer to the left' (-1) 2.2 40 0.5 30 1 $true $false 3 0 0.02
-$null = Pass 'slow, 1.6 m/s' 1 1.6 40 0.5 30 2 $true $false 3 0 0.02
-$null = Pass 'fast, 3.0 m/s' 1 3.0 40 0.5 30 3 $true $false 3 0 0.02
-$null = Pass 'lighter than the water' 1 2.2 215 0.5 30 4 $true $false 3 0 0.02
-$null = Pass 'line left of the middle' 1 2.2 40 0.42 30 5 $true $false 3 0 0.02
-$null = Pass '25 images/s' 1 2.2 40 0.5 25 6 $true $false 3 0 0.02
-$null = Pass 'noisy camera' 1 2.2 40 0.5 30 7 $true $false 8 0 0.02
-$null = Pass 'low contrast' 1 2.2 110 0.5 30 8 $true $false 3 0 0.03
-$null = Pass 'bubbles in front of him' 1 2.2 40 0.5 30 9 $true $true 3 0 0.04
-$null = Pass 'the way given' (-1) 2.2 40 0.5 30 10 $true $false 3 (-1) 0.02
+Pass 'swimmer to the left' (-1) 2.2 40 0.5 30 1 $true $false 3 0 0.02
+Pass 'slow, 1.6 m/s' 1 1.6 40 0.5 30 2 $true $false 3 0 0.02
+Pass 'fast, 3.0 m/s' 1 3.0 40 0.5 30 3 $true $false 3 0 0.02
+Pass 'lighter than the water' 1 2.2 215 0.5 30 4 $true $false 3 0 0.02
+Pass 'line left of the middle' 1 2.2 40 0.42 30 5 $true $false 3 0 0.02
+Pass '25 images/s' 1 2.2 40 0.5 25 6 $true $false 3 0 0.02
+Pass 'noisy camera' 1 2.2 40 0.5 30 7 $true $false 8 0 0.02
+Pass 'low contrast' 1 2.2 110 0.5 30 8 $true $false 3 0 0.03
+Pass 'bubbles in front of him' 1 2.2 40 0.5 30 9 $true $true 3 0 0.04
+Pass 'the way given' (-1) 2.2 40 0.5 30 10 $true $false 3 (-1) 0.02
 
 # Before the horn nothing is kept; without a swimmer nothing is found.
 $w0 = $null

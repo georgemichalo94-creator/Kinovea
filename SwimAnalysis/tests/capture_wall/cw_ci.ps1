@@ -277,13 +277,104 @@ try {
   Finish $p 'wall-5-english.png' $rec $true $false
 } finally { $english.SetValue($null, $false) }
 
+# ---- (2.28.0) The places of the cameras in the pool, the lines, the times of an attempt and its report (fictional attempts).
+$tPlaces = T 'SwimWallPlaces'; $tTrack = T 'SwimLiveTrack'; $tAttempt = T 'SwimLiveAttempt'; $tAttempts = T 'SwimLiveAttempts'; $tReport = T 'SwimAttemptReport'
+$tSample = T 'SwimLineSample'
+$of = $tPlaces.GetMethod('Of')
+$d3 = $of.Invoke($null, [object[]]@('a fictional camera', 3, 5)).Distance
+$d1 = $of.Invoke($null, [object[]]@('a fictional camera', 1, 5)).Distance
+$d4 = $of.Invoke($null, [object[]]@('a fictional camera', 2, 4)).Distance
+Check ($d3 -eq 5 -and $d1 -eq 0 -and [double]::IsNaN($d4)) ('five cameras: 0, 2.5, 5, 10, 15 m in their order; other numbers of cameras: no place until said (' + $d1 + ', ' + $d3 + ', ' + $d4 + ')')
+Check (($tPlaces.GetMethod('Label').Invoke($null, [object[]]@([double]2.5))) -eq '2.5 m' -and ($tPlaces.GetMethod('Label').Invoke($null, [object[]]@([double]10))) -eq '10 m') 'the distances written 2.5 m, 10 m'
+
+# A swimmer at 2 m/s before the camera of 5 m (3 m of lane across its image): his speed from the places of his head.
+$track = [Activator]::CreateInstance($tTrack)
+$track.Distance = 5; $track.Line = [single]0.5; $track.Width = 3; $track.Way = 1
+for ($t = 0.4; $t -le 1.6; $t += 1 / 30) { $track.Samples.Add([Activator]::CreateInstance($tSample, [object[]]@([double]$t, [single](0.5 + ($t - 1.0) * 2.0 / 3.0)))) }
+$speed = @($track.Speed(0.12))
+$bad = @($speed | Where-Object { [Math]::Abs($_.Speed - 2.0) -gt 0.01 }).Count
+Check ($speed.Count -ge 25 -and $bad -eq 0 -and [Math]::Abs($speed[0].Metres - 3.8) -lt 0.2) ('his speed before the camera: 2.00 m/s at every place (' + $speed.Count + ' places, from ' + ('{0:0.0}' -f $speed[0].Metres) + ' m)')
+
+# Fictional attempts: the head from the block (0.8 m) to 16 m, the cameras under the water at 2.5, 5, 10, 15 m see 1.5 m on each side of their line.
+function V([double]$x, [double]$k, [double]$ph) {
+  if ($x -lt 3.6) { return 4.5 * $k }
+  if ($x -lt 6.6) { return (2.25 + (4.62 - 2.25) * [Math]::Exp(-($x - 3.6) / 1.25)) * $k }
+  if ($x -lt 10.9) { return (2.02 - 0.05 * ($x - 6.6) + 0.4 * [Math]::Sin(2 * [Math]::PI * ($x - 6.6) / 0.92 + $ph)) * $k }
+  return (1.86 + 0.2 * [Math]::Sin(2 * [Math]::PI * ($x - 10.9) / 1.05 + $ph)) * $k
+}
+function Attempt([int]$number, [double]$k, [double]$ph, [double]$rt) {
+  $a = [Activator]::CreateInstance($tAttempt)
+  $a.Number = $number; $a.Reaction = $rt; $a.Horn = [DateTime]::Now
+  $points = New-Object System.Collections.ArrayList
+  $x = 0.8; $t = $rt
+  while ($x -lt 16.2) { [void]$points.Add(@($t, $x)); $x += (V $x $k $ph) / 30; $t += 1 / 30 }
+  $n = 0
+  foreach ($d in @(0, 2.5, 5, 10, 15)) {
+    $n++
+    $tr = [Activator]::CreateInstance($tTrack)
+    $tr.Number = $n; $tr.Camera = 'Κάμερα ' + $n; $tr.Distance = $d; $tr.Line = [single]0.5; $tr.Width = 3; $tr.Way = 1
+    if ($d -gt 0) {
+      $prev = $null
+      foreach ($p in $points) {
+        if ([Math]::Abs($p[1] - $d) -le 1.5) { $tr.Samples.Add([Activator]::CreateInstance($tSample, [object[]]@([double]$p[0], [single](0.5 + ($p[1] - $d) / 3.0)))) }
+        if ($prev -ne $null -and $prev[1] -lt $d -and $p[1] -ge $d) { $tr.Crossed = $prev[0] + ($p[0] - $prev[0]) * ($d - $prev[1]) / ($p[1] - $prev[1]) }
+        $prev = $p
+      }
+    }
+    $a.Tracks.Add($tr)
+  }
+  return ,$a
+}
+$attempts = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($tAttempt))
+$attempts.Add((Attempt 1 0.965 0.9 0.71)); $attempts.Add((Attempt 2 0.985 0.4 0.66)); $attempts.Add((Attempt 3 1.0 0.0 0.64))
+$a3 = $attempts[2]
+$t15 = $a3.TimeAt(15); $t5 = $a3.TimeAt(5)
+Check ($t5 -gt 1.4 -and $t5 -lt 1.9 -and $t15 -gt 6.0 -and $t15 -lt 7.5) ('a fictional attempt: 5 m in {0:0.00} s, 15 m in {1:0.00} s' -f $t5, $t15)
+$top = $a3.Top
+Check ($top.Speed -gt 4.3 -and $top.Speed -lt 4.8 -and $top.Metres -gt 3 -and $top.Metres -lt 4.5) ('its highest speed {0:0.00} m/s at {1:0.0} m (the camera of 2.5 m sees the entry)' -f $top.Speed, $top.Metres)
+$parts = @($a3.Speed)
+Check ($parts.Count -eq 4) ('its speed in four parts, one per camera under the water (' + $parts.Count + ')')
+$tAttempts.GetMethod('Replace').Invoke($null, [object[]]@(,$attempts))
+Check ($tAttempts.GetProperty('Report').GetValue($null) -and $tAttempts.GetProperty('List').GetValue($null).Count -eq 3) 'the attempts kept, the report asked for'
+
+# The report after the third attempt.
+$draw = $tReport.GetMethod('Draw')
+foreach ($size in @(@(1880, 900, 'report-3.png'), @(1389, 700, 'report-3-laptop.png'))) {
+  $b = New-Object System.Drawing.Bitmap $size[0], $size[1]
+  $g = [System.Drawing.Graphics]::FromImage($b)
+  try {
+    $placesOfButtons = @($draw.Invoke($null, [object[]]@($g, [System.Drawing.Rectangle]::new(0, 0, $size[0], $size[1]), $attempts, [single]1, -1)))
+    $inside = @($placesOfButtons | Where-Object { $_.Width -gt 0 -and $_.Right -le $size[0] -and $_.Bottom -le $size[1] }).Count
+    Check ($inside -eq 2) ($size[2] + ': the two buttons inside the report (' + $inside + ')')
+  } catch { Check $false ($size[2] + ': ' + $_.Exception.ToString()) } finally { $g.Dispose() }
+  if ($out) { $b.Save([System.IO.Path]::Combine($out, $size[2]), [System.Drawing.Imaging.ImageFormat]::Png) }
+  $b.Dispose()
+}
+
+# The wall during the attempt: the lines of the cameras under the water, the time of 5 m, the times in the live panel.
+$lines = @(0..4 | ForEach-Object { Cam ($_ + 1) $names[$_] $true $true $true $true 50 0 6.2 })
+$distances = @(0, 2.5, 5, 10, 15)
+for ($i = 0; $i -lt 5; $i++) { $lines[$i].Distance = $distances[$i] }
+$lines[2].Crossed = 1.68
+$hornField.SetValue($null, [DateTime]::Now.AddSeconds(-4.05))
+$tAttempts.GetMethod('Begin').Invoke($null, [object[]]@([DateTime]::Now.AddSeconds(-4.05)))
+$p = Picture 'wall-5-lines.png' 1880 900 $lines $five (-1) (-1) (-1) $true
+Finish $p 'wall-5-lines.png' $lines $true $false
+$hornField.SetValue($null, [DateTime]::MinValue)
+$tAttempts.GetMethod('Clear').Invoke($null, $null)
+Check (-not $tAttempts.GetProperty('Report').GetValue($null) -and $tAttempts.GetProperty('List').GetValue($null).Count -eq 0) 'a new swimmer: the attempts go'
+
 # ---- The English of the new texts.
 $map = (T 'SwimLangEnglish').GetField('Map', $all).GetValue($null)
 $keys = @('Ζωντανή εικόνα', 'Έτοιμο για εγγραφή', 'Εγγραφή', 'Στοπ', 'Παύση', 'Έναρξη', 'Εναλλαγή', 'Τοίχος καμερών', 'Όλες οι κάμερες', 'Χωρίς κάμερα',
   'Σύνδεση με την κάμερα', 'Γίνεται εγγραφή', 'Σε παύση', 'Μόνη της σε όλη την οθόνη', 'Πίσω σε όλες τις κάμερες', 'Ρυθμίσεις κάμερας', 'Ρυθμίσεις κάμερας (όχι στην εγγραφή)',
   'Διπλό κλικ σε μια κάμερα: μόνη της σε όλη την οθόνη', '{0} από {1} κάμερες με εικόνα', '{0} κάμερες', 'χαμένα καρέ', 'χαμένο καρέ', 'Κενή οθόνη',
   'Φάκελος εγγραφής: κανένας', 'Φάκελος εγγραφής: διαφορετικός ανά κάμερα', 'Φάκελος: {0}', 'Φάκελοι εγγραφής…', 'Δεν έχει οριστεί φάκελος εγγραφής',
-  'Σήμα εκκίνησης', 'Από την κόρνα', 'η κόρνα σε {0:0.0} s', 'εγγραφή {0}')
+  'Σήμα εκκίνησης', 'Από την κόρνα', 'η κόρνα σε {0:0.0} s', 'εγγραφή {0}',
+  'Αναφορά μετά την προσπάθεια', 'Προσπάθεια {0}', 'εκκίνηση έως τα {0}', 'Μέγιστη ταχύτητα', 'Αντίδραση', 'Πίσω στις κάμερες', 'Νέος κολυμβητής',
+  'Ταχύτητα κατά μήκος της πισίνας', 'Χρόνοι από την κόρνα', 'Τμήματα · προσπάθεια {0}', 'στα {0} από την προσπάθεια {1}', 'πριν {0}',
+  '{0}/{1} κάμερες γράφουν', '{0} χαμένα καρέ', 'Αυτόματο στοπ', 'Αναφορά', 'Θέση στην πισίνα', 'Πάνω από το νερό', 'Υποβρύχια', 'Χωρίς θέση',
+  'Η γραμμή στη μέση της εικόνας', 'Το επόμενο «Σήμα εκκίνησης» γυρίζει μόνο του στις κάμερες.')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts' + ($(if ($missing.Count -gt 0) { ': missing ' + ($missing -join ' | ') } else { '' })))
 

@@ -165,7 +165,11 @@ namespace Kinovea.ScreenManager
                         DrawHint(g, new RectangleF(r.Left + pad, r.Bottom - pad - hintHeight + 4 * s, r.Width - 2 * pad, hintHeight), fs);
                 }
 
-                DrawRows(g, rows, list, s, fs);
+                // (2.28.0) During an attempt (after its horn) the times of the lines instead of the cameras.
+                if (SwimLiveAttempts.Current != null && list.Any(c => c.Recording) && TimeLines(list).Count > 0)
+                    DrawTimes(g, rows, list, s, fs);
+                else
+                    DrawRows(g, rows, list, s, fs);
             }
             catch (Exception e)
             {
@@ -300,6 +304,79 @@ namespace Kinovea.ScreenManager
                 DrawHint(g, new RectangleF(r.Left, r.Bottom - 20 * s, r.Width, 20 * s), fs);
 
             return y;
+        }
+
+        /// <summary>(2.28.0) The distances of the lines whose times the panel shows (5 m and farther, four at most).</summary>
+        private static List<double> TimeLines(List<SwimWallCamera> list)
+        {
+            return list.Where(c => c.Loaded && SwimWallPlaces.Under(c.Distance) && c.Distance >= 4.99).Select(c => c.Distance).Distinct().OrderBy(d => d).Take(4).ToList();
+        }
+
+        /// <summary>
+        /// (2.28.0) The times of the lines in the attempt going on (≈: from the live images), one per line with the time of the last
+        /// attempt beside it, and under them the state of the cameras in one line.
+        /// </summary>
+        private static void DrawTimes(Graphics g, RectangleF r, List<SwimWallCamera> list, float s, float fs)
+        {
+            List<double> lines = TimeLines(list);
+            if (lines.Count == 0 || r.Width < 80 || r.Height < 30)
+                return;
+
+            SwimLiveAttempt last = SwimLiveAttempts.Last;
+            float rowHeight = Math.Min(36 * s, r.Height / (lines.Count + 1));
+            Font label = SwimCaptureWall.Display(12f * fs * rowHeight / (36 * s));
+            Font value = SwimCaptureWall.Display(17f * fs * rowHeight / (36 * s));
+            Font small = SwimCaptureWall.Display(9f * fs * rowHeight / (36 * s));
+            float y = r.Top;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                double d = lines[i];
+                SwimWallCamera camera = list.FirstOrDefault(c => c.Loaded && Math.Abs(c.Distance - d) < 0.01 && !double.IsNaN(c.Crossed)) ??
+                    list.FirstOrDefault(c => c.Loaded && Math.Abs(c.Distance - d) < 0.01);
+                bool seen = camera != null && !double.IsNaN(camera.Crossed);
+                RectangleF row = new RectangleF(r.Left, y, r.Width, rowHeight);
+                if (i > 0)
+                {
+                    using (Pen sep = new Pen(SwimTheme.GridLine, 1f))
+                        g.DrawLine(sep, row.Left, row.Top, row.Right, row.Top);
+                }
+
+                using (SolidBrush brush = new SolidBrush(seen ? SwimTheme.Accent : SwimTheme.Text))
+                using (StringFormat left = new StringFormat { LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap })
+                    g.DrawString(SwimWallPlaces.Label(d), label, brush, row, left);
+
+                string text = seen ? "≈" + camera.Crossed.ToString("0.00", CultureInfo.InvariantCulture) : "–.––";
+                float valueWidth = g.MeasureString(text, value).Width;
+                using (SolidBrush brush = new SolidBrush(seen ? SwimTheme.Accent : SwimTheme.Faint))
+                using (StringFormat right = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap })
+                    g.DrawString(text, value, brush, row, right);
+
+                double before = last == null ? double.NaN : last.TimeAt(d);
+                if (!double.IsNaN(before))
+                {
+                    string previous = SwimLang.F($"πριν {before.ToString("0.00", CultureInfo.InvariantCulture)}");
+                    using (SolidBrush brush = new SolidBrush(SwimTheme.Dim))
+                    using (StringFormat right = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap })
+                        g.DrawString(previous, small, brush, new RectangleF(row.Left, row.Top, Math.Max(10, row.Width - valueWidth - 14 * s), row.Height), right);
+                }
+
+                y += rowHeight;
+            }
+
+            // The cameras in one line under the times.
+            int recording = list.Count(c => c.Loaded && c.Recording);
+            int loaded = list.Count(c => c.Loaded);
+            long drops = list.Where(c => c.Loaded && !c.OnCamera).Sum(c => c.Drops);
+            double fps = list.Where(c => c.Loaded && c.Fps > 0).Select(c => c.Fps).DefaultIfEmpty(0).Min();
+            string state = SwimLang.F($"{recording}/{loaded} κάμερες γράφουν") + (fps > 0 ? string.Format(CultureInfo.InvariantCulture, " · {0:0} fps", fps) : "") +
+                (drops > 0 ? " · " + SwimLang.F($"{drops} χαμένα καρέ") : "");
+            float dot = 7 * s;
+            float cy = Math.Min(r.Bottom - small.GetHeight(g) / 2f, y + 6 * s + small.GetHeight(g) / 2f);
+            using (SolidBrush brush = new SolidBrush(drops > 0 ? SwimTheme.Amber : (recording == loaded ? SwimTheme.Green : SwimTheme.Red)))
+                g.FillEllipse(brush, r.Left, cy - dot / 2f, dot, dot);
+            using (SolidBrush brush = new SolidBrush(SwimTheme.Dim))
+            using (StringFormat left = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
+                g.DrawString(state, small, brush, new RectangleF(r.Left + dot + 6 * s, cy - small.GetHeight(g), Math.Max(10, r.Width - dot - 6 * s), small.GetHeight(g) * 2), left);
         }
 
         /// <summary>One line per camera: its number, its name and its state, in one or two columns.</summary>
@@ -527,7 +604,11 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public sealed class SwimCaptureBar : Control
     {
-        public const int PartRecord = 0, PartGrab = 1, PartSnapshot = 2, PartSwap = 3, PartWall = 4, PartFolder = 5, PartSignal = 6, PartCount = 7;
+        public const int PartRecord = 0, PartGrab = 1, PartSnapshot = 2, PartSwap = 3, PartWall = 4, PartFolder = 5, PartSignal = 6, PartReport = 7,
+            PartAutoStop = 8, PartCount = 9;
+
+        /// <summary>(2.28.0) The report of the attempts can be shown (there is one) and is shown; the recording stops by itself after the last line.</summary>
+        public bool ReportAvailable, ReportOn, AutoStopOn = true;
 
         /// <summary>The text of the folder button (the folder of all the cameras), and whether a camera has none (amber).</summary>
         public Func<string> FolderText;
@@ -671,6 +752,7 @@ namespace Kinovea.ScreenManager
                 case PartRecord: return Grabbing || recording;
                 case PartSwap: return SwapAvailable;
                 case PartWall: return WallAvailable;
+                case PartReport: return ReportAvailable;
                 default: return true;
             }
         }
@@ -685,6 +767,10 @@ namespace Kinovea.ScreenManager
                 case PartFolder: return SwimLang.T("Ο φάκελος όπου γράφουν όλες οι κάμερες. Πάτησε για να τον αλλάξεις.");
                 case PartSignal: return SwimLang.T("«Take your marks», 1 s, κόρνα: ξεκινά την εγγραφή όλων των καμερών (αν δεν γράφουν) και η κόρνα γίνεται το 0 του χρόνου των βίντεο.");
                 case PartSwap: return SwimLang.T("Οι δύο οθόνες αλλάζουν θέση.");
+                case PartReport: return ReportOn ? SwimLang.T("Η αναφορά των προσπαθειών. Πάτησε για τις κάμερες.") :
+                    SwimLang.T("Η αναφορά των προσπαθειών: η ταχύτητα κατά μήκος της πισίνας και οι χρόνοι των τελευταίων 5.");
+                case PartAutoStop: return AutoStopOn ? SwimLang.T("Η εγγραφή σταματά μόνη της 2 s μετά την τελευταία γραμμή (το πολύ 25 s μετά την κόρνα). Πάτησε για να το σβήσεις.") :
+                    SwimLang.T("Το αυτόματο στοπ είναι σβηστό: η εγγραφή σταματά με το ΣΤΟΠ. Πάτησε για να το ανάψεις.");
                 case PartWall: return WallOn ? SwimLang.T("Τοίχος καμερών: μόνο οι εικόνες, ενωμένες. Πάτησε για τις κλασικές οθόνες με τα κουμπιά τους.") :
                     SwimLang.T("Κλασικές οθόνες. Πάτησε για τον τοίχο καμερών: μόνο οι εικόνες, ενωμένες, με τα στοιχεία τους πάνω τους.");
                 default: return null;
@@ -718,7 +804,17 @@ namespace Kinovea.ScreenManager
 
                 string all = SwimLang.Upper(SwimLang.T("Όλες οι κάμερες"));
                 float captionWidth = SwimTheme.TrackedWidth(g, all, caption);
-                if (r.Width > 700 * s)
+
+                // (2.28.0) On the wall: the automatic stop after the last line and the report of the attempts.
+                bool wallParts = WallOn && WallAvailable;
+                string autoText = SwimLang.T("Αυτόματο στοπ");
+                string reportText = SwimLang.Upper(SwimLang.T("Αναφορά"));
+                float autoWidth = wallParts ? g.MeasureString(autoText, font).Width + 46 * s : 0;
+                float reportWidth = wallParts ? SwimTheme.TrackedWidth(g, reportText, font, 0.08f) + 48 * s : 0;
+                float fixedWidth = 14 * s + (SwimTheme.TrackedWidth(g, "TAKE YOUR MARKS", font, 0.08f) + 50 * s) + (SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Στοπ")) + "  00:00.0", font, 0.08f) + 52 * s) +
+                    (SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Έναρξη")), font, 0.08f) + 48 * s) + (SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Στιγμιότυπο")), font, 0.08f) + 48 * s) +
+                    (wallParts ? autoWidth + reportWidth + 20 * s : 0) + (WallAvailable ? SwimTheme.TrackedWidth(g, SwimLang.Upper(SwimLang.T("Τοίχος καμερών")), font, 0.08f) + 48 * s : 0) + 60 * s;
+                if (r.Width > 700 * s && r.Width - fixedWidth - 200 * s > captionWidth + 16 * s)
                 {
                     using (SolidBrush faint = new SolidBrush(SwimTheme.Faint))
                         SwimTheme.Tracked(g, all, caption, faint, x, r.Top + (r.Height - caption.GetHeight(g)) / 2f);
@@ -763,6 +859,16 @@ namespace Kinovea.ScreenManager
                     float wallWidth = SwimTheme.TrackedWidth(g, wallText, font, 0.08f) + 48 * s;
                     wallLeft = Math.Max(x + 8 * s, r.Right - 14 * s - wallWidth);
                     next[PartWall] = new RectangleF(wallLeft, top, wallWidth, height);
+                }
+
+                if (wallParts)
+                {
+                    float reportLeft = Math.Max(x + 8 * s, wallLeft - 8 * s - reportWidth);
+                    next[PartReport] = new RectangleF(reportLeft, top, reportWidth, height);
+                    wallLeft = reportLeft;
+                    float autoLeft = Math.Max(x + 8 * s, wallLeft - 12 * s - autoWidth);
+                    next[PartAutoStop] = new RectangleF(autoLeft, top, autoWidth, height);
+                    wallLeft = autoLeft;
                 }
 
                 // The capture folder of all the cameras, after the buttons (its name cut if the row is short).
@@ -839,6 +945,23 @@ namespace Kinovea.ScreenManager
                 if (!next[PartFolder].IsEmpty)
                     DrawFolder(g, next[PartFolder], folderText, folderMissing, folderFont, hover == PartFolder, s);
 
+                if (wallParts)
+                {
+                    DrawAutoStop(g, next[PartAutoStop], autoText, font, hover == PartAutoStop, s);
+                    bool reportOn = PartEnabled(PartReport);
+                    Color purple = Color.FromArgb(199, 146, 255);
+                    DrawButton(g, next[PartReport], ReportOn ? Color.FromArgb(70, purple) : SwimTheme.Raised, reportOn ? purple : SwimTheme.Border,
+                        ReportOn ? Color.FromArgb(226, 204, 255) : (reportOn ? SwimTheme.Text : SwimTheme.Faint), reportText, font, s, (gg, icon, ink) =>
+                        {
+                            using (Pen p = new Pen(ink, Math.Max(1.4f, 1.6f * s)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                            {
+                                gg.DrawLines(p, new[] { new PointF(icon.Left, icon.Top), new PointF(icon.Left, icon.Bottom), new PointF(icon.Right, icon.Bottom) });
+                                gg.DrawLines(p, new[] { new PointF(icon.Left + icon.Width * 0.15f, icon.Bottom - icon.Height * 0.3f), new PointF(icon.Left + icon.Width * 0.45f, icon.Top + icon.Height * 0.25f),
+                                    new PointF(icon.Left + icon.Width * 0.7f, icon.Top + icon.Height * 0.55f), new PointF(icon.Right, icon.Top) });
+                            }
+                        }, hover == PartReport && reportOn);
+                }
+
                 if (WallAvailable)
                 {
                     DrawButton(g, next[PartWall], WallOn ? SwimTheme.AccentDark : SwimTheme.Raised, WallOn ? SwimTheme.Accent : SwimTheme.Border, WallOn ? SwimTheme.AccentPale : SwimTheme.Text, wallText, font, s, (gg, icon, ink) =>
@@ -873,6 +996,29 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The folder button: a folder icon, the name of the folder (amber when a camera has none) and a small arrow of its menu.</summary>
+        /// <summary>(2.28.0) The automatic stop: a box ticked when on.</summary>
+        private void DrawAutoStop(Graphics g, RectangleF r, string text, Font font, bool hot, float s)
+        {
+            if (r.IsEmpty)
+                return;
+
+            SwimTheme.FillRounded(g, AutoStopOn ? Color.FromArgb(hot ? 50 : 30, SwimTheme.Accent) : (hot ? SwimTheme.RaisedHover : SwimTheme.Raised), r, 4 * s);
+            SwimTheme.DrawRounded(g, AutoStopOn ? SwimTheme.Accent : SwimTheme.Border, r, 4 * s);
+            float box = 13 * s;
+            RectangleF check = new RectangleF(r.Left + 12 * s, r.Top + (r.Height - box) / 2f, box, box);
+            using (Pen pen = new Pen(AutoStopOn ? SwimTheme.Accent : SwimTheme.Dim, 1.4f * s))
+                g.DrawRectangle(pen, check.X, check.Y, check.Width, check.Height);
+            if (AutoStopOn)
+            {
+                using (Pen pen = new Pen(SwimTheme.Accent, 1.8f * s) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                    g.DrawLines(pen, new[] { new PointF(check.Left + box * 0.22f, check.Top + box * 0.52f), new PointF(check.Left + box * 0.42f, check.Top + box * 0.74f), new PointF(check.Left + box * 0.8f, check.Top + box * 0.28f) });
+            }
+
+            using (SolidBrush brush = new SolidBrush(AutoStopOn ? SwimTheme.Text : SwimTheme.Dim))
+            using (StringFormat format = new StringFormat { LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap, Trimming = StringTrimming.EllipsisCharacter })
+                g.DrawString(text, font, brush, new RectangleF(check.Right + 8 * s, r.Top, r.Right - check.Right - 12 * s, r.Height), format);
+        }
+
         private static void DrawFolder(Graphics g, RectangleF r, string text, bool missing, Font font, bool hot, float s)
         {
             Color ink = missing ? SwimTheme.Amber : SwimTheme.Text;

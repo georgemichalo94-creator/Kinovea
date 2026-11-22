@@ -91,6 +91,7 @@ namespace Kinovea.ScreenManager
         private bool captureWallWanted = true;
         private bool captureWallActive;
         private SwimLivePanel swimLivePanel;
+        private SwimAttemptReport swimReport;
 
         /// <summary>(Swim 2.18.0) The main menu of Kinovea Swim (the menus of Kinovea in groups by task, or the classic menu).</summary>
         private SwimMainMenu swimMenu;
@@ -252,6 +253,9 @@ namespace Kinovea.ScreenManager
             // (Swim 2.16.0) The panel of a group of screens comes or goes: the screens are placed again.
             SwimAnalysisManager.ScreensRelayoutAsked = () => OrganizeScreens();
             SwimCaptureWall.RecheckAsked = SwimCaptureWallRecheck;
+
+            // (Swim 2.28.0) The report of the attempts over the wall of cameras, shown after an attempt.
+            SwimLiveAttempts.Changed += SwimAttemptsChanged;
 
             // (Swim 2.25.0) A package for the coaches finished in the background: its screens leave the window as they are, new empty
             // screens take their places.
@@ -1588,22 +1592,54 @@ namespace Kinovea.ScreenManager
                 swimLivePanel.SetProvider(() => captureScreens.Select(s => s.SwimWallState()).ToList());
             }
 
+            if (wall && swimReport == null)
+            {
+                swimReport = new SwimAttemptReport();
+                swimReport.BackAsked += () => SwimLiveAttempts.ShowReport(false);
+                swimReport.ClearAsked += () => SwimLiveAttempts.Clear();
+            }
+
             int number = 0;
             foreach (AbstractScreen screen in screenList)
             {
                 number++;
                 CaptureScreen capture = screen as CaptureScreen;
                 if (capture != null)
-                    capture.SwimWall(wall, number);
+                    capture.SwimWall(wall, number, screenList.Count);
             }
 
             if (wall != captureWallActive)
                 log.DebugFormat("Wall of cameras {0} ({1} screens).", wall ? "on" : "off", screenList.Count);
 
             captureWallActive = wall;
-            view.SetCaptureWall(wall, wall ? swimLivePanel : null);
+            view.SetCaptureWall(wall, wall ? swimLivePanel : null, wall ? swimReport : null);
+            view.ShowWallReport(wall && SwimLiveAttempts.Report);
             bool available = screenList.Count >= 2 && screenList.All(s => s is CaptureScreen);
             dualCapture.View.SetWall(captureWallWanted, available, screenList.Count == 2);
+        }
+
+        /// <summary>(2.28.0) The attempts changed, or their report is asked for or put away: the report over the wall shown or hidden.</summary>
+        private void SwimAttemptsChanged()
+        {
+            if (view == null || view.IsDisposed || !view.IsHandleCreated)
+                return;
+
+            try
+            {
+                view.BeginInvoke((Action)(() =>
+                {
+                    if (view.IsDisposed)
+                        return;
+
+                    view.ShowWallReport(captureWallActive && SwimLiveAttempts.Report);
+                    if (swimReport != null)
+                        swimReport.Invalidate();
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                // The window is closing.
+            }
         }
 
         /// <summary>A screen got or lost a camera that records on its own card: the screens are organized again if the wall changes.</summary>
