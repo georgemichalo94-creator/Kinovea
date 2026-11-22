@@ -268,9 +268,13 @@ namespace Kinovea.ScreenManager
             if (!SwimLiveAttempts.AutoStop)
                 return;
 
+            // Only with cameras under the water (the lines): a recording without them is stopped by the button only.
             double since = (DateTime.Now - attempt.Horn).TotalSeconds;
-            List<SwimWallCamera> lines = screens.Select(s => s.SwimWallState()).Where(c => SwimWallPlaces.Under(c.Distance)).ToList();
-            double farthest = lines.Count > 0 ? lines.Max(c => c.Distance) : double.NaN;
+            List<SwimWallCamera> lines = screens.Select(s => s.SwimWallState()).Where(c => c.Loaded && SwimWallPlaces.Under(c.Distance)).ToList();
+            if (lines.Count == 0)
+                return;
+
+            double farthest = lines.Max(c => c.Distance);
             double crossed = lines.Where(c => Math.Abs(c.Distance - farthest) < 0.01).Select(c => c.Crossed).Where(t => !double.IsNaN(t)).DefaultIfEmpty(double.NaN).Min();
             bool after = !double.IsNaN(crossed) && since >= crossed + SwimLiveAttempts.AutoStopAfter;
             if (after || since >= SwimLiveAttempts.AutoStopLatest)
