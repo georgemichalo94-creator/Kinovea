@@ -688,8 +688,8 @@ namespace Kinovea.ScreenManager
             if (swimWall)
             {
                 base.OnDoubleClick(e);
-                Point mouse = PointToClient(Control.MousePosition);
-                if (!swimPole && SwimHit(mouse) < 0 && !SwimOnLine(mouse) && SwimSoloAsked != null)
+                Point at = PointToClient(Control.MousePosition);
+                if (!swimPole && SwimHit(at) < 0 && !SwimOnLine(at) && SwimSoloAsked != null)
                     SwimSoloAsked(this, EventArgs.Empty);
 
                 return;
