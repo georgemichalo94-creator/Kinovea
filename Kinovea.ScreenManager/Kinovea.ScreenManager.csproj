@@ -1126,6 +1126,7 @@
     <Compile Include="SwimAnalysis\SwimCaptureWallPanels.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\SwimLineWatch.cs" />
     <Compile Include="SwimAnalysis\SwimCompare.cs" />
     <Compile Include="SwimAnalysis\SwimFiles.cs" />
     <Compile Include="SwimAnalysis\SwimTechCompare.cs" />
