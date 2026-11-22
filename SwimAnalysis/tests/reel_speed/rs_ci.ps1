@@ -2,7 +2,8 @@
 # curve through the checkpoints is on the times of the race (the official final time where typed, as the sheet and the PDF), the
 # swimmer on the frames of the marks. A finish marked 0.75 s after its official time made the last 5 m 1.32 m/s on the video
 # (1.64 in the PDF) and pulled the 85-95 m down; now the speeds are those of the PDF and the swimmer still reaches the wall on the
-# frame of the mark. Without an official time nothing changes.
+# frame of the mark. Without an official time nothing changes. The speed in the water also under it after the start and the turn
+# (the entry and the push off the wall estimated: not marked here), the samples of the chart of the whole race.
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File rs_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -39,7 +40,7 @@ function NewRace($official) {
   $race.Style = 'bk'; $race.Distance = 100; $race.Pool = 50
   $race.Checkpoints = $tPresets.GetMethod('DefaultCheckpoints').Invoke($null, @(100, 50, $false))
   $race.StartTimestamp = [long]1000
-  foreach ($d in $splits.Keys) { Mark $race 'Split' $splits[$d] $d }
+  foreach ($e in $splits.GetEnumerator()) { Mark $race 'Split' $e.Value $e.Key }
   Mark $race 'Breakout' 9.6 $null
   Mark $race 'Breakout' 29.4 $null
   # Arm strokes every 0.66 s after each breakout up to the wall (backstroke: two presses a cycle).
@@ -81,6 +82,37 @@ Check ($null -ne $part -and [Math]::Abs($part.Time - (52.85 - 25.40)) -lt 1e-6) 
 Check ($null -ne $part -and $part.Strokes -gt 30) ('its strokes between the frames of its checkpoints: ' + $part.Strokes)
 $wall = $reel.Walls[0]
 Check ([Math]::Abs($wall - 25.40) -lt 1e-9) ('the wall at 50 m: ' + (F2 $wall))
+
+# --- In the water: from about the entry of the start (1.5 m in backstroke, not marked here) and from the push off the wall (0.3 s after
+# the touch of a tumble turn, the feet off not marked), the speed with ≈ under the water up to each breakout.
+$entry = $reel.TimeAtDistance(1.5)
+Check ($entry -gt 0.3 -and $entry -lt 0.9) ('the entry of the start estimated at ' + (F2 $entry) + ' s (1.5 m on the curve)')
+Check (-not $reel.InWater(0.2) -and $reel.InWater($entry + 0.05) -and $reel.Underwater($entry + 0.05)) 'no speed before the entry, under the water after it'
+Check ($reel.PhaseAt(0.2) -eq 'ΕΚΚΙΝΗΣΗ' -and $reel.PhaseAt(3.0) -eq 'ΥΠΟΒΡΥΧΙΑ') ('the phase: ' + $reel.PhaseAt(0.2) + ' then ' + $reel.PhaseAt(3.0))
+Check ($reel.InWater(10.0) -and -not $reel.Underwater(10.0)) 'after the breakout in the water, not under it'
+Check (-not $reel.InWater(25.55) -and $reel.PhaseAt(25.55) -eq 'ΣΤΡΟΦΗ') 'the turn up to the push off the wall: no speed'
+Check ($reel.InWater(25.75) -and $reel.Underwater(25.75) -and $reel.PhaseAt(26.0) -eq 'ΥΠΟΒΡΥΧΙΑ') 'after the push under the water'
+Check ($reel.InWater(29.5) -and -not $reel.Underwater(29.5)) 'after the breakout of the turn'
+Check (-not $reel.InWater(53.60)) 'no speed after the finish'
+$uw = $reel.SpeedAt(3.0); $uw2 = $reel.SpeedAt(27.0)
+Check ($uw -gt 2.0 -and $uw -lt 3.0 -and $uw2 -gt 1.9 -and $uw2 -lt 2.6) ('the speeds under the water: ' + (F2 $uw) + ' and ' + (F2 $uw2) + ' m/s')
+Check ([Math]::Abs($reel.SpeedAt(25.40) - $reel.SpeedAt(25.38)) -lt 0.02) ('on the frame of the wall the speed of its length: ' + (F2 $reel.SpeedAt(25.40)) + ' (0.02 s before ' + (F2 $reel.SpeedAt(25.38)) + ')')
+$spans = @($reel.UnderwaterSpans)
+Check ($spans.Count -eq 2) ('two underwater parts: ' + $spans.Count)
+if ($spans.Count -eq 2) {
+  Check ([Math]::Abs($spans[0].From - $entry) -lt 1e-6 -and [Math]::Abs($spans[0].To - 9.6) -lt 1e-6 -and [Math]::Abs($spans[0].FromDistance - 1.5) -lt 0.01) ('after the start: ' + (F2 $spans[0].From) + '-' + (F2 $spans[0].To) + ' s from ' + (F2 $spans[0].FromDistance) + ' m')
+  Check ([Math]::Abs($spans[1].From - 25.70) -lt 1e-6 -and [Math]::Abs($spans[1].To - 29.4) -lt 1e-6 -and $spans[1].FromDistance -eq 50 -and $spans[1].ToDistance -gt 50 -and $spans[1].ToDistance -lt 65) ('after the turn: ' + (F2 $spans[1].From) + '-' + (F2 $spans[1].To) + ' s, ' + (F2 $spans[1].FromDistance) + '-' + (F2 $spans[1].ToDistance) + ' m')
+}
+$samples = @($reel.Samples)
+$inTurn = @($samples | Where-Object { $_.Time -gt 25.40 + 1e-6 -and $_.Time -lt 25.70 - 1e-6 })
+$early = @($samples | Where-Object { $_.Time -lt $entry - 1e-6 })
+$bad = @($samples | Where-Object { $_.Speed -lt 1.5 -or $_.Speed -gt 2.8 })
+Check ($samples.Count -gt 500 -and $inTurn.Count -eq 0 -and $early.Count -eq 0 -and $bad.Count -eq 0) ('the samples of the chart: ' + $samples.Count + ', none in the turn (' + $inTurn.Count + '), before the entry (' + $early.Count + ') or out of 1.5-2.8 m/s (' + $bad.Count + ')')
+Check ($samples.Count -gt 0 -and [Math]::Abs($samples[$samples.Count - 1].Time - 53.60) -lt 1e-6 -and [Math]::Abs($samples[$samples.Count - 1].Distance - 100) -lt 1e-6) 'the last sample on the frame of the finish, at the wall'
+$lateS = @($samples | Where-Object { $_.Time -ge 50.5 -and $_.Time -le 53.0 -and [Math]::Abs($_.Speed - $pdf95) -gt 0.06 })
+Check ($lateS.Count -eq 0) ('the last 5 m of the chart at the speed of the PDF (' + $lateS.Count + ' apart)')
+$uwS = @($samples | Where-Object { $_.Underwater }); $uwBad = @($uwS | Where-Object { -not (($_.Time -lt 9.6) -or ($_.Time -ge 25.70 -and $_.Time -lt 29.4)) })
+Check ($uwS.Count -gt 50 -and $uwBad.Count -eq 0) ('the samples under the water: ' + $uwS.Count + ' (' + $uwBad.Count + ' outside the parts)')
 
 # --- Without an official time: the curve on the marks, as before (the last 5 m at the speed of the marks).
 $r0 = Reel (NewRace $null)

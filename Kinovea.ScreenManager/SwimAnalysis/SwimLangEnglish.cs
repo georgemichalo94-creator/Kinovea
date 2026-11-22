@@ -2909,6 +2909,10 @@ namespace Kinovea.ScreenManager
             { "Τα δύο σημάδια είναι πολύ κοντά: κάνε κλικ στις δύο άκρες του κονταριού.", "The two marks are too close: click the two ends of the pole." },
             { "\nΜόλις επικολλήσεις τον σύνδεσμο, η αναζήτηση ξεκινά μόνη της. Ο σύνδεσμος ενός τελικού ή μιας σειράς των live της ΚΟΕ δίνει και το αγώνισμα, τη φάση, την ημερομηνία, τη διοργάνωση και τον τόπο.",
                 "\nAs soon as you paste the link, the search starts by itself. The link of a final or a heat of the KOE live results also gives the event, the round, the date, the competition and the place." },
+            // (2.31.0) The chart of the speed of the whole race in the technical view, the speed under the water.
+            { "ΤΑΧΥΤΗΤΑ  ·  ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ", "SPEED  ·  START → FINISH" },
+            { "μέση τμήματος", "segment average" },
+            { "υποβρ.", "u/w" },
         };
     }
 }

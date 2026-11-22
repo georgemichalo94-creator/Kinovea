@@ -179,6 +179,9 @@ public static class ReelPreview
         add("fly-14.2-export", fly, 14.2, 960, 540, 1280);
         add("fly-14.2-small", fly, 14.2, 640, 360, 0);
         add("fly-14.2-portrait", fly, 14.2, 405, 720, 0);
+        // (2.31.0) Under the water after the start and after a turn: the speed with ≈ and the chart of the whole race.
+        add("fly-03.0-underwater", fly, 3.0, 960, 540, 0);
+        add("free-12.5-underwater", free, 12.5, 960, 540, 0);
         return frames;
     }
 
@@ -261,6 +264,8 @@ public static class ReelPreview
             frames.Add(new Frame { Name = "bk-58.6-summary", Race = back, Time = 58.6, Width = 960, Height = 540, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-portrait", Race = back, Time = 26.5, Width = 405, Height = 720, Final = final });
             frames.Add(new Frame { Name = "bk-26.5-small", Race = back, Time = 26.5, Width = 640, Height = 360, Final = final });
+            frames.Add(new Frame { Name = "bk-03.0-underwater", Race = back, Time = 3.0, Width = 960, Height = 540, Final = final });
+            frames.Add(new Frame { Name = "bk-28.0-underwater", Race = back, Time = 28.0, Width = 960, Height = 540, Final = final });
             RenderReport(folder, names, back, computed[back], final, timing);
 
             // (2.9.4) The speed of the curve through the checkpoints around the first wall of the backstroke: one curve per length.

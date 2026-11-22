@@ -59,6 +59,38 @@ namespace Kinovea.ScreenManager
         public double? Speed;
     }
 
+    /// <summary>(2.31.0) A point of the speed of the race on the curve through the checkpoints, for the chart of the whole race.</summary>
+    public sealed class SwimReelSample
+    {
+        /// <summary>Time on the video (s after the start), distance of the race (pool units) and speed (m/s, as SpeedAt).</summary>
+        public double Time;
+        public double Distance;
+        public double Speed;
+
+        /// <summary>Lap (0 = first length): the line of the chart is broken at each wall.</summary>
+        public int Lap;
+
+        /// <summary>Under the water (after the start or a turn, before the breakout).</summary>
+        public bool Underwater;
+    }
+
+    /// <summary>
+    /// (2.31.0) An underwater part of the race with its breakout marked: after the start from the entry (marked, else about where the
+    /// swimmer enters the water), after a turn from the push off the wall (the feet off marked, else a little after the touch).
+    /// </summary>
+    public sealed class SwimReelSpan
+    {
+        public int Lap;
+
+        /// <summary>Times on the video (s after the start): the swimmer in the water, the breakout.</summary>
+        public double From;
+        public double To;
+
+        /// <summary>Distances of the race (pool units) of the green band of the chart: after the start the entry, after a turn the wall; the breakout.</summary>
+        public double FromDistance;
+        public double ToDistance;
+    }
+
     /// <summary>
     /// Technical view of a race (as the swimming reels): distance-time model through the checkpoints, the stroke cycles
     /// with their tempo, distance and speed, the phase at each moment, the badges and the summary of the race.
@@ -127,6 +159,18 @@ namespace Kinovea.ScreenManager
         /// <summary>Breakout distances from the wall (pool units) by lap, measured by the analyst or estimated (≈).</summary>
         public readonly Dictionary<int, double> BreakoutDistances = new Dictionary<int, double>();
         public readonly HashSet<int> BreakoutMeasured = new HashSet<int>();
+
+        /// <summary>
+        /// (2.31.0) The speed of the race on the curve while the swimmer is in the water (the chart from the start to the finish): from the
+        /// entry of the start and from the push off each wall to the next wall, up to the last checkpoint marked.
+        /// </summary>
+        public readonly List<SwimReelSample> Samples = new List<SwimReelSample>();
+
+        /// <summary>(2.31.0) The underwater parts of the race whose breakout is marked (the speed shown with ≈, the green bands of the chart).</summary>
+        public readonly List<SwimReelSpan> UnderwaterSpans = new List<SwimReelSpan>();
+
+        // (2.31.0) From when the swimmer is in the water in each lap (s on the video, NaN: not known).
+        private readonly List<double> lapInWater = new List<double>();
 
         public bool HasModel
         {
@@ -197,6 +241,7 @@ namespace Kinovea.ScreenManager
             reel.BuildBreakouts(race, computed);
             reel.BuildBadges(race, computed);
             reel.BuildParts(race, computed);
+            reel.BuildSamples();
             return reel;
         }
 
@@ -515,6 +560,103 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        // (2.31.0) Where the swimmer enters the water after the start when the entry is not marked (m from the wall): about 3 m after a
+        // dive, 1.5 m in backstroke. Only so that the block and the flight have no speed.
+        internal const double DiveEntry = 3.0;
+        internal const double BackstrokeEntry = 1.5;
+
+        // (2.31.0) The push off a wall when the feet off are not marked (s after the touch): 0.3 s after a tumble turn (the touch is the feet
+        // on the wall), 0.9 s after a turn with the hands (breaststroke, butterfly, the changes of style of the medley).
+        internal const double TumblePush = 0.3;
+        internal const double HandsPush = 0.9;
+
+        /// <summary>
+        /// (2.31.0) The speed of the race every 0.05 s (more apart in a long race) while the swimmer is in the water, and the underwater
+        /// parts with a breakout: the chart from the start to the finish and the speed under the water (before: none, «–»).
+        /// </summary>
+        private void BuildSamples()
+        {
+            if (!HasModel)
+                return;
+
+            double last = knotV[knotV.Count - 1];
+            double step = Math.Max(0.05, last / 2000);
+            for (int lap = 0; lap < lapStarts.Count; lap++)
+            {
+                double from = InWaterFrom(lap);
+                lapInWater.Add(from);
+                if (double.IsNaN(from))
+                    continue;
+
+                double breakout = lapBreakouts[lap];
+                if (!double.IsNaN(breakout) && breakout > from)
+                {
+                    // The band of the chart up to the breakout distance of the summary (measured or estimated), else where the curve is then.
+                    double wall = lap * Pool;
+                    double length;
+                    if (!BreakoutDistances.TryGetValue(lap, out length))
+                        length = DistanceAt(breakout) - wall;
+                    UnderwaterSpans.Add(new SwimReelSpan
+                    {
+                        Lap = lap,
+                        From = from,
+                        To = breakout,
+                        FromDistance = lap == 0 ? DistanceAt(from) : wall,
+                        ToDistance = Math.Min(Distance, wall + Math.Max(0, length))
+                    });
+                }
+
+                double to = Math.Min(LapEnd(lap), last);
+                if (!(to > from))
+                    continue;
+
+                for (double t = from; ; t += step)
+                {
+                    double at = Math.Min(t, to);
+                    Samples.Add(new SwimReelSample
+                    {
+                        Time = at,
+                        Distance = DistanceAt(at),
+                        Speed = SpeedAt(at),
+                        Lap = lap,
+                        Underwater = !double.IsNaN(breakout) && at < breakout
+                    });
+                    if (at >= to)
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// (2.31.0) From when the swimmer is in the water in a lap (s on the video, NaN: its start not known): after the start the entry
+        /// marked (else the curve at about the entry), after a wall the feet off marked (else a little after the touch); not after the
+        /// breakout of the lap.
+        /// </summary>
+        private double InWaterFrom(int lap)
+        {
+            double start = lap < lapStarts.Count ? lapStarts[lap] : double.NaN;
+            if (double.IsNaN(start))
+                return double.NaN;
+
+            double from;
+            if (lap == 0)
+            {
+                double entry = (StyleOfLap(0) == "bk" ? BackstrokeEntry : DiveEntry) / K;
+                from = Entry.HasValue && Entry.Value > 0 ? Entry.Value : TimeAtDistance(entry);
+            }
+            else
+            {
+                string before = StyleOfLap(lap - 1), after = StyleOfLap(lap);
+                bool tumble = before == after && (after == "fs" || after == "bk");
+                from = !double.IsNaN(lapFeetOff[lap]) ? lapFeetOff[lap] : start + (tumble ? TumblePush : HandsPush);
+            }
+
+            double breakout = lapBreakouts[lap];
+            if (!double.IsNaN(breakout))
+                from = Math.Min(from, breakout);
+            return Math.Max(start, from);
+        }
+
         /// <summary>The frame of a checkpoint on the video (s after the start), null without a time.</summary>
         private double? TimeAtCheckpoint(int distance)
         {
@@ -690,9 +832,36 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public double SpeedAt(double t)
         {
-            const double dt = 0.02;
-            double r = RaceTime(t);
-            return (Curve(r + dt, true) - Curve(r - dt, true)) / (2 * dt) * K;
+            return Slope(RaceTime(t)) * K;
+        }
+
+        /// <summary>
+        /// (2.31.0) Speed of the curve (pool units/s) at a time of the race: the derivative of the cubic of its segment; at a checkpoint the
+        /// one of the segment that ends there (on the frame of a wall the speed of its length: the difference of two points 0.02 s on each
+        /// side of it mixed the push-off after it); after the last checkpoint marked as the curve goes on.
+        /// </summary>
+        private double Slope(double r)
+        {
+            int n = knotT.Count;
+            if (n < 2)
+                return 0;
+
+            if (r > knotT[n - 1])
+            {
+                if (Finish.HasValue)
+                    return 0;
+
+                double v = (knotD[n - 1] - knotD[n - 2]) / (knotT[n - 1] - knotT[n - 2]);
+                return Curve(r, true) < nextCheckpoint - 1e-9 ? v : 0;
+            }
+
+            int k = 0;
+            while (k < n - 2 && r > knotT[k + 1])
+                k++;
+
+            double h = knotT[k + 1] - knotT[k];
+            double s = Math.Max(0, (r - knotT[k]) / h);
+            return (6 * s * s - 6 * s) / h * (knotD[k] - knotD[k + 1]) + (3 * s * s - 4 * s + 1) * slopeFrom[k] + (3 * s * s - 2 * s) * slopeTo[k];
         }
 
         /// <summary>
@@ -801,24 +970,45 @@ namespace Kinovea.ScreenManager
 
             int lap = LapAt(t);
             double breakout = lap < lapBreakouts.Count ? lapBreakouts[lap] : double.NaN;
+            // (2.31.0) In the water from the entry or the push off the wall, marked or estimated as for the speed (before, without the
+            // marks: the start, the turn, up to the breakout).
+            double inWater = lap < lapInWater.Count ? lapInWater[lap] : double.NaN;
             if (lap == 0)
             {
-                if (Entry.HasValue && t < Entry.Value)
-                    return "ΕΚΚΙΝΗΣΗ";
-                if (!Entry.HasValue && !double.IsNaN(breakout) && t < breakout)
+                if (!double.IsNaN(inWater) ? t < inWater : (Entry.HasValue ? t < Entry.Value : !double.IsNaN(breakout) && t < breakout))
                     return "ΕΚΚΙΝΗΣΗ";
                 if (!double.IsNaN(breakout) && t < breakout)
                     return "ΥΠΟΒΡΥΧΙΑ";
             }
             else if (!double.IsNaN(breakout) && t < breakout)
             {
-                double feetOff = lapFeetOff[lap];
-                if (double.IsNaN(feetOff) || t < feetOff)
+                double push = !double.IsNaN(inWater) ? inWater : lapFeetOff[lap];
+                if (double.IsNaN(push) || t < push)
                     return "ΣΤΡΟΦΗ";
                 return "ΥΠΟΒΡΥΧΙΑ";
             }
 
             return SwimAthleteList.Normalize(SwimPresets.StyleName(StyleOfLap(lap)));
+        }
+
+        /// <summary>
+        /// (2.31.0) The swimmer is in the water at this time, its speed shown: from the entry of the start or the push off a wall (marked,
+        /// else estimated) to the next wall; not before the start or after the finish.
+        /// </summary>
+        public bool InWater(double t)
+        {
+            if (!HasModel || t < 0 || (Finish.HasValue && t >= Finish.Value))
+                return false;
+
+            int lap = LapAt(t);
+            double from = lap < lapInWater.Count ? lapInWater[lap] : double.NaN;
+            return !double.IsNaN(from) && t >= from - 1e-6;
+        }
+
+        /// <summary>(2.31.0) Under the water at this time (after the start or a turn, before its breakout): the speed with ≈.</summary>
+        public bool Underwater(double t)
+        {
+            return InWater(t) && UnderwaterSpans.Any(span => t >= span.From - 1e-6 && t < span.To);
         }
 
         /// <summary>True while the swimmer swims (after the breakout of the lap, before its wall).</summary>
