@@ -59,8 +59,8 @@ namespace Kinovea.ScreenManager
     {
         private static readonly Color athlete = SwimTheme.Amber;
 
-        /// <summary>(2.31.0) The figures of the averages of the segments on the chart of the speed.</summary>
-        private static readonly Color amberPale = Color.FromArgb(255, 214, 150);
+        /// <summary>(2.31.0) The averages of the segments on the chart of the race (white: the amber is the distance per cycle).</summary>
+        private static readonly Color segmentAverage = Color.FromArgb(235, 244, 250, 252);
 
         /// <summary>Places of the parts, from the size of the image.</summary>
         private sealed class Layout
@@ -473,10 +473,10 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.31.0) The speed of the whole race, from the start to the finish (before: the cycles of the current length): the speed of the
-        /// curve through the checkpoints up to now, the one of the card above it, also under the water after the start and each turn (the
-        /// green bands), broken at each wall; the average speed of each segment passed in amber, as the PDF; where the swimmer is, with
-        /// its speed. After the finish the whole race.
+        /// (2.31.0) The whole race, from the start to the finish (before: the cycles of the current length). Above, the speed of the curve
+        /// through the checkpoints up to now, the one of the card, also under the water after the start and each turn (the green bands),
+        /// broken at each wall, and the average speed of each segment passed in white, as the PDF; below, the distance of each cycle in
+        /// amber, as before; where the swimmer is, with its speed. After the finish the whole race.
         /// </summary>
         private static void DrawChartOn(Graphics g, SwimReelScene s, Layout L)
         {
@@ -489,16 +489,20 @@ namespace Kinovea.ScreenManager
 
             // Title and legend (the legend where it does not reach the title).
             Font titleFont = F(8.25f, k, false, FontStyle.Bold);
-            float titleRight = r.Left + 16 * k + Caps(g, SwimLang.Upper(SwimLang.T("ΤΑΧΥΤΗΤΑ  ·  ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ")), titleFont,
+            float titleRight = r.Left + 16 * k + Caps(g, SwimLang.Upper(SwimLang.T("ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ")), titleFont,
                 SwimTheme.AccentLight, r.Left + 16 * k, r.Top + 8 * k);
             Font legend = F(7.25f, k);
-            string averageLegend = SwimLang.T("μέση τμήματος"), speedLegend = SwimLang.T("ταχύτητα m/s");
-            float averageX = r.Right - 14 * k - Width(g, averageLegend, legend);
+            string speedLegend = SwimLang.T("ταχύτητα m/s"), averageLegend = SwimLang.T("μέση τμήματος"), distanceLegend = SwimLang.T("απόσταση/κύκλο m");
+            float distanceX = r.Right - 14 * k - Width(g, distanceLegend, legend);
+            float averageX = distanceX - 26 * k - Width(g, averageLegend, legend);
             float speedX = averageX - 28 * k - Width(g, speedLegend, legend);
             if (speedX - 14 * k > titleRight + 10 * k)
             {
-                Text(g, averageLegend, legend, SwimTheme.Amber, averageX, r.Top + 9 * k);
+                Text(g, distanceLegend, legend, SwimTheme.Amber, distanceX, r.Top + 9 * k);
                 using (SolidBrush b = new SolidBrush(SwimTheme.Amber))
+                    g.FillRectangle(b, distanceX - 12 * k, r.Top + 11 * k, 8 * k, 9 * k);
+                Text(g, averageLegend, legend, segmentAverage, averageX, r.Top + 9 * k);
+                using (SolidBrush b = new SolidBrush(segmentAverage))
                     g.FillRectangle(b, averageX - 15 * k, r.Top + 14.5f * k, 11 * k, 2.5f * k);
                 Text(g, speedLegend, legend, SwimTheme.Accent, speedX, r.Top + 9 * k);
                 using (SolidBrush b = new SolidBrush(SwimTheme.Accent))
@@ -529,7 +533,10 @@ namespace Kinovea.ScreenManager
             if ((int)Math.Round((vmax - vmin) * 10) % 2 == 1)
                 vmax += 0.1;
 
-            Func<double, float> Y = v => plot.Top + (float)((vmax - Math.Max(vmin, Math.Min(vmax, v))) / (vmax - vmin) * plot.Height);
+            // The speed in the upper part, the distance of the cycles in the lower one (as the chart of the cycles before).
+            float topH = plot.Height * 0.58f;
+            float barH = plot.Height - topH - 6 * k;
+            Func<double, float> Y = v => plot.Top + (float)((vmax - Math.Max(vmin, Math.Min(vmax, v))) / (vmax - vmin) * topH);
             Font axis = F(6.75f, k);
             using (Pen grid = new Pen(Color.FromArgb(38, SwimTheme.Accent), Math.Max(1f, 0.8f * k)))
             {
@@ -539,6 +546,10 @@ namespace Kinovea.ScreenManager
                     Text(g, v.ToString("0.0", CultureInfo.InvariantCulture), axis, SwimTheme.Faint, plot.Left - 6 * k, Y(v), StringAlignment.Far, StringAlignment.Center);
                 }
             }
+
+            double dpsTop = DpsScale(reel.Cycles.Select(c => c.Dps));
+            Text(g, dpsTop.ToString("0.0", CultureInfo.InvariantCulture), axis, Fade(SwimTheme.Amber, 0.75f), plot.Left - 6 * k, plot.Bottom - barH,
+                StringAlignment.Far, StringAlignment.Center);
 
             // Where the swimmer is: its tag under the chart's line (the labels give way to it).
             bool showSwimmer = t >= 0 && !finished;
@@ -617,9 +628,28 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // The average speed of each segment passed (as the PDF): an amber step.
+            // The distance of each cycle up to now (all after the finish): amber bars with a bright top edge.
+            List<SwimReelCycle> cycles = reel.Cycles.Where(c => finished || c.Time <= t + 1e-6).ToList();
+            using (LinearGradientBrush bar = new LinearGradientBrush(new RectangleF(plot.Left, plot.Bottom - barH - 1, Math.Max(1, plot.Width), barH + 2),
+                Color.FromArgb(175, SwimTheme.Amber), Color.FromArgb(60, SwimTheme.Amber), LinearGradientMode.Vertical))
+            using (Pen edge = new Pen(SwimTheme.Amber, Math.Max(1f, 1.4f * k)))
+            {
+                foreach (SwimReelCycle c in cycles)
+                {
+                    float xa = X(reel.DistanceAt(c.Start)), xb = X(reel.DistanceAt(c.Time));
+                    float pad = Math.Min(1.5f * k, (xb - xa) * 0.15f);
+                    float h = (float)(Math.Max(0, Math.Min(dpsTop, c.Dps)) / dpsTop * barH);
+                    if (xb - xa > 2 * pad + 0.5f && h > 0)
+                    {
+                        g.FillRectangle(bar, xa + pad, plot.Bottom - h, xb - xa - 2 * pad, h);
+                        g.DrawLine(edge, xa + pad, plot.Bottom - h, xb - pad, plot.Bottom - h);
+                    }
+                }
+            }
+
+            // The average speed of each segment passed (as the PDF): a white step.
             List<SwimRow> steps = rows.Where(row => row.Vel.HasValue && row.D > row.PrevD && row.PassedAt(t)).ToList();
-            using (Pen step = new Pen(SwimTheme.Amber, Math.Max(1.5f, 2.2f * k)))
+            using (Pen step = new Pen(segmentAverage, Math.Max(1.5f, 2f * k)))
             {
                 foreach (SwimRow row in steps)
                 {
@@ -663,7 +693,7 @@ namespace Kinovea.ScreenManager
                 if (taken.Any(o => o.IntersectsWith(box)))
                     continue;
 
-                Text(g, figure, stepFont, amberPale, (xa + xb) / 2, box.Top, StringAlignment.Center);
+                Text(g, figure, stepFont, segmentAverage, (xa + xb) / 2, box.Top, StringAlignment.Center);
             }
 
             // The distances under the chart: the start, the finish and the walls first, then the other checkpoints where they fit.
