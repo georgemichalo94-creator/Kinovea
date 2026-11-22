@@ -141,7 +141,7 @@ $none = [System.Collections.Generic.List[guid]]::new()
 $none.Add([guid]::Empty); $none.Add([guid]::Empty)
 $mixed2 = [System.Collections.Generic.List[guid]]::new()
 $mixed2.Add([guid]::NewGuid()); $mixed2.Add([guid]::Empty)
-Check (($folderText.Invoke($null, [object[]]@($none))) -eq 'Φάκελος εγγραφής: κανένας' -and ($folderText.Invoke($null, [object[]]@($mixed2))) -eq 'Φάκελος εγγραφής: διαφορετικός ανά κάμερα') 'the text of the folder button (none, different per camera)'
+Check (($folderText.Invoke($null, [object[]]@(,$none))) -eq 'Φάκελος εγγραφής: κανένας' -and ($folderText.Invoke($null, [object[]]@(,$mixed2))) -eq 'Φάκελος εγγραφής: διαφορετικός ανά κάμερα') 'the text of the folder button (none, different per camera)'
 
 # ---- Pictures of the wall on fictional cameras.
 function Cam([int]$n, [string]$name, [bool]$loaded, [bool]$connected, [bool]$grabbing, [bool]$recording, [double]$fps, [long]$drops, [double]$seconds) {
