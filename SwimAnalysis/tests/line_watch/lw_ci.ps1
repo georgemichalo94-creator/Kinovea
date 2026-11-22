@@ -266,7 +266,9 @@ try {
     $fa = [System.Reflection.Assembly]::LoadFrom((Join-Path $bin 'Kinovea.Video.FFMpeg.dll'))
     $readers = New-Object 'System.Collections.Generic.List[Type]'
     $readers.Add($fa.GetType('Kinovea.Video.FFMpeg.VideoReaderFFMpeg', $true))
-    [void]$va.GetType('Kinovea.Video.VideoTypeManager', $true).GetMethod('LoadVideoReaders', [Type[]]@($readers.GetType())).Invoke($null, [object[]]@(,$readers))
+    # (The objects of New-Object come wrapped for PowerShell: Invoke wants them as they are.)
+    $list = $readers.psobject.BaseObject
+    [void]$va.GetType('Kinovea.Video.VideoTypeManager', $true).GetMethod('LoadVideoReaders', [Type[]]@($list.GetType())).Invoke($null, [object[]]@(,$list))
     $read = $a.GetType('Kinovea.ScreenManager.SwimLineFile', $true).GetMethod('Read')
     # As after a live attempt: the line seen at about its time, the way known.
     $w = $read.Invoke($null, [object[]]@([string]$video, [double]$hornFrame, [double]$fps, [single]0.5, [int]1, [double]1.32))
