@@ -67,7 +67,13 @@ namespace Kinovea.ScreenManager
     /// </summary>
     public sealed class SwimReel
     {
+        // (2.31.0) The curve is on the times of the race (knotT: the analysis' times, the official one where it was typed, as the
+        // sheet and the PDF), the swimmer on the frames of the marks (knotV: the video). They differ only where an official time is not
+        // on the frame of its mark: the video goes from one to the other in proportion between two checkpoints. Before, the curve was on
+        // the frames: a finish marked 0.75 s after the official time made the last 5 m of a 100 m backstroke 1.32 m/s on the video
+        // (1.64 in the PDF) and pulled the 85–95 m down with them (the fictional race of reel_speed/rs_ci.ps1).
         private readonly List<double> knotT = new List<double>();
+        private readonly List<double> knotV = new List<double>();
         private readonly List<double> knotD = new List<double>();
 
         // Derivative of the curve at the beginning and at the end of each interval between two knots (2.9.4: they differ at a wall,
@@ -139,16 +145,21 @@ namespace Kinovea.ScreenManager
             reel.Distance = race.Distance;
             reel.Pool = Math.Max(1, race.Pool);
 
-            // Distance-time model: the start and the checkpoints with a time, both increasing.
+            // Distance-time model: the start and the checkpoints with a time, all increasing. The curve on the times of the race (T, the
+            // official one where typed), the swimmer on the video at the frame of each mark (OnVideo; T without a mark).
             reel.knotT.Add(0);
+            reel.knotV.Add(0);
             reel.knotD.Add(0);
-            // (On the video: the frame of a mark when its time is the official one beside it.)
             foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
             {
-                if (row.OnVideo <= reel.knotT[reel.knotT.Count - 1] + 1e-6 || row.D <= reel.knotD[reel.knotD.Count - 1])
+                double race = row.T.Value;
+                double video = double.IsNaN(row.OnVideo) ? race : row.OnVideo;
+                int last = reel.knotT.Count - 1;
+                if (video <= reel.knotV[last] + 1e-6 || race <= reel.knotT[last] + 1e-6 || row.D <= reel.knotD[last])
                     continue;
 
-                reel.knotT.Add(row.OnVideo);
+                reel.knotT.Add(race);
+                reel.knotV.Add(video);
                 reel.knotD.Add(row.D);
             }
 
@@ -280,8 +291,9 @@ namespace Kinovea.ScreenManager
                         continue;
 
                     double dps = (Position(t1, false) - Position(t0, false)) * K;
+                    double span = RaceTime(t1) - RaceTime(t0);
                     number++;
-                    Cycles.Add(new SwimReelCycle { Start = t0, Time = t1, Tempo = tempo, Dps = dps, Speed = dps / tempo, Lap = lap, Number = number });
+                    Cycles.Add(new SwimReelCycle { Start = t0, Time = t1, Tempo = tempo, Dps = dps, Speed = dps / (span > 0.05 ? span : tempo), Lap = lap, Number = number });
                 }
             }
         }
@@ -473,9 +485,11 @@ namespace Kinovea.ScreenManager
                 SwimReelPart part = new SwimReelPart { From = bounds[i - 1], To = bounds[i] };
                 double? t0 = TimeAtCheckpoint(part.From);
                 double? t1 = TimeAtCheckpoint(part.To);
-                if (t0.HasValue && t1.HasValue && t1.Value > t0.Value)
+                double? r0 = RaceTimeAtCheckpoint(part.From);
+                double? r1 = RaceTimeAtCheckpoint(part.To);
+                if (r0.HasValue && r1.HasValue && r1.Value > r0.Value)
                 {
-                    part.Time = t1.Value - t0.Value;
+                    part.Time = r1.Value - r0.Value;
                     part.Speed = (part.To - part.From) * K / part.Time.Value;
                 }
 
@@ -501,7 +515,18 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>The frame of a checkpoint on the video (s after the start), null without a time.</summary>
         private double? TimeAtCheckpoint(int distance)
+        {
+            if (distance == 0)
+                return 0;
+
+            int i = knotD.IndexOf(distance);
+            return i >= 0 ? (double?)knotV[i] : null;
+        }
+
+        /// <summary>(2.31.0) The time of the race at a checkpoint (the official one where typed), null without a time.</summary>
+        private double? RaceTimeAtCheckpoint(int distance)
         {
             if (distance == 0)
                 return 0;
@@ -521,30 +546,67 @@ namespace Kinovea.ScreenManager
             return Position(t, true);
         }
 
-        /// <summary>Time (s after the start) at a distance up to the last checkpoint marked, from the curve.</summary>
+        /// <summary>Time on the video (s after the start) at a distance up to the last checkpoint marked, from the curve.</summary>
         public double TimeAtDistance(double d)
         {
             int n = knotT.Count;
             if (n < 2 || d <= 0)
                 return 0;
             if (d >= knotD[n - 1])
-                return knotT[n - 1];
+                return knotV[n - 1];
 
             double lo = 0, hi = knotT[n - 1];
             for (int i = 0; i < 50; i++)
             {
                 double mid = 0.5 * (lo + hi);
-                if (Position(mid, true) < d)
+                if (Curve(mid, true) < d)
                     lo = mid;
                 else
                     hi = mid;
             }
 
-            return 0.5 * (lo + hi);
+            return VideoTime(0.5 * (lo + hi));
+        }
+
+        /// <summary>
+        /// (2.31.0) The time of the race at a time of the video (both s after the start): the same at the checkpoints whose mark is on
+        /// their time, in proportion between two checkpoints, on as the video after the last one.
+        /// </summary>
+        public double RaceTime(double t)
+        {
+            return Map(t, knotV, knotT);
+        }
+
+        /// <summary>(2.31.0) The time of the video at a time of the race (the inverse of RaceTime).</summary>
+        public double VideoTime(double r)
+        {
+            return Map(r, knotT, knotV);
+        }
+
+        private static double Map(double x, List<double> from, List<double> to)
+        {
+            int n = from.Count;
+            if (n < 2 || x <= 0)
+                return x;
+            if (x >= from[n - 1])
+                return to[n - 1] + (x - from[n - 1]);
+
+            int k = 0;
+            while (k < n - 2 && x > from[k + 1])
+                k++;
+
+            double h = from[k + 1] - from[k];
+            return h > 0 ? to[k] + (x - from[k]) / h * (to[k + 1] - to[k]) : to[k];
         }
 
         /// <summary>stopAtCheckpoint: not beyond the next checkpoint (where the swimmer is shown), else up to the finish (cycles).</summary>
         private double Position(double t, bool stopAtCheckpoint)
+        {
+            return Curve(RaceTime(t), stopAtCheckpoint);
+        }
+
+        /// <summary>(2.31.0) Distance at a time of the race (the curve through the checkpoints, on the times of the race).</summary>
+        private double Curve(double t, bool stopAtCheckpoint)
         {
             int n = knotT.Count;
             if (n < 2 || t <= 0)
@@ -622,11 +684,15 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        /// <summary>Speed (m/s) at a time after the start, from the curve through the checkpoints.</summary>
+        /// <summary>
+        /// Speed (m/s) at a time of the video after the start, from the curve through the checkpoints: on the times of the race, as the
+        /// speeds of the analysis and the PDF (2.31.0).
+        /// </summary>
         public double SpeedAt(double t)
         {
             const double dt = 0.02;
-            return (DistanceAt(t + dt) - DistanceAt(t - dt)) / (2 * dt) * K;
+            double r = RaceTime(t);
+            return (Curve(r + dt, true) - Curve(r - dt, true)) / (2 * dt) * K;
         }
 
         /// <summary>
