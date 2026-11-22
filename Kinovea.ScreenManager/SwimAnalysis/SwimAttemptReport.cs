@@ -595,13 +595,13 @@ namespace Kinovea.ScreenManager
 
             // How it was measured.
             Font note = SwimCaptureWall.Display(8.5f * fs);
-            string text = SwimLang.T("≈ από τη ζωντανή εικόνα. Ο ακριβής χρόνος ελέγχεται καρέ καρέ στην ανάλυση.");
+            string noteText = SwimLang.T("≈ από τη ζωντανή εικόνα. Ο ακριβής χρόνος ελέγχεται καρέ καρέ στην ανάλυση.");
             if (attempt.Estimated)
-                text += " " + SwimLang.T("Η ταχύτητα με εκτίμηση της κλίμακας των καμερών.");
+                noteText += " " + SwimLang.T("Η ταχύτητα με εκτίμηση της κλίμακας των καμερών.");
 
             float noteHeight = 40 * s;
             using (SolidBrush brush = new SolidBrush(SwimTheme.Dim))
-                g.DrawString(text, note, brush, new RectangleF(x0, Math.Max(y + 10 * s, r.Bottom - 12 * s - noteHeight), x1 - x0, noteHeight));
+                g.DrawString(noteText, note, brush, new RectangleF(x0, Math.Max(y + 10 * s, r.Bottom - 12 * s - noteHeight), x1 - x0, noteHeight));
         }
         #endregion
     }
