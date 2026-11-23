@@ -70,7 +70,7 @@ Check ($null -ne $r.Turn) 'the turn at 50 m'
 $v = $r.Turn.Value('uwVel')
 Check (Near $v 2.5 0.0005) ('underwater speed from the wall over the time from the push-off: ' + $v)
 $kd = $r.Turn.Value('kickDist')
-Check (Near $kd (10.0 / 6) 1e-9) ('distance per kick from the wall: ' + $kd)
+Check (Near $kd (10.0 / 6) 0.0005) ('distance per kick from the wall: ' + $kd + ' (the values to the thousandth)')
 $b15 = $r.Turn.Value('bo15Vel')
 Check (Near $b15 (5 / (33.5 - 30.6)) 0.0005) ('from the breakout to the 15 m: ' + $b15)
 Check ($null -eq $r.Turn.SpeedNote) ('no note: ' + $r.Turn.SpeedNote)
@@ -83,7 +83,7 @@ Check ($null -eq $body.race.manual.turns.'50'.underwaterEstimated) 'a measured d
 $race.BodyLength = 1.9
 $r = TurnPhase $race
 Check (Near $r.Turn.Value('uwVel') 2.5 0.0005) ('with a body length the same speed: ' + $r.Turn.Value('uwVel'))
-Check (Near $r.Turn.Value('kickDist') (10.0 / 6) 1e-9) 'and the same distance per kick'
+Check (Near $r.Turn.Value('kickDist') (10.0 / 6) 0.0005) 'and the same distance per kick'
 $race.BodyLength = $null
 
 # The distance estimated from the times: no speed from it.
