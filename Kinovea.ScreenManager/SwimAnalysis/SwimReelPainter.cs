@@ -397,17 +397,25 @@ namespace Kinovea.ScreenManager
 
             // Strokes of the length, tempo and distance of the last cycle, speed (2.31.0: in the water, also under it after the start and the
             // turns, with ≈; before, only after the breakout).
+            // (2.34.0) In the clean swimming the rate, the cycle length and the speed of the segment as the analysis and the PDF have them
+            // (no ≈: the video never shows another number than the report; speed = rate × length ÷ 60 on the card). Elsewhere (the first
+            // 15 m, after a turn, the last 5 m: the report has no rate or stroke length there) those of the last cycle and the speed of
+            // the curve, with ≈.
             SwimReelCycle cycle = t >= 0 ? reel.LastCycle(t) : null;
+            SwimReelClean clean = t >= 0 ? reel.CleanAt(t) : null;
             bool inWater = reel.InWater(t);
             bool underwater = inWater && reel.Underwater(t);
+            bool measured = false;
+            double speed = inWater ? reel.ShownSpeed(t, out measured) : 0;
             string[] captions = { SwimLang.T("ΧΕΡΙΕΣ"), SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), SwimLang.T("ΑΠΟΣΤ./ΚΥΚΛΟ"), SwimLang.T("ΤΑΧΥΤΗΤΑ") };
             string[] values =
             {
                 (t >= 0 ? reel.StrokesInLength(t) : 0).ToString(CultureInfo.InvariantCulture),
-                // (2.33.0) The steady tempo and distance of the cycle (a press a little off its frame showed 70 for 52 for a moment).
-                cycle != null && cycle.ShownTempo > 0 ? (60.0 / cycle.ShownTempo).ToString("0.0", CultureInfo.InvariantCulture) : "–",
-                cycle != null && reel.HasModel ? "≈" + cycle.ShownDps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
-                inWater ? (underwater ? "≈" : "") + reel.SpeedAt(t).ToString("0.00", CultureInfo.InvariantCulture) : "–"
+                clean != null ? clean.Rate.ToString("0.0", CultureInfo.InvariantCulture)
+                    : cycle != null && cycle.ShownTempo > 0 ? "≈" + (60.0 / cycle.ShownTempo).ToString("0.0", CultureInfo.InvariantCulture) : "–",
+                clean != null ? clean.Length.ToString("0.00", CultureInfo.InvariantCulture)
+                    : cycle != null && reel.HasModel ? "≈" + cycle.ShownDps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
+                inWater ? (measured ? "" : "≈") + speed.ToString("0.00", CultureInfo.InvariantCulture) : "–"
             };
             string[] units = { "", SwimLang.T("κ/λ"), "m", "m/s" };
             Color[] colors = { SwimTheme.Text, SwimTheme.Accent, SwimTheme.Amber, SwimTheme.Green };
@@ -718,8 +726,13 @@ namespace Kinovea.ScreenManager
 
             // The swimmer: a line down to its distance and, in the water, a dot on the line of the speed with its value (green under the
             // water).
+            // (2.34.0) The figure beside the dot is the speed the card shows (in the clean swimming that of the segment, as the PDF).
             bool inWater = reel.InWater(t);
             double speed = inWater ? reel.SpeedAt(t) : 0;
+            bool measuredSpeed;
+            double shownSpeed = reel.ShownSpeed(t, out measuredSpeed);
+            if (!inWater)
+                shownSpeed = 0;
             float ys = Y(speed);
             SwimTheme.GlowLine(g, SwimTheme.AccentPale, Math.Max(1f, 1.3f * k), new PointF(xs, plot.Top), new PointF(xs, tag.Top));
             SwimTheme.HudChip(g, tag, SwimTheme.AccentPale, 1f, 4 * k, 235);
@@ -733,7 +746,7 @@ namespace Kinovea.ScreenManager
             using (SolidBrush dot = new SolidBrush(SwimTheme.AccentPale))
                 g.FillEllipse(dot, xs - 3.6f * k, ys - 3.6f * k, 7.2f * k, 7.2f * k);
 
-            string value = speed.ToString("0.00", CultureInfo.InvariantCulture);
+            string value = shownSpeed.ToString("0.00", CultureInfo.InvariantCulture);
             Font pillFont = F(7.75f, k, false, FontStyle.Bold);
             float pw = Width(g, value, pillFont) + 12 * k, ph = 16 * k;
             float px = xs + 9 * k + pw <= plot.Right ? xs + 9 * k : xs - 9 * k - pw;
@@ -894,7 +907,9 @@ namespace Kinovea.ScreenManager
                 new[] { SwimLang.T("ΧΡΟΝΟΣ ΑΝΑ ΤΜΗΜΑ"), string.Join(" / ", reel.Parts.Select(p => p.Time.HasValue ? SwimReference.FormatTime(p.Time.Value) : "–")), partsLabel + " " + unit },
                 new[] { SwimLang.T("ΧΕΡΙΕΣ"), string.Join(" / ", reel.Parts.Select(p => p.Strokes.ToString(CultureInfo.InvariantCulture))), SwimLang.T("χεριές ανά τμήμα (της ανάλυσης)") },
                 new[] { SwimLang.T("ΣΥΧΝΟΤΗΤΑ"), joined(p => p.Tempo.HasValue && p.Tempo.Value > 0 ? (double?)(60.0 / p.Tempo.Value) : null, "0.0"), SwimLang.T("κύκλοι ανά λεπτό") },
-                new[] { SwimLang.T("ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ"), "≈" + joined(p => p.Dps, "0.00"), SwimLang.T("μέτρα ανά κύκλο") },
+                // (2.34.0) Without ≈ when every part has the numbers of the analysis (the clean swimming, as the PDF).
+                new[] { SwimLang.T("ΑΠΟΣΤΑΣΗ/ΚΥΚΛΟ"), (reel.Parts.Count > 0 && reel.Parts.All(p => p.FromAnalysis || !p.Dps.HasValue) ? "" : "≈") + joined(p => p.Dps, "0.00"),
+                    SwimLang.T("μέτρα ανά κύκλο") },
                 new[] { SwimLang.T("ΤΑΧΥΤΗΤΑ"), joined(p => p.Speed, "0.00"), SwimLang.T("m/s ανά τμήμα") }
             };
 

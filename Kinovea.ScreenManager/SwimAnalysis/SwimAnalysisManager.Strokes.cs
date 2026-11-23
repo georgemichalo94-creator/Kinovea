@@ -26,8 +26,9 @@ namespace Kinovea.ScreenManager
     /// that starts the follow of the lap (stroke session). At each checkpoint marked afterwards the video of the lap is
     /// read up to the checkpoint (and a little after it, for the fraction of the stroke at the checkpoint), the strokes
     /// are found (SwimStrokeDetector) and placed as stroke marks, and the count of the segment is shown: Enter confirms
-    /// it, or the analyst types the right number. The confirmed or typed counts are kept in SwimRace.StrokeCounts and
-    /// have priority over the count from the marks (in the panel, the sheet and the PDF). The session ends at the wall.
+    /// it, or the analyst types the right number. A typed count is kept in SwimRace.StrokeCounts and has priority over
+    /// the count from the marks (in the panel, the sheet and the PDF); (2.34.0) a count accepted as shown stays the one
+    /// of the marks (SwimRace.StrokeConfirmed). The session ends at the wall.
     /// </summary>
     public partial class SwimAnalysisManager
     {
@@ -493,7 +494,10 @@ namespace Kinovea.ScreenManager
                 return true;
             }
 
-            double? found = row.Strokes;
+            // (2.34.0) What the stroke marks give (also under a count accepted before that stands against them).
+            double? found = row.StrokesAuto;
+            double accepted = 0;
+            bool hadAccepted = row.StrokesChanged && Race.StrokeConfirmed.TryGetValue(distance, out accepted);
             string title = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Χεριές {0}→{1}{2}"), row.PrevD, row.D, UnitLabel);
             string detail;
             if (detection != null)
@@ -513,6 +517,8 @@ namespace Kinovea.ScreenManager
 
             if (hadTyped)
                 detail += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Γραμμένο πριν: {0}."), FormatCount(previous));
+            else if (hadAccepted)
+                detail += string.Format(CultureInfo.InvariantCulture, SwimLang.T(" Είχες δεχτεί: {0}."), FormatCount(accepted));
 
             // A new count shows what was found; a correction from the panel starts from the number written before.
             double? shown = detection == null && hadTyped ? previous : found;
@@ -537,12 +543,25 @@ namespace Kinovea.ScreenManager
 
             if (cleared)
             {
+                Race.StrokeConfirmed.Remove(distance);
                 Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: χωρίς γραμμένο αριθμό (μετράνε τα σημάδια χεριών)."), title), false);
             }
             else if (value.HasValue)
             {
-                Race.StrokeCounts[distance] = value.Value;
+                // (2.34.0) The count accepted as shown stays the count of the stroke marks, also when they change afterwards (the length is
+                // read again at the next checkpoints): only another number is a typed one. Until 2.33.0 the count shown was kept as
+                // typed, and the rate of the segment came from it when the marks had moved on.
                 bool same = found.HasValue && Math.Abs(found.Value - value.Value) < 1e-6;
+                if (same)
+                {
+                    Race.StrokeConfirmed[distance] = value.Value;
+                }
+                else
+                {
+                    Race.StrokeCounts[distance] = value.Value;
+                    Race.StrokeConfirmed.Remove(distance);
+                }
+
                 Status(string.Format(CultureInfo.InvariantCulture, "{0}: {1}{2}", title, FormatCount(value.Value),
                     same ? " ✓" : (found.HasValue ? SwimLang.T(" (διόρθωση από ") + FormatCount(found.Value) + ")" : "")), false);
             }

@@ -40,6 +40,12 @@ namespace Kinovea.ScreenManager
         public double SteadyTempo;
         public double SteadyDps;
 
+        /// <summary>
+        /// (2.34.0) The cycle is in a segment of clean swimming: what it shows is the rate and the cycle length of that segment as the
+        /// analysis and the PDF have them (every such segment, not only the corrected ones as in 2.33.0).
+        /// </summary>
+        public bool FromAnalysis;
+
         /// <summary>(2.33.0) The steady duration, else the cycle's own (s).</summary>
         public double ShownTempo
         {
@@ -79,6 +85,27 @@ namespace Kinovea.ScreenManager
         public double? Tempo;
         public double? Dps;
         public double? Speed;
+
+        /// <summary>
+        /// (2.34.0) Tempo and Dps are those of the clean swimming of the part as the analysis and the PDF have them (the rate weighted
+        /// with the time, the cycle length of the whole); false: the mean of the cycles marked in the part (no clean swimming in it).
+        /// </summary>
+        public bool FromAnalysis;
+    }
+
+    /// <summary>
+    /// (2.34.0) A segment of clean swimming as the analysis and the PDF have it: its checkpoints, their times on the video (s after the
+    /// start), the stroke rate (cycles a minute), the length of the cycle (m) and the speed (m/s). What the video shows in it.
+    /// </summary>
+    public sealed class SwimReelClean
+    {
+        public int From;
+        public int To;
+        public double Start;
+        public double End;
+        public double Rate;
+        public double Length;
+        public double Speed;
     }
 
     /// <summary>(2.31.0) A point of the speed of the race on the curve through the checkpoints, for the chart of the whole race.</summary>
@@ -169,11 +196,20 @@ namespace Kinovea.ScreenManager
         public readonly List<SwimReelBadge> Badges = new List<SwimReelBadge>();
         public readonly List<SwimReelPart> Parts = new List<SwimReelPart>();
 
+        /// <summary>(2.34.0) The segments of clean swimming with the numbers of the analysis, in order (CleanAt).</summary>
+        public readonly List<SwimReelClean> Clean = new List<SwimReelClean>();
+
         /// <summary>Stroke marks closer to their neighbours than a cycle (a second press on the same stroke): left out.</summary>
         public readonly List<double> DoubleMarks = new List<double>();
 
         /// <summary>Stroke marks used for the cycles, by lap.</summary>
         private readonly List<List<double>> lapStrokes = new List<List<double>>();
+
+        /// <summary>
+        /// (2.34.0) The strokes of each lap as the analysis counts them, for the counter of the video: lapStrokes before the double marks
+        /// are left out (the analysis counts every mark; the data check says the double ones).
+        /// </summary>
+        private readonly List<List<double>> lapCounted = new List<List<double>>();
         private readonly List<string> lapStyles = new List<string>();
         private readonly List<double> lapBreakouts = new List<double>();
         private readonly List<double> lapStarts = new List<double>();
@@ -313,8 +349,87 @@ namespace Kinovea.ScreenManager
                     strokes.AddRange(computed.Strokes.Where(s => s > from && s <= end + 1e-6));
                 }
 
+                AsTheAnalysisCounts(strokes, computed, lap);
+                lapCounted.Add(new List<double>(strokes));
                 lapStrokes.Add(RemoveDoubleMarks(strokes));
             }
+        }
+
+        /// <summary>
+        /// (2.34.0) The strokes of the lap as the analysis counts them, so that the counter of the video ends where the PDF does: the
+        /// first pull of backstroke after the dive is not one (SwimCalculator), and in a segment whose count the analyst typed (an
+        /// automatic stroke missed, or one too many) a stroke is put in the middle of its longest interval, or the one closest to the
+        /// stroke before it is left out, for each whole stroke of the difference. The marks of the analysis are not touched.
+        /// </summary>
+        private void AsTheAnalysisCounts(List<double> strokes, SwimComputed computed, int lap)
+        {
+            if (computed == null || strokes.Count == 0 || lap >= lapStarts.Count || double.IsNaN(lapStarts[lap]))
+                return;
+
+            double lapFrom = lapStarts[lap], lapTo = LapEnd(lap);
+            foreach (SwimRow row in computed.Rows)
+            {
+                if (double.IsNaN(row.OnVideo) || row.Index < 0 || row.Index >= computed.Rows.Count)
+                    continue;
+
+                double from = row.Index == 0 ? 0 : computed.Rows[row.Index - 1].OnVideo;
+                double to = row.OnVideo;
+                if (double.IsNaN(from) || to <= from || from < lapFrom - 1e-6 || to > lapTo + 1e-6)
+                    continue;
+
+                if (row.Index == 0 && row.Style == "bk" && SwimCalculator.BackstrokeBreakoutPull && computed.Strokes.Count > 0 &&
+                    computed.Strokes[0] <= to + 1e-6 && strokes.Count > 0 && Math.Abs(strokes[0] - computed.Strokes[0]) < 1e-6)
+                    strokes.RemoveAt(0);
+
+                if (!row.StrokesTyped || !row.Strokes.HasValue || !row.StrokesAuto.HasValue)
+                    continue;
+
+                int more = (int)Math.Truncate(row.Strokes.Value - row.StrokesAuto.Value + (row.Strokes.Value >= row.StrokesAuto.Value ? 1e-6 : -1e-6));
+                for (; more > 0; more--)
+                    PutStroke(strokes, from, to);
+                for (; more < 0; more++)
+                    DropStroke(strokes, from, to);
+            }
+        }
+
+        /// <summary>A stroke in the middle of the longest interval of the strokes in the segment (from, to] (the segment's middle without one).</summary>
+        private static void PutStroke(List<double> strokes, double from, double to)
+        {
+            double at = 0.5 * (from + to), longest = 0;
+            for (int i = 1; i < strokes.Count; i++)
+            {
+                double a = strokes[i - 1], b = strokes[i];
+                if (b <= from + 1e-6 || a > to + 1e-6 || b - a <= longest)
+                    continue;
+
+                longest = b - a;
+                at = Math.Min(to, Math.Max(from + 0.02, 0.5 * (a + b)));
+            }
+
+            int index = strokes.FindIndex(s => s > at);
+            strokes.Insert(index < 0 ? strokes.Count : index, at);
+        }
+
+        /// <summary>The stroke of the segment (from, to] closest to the stroke before it is left out.</summary>
+        private static void DropStroke(List<double> strokes, double from, double to)
+        {
+            int drop = -1;
+            double shortest = double.PositiveInfinity;
+            for (int i = 0; i < strokes.Count; i++)
+            {
+                if (strokes[i] <= from + 1e-6 || strokes[i] > to + 1e-6)
+                    continue;
+
+                double interval = i > 0 ? strokes[i] - strokes[i - 1] : double.MaxValue;
+                if (interval < shortest)
+                {
+                    shortest = interval;
+                    drop = i;
+                }
+            }
+
+            if (drop >= 0)
+                strokes.RemoveAt(drop);
         }
 
         /// <summary>
@@ -390,28 +505,32 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // (2.33.0) A segment of clean swimming whose rate the analysis does not take from the times of its strokes (the analyst corrected
-            // its strokes at its checkpoint, S: an automatic stroke missed or one too many; or the times do not agree with the strokes): its
-            // rate and cycle length as the analysis and the PDF have them (the strokes over the time).
+            // (2.34.0) Every segment of clean swimming as the analysis and the PDF have it: its rate, cycle length and speed are what the
+            // video shows in it (the card, the bars of the chart, the summary), so that the video and the PDF never differ. (2.33.0:
+            // only the segments whose rate the analysis did not take from the times of the strokes.)
             if (computed == null)
                 return;
 
             foreach (SwimRow row in computed.Rows)
             {
-                if (!row.IsFree || row.SrFromTimes || !row.Sr.HasValue || row.Sr.Value <= 0 || !row.Sl.HasValue ||
-                    row.Sl.Value <= 0 || row.Index <= 0 || row.Index >= computed.Rows.Count)
+                if (!row.IsFree || !row.Sr.HasValue || row.Sr.Value <= 0 || !row.Sl.HasValue || row.Sl.Value <= 0 ||
+                    !row.Vel.HasValue || row.Index <= 0 || row.Index >= computed.Rows.Count)
                     continue;
 
                 double from = computed.Rows[row.Index - 1].OnVideo, to = row.OnVideo;
                 if (double.IsNaN(from) || double.IsNaN(to) || to <= from)
                     continue;
 
+                Clean.Add(new SwimReelClean { From = row.PrevD, To = row.D, Start = from, End = to, Rate = row.Sr.Value, Length = row.Sl.Value, Speed = row.Vel.Value });
                 foreach (SwimReelCycle cycle in Cycles.Where(x => x.Time > from + 1e-6 && x.Time <= to + 1e-6))
                 {
                     cycle.SteadyTempo = 60.0 / row.Sr.Value;
                     cycle.SteadyDps = row.Sl.Value;
+                    cycle.FromAnalysis = true;
                 }
             }
+
+            Clean.Sort((a, b) => a.Start.CompareTo(b.Start));
         }
 
         private void BuildBreakouts(SwimRace race, SwimComputed computed)
@@ -626,15 +745,34 @@ namespace Kinovea.ScreenManager
                 double a = t0 ?? double.NaN, b = t1 ?? double.NaN;
                 if (!double.IsNaN(a) && !double.IsNaN(b))
                 {
-                    part.Strokes = lapStrokes.SelectMany(s => s).Count(s => s > a && s <= b);
+                    part.Strokes = lapCounted.SelectMany(s => s).Count(s => s > a && s <= b);
 
                     // (2.15.0) The counts of the analysis when every segment of the part has one (those the analyst confirmed or typed, the
                     // first pull of backstroke not counted), as the sheet and the report: the marks alone left his corrections out.
                     List<SwimRow> rows = computed != null ? computed.Rows.Where(r => r.PrevD >= part.From && r.D <= part.To).ToList() : new List<SwimRow>();
                     if (rows.Count > 0 && rows.All(r => r.Strokes.HasValue))
                         part.Strokes = rows.Sum(r => r.Strokes.Value);
+                    // (2.34.0) The rate and the cycle length of the clean swimming of the part as the analysis and the PDF have them (of
+                    // a 50: the «Ανά 50» of the report): the rate weighted with the time, the length of the whole. Until 2.33.0 the mean
+                    // of every cycle marked in the part, the breakout and the strokes into the wall with them.
+                    double cyclesOfRate = 0, cyclesOfStrokes = 0, cleanTime = 0, cleanMetres = 0;
+                    foreach (SwimRow row in rows.Where(r => r.Sr.HasValue && r.SegTime.HasValue && r.Strokes.HasValue))
+                    {
+                        cyclesOfRate += row.Sr.Value * row.SegTime.Value / 60.0;
+                        cyclesOfStrokes += row.Strokes.Value / SwimPresets.PressesPerCycle(row.Style);
+                        cleanTime += row.SegTime.Value;
+                        cleanMetres += (row.D - row.PrevD) * K;
+                    }
+
+                    double cycles = SwimCalculator.LengthFromRate ? cyclesOfRate : cyclesOfStrokes;
                     List<SwimReelCycle> inside = Cycles.Where(c => c.Time > a && c.Time <= b).ToList();
-                    if (inside.Count > 0)
+                    if (cleanTime > 0 && cyclesOfRate > 0 && cycles > 0)
+                    {
+                        part.Tempo = cleanTime / cyclesOfRate;
+                        part.Dps = cleanMetres / cycles;
+                        part.FromAnalysis = true;
+                    }
+                    else if (inside.Count > 0)
                     {
                         part.Tempo = inside.Average(c => c.Tempo);
                         part.Dps = inside.Average(c => c.Dps);
@@ -1143,11 +1281,37 @@ namespace Kinovea.ScreenManager
             return lap >= 0 && lap < lapStyles.Count ? lapStyles[lap] : "fs";
         }
 
-        /// <summary>Stroke marks of the current length up to this time.</summary>
+        /// <summary>Strokes of the current length up to this time, as the analysis counts them (2.34.0, lapCounted).</summary>
         public int StrokesInLength(double t)
         {
             int lap = LapAt(t);
-            return lap < lapStrokes.Count ? lapStrokes[lap].Count(s => s <= t + 1e-6) : 0;
+            return lap < lapCounted.Count ? lapCounted[lap].Count(s => s <= t + 1e-6) : 0;
+        }
+
+        /// <summary>
+        /// (2.34.0) The segment of clean swimming the swimmer is in at this time (from the frame of its first checkpoint to the frame
+        /// before its last one), null outside the clean swimming: there the analysis has no rate or stroke length.
+        /// </summary>
+        public SwimReelClean CleanAt(double t)
+        {
+            foreach (SwimReelClean c in Clean)
+            {
+                if (t >= c.Start - 1e-6 && t < c.End - 1e-6)
+                    return c;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// (2.34.0) The speed the video shows at this time: in the clean swimming the speed of the segment as the analysis and the PDF
+        /// have it (measured: between two checkpoints), elsewhere the speed of the curve (an estimate, shown with ≈).
+        /// </summary>
+        public double ShownSpeed(double t, out bool measured)
+        {
+            SwimReelClean c = CleanAt(t);
+            measured = c != null;
+            return c != null ? c.Speed : Math.Max(0, SpeedAt(t));
         }
 
         /// <summary>The last complete cycle of the current length at this time, null before the first one.</summary>

@@ -63,7 +63,7 @@ function makeCase(i) {
   const training = chance(0.25);
   const race = { Id: 'fm' + i, Athlete: 'FUZZ ATHLETE', AthleteId: '', AthleteGender: pick(['', 'Ανδρών', 'Γυναικών']), Kind: training ? 'training' : 'race',
     Style: 'fs', Relay: false, Distance: 100, Pool: 50, PoolUnit: 'm', Competition: 'Fuzz Games', Round: pick(['Τελικός', 'Προκριματικός', '']),
-    Date: '13.11.2026', Checkpoints: [], StartTimestamp: origin, Marks: marks, StrokeCounts: {}, Turns: {} };
+    Date: '13.11.2026', Checkpoints: [], StartTimestamp: origin, Marks: marks, StrokeCounts: {}, StrokeConfirmed: {}, Turns: {} };
 
   // Kicks, a breakout and strokes after a wall (or the start) until a time.
   const cycle = style => (style === 'br' || style === 'fly' ? between(1.0, 1.5) : between(0.55, 0.8));
@@ -185,6 +185,10 @@ function makeCase(i) {
     if (chance(0.2)) race.FinishLastStrokeDist = round(between(0.3, 2), 1);
     if (chance(0.4)) race.BodyLength = round(between(1.6, 2.0), 2);
     if (chance(0.2)) race.Checkpoints.forEach(d => { if (chance(0.3)) race.StrokeCounts[d] = pick([4, 6, 7, 8.5, 10, 12, 15.5]); });
+    // (2.34.0) Counts the analyst accepted as shown (Enter): the marks stand while they give them or half a stroke more or less, the
+    // accepted count against a whole stroke. From their own random numbers (the analyses of before stay the same).
+    const own = require('../rng').makeRandom(977 + 31 * i);
+    if (own() < 0.35) race.Checkpoints.forEach(d => { if (own() < 0.4) race.StrokeConfirmed[d] = [2, 3.5, 4.5, 5, 5.5, 6, 7.5, 9, 10.5, 14][Math.floor(own() * 10)]; });
     if (chance(0.35)) {
       const n = distance >= 100 && chance(0.7) ? distance / 50 : 1;
       race.Official = [];
@@ -223,6 +227,7 @@ function makeCase(i) {
 
   // The strokes typed for a checkpoint go with its mark (the program removes them when the mark is removed).
   Object.keys(race.StrokeCounts).forEach(d => { if (!race.Marks.some(m => m.Type === 'Split' && m.Distance === +d)) delete race.StrokeCounts[d]; });
+  Object.keys(race.StrokeConfirmed).forEach(d => { if (!race.Marks.some(m => m.Type === 'Split' && m.Distance === +d)) delete race.StrokeConfirmed[d]; });
 
   return { i, plausible: mutation < 0, mutation, timing, race };
 }

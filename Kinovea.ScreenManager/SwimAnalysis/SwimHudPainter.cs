@@ -82,7 +82,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.33.0";
+        public const string AppVersion = "2.34.0";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -992,17 +992,23 @@ namespace Kinovea.ScreenManager
                 speed = s.Computed.AvgVel;
                 rate = s.Computed.AvgSr;
             }
-            else if (st.Started && !st.Early && reel != null && reel.HasModel)
+            bool measured = false;
+            if (!st.Finished && st.Started && !st.Early && reel != null && reel.HasModel)
             {
-                speed = Math.Max(0, reel.SpeedAt(t));
+                // (2.34.0) In the clean swimming the speed and the rate of the segment as the analysis and the PDF have them.
+                speed = reel.ShownSpeed(t, out measured);
+                SwimReelClean clean = reel.CleanAt(t);
                 SwimReelCycle cycle = reel.LastCycle(t);
-                if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
+                if (clean != null)
+                    rate = clean.Rate;
+                else if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
                     rate = 60.0 / cycle.ShownTempo;
             }
 
             float spin = (float)s.VideoSeconds;
-            // The speed during the race from the curve through the checkpoints (≈), the mean speed of the race after the finish.
-            string speedText = speed.HasValue ? (st.Finished ? "" : "≈") + speed.Value.ToString("0.00", CultureInfo.InvariantCulture) : (st.Started ? "—" : "0.00");
+            // The speed during the race from the curve through the checkpoints (≈; in the clean swimming that of the segment), the mean
+            // speed of the race after the finish.
+            string speedText = speed.HasValue ? (st.Finished || measured ? "" : "≈") + speed.Value.ToString("0.00", CultureInfo.InvariantCulture) : (st.Started ? "—" : "0.00");
             Gauge(g, o.X + 92, o.Y + 92, speed, 3.0, speedText,
                 "m/s", SwimLang.T("ΤΑΧΥΤΗΤΑ"), spin * 40, C);
             Gauge(g, o.X + 396, o.Y + 92, rate, 70, rate.HasValue ? rate.Value.ToString("0.0", CultureInfo.InvariantCulture) : "—",
@@ -1705,11 +1711,19 @@ namespace Kinovea.ScreenManager
             string head = (s.Race.Lane > 0 ? SwimLang.T("ΔΙΑΔΡ. ") + s.Race.Lane.ToString(CultureInfo.InvariantCulture) + " · " : "") +
                 SwimLang.T("ΧΕΡΙΕΣ ") + reel.StrokesInLength(t).ToString(CultureInfo.InvariantCulture);
             List<string> values = new List<string>();
+            // (2.34.0) In the clean swimming the rate and the speed of the segment as the analysis and the PDF have them.
             SwimReelCycle cycle = reel.LastCycle(t);
-            if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
+            SwimReelClean clean = reel.CleanAt(t);
+            if (clean != null)
+                values.Add(clean.Rate.ToString("0.0", CultureInfo.InvariantCulture) + " " + SwimLang.T("κ/λ"));
+            else if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
                 values.Add((60.0 / cycle.ShownTempo).ToString("0.0", CultureInfo.InvariantCulture) + " " + SwimLang.T("κ/λ"));
             if (reel.HasModel)
-                values.Add("≈" + Math.Max(0, reel.SpeedAt(t)).ToString("0.00", CultureInfo.InvariantCulture) + " m/s");
+            {
+                bool measured;
+                double speed = reel.ShownSpeed(t, out measured);
+                values.Add((measured ? "" : "≈") + speed.ToString("0.00", CultureInfo.InvariantCulture) + " m/s");
+            }
             string value = string.Join("  ·  ", values);
 
             Font hf = Ui(11, true), vf = Thin(22);

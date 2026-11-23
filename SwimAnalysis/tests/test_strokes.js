@@ -38,7 +38,10 @@ assert.strictEqual(r25.strokesAuto, 8.5);
 assert.ok(near(r25.sr, (9 / 2) * 60 / (10.6 - 5.9), 1e-9) && r25.srTimes === false, 'sr of a corrected count ' + r25.sr);
 assert.strictEqual(r35.strokesAuto, 8.5);
 assert.ok(near(r35.sr, 60 / 1.1, 1e-9) && r35.srTimes === true, 'sr from the times ' + r35.sr);
-assert.ok(near(r35.dps, 10 / 8.5, 1e-9), 'dps ' + r35.dps);
+// 2.19.0: the length from the speed and the rate. With the rate from the stroke times (35 m) the distance per stroke is the speed ×
+// 60 ÷ rate ÷ 2 (not the 10 m over the 8.5 strokes); with the rate from the strokes over the time (25 m) the same number as before.
+assert.ok(near(r35.dps, r35.vel * 60 / r35.sr / 2, 1e-9) && !near(r35.dps, 10 / 8.5, 1e-3), 'dps ' + r35.dps);
+assert.ok(near(r35.sl, r35.vel * 60 / r35.sr, 1e-9) && near(r35.vel, r35.sr * r35.sl / 60, 1e-9), 'speed = rate × length ' + r35.sl);
 assert.ok(near(r25.dps, 10 / 9, 1e-9), 'dps ' + r25.dps);
 // Without the stroke times (counts typed only) the rate is strokes ÷ time.
 const onlyTyped = S.swimAnalyze_(S.swimNormalizeRace_(Object.assign({}, typed, { strokes: [] })));
@@ -88,7 +91,7 @@ S.swimSetup();
 const call = body => JSON.parse(S.swimDoPost({ postData: { contents: JSON.stringify(Object.assign({ token: 'tok', app: 'kinovea-swim' }, body)) } }).text);
 const res = call({ action: 'update', race: typed });
 assert.ok(res.ok, JSON.stringify(res));
-assert.strictEqual(call({ action: 'ping' }).version, '2.18.2');
+assert.strictEqual(call({ action: 'ping' }).version, '2.19.0');
 
 console.log('counts from times', autoCounts.join(' '), '· typed 25→9, 35→8.5');
 console.log('ALL STROKE COUNT TESTS PASSED');

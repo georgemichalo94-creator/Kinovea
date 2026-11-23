@@ -116,8 +116,17 @@ namespace Kinovea.ScreenManager
         public double? VelYd;
         public double? Strokes;
 
-        /// <summary>The strokes of the segment were confirmed or typed by the analyst (SwimRace.StrokeCounts).</summary>
+        /// <summary>The strokes of the segment were typed by the analyst (SwimRace.StrokeCounts), or accepted by him and stand (StrokesChanged).</summary>
         public bool StrokesTyped;
+
+        /// <summary>(2.34.0) The analyst accepted this count as shown and the stroke marks still give it (SwimRace.StrokeConfirmed).</summary>
+        public bool StrokesConfirmed;
+
+        /// <summary>
+        /// (2.34.0) The analyst accepted this count as shown and the stroke marks now give a whole stroke more or less (StrokesAuto):
+        /// his count stands as a typed one, and the data check asks him to look at the segment.
+        /// </summary>
+        public bool StrokesChanged;
 
         /// <summary>Stroke rate (cycles/min), distance per stroke press (m) and cycle length (m): clean swimming only.</summary>
         public double? Sr;
@@ -296,6 +305,26 @@ namespace Kinovea.ScreenManager
         /// hundredths, the touch on the pad is between two frames.
         /// </summary>
         public const double OfficialNear = 0.015;
+
+        /// <summary>
+        /// (2.34.0) A count the analyst accepted as shown stands against the stroke marks when they come to give this much more or less
+        /// (strokes): a whole stroke (with half strokes 1.0, the 0.75 for the counts with decimals); half a stroke is the same strokes
+        /// seen at another moment of the cycle.
+        /// </summary>
+        public const double ConfirmedApart = 0.75;
+
+        /// <summary>
+        /// (2.34.0) The stroke length of the clean swimming from the speed and the rate: the length of the cycle = speed × 60 ÷ rate,
+        /// the distance per stroke its half in freestyle and backstroke (speed = rate × length, the way race analyses define it). The
+        /// metres over the strokes of the segment, with half strokes, take only 2.22 / 2.00 / 1.82 in 10 m (half a stroke in five is
+        /// 10%); where the rate is the strokes over the time the two are the same number. The report of the Apps Script does it from
+        /// 2.19.0 on: on only when the program has seen that script (SwimAnalysisManager.BackendSeen), so that the panel, the video
+        /// and the PDF always show the same numbers.
+        /// </summary>
+        public static bool LengthFromRate;
+
+        /// <summary>The first Apps Script whose report takes the stroke length from the speed and the rate (LengthFromRate).</summary>
+        public static readonly Version LengthFromRateBackend = new Version(2, 19, 0);
 
         /// <summary>
         /// (2.22.0) A time of the video in whole milliseconds, never after it: the time the Google Sheet gets (SwimPayload). The numbers
@@ -484,12 +513,28 @@ namespace Kinovea.ScreenManager
 
                 row.StrokesAuto = row.Strokes;
 
-                // Strokes confirmed or typed by the analyst for this segment.
+                // Strokes typed by the analyst for this segment.
                 double typed;
                 if (row.T.HasValue && race.StrokeCounts != null && race.StrokeCounts.TryGetValue(row.D, out typed))
                 {
                     row.Strokes = typed;
                     row.StrokesTyped = true;
+                }
+                else if (row.T.HasValue && race.StrokeConfirmed != null && race.StrokeConfirmed.TryGetValue(row.D, out typed))
+                {
+                    // (2.34.0) A count he accepted as shown (Enter): the count of the marks stays, also half a stroke more or less after
+                    // a later reading of the length (the rate from their times). A whole stroke more or less than what he saw and
+                    // accepted: his count stands, as a typed one, and the data check says it.
+                    if (!row.StrokesAuto.HasValue || Math.Abs(row.StrokesAuto.Value - typed) >= ConfirmedApart)
+                    {
+                        row.Strokes = typed;
+                        row.StrokesTyped = true;
+                        row.StrokesChanged = true;
+                    }
+                    else
+                    {
+                        row.StrokesConfirmed = Math.Abs(row.StrokesAuto.Value - typed) < 0.01;
+                    }
                 }
 
                 // Stroke rate and length only in the clean swimming (15 m after the wall to 5 m before the next one),
@@ -510,18 +555,29 @@ namespace Kinovea.ScreenManager
                         row.Sr = row.SrExact;
                         row.SrFromTimes = true;
                     }
+
+                    // (2.34.0) The length from the speed and the rate (with the rate from the strokes over the time: the same number).
+                    if (LengthFromRate && row.Vel.HasValue && row.Sr.Value > 0)
+                    {
+                        row.Sl = row.Vel.Value * 60.0 / row.Sr.Value;
+                        row.Dps = row.Sl.Value / ppc;
+                    }
                 }
             }
 
             // Clean swimming averages, weighted (a mean of the segment values would give the same weight to a 5 m and a 30 m segment).
             // (2.11.0) The rate from the rate of each segment (the one rate), the cycle length from the strokes.
+            // (2.34.0, LengthFromRate) The cycles and the strokes of each segment from its rate: the length of the whole is then the
+            // speed of the clean swimming over its rate, as in each segment.
             double sumRate = 0, sumCycles = 0, sumTime = 0, sumStrokes = 0, sumDistance = 0;
             foreach (SwimRow row in result.Rows.Where(r => r.Sr.HasValue))
             {
-                sumRate += row.Sr.Value * row.SegTime.Value / 60.0;
-                sumCycles += row.Strokes.Value / SwimPresets.PressesPerCycle(row.Style);
+                int presses = SwimPresets.PressesPerCycle(row.Style);
+                double cyclesOfRate = row.Sr.Value * row.SegTime.Value / 60.0;
+                sumRate += cyclesOfRate;
+                sumCycles += LengthFromRate ? cyclesOfRate : row.Strokes.Value / presses;
                 sumTime += row.SegTime.Value;
-                sumStrokes += row.Strokes.Value;
+                sumStrokes += LengthFromRate ? cyclesOfRate * presses : row.Strokes.Value;
                 sumDistance += (row.D - row.PrevD) * k;
             }
 
@@ -768,10 +824,12 @@ namespace Kinovea.ScreenManager
                 double rate = 0, cycles = 0, time = 0, strokes = 0, meters = 0;
                 foreach (SwimRow r in inBlock.Where(x => x.Sr.HasValue))
                 {
-                    rate += r.Sr.Value * r.SegTime.Value / 60.0;
-                    cycles += r.Strokes.Value / SwimPresets.PressesPerCycle(r.Style);
+                    int presses = SwimPresets.PressesPerCycle(r.Style);
+                    double cyclesOfRate = r.Sr.Value * r.SegTime.Value / 60.0;
+                    rate += cyclesOfRate;
+                    cycles += LengthFromRate ? cyclesOfRate : r.Strokes.Value / presses;
                     time += r.SegTime.Value;
-                    strokes += r.Strokes.Value;
+                    strokes += LengthFromRate ? cyclesOfRate * presses : r.Strokes.Value;
                     meters += (r.D - r.PrevD) * k;
                 }
 
@@ -869,6 +927,7 @@ namespace Kinovea.ScreenManager
             CheckStart(result);
             CheckVelocities(result);
             CheckStrokeRates(result);
+            CheckConfirmedStrokes(result);
             CheckStrokeIntervals(result);
             CheckTurns(result);
             CheckBreakouts(result, pool);
@@ -964,6 +1023,23 @@ namespace Kinovea.ScreenManager
                     result.Warnings.Add(Format(SwimLang.T("Μήκος κύκλου {0:0.00} m ({1}): πολύ μικρό. Μήπως υπάρχουν διπλά πατήματα χεριάς;"), sl, StyleName(group.Key)));
                 }
             }
+        }
+
+        /// <summary>
+        /// (2.34.0) The strokes of a segment the analyst accepted, where the stroke marks now give a whole stroke more or less (the length
+        /// was read again, a stroke added or deleted): his count stands and he is asked to look at the segment.
+        /// </summary>
+        private static void CheckConfirmedStrokes(SwimComputed result)
+        {
+            List<string> found = result.Rows
+                .Where(r => r.StrokesChanged && r.Strokes.HasValue)
+                .Select(r => r.StrokesAuto.HasValue
+                    ? Format(SwimLang.T("{0}–{1}{2} (δέχτηκες {3:0.##}, τα σημάδια δίνουν {4:0.##})"), r.PrevD, r.D, result.Unit, r.Strokes.Value, r.StrokesAuto.Value)
+                    : Format(SwimLang.T("{0}–{1}{2} (δέχτηκες {3:0.##}, δεν υπάρχουν πια σημάδια χεριών)"), r.PrevD, r.D, result.Unit, r.Strokes.Value))
+                .ToList();
+            if (found.Count > 0)
+                result.Warnings.Add(SwimLang.T("Χεριές: τα σημάδια άλλαξαν μετά τον αριθμό που δέχτηκες στο τμήμα ") + Join(found) +
+                    SwimLang.T(". Ισχύει ο αριθμός που δέχτηκες: δες το τμήμα και κάνε διπλό κλικ στις χεριές του."));
         }
 
         /// <summary>

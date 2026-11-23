@@ -91,6 +91,13 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.15.0) Strokes the beats put where there was no stroke signal (image lost, camera turned away), left out.</summary>
         public int Invented;
 
+        /// <summary>
+        /// (2.34.0) Strokes brought to the phase of the others (RepairBeatPhase): those that were alone out of place, and the steps
+        /// (the strokes after one in another phase of the cycle than those before it) closed.
+        /// </summary>
+        public int PhaseMoved;
+        public int PhaseSteps;
+
         /// <summary>True when the lane ropes were found, false for a band along the swimmer.</summary>
         public bool Ropes;
 
@@ -916,8 +923,285 @@ namespace Kinovea.ScreenManager
             result.Period = period;
             result.Strokes = TrackBeats(clipped, fps, period, first, last, 4.0, 0.5, 2.0);
             result.Invented = DropInventedBeats(result.Strokes, o, period * fps);
+            if (PhaseRepair)
+            {
+                int steps;
+                result.PhaseMoved = RepairBeatPhase(result.Strokes, o, first, last, Presses(style), out steps);
+                result.PhaseSteps = steps;
+                if (LaneTrace != null && (result.PhaseMoved > 0 || steps > 0))
+                    LaneTrace(string.Format(System.Globalization.CultureInfo.InvariantCulture, "phase: {0} strokes alone moved, {1} steps closed", result.PhaseMoved, steps));
+            }
+
             return result;
         }
+
+        #region Phase of the strokes
+        /// <summary>(2.34.0) The strokes of a length in one phase of the cycle (tests: off).</summary>
+        internal static bool PhaseRepair = true;
+
+        /// <summary>Fewer strokes than these are left as they are (the usual interval is not known well enough).</summary>
+        internal const int PhaseMinBeats = 7;
+
+        /// <summary>An interval alone this much shorter or longer than the usual one around it (part of it) is a step of the phase.</summary>
+        internal const double PhaseStep = 0.22;
+
+        /// <summary>
+        /// A step is not more than this (part of the usual interval), and the phases of a length are not farther apart than it: half
+        /// an interval and more is a stroke too many (two halves in a row) or one missing, and those stay as they are.
+        /// </summary>
+        internal const double PhaseStepMost = 0.45;
+
+        /// <summary>Two intervals in a row off by this much and more, one long and one short: the stroke between them is out of place.</summary>
+        internal const double PhasePair = 0.12;
+
+        /// <summary>An interval this many times the usual one is a gap (strokes not found there), not a step.</summary>
+        internal const double PhaseGap = 1.6;
+
+        /// <summary>
+        /// What is out of place is well beyond how much the intervals of the length differ from the usual one anyway (the strokes
+        /// are read a frame or two off): a step this many times that, a stroke alone this many times.
+        /// </summary>
+        internal const double PhaseStepNoise = 3.5;
+        internal const double PhasePairNoise = 2.0;
+
+        /// <summary>
+        /// The strokes after a step stay in the new phase: the three after it against the three before it differ by this part of the
+        /// smallest step at least, and by this part of what the interval alone has.
+        /// </summary>
+        internal const double PhaseHold = 0.75;
+        internal const double PhaseKeep = 0.7;
+
+        /// <summary>
+        /// (2.34.0) The beats follow the strongest motion of each cycle, and a cycle can have two (in butterfly the arms coming out of
+        /// the water and their entry, a third of a second apart): in the middle of a length the beats went from the one to the other
+        /// (one interval alone short or long, a step: every stroke after it a third of a second early, the rate of that 10 m 59 for
+        /// 56 and one cycle of the card of the video at 94 a minute), or one beat alone was on the other one (an interval long and the
+        /// next one short by the same). Here the strokes of the length come to one phase: a stroke alone out of place goes between
+        /// the two beside it, and the strokes on the two sides of a step come together, at the phase with the most stroke signal
+        /// (without the signal: where the most strokes are). The number of the strokes does not change; the first and the last
+        /// interval (the breakout stroke, the stroke into the wall) are not judged, the gaps where no stroke was found stay, and no
+        /// stroke leaves the frames first..last of the search. stride: stroke marks per cycle (in freestyle and backstroke each arm
+        /// is compared with itself: one arm slower than the other is not a stroke out of place).
+        /// Returns the strokes moved alone; steps: the steps closed.
+        /// </summary>
+        internal static int RepairBeatPhase(List<int> beats, double[] onset, int first, int last, int stride, out int steps)
+        {
+            steps = 0;
+            if (beats == null || beats.Count < PhaseMinBeats)
+                return 0;
+
+            int n = beats.Count;
+            double[] t = new double[n];
+            for (int i = 0; i < n; i++)
+                t[i] = beats[i];
+
+            double[] d = new double[n - 1];
+            for (int i = 0; i < n - 1; i++)
+                d[i] = t[i + 1] - t[i];
+
+            double usual = Median(new List<double>(d));
+            if (!(usual > 0))
+                return 0;
+
+            double gap = PhaseGap * usual;
+            stride = Math.Max(1, stride);
+            double[] m = new double[n - 1];
+            double[] e = new double[n - 1];
+            for (int i = 0; i < n - 1; i++)
+            {
+                m[i] = UsualInterval(d, i, stride, gap);
+                e[i] = Deviation(d, m, i, gap);
+            }
+
+            // How much the intervals of this length differ from the usual one anyway (the first and the last not counted).
+            List<double> inner = new List<double>();
+            for (int i = 1; i <= n - 3; i++)
+            {
+                if (!double.IsNaN(e[i]))
+                    inner.Add(Math.Abs(e[i]));
+            }
+
+            double noise = inner.Count >= 4 ? 1.4826 * Median(inner) : 0;
+            double pair = Math.Max(PhasePair, PhasePairNoise * noise);
+            double step = Math.Max(PhaseStep, PhaseStepNoise * noise);
+
+            // 1. A stroke alone out of place: the interval before it long and the one after it short by about the same, or the
+            // reverse. It goes between the two strokes beside it (never the first or the last stroke, nor next to them).
+            int moved = 0;
+            int at = 1;
+            while (at <= n - 4)
+            {
+                double a = e[at], b = e[at + 1];
+                if (!double.IsNaN(a) && !double.IsNaN(b) && a * b < 0 && Math.Min(Math.Abs(a), Math.Abs(b)) >= pair &&
+                    Math.Abs(a + b) <= 0.5 * Math.Max(Math.Abs(a), Math.Abs(b)) + 0.04)
+                {
+                    t[at + 1] = t[at] + (t[at + 2] - t[at]) * m[at] / (m[at] + m[at + 1]);
+                    d[at] = t[at + 1] - t[at];
+                    d[at + 1] = t[at + 2] - t[at + 1];
+                    e[at] = Deviation(d, m, at, gap);
+                    e[at + 1] = Deviation(d, m, at + 1, gap);
+                    moved++;
+                    at += 2;
+                    continue;
+                }
+
+                at++;
+            }
+
+            // The phase of each stroke from the first one (frames): what the intervals before it have more or less than the usual.
+            double[] phase = new double[n];
+            for (int i = 0; i < n - 1; i++)
+                phase[i + 1] = phase[i] + (double.IsNaN(e[i]) ? 0 : d[i] - m[i]);
+
+            // 2. Steps: one interval alone short or long (not made up for by the one before or after it), and the strokes after it
+            // stay in the new phase (the three after it against the three before it).
+            List<int> stepAt = new List<int>();
+            List<double> stepSize = new List<double>();
+            for (int i = 1; i <= n - 3; i++)
+            {
+                if (double.IsNaN(e[i]) || Math.Abs(e[i]) < step || Math.Abs(e[i]) > PhaseStepMost)
+                    continue;
+
+                double left = e[i - 1], right = e[i + 1];
+                if ((!double.IsNaN(left) && left * e[i] < 0 && Math.Abs(left) >= pair) ||
+                    (!double.IsNaN(right) && right * e[i] < 0 && Math.Abs(right) >= pair))
+                    continue;
+
+                List<double> before = new List<double>();
+                for (int j = Math.Max(0, i - 2); j <= i; j++)
+                    before.Add(phase[j]);
+                List<double> after = new List<double>();
+                for (int j = i + 1; j <= Math.Min(n - 1, i + 3); j++)
+                    after.Add(phase[j]);
+                if (before.Count < 2 || after.Count < 2)
+                    continue;
+
+                double size = Median(after) - Median(before);
+                if (size * e[i] <= 0 || Math.Abs(size) < Math.Max(PhaseHold * PhaseStep * m[i], PhaseKeep * Math.Abs(d[i] - m[i])) ||
+                    Math.Abs(size) > PhaseStepMost * m[i])
+                    continue;
+
+                stepAt.Add(i);
+                stepSize.Add(size);
+            }
+
+            double[] chosen = null;
+            if (stepAt.Count > 0)
+            {
+                // The runs of strokes between the steps, and the phase of each one from the first (frames).
+                int runs = stepAt.Count + 1;
+                int[] runOf = new int[n];
+                double[] level = new double[runs];
+                int run = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    runOf[i] = run;
+                    if (run < stepAt.Count && i == stepAt[run])
+                    {
+                        level[run + 1] = level[run] + stepSize[run];
+                        run++;
+                    }
+                }
+
+                double lowest = 0, highest = 0;
+                for (int r = 0; r < runs; r++)
+                {
+                    lowest = Math.Min(lowest, level[r]);
+                    highest = Math.Max(highest, level[r]);
+                }
+
+                // Every stroke at the phase of one of the runs: the one with the most stroke signal at the strokes. (Phases farther
+                // apart than a step: the beats went on by a whole stroke, not to another moment of the cycle; left as they are.)
+                double best = double.NegativeInfinity;
+                for (int r = 0; r < runs && highest - lowest <= PhaseStepMost * usual; r++)
+                {
+                    double[] s = new double[n];
+                    bool fits = true;
+                    for (int i = 0; i < n && fits; i++)
+                    {
+                        s[i] = t[i] - (level[runOf[i]] - level[r]);
+                        if (i > 0 && s[i] - s[i - 1] < 0.35 * usual)
+                            fits = false;
+                    }
+
+                    if (!fits || s[0] < first || s[n - 1] > last)
+                        continue;
+
+                    double score = 0;
+                    if (onset != null && onset.Length > 0)
+                    {
+                        for (int i = 0; i < n; i++)
+                        {
+                            int x = (int)Math.Round(s[i]);
+                            double top = double.NegativeInfinity;
+                            for (int q = -2; q <= 2; q++)
+                                top = Math.Max(top, onset[Math.Max(0, Math.Min(onset.Length - 1, x + q))]);
+                            score += top;
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (Math.Abs(level[runOf[i]] - level[r]) < 0.12 * usual)
+                                score += 1;
+                        }
+                    }
+
+                    if (score > best + 1e-9)
+                    {
+                        best = score;
+                        chosen = s;
+                    }
+                }
+            }
+
+            int closed = chosen != null ? stepAt.Count : 0;
+            if (moved == 0 && closed == 0)
+                return 0;
+
+            // On frames, in order (a stroke is never put on or before the one before it: then nothing is changed).
+            double[] final = chosen ?? t;
+            int[] placed = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                placed[i] = (int)Math.Round(final[i]);
+                if (i > 0 && placed[i] <= placed[i - 1])
+                    return 0;
+            }
+
+            for (int i = 0; i < n; i++)
+                beats[i] = placed[i];
+            steps = closed;
+            return moved;
+        }
+
+        /// <summary>How much interval i has more (+) or less (−) than the usual one around it, as a part of it; NaN: a gap, or not known.</summary>
+        private static double Deviation(double[] d, double[] m, int i, double gap)
+        {
+            return !double.IsNaN(m[i]) && m[i] > 0 && d[i] < gap ? (d[i] - m[i]) / m[i] : double.NaN;
+        }
+
+        /// <summary>
+        /// The usual interval around interval i: the median of the six nearest intervals of the same arm (on either side: near an end
+        /// of the length those of the other side), the gaps not counted. NaN with fewer than four (not known: a length of freestyle
+        /// with fewer than eleven strokes; the intervals of the other arm would make one arm slower than the other a step).
+        /// </summary>
+        private static double UsualInterval(double[] d, int i, int stride, double gap)
+        {
+            List<double> near = new List<double>();
+            for (int k = 1; k <= 6 && near.Count < 6; k++)
+            {
+                int before = i - k * stride, after = i + k * stride;
+                if (before >= 0 && d[before] < gap && near.Count < 6)
+                    near.Add(d[before]);
+                if (after < d.Length && d[after] < gap && near.Count < 6)
+                    near.Add(d[after]);
+            }
+
+            return near.Count >= 4 ? Median(near) : double.NaN;
+        }
+        #endregion
 
         /// <summary>
         /// (2.15.0) The beats chain at about one period also where the stroke signal is gone (the band lost, a camera cut, still water):

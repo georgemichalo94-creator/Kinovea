@@ -98,6 +98,21 @@ assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ
 assert.strictEqual(below(sh, 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)'), '', 'no speed from an estimate');
 assert.strictEqual(below(sh, 'Μέτρα κάτω από το νερό (μ.)'), '≈8.4', 'turn: the estimate marked');
 
+// (d1) Kinovea 2.34.0: με μόνο την απόσταση εξόδου μετρημένη (📍· η απόσταση κάτω από το νερό εκτίμηση ή κενή) το πρόγραμμα στέλνει τη
+// μέση ταχύτητα σήμα → έξοδος και το κελί τη δείχνει (το script την έβγαζε μόνο από την απόσταση κάτω από το νερό: έμενε κενό).
+const r4a = race();
+r4a.manual.underwaterEstimated = true;
+r4a.manual.breakoutDist = 12.1;
+r4a.manual.signalBreakoutVel = 2.42;
+res = call({ token: 'tok', action: 'update', race: r4a });
+assert.ok(res.ok, JSON.stringify(res));
+sh = sheetOf(res);
+near(Number(below(sh, 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)')), 2.42, 'the speed the program sends with the breakout distance alone');
+assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ.)'), '≈11.5', 'the estimate still marked');
+res = call({ token: 'tok', action: 'update', race: r4 });
+sh = sheetOf(res);
+assert.strictEqual(below(sh, 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)'), '', 'without it again: cleared');
+
 // (d2) μια εκτίμηση που δεν υπάρχει πια (Kinovea: underwaterDist null): το ≈ σβήνεται· ό,τι γράφτηκε με το χέρι στο φύλλο μένει
 const cellBelow = (sh2, header) => {
   const vals = sh2.getRange(1, 1, sh2.getLastRow(), 15).getValues();

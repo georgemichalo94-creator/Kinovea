@@ -2917,6 +2917,14 @@ namespace Kinovea.ScreenManager
             { " Η βαθμονόμηση είναι από άλλο καρέ: αν η κάμερα κινήθηκε, βαθμονόμησε σε αυτό το καρέ και μέτρησε ξανά.",
               " The calibration is from another frame: if the camera moved, calibrate on this frame and measure again." },
             { " Έλεγξε τη βαθμονόμηση (τις γραμμές και τις αποστάσεις τους) και μέτρησε ξανά.", " Check the calibration (the lines and their distances) and measure again." },
+            // (2.34.0) The count accepted as shown stays the count of the stroke marks.
+            { " Είχες δεχτεί: {0}.", " You had accepted: {0}." },
+            { "Ο αριθμός που δέχτηκες· τα σημάδια χεριών άλλαξαν μετά. Διπλό κλικ για να τον δεις ξανά.", "The number you accepted; the stroke marks changed afterwards. Double-click to look at it again." },
+            { "Από τα σημάδια χεριών, όπως το δέχτηκες. Διπλό κλικ για αλλαγή.", "From the stroke marks, as you accepted it. Double-click to change." },
+            { "{0}–{1}{2} (δέχτηκες {3:0.##}, τα σημάδια δίνουν {4:0.##})", "{0}–{1}{2} (you accepted {3:0.##}, the marks give {4:0.##})" },
+            { "{0}–{1}{2} (δέχτηκες {3:0.##}, δεν υπάρχουν πια σημάδια χεριών)", "{0}–{1}{2} (you accepted {3:0.##}, there are no stroke marks any more)" },
+            { "Χεριές: τα σημάδια άλλαξαν μετά τον αριθμό που δέχτηκες στο τμήμα ", "Strokes: the marks changed after the number you accepted in segment " },
+            { ". Ισχύει ο αριθμός που δέχτηκες: δες το τμήμα και κάνε διπλό κλικ στις χεριές του.", ". The number you accepted stands: look at the segment and double-click its strokes." },
             { "η απόσταση της εξόδου ({0:0.00}) δεν γίνεται: μέτρησέ τη ξανά (📍)", "the breakout distance ({0:0.00}) is not possible: measure it again (📍)" },
         };
     }

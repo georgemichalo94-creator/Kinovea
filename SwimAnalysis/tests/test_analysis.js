@@ -34,12 +34,37 @@ assert.strictEqual(rows[5].isSwim, false); assert.strictEqual(rows[4].isFree, fa
 // SR / DPS / SL only in clean swimming: not in the last 5 m before the wall, not in 0-15 / 50-65
 assert.strictEqual(rows[4].sr, null, 'no SR in 45-50'); assert.strictEqual(rows[4].dps, null, 'no DPS in 45-50');
 assert.strictEqual(rows[0].sr, null); assert.strictEqual(rows[5].sr, null); assert.strictEqual(rows[9].sr, null, 'no SR in 95-100');
-assert.ok(near(rows[1].sl, 10 / (9.5 / 2)), 'SL per cycle ' + rows[1].sl);
+// 2.19.0: the cycle length from the speed and the rate (10 m in 4.9 s at 60 cycles a minute: 2.04 m; the metres over the 9.5
+// strokes gave 2.11), the distance per stroke its half in freestyle.
+assert.ok(near(rows[1].sl, (10 / rows[1].segTime) * 60 / rows[1].sr) && near(rows[1].sl, 10 / 4.9), 'SL per cycle ' + rows[1].sl);
 assert.ok(near(rows[1].dps * 2, rows[1].sl), 'fs: SL = 2 x DPS');
 // average SR weighted by time over the clean segments
 const clean = rows.filter(r => r.sr !== null);
 const wsr = clean.reduce((s, r) => s + r.sr * r.segTime, 0) / clean.reduce((s, r) => s + r.segTime, 0);
 assert.ok(near(a.summary.avgSr, wsr), 'weighted avg SR');
+// 2.19.0: speed = rate × length ÷ 60 in every segment of clean swimming, in every 50 and in the whole race (the length of the
+// cycle from the speed and the rate; the distance per stroke its half in freestyle).
+clean.forEach(r => {
+  assert.ok(near(r.vel, r.sr * r.sl / 60, 1e-9), 'speed = rate × length in ' + r.prevD + '-' + r.d + ': ' + r.vel + ' / ' + r.sr * r.sl / 60);
+  assert.ok(near(r.dps, r.sl / 2, 1e-12), 'DPS = SL / 2 in ' + r.prevD + '-' + r.d);
+});
+const cleanMetres = clean.reduce((s, r) => s + (r.d - r.prevD), 0), cleanTime = clean.reduce((s, r) => s + r.segTime, 0);
+assert.ok(near(cleanMetres / cleanTime, a.summary.avgSr * a.summary.avgSl / 60, 1e-9), 'the whole race: ' + a.summary.avgSl);
+assert.ok(near(a.summary.avgDps, a.summary.avgSl / 2, 1e-9), 'the whole race: DPS ' + a.summary.avgDps);
+a.blocks.forEach(b => {
+  const inB = clean.filter(r => r.prevD >= b.from && r.d <= b.to);
+  const m = inB.reduce((s, r) => s + (r.d - r.prevD), 0), tt = inB.reduce((s, r) => s + r.segTime, 0);
+  assert.ok(near(m / tt, b.sr * b.sl / 60, 1e-9) && near(b.dps, b.sl / 2, 1e-9), 'the 50 to ' + b.to + ': ' + b.sr + ' / ' + b.sl);
+});
+// The formulas of the sheet say the same: M (SL) = C (speed) × 60 ÷ I (rate), J (DPS) its half in freestyle / backstroke.
+{
+  const lay = S.swimBuildLayout_(race, a);
+  const cellAt = (r, c) => Object.values(lay.grid.cells).find(x => x.r === r && x.c === c);
+  const first = Object.values(lay.grid.cells).find(x => x.c === 1 && x.v === 25).r;
+  const J = cellAt(first, 10).v, M = cellAt(first, 13).v;
+  assert.ok(M.indexOf('C' + first + '*60/I' + first) > 0 && M.indexOf('H' + first) < 0, 'SL of the sheet: ' + M);
+  assert.ok(J.indexOf('C' + first + '*60/I' + first + '/IF(OR(N' + first + '="fs",N' + first + '="bk"),2,1)') > 0, 'DPS of the sheet: ' + J);
+}
 // start
 assert.strictEqual(a.start.blockTime, 0.7); assert.strictEqual(a.start.entryTime, 1.0);
 assert.strictEqual(a.start.underwaterTime, 4.5); assert.strictEqual(a.start.kicks, 4);

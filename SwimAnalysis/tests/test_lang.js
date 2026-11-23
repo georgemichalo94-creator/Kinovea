@@ -37,6 +37,11 @@ assert.ok(ORIGINAL.indexOf(UW_OLD) > 0 && CURRENT.indexOf(UW_OLD) < 0, 'the 2.9.
 const SR_NOTE_OLD = "'SR από χρόνους χεριών: από τα διαστήματα των πατημάτων · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.'";
 const SR_NOTE_NEW = "'StrRate: από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου, όπως η συχνότητα του βίντεο) όπου συμφωνούν με τις χεριές του τμήματος, αλλιώς χεριές ÷ χρόνο · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.'";
 assert.ok(ORIGINAL.indexOf(SR_NOTE_OLD) > 0 && CURRENT.indexOf(SR_NOTE_OLD) < 0 && CURRENT.indexOf(SR_NOTE_NEW) > 0, 'the 2.11.0 note of the stroke rate');
+// 2.19.0: το μήκος κύκλου και η απόσταση ανά χεριά από την ταχύτητα και τη συχνότητα (swimAnalyze_, swimBlocks50_, swimCleanFormulas_,
+// swimLayoutTiming_ του νέου script, πιο κάτω)· η σημείωσή τους στο report και το μήκος χεριάς ανάμεσα σε δύο αποστάσεις (swimV2Stroke_).
+const SL_NOTE_OLD = "DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο.'";
+const SL_NOTE_NEW = "DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο = ταχύτητα × 60 ÷ StrRate.'";
+assert.ok(ORIGINAL.split(SL_NOTE_OLD).length === 2 && CURRENT.indexOf(SL_NOTE_OLD) < 0 && CURRENT.indexOf(SL_NOTE_NEW) > 0, 'the 2.19.0 note of the stroke length');
 const fnOf = (src, name) => {
   const a = src.indexOf('\nfunction ' + name + '(');
   assert.ok(a >= 0 && src.indexOf('\nfunction ' + name + '(', a + 1) < 0, 'one function ' + name);
@@ -44,7 +49,7 @@ const fnOf = (src, name) => {
 };
 const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15',
   "cell(r, 9, '=IF(O' + tr + '=\"\",\"\",O' + tr + ')', SWIM_FMT.dps);": "cell(r, 9, '=IF(M' + tr + '=\"\",\"\",M' + tr + ')', SWIM_FMT.dps);" };
-let ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW).replace(SR_NOTE_OLD, SR_NOTE_NEW);
+let ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW).replace(SR_NOTE_OLD, SR_NOTE_NEW).replace(SL_NOTE_OLD, SL_NOTE_NEW);
 ['swimAnalyze_', 'swimBlocks50_', 'swimLayoutTiming_', 'swimInputPlan_', 'swimCleanFormulas_'].forEach(name => {
   ORIGINAL_NAMED = ORIGINAL_NAMED.split(fnOf(ORIGINAL_NAMED, name)).join(fnOf(CURRENT, name));
 });
@@ -342,7 +347,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.18.2');
+assert.strictEqual(vNew, '2.19.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -454,7 +459,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.18\.2$/, 'version line');
+like(/^Updated .* · version 2\.19\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

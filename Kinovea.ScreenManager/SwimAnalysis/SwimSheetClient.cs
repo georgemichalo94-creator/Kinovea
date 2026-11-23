@@ -690,11 +690,26 @@ namespace Kinovea.ScreenManager
             r["checkpoints"] = checkpoints;
             r["strokes"] = Times(computed.Strokes);
 
-            // Strokes of the segments confirmed or typed by the analyst: they have priority over the stroke times.
-            if (!race.IsTraining && race.StrokeCounts != null && race.StrokeCounts.Count > 0)
+            // Strokes of the segments typed by the analyst: they have priority over the stroke times. (2.34.0) Also a count he accepted
+            // as shown that stands against the marks (a whole stroke more or less now, SwimRow.StrokesChanged); the counts accepted
+            // that the marks still give are not sent (the script counts the marks as the program).
+            if (!race.IsTraining)
             {
+                SortedDictionary<int, double> standing = new SortedDictionary<int, double>();
+                if (race.StrokeCounts != null)
+                {
+                    foreach (KeyValuePair<int, double> pair in race.StrokeCounts)
+                        standing[pair.Key] = pair.Value;
+                }
+
+                foreach (SwimRow row in computed.Rows)
+                {
+                    if (row.StrokesChanged && row.Strokes.HasValue && !standing.ContainsKey(row.D))
+                        standing[row.D] = row.Strokes.Value;
+                }
+
                 JObject counts = new JObject();
-                foreach (KeyValuePair<int, double> pair in race.StrokeCounts.OrderBy(p => p.Key))
+                foreach (KeyValuePair<int, double> pair in standing)
                 {
                     if (race.GetSplit(pair.Key) != null)
                         counts[pair.Key.ToString(CultureInfo.InvariantCulture)] = pair.Value;
@@ -754,6 +769,14 @@ namespace Kinovea.ScreenManager
             if (!startUnderwater || !startBreakout)
                 Estimated(manual, reel, 0, "underwaterDist", startUnderwater ? race.UnderwaterDist : null);
             manual["finishLastStrokeDist"] = race.FinishLastStrokeDist;
+
+            // (2.34.0) The average speed from the signal to the breakout also when only the distance of the breakout was measured (📍):
+            // the script takes it from the distance under the water, which is then missing or an estimate, and the cell stayed
+            // empty. Sent only then (the script takes a value of the program before its own); otherwise the script's as before.
+            bool measuredUnderwater = startUnderwater && race.UnderwaterDist.HasValue && !race.UnderwaterEstimated;
+            if (!race.IsTraining && !measuredUnderwater && startBreakout && race.BreakoutDist.HasValue && race.BreakoutDist.Value > 0 &&
+                computed.StartUnderwaterTime.HasValue && computed.StartUnderwaterTime.Value > 0)
+                manual["signalBreakoutVel"] = Math.Round(race.BreakoutDist.Value * race.K / computed.StartUnderwaterTime.Value, 3);
 
             // (2.15.0) The body length (toes → head): where the head is at the push-off from each wall.
             if (race.BodyLength.HasValue)

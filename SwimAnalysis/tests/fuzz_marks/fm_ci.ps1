@@ -29,6 +29,8 @@ $compute = $tCalc.GetMethod('Compute'); $techCompute = $tTech.GetMethod('Compute
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $inv = [System.Globalization.CultureInfo]::InvariantCulture
 $settings = [Activator]::CreateInstance($tSettings)
+# (2.34.0) As with the Apps Script of the repository (2.19.0 on): the stroke length from the speed and the rate.
+$tCalc.GetField('LengthFromRate').SetValue($null, $true)
 $rounding = [double]$settings.StrokeRounding
 $fails = 0; $done = 0
 

@@ -138,7 +138,7 @@ console.log('test_pdfcharts (1): charts asked again once, Google charts printed 
 // ---------------------------------------------------------------------------------------------
 {
   const opts = { noStrokes: true };
-  const env = setup({ cache: true, formulaValue: (sh, row, col, f) => (opts.noStrokes && /(^|[^A-Z$])H\d/.test(f) ? '' : fromTimes(sh, row, col, f)) });
+  const env = setup({ cache: true, formulaValue: (sh, row, col, f) => (opts.noStrokes && /(^|[^A-Z$])[HI]\d/.test(f) ? '' : fromTimes(sh, row, col, f)) });
   const { G, call, sheetOf } = env;
   let r = call({ action: 'update', race: raceOf('e100'), drawCharts: true });
   const race = G.swimNormalizeRace_(raceOf('e100'));

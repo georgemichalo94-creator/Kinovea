@@ -2064,9 +2064,12 @@ namespace Kinovea.ScreenManager
                     int undoAt = undoStack.IndexOf(gone.Id);
                     double strokes;
                     bool hadStrokes = Race.StrokeCounts.TryGetValue(distance, out strokes);
+                    double accepted;
+                    bool hadAccepted = Race.StrokeConfirmed.TryGetValue(distance, out accepted);
                     Race.Marks.Remove(gone);
                     undoStack.Remove(gone.Id);
                     Race.StrokeCounts.Remove(distance);
+                    Race.StrokeConfirmed.Remove(distance);
                     if (distance == Race.Distance && final != null && SameFrame(final.Timestamp, gone.Timestamp))
                         Race.FinalFrame = null;
                     undo.Back.Add(() =>
@@ -2078,6 +2081,8 @@ namespace Kinovea.ScreenManager
                             undoStack.Insert(Math.Min(undoAt, undoStack.Count), gone.Id);
                         if (hadStrokes && !Race.StrokeCounts.ContainsKey(gone.Distance))
                             Race.StrokeCounts[gone.Distance] = strokes;
+                        if (hadAccepted && !Race.StrokeConfirmed.ContainsKey(gone.Distance))
+                            Race.StrokeConfirmed[gone.Distance] = accepted;
                         if (Race.FinalFrame == null)
                             Race.FinalFrame = final;
                     });

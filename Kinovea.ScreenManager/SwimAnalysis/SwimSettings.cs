@@ -29,6 +29,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Stroke count rounding at checkpoints: 0.5 (half strokes), 1 (whole) or 0 (exact).</summary>
         public double StrokeRounding = 0.5;
 
+        /// <summary>
+        /// (2.34.0) The version of the Apps Script the web app last answered with ("" before the first answer). The stroke length of the
+        /// clean swimming follows it (SwimCalculator.LengthFromRate): the panel and the video show what the report of that script shows.
+        /// </summary>
+        public string BackendVersion = "";
+
         /// <summary>Send every change to the sheet as it happens.</summary>
         public bool AutoSend = true;
 
@@ -321,6 +327,9 @@ namespace Kinovea.ScreenManager
                             settings.AiProModel = SwimAiModels.Opus;
                         if (settings.AiProMoments < 4)
                             settings.AiProMoments = 16;
+                        if (settings.BackendVersion == null)
+                            settings.BackendVersion = "";
+                        ApplyBackend(settings.BackendVersion);
                         return settings;
                     }
                 }
@@ -331,6 +340,17 @@ namespace Kinovea.ScreenManager
             }
 
             return new SwimSettings();
+        }
+
+        /// <summary>
+        /// (2.34.0) The program computes what the report of the Apps Script of this version computes: the stroke length from the speed
+        /// and the rate from 2.19.0 on (SwimCalculator.LengthFromRate), the metres over the strokes before it (and before any answer).
+        /// </summary>
+        public static void ApplyBackend(string version)
+        {
+            Version backend;
+            SwimCalculator.LengthFromRate = !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) &&
+                backend >= SwimCalculator.LengthFromRateBackend;
         }
 
         /// <summary>(2.25.0) A copy of these settings for an analysis that went to the background: the same values, never saved.</summary>

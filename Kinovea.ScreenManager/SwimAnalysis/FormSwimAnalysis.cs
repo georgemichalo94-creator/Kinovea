@@ -1960,9 +1960,14 @@ namespace Kinovea.ScreenManager
                 gr.Cells["vel"].Value = Format(row.Vel);
                 gr.Cells["vel"].Style.BackColor = row.IsFree ? Color.Empty : colorPhase;
                 gr.Cells["vel"].ToolTipText = row.VelYd.HasValue ? row.VelYd.Value.ToString("0.00", CultureInfo.InvariantCulture) + " yd/s" : "";
-                gr.Cells["strokes"].Value = FormatStrokes(row.Strokes) + (row.StrokesTyped && row.Strokes.HasValue ? " ✓" : "");
-                gr.Cells["strokes"].ToolTipText = row.StrokesTyped
+                // (2.34.0) ✓: typed by the analyst, or accepted by him as the stroke marks still give it.
+                gr.Cells["strokes"].Value = FormatStrokes(row.Strokes) + ((row.StrokesTyped || row.StrokesConfirmed) && row.Strokes.HasValue ? " ✓" : "");
+                gr.Cells["strokes"].ToolTipText = row.StrokesChanged
+                    ? SwimLang.T("Ο αριθμός που δέχτηκες· τα σημάδια χεριών άλλαξαν μετά. Διπλό κλικ για να τον δεις ξανά.")
+                    : row.StrokesTyped
                     ? SwimLang.T("Επιβεβαιωμένο ή γραμμένο από εσένα. Διπλό κλικ για αλλαγή.")
+                    : row.StrokesConfirmed
+                    ? SwimLang.T("Από τα σημάδια χεριών, όπως το δέχτηκες. Διπλό κλικ για αλλαγή.")
                     : SwimLang.T("Από τα σημάδια χεριών. Διπλό κλικ για να το επιβεβαιώσεις ή να το διορθώσεις.");
                 gr.Cells["sr"].Value = Format(row.Sr, "0.0");
                 gr.Cells["sr"].ToolTipText = !row.Sr.HasValue ? "" : row.SrFromTimes

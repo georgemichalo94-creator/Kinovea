@@ -893,7 +893,10 @@ namespace Kinovea.ScreenManager
             ForgetTaught(pilot);
             undoStack.Remove(pilot.Id);
             if (pilot.Type == SwimMarkType.Split)
+            {
                 Race.StrokeCounts.Remove(pilot.Distance);
+                Race.StrokeConfirmed.Remove(pilot.Distance);
+            }
 
             // The final frame of the report was of this finish (with its time): it goes with it.
             if (pilot.Type == SwimMarkType.Split && pilot.Distance == Race.Distance && Race.FinalFrame != null && SameFrame(Race.FinalFrame.Timestamp, pilot.Timestamp))

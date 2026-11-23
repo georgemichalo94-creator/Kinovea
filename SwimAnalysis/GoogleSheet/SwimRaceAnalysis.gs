@@ -35,9 +35,16 @@
  *  14. Ο πίνακας πάντα στην πρώτη σελίδα (2.18.2): όταν μετά τα νούμερα δεν θα χωρούσε εκεί (πολλά νούμερα, π.χ. μια ανοιχτή στροφή
  *      πρόσθιο με σύγκριση), μπαίνει πριν από αυτά, αμέσως μετά τα πλακίδια· τα νούμερα ακολουθούν και η αξιολόγηση αρχίζει πάλι σε νέα
  *      σελίδα.
+ *  15. Το μήκος χεριάς από την ταχύτητα και τη συχνότητα (2.19.0): στην καθαρή κολύμβηση το μήκος κύκλου (SL) είναι ταχύτητα × 60 ÷
+ *      συχνότητα και η απόσταση ανά χεριά (DPS) το μισό του στο ελεύθερο / ύπτιο, σε κάθε τμήμα, σε κάθε 50άρι και στο σύνολο
+ *      (ταχύτητα = συχνότητα × μήκος, όπως το ορίζουν οι αναλύσεις αγώνων). Πριν ήταν μέτρα ÷ χεριές του τμήματος: με μισές χεριές
+ *      στα 10μ. έπαιρνε μόνο 2,22 / 2,00 / 1,82 (μισή χεριά στις πέντε = 10%). Όπου η συχνότητα είναι χεριές ÷ χρόνο (χωρίς χρόνους
+ *      χεριών, ή με διορθωμένες χεριές) βγαίνει ο ίδιος αριθμός με πριν. Οι χεριές του τμήματος μένουν όπως είναι (μισές, όπως στο
+ *      Excel). Το Kinovea 2.34.0 δείχνει τους ίδιους αριθμούς στο παράθυρο και στα γραφικά του βίντεο. Τα report ξαναφτιάχνονται
+ *      μία φορά.
  */
 
-var SWIM_VERSION = '2.18.2';
+var SWIM_VERSION = '2.19.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -2088,8 +2095,11 @@ function swimAnalyze_(race) {
     // (swimSrFormula_) και στο Kinovea.
     row.srTimes = row.sr !== null && swimSrMatches_(row.srExact, row.segTime, row.ppc, row.strokes, row.strokesAuto);
     if (row.srTimes) row.sr = row.srExact;
-    row.dps = (row.isFree && row.strokes) ? (row.d - row.prevD) * k / row.strokes : null;
-    row.sl = (row.isFree && row.strokes) ? (row.d - row.prevD) * k / (row.strokes / row.ppc) : null;
+    // 2.19.0: το μήκος κύκλου από την ταχύτητα και τη συχνότητα του τμήματος (ταχύτητα × 60 ÷ συχνότητα), η απόσταση ανά χεριά το
+    // μισό του στο ελεύθερο / ύπτιο. Με τη συχνότητα από χεριές ÷ χρόνο είναι ο ίδιος αριθμός με τα μέτρα ÷ χεριές· με τη συχνότητα
+    // από τους χρόνους των χεριών δεν εξαρτάται από το πού έπεσε η μισή χεριά (στα 10μ. έπαιρνε μόνο 2,22 / 2,00 / 1,82).
+    row.sl = (row.sr !== null && row.sr > 0 && row.vel !== null) ? row.vel * 60 / row.sr : null;
+    row.dps = row.sl !== null ? row.sl / row.ppc : null;
     row.dpsYd = yards && row.dps !== null ? row.dps / k : null;
     row.slYd = yards && row.sl !== null ? row.sl / k : null;
   });
@@ -2191,8 +2201,10 @@ function swimAnalyze_(race) {
   }
   // Μέση συχνότητα της καθαρής κολύμβησης, σταθμισμένη με τον χρόνο (κύκλοι / χρόνος· 2.11.0: οι κύκλοι από τη συχνότητα κάθε
   // τμήματος, όπως η στήλη I, και το μήκος κύκλου από τις χεριές).
+  // 2.19.0: οι κύκλοι και οι χεριές κάθε τμήματος από τη συχνότητά του, ώστε το μήκος όλου να είναι η ταχύτητα της καθαρής
+  // κολύμβησης ÷ τη συχνότητά της, όπως σε κάθε τμήμα.
   var cyc = 0, cycT = 0, cs = 0, cd = 0, cc = 0;
-  rows.forEach(function (r) { if (r.sr !== null) { cyc += r.sr * r.segTime / 60; cycT += r.segTime; cc += r.strokes / r.ppc; cs += r.strokes; cd += (r.d - r.prevD) * k; } });
+  rows.forEach(function (r) { if (r.sr !== null) { var c = r.sr * r.segTime / 60; cyc += c; cycT += r.segTime; cc += c; cs += c * r.ppc; cd += (r.d - r.prevD) * k; } });
   var daks = blocks.filter(function (b) { return b.dak !== null; }).map(function (b) { return b.dak; });
   var summary = {
     finalTime: finish.tFinish,
@@ -2274,7 +2286,9 @@ function swimBlocks50_(race, rows) {
     var cyc = 0, ct = 0, cs = 0, cd = 0, cc = 0;
     rows.forEach(function (r) {
       if (r.sr === null || !inRange(r, b, e)) return;
-      cyc += r.sr * r.segTime / 60; ct += r.segTime; cc += r.strokes / r.ppc; cs += r.strokes; cd += (r.d - r.prevD) * k;
+      // 2.19.0: οι κύκλοι και οι χεριές από τη συχνότητα του τμήματος (όπως στο σύνολο).
+      var c = r.sr * r.segTime / 60;
+      cyc += c; ct += r.segTime; cc += c; cs += c * r.ppc; cd += (r.d - r.prevD) * k;
     });
     blk.sr = ct > 0 ? cyc * 60 / ct : null;
     blk.dps = cs > 0 ? cd / cs : null;
@@ -2412,8 +2426,9 @@ function swimLayoutSignature_(race, extras, pageHeight, panelsFirst) {
   var x = extras || {};
   var sig = function (o) { return o ? String(o.id || '') + ':' + swimHash_(JSON.stringify(o.race)) : ''; };
   var s = {
-    // 10 (2.9.5): ο ΔΑΚ κάθε 50άρι στη στήλη L των χρόνων· 11 (2.11.0): μία στήλη συχνότητας. Τα report ξαναφτιάχνονται μία φορά.
-    v: SWIM_DAK50 ? 11 : 9,
+    // 10 (2.9.5): ο ΔΑΚ κάθε 50άρι στη στήλη L των χρόνων· 11 (2.11.0): μία στήλη συχνότητας· 12 (2.19.0): DPS και SL από την
+    // ταχύτητα και τη συχνότητα. Τα report ξαναφτιάχνονται μία φορά.
+    v: SWIM_DAK50 ? 12 : 9,
     kind: race.kind,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
@@ -2687,12 +2702,12 @@ function swimCleanFormulas_(rowsSel, T0, K) {
   var mult = K || '';
   rowsSel.forEach(function (x) {
     var r = T0 + x.i;
-    var ok = 'AND(ISNUMBER(H' + r + '),H' + r + '>0,ISNUMBER(K' + r + '))';
-    cyc.push('IF(' + ok + ',H' + r + '/' + x.row.ppc + ',0)');
-    str.push('IF(' + ok + ',H' + r + ',0)');
-    dst.push('IF(' + ok + ',' + (x.row.d - x.row.prevD) + mult + ',0)');
     // 2.11.0: η συχνότητα από τη στήλη I (μία συχνότητα: από τους χρόνους ή από τις χεριές), σταθμισμένη με τον χρόνο.
     var okI = 'AND(ISNUMBER(I' + r + '),ISNUMBER(K' + r + '))';
+    // 2.19.0: οι κύκλοι και οι χεριές του τμήματος από τη συχνότητά του (I × χρόνος ÷ 60), όπως το swimAnalyze_.
+    cyc.push('IF(' + okI + ',I' + r + '*K' + r + '/60,0)');
+    str.push('IF(' + okI + ',I' + r + '*K' + r + '/60' + (x.row.ppc === 1 ? '' : '*' + x.row.ppc) + ',0)');
+    dst.push('IF(' + okI + ',' + (x.row.d - x.row.prevD) + mult + ',0)');
     rate.push('IF(' + okI + ',I' + r + '*K' + r + ',0)');
     rateT.push('IF(' + okI + ',K' + r + ',0)');
   });
@@ -3118,9 +3133,12 @@ function swimLayoutTiming_(L) {
 
     if (row.isFree && i > 0) {
       g.set(r, 9, swimSrFormula_(r, row), swimF_(SWIM_FMT.sr, 'formula'));
-      g.set(r, 10, '=IF(OR(H' + r + '="",H' + r + '=0),"",(A' + r + '-A' + p + ')' + K + '/H' + r + ')', swimF_(SWIM_FMT.dps, 'formula'));
-      g.set(r, 13, '=IF(OR(H' + r + '="",H' + r + '=0),"",(A' + r + '-A' + p + ')' + K + '/IF(OR(N' + r + '="fs",N' + r + '="bk"),H' + r + '/2,H' + r + '))', swimF_(SWIM_FMT.dps, 'formula'));
-      if (L.yards) g.set(r, 16, '=IF(OR(H' + r + '="",H' + r + '=0),"",(A' + r + '-A' + p + ')/H' + r + ')', swimF_(SWIM_FMT.dps, 'formula'));
+      // 2.19.0: το μήκος κύκλου (M) = ταχύτητα (C) × 60 ÷ συχνότητα (I), η απόσταση ανά χεριά (J) το μισό του στο ελεύθερο / ύπτιο.
+      var perCycle = 'IF(OR(N' + r + '="fs",N' + r + '="bk"),2,1)';
+      var noRate = 'OR(NOT(ISNUMBER(I' + r + ')),I' + r + '=0,NOT(ISNUMBER(C' + r + ')))';
+      g.set(r, 10, '=IF(' + noRate + ',"",C' + r + '*60/I' + r + '/' + perCycle + ')', swimF_(SWIM_FMT.dps, 'formula'));
+      g.set(r, 13, '=IF(' + noRate + ',"",C' + r + '*60/I' + r + ')', swimF_(SWIM_FMT.dps, 'formula'));
+      if (L.yards) g.set(r, 16, '=IF(OR(NOT(ISNUMBER(I' + r + ')),I' + r + '=0,NOT(ISNUMBER(O' + r + '))),"",O' + r + '*60/I' + r + '/' + perCycle + ')', swimF_(SWIM_FMT.dps, 'formula'));
     } else {
       g.set(r, 9, '', swimF_(null, 'formula'));
       g.set(r, 10, '', swimF_(null, 'formula'));
@@ -3394,7 +3412,7 @@ function swimLayoutComposition_(L) {
   var notes = [
     swimTF_('ΔΑΚ = (Χεριές + Χρόνος από τα 15{0} έως τον τοίχο) / (μέτρα / 10), για κάθε μήκος: σε πισίνα 50μ. /3,5 όπως στο Excel, σε πισίνα 25 /1,0 ανά μήκος.', U) +
       (L.yards ? swimT_(' Σε γιάρδες και «ανά 10yd».') : ''),
-    swimTF_('StrRate, DPS, SL μόνο στην καθαρή κολύμβηση (15{0} μετά τον τοίχο έως 5{0} πριν τον επόμενο). DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο.', U),
+    swimTF_('StrRate, DPS, SL μόνο στην καθαρή κολύμβηση (15{0} μετά τον τοίχο έως 5{0} πριν τον επόμενο). DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο = ταχύτητα × 60 ÷ StrRate.', U),
     swimTF_('Πορτοκαλί ταχύτητα: τμήμα εκκίνησης / στροφής / τελευταίων 5{0} – συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι). Σύγκρινε εκεί τους χρόνους.', U),
     swimT_('Χρόνος στροφής: ανάποδη (ελεύθερο/ύπτιο) από την τελευταία είσοδο χεριού έως την αποκόλληση · ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ) από την επαφή στον τοίχο · σκυταλοδρομία: χρόνος αλλαγής.'),
     swimT_('StrRate: από τους χρόνους των χεριών (60 ÷ χρόνος κύκλου, όπως η συχνότητα του βίντεο) όπου συμφωνούν με τις χεριές του τμήματος, αλλιώς χεριές ÷ χρόνο · Λευκά: πληκτρολόγηση · Γαλάζια: αυτόματα από το Kinovea · Γκρι: τύποι.') +
@@ -8647,8 +8665,10 @@ function swimV2Stroke_(analysis, from, to) {
   var cyc = 0, t = 0, s = 0, d = 0;
   ((analysis && analysis.rows) || []).forEach(function (r) {
     if (r.sr === null || r.sr === undefined || r.prevD < from - 1e-9 || r.d > to + 1e-9 || !(r.segTime > 0) || !r.strokes) return;
-    cyc += r.sr * r.segTime / 60; t += r.segTime; s += r.strokes;
-    d += r.dps * r.strokes;
+    // 2.19.0: οι χεριές από τη συχνότητα του τμήματος (όπως στα 50άρια): μήκος χεριάς = μέτρα ÷ αυτές.
+    var c = r.sr * r.segTime / 60, n = c * (r.ppc || swimPressesPerCycle_(r.style));
+    cyc += c; t += r.segTime; s += n;
+    d += r.dps * n;
   });
   return { sr: t > 0 ? cyc * 60 / t : null, dps: s > 0 ? d / s : null };
 }
@@ -11911,8 +11931,8 @@ var SWIM_EN_ = {
   'ΔΑΚ = (Χεριές + Χρόνος από τα 15{0} έως τον τοίχο) / (μέτρα / 10), για κάθε μήκος: σε πισίνα 50μ. /3,5 όπως στο Excel, σε πισίνα 25 /1,0 ανά μήκος.':
     'SPI = (Strokes + Time from 15{0} to the wall) / (meters / 10), for each length: in a 50m pool /3.5 as in the Excel, in a 25 pool /1.0 per length.',
   ' Σε γιάρδες και «ανά 10yd».': ' In yards also "per 10yd".',
-  'StrRate, DPS, SL μόνο στην καθαρή κολύμβηση (15{0} μετά τον τοίχο έως 5{0} πριν τον επόμενο). DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο.':
-    'StrRate, DPS, SL only in clean swimming (15{0} after the wall to 5{0} before the next one). DPS: meters per stroke (free/back: per arm) · SL: meters per cycle.',
+  'StrRate, DPS, SL μόνο στην καθαρή κολύμβηση (15{0} μετά τον τοίχο έως 5{0} πριν τον επόμενο). DPS: μέτρα ανά χεριά (ελ./υπτ. ανά χέρι) · SL: μέτρα ανά κύκλο = ταχύτητα × 60 ÷ StrRate.':
+    'StrRate, DPS, SL only in clean swimming (15{0} after the wall to 5{0} before the next one). DPS: meters per stroke (free/back: per arm) · SL: meters per cycle = speed × 60 ÷ StrRate.',
   'Πορτοκαλί ταχύτητα: τμήμα εκκίνησης / στροφής / τελευταίων 5{0} – συμβατική (στον τοίχο μετράει η επαφή, όχι το κεφάλι). Σύγκρινε εκεί τους χρόνους.':
     'Orange speed: start / turn / last 5{0} segment – conventional (at the wall the contact counts, not the head). Compare the times there.',
   'Χρόνος στροφής: ανάποδη (ελεύθερο/ύπτιο) από την τελευταία είσοδο χεριού έως την αποκόλληση · ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ) από την επαφή στον τοίχο · σκυταλοδρομία: χρόνος αλλαγής.':

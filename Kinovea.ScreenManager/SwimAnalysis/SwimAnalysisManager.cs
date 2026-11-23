@@ -822,7 +822,10 @@ namespace Kinovea.ScreenManager
 
             // (2.9.5) A checkpoint moved and put back: the strokes of its segment stay.
             if (mark.Type == SwimMarkType.Split && (replaced == null || !replaced.Any(m => m.Type == SwimMarkType.Split && m.Distance == mark.Distance)))
+            {
                 Race.StrokeCounts.Remove(mark.Distance);
+                Race.StrokeConfirmed.Remove(mark.Distance);
+            }
 
             // The automatic snapshot of the event goes with it.
             UndoAutoSnapshots(mark);
@@ -891,6 +894,7 @@ namespace Kinovea.ScreenManager
             foreach (SwimMark old in cleared)
                 ForgetTaught(old);
             Race.StrokeCounts.Remove(distance);
+            Race.StrokeConfirmed.Remove(distance);
             if (removed > 0)
             {
                 Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Διαγράφηκε ο χρόνος στο σημείο {0}{1} · το επόμενο Πέρασμα θα το συμπληρώσει."), distance, UnitLabel), false);
@@ -3412,6 +3416,7 @@ namespace Kinovea.ScreenManager
             // An older Apps Script still computes the stroke rate and length in the last 5 m and over whole 50s.
             Version backend;
             string version = e.Result != null && e.Result.Ok && e.Result.Raw != null ? e.Result.Raw.Value<string>("version") : null;
+            BackendSeen(version);
             if (!backendWarned && !string.IsNullOrEmpty(version) && Version.TryParse(version, out backend) && backend < minimumBackend)
             {
                 backendWarned = true;
@@ -3670,6 +3675,33 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.15.0) The timing of the last calculation (slow-motion factor, timestamps per frame, frame interval) and its race.</summary>
         private readonly double[] computedTiming = new double[3];
         private SwimRace computedRace;
+
+        /// <summary>
+        /// (2.34.0) The Apps Script that answered: its version is kept in the settings and the program computes as its report does (the
+        /// stroke length from the speed and the rate from 2.19.0 on), so that the panel, the video and the PDF show the same numbers
+        /// also before the new script is pasted. The analysis is computed again when that changes.
+        /// </summary>
+        private void BackendSeen(string version)
+        {
+            Version backend;
+            if (string.IsNullOrEmpty(version) || !Version.TryParse(version, out backend) || Settings == null)
+                return;
+
+            bool before = SwimCalculator.LengthFromRate;
+            if (Settings.BackendVersion != version)
+            {
+                Settings.BackendVersion = version;
+                Settings.Save();
+            }
+
+            SwimSettings.ApplyBackend(version);
+            if (SwimCalculator.LengthFromRate == before || Race == null)
+                return;
+
+            Recompute();
+            if (form != null && !form.IsDisposed)
+                form.RefreshData();
+        }
 
         private void Recompute()
         {

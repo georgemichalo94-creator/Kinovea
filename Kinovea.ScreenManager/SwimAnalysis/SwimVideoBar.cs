@@ -794,8 +794,8 @@ namespace Kinovea.ScreenManager
                 if (row.Vel.HasValue)
                     CellRight(g, row.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture), cellFont, colV, r, row.IsFree ? SwimTheme.Text : SwimTheme.Dim);
                 if (row.Strokes.HasValue)
-                    CellRight(g, row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture) + (row.StrokesTyped ? " ✓" : ""), cellFont, colS, r,
-                        row.StrokesTyped ? SwimTheme.Green : SwimTheme.Text);
+                    CellRight(g, row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture) + (row.StrokesTyped || row.StrokesConfirmed ? " ✓" : ""), cellFont, colS, r,
+                        row.StrokesTyped || row.StrokesConfirmed ? SwimTheme.Green : SwimTheme.Text);
 
                 if (row.Marked)
                 {

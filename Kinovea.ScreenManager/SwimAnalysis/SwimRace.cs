@@ -736,10 +736,19 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Strokes of the segments confirmed or typed by the analyst (key: distance of the checkpoint at the end of the segment).
-        /// They have priority over the count from the stroke marks.
+        /// Strokes of the segments typed by the analyst (key: distance of the checkpoint at the end of the segment). They have priority
+        /// over the count from the stroke marks. (Until 2.33.0 also the counts he accepted as shown: see StrokeConfirmed.)
         /// </summary>
         public Dictionary<int, double> StrokeCounts = new Dictionary<int, double>();
+
+        /// <summary>
+        /// (2.34.0) The count of a segment the analyst accepted as it was shown (Enter). The count stays the one of the stroke marks,
+        /// also when they change afterwards (the length is read again at the next checkpoints and at the wall): until 2.33.0 it was
+        /// kept as a typed one, and half a stroke that the marks no longer gave stayed in the report with the rate taken from it (4.5
+        /// strokes and 50.6 cycles a minute where the marks and their times gave 5.0 and 55). It stands as a typed one only when the
+        /// marks come to give a whole stroke more or less than it (SwimCalculator.ConfirmedApart).
+        /// </summary>
+        public Dictionary<int, double> StrokeConfirmed = new Dictionary<int, double>();
 
         // Manual values (typed by the analyst).
         public double? Reaction;
@@ -1189,6 +1198,7 @@ namespace Kinovea.ScreenManager
         {
             if (Marks == null) Marks = new List<SwimMark>();
             if (StrokeCounts == null) StrokeCounts = new Dictionary<int, double>();
+            if (StrokeConfirmed == null) StrokeConfirmed = new Dictionary<int, double>();
             if (Checkpoints == null) Checkpoints = new List<int>();
             if (Turns == null) Turns = new Dictionary<int, SwimTurnManual>();
             if (PhaseValues == null) PhaseValues = new Dictionary<string, SwimPhaseManual>();
@@ -1255,6 +1265,7 @@ namespace Kinovea.ScreenManager
                 Pilot = m.Pilot }).ToList();
             r.Checkpoints = new List<int>(Checkpoints);
             r.StrokeCounts = new Dictionary<int, double>(StrokeCounts);
+            r.StrokeConfirmed = StrokeConfirmed != null ? new Dictionary<int, double>(StrokeConfirmed) : new Dictionary<int, double>();
             r.RemovedStrokes = RemovedStrokes != null ? new List<long>(RemovedStrokes) : null;
             r.Turns = new Dictionary<int, SwimTurnManual>();
             r.PhaseValues = new Dictionary<string, SwimPhaseManual>();
