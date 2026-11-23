@@ -36,11 +36,13 @@ $tCalc.GetField('LengthFromRate').SetValue($null, $false)
 # 1. The strokes of a length in one phase (frames of the reading).
 # ---------------------------------------------------------------------------------------------------------------------------------
 $repair = $tDetector.GetMethod('RepairBeatPhase', [System.Reflection.BindingFlags]'NonPublic,Static')
+# (The list and the arrays from .NET itself: what New-Object makes is wrapped by PowerShell and a method called by reflection refuses it.)
 function Repair($beats, $onset, $first, $last, $stride) {
-  $list = New-Object 'System.Collections.Generic.List[int]'
+  $list = [Activator]::CreateInstance([System.Collections.Generic.List[int]])
   foreach ($b in $beats) { $list.Add([int]$b) }
-  $call = New-Object object[] 6
-  $call[0] = $list; $call[1] = $onset; $call[2] = [int]$first; $call[3] = [int]$last; $call[4] = [int]$stride; $call[5] = [int]0
+  $call = [Array]::CreateInstance([object], 6)
+  $call[0] = $list; $call[1] = $null; $call[2] = [int]$first; $call[3] = [int]$last; $call[4] = [int]$stride; $call[5] = [int]0
+  if ($null -ne $onset) { $call[1] = $onset.PSObject.BaseObject }
   $moved = $repair.Invoke($null, $call)
   return @{ Beats = @($list.ToArray()); Moved = [int]$moved; Steps = [int]$call[5] }
 }
@@ -71,7 +73,7 @@ Check ($r.Moved -eq 1 -and $r.Steps -eq 0 -and $r.Beats[0] -eq 150 -and $r.Beats
 
 # With the stroke signal: the phase with the most of it, whichever has the most strokes.
 function Signal($strong, $weak) {
-  $o = New-Object double[] 1000
+  $o = [Array]::CreateInstance([double], 1000)
   for ($i = 0; $i -lt 1000; $i++) { $o[$i] = -0.5 }
   foreach ($b in $base) {
     $o[$b] = $strong; $o[$b - 1] = 0.5 * $strong; $o[$b + 1] = 0.5 * $strong

@@ -974,8 +974,8 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// (2.34.0) The beats follow the strongest motion of each cycle, and a cycle can have two (in butterfly the arms coming out of
         /// the water and their entry, a third of a second apart): in the middle of a length the beats went from the one to the other
-        /// (one interval alone short or long, a step: every stroke after it a third of a second early, the rate of that 10 m 59 for
-        /// 56 and one cycle of the card of the video at 94 a minute), or one beat alone was on the other one (an interval long and the
+        /// (one interval alone short or long, a step: every stroke after it a third of a second early, the rate of those 10 m 57 for
+        /// 54 and one cycle of the card of the video at 79 a minute in the fictional race of the CI check), or one beat alone was on the other one (an interval long and the
         /// next one short by the same). Here the strokes of the length come to one phase: a stroke alone out of place goes between
         /// the two beside it, and the strokes on the two sides of a step come together, at the phase with the most stroke signal
         /// (without the signal: where the most strokes are). The number of the strokes does not change; the first and the last

@@ -745,7 +745,7 @@ namespace Kinovea.ScreenManager
         /// (2.34.0) The count of a segment the analyst accepted as it was shown (Enter). The count stays the one of the stroke marks,
         /// also when they change afterwards (the length is read again at the next checkpoints and at the wall): until 2.33.0 it was
         /// kept as a typed one, and half a stroke that the marks no longer gave stayed in the report with the rate taken from it (4.5
-        /// strokes and 50.6 cycles a minute where the marks and their times gave 5.0 and 55). It stands as a typed one only when the
+        /// strokes and 46 cycles a minute where the marks and their times gave 5.0 and 54, in the fictional race of the CI check). It stands as a typed one only when the
         /// marks come to give a whole stroke more or less than it (SwimCalculator.ConfirmedApart).
         /// </summary>
         public Dictionary<int, double> StrokeConfirmed = new Dictionary<int, double>();
