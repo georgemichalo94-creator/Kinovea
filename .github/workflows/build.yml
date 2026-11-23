@@ -209,13 +209,24 @@ jobs:
     - name: Swim underwater speed of the turns
       shell: pwsh
       run: |
-        # (2.15.0) From the head at the push-off (the body length) to the breakout; in its own Windows PowerShell, as Kinovea.
+        # (2.32.0) From the wall, as the start: the breakout distance over the time from the push-off; in its own Windows PowerShell, as Kinovea.
         $out = & powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\turn_speed\uw_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release 2>&1
         $code = $LASTEXITCODE
         $out | ForEach-Object { Write-Output $_ }
         $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
         if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim underwater speed::exit ' + $code + ' | ' + (($out | Select-Object -Last 12) -join ' | ')); exit 1 }
         Write-Output ('::notice title=Swim underwater speed::' + ($out | Select-Object -Last 1))
+
+    - name: Swim steady stroke rate of the video graphics
+      shell: pwsh
+      run: |
+        # (2.33.0) A stroke a little off its frame does not show as a spike on the card; a corrected segment as in the report.
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\stroke_shift\sh_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release 2>&1
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim steady stroke rate::exit ' + $code + ' | ' + (($out | Select-Object -Last 12) -join ' | ')); exit 1 }
+        Write-Output ('::notice title=Swim steady stroke rate::' + ($out | Select-Object -Last 1))
 
     - name: Swim comparison of a technique analysis
       shell: pwsh

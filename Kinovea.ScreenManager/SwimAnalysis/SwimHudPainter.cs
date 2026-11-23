@@ -82,7 +82,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.32.0";
+        public const string AppVersion = "2.33.0";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -997,7 +997,7 @@ namespace Kinovea.ScreenManager
                 speed = Math.Max(0, reel.SpeedAt(t));
                 SwimReelCycle cycle = reel.LastCycle(t);
                 if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
-                    rate = 60.0 / cycle.Tempo;
+                    rate = 60.0 / cycle.ShownTempo;
             }
 
             float spin = (float)s.VideoSeconds;
@@ -1707,7 +1707,7 @@ namespace Kinovea.ScreenManager
             List<string> values = new List<string>();
             SwimReelCycle cycle = reel.LastCycle(t);
             if (cycle != null && cycle.Tempo > 0.2 && t - cycle.Time <= 2.2 * cycle.Tempo && reel.Swimming(t))
-                values.Add((60.0 / cycle.Tempo).ToString("0.0", CultureInfo.InvariantCulture) + " " + SwimLang.T("κ/λ"));
+                values.Add((60.0 / cycle.ShownTempo).ToString("0.0", CultureInfo.InvariantCulture) + " " + SwimLang.T("κ/λ"));
             if (reel.HasModel)
                 values.Add("≈" + Math.Max(0, reel.SpeedAt(t)).ToString("0.00", CultureInfo.InvariantCulture) + " m/s");
             string value = string.Join("  ·  ", values);

@@ -404,8 +404,9 @@ namespace Kinovea.ScreenManager
             string[] values =
             {
                 (t >= 0 ? reel.StrokesInLength(t) : 0).ToString(CultureInfo.InvariantCulture),
-                cycle != null && cycle.Tempo > 0 ? (60.0 / cycle.Tempo).ToString("0.0", CultureInfo.InvariantCulture) : "–",
-                cycle != null && reel.HasModel ? "≈" + cycle.Dps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
+                // (2.33.0) The steady tempo and distance of the cycle (a press a little off its frame showed 70 for 52 for a moment).
+                cycle != null && cycle.ShownTempo > 0 ? (60.0 / cycle.ShownTempo).ToString("0.0", CultureInfo.InvariantCulture) : "–",
+                cycle != null && reel.HasModel ? "≈" + cycle.ShownDps.ToString("0.00", CultureInfo.InvariantCulture) : "–",
                 inWater ? (underwater ? "≈" : "") + reel.SpeedAt(t).ToString("0.00", CultureInfo.InvariantCulture) : "–"
             };
             string[] units = { "", SwimLang.T("κ/λ"), "m", "m/s" };
@@ -548,7 +549,7 @@ namespace Kinovea.ScreenManager
             }
 
             // (No figure for the scale of the cycles: it fell on the lowest of the speed; the card gives the distance of the last cycle.)
-            double dpsTop = DpsScale(reel.Cycles.Select(c => c.Dps));
+            double dpsTop = DpsScale(reel.Cycles.Select(c => c.ShownDps));
 
             // Where the swimmer is: its tag under the chart's line (the labels give way to it).
             bool showSwimmer = t >= 0 && !finished;
@@ -637,7 +638,7 @@ namespace Kinovea.ScreenManager
                 {
                     float xa = X(reel.DistanceAt(c.Start)), xb = X(reel.DistanceAt(c.Time));
                     float pad = Math.Min(1.5f * k, (xb - xa) * 0.15f);
-                    float h = (float)(Math.Max(0, Math.Min(dpsTop, c.Dps)) / dpsTop * barH);
+                    float h = (float)(Math.Max(0, Math.Min(dpsTop, c.ShownDps)) / dpsTop * barH);
                     if (xb - xa > 2 * pad + 0.5f && h > 0)
                     {
                         g.FillRectangle(bar, xa + pad, plot.Bottom - h, xb - xa - 2 * pad, h);
@@ -954,7 +955,7 @@ namespace Kinovea.ScreenManager
             {
                 if (perCycle)
                 {
-                    bars.AddRange(lengths[l].Select(cy => new KeyValuePair<double, double>(cy.Dps, 60.0 / cy.Tempo)));
+                    bars.AddRange(lengths[l].Select(cy => new KeyValuePair<double, double>(cy.ShownDps, 60.0 / cy.ShownTempo)));
                     lapOfBar.AddRange(lengths[l].Select(cy => l));
                 }
                 else

@@ -30,6 +30,28 @@ namespace Kinovea.ScreenManager
         public double Dps;
         public double Speed;
 
+        /// <summary>
+        /// (2.33.0) What the card and the chart show for the cycle: the median duration and distance of it and the cycles beside it in the
+        /// length (three; the first and the last of the length with the two after or before them). A stroke a little before or after its
+        /// frame (an automatic one read a few frames off) makes one cycle short and the next long by as much (70 and 42 cycles a minute
+        /// around 52): the median is the swimmer's. In the clean swimming of a segment whose strokes the analyst corrected (the automatic
+        /// strokes missed one or found one too many), the rate and the cycle length of the segment, as the analysis and the PDF have them.
+        /// </summary>
+        public double SteadyTempo;
+        public double SteadyDps;
+
+        /// <summary>(2.33.0) The steady duration, else the cycle's own (s).</summary>
+        public double ShownTempo
+        {
+            get { return SteadyTempo > 0 ? SteadyTempo : Tempo; }
+        }
+
+        /// <summary>(2.33.0) The steady distance, else the cycle's own (m).</summary>
+        public double ShownDps
+        {
+            get { return SteadyDps > 0 ? SteadyDps : Dps; }
+        }
+
         /// <summary>Lap (0 = first length) and number of the cycle in the lap (1 = first).</summary>
         public int Lap;
         public int Number;
@@ -250,7 +272,7 @@ namespace Kinovea.ScreenManager
             if (reel.AddPhaseKnots(race, computed))
                 reel.BuildSlopes();
 
-            reel.BuildCycles();
+            reel.BuildCycles(computed);
             reel.BuildBadges(race, computed);
             reel.BuildParts(race, computed);
             reel.BuildSamples();
@@ -333,7 +355,7 @@ namespace Kinovea.ScreenManager
             return kept;
         }
 
-        private void BuildCycles()
+        private void BuildCycles(SwimComputed computed)
         {
             for (int lap = 0; lap < lapStrokes.Count; lap++)
             {
@@ -351,6 +373,43 @@ namespace Kinovea.ScreenManager
                     double span = RaceTime(t1) - RaceTime(t0);
                     number++;
                     Cycles.Add(new SwimReelCycle { Start = t0, Time = t1, Tempo = tempo, Dps = dps, Speed = dps / (span > 0.05 ? span : tempo), Lap = lap, Number = number });
+                }
+            }
+
+            // (2.33.0) The steady values of each cycle, inside its length.
+            foreach (IGrouping<int, SwimReelCycle> length in Cycles.GroupBy(c => c.Lap))
+            {
+                List<SwimReelCycle> list = length.ToList();
+                for (int i = 0; i < list.Count; i++)
+                {
+                    int from = Math.Max(0, Math.Min(i - 1, list.Count - 3));
+                    int to = Math.Min(list.Count - 1, from + 2);
+                    List<SwimReelCycle> around = list.GetRange(from, to - from + 1);
+                    list[i].SteadyTempo = Median(around.Select(c => c.Tempo).ToList());
+                    list[i].SteadyDps = Median(around.Select(c => c.Dps).ToList());
+                }
+            }
+
+            // (2.33.0) A segment of clean swimming whose rate the analysis does not take from the times of its strokes (the analyst corrected
+            // its strokes at its checkpoint, S: an automatic stroke missed or one too many; or the times do not agree with the strokes): its
+            // rate and cycle length as the analysis and the PDF have them (the strokes over the time).
+            if (computed == null)
+                return;
+
+            foreach (SwimRow row in computed.Rows)
+            {
+                if (!row.IsFree || row.SrFromTimes || !row.Sr.HasValue || row.Sr.Value <= 0 || !row.Sl.HasValue ||
+                    row.Sl.Value <= 0 || row.Index <= 0 || row.Index >= computed.Rows.Count)
+                    continue;
+
+                double from = computed.Rows[row.Index - 1].OnVideo, to = row.OnVideo;
+                if (double.IsNaN(from) || double.IsNaN(to) || to <= from)
+                    continue;
+
+                foreach (SwimReelCycle cycle in Cycles.Where(x => x.Time > from + 1e-6 && x.Time <= to + 1e-6))
+                {
+                    cycle.SteadyTempo = 60.0 / row.Sr.Value;
+                    cycle.SteadyDps = row.Sl.Value;
                 }
             }
         }
