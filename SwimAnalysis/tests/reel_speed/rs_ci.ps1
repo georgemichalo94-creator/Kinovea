@@ -127,20 +127,21 @@ Check ($lateS.Count -eq 0) ('the last 5 m of the chart at the speed of the PDF (
 $uwS = @($samples | Where-Object { $_.Underwater }); $uwBad = @($uwS | Where-Object { -not (($_.Time -lt 9.6) -or ($_.Time -ge 25.70 -and $_.Time -lt 29.4)) })
 Check ($uwS.Count -gt 50 -and $uwBad.Count -eq 0) ('the samples under the water: ' + $uwS.Count + ' (' + $uwBad.Count + ' outside the parts)')
 
-# --- (2.32.0) The start from its marks: on the wall up to the release (0.62), the entry at 2.0 m (0.95), the breakout at 11.5 m (4.6).
+# --- (2.32.0) The start from its marks: on the wall up to the release (0.62), the entry at 2.0 m (0.96), the breakout at 11.5 m (4.6).
+# (The marks on frames of the 50 fps video: a time between two frames is taken at the nearest one.)
 $rs = NewRace @(52.85) 4.6
 Mark $rs 'FeetOff' 0.62 $null
-Mark $rs 'Entry' 0.95 $null
+Mark $rs 'Entry' 0.96 $null
 $rs.EntryDistHands = 2.0
 $rs.BreakoutDist = 11.5
 $st = (Reel $rs).Reel
 Check ([Math]::Abs($st.DistanceAt(0.5)) -lt 1e-6) ('on the wall up to the release: ' + (F2 $st.DistanceAt(0.5)) + ' m')
-Check ([Math]::Abs($st.DistanceAt(0.95) - 2.0) -lt 0.01 -and [Math]::Abs($st.DistanceAt(4.6) - 11.5) -lt 0.01) ('the entry and the breakout at their distances: ' + (F2 $st.DistanceAt(0.95)) + ' / ' + (F2 $st.DistanceAt(4.6)) + ' m')
+Check ([Math]::Abs($st.DistanceAt(0.96) - 2.0) -lt 0.01 -and [Math]::Abs($st.DistanceAt(4.6) - 11.5) -lt 0.01) ('the entry and the breakout at their distances: ' + (F2 $st.DistanceAt(0.96)) + ' / ' + (F2 $st.DistanceAt(4.6)) + ' m')
 $e1 = $st.SpeedAt(1.0); $e2 = $st.SpeedAt(3.0); $e3 = $st.SpeedAt(4.5)
 Check ($e1 -gt $e2 -and $e2 -gt $e3 -and $e1 -lt 3.5 -and $e3 -gt 1.8) ('fast after the entry, slower to the breakout: ' + (F2 $e1) + ' > ' + (F2 $e2) + ' > ' + (F2 $e3))
-Check ($st.InWater(0.952) -and $st.SpeedAt(0.952) -lt 3.5) ('in the water just after the entry, not at the speed of the flight: ' + (F2 $st.SpeedAt(0.952)))
-$uwAvg = (11.5 - 2.0) / (4.6 - 0.95)
-Check ([Math]::Abs(($st.DistanceAt(4.6) - $st.DistanceAt(0.95)) / (4.6 - 0.95) - $uwAvg) -lt 0.01) ('under the water ' + (F2 $uwAvg) + ' m/s on average, as the PDF')
+Check ($st.InWater(0.962) -and $st.SpeedAt(0.962) -lt 3.5) ('in the water just after the entry, not at the speed of the flight: ' + (F2 $st.SpeedAt(0.962)))
+$uwAvg = (11.5 - 2.0) / (4.6 - 0.96)
+Check ([Math]::Abs(($st.DistanceAt(4.6) - $st.DistanceAt(0.96)) / (4.6 - 0.96) - $uwAvg) -lt 0.01) ('under the water ' + (F2 $uwAvg) + ' m/s on average, as the PDF')
 
 # --- Without an official time: the curve on the marks (the last 5 m at the speed of the marks).
 $r0 = Reel (NewRace $null)
