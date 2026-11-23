@@ -2913,6 +2913,11 @@ namespace Kinovea.ScreenManager
             { "ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ", "START → FINISH" },
             { "μέση τμήματος", "segment average" },
             { "υποβρ.", "u/w" },
+            { "📍 {0}: {1:0.00} {2} δεν γίνεται (από {3:0.#} ως {4:0.#} {2}) και δεν γράφτηκε.", "📍 {0}: {1:0.00} {2} is not possible (from {3:0.#} to {4:0.#} {2}) and was not written." },
+            { " Η βαθμονόμηση είναι από άλλο καρέ: αν η κάμερα κινήθηκε, βαθμονόμησε σε αυτό το καρέ και μέτρησε ξανά.",
+              " The calibration is from another frame: if the camera moved, calibrate on this frame and measure again." },
+            { " Έλεγξε τη βαθμονόμηση (τις γραμμές και τις αποστάσεις τους) και μέτρησε ξανά.", " Check the calibration (the lines and their distances) and measure again." },
+            { "η απόσταση της εξόδου ({0:0.00}) δεν γίνεται: μέτρησέ τη ξανά (📍)", "the breakout distance ({0:0.00}) is not possible: measure it again (📍)" },
         };
     }
 }

@@ -1241,6 +1241,19 @@ namespace Kinovea.ScreenManager
             int wall = pendingWall;
             double value = MeasuredValue(target, wall, x);
             value = Math.Round(value, 2);
+
+            // (2.32.0) A distance no swimmer has (a breakout after a turn at 39.6 m: the calibration of another frame of a camera that
+            // moved) is not written; the analyst is told why and what to do.
+            string impossible = ImpossibleMeasurement(target, wall, value, calibration, timestamp);
+            if (impossible != null)
+            {
+                pendingMeasure = SwimPickTarget.None;
+                SetPick(SwimPickTarget.None);
+                SystemSounds.Exclamation.Play();
+                Status(impossible, true);
+                return;
+            }
+
             StoreMeasurement(target, wall, value);
 
             string label = MeasureLabel(target, wall);
@@ -1506,6 +1519,53 @@ namespace Kinovea.ScreenManager
                 default:
                     return x;
             }
+        }
+
+        /// <summary>
+        /// (2.32.0) The text for a measured distance no swimmer has (null: it can be): a breakout past the most for the style (15 m by the
+        /// rules, 20 m in breaststroke, with the margin of a measure) or nearer than 2 m to its wall, an entry of the start farther than
+        /// 7 m, a last stroke farther than 6 m from the wall.
+        /// </summary>
+        private string ImpossibleMeasurement(SwimPickTarget target, int wall, double value, SwimCalibration calibration, long timestamp)
+        {
+            if (Race == null)
+                return null;
+
+            double meters = value * Race.K;
+            double most;
+            double least = 0;
+            switch (target)
+            {
+                case SwimPickTarget.StartUnderwater:
+                case SwimPickTarget.StartBreakout:
+                    most = BreakoutLimit(0) + SwimReel.MeasuredSlack;
+                    least = 2;
+                    break;
+                case SwimPickTarget.TurnUnderwater:
+                    most = BreakoutLimit(wall) + SwimReel.MeasuredSlack;
+                    least = 2;
+                    break;
+                case SwimPickTarget.EntryHands:
+                case SwimPickTarget.EntryHips:
+                    most = 7;
+                    break;
+                case SwimPickTarget.FinishLastStroke:
+                    most = 6;
+                    break;
+                default:
+                    return null;
+            }
+
+            if (meters <= most && meters >= least)
+                return null;
+
+            string text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("📍 {0}: {1:0.00} {2} δεν γίνεται (από {3:0.#} ως {4:0.#} {2}) και δεν γράφτηκε."),
+                MeasureLabel(target, wall), value, UnitLabel, least / Race.K, most / Race.K);
+            bool otherFrame = calibration != null && Math.Abs(Timing.Seconds(timestamp, calibration.Timestamp)) > 0.05;
+            text += otherFrame
+                ? SwimLang.T(" Η βαθμονόμηση είναι από άλλο καρέ: αν η κάμερα κινήθηκε, βαθμονόμησε σε αυτό το καρέ και μέτρησε ξανά.")
+                : SwimLang.T(" Έλεγξε τη βαθμονόμηση (τις γραμμές και τις αποστάσεις τους) και μέτρησε ξανά.");
+            return text;
         }
 
         private void StoreMeasurement(SwimPickTarget target, int wall, double value)

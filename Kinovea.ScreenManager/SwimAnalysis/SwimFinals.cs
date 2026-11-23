@@ -672,6 +672,9 @@ namespace Kinovea.ScreenManager
             add("Εκκίνηση", "Έξοδος: χρόνος", computed.StartUnderwaterTime, s => s.StartBreakoutTime).Neutral = true;
             // (2.15.0) Where the head came out (📍), else the underwater distance, but not the estimate from the times (as the turns).
             double? startOut = race.BreakoutDist ?? (race.UnderwaterEstimated ? null : race.UnderwaterDist);
+            // (2.32.0) Not a distance no swimmer has (a measurement with the calibration of another frame of a moving camera).
+            if (!SwimReel.PossibleBreakout(race, 0, startOut))
+                startOut = null;
             SwimFinalsMetric startDist = add("Εκκίνηση", "Έξοδος: απόσταση", startOut, s => s.StartBreakoutDist);
             startDist.Unit = "μ.";
             startDist.Neutral = true;
@@ -708,7 +711,9 @@ namespace Kinovea.ScreenManager
                 add(group, "Έξοδος: χρόνος από τον τοίχο", breakout, s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutTime : null).Neutral = true;
                 SwimTurnManual manual = race.GetTurn(wall, false);
                 // (2.15.0) Not the estimate from the times (it is not a measurement).
-                SwimFinalsMetric dist = add(group, "Έξοδος: απόσταση", manual != null && !manual.UnderwaterEstimated ? manual.UnderwaterDist : null,
+                // (2.32.0) Nor a distance no swimmer has (39.61 m for a breakout at about 10 m: +26.68 from the winner).
+                SwimFinalsMetric dist = add(group, "Έξοδος: απόσταση", manual != null && !manual.UnderwaterEstimated &&
+                    SwimReel.PossibleBreakout(race, wall, manual.UnderwaterDist) ? manual.UnderwaterDist : null,
                     s => s.TurnAt(wall) != null ? s.TurnAt(wall).BreakoutDist : null);
                 dist.Unit = "μ.";
                 dist.Neutral = true;

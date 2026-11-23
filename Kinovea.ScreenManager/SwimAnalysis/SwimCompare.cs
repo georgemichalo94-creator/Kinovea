@@ -596,25 +596,33 @@ namespace Kinovea.ScreenManager
             p.SwimmerX = selfHead - p.Direction * half;
             p.SwimmerY = y0 + slope * (p.SwimmerX - x0);
             float headY = y0 + slope * (head - x0);
-            p.LineA = new PointF(head, headY - halfHeight);
-            p.LineB = new PointF(head, headY + halfHeight);
+
+            // (2.32.0) The line from rope to rope of the lane: around the middle of the lane (the ropes followed around this frame), not the
+            // swimmer's place in it (a swimmer near a rope put the line half over the next lane).
+            float middle = MiddleAround(track, now, window, n);
+            float lineY = headY + middle;
+            p.LineA = new PointF(head, lineY - halfHeight);
+            p.LineB = new PointF(head, lineY + halfHeight);
 
             // (2.9.6) With the camera of the part: the line lies on the water of the lane as a line across the pool (towards the point
             // where those lines meet), from rope to rope (until 2.9.5 straight up the image, 7–70° off the marks of the ropes).
+            // (2.32.0) Only when that way crosses the ropes steeply enough for a line at most twice the height of the lane: a camera
+            // from the stands that moves gave ways almost along the ropes, and lines 5 times the lane long, across the next lanes; then
+            // straight up the image from rope to rope, always inside the lane.
             if (camera != null)
             {
                 PointF across = camera.Across(selfPlace, poolDirection, x0, y0, lane, LaneWidth);
-                double dx = across.X - head, dy = across.Y - headY, length = Math.Sqrt(dx * dx + dy * dy);
+                double dx = across.X - head, dy = across.Y - lineY, length = Math.Sqrt(dx * dx + dy * dy);
                 if (length > 1e-3 && !double.IsNaN(length) && !double.IsInfinity(length))
                 {
                     dx /= length;
                     dy /= length;
                     double along = dy - slope * dx;
-                    if (Math.Abs(along) > 0.2)
+                    if (Math.Abs(along) >= MinAcross)
                     {
                         double t = -halfHeight / along;
-                        p.LineA = new PointF((float)(head + t * dx), (float)(headY + t * dy));
-                        p.LineB = new PointF((float)(head - t * dx), (float)(headY - t * dy));
+                        p.LineA = new PointF((float)(head + t * dx), (float)(lineY + t * dy));
+                        p.LineB = new PointF((float)(head - t * dx), (float)(lineY - t * dy));
                     }
                 }
             }
@@ -622,6 +630,34 @@ namespace Kinovea.ScreenManager
             p.Inside = inside;
             p.Located = true;
             return p;
+        }
+
+        /// <summary>
+        /// (2.32.0) How steeply the line across the lane crosses the ropes, at least (the share of its length up the image across the ropes):
+        /// 0.5 keeps it at most twice the height of the lane (until 2.31.0 0.2: five times, over the next lanes).
+        /// </summary>
+        internal const double MinAcross = 0.5;
+
+        /// <summary>
+        /// (2.32.0) Where the middle of the lane is from the swimmer (pixels, + down) around a point of the part: the median of 'window'
+        /// points on each side (a rope misread for a few frames does not move it); 0 when the ropes are not known.
+        /// </summary>
+        private static float MiddleAround(SwimTrack track, int now, int window, int n)
+        {
+            List<float> offsets = new List<float>();
+            for (int i = Math.Max(0, now - window); i <= Math.Min(n - 1, now + window); i++)
+            {
+                if (track.Bottom[i] != track.Top[i])
+                    offsets.Add(0.5f * (track.Top[i] + track.Bottom[i]) - track.Y[i]);
+            }
+
+            if (offsets.Count == 0)
+                return 0;
+
+            offsets.Sort();
+            float middle = offsets[offsets.Count / 2];
+            float half = 0.5f * Math.Abs(track.Bottom[now] - track.Top[now]);
+            return half > 0 ? Math.Max(-half, Math.Min(half, middle)) : middle;
         }
 
         /// <summary>The width of the lane at the swimmer around a point of the part: the median of 'window' points on each side.</summary>

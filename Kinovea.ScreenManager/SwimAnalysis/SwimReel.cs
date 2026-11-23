@@ -108,6 +108,10 @@ namespace Kinovea.ScreenManager
         private readonly List<double> knotV = new List<double>();
         private readonly List<double> knotD = new List<double>();
 
+        // (2.32.0) A new piece of the curve starts at the knot (each wall; the release from the block, the entry, the push off a wall): its
+        // speed is not joined to the one before it.
+        private readonly List<bool> knotBreak = new List<bool>();
+
         // Derivative of the curve at the beginning and at the end of each interval between two knots (2.9.4: they differ at a wall,
         // where the curve is broken: the turn).
         private double[] slopeFrom = new double[0];
@@ -190,10 +194,12 @@ namespace Kinovea.ScreenManager
             reel.Pool = Math.Max(1, race.Pool);
 
             // Distance-time model: the start and the checkpoints with a time, all increasing. The curve on the times of the race (T, the
-            // official one where typed), the swimmer on the video at the frame of each mark (OnVideo; T without a mark).
+            // official one where typed), the swimmer on the video at OnVideo (2.32.0: T too, the official time also when the mark is a
+            // little before or after it; until 2.31.0 the frame of the mark).
             reel.knotT.Add(0);
             reel.knotV.Add(0);
             reel.knotD.Add(0);
+            reel.knotBreak.Add(false);
             foreach (SwimRow row in computed.Rows.Where(r => r.T.HasValue).OrderBy(r => r.OnVideo))
             {
                 double raceTime = row.T.Value;
@@ -205,6 +211,7 @@ namespace Kinovea.ScreenManager
                 reel.knotT.Add(raceTime);
                 reel.knotV.Add(video);
                 reel.knotD.Add(row.D);
+                reel.knotBreak.Add(row.D < race.Distance && row.D % reel.Pool == 0);
             }
 
             reel.BuildSlopes();
@@ -237,8 +244,13 @@ namespace Kinovea.ScreenManager
             reel.FirstBreakout = computed.Breakouts.Count > 0 ? (double?)computed.Breakouts[0] : null;
 
             reel.BuildLaps(race, computed);
-            reel.BuildCycles();
             reel.BuildBreakouts(race, computed);
+
+            // (2.32.0) The start and the turns on the curve from their own marks, then the cycles on it.
+            if (reel.AddPhaseKnots(race, computed))
+                reel.BuildSlopes();
+
+            reel.BuildCycles();
             reel.BuildBadges(race, computed);
             reel.BuildParts(race, computed);
             reel.BuildSamples();
@@ -407,6 +419,20 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.32.0) A distance of the breakout after this wall of the race (0: the start; pool units, from the wall) a swimmer can have: up to
+        /// the most for the style of the length with the margin of a measure (a turn's breakout measured at 39.6 m with the calibration of
+        /// another frame of a moving camera is not). True for no value.
+        /// </summary>
+        internal static bool PossibleBreakout(SwimRace race, int wall, double? value)
+        {
+            if (!value.HasValue || race == null)
+                return true;
+
+            double max = MaxBreakout(SwimPresets.StyleAt(race, Math.Min(race.Distance, wall + 15)));
+            return value.Value > 0 && value.Value * race.K <= max + MeasuredSlack;
+        }
+
+        /// <summary>
         /// (2.9.5b) The farthest a breakout can be from its wall (m): 15 m by the rules in butterfly, backstroke and freestyle (15.5 m for
         /// the head a little past the mark when the body comes up); breaststroke has no such rule and its breakouts can come later (20 m).
         /// </summary>
@@ -560,6 +586,111 @@ namespace Kinovea.ScreenManager
             }
         }
 
+        /// <summary>
+        /// (2.32.0) The start and the turns on the curve, from their own marks: on the block (0) up to the release from it, the entry at its
+        /// distance measured, the breakout at its distance (measured or estimated as the summary shows it); at a wall up to the push off it
+        /// (the feet off marked, else a little after the touch), then the breakout. Before, the curve went only through the checkpoints:
+        /// the 50–65 m after a butterfly turn (8.01 s with the 1.10 s on the wall) gave a flat 1.89 m/s under the water and moved the
+        /// swimmer off the wall while he was turning; now 2.9 m/s after the push down to the breakout, as the start. A mark out of its
+        /// place (a knot that would make the curve go back, or speeds no swimmer has) is left out. True if one was put.
+        /// </summary>
+        private bool AddPhaseKnots(SwimRace race, SwimComputed computed)
+        {
+            if (!HasModel || race == null || computed == null)
+                return false;
+
+            // The times of the race of these marks as between the checkpoints around them (the knots of the checkpoints alone).
+            List<double> cpV = new List<double>(knotV), cpT = new List<double>(knotT);
+            List<PhaseKnot> knots = new List<PhaseKnot>();
+
+            // The start.
+            double release = computed.BlockMarkTime ?? computed.BlockTime ?? double.NaN;
+            if (!double.IsNaN(release) && release > 0.2 && release < 1.5)
+                knots.Add(new PhaseKnot { Video = release, Distance = 0, Break = true, Hold = true, What = "release" });
+
+            double entryDistance = race.EntryDistHands ?? double.NaN;
+            if (Entry.HasValue && !double.IsNaN(entryDistance) && entryDistance * K >= 0.5 && entryDistance * K <= 6.5)
+                knots.Add(new PhaseKnot { Video = Entry.Value, Distance = entryDistance, Break = true, What = "entry" });
+
+            double startDistance;
+            if (lapBreakouts.Count > 0 && !double.IsNaN(lapBreakouts[0]) && BreakoutDistances.TryGetValue(0, out startDistance))
+                knots.Add(new PhaseKnot { Video = lapBreakouts[0], Distance = startDistance, What = "breakout" });
+
+            // The turns.
+            for (int lap = 1; lap < lapStarts.Count; lap++)
+            {
+                double touch = lapStarts[lap];
+                if (double.IsNaN(touch))
+                    continue;
+
+                int wall = lap * Pool;
+                double breakout = lapBreakouts[lap];
+                string before = StyleOfLap(lap - 1), after = StyleOfLap(lap);
+                bool tumble = before == after && (after == "fs" || after == "bk");
+                double push = !double.IsNaN(lapFeetOff[lap]) ? lapFeetOff[lap] : touch + (tumble ? TumblePush : HandsPush);
+                if (push - touch > 0.05 && push - touch < 2.5 && (double.IsNaN(breakout) || push < breakout - 0.3))
+                    knots.Add(new PhaseKnot { Video = push, Distance = wall, Break = true, Hold = true, What = "push" });
+
+                double length;
+                if (!double.IsNaN(breakout) && BreakoutDistances.TryGetValue(lap, out length))
+                    knots.Add(new PhaseKnot { Video = breakout, Distance = wall + length, What = "breakout" });
+            }
+
+            bool put = false;
+            foreach (PhaseKnot knot in knots.OrderBy(x => x.Video))
+                put |= PutKnot(knot, cpV, cpT);
+
+            return put;
+        }
+
+        private sealed class PhaseKnot
+        {
+            public double Video;
+            public double Distance;
+            public bool Break;
+            public bool Hold;
+            public string What;
+        }
+
+        /// <summary>
+        /// (2.32.0) A knot of the start or a turn between two knots of the curve (never past the last one): on its frame, its time of the
+        /// race as between the checkpoints, its distance on from the knot before it (the same on the block and at the wall), speeds a
+        /// swimmer can have (the flight up to 15 m/s, under the water 1–3.5 m/s, after the breakout 0.6–2.8 m/s).
+        /// </summary>
+        private bool PutKnot(PhaseKnot knot, List<double> cpV, List<double> cpT)
+        {
+            int n = knotV.Count;
+            int k = 0;
+            while (k < n && knotV[k] < knot.Video)
+                k++;
+            if (k <= 0 || k >= n)
+                return false;
+
+            double race = Map(knot.Video, cpV, cpT);
+            if (knot.Video < knotV[k - 1] + 0.05 || knot.Video > knotV[k] - 0.05 || race < knotT[k - 1] + 0.05 || race > knotT[k] - 0.05)
+                return false;
+
+            double before = knotD[k - 1], next = knotD[k];
+            if (knot.Hold ? Math.Abs(knot.Distance - before) > 1e-9 : knot.Distance < before + 0.2 / K || knot.Distance > next - 0.2 / K)
+                return false;
+
+            if (!knot.Hold)
+            {
+                double speedIn = (knot.Distance - before) / (race - knotT[k - 1]) * K;
+                double speedOut = (next - knot.Distance) / (knotT[k] - race) * K;
+                double most = knot.What == "entry" ? 15.0 : 3.5;
+                double least = knot.What == "entry" ? 1.5 : 1.0;
+                if (speedIn < least || speedIn > most || speedOut < 0.6 || speedOut > (knot.What == "entry" ? 3.5 : 2.8))
+                    return false;
+            }
+
+            knotT.Insert(k, race);
+            knotV.Insert(k, knot.Video);
+            knotD.Insert(k, knot.Distance);
+            knotBreak.Insert(k, knot.Break);
+            return true;
+        }
+
         // (2.31.0) Where the swimmer enters the water after the start when the entry is not marked (m from the wall): about 3 m after a
         // dive, 1.5 m in backstroke. Only so that the block and the flight have no speed.
         internal const double DiveEntry = 3.0;
@@ -654,8 +785,13 @@ namespace Kinovea.ScreenManager
             double breakout = lapBreakouts[lap];
             if (!double.IsNaN(breakout))
                 from = Math.Min(from, breakout);
-            return Math.Max(start, from);
+
+            // (2.32.0) A millisecond after the entry or the push: on their knot the speed is the one of the flight or of the wall before it.
+            return Math.Max(start, from) + KnotNudge;
         }
+
+        /// <summary>(2.32.0) The swimmer is in the water this long after the knot of the entry or the push off the wall (s).</summary>
+        internal const double KnotNudge = 0.001;
 
         /// <summary>The frame of a checkpoint on the video (s after the start), null without a time.</summary>
         private double? TimeAtCheckpoint(int distance)
@@ -794,11 +930,13 @@ namespace Kinovea.ScreenManager
             int first = 0;
             for (int i = 1; i < n; i++)
             {
-                bool wall = knotD[i] < Distance && Math.Abs(knotD[i] / Pool - Math.Round(knotD[i] / Pool)) < 1e-9;
+                // (2.32.0) Pieces at the walls as before, and at the release, the entry and the push off a wall (knotBreak).
+                bool wall = i < knotBreak.Count ? knotBreak[i] : knotD[i] < Distance && Math.Abs(knotD[i] / Pool - Math.Round(knotD[i] / Pool)) < 1e-9;
                 if (!wall && i < n - 1)
                     continue;
 
-                // The knots first..i are one length (or what is marked of it).
+                // The knots first..i are one length (or what is marked of it); a wall and the push off it, or the start and the release
+                // from the block, a piece on the spot (no speed); the release and the entry the flight.
                 List<double> x = knotT.GetRange(first, i - first + 1), y = knotD.GetRange(first, i - first + 1);
                 double[] m = PchipSlopes(x, y);
 

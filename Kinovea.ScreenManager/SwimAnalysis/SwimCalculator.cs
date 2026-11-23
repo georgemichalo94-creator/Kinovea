@@ -64,7 +64,11 @@ namespace Kinovea.ScreenManager
         public bool Official;
         public double? OfficialTime;
 
-        /// <summary>The time of the mark on the video when T is the official time (the frames round it off; the graphics follow it).</summary>
+        /// <summary>
+        /// The time of the mark on the video when T is the official time: only for the notice of the analysis window (MarkApart). Since
+        /// 2.32.0 the official time is the time of the checkpoint on the video too (until 2.31.0 the graphics and what is counted or
+        /// timed between the checkpoints followed the frame of the mark).
+        /// </summary>
         public double? MarkT;
 
         /// <summary>
@@ -83,20 +87,22 @@ namespace Kinovea.ScreenManager
         public double FrameSlack;
 
         /// <summary>
-        /// The checkpoint is passed at this race time of the video: its mark's frame (T without a mark), so that the graphics of the
-        /// frame of the mark show it when T is the official time a little after the frame. A mark between two frames (the pilot
-        /// keeps the time read, or the official one) is passed on the frame nearest to it, the one shown for it.
+        /// The checkpoint is passed at this race time of the video: at T, the official time where typed (2.32.0, the analyst's request:
+        /// the official splits also when the mark is a little before or after them; until 2.31.0 on the frame of the mark). A time between
+        /// two frames is passed on the frame nearest to it, the one shown for it.
         /// </summary>
         public bool PassedAt(double t)
         {
-            double? at = MarkT ?? T;
-            return at.HasValue && at.Value <= t + FrameSlack + 1e-6;
+            return T.HasValue && T.Value <= t + FrameSlack + 1e-6;
         }
 
-        /// <summary>Its time on the video (MarkT, else T; NaN: none), for the order of the checkpoints passed.</summary>
+        /// <summary>
+        /// Its time on the video (NaN: none): T, the official time where typed (2.32.0; until 2.31.0 the frame of its mark, MarkT), for
+        /// the order of the checkpoints passed and what is counted or timed between them.
+        /// </summary>
         public double OnVideo
         {
-            get { return (MarkT ?? T) ?? double.NaN; }
+            get { return T ?? double.NaN; }
         }
 
         /// <summary>
@@ -417,8 +423,8 @@ namespace Kinovea.ScreenManager
                 turnWalls.Add(w);
 
             // (2.9.5b) What is counted or timed on the video (the strokes of a segment, the turn from the touch to the feet off, the last
-            // stroke before a wall) is between the frames of the checkpoints: their marks (OnVideo), also where an official time stands
-            // for the time of the checkpoint a little off its frame. The same as the times when the marks are at the official times.
+            // stroke before a wall) is between the times of the checkpoints on the video (OnVideo): since 2.32.0 the official ones where
+            // typed, also when the mark is a little before or after (until 2.31.0 the frames of the marks).
             Dictionary<int, double> videoAt = new Dictionary<int, double>();
             foreach (SwimRow r in result.Rows)
             {

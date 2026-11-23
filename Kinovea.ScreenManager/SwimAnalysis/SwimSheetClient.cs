@@ -621,6 +621,24 @@ namespace Kinovea.ScreenManager
         /// <summary>Lets the backend recognize our requests inside a project that has its own doPost.</summary>
         public const string AppId = "kinovea-swim";
 
+        /// <summary>
+        /// (2.32.0) In place of a distance no swimmer has: the estimate of the video graphics for the breakout after this wall (from the
+        /// times), said as an estimate; nothing when there is none or a value stands.
+        /// </summary>
+        private static void Estimated(JObject target, SwimReel reel, int wall, string key, double? standing)
+        {
+            if (standing.HasValue || reel == null || reel.Pool <= 0)
+                return;
+
+            int lap = wall / reel.Pool;
+            double estimate;
+            if (!reel.BreakoutDistances.TryGetValue(lap, out estimate) || reel.BreakoutMeasured.Contains(lap))
+                return;
+
+            target[key] = Math.Round(estimate, 1);
+            target["underwaterEstimated"] = true;
+        }
+
         public static string Build(SwimRace race, SwimComputed computed, List<SwimTechPhase> tech, SwimTiming timing, long timeOrigin,
             SwimSettings settings, string videoName, string action, SwimFinal finalOfEvent = null, bool drawCharts = false, JObject extra = null)
         {
@@ -713,11 +731,28 @@ namespace Kinovea.ScreenManager
             manual["entryVelHands"] = race.EntryVelHands;
             manual["entryVelHips"] = race.EntryVelHips;
             manual["entryVelFeet"] = race.EntryVelFeet;
-            manual["underwaterDist"] = race.UnderwaterDist;
+            // (2.32.0) A distance no swimmer has is not sent (a measurement with the calibration of another frame of a moving camera); the
+            // estimate of the video graphics instead, said as an estimate.
+            // Only for an estimate in place of such a distance: the send never fails because of it.
+            SwimReel reel = null;
+            try
+            {
+                reel = race.IsTraining ? null : SwimReel.Build(race, computed);
+            }
+            catch (Exception)
+            {
+                reel = null;
+            }
+
+            bool startUnderwater = SwimReel.PossibleBreakout(race, 0, race.UnderwaterDist);
+            bool startBreakout = SwimReel.PossibleBreakout(race, 0, race.BreakoutDist);
+            manual["underwaterDist"] = startUnderwater ? race.UnderwaterDist : null;
             // (2.15.0) The start's distance estimated from the times (not measured): the script marks it and takes no speed from it.
-            if (race.UnderwaterEstimated && race.UnderwaterDist.HasValue)
+            if (startUnderwater && race.UnderwaterEstimated && race.UnderwaterDist.HasValue)
                 manual["underwaterEstimated"] = true;
-            manual["breakoutDist"] = race.BreakoutDist;
+            manual["breakoutDist"] = startBreakout ? race.BreakoutDist : null;
+            if (!startUnderwater || !startBreakout)
+                Estimated(manual, reel, 0, "underwaterDist", startUnderwater ? race.UnderwaterDist : null);
             manual["finishLastStrokeDist"] = race.FinishLastStrokeDist;
 
             // (2.15.0) The body length (toes → head): where the head is at the push-off from each wall.
@@ -728,12 +763,15 @@ namespace Kinovea.ScreenManager
             foreach (var pair in race.Turns)
             {
                 JObject t = new JObject();
-                t["underwaterDist"] = pair.Value.UnderwaterDist;
+                bool possible = SwimReel.PossibleBreakout(race, pair.Key, pair.Value.UnderwaterDist);
+                t["underwaterDist"] = possible ? pair.Value.UnderwaterDist : null;
                 t["turnTime"] = pair.Value.TurnTime;
+                if (!possible)
+                    Estimated(t, reel, pair.Key, "underwaterDist", null);
 
                 // (2.15.0) The estimate from the times is said (the report does not take a speed from it), and the underwater speed of
-                // the turn as the program measures it: (breakout distance − body length) / (breakout − push-off), m/s.
-                if (pair.Value.UnderwaterEstimated && pair.Value.UnderwaterDist.HasValue)
+                // the turn as the program measures it: (2.32.0, as the start) breakout distance / (breakout − push-off), m/s.
+                if (possible && pair.Value.UnderwaterEstimated && pair.Value.UnderwaterDist.HasValue)
                     t["underwaterEstimated"] = true;
                 SwimTechPhase turnPhase = tech == null ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == pair.Key);
                 double? uwSpeed = turnPhase != null ? turnPhase.Value("uwVel") : null;
