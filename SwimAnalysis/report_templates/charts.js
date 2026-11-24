@@ -84,6 +84,11 @@ function lineChart(o) {
     g += `<line x1="${m.l}" y1="${y.toFixed(1)}" x2="${w - m.r + 4}" y2="${y.toFixed(1)}" stroke="${o.refLine.color || C.dim}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
     if (o.refLine.label) g += `<text x="${m.l + 5}" y="${(y - 4).toFixed(1)}" class="an">${esc(o.refLine.label)}</text>`;
   }
+  (o.vlines || []).forEach(vl => {
+    const x = (X(vl.at - 1) + X(vl.at)) / 2;
+    g += `<line x1="${x.toFixed(1)}" y1="${m.t}" x2="${x.toFixed(1)}" y2="${(m.t + ih).toFixed(1)}" stroke="${C.navy}" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>`;
+    if (vl.label) g += `<text x="${(x + 4).toFixed(1)}" y="${m.t + 11}" class="an">${esc(vl.label)}</text>`;
+  });
   const every = o.every || Math.max(1, Math.ceil(n / 16));
   o.cats.forEach((c, i) => {
     if (i % every !== 0 && i !== n - 1) return;
@@ -165,7 +170,7 @@ function barChart(o) {
  * Vertical bars around zero: below zero (faster, blue), above (slower, orange). o: { w, h, cats, values, fmt, every, yTitle, labels }
  */
 function vDiverging(o) {
-  const w = o.w, h = o.h, fmt = o.fmt || (v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(2));
+  const w = o.w, h = o.h, fmt = o.fmt || (v => { const r = Math.round(v * 100) / 100; return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r).toFixed(2); });
   const m = { l: o.ml || 40, r: 10, t: 16, b: 22 };
   const vals = o.values.filter(v => v !== null);
   const amp = Math.max(0.1, Math.max.apply(null, vals.map(Math.abs))) * 1.15;
@@ -272,12 +277,15 @@ function startStrip(o) {
     { d: s.bd, t: s.bt, top: 'Έξοδος', sub: o.fmt(s.bt) + ' s · ' + s.bd.toFixed(2) + ' μ.' },
     { d: 15, t: s.t15, top: '15 μ.', sub: o.fmt(s.t15) + ' s' }
   ];
+  const close = 15 - s.bd < 2.6;
   ev.forEach((e, i) => {
-    const x = X(e.d), anchor = i === 0 ? 'start' : i === ev.length - 1 ? 'end' : 'middle';
+    const x = X(e.d);
+    let anchor = i === 0 ? 'start' : i === ev.length - 1 ? 'end' : 'middle', tx = x;
+    if (close && i === 2) { anchor = 'end'; tx = x - 8; }
     g += `<line x1="${x.toFixed(1)}" y1="40" x2="${x.toFixed(1)}" y2="88" stroke="${C.navy}" stroke-width="1.5"/>`;
     g += `<circle cx="${x.toFixed(1)}" cy="40" r="4.5" fill="${C.navy}"/>`;
-    g += `<text x="${x.toFixed(1)}" y="16" class="et" text-anchor="${anchor}">${esc(e.top)}</text>`;
-    g += `<text x="${x.toFixed(1)}" y="30" class="es" text-anchor="${anchor}">${esc(e.sub)}</text>`;
+    g += `<text x="${tx.toFixed(1)}" y="16" class="et" text-anchor="${anchor}">${esc(e.top)}</text>`;
+    g += `<text x="${tx.toFixed(1)}" y="30" class="es" text-anchor="${anchor}">${esc(e.sub)}</text>`;
   });
   // Speeds under the zones.
   const sp = [
@@ -332,3 +340,83 @@ function turnStrip(o) {
 }
 
 module.exports = { C, lineChart, barChart, vDiverging, hDiverging, stacked, startStrip, turnStrip, esc };
+
+// ---- (2nd version) scorecard bullets, the race in 50s, ΔΑΚ components
+
+/** One bullet: the athlete (dot), the PB (grey tick), the reference (dark tick), on a scale of the three. */
+function bullet(o) {
+  const w = o.w, h = 22, vals = [o.a, o.pb, o.ref].filter(v => v !== null && v !== undefined && isFinite(v));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = Math.max((hi - lo) * 0.35, Math.abs(hi) * 0.01, 0.02);
+  lo -= pad; hi += pad;
+  const X = v => 8 + (w - 16) * (o.better === 'lower' ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo));
+  let g = `<rect x="4" y="${h / 2 - 4}" width="${w - 8}" height="8" rx="4" fill="#E8EEF5"/>`;
+  if (o.ref !== null && o.ref !== undefined) g += `<rect x="${(X(o.ref) - 1.5).toFixed(1)}" y="${h / 2 - 9}" width="3" height="18" rx="1.5" fill="${C.ref}"/>`;
+  if (o.pb !== null && o.pb !== undefined) g += `<rect x="${(X(o.pb) - 1.5).toFixed(1)}" y="${h / 2 - 7}" width="3" height="14" rx="1.5" fill="${C.pb}"/>`;
+  g += `<circle cx="${X(o.a).toFixed(1)}" cy="${h / 2}" r="7" fill="${C.race}" stroke="#fff" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="chart">${g}</svg>`;
+}
+
+/** The race in boxes of 50: time, ΔΑΚ, coloured by the ΔΑΚ against the mean of the race (blue better, orange worse). */
+function heatStrip(o) {
+  const n = o.items.length, w = o.w;
+  const perRow = n <= 10 ? n : n <= 16 ? 8 : n <= 30 ? 10 : 11;
+  const rows = Math.ceil(n / perRow), gap = 6, bw = (w - gap * (perRow - 1)) / perRow, bh = n > 16 ? 42 : n > 10 ? 46 : 62;
+  const mean = o.items.reduce((s, it) => s + it.dak, 0) / n;
+  const amp = Math.max(0.25, Math.max(...o.items.map(it => Math.abs(it.dak - mean))));
+  let g = '';
+  o.items.forEach((it, i) => {
+    const r = Math.floor(i / perRow), c = i % perRow, x = c * (bw + gap), y = r * (bh + gap);
+    const d = (it.dak - mean) / amp;
+    const fill = o.neutral ? '#EEF2F7' : d < 0 ? mix('#FFFFFF', '#9DBDF0', Math.min(1, -d)) : mix('#FFFFFF', '#F6C08F', Math.min(1, d));
+    g += `<rect x="${x.toFixed(1)}" y="${y}" width="${bw.toFixed(1)}" height="${bh}" rx="7" fill="${fill}" stroke="${it.mark ? C.navy : '#DCE3EB'}" stroke-width="${it.mark ? 1.6 : 1}"/>`;
+    const sm = n > 10;
+    const xs = n > 16;
+    g += `<text x="${(x + bw / 2).toFixed(1)}" y="${y + (xs ? 11 : sm ? 12 : 15)}" class="hs${sm ? ' s' : ''}" text-anchor="middle">${esc(it.label)}</text>`;
+    g += `<text x="${(x + bw / 2).toFixed(1)}" y="${y + (xs ? 25.5 : sm ? 27.5 : 36)}" class="hv${sm ? ' s' : ''}" text-anchor="middle">${esc(it.time)}</text>`;
+    g += `<text x="${(x + bw / 2).toFixed(1)}" y="${y + (xs ? 37.5 : sm ? 40.5 : 53)}" class="hd${sm ? ' s' : ''}" text-anchor="middle">ΔΑΚ ${esc(it.dakText)}</text>`;
+  });
+  const h = rows * (bh + gap) - gap;
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="chart">${g}</svg>`;
+}
+
+function mix(a, b, t) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+/** Vertical stacked bars from zero: o: { w, h, cats, parts: [{ name, color, values }], fmt, totalFmt, every, yTitle } */
+function vStacked(o) {
+  const w = o.w, h = o.h, m = { l: 46, r: 12, t: 30, b: 26 };
+  const n = o.cats.length;
+  const totals = o.cats.map((_, i) => o.parts.reduce((s, p) => s + p.values[i], 0));
+  const nt = niceTicks(0, Math.max(...totals) * 1.12, 4);
+  const iw = w - m.l - m.r, ih = h - m.t - m.b, bw = Math.min(46, iw / n * 0.64), Y = v => m.t + ih * (1 - v / nt.hi);
+  let g = '';
+  nt.ticks.forEach(t => {
+    g += `<line x1="${m.l}" y1="${Y(t).toFixed(1)}" x2="${w - m.r}" y2="${Y(t).toFixed(1)}" stroke="${C.grid}"/>`;
+    g += `<text x="${m.l - 6}" y="${(Y(t) + 3.5).toFixed(1)}" class="ax" text-anchor="end">${esc(String(+t.toFixed(1)))}</text>`;
+  });
+  const every = o.every || 1;
+  o.cats.forEach((c, i) => {
+    const cx = m.l + iw * (i + 0.5) / n;
+    let base = 0;
+    o.parts.forEach((p, k) => {
+      const v = p.values[i], y0 = Y(base), y1 = Y(base + v);
+      g += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(y1 + (k ? 1 : 0)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, y0 - y1 - (k ? 1 : 0)).toFixed(1)}" rx="${k === o.parts.length - 1 ? 4 : 0}" fill="${p.color}"/>`;
+      base += v;
+    });
+    if (n <= 16) g += `<text x="${cx.toFixed(1)}" y="${(Y(totals[i]) - 5).toFixed(1)}" class="pl" text-anchor="middle">${esc((o.totalFmt || (v => v.toFixed(2)))(totals[i]))}</text>`;
+    if ((i % every === 0 && !(i !== n - 1 && every > 1 && n - 1 - i < every)) || i === n - 1) g += `<text x="${cx.toFixed(1)}" y="${h - 8}" class="ax" text-anchor="middle">${esc(c)}</text>`;
+  });
+  g += `<line x1="${m.l}" y1="${m.t + ih}" x2="${w - m.r}" y2="${m.t + ih}" stroke="${C.axis}"/>`;
+  if (o.yTitle) g += `<text x="${m.l}" y="12" class="ax">${esc(o.yTitle)}</text>`;
+  g += legend(o.parts.map(p => ({ name: p.name, color: p.color, kind: 'bar' })), Math.max(m.l + 160, w - m.r - o.parts.reduce((s, p) => s + 17 + p.name.length * 5.6 + 16, 0)), 14);
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="chart">${g}</svg>`;
+}
+
+module.exports.bullet = bullet;
+module.exports.heatStrip = heatStrip;
+module.exports.vStacked = vStacked;
+module.exports.mix = mix;
