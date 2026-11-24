@@ -2,9 +2,12 @@
 # pages that the Apps Script makes are printed by the DLL (SwimPdfPrinter) with the Edge of the runner, through its DevTools (and a few
 # from its command line too): a PDF, A4, as many pages as the report, with the fonts of the report embedded (Inter only: a letter
 # missing from them would bring another font), in time; the fonts in the DLL; the English of the new texts; the PDFs for a look.
-# Windows PowerShell 5.1 (.NET Framework, as Kinovea).
+# With -server (pp_server.js: the script of the KOE App on the mock of Apps Script, over HTTP) and -races (fm_make.js): from end to
+# end, a fictional race of Kinovea asks for its PDF, the DLL prints the pages that come and sends the PDF to be kept; and the queue of
+# the requests with a PDF to keep. Windows PowerShell 5.1 (.NET Framework, as Kinovea).
 #   powershell -File pp_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls> -dir <folder of rv2_build.js> -out <folder>
-param([string]$sm, [string]$bin, [string]$dir, [string]$out)
+#     [-server http://127.0.0.1:<port>/exec -races <folder of fm_make.js>]
+param([string]$sm, [string]$bin, [string]$dir, [string]$out, [string]$server, [string]$races)
 $ErrorActionPreference = 'Stop'
 $sm = (Resolve-Path $sm).Path; $bin = (Resolve-Path $bin).Path
 if ($out) { New-Item -ItemType Directory -Force -Path $out | Out-Null; $out = (Resolve-Path $out).Path }
@@ -18,7 +21,7 @@ $script:resolving = $false
   $script:resolving = $true
   try { return [System.Reflection.Assembly]::LoadFrom($p) } finally { $script:resolving = $false } })
 $a = [System.Reflection.Assembly]::LoadFrom($sm)
-[void][System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Newtonsoft.Json.dll'))
+$json = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Newtonsoft.Json.dll'))
 function T($n) { return $a.GetType('Kinovea.ScreenManager.' + $n, $true) }
 $static = [System.Reflection.BindingFlags]'Public,NonPublic,Static'
 $fails = 0
@@ -89,6 +92,110 @@ $keys = @('δεν βρέθηκε ο Microsoft Edge ούτε το Google Chrome',
   'Το PDF της νέας αναφοράς δεν αποθηκεύτηκε ({0}): γίνεται το PDF του φύλλου, όπως πριν.')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts (' + $missing.Count + ' missing: ' + ($missing -join ' | ') + ')')
+
+# ---- From end to end with the script of the KOE App, and the queue of the requests with a PDF to keep.
+if ($server -and $races) {
+  $tRace = T 'SwimRace'; $tTiming = T 'SwimTiming'; $tCalc = T 'SwimCalculator'; $tTech = T 'SwimTechCalculator'
+  $tPayload = T 'SwimPayload'; $tClient = T 'SwimSheetClient'; $tSettings = T 'SwimSettings'
+  $all = [System.Reflection.BindingFlags]'Public,NonPublic,Instance,Static'
+  $deserialize = $json.GetType('Newtonsoft.Json.JsonConvert', $true).GetMethod('DeserializeObject', [Type[]]@([string], [Type]))
+  $parse = $json.GetType('Newtonsoft.Json.Linq.JObject', $true).GetMethod('Parse', [Type[]]@([string]))
+  $tCalc.GetField('LengthFromRate').SetValue($null, $true)
+  $inv = [System.Globalization.CultureInfo]::InvariantCulture
+  $build = $tPayload.GetMethod('Build')
+  $cases = [System.IO.File]::ReadAllLines([System.IO.Path]::Combine($races, 'cases.txt'), $utf8)
+  $line = @($cases | Where-Object { $_ -like '*;mx' } | Where-Object {
+      $t = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($races, 'race_' + $_.Split(';')[0] + '.json'), $utf8)
+      $t.Contains('"Distance":100,') -and $t.Contains('"Style":"fs"') -and $t.Contains('"Relay":false') -and $t.Contains('"Pool":50,') })[0]
+  Check ($null -ne $line) 'a fictional 100 m free in a 50 m pool'
+  $f = $line.Split(';')
+  $text = [System.IO.File]::ReadAllText([System.IO.Path]::Combine($races, 'race_' + $f[0] + '.json'), $utf8)
+  $timing = [Activator]::CreateInstance($tTiming)
+  $timing.AverageTimestampsPerFrame = [double]::Parse($f[1], $inv); $timing.FrameIntervalMilliseconds = [double]::Parse($f[2], $inv); $timing.HighSpeedFactor = [double]::Parse($f[3], $inv)
+  $settings = [Activator]::CreateInstance($tSettings)
+  $settings.WebAppUrl = $server; $settings.Token = 'tok'
+  function Race($id) {
+    $r = $deserialize.Invoke($null, @([string]$text, [Type]$tRace))
+    [void]$tRace.GetMethod('EnsureLists', $all).Invoke($r, @())
+    $r.Id = $id; $r.Athlete = 'Αθλητής Δείγμα'; $r.Competition = 'Αγώνας δείγμα'; $r.Location = 'Πόλη δείγμα'; $r.Round = 'Τελικός'
+    return $r
+  }
+  function Body($r, $action, $extra) {
+    $c = $tCalc.GetMethod('Compute').Invoke($null, @($r, $timing, [double]0.5))
+    $tech = $tTech.GetMethod('Compute').Invoke($null, @($r, $c, $timing))
+    $x = if ($extra) { $parse.Invoke($null, @([string]$extra)) } else { $null }
+    return [string]$build.Invoke($null, @($r, $c, $tech, $timing, [long]0, $settings, 'video.mp4', [string]$action, $null, $false, $x))
+  }
+  $client = [Activator]::CreateInstance($tClient)
+  Register-ObjectEvent -InputObject $client -EventName StateChanged -SourceIdentifier 'swimsync' | Out-Null
+  # The answers of the client (not "Sending…"), until one of a PDF to keep or of a state as asked, or the time.
+  function Answer([bool]$store, [int]$seconds) {
+    $until = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $until) {
+      $ev = Wait-Event -SourceIdentifier 'swimsync' -Timeout 2
+      if ($null -eq $ev) { continue }
+      Remove-Event -EventIdentifier $ev.EventIdentifier
+      $e = $ev.SourceEventArgs
+      if ($e.State.ToString() -eq 'Sending') { continue }
+      if ([bool]$e.Store -eq $store) { return $e }
+    }
+    return $null
+  }
+  # What came to the script, in its order (the array itself: Windows PowerShell gives a JSON array as one object).
+  function ServerLog() {
+    $parsed = ConvertFrom-Json (Invoke-WebRequest -Uri ($server -replace '/exec$', '/log') -UseBasicParsing).Content
+    $items = New-Object System.Collections.ArrayList
+    foreach ($it in $parsed) { [void]$items.Add($it) }
+    return ,$items.ToArray()
+  }
+
+  # 1. The PDF asked for with v2: the pages of the report come in place of the PDF of the sheet.
+  $race = Race 'e2e-ci-1'
+  $client.Enqueue($server, (Body $race 'pdf' '{"v2":true}'), $race.Id, $true)
+  $e = Answer $false 120
+  $v2 = if ($e -and $e.Result.Raw) { $e.Result.Raw['v2'] } else { $null }
+  $pages = if ($v2) { [int]$v2['pages'].ToString() } else { 0 }
+  Check ($e -and $e.Result.Ok -and $v2 -and $pages -ge 5 -and -not $e.Result.PdfUrl) ('the pages of the report from the script: ' + $pages + ' pages' + $(if ($e) { ' · ' + $e.Message } else { ' · no answer' }))
+  if ($v2) {
+    # 2. Printed by the DLL and sent to be kept: the answer of a PDF, the PDF of the 2nd version in the folder of the reports.
+    $printed = $print.Invoke($null, @([string]$v2['html'].ToString(), [string]$null, [int]90))
+    Check ($printed.Ok -and $printed.Pages -eq $pages) ('printed by ' + $printed.Browser + ' (' + $printed.Method + '): ' + $printed.Pages + ' pages of ' + $pages + ', ' + [math]::Round($printed.Seconds, 1) + ' s' + $(if ($printed.Error) { ' · ' + $printed.Error } else { '' }))
+    if ($printed.Ok) {
+      $extra = '{"raceId":"' + $race.Id + '","pdf":"' + [Convert]::ToBase64String($printed.Pdf) + '"}'
+      $client.EnqueueStore($server, (Body $race 'pdfStore' $extra), $race.Id)
+      $s = Answer $true 120
+      $pdf = if ($s -and $s.Result.Raw) { $s.Result.Raw['pdf'] } else { $null }
+      Check ($s -and $s.Result.Ok -and $s.Result.PdfUrl -and $pdf -and $pdf['v2'].ToString() -eq 'True' -and $pdf['name'].ToString().EndsWith('.pdf')) ('the PDF kept by the script: ' + $(if ($s) { $s.Result.PdfUrl + ' ' + $s.Message } else { 'no answer' }))
+      $log = ServerLog
+      $kept = @($log | Where-Object { $_.action -eq 'pdfStore' -and $_.raceId -eq $race.Id })
+      Check ($kept.Count -eq 1 -and $kept[0].pdfPages -eq $pages -and $kept[0].ok) ('the script got the PDF whole: ' + $(if ($kept.Count) { '' + $kept[0].pdfPages + ' pages, ' + $kept[0].bytes + ' bytes' } else { 'nothing' }))
+
+      # 3. The queue: a state in flight, then a PDF to keep and two newer states of the same race: the PDF is kept, the newest state
+      # goes after it (the older one replaced), nothing lost.
+      $slow = Race 'e2e-slow-2'
+      $client.Enqueue($server, (Body $slow 'update' $null), $slow.Id, $false)
+      [void](Answer $false 60)
+      $log = ServerLog
+      $before = $log.Count
+      $client.Enqueue($server, (Body $slow 'update' $null), $slow.Id, $false)
+      Start-Sleep -Milliseconds 300
+      $client.EnqueueStore($server, (Body $slow 'pdfStore' ('{"raceId":"' + $slow.Id + '","pdf":"' + [Convert]::ToBase64String($printed.Pdf) + '"}')), $slow.Id)
+      $slow.Lane = 3
+      $client.Enqueue($server, (Body $slow 'update' $null), $slow.Id, $false)
+      $slow.Lane = 5
+      $client.Enqueue($server, (Body $slow 'update' $null), $slow.Id, $false)
+      $got = @(); $until = (Get-Date).AddSeconds(90)
+      while ($got.Count -lt 3 -and (Get-Date) -lt $until) { $x = Answer ($got.Count -eq 1) 30; if ($x) { $got += $x } else { break } }
+      Start-Sleep -Milliseconds 300
+      $log = ServerLog
+      $after = @($log | Select-Object -Skip $before | Where-Object { $_.raceId -eq $slow.Id })
+      $order = ($after | ForEach-Object { $_.action }) -join ', '
+      Check ($order -eq 'update, pdfStore, update' -and @($after | Where-Object { -not $_.ok }).Count -eq 0) ('the queue with a PDF to keep: ' + $order)
+      Check ($client.HasWaiting($slow.Id) -eq $false) 'nothing of the race waits after them'
+    }
+  }
+  Unregister-Event -SourceIdentifier 'swimsync'
+}
 
 # ---- What the printing left: no browser of its own still running, no folder of a print.
 Start-Sleep -Milliseconds 500
