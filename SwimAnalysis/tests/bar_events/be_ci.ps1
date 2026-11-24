@@ -232,6 +232,105 @@ $w2 = $wheelDistance.Invoke($null, [object[]]@('', 1, [System.Windows.Forms.Keys
 $w3 = $wheelDistance.Invoke($null, [object[]]@('49,5', 1, [System.Windows.Forms.Keys]::Shift, [decimal]8))
 Check ($w1 -eq '3.07' -and $w2 -eq '8.00' -and $w3 -eq '50.00') ('the wheel in the cells of the turns: ' + $w1 + ' ' + $w2 + ' ' + $w3)
 
+# ---- (2.38.1) The wheel in the edited cell of the distance under the water, in the panel of the analysis (a fictional 100 m, its
+# turn): over the cell it turns the distance (the parts of a notch of a fine wheel add up) and the list does not move; elsewhere it
+# changes nothing; the value goes into the race at the end of the edit. Then the wheel as Windows sends it, to the editor of the cell
+# (the editor gives it to the grid: in 2.37.0 the wheel there did nothing).
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class BeWheel
+{
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out Pt p);
+    struct Pt { public int X; public int Y; }
+    public static int[] Cursor() { Pt p; return GetCursorPos(out p) ? new int[] { p.X, p.Y } : null; }
+    public static void Wheel(IntPtr hWnd, int delta, int x, int y)
+    {
+        SendMessage(hWnd, 0x020A, new IntPtr((delta & 0xFFFF) << 16), new IntPtr(((y & 0xFFFF) << 16) | (x & 0xFFFF)));
+    }
+}
+'@
+$form = $null
+try {
+  $mgrType = T 'SwimAnalysisManager'
+  $mgr = $mgrType.GetProperty('Instance').GetValue($null)
+  $mgrType.GetProperty('Settings').SetValue($mgr, [Activator]::CreateInstance((T 'SwimSettings')))
+  $p = $picks['100|50|m|fs|False']
+  $l = Load $p.n $p.f
+  $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
+  $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
+  $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
+  $tForm = T 'FormSwimAnalysis'
+  $form = [Activator]::CreateInstance($tForm, [object[]]@($mgr))
+  $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+  $form.ShowInTaskbar = $false
+  $form.Location = New-Object System.Drawing.Point 0, 0
+  $form.Size = New-Object System.Drawing.Size 1000, 700
+  $form.Show(); [System.Windows.Forms.Application]::DoEvents()
+  [void]$tForm.GetMethod('RefreshAll').Invoke($form, @())
+  $form.PageIndex = 3; [System.Windows.Forms.Application]::DoEvents()
+  if ($form.PageIndex -ne 3) { throw ('the page of the turns is not shown: ' + $form.PageIndex) }
+  $grid = $tForm.GetField('gridTurns', $all).GetValue($form)
+  if ($grid.Rows.Count -lt 1 -or -not ($grid.Rows[0].Tag -is [int])) { throw ('no turn in the grid: ' + $grid.Rows.Count) }
+  $wall = [int]$grid.Rows[0].Tag
+  $col = $grid.Columns['uwDist'].Index
+  $grid.CurrentCell = $grid.Rows[0].Cells[$col]
+  [void]$grid.BeginEdit($true)
+  $editor = $grid.EditingControl
+  if ($null -eq $editor) { throw 'the cell is not edited' }
+  $editor.Text = '7.50'
+  $cellArea = $grid.RectangleToScreen($grid.GetCellDisplayRectangle($col, 0, $false))
+  $in = New-Object System.Drawing.Point ($cellArea.X + [int]($cellArea.Width / 2)), ($cellArea.Y + [int]($cellArea.Height / 2))
+  $away = New-Object System.Drawing.Point ($cellArea.X + [int]($cellArea.Width / 2)), ($cellArea.Bottom + 40)
+  $turnsWheel = $tForm.GetMethod('TurnsWheel', $all)
+  function TurnsWheel($delta, $point, $keys) {
+    $h = New-Object System.Windows.Forms.HandledMouseEventArgs -ArgumentList @([System.Windows.Forms.MouseButtons]::None, 0, 0, 0, [int]$delta)
+    $took = $turnsWheel.Invoke($form, [object[]]@($h, [int]$delta, $point, [System.Windows.Forms.Keys]$keys))
+    return @{ took = $took; handled = $h.Handled; text = $editor.Text }
+  }
+  $r1 = TurnsWheel 120 $in 'None'
+  $r2 = TurnsWheel -120 $in 'Control'
+  $r3 = TurnsWheel 60 $in 'None'
+  $r4 = TurnsWheel 60 $in 'None'
+  $r5 = TurnsWheel 120 $away 'Shift'
+  Check ($r1.took -and $r1.handled -and $r1.text -eq '7.51') ('the wheel over the edited cell of the turns: ' + $r1.text)
+  Check ($r2.took -and $r2.text -eq '7.41') ('there with Ctrl a tenth: ' + $r2.text)
+  Check ($r3.took -and $r3.handled -and $r3.text -eq '7.41' -and $r4.text -eq '7.42') ('the parts of a notch of a fine wheel add up: ' + $r3.text + ' ' + $r4.text)
+  Check (-not $r5.took -and -not $r5.handled -and $r5.text -eq '7.42') ('away from the cell the wheel changes nothing: ' + $r5.text)
+
+  # The wheel as Windows sends it: to the editor of the cell with the mouse over the cell, then with the mouse away from it.
+  $want = 7.42
+  [void][BeWheel]::SetCursorPos($in.X, $in.Y)
+  $at = [BeWheel]::Cursor()
+  if ($null -ne $at -and $at[0] -eq $in.X -and $at[1] -eq $in.Y) {
+    [BeWheel]::Wheel($editor.Handle, 120, $in.X, $in.Y); [System.Windows.Forms.Application]::DoEvents()
+    $s1 = $editor.Text
+    [BeWheel]::Wheel($editor.Handle, -240, $in.X, $in.Y); [System.Windows.Forms.Application]::DoEvents()
+    $s2 = $editor.Text
+    [void][BeWheel]::SetCursorPos($away.X, $away.Y)
+    [BeWheel]::Wheel($editor.Handle, 120, $away.X, $away.Y); [System.Windows.Forms.Application]::DoEvents()
+    $s3 = $editor.Text
+    Check ($s1 -eq '7.43' -and $s2 -eq '7.41' -and $s3 -eq '7.41') ('the wheel sent to the editor of the cell as Windows sends it: ' + $s1 + ' ' + $s2 + ' ' + $s3)
+    $want = 7.41
+  } else {
+    Write-Output ('note: the wheel as Windows sends it not checked (the mouse of this machine did not move: ' + ($at -join ',') + ')')
+  }
+
+  # The value into the race at the end of the edit.
+  [void]$grid.EndEdit(); [System.Windows.Forms.Application]::DoEvents()
+  $manual = $l.race.GetTurn($wall, $false)
+  $got = $null
+  if ($null -ne $manual -and $null -ne $manual.UnderwaterDist) { $got = [double]$manual.UnderwaterDist }
+  Check ($null -ne $got -and [Math]::Abs($got - $want) -lt 1e-9) ('the distance into the race at the end of the edit: ' + $got)
+} catch {
+  $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
+  Check $false ('the wheel in the edited cell of the turns: ' + $x.GetType().Name + ': ' + $x.Message + ' @ ' + (($x.StackTrace -split "`n" | Select-Object -First 3 | ForEach-Object { $_.Trim() }) -join ' < '))
+} finally {
+  if ($null -ne $form) { try { $form.Close(); $form.Dispose() } catch { } }
+}
+
 # ---- The English of the new texts.
 $map = (T 'SwimLangEnglish').GetField('Map', $static).GetValue($null)
 $keys = @('ΓΕΓΟΝΟΤΑ', 'ΑΓΩΝΑΣ', 'ΓΕΓΟΝΟΣ', 'ΤΙΜΗ', 'ΚΟΛΥΜΒΗΣΗ {0}–{1}{2}', 'ΑΛΛΑΓΗ ΣΚΥΤΑΛΗΣ {0}{1}', 'ΑΛΛΑΓΗ ΣΤΥΛ {0}{1}', 'ΣΤΡΟΦΗ {0}{1}',

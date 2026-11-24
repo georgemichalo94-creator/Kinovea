@@ -48,6 +48,8 @@ namespace Kinovea.ScreenManager
         /// <summary>A cell of the turns grid being edited: its race and its text before the edit.</summary>
         private SwimRace turnEditRace;
         private string turnEditText;
+        /// <summary>(2.38.1) The part of a notch of a fine wheel not yet turned in the edited cell of the turns.</summary>
+        private int turnsWheelDelta;
         private Timer liveTimer;
         private readonly ToolTip toolTip = new ToolTip();
         private Font boldGridFont;
@@ -1076,35 +1078,17 @@ namespace Kinovea.ScreenManager
             {
                 turnEditRace = manager.Race;
                 turnEditText = Convert.ToString(gridTurns.Rows[e.RowIndex].Cells[e.ColumnIndex].Value, CultureInfo.InvariantCulture);
+                turnsWheelDelta = 0;
             };
             gridTurns.CellEndEdit += GridTurns_CellEndEdit;
             gridTurns.CellDoubleClick += GridTurns_CellDoubleClick;
 
             // (2.37.0) The distance under the water also with the wheel while its cell is edited (two decimals, as the boxes of the start).
+            // (2.38.1) Through the wheel of the grid: the editor of a cell gives its wheel to the grid and raises no wheel event of its own
+            // (DataGridViewTextBoxEditingControl), so the handler of 2.37.0 on the editor never ran. Only with the mouse over the edited
+            // cell: elsewhere the wheel scrolls the list as before, and never changes a value.
             gridTurns.Columns["uwDist"].ToolTipText = DistanceHelp;
-            gridTurns.EditingControlShowing += (s, e) =>
-            {
-                TextBox editor = e.Control as TextBox;
-                if (editor == null || "swim-wheel".Equals(editor.Tag))
-                    return;
-
-                editor.Tag = "swim-wheel";
-                editor.MouseWheel += (o, w) =>
-                {
-                    DataGridViewCell cell = gridTurns.CurrentCell;
-                    if (cell == null || !gridTurns.IsCurrentCellInEditMode || gridTurns.Columns[cell.ColumnIndex].Name != "uwDist")
-                        return;
-
-                    HandledMouseEventArgs handled = w as HandledMouseEventArgs;
-                    if (handled != null)
-                        handled.Handled = true;
-                    int notches = w.Delta / 120;
-                    if (notches == 0)
-                        notches = Math.Sign(w.Delta);
-                    editor.Text = WheelDistance(editor.Text, notches, ModifierKeys, 8m);
-                    editor.SelectionStart = editor.Text.Length;
-                };
-            };
+            gridTurns.MouseWheel += (s, w) => TurnsWheel(w as HandledMouseEventArgs, w.Delta, Control.MousePosition, ModifierKeys);
 
             Label lblTurns = new Label
             {
@@ -1647,6 +1631,35 @@ namespace Kinovea.ScreenManager
             decimal value = now.HasValue ? Math.Round((decimal)Math.Max(-1e6, Math.Min(1e6, now.Value)), 2, MidpointRounding.AwayFromZero) + notches * step : seed;
             value = Math.Max(0m, Math.Min(50m, value));
             return value.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// (2.38.1) The wheel of the grid of the turns ('screen': where the mouse is): over the edited cell of the distance under the
+        /// water it turns the distance (WheelDistance; the parts of a notch of a fine wheel add up, as in the boxes) and the grid does not
+        /// scroll. True when the wheel was taken.
+        /// </summary>
+        private bool TurnsWheel(HandledMouseEventArgs handled, int delta, Point screen, Keys modifiers)
+        {
+            DataGridViewCell cell = gridTurns.CurrentCell;
+            TextBox editor = gridTurns.EditingControl as TextBox;
+            if (cell == null || editor == null || !gridTurns.IsCurrentCellInEditMode || gridTurns.Columns[cell.ColumnIndex].Name != "uwDist")
+                return false;
+
+            Rectangle area = gridTurns.RectangleToScreen(gridTurns.GetCellDisplayRectangle(cell.ColumnIndex, cell.RowIndex, false));
+            if (!area.Contains(screen))
+                return false;
+
+            if (handled != null)
+                handled.Handled = true;
+            turnsWheelDelta += delta;
+            int notches = turnsWheelDelta / 120;
+            if (notches == 0)
+                return true;
+
+            turnsWheelDelta -= notches * 120;
+            editor.Text = WheelDistance(editor.Text, notches, modifiers, 8m);
+            editor.SelectionStart = editor.Text.Length;
+            return true;
         }
 
         /// <summary>(2.37.0) How a distance box works (its tooltip).</summary>
