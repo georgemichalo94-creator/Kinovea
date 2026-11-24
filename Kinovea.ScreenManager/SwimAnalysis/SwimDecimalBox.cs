@@ -76,9 +76,34 @@ namespace Kinovea.ScreenManager
                         return (double)Clamp(typed.Value);
                 }
 
-                return empty ? (double?)null : (double)Value;
+                // Not a number (yet): the number as it was.
+                return empty ? (double?)null : (double)Kept;
             }
             set { SetNumber(value, false); }
+        }
+
+        /// <summary>
+        /// (2.38.0) The number of the box without NumericUpDown reading what is being typed: its Value reads the text in the language of
+        /// Windows, and in Greek the point is the thousands separator. A distance typed with one point too many ("3.30.", read as
+        /// 330) became the most of the box, 50.00, in the window that keeps each key typed.
+        /// </summary>
+        private decimal Kept
+        {
+            get
+            {
+                if (!UserEdit)
+                    return Value;
+
+                UserEdit = false;
+                try
+                {
+                    return Value;
+                }
+                finally
+                {
+                    UserEdit = true;
+                }
+            }
         }
 
         /// <summary>The number from the program, unless the user is typing in the box (what he types stays).</summary>
@@ -122,7 +147,7 @@ namespace Kinovea.ScreenManager
         private void SetNumber(double? value, bool byUser)
         {
             bool wasEmpty = empty;
-            decimal was = Value;
+            decimal was = Kept;
             quiet = true;
             try
             {

@@ -193,6 +193,27 @@ $box.UpButton()
 Check ($box.Number -eq 3) ('the arrow from empty: the usual value (' + $box.Text + ')')
 $box.UpButton()
 Check ([Math]::Abs($box.Number - 3.01) -lt 1e-9) ('the arrow: 0.01 (' + $box.Text + ')')
+# (2.38.0) With Windows in Greek (the point is the thousands separator there): a point too many while typing keeps the number as it
+# was (it became 330, then the most of the box, 50.00, in the window that keeps each key), and it is dropped when confirmed.
+$culture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('el-GR')
+try {
+  $box.Number = 3.30
+  $box.Text = '3.30.'
+  $typing = $box.Number
+  Check ([Math]::Abs($typing - 3.30) -lt 1e-9 -and $box.Text -eq '3.30.') ('Windows in Greek, "3.30." being typed: the number as it was (' + $typing + ', "' + $box.Text + '")')
+  $box.Text = '3.303.30'
+  $typing = $box.Number
+  $tBox.GetMethod('ValidateEditText', $all).Invoke($box, $null) | Out-Null
+  Check ([Math]::Abs($typing - 3.30) -lt 1e-9 -and $box.Text -eq '3.30' -and [Math]::Abs($box.Number - 3.30) -lt 1e-9) ('Windows in Greek, "3.303.30" confirmed: dropped (' + $typing + ', "' + $box.Text + '")')
+  $box.Text = '3,45'
+  Check ([Math]::Abs($box.Number - 3.45) -lt 1e-9) ('Windows in Greek, typed with a comma: ' + $box.Number)
+  $box.Text = '3.45'
+  Check ([Math]::Abs($box.Number - 3.45) -lt 1e-9) ('Windows in Greek, typed with a point: ' + $box.Number)
+}
+finally {
+  [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+}
 $box.Dispose()
 $lane = [Activator]::CreateInstance($tBox)
 $lane.DecimalPlaces = 0; $lane.Increment = [decimal]1; $lane.Maximum = [decimal]10; $lane.Accelerations.Clear()
