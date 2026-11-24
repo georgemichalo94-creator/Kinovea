@@ -161,7 +161,7 @@ if ($server -and $races) {
   Check ($e -and $e.Result.Ok -and $v2 -and $pages -ge 5 -and -not $e.Result.PdfUrl) ('the pages of the report from the script: ' + $pages + ' pages' + $(if ($e) { ' · ' + $e.Message } else { ' · no answer' }))
   if ($v2) {
     # 2. Printed by the DLL and sent to be kept: the answer of a PDF, the PDF of the 2nd version in the folder of the reports.
-    $printed = $print.Invoke($null, @([string]$v2['html'].ToString(), [string]$null, [int]90))
+    $printed = $print.Invoke($null, @([string]$v2['html'].ToString(), $null, [int]90))
     Check ($printed.Ok -and $printed.Pages -eq $pages) ('printed by ' + $printed.Browser + ' (' + $printed.Method + '): ' + $printed.Pages + ' pages of ' + $pages + ', ' + [math]::Round($printed.Seconds, 1) + ' s' + $(if ($printed.Error) { ' · ' + $printed.Error } else { '' }))
     if ($printed.Ok) {
       $extra = '{"raceId":"' + $race.Id + '","pdf":"' + [Convert]::ToBase64String($printed.Pdf) + '"}'

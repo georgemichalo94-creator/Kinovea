@@ -138,11 +138,14 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// The pages printed as a PDF. method: null (DevTools, then the command line), "devtools" or "commandline" (the checks). Never
-        /// throws: Ok false and the reason.
+        /// The pages printed as a PDF. method: "devtools" or "commandline" (the checks), else both (DevTools first, unless the command line
+        /// printed when DevTools failed). Never throws: Ok false and the reason.
         /// </summary>
         public static Result Print(string html, string method = null, int timeoutSeconds = 90)
         {
+            if (method != "devtools" && method != "commandline")
+                method = null;
+
             Stopwatch watch = Stopwatch.StartNew();
             Result result = new Result();
             string browser = BrowserPath;
