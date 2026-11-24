@@ -1155,9 +1155,18 @@ var SwimV2 = (function () {
         per100.push({ s, e, a: t(a), pb: t(b), ref: t(c), lab: I.relay ? `Σκέλος ${s / step + 1}` : I.im ? STYLE_NAME[IM_ORDER[s / step]] : '' });
       }
       body += section(I.relay ? 'Χρόνοι ανά σκέλος' : I.im ? 'Χρόνοι ανά στυλ' : 'Χρόνοι ανά 100', '');
-      body += `<div class="box"><table class="tbl"><thead><tr><th>${I.relay ? 'Σκέλος' : I.im ? 'Στυλ' : '100άρι'}</th><th>Χρόνος</th><th>Σωρευτικός</th><th>${esc(I.pbShort)}</th><th>Δ ${esc(I.pbShort)}</th><th>Αναφ.</th><th>Δ Αναφ.</th></tr></thead><tbody>
-        ${per100.map(p => `<tr><td class="l">${p.s}–${p.e}${p.lab ? ' · ' + esc(p.lab) : ''}</td><td><b>${T(p.a)}</b></td><td>${T(tOf(a, p.e))}</td><td>${T(p.pb)}</td><td>${chip(p.a - p.pb, 'lower')}</td><td>${T(p.ref)}</td><td>${chip(p.a - p.ref, 'lower')}</td></tr>`).join('')}
-        </tbody></table></div>`;
+      const head0 = I.relay ? 'Σκέλος' : I.im ? 'Στυλ' : '100άρι';
+      if (per100.length <= 8) {
+        body += `<div class="box"><table class="tbl"><thead><tr><th>${head0}</th><th>Χρόνος</th><th>Σωρευτικός</th><th>${esc(I.pbShort)}</th><th>Δ ${esc(I.pbShort)}</th><th>Αναφ.</th><th>Δ Αναφ.</th></tr></thead><tbody>
+          ${per100.map(p => `<tr><td class="l">${p.s}–${p.e}${p.lab ? ' · ' + esc(p.lab) : ''}</td><td><b>${T(p.a)}</b></td><td>${T(tOf(a, p.e))}</td><td>${T(p.pb)}</td><td>${chip(p.a - p.pb, 'lower') || '–'}</td><td>${T(p.ref)}</td><td>${chip(p.a - p.ref, 'lower') || '–'}</td></tr>`).join('')}
+          </tbody></table></div>`;
+      } else {
+        // The long races: two tables side by side, the differences only.
+        const half = Math.ceil(per100.length / 2);
+        const table = list => `<table class="tbl sm"><thead><tr><th>${head0}</th><th>Χρόνος</th><th>Σωρευτικός</th><th>Δ ${esc(I.pbShort)}</th><th>Δ Αναφ.</th></tr></thead><tbody>
+          ${list.map(p => `<tr><td class="l">${p.s}–${p.e}</td><td><b>${T(p.a)}</b></td><td>${T(tOf(a, p.e))}</td><td>${chip(p.a - p.pb, 'lower') || '–'}</td><td>${chip(p.a - p.ref, 'lower') || '–'}</td></tr>`).join('')}</tbody></table>`;
+        body += `<div class="two"><div class="box">${table(per100.slice(0, half))}</div><div class="box">${table(per100.slice(half))}</div></div>`;
+      }
     }
     return page(I, 'Ρυθμός αγώνα', body, n, N);
   }
@@ -1708,10 +1717,10 @@ var SwimV2 = (function () {
     const a = analyse(race, analysis);
     const other = c => c && c.race && c.analysis ? aligned(analyse(c.race, c.analysis), a) : blank(a);
     const gender = String(race.gender || race.category || '').trim();
-    const meta = [race.competition, race.location, race.date, ev.poolName, race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
+    const meta = [race.competition, race.location, race.date, race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25yd' : 'Πισίνα 25μ.', race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
       .map(s => String(s || '').trim()).filter(s => s);
     return { ev, race: a, pb: other(cmp.pb), ref: other(cmp.elite),
-      details: { who: race.athlete || '', kind: race.relay ? (gender ? 'Ομαδικό · ' + gender : 'Ομαδικό') : gender, competition: String(race.competition || '').trim(),
+      details: { who: race.athlete || '', kind: gender || (race.relay ? 'Ομαδικό' : ''), competition: String(race.competition || '').trim(),
         round: String(race.round || '').trim(), meta, pbLabel: cmp.pb ? String(cmp.pb.label || '') : '', refLabel: cmp.elite ? String(cmp.elite.label || '') : '' } };
   }
 
@@ -1728,10 +1737,12 @@ var SwimV2 = (function () {
   .kicker { font-size: 10px; letter-spacing: 0.14em; color: #8CA0B6; font-weight: 600; }
   .proto { font-size: 9.5px; letter-spacing: 0.08em; color: #0B111A; background: #00C8FF; padding: 3px 9px; border-radius: 3px; font-weight: 800; }
   .band-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-  .event { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 33px; font-weight: 800; letter-spacing: -0.015em; line-height: 1.05; }
+  .event { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 33px; font-weight: 800; letter-spacing: -0.015em; line-height: 1.05; white-space: nowrap; }
   .event .cat { font-size: 16px; font-weight: 500; color: #8CA0B6; margin-left: 6px; }
   .name { font-size: 18px; font-weight: 700; margin-top: 8px; }
-  .meta { font-size: 10.6px; color: #9DB0C4; margin-top: 4px; }
+  .meta { font-size: 10.6px; color: #9DB0C4; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .band-main .who { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+  .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hero { text-align: right; min-width: 250px; }
   .hero-lab { font-size: 10px; letter-spacing: 0.12em; color: #8CA0B6; text-transform: uppercase; font-weight: 700; }
   .hero-time { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 60px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.0; margin: 3px 0 6px; }
