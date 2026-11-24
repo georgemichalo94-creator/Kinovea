@@ -623,6 +623,16 @@ jobs:
             $a7 = Invoke-RestMethod $up7 -Method Post -Headers $headers -InFile capture-wall.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release capture wall pictures::$($a7.name) $($a7.size) bytes"
           }
+          # (2.37.0) The pictures of the right bar beside the video in its three tabs (fictional races), for a look.
+          if (Test-Path bar-events) {
+            Compress-Archive -Path bar-events\* -DestinationPath bar-events.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'bar-events.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up8 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=bar-events.zip"
+            $a8 = Invoke-RestMethod $up8 -Method Post -Headers $headers -InFile bar-events.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release bar pictures::$($a8.name) $($a8.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
