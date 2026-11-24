@@ -47,10 +47,12 @@ const fnOf = (src, name) => {
   assert.ok(a >= 0 && src.indexOf('\nfunction ' + name + '(', a + 1) < 0, 'one function ' + name);
   return src.slice(a + 1, src.indexOf('\n}\n', a) + 3);
 };
-const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15',
+// 2.20.0: δύο γραμμές ακόμη στην εκκίνηση (οι ταχύτητες των φάσεων, swimLayoutStart_ του νέου script) και η στήλη έξοδος → +15 των
+// στροφών (swimLayoutTurns_): ο πίνακας των χρόνων δύο γραμμές πιο κάτω.
+const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15', 'L.T0 = L.startRow + 6;': 'L.T0 = L.startRow + 8;',
   "cell(r, 9, '=IF(O' + tr + '=\"\",\"\",O' + tr + ')', SWIM_FMT.dps);": "cell(r, 9, '=IF(M' + tr + '=\"\",\"\",M' + tr + ')', SWIM_FMT.dps);" };
 let ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW).replace(SR_NOTE_OLD, SR_NOTE_NEW).replace(SL_NOTE_OLD, SL_NOTE_NEW);
-['swimAnalyze_', 'swimBlocks50_', 'swimLayoutTiming_', 'swimInputPlan_', 'swimCleanFormulas_'].forEach(name => {
+['swimAnalyze_', 'swimBlocks50_', 'swimLayoutTiming_', 'swimInputPlan_', 'swimCleanFormulas_', 'swimLayoutStart_', 'swimLayoutTurns_'].forEach(name => {
   ORIGINAL_NAMED = ORIGINAL_NAMED.split(fnOf(ORIGINAL_NAMED, name)).join(fnOf(CURRENT, name));
 });
 Object.keys(SR_SAME).forEach(k => {
@@ -347,7 +349,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.19.0');
+assert.strictEqual(vNew, '2.20.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -459,7 +461,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.19\.0$/, 'version line');
+like(/^Updated .* · version 2\.20\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

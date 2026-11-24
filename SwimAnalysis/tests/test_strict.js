@@ -133,6 +133,31 @@ res = call({ token: 'tok', action: 'update', race: r4b });
 sh = sheetOf(res);
 assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ.)'), 10.2, 'a value typed in the sheet stays');
 
+// (d3) Kinovea 2.35.0 / Apps Script 2.20.0: οι ταχύτητες των φάσεων της εκκίνησης σε μια γραμμή κάτω από τα στοιχεία της, η
+// ταχύτητα έξοδος → +15 κάθε στροφής σε μια στήλη· οι τιμές του προγράμματος, σβήνουν όταν δεν υπάρχουν πια. Ο πίνακας των χρόνων
+// δύο γραμμές πιο κάτω.
+const r4c = race();
+Object.assign(r4c.manual, { sigEntryVel: 3.17, entryBreakoutVel: 2.15, breakout15Vel: 2.18 });
+r4c.manual.turns['50'].uwSpeed = 2.08;
+r4c.manual.turns['50'].bo15Speed = 1.91;
+res = call({ token: 'tok', action: 'update', race: r4c });
+assert.ok(res.ok, JSON.stringify(res));
+sh = sheetOf(res);
+near(Number(below(sh, 'Ταχύτητα: σήμα → είσοδος χεριών (m/s)')), 3.17, 'start: signal → entry of the hands');
+near(Number(below(sh, 'Ταχύτητα: είσοδος → έξοδος (m/s)')), 2.15, 'start: entry → breakout');
+near(Number(below(sh, 'Ταχύτητα: έξοδος → 15μ. (m/s)')), 2.18, 'start: breakout → 15');
+near(Number(below(sh, 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)')), 2.08, 'turn: push-off → breakout');
+near(Number(below(sh, 'Ταχύτητα: έξοδος → +15μ. (m/s)')), 1.91, 'turn: breakout → +15');
+const startHead = cellBelow(sh, 'Ταχύτητα: σήμα → είσοδος χεριών (m/s)');
+const timesHead = cellBelow(sh, 'Distance (m)');
+assert.ok(startHead && timesHead && timesHead[0] - startHead[0] === 4, 'the times two rows below the phase speeds: ' + startHead + ' / ' + timesHead);
+const raw = sh.getRange(1, 1, sh.getLastRow(), 15).getValues().map(r => r.join(' ')).join(' ');
+assert.ok(!/τυπικό ύψος|0\.27|κεφάλι στην/.test(raw), 'no word on how the speeds are found');
+res = call({ token: 'tok', action: 'update', race: race() });
+sh = sheetOf(res);
+assert.strictEqual(below(sh, 'Ταχύτητα: σήμα → είσοδος χεριών (m/s)'), '', 'the start speeds cleared without the values');
+assert.strictEqual(below(sh, 'Ταχύτητα: έξοδος → +15μ. (m/s)'), '', 'the turn speed cleared');
+
 // (e) ένα 50άρι με σημείο χωρίς χρόνο (π.χ. ο πιλότος δεν το βρήκε): χωρίς χεριές, Swolf και ΔΑΚ του 50 (όχι το μισό ως όλο)
 const strokes50 = []; for (let t = 4.6; t < 30; t += 0.55) strokes50.push(+t.toFixed(2));
 const r5 = { id: 'strict5', athlete: 'ΑΛΦΑ ΔΟΚΙΜΗ', style: 'fs', distance: 50, pool: 50,

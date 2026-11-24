@@ -809,7 +809,7 @@ namespace Kinovea.ScreenManager
 
             // (2.9.8) The speeds before and after the breakout.
             lblStartSpeeds = ValueLabel();
-            AddEventRow(t, SwimLang.T("Ταχύτητες εξόδου"), null, null, BreakoutSpeedsHelp(true), lblStartSpeeds);
+            AddEventRow(t, SwimLang.T("Ταχύτητες φάσεων"), null, null, BreakoutSpeedsHelp(true), lblStartSpeeds);
 
             page.Controls.Add(t);
             return page;
@@ -2068,7 +2068,7 @@ namespace Kinovea.ScreenManager
             SwimRow first = computed.Rows.FirstOrDefault();
             lblFirstSplitTitle.Text = first != null ? SwimLang.T("Πέρασμα ") + first.D + race.Unit : SwimLang.T("Πρώτο πέρασμα");
             lblFirstSplit.Text = first != null ? Seconds(first.T) : "–";
-            lblStartSpeeds.Text = BreakoutSpeedsText(PhaseOf(0), race.Unit);
+            lblStartSpeeds.Text = BreakoutSpeedsText(PhaseOf(0), race);
 
             // Finish.
             lblFinishGap.Text = computed.FinishLastStrokeGap.HasValue ? SwimLang.T("τελ. χεριά → τοίχος ") + Seconds(computed.FinishLastStrokeGap) : "–";
@@ -2202,7 +2202,7 @@ namespace Kinovea.ScreenManager
             string uwDist = manual != null && manual.UnderwaterDist.HasValue
                 ? " · " + (manual.UnderwaterEstimated ? "≈" : "") + Format(manual.UnderwaterDist) + " " + race.Unit : "";
             lblTurnUnderwater.Text = uwTime + uwDist;
-            lblTurnSpeeds.Text = wall > 0 ? BreakoutSpeedsText(PhaseOf(wall), race.Unit) : "–";
+            lblTurnSpeeds.Text = wall > 0 ? BreakoutSpeedsText(PhaseOf(wall), race) : "–";
 
             foreach (DataGridViewRow gr in gridTurns.Rows)
             {
@@ -3343,47 +3343,90 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.9.8) "αποδέσμευση → έξοδος 2.85 m/s · έξοδος → 15μ. 1.95 m/s" for the start, "αποκόλληση → έξοδος …" for a turn, with why a
-        /// speed is missing once the breakout is marked.
+        /// (2.9.8) The speeds of the start and of a turn, with why one is missing once its marks are there. (2.35.0) The phases of a start
+        /// as the analyst asked: "σήμα → είσοδος 3.17 · είσοδος → έξοδος 2.15 · έξοδος → 15μ. 2.18 m/s"; a turn: "αποκόλληση → έξοδος 2.08 ·
+        /// έξοδος → +15μ. 1.91 m/s"; on a second line where the program put the head (the analyst does not click it).
         /// </summary>
-        private static string BreakoutSpeedsText(SwimTechPhase phase, string unit)
+        private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race)
         {
-            if (phase == null)
+            if (phase == null || race == null)
                 return "–";
 
             bool start = phase.Kind == SwimPhaseKind.Start;
-            double? before = phase.Value(start ? "pushVel" : "uwVel");
-            double? after = phase.Value("bo15Vel");
             List<string> parts = new List<string>();
-            if (before.HasValue)
-                parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0.00} m/s", start ? SwimLang.T("αποδέσμευση → έξοδος") : SwimLang.T("αποκόλληση → έξοδος"), before.Value));
-            if (after.HasValue)
-                parts.Add(string.Format(CultureInfo.InvariantCulture, "{0}{1} {2:0.00} m/s", start ? SwimLang.T("έξοδος → 15") : SwimLang.T("έξοδος → +15"), unit, after.Value));
+            Action<string, double?> add = (name, value) =>
+            {
+                if (value.HasValue)
+                    parts.Add(string.Format(CultureInfo.InvariantCulture, "{0} {1:0.00}", name, value.Value));
+            };
+            if (start)
+            {
+                add(SwimLang.T("σήμα → είσοδος"), phase.Value("sigEntryVel"));
+                add(SwimLang.T("είσοδος → έξοδος"), phase.Value("uwVel"));
+                add(SwimLang.T("έξοδος → 15") + race.Unit, phase.Value("bo15Vel"));
+            }
+            else
+            {
+                add(SwimLang.T("αποκόλληση → έξοδος"), phase.Value("uwVel"));
+                add(SwimLang.T("έξοδος → +15") + race.Unit, phase.Value("bo15Vel"));
+            }
 
-            string text = parts.Count > 0 ? string.Join(" · ", parts.ToArray()) : "–";
-            if (parts.Count < 2 && phase.Breakout.HasValue && !string.IsNullOrEmpty(phase.SpeedNote))
+            string text = parts.Count > 0 ? string.Join(" · ", parts.ToArray()) + " m/s" : "–";
+            bool marked = phase.Breakout.HasValue || (start && phase.Entry.HasValue);
+            if (parts.Count < (start ? 3 : 2) && marked && !string.IsNullOrEmpty(phase.SpeedNote))
                 text += " · " + phase.SpeedNote;
+
+            string head = HeadText(phase, race);
+            if (head.Length > 0 && parts.Count > 0)
+                text += "\n" + head;
             return text;
         }
 
-        /// <summary>(2.9.8) What the speeds of the breakout are and what they need.</summary>
-        private static string BreakoutSpeedsHelp(bool start)
+        /// <summary>
+        /// (2.35.0) Where the program put the head for the speeds, in the panel only (not in the reports): behind the hands at their entry,
+        /// from the wall at the push-off; from the typical height of the swimmer (or the body length measured).
+        /// </summary>
+        private static string HeadText(SwimTechPhase phase, SwimRace race)
         {
-            return (start
-                ? SwimLang.T("Μέση ταχύτητα από την αποδέσμευση από τον βατήρα έως την έξοδο του κεφαλιού (απόσταση της εξόδου από τον τοίχο / χρόνος) ")
-                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού: στην αποκόλληση τα πόδια είναι ακόμη στον τοίχο και το σώμα τεντωμένο, ") +
-                  SwimLang.T("άρα το κεφάλι απέχει από τον τοίχο όσο το μήκος του σώματος: (απόσταση εξόδου − μήκος σώματος) / χρόνος. ")) +
-                SwimLang.T("Και από την έξοδο έως το κεφάλι στα 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
-                SwimLang.T("Χρειάζονται η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή γραμμένη, όχι η εκτίμηση από τους χρόνους, και τα σημάδια ") +
-                (start ? SwimLang.T("της αποδέσμευσης (ή ο επίσημος χρόνος αντίδρασης), της εξόδου και των 15μ.") :
-                    SwimLang.T("της αποκόλλησης, της εξόδου και του +15· για την υποβρύχια ταχύτητα και το μήκος του σώματος (μία φορά στον αγώνα)."));
+            SwimHead h = SwimHead.Of(race);
+            if (phase.Kind == SwimPhaseKind.Start)
+            {
+                if (!phase.HeadBehindHands.HasValue)
+                    return "";
+                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην είσοδο: {0:0.00}{1} πίσω από τα χέρια (τυπικό ύψος {2:0.00} μ., {3})"),
+                    phase.HeadBehindHands.Value, race.Unit, h.Height, h.Who());
+            }
+
+            if (!phase.HeadAtPushoff.HasValue)
+                return "";
+            if (h.BodyMeasured)
+                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (το μήκος σώματος που μετρήθηκε)"),
+                    phase.HeadAtPushoff.Value, race.Unit);
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (τυπικό ύψος {2:0.00} μ. + 0.10, {3})"),
+                phase.HeadAtPushoff.Value, race.Unit, h.Height, h.Who());
         }
 
-        /// <summary>(2.15.0) What the body length is and how it is measured.</summary>
+        /// <summary>(2.9.8) What the speeds of the breakout are and what they need. (2.35.0) The phases of the start; both from the head.</summary>
+        private static string BreakoutSpeedsHelp(bool start)
+        {
+            return start
+                ? SwimLang.T("Ταχύτητες των φάσεων της εκκίνησης: σήμα → είσοδος (τα χέρια, από τον βατήρα ως εκεί που μπαίνουν στο νερό), ") +
+                  SwimLang.T("είσοδος → έξοδος (το κεφάλι: τη στιγμή της εισόδου είναι πίσω από τα χέρια κατά 0.27 × το τυπικό ύψος του αθλητή για το φύλο ") +
+                  SwimLang.T("και την ηλικία του, ως εκεί που βγαίνει από το νερό) και έξοδος → 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
+                  SwimLang.T("Χρειάζονται τα σημάδια της εισόδου, της εξόδου και των 15μ., και οι αποστάσεις εισόδου των χεριών και εξόδου ") +
+                  SwimLang.T("μετρημένες (📍 Μέτρηση) ή γραμμένες, όχι η εκτίμηση από τους χρόνους.")
+                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού: στην αποκόλληση τα δάχτυλα των ποδιών είναι ακόμη στον ") +
+                  SwimLang.T("τοίχο, άρα το κεφάλι απέχει από τον τοίχο το μήκος του σώματος (το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του ") +
+                  SwimLang.T("+ 0.10 μ., ή το μήκος σώματος αν μετρήθηκε). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος).\n") +
+                  SwimLang.T("Χρειάζονται τα σημάδια της αποκόλλησης, της εξόδου και του +15, και η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή ") +
+                  SwimLang.T("γραμμένη, όχι η εκτίμηση από τους χρόνους.");
+        }
+
+        /// <summary>(2.15.0) What the body length is and how it is measured. (2.35.0) Not needed: the typical height takes its place.</summary>
         private static string BodyLengthHelp()
         {
-            return SwimLang.T("Ο αθλητής τεντωμένος, από τα δάχτυλα των ποδιών ως την κορυφή του κεφαλιού. Στην αποκόλληση τα πόδια είναι ακόμη στον τοίχο, ") +
-                SwimLang.T("άρα το κεφάλι απέχει από τον τοίχο τόσο: από εκεί μετράει η υποβρύχια ταχύτητα κάθε στροφής.\n") +
+            return SwimLang.T("Προαιρετικό. Ο αθλητής τεντωμένος, από τα δάχτυλα των ποδιών ως την κορυφή του κεφαλιού: στην αποκόλληση το κεφάλι ") +
+                SwimLang.T("απέχει τόσο από τον τοίχο. Χωρίς αυτό το πρόγραμμα παίρνει το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του + 0.10 μ.\n") +
                 SwimLang.T("📍 Μέτρηση: σε ένα καρέ της ολίσθησης μετά την αποκόλληση, κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι. Και τα δύο ") +
                 SwimLang.T("είναι κάτω από το νερό στο ίδιο βάθος, οπότε η μετατόπιση που δείχνει το νερό από την κερκίδα δεν μπαίνει στη μέτρηση. ") +
                 SwimLang.T("Μία φορά για όλον τον αγώνα (ή γράψε την τιμή).");

@@ -782,6 +782,20 @@ namespace Kinovea.ScreenManager
             if (race.BodyLength.HasValue)
                 manual["bodyLength"] = race.BodyLength;
 
+            // (2.35.0) The phases of the start as the program measures them (Apps Script 2.20.0: a row of the start of the report):
+            // signal → entry of the hands, entry → breakout of the head, breakout → 15; m/s. Only the values, not how.
+            SwimTechPhase startPhase = tech == null || race.IsTraining ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start);
+            if (startPhase != null)
+            {
+                double? sigEntry = startPhase.Value("sigEntryVel"), entryBreakout = startPhase.Value("uwVel"), breakout15 = startPhase.Value("bo15Vel");
+                if (sigEntry.HasValue)
+                    manual["sigEntryVel"] = Math.Round(sigEntry.Value, 3);
+                if (entryBreakout.HasValue)
+                    manual["entryBreakoutVel"] = Math.Round(entryBreakout.Value, 3);
+                if (breakout15.HasValue)
+                    manual["breakout15Vel"] = Math.Round(breakout15.Value, 3);
+            }
+
             JObject turns = new JObject();
             foreach (var pair in race.Turns)
             {
@@ -793,13 +807,17 @@ namespace Kinovea.ScreenManager
                     Estimated(t, reel, pair.Key, "underwaterDist", null);
 
                 // (2.15.0) The estimate from the times is said (the report does not take a speed from it), and the underwater speed of
-                // the turn as the program measures it: (2.32.0, as the start) breakout distance / (breakout − push-off), m/s.
+                // the turn as the program measures it: (2.35.0, from the head again) (breakout distance − head at the push-off) /
+                // (breakout − push-off), m/s; and (Apps Script 2.20.0) from the breakout to the head at +15.
                 if (possible && pair.Value.UnderwaterEstimated && pair.Value.UnderwaterDist.HasValue)
                     t["underwaterEstimated"] = true;
                 SwimTechPhase turnPhase = tech == null ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Turn && p.Wall == pair.Key);
                 double? uwSpeed = turnPhase != null ? turnPhase.Value("uwVel") : null;
                 if (uwSpeed.HasValue && !race.IsTraining)
                     t["uwSpeed"] = Math.Round(uwSpeed.Value, 3);
+                double? bo15Speed = turnPhase != null ? turnPhase.Value("bo15Vel") : null;
+                if (bo15Speed.HasValue && !race.IsTraining)
+                    t["bo15Speed"] = Math.Round(bo15Speed.Value, 3);
                 turns[pair.Key.ToString(CultureInfo.InvariantCulture)] = t;
             }
 
