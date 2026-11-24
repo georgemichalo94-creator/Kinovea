@@ -31,7 +31,7 @@ const pick = key => events.find(p => p.ev.key === key);
   const race = Object.assign({}, p.race, { compare: { pb: p.pb.id }, reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race });
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
-  assert.strictEqual(r.version, '2.22.0');
+  assert.strictEqual(r.version, '2.23.0');
   assert.ok(r.v2 && typeof r.v2.html === 'string' && r.v2.html.length > 50000, 'the pages of the 2nd version');
   assert.ok(!r.pdf, 'no PDF of the sheet with v2');
   assert.ok(!r.needCharts, 'no charts to draw for the pages of the 2nd version');
@@ -127,6 +127,48 @@ const pick = key => events.find(p => p.ev.key === key);
   const p = pick('lc-100-fs');
   const r = call({ action: 'pdf', v2: true, race: Object.assign({}, p.race, { kind: 'training', checkpoints: [] }) });
   assert.ok(r.ok && !r.v2, 'no race pages for a training video');
+}
+
+// 10. (2.23.0) «Πού κρύβεται ο χρόνος» in the place of the target time: no target time anywhere; the map of the race with the time
+// of every recommendation in its zones (the same total, nothing outside the course); the pacing with today's time; the ΔΑΚ in capitals.
+{
+  const G = makeContext({ athletes: ATHLETES });
+  const V2 = G.SwimV2;
+  const GREEK = 'Α-Ωα-ωάέήίόύώϊϋΐΰΆΈΉΊΌΎΏ';
+  const lowDak = new RegExp('(^|[^' + GREEK + '])δακ([^' + GREEK + ']|$)');
+  let maps = 0, paces = 0;
+  events.forEach(p => {
+    const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+    const pr = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.pb)));
+    const er = G.swimReferenceRace_(p.ref);
+    const cmp = { pb: { race: pr, analysis: G.swimAnalyze_(pr), label: 'PB' }, elite: { race: er, analysis: G.swimAnalyze_(er), label: 'Αναφορά δείγμα' } };
+    const x = V2.fromScript(race, G.swimAnalyze_(race), cmp);
+    const R = V2.recommendations(x);
+    const doc = V2.document(x, {});
+    const text = doc.html.replace(/<style>[\s\S]*?<\/style>/, '');
+    const key = p.ev.key;
+    assert.ok(!/Στόχος για τον επόμενο αγώνα|Στόχος με τις προτάσεις|Χρόνοι-στόχοι|ο στόχος είναι/.test(text), key + ': no target time');
+    assert.ok(!lowDak.test(text.replace(/<[^>]+>/g, ' ')), key + ': the ΔΑΚ in capitals');
+    const withGain = R.recs.filter(r => r.gain !== null && r.gain > 0);
+    const total = withGain.reduce((s0, r) => s0 + r.gain, 0);
+    assert.ok(Math.abs(R.total - total) < 1e-9, key + ': the total of the gains');
+    const inZones = R.map.zones.reduce((s0, z) => s0 + z.gain, 0);
+    const mapped = withGain.filter(r => r.zones && r.zones.some(z => z.w > 0)).reduce((s0, r) => s0 + r.gain, 0);
+    assert.ok(Math.abs(inZones - mapped) < 1e-6, key + ': every gain in its zones ' + inZones + ' / ' + mapped);
+    R.map.zones.forEach(z => assert.ok(z.from >= 0 && z.to <= R.map.D && z.to > z.from && z.gain > 0, key + ': a zone on the course ' + JSON.stringify(z)));
+    if (withGain.length) {
+      maps++;
+      assert.ok(/Πού κρύβεται ο χρόνος/.test(text) && /class="rmap big"/.test(text) && /class="rmap"/.test(text), key + ': the map on pages 1 and 2');
+      assert.ok(/Η μεγαλύτερη ευκαιρία/.test(text), key + ': the biggest opportunity');
+    }
+    if (R.splits) {
+      paces++;
+      const sum = R.splits.reduce((s0, t) => s0 + t, 0);
+      assert.ok(Math.abs(sum - x.race.final) < 1e-6, key + ': the same time ' + sum + ' / ' + x.race.final);
+      if (!x.ev.relay) assert.ok(/Ίδιος χρόνος, καλύτερη κατανομή/.test(text), key + ': the pacing page');
+    }
+  });
+  assert.ok(maps >= 40 && paces >= 20, 'maps ' + maps + ', pacing ' + paces);
 }
 
 console.log('test_reportv2: ok');
