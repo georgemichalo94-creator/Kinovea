@@ -122,6 +122,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool VideoBars = true;
 
+        /// <summary>
+        /// (2.37.0) The tab of the big card of the right bar: 0 every event of the race in its order («ΓΕΓΟΝΟΤΑ»), 1 the checkpoints
+        /// («ΠΕΡΑΣΜΑΤΑ»), 2 the details of the race («ΑΓΩΝΑΣ»).
+        /// </summary>
+        public int BarListTab = 0;
+
         /// <summary>Place of the window of the analysis when it was last closed ("x,y,width,height"), empty for the default place.</summary>
         public string PanelBounds = "";
 

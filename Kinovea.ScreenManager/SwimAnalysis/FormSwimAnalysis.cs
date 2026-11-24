@@ -103,12 +103,12 @@ namespace Kinovea.ScreenManager
         private TextBox tbReaction;
         private Label lblBlock;
         private Label lblEntry;
-        private TextBox tbEntryDistHands;
+        private SwimDecimalBox tbEntryDistHands;
         private TextBox tbEntryVelHands;
         private Label lblStartKicks;
         private Label lblBreakout;
-        private TextBox tbBreakoutDist;
-        private TextBox tbUnderwaterDist;
+        private SwimDecimalBox tbBreakoutDist;
+        private SwimDecimalBox tbUnderwaterDist;
         private Label lblFirstSplitTitle;
         private Label lblFirstSplit;
         private Label lblStartSpeeds;
@@ -182,7 +182,7 @@ namespace Kinovea.ScreenManager
         private Timer resultsLinkPaste;
         private Button btnFinalFrame;
         private Label lblFinalFrame;
-        private TextBox tbFinishDist;
+        private SwimDecimalBox tbFinishDist;
         private Label lblFinishSummary;
         private TextBox tbChecks;
         private SwimTile tileDak;
@@ -762,7 +762,7 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Τα πόδια φεύγουν από τον βατήρα (χρόνος πάνω στον βατήρα). Αντιστοιχεί στον επίσημο χρόνο αντίδρασης των αποτελεσμάτων."), lblBlock);
 
             lblEntry = ValueLabel();
-            tbEntryDistHands = NumberBox();
+            tbEntryDistHands = DistanceBox(3m);
             AddEventRow(t, SwimLang.T("Είσοδος χεριών στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"),
                 SwimLang.T("Τα χέρια μπαίνουν στο νερό: χρόνος από το σήμα και χρόνος πτήσης (αποδέσμευση → είσοδος). Η απόσταση μετριέται από τον τοίχο εκκίνησης."),
                 lblEntry, Caption(SwimLang.T("απόσταση:")), tbEntryDistHands, DistanceUnit(),
@@ -780,13 +780,13 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("Ένα πάτημα για κάθε υποβρύχιο δελφινισμό."), lblStartKicks);
 
             lblBreakout = ValueLabel();
-            tbBreakoutDist = NumberBox();
+            tbBreakoutDist = DistanceBox(10m);
             AddEventRow(t, SwimLang.T("Έξοδος από το νερό (κεφάλι)"), PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"),
                 SwimLang.T("Το κεφάλι βγαίνει από το νερό (χρόνος κάτω από το νερό). Η απόσταση μετριέται από τον τοίχο εκκίνησης."),
                 lblBreakout, Caption(SwimLang.T("απόσταση:")), tbBreakoutDist, DistanceUnit(),
                 PickButton(SwimPickTarget.StartBreakout, SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό.")));
 
-            tbUnderwaterDist = NumberBox();
+            tbUnderwaterDist = DistanceBox(10m);
             AddEventRow(t, SwimLang.T("Απόσταση κάτω από το νερό"), null, null,
                 SwimLang.T("Μέχρι πού έμεινε κάτω από το νερό, από τον τοίχο εκκίνησης."),
                 tbUnderwaterDist, DistanceUnit(),
@@ -1080,6 +1080,32 @@ namespace Kinovea.ScreenManager
             gridTurns.CellEndEdit += GridTurns_CellEndEdit;
             gridTurns.CellDoubleClick += GridTurns_CellDoubleClick;
 
+            // (2.37.0) The distance under the water also with the wheel while its cell is edited (two decimals, as the boxes of the start).
+            gridTurns.Columns["uwDist"].ToolTipText = DistanceHelp;
+            gridTurns.EditingControlShowing += (s, e) =>
+            {
+                TextBox editor = e.Control as TextBox;
+                if (editor == null || "swim-wheel".Equals(editor.Tag))
+                    return;
+
+                editor.Tag = "swim-wheel";
+                editor.MouseWheel += (o, w) =>
+                {
+                    DataGridViewCell cell = gridTurns.CurrentCell;
+                    if (cell == null || !gridTurns.IsCurrentCellInEditMode || gridTurns.Columns[cell.ColumnIndex].Name != "uwDist")
+                        return;
+
+                    HandledMouseEventArgs handled = w as HandledMouseEventArgs;
+                    if (handled != null)
+                        handled.Handled = true;
+                    int notches = w.Delta / 120;
+                    if (notches == 0)
+                        notches = Math.Sign(w.Delta);
+                    editor.Text = WheelDistance(editor.Text, notches, ModifierKeys, 8m);
+                    editor.SelectionStart = editor.Text.Length;
+                };
+            };
+
             Label lblTurns = new Label
             {
                 Dock = DockStyle.Top,
@@ -1134,7 +1160,7 @@ namespace Kinovea.ScreenManager
             lblOfficial = ValueLabel();
             AddEventRow(t, SwimLang.T("Επίσημος χρόνος (αποτελέσματα)"), null, null, officialHelp, tbOfficial, lblOfficial);
 
-            tbFinishDist = NumberBox();
+            tbFinishDist = DistanceBox(1m);
             AddEventRow(t, SwimLang.T("Απόσταση τελευταίας χεριάς"), null, null,
                 SwimLang.T("Απόσταση από τον τοίχο τερματισμού τη στιγμή της τελευταίας χεριάς."),
                 tbFinishDist, DistanceUnit(),
@@ -1597,6 +1623,50 @@ namespace Kinovea.ScreenManager
             table.Controls.Add(control, 1, row);
         }
 
+        /// <summary>
+        /// (2.37.0) A distance: typed (with a point or a comma) or turned with the wheel and the arrows, always with two decimals
+        /// (SwimDecimalBox). From empty, the first step goes to 'seed', the usual value of the distance. Commits at each change, as the
+        /// number boxes do.
+        /// </summary>
+        private SwimDecimalBox DistanceBox(decimal seed)
+        {
+            SwimDecimalBox box = new SwimDecimalBox { Width = 74, Seed = seed, Margin = new Padding(3, 3, 2, 3) };
+            box.TextChanged += (s, e) => CommitManualValues();
+            SetBoxTip(box, DistanceHelp);
+            return box;
+        }
+
+        /// <summary>
+        /// (2.37.0) A distance turned with the wheel: 0.01 a notch (Ctrl 0.10, Shift 1.00), from 'seed' when empty, between 0 and 50, two
+        /// decimals.
+        /// </summary>
+        internal static string WheelDistance(string text, int notches, Keys modifiers, decimal seed)
+        {
+            double? now = SwimDecimalBox.Read(text);
+            decimal step = (modifiers & Keys.Control) != 0 ? 0.10m : (modifiers & Keys.Shift) != 0 ? 1.00m : 0.01m;
+            decimal value = now.HasValue ? Math.Round((decimal)Math.Max(-1e6, Math.Min(1e6, now.Value)), 2, MidpointRounding.AwayFromZero) + notches * step : seed;
+            value = Math.Max(0m, Math.Min(50m, value));
+            return value.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>(2.37.0) How a distance box works (its tooltip).</summary>
+        private static string DistanceHelp
+        {
+            get
+            {
+                return SwimLang.T("Γράψε την απόσταση (π.χ. 3.05 ή 3,05) ή γύρνα τη ροδέλα: 0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. ") +
+                    SwimLang.T("Τα βελάκια ▲▼ (και ↑ ↓) αλλάζουν 0.01, πιο γρήγορα όταν τα κρατάς. Κενό: χωρίς τιμή.");
+            }
+        }
+
+        /// <summary>The tooltip of a number box also over its text and its arrows (they take the mouse).</summary>
+        private void SetBoxTip(Control box, string tip)
+        {
+            toolTip.SetToolTip(box, tip);
+            foreach (Control child in box.Controls)
+                toolTip.SetToolTip(child, tip);
+        }
+
         private TextBox NumberBox()
         {
             TextBox tb = new TextBox { Width = 52, Margin = new Padding(3, 3, 2, 3), TextAlign = HorizontalAlignment.Right };
@@ -1662,21 +1732,7 @@ namespace Kinovea.ScreenManager
                 bool hasRace = r != null;
                 tabs.Enabled = hasRace;
                 if (hasRace)
-                {
-                    tbAthlete.Text = r.Athlete;
-                    nudLane.Value = Math.Max(0, Math.Min(10, r.Lane));
-                    cmbStyle.SelectedIndex = Math.Max(0, Array.IndexOf(SwimPresets.Styles, r.Style));
-                    cmbKind.SelectedIndex = r.IsTraining ? 1 : 0;
-                    FillDistances(r, r.DistanceLabel);
-                    cmbPool.SelectedIndex = SwimPresets.PoolIndex(r);
-                    tbCompetition.Text = r.Competition;
-                    tbLocation.Text = r.Location;
-                    cmbRound.Text = r.Round;
-                    tbDate.Text = r.Date;
-                    if (!tbResultsLink.Focused)
-                        tbResultsLink.Text = r.ResultsLink ?? "";
-                    tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
-                }
+                    FillRaceFields(r);
 
                 SwimSettings settings = manager.Settings;
                 tbUrl.Text = settings.WebAppUrl;
@@ -1721,6 +1777,60 @@ namespace Kinovea.ScreenManager
             RefreshGroupChoices();
             if (!string.IsNullOrEmpty(manager.LastStatus))
                 ShowStatus(manager.LastStatus, manager.LastStatusIsWarning);
+        }
+
+        /// <summary>The details of the race in the fields of its page (while 'updating': nothing is committed back).</summary>
+        private void FillRaceFields(SwimRace r)
+        {
+            tbAthlete.Text = r.Athlete;
+            nudLane.Value = Math.Max(0, Math.Min(10, r.Lane));
+            cmbStyle.SelectedIndex = Math.Max(0, Array.IndexOf(SwimPresets.Styles, r.Style));
+            cmbKind.SelectedIndex = r.IsTraining ? 1 : 0;
+            FillDistances(r, r.DistanceLabel);
+            cmbPool.SelectedIndex = SwimPresets.PoolIndex(r);
+            tbCompetition.Text = r.Competition;
+            tbLocation.Text = r.Location;
+            cmbRound.Text = r.Round;
+            tbDate.Text = r.Date;
+            if (!tbResultsLink.Focused)
+                tbResultsLink.Text = r.ResultsLink ?? "";
+            tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
+        }
+
+        /// <summary>
+        /// (2.37.0) The details of the race changed in the bar beside the video: the fields of the page show them (a field left as it was
+        /// would put its old value back at the next change of the page).
+        /// </summary>
+        public void RefreshRaceFields()
+        {
+            SwimRace r = manager.Race;
+            if (r == null || IsDisposed)
+                return;
+
+            bool was = updating;
+            updating = true;
+            try
+            {
+                FillRaceFields(r);
+            }
+            finally
+            {
+                updating = was;
+            }
+
+            RefreshCalibration();
+            RefreshPb();
+        }
+
+        /// <summary>(2.37.0) The search of the athlete (from the bar beside the video), with its text selected.</summary>
+        public void FocusAthleteSearch()
+        {
+            if (IsDisposed || tbAthleteSearch == null)
+                return;
+
+            Activate();
+            tbAthleteSearch.Focus();
+            tbAthleteSearch.SelectAll();
         }
 
         /// <summary>
@@ -1824,18 +1934,18 @@ namespace Kinovea.ScreenManager
                     if (tbOfficial.Text != official)
                         tbOfficial.Text = official;
                 }
-                SetText(tbEntryDistHands, Format(r.EntryDistHands));
+                tbEntryDistHands.ShowNumber(r.EntryDistHands);
                 SetText(tbEntryVelHands, Format(r.EntryVelHands));
-                SetText(tbUnderwaterDist, Format(r.UnderwaterDist));
-                SetText(tbBreakoutDist, Format(r.BreakoutDist));
-                SetText(tbFinishDist, Format(r.FinishLastStrokeDist));
+                tbUnderwaterDist.ShowNumber(r.UnderwaterDist);
+                tbBreakoutDist.ShowNumber(r.BreakoutDist);
+                tbFinishDist.ShowNumber(r.FinishLastStrokeDist);
 
                 // (2.9.8) The estimate from the times apart (dim, with a tooltip): no speeds of the breakout from it.
                 if (underwaterColor == Color.Empty)
                     underwaterColor = tbUnderwaterDist.ForeColor;
                 bool estimated = r.UnderwaterEstimated && r.UnderwaterDist.HasValue;
                 tbUnderwaterDist.ForeColor = estimated ? SwimTheme.Dim : underwaterColor;
-                toolTip.SetToolTip(tbUnderwaterDist, estimated ? SwimLang.T("Εκτίμηση από τους χρόνους (για ακρίβεια 📍 Μέτρηση ή γράψε την τιμή).") : "");
+                SetBoxTip(tbUnderwaterDist, estimated ? SwimLang.T("Εκτίμηση από τους χρόνους (για ακρίβεια 📍 Μέτρηση ή γράψε την τιμή).") + "\n" + DistanceHelp : DistanceHelp);
             }
             finally
             {
@@ -3010,16 +3120,16 @@ namespace Kinovea.ScreenManager
 
             SwimRace r = manager.Race;
             r.Reaction = Parse(tbReaction);
-            r.EntryDistHands = Parse(tbEntryDistHands);
+            r.EntryDistHands = tbEntryDistHands.Number;
             r.EntryVelHands = Parse(tbEntryVelHands);
 
             // (2.9.8) A value typed is the analyst's, no longer the estimate from the times (the same value shown again stays one).
-            double? underwater = Parse(tbUnderwaterDist);
+            double? underwater = tbUnderwaterDist.Number;
             if (!underwater.HasValue || !r.UnderwaterDist.HasValue || Math.Abs(underwater.Value - r.UnderwaterDist.Value) > 0.005)
                 r.UnderwaterEstimated = false;
             r.UnderwaterDist = underwater;
-            r.BreakoutDist = Parse(tbBreakoutDist);
-            r.FinishLastStrokeDist = Parse(tbFinishDist);
+            r.BreakoutDist = tbBreakoutDist.Number;
+            r.FinishLastStrokeDist = tbFinishDist.Number;
 
             manager.ManualValuesChanged();
         }

@@ -58,7 +58,7 @@ namespace Kinovea.ScreenManager
     /// Drawn like the graphics on the video: dark cards with a colored edge. The bar never takes the keyboard focus,
     /// so the keys of the analysis keep going to the video.
     /// </summary>
-    internal sealed class SwimVideoBar : Control
+    internal sealed partial class SwimVideoBar : Control
     {
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -137,12 +137,26 @@ namespace Kinovea.ScreenManager
             TabStop = false;
             BackColor = Color.Black;
             ForeColor = SwimTheme.Text;
+
+            // (2.37.0) The wheel over the lists of the right bar (SwimVideoBar.List.cs).
+            if (!left)
+                Application.AddMessageFilter(this);
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                if (!left)
+                    Application.RemoveMessageFilter(this);
+                if (editor != null)
+                {
+                    Control c = editor;
+                    editor = null;
+                    editId = null;
+                    c.Dispose();
+                }
+
                 toolTip.Dispose();
                 if (spotTimer != null)
                 {
@@ -308,7 +322,9 @@ namespace Kinovea.ScreenManager
             b.Append(race.Proposals.Count).Append('|').Append(manager.Reviewing).Append('|');
             b.Append(manager.CurrentProposal != null ? manager.CurrentProposal.Id : "").Append('|');
             b.Append(manager.PilotWaiting).Append('|').Append(manager.PilotDoubtful).Append('|').Append(manager.StartLightRunning).Append('|');
-            b.Append(manager.CanCreatePackage);
+            b.Append(manager.CanCreatePackage).Append('|').Append(manager.Settings.BarListTab).Append('|');
+            b.Append(race.Competition).Append('|').Append(race.Location).Append('|').Append(race.Round).Append('|').Append(race.Date).Append('|');
+            b.Append(race.ResultsLink).Append('|').Append(race.AthleteId).Append('|').Append(race.Checkpoints != null ? race.Checkpoints.Count : 0);
             return b.ToString();
         }
         #endregion
@@ -467,7 +483,9 @@ namespace Kinovea.ScreenManager
             float top = PaintInfo(g, area, race, tech) + S(8);
             bottom = PaintStatus(g, list, area, top, bottom);
             if (!tech)
-                PaintSplits(g, list, new RectangleF(area.Left, top, area.Width, bottom - top), race);
+                PaintList(g, list, new RectangleF(area.Left, top, area.Width, bottom - top), race);
+            else
+                listArea = RectangleF.Empty;
         }
 
         /// <summary>Card of the time: race time (or time of the start / turn in the technical analysis) and chips.</summary>
@@ -714,44 +732,49 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// The checkpoints: time, velocity and strokes, the next one in amber. A click on a checkpoint shows its frame.
-        /// With many checkpoints, the ones around the next one.
+        /// With many checkpoints, the ones around the next one (2.37.0: or where the wheel scrolled them, until the next one changes).
+        /// 'card': the place of the list in the card, under its tabs.
         /// </summary>
         private void PaintSplits(Graphics g, List<Item> list, RectangleF card, SwimRace race)
         {
-            if (card.Height < S(90))
+            if (card.Height < S(50))
                 return;
 
             List<SwimRow> rows = manager.Computed.Rows;
-            DrawCard(g, card, colorSplits);
-            float inner = S(10);
-            Caption(g, SwimLang.T("ΠΕΡΑΣΜΑΤΑ"), new RectangleF(card.Left + inner, card.Top + S(6), card.Width - inner - S(8), S(14)), SwimTheme.AccentLight);
-
             float rx = card.Left + S(7);
             float rw = card.Right - S(5) - rx;
             float colD = rx + S(5);
             float colT = rx + rw * 0.57f;
             float colV = rx + rw * 0.78f;
             float colS = rx + rw - S(5);
-            RectangleF head = new RectangleF(rx, card.Top + S(21), rw, S(14));
+            RectangleF head = new RectangleF(rx, card.Top, rw, S(14));
             Font headFont = SwimTheme.Ui(6.5f, FontStyle.Bold);
             CellRight(g, SwimLang.T("ΧΡΟΝΟΣ"), headFont, colT, head, SwimTheme.Faint);
             CellRight(g, "M/S", headFont, colV, head, SwimTheme.Faint);
             CellRight(g, SwimLang.T("ΧΕΡ."), headFont, colS, head, SwimTheme.Faint);
 
             float rowHeight = S(21);
-            float rowsTop = card.Top + S(37);
+            float rowsTop = card.Top + S(16);
             int capacity = Math.Max(0, (int)((card.Bottom - S(6) - rowsTop) / rowHeight));
             if (rows.Count == 0 || capacity == 0)
                 return;
 
+            listArea = new RectangleF(card.Left, rowsTop, card.Width, capacity * rowHeight);
+
             // (A checkpoint with an official time and no mark is still to mark: its time shows dimmed.)
             int next = rows.FindIndex(r => !r.Marked);
             int first = 0;
+            if (splitsManual && next != splitsAnchor)
+                splitsManual = false;
             if (rows.Count > capacity)
             {
                 // The next checkpoint third from the bottom: the ones done before it, two still to mark after it.
                 int anchor = next >= 0 ? next : rows.Count - 1;
                 first = Math.Max(0, Math.Min(rows.Count - capacity, anchor - (capacity - Math.Min(3, capacity))));
+                if (splitsManual)
+                    first = Math.Max(0, Math.Min(rows.Count - capacity, splitsFirst));
+                splitsFirst = first;
+                DrawScrollMark(g, new RectangleF(card.Left + S(3), rowsTop, card.Width - S(6), capacity * rowHeight), first, capacity, rows.Count);
             }
 
             Font timeFont = SwimTheme.Display(9.5f);

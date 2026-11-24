@@ -1169,6 +1169,15 @@
     <Compile Include="SwimAnalysis\SwimVideoBar.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\SwimVideoBar.List.cs">
+      <DependentUpon>SwimVideoBar.cs</DependentUpon>
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="SwimAnalysis\SwimBarEvents.cs" />
+    <Compile Include="SwimAnalysis\SwimDecimalBox.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.BarEdit.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="UserInterface\ScreenManagerUserInterface.cs">
       <SubType>UserControl</SubType>
