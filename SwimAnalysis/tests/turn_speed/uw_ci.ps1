@@ -6,7 +6,8 @@
 # distance per kick from the head too. None from a distance estimated from the times or from a distance no swimmer has (a breakout
 # measured at 39.6 m with the calibration of another frame: the Sheet gets the estimate of the video graphics instead, said as an
 # estimate). The official time of the wall is the time of the turn (also when its mark is a little before it): the contact, the −5 and
-# the +15 from it, as the splits of the race.
+# the +15 from it, as the splits of the race. 2.35.1: the speed from the breakout to 15 for every breakout before it (a late turn, a
+# late start), none past it or with its mark after the head at 15.
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File uw_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -43,13 +44,13 @@ function Mark($race, $type, $seconds, $dist) {
   if ($null -ne $dist) { $m.Distance = [int]$dist }
   $race.Marks.Add($m)
 }
-function Fill($race, $pushoff, $wall = 26.3) {
+function Fill($race, $pushoff, $wall = 26.3, $breakout = 30.6) {
   $splits = @{ 15 = 6.2; 25 = 11.8; 35 = 17.6; 45 = 23.4; 50 = $wall; 65 = 33.5; 75 = 39.4; 85 = 45.3; 95 = 51.2; 100 = 54.1 }
   foreach ($d in $splits.Keys) { Mark $race 'Split' $splits[$d] $d }
   if ($pushoff) { Mark $race 'FeetOff' 26.6 $null }
   # Six dolphin kicks between the push-off and the breakout.
   foreach ($k in @(27.0, 27.5, 28.0, 28.5, 29.0, 29.5)) { Mark $race 'Kick' $k $null }
-  Mark $race 'Breakout' 30.6 $null
+  Mark $race 'Breakout' $breakout $null
 }
 function TurnPhase($race) {
   $computed = $tCalc.GetMethod('Compute').Invoke($null, @($race, $timing, 0.5))
@@ -182,6 +183,44 @@ Check ($null -eq $start.Value('sigEntryVel') -and $null -eq $start.Value('uwVel'
 Check ("$($start.SpeedNote)" -like '*απόσταση εισόδου*') ('the note: ' + $start.SpeedNote)
 $body = Sheet $race4 $r
 Check ($null -eq $body.race.manual.sigEntryVel -and $null -eq $body.race.manual.entryBreakoutVel) 'nothing sent for them'
+
+# (2.35.1) Late breakouts, the analyst's request: the speed to 15 for every breakout before it (2.9.8–2.35.0 only 2 m and more before).
+# A turn out at 13.5 m: breakout at 32.8 s, +15 (65 m) at 33.5 s: 1.5 / 0.7 = 2.142857; push-off → breakout (13.5 − 1.885) / 6.2.
+$race5 = NewRace; Fill $race5 $true 26.3 32.8
+$t5 = $race5.GetTurn(50, $true); $t5.UnderwaterDist = 13.5
+$r = TurnPhase $race5
+Check (Near $r.Turn.Value('bo15Vel') (1.5 / 0.7) 0.0006) ('a turn out at 13.5 m, breakout → +15: ' + $r.Turn.Value('bo15Vel'))
+Check (Near $r.Turn.Value('uwVel') ((13.5 - 1.885) / 6.2) 0.0006) ('and push-off → breakout: ' + $r.Turn.Value('uwVel'))
+Check ($null -eq $r.Turn.SpeedNote) ('no note: ' + $r.Turn.SpeedNote)
+$body = Sheet $race5 $r
+Check (Near $body.race.manual.turns.'50'.bo15Speed (1.5 / 0.7) 0.0006) ('bo15Speed sent: ' + $body.race.manual.turns.'50'.bo15Speed)
+# A start out at 14.2 m (0.8 m before the 15): breakout at 5.84 s, 15 m at 6.20 s: 0.8 / 0.36; entry → breakout (14.2 − 2.8005) / 4.80.
+$race6 = NewRace; Fill $race6 $true
+$race6.AthleteGender = 'Ανδρών'; $race6.AthleteBirthYear = '2000'; $race6.Date = '23.11.2026'
+Mark $race6 'Entry' 1.04 $null
+foreach ($k in @(2.0, 2.6, 3.2)) { Mark $race6 'Kick' $k $null }
+Mark $race6 'Breakout' 5.84 $null
+$race6.EntryDistHands = 3.30; $race6.BreakoutDist = 14.2
+$r = TurnPhase $race6
+foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
+Check (Near $start.Value('bo15Vel') (0.8 / 0.36) 0.0006) ('a start out at 14.2 m, breakout → 15: ' + $start.Value('bo15Vel'))
+Check (Near $start.Value('uwVel') ((14.2 - 2.8005) / 4.80) 0.0006) ('and entry → breakout: ' + $start.Value('uwVel'))
+Check ($null -eq $start.SpeedNote) ('no note: ' + $start.SpeedNote)
+$body = Sheet $race6 $r
+Check (Near $body.race.manual.breakout15Vel (0.8 / 0.36) 0.0006) ('breakout15Vel sent: ' + $body.race.manual.breakout15Vel)
+# Out at 15.2 m (past the 15, inside the margin of a measure): no speed to 15, the note says why.
+$race6.BreakoutDist = 15.2
+$r = TurnPhase $race6
+foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
+Check ($null -eq $start.Value('bo15Vel') -and $null -ne $start.Value('uwVel')) 'out at 15.2 m: no speed to 15, entry → breakout still'
+Check ("$($start.SpeedNote)" -like '*15.2*δεν είναι πριν*') ('the note: ' + $start.SpeedNote)
+# The breakout marked after the head at 15 (6.30 s, the 15 m at 6.20 s): no speed, the note says to check the marks.
+$race6.BreakoutDist = 14.2
+foreach ($mk in $race6.Marks) { if ($mk.Type.ToString() -eq 'Breakout' -and $mk.Timestamp -eq [long]6840) { $mk.Timestamp = [long]7300 } }
+$r = TurnPhase $race6
+foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
+Check ($null -eq $start.Value('bo15Vel')) 'the breakout marked after the 15: no speed to 15'
+Check ("$($start.SpeedNote)" -like '*μετά το κεφάλι στα 15*') ('the note: ' + $start.SpeedNote)
 
 if ($fails -gt 0) { Write-Output ("$fails check(s) failed"); exit 1 }
 Write-Output 'speeds of the start and of the turns: all checks passed'

@@ -891,13 +891,7 @@ namespace Kinovea.ScreenManager
             set("firstStroke", p.FirstStroke);
         }
 
-        /// <summary>
-        /// (2.9.8) The breakout's distance from the wall has to be at least this far before the 15 (pool units) for the speed from the
-        /// breakout to 15: nearer, a click of a few tenths of a metre off the head would change it by a tenth and more.
-        /// </summary>
-        internal const double SpeedMinSpan = 2.0;
-
-        /// <summary>(2.9.8) Shortest time a speed of the breakout is measured over (s).</summary>
+        /// <summary>(2.9.8) Shortest time a speed of the breakout is measured over (s); not the one from the breakout to 15 (2.35.1).</summary>
         internal const double SpeedMinTime = 0.3;
 
         /// <summary>
@@ -1047,18 +1041,28 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.9.8) Mean speed from the breakout to the head at 15 ('at15': seconds from the origin): what is left to the 15 over the time.
-        /// Null when something is missing, the breakout is less than SpeedMinSpan before the 15 or the speed is not plausible.
+        /// (2.35.1) For every breakout before the 15, the analyst's request (2.9.8–2.35.0 only for one 2 and more before it: the late
+        /// breakouts, often in backstroke and butterfly, had none). The nearer the 15, the more the breakout's distance weighs: a tenth
+        /// off at 1 before the 15 is a tenth of the speed, at 3 before it a thirtieth. Null when something is missing, the breakout is
+        /// not before the 15, its mark is not before the head at 15 or the speed is not plausible (the note says which).
         /// </summary>
         private static double? SpeedTo15(SwimTechPhase p, double? at15, double k)
         {
             if (!p.Breakout.HasValue || !at15.HasValue || !Usable(p))
                 return null;
 
+            string name = p.Kind == SwimPhaseKind.Start ? SwimLang.T("έξοδος → 15") : SwimLang.T("έξοδος → +15");
             double span = 15 - p.OutDist.Value;
-            double time = at15.Value - p.Breakout.Value;
-            if (span < SpeedMinSpan || time < SpeedMinTime)
+            if (span <= 0)
             {
-                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("έξοδος → 15: η έξοδος είναι λιγότερο από {0:0} πριν από τα 15 (πολύ κοντά για ταχύτητα)"), SpeedMinSpan));
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: η έξοδος ({1:0.0}) δεν είναι πριν από τα 15"), name, p.OutDist.Value));
+                return null;
+            }
+
+            double time = at15.Value - p.Breakout.Value;
+            if (time <= 0)
+            {
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: το σημάδι της εξόδου είναι μετά το κεφάλι στα 15· έλεγξε τα σημάδια"), name));
                 return null;
             }
 
@@ -1066,8 +1070,7 @@ namespace Kinovea.ScreenManager
             if (speed >= After15SpeedMin && speed <= After15SpeedMax)
                 return speed;
 
-            Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1:0.00} m/s δεν γίνεται· έλεγξε την απόσταση της εξόδου και τα σημάδια"),
-                SwimLang.T("έξοδος → 15"), speed));
+            Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: {1:0.00} m/s δεν γίνεται· έλεγξε την απόσταση της εξόδου και τα σημάδια"), name, speed));
             return null;
         }
 

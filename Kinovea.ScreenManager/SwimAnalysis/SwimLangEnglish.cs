@@ -1407,7 +1407,6 @@ namespace Kinovea.ScreenManager
             { "έξοδος από το νερό", "breakout" },
             { "έξοδος → +15", "breakout → +15" },
             { "έξοδος → 15", "breakout → 15" },
-            { "έξοδος → 15: η έξοδος είναι λιγότερο από {0:0} πριν από τα 15 (πολύ κοντά για ταχύτητα)", "breakout → 15: the breakout is less than {0:0} before 15 (too near for a speed)" },
             { "έτος γέννησης άγνωστο", "birth year unknown" },
             { "ή γράψε:", "or enter:" },
             { "ή κλικ στο κεφάλι και μετά στα πόδια του · Esc: σταμάτημα. Μετά συνεχίζει μόνος του ως το PDF.", "or click the head and then the feet · Esc: stop. Then it carries on by itself up to the PDF." },
@@ -2956,6 +2955,9 @@ namespace Kinovea.ScreenManager
             { "κορίτσια {0} ετών", "girls aged {0}" },
             { "χωρίς φύλο, 18+", "gender unknown, 18+" },
             { "χωρίς φύλο, {0} ετών", "gender unknown, aged {0}" },
+            // (2.35.1) The speed from the breakout to 15 for every breakout before the 15.
+            { "{0}: η έξοδος ({1:0.0}) δεν είναι πριν από τα 15", "{0}: the breakout ({1:0.0}) is not before 15" },
+            { "{0}: το σημάδι της εξόδου είναι μετά το κεφάλι στα 15· έλεγξε τα σημάδια", "{0}: the breakout mark is after the head at 15; check the marks" },
         };
     }
 }
