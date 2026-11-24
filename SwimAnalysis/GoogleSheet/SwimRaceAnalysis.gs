@@ -319,6 +319,8 @@ function swimHandleRequest_(req) {
       };
       var chartData = result.charts;
       delete result.charts;
+      // Το Kinovea ζήτησε τη 2η έκδοση και το project δεν έχει το αρχείο SwimReportV2: το λέει (το PDF του φύλλου, όπως πριν).
+      if (action === 'pdf' && req.v2 === true && typeof SwimV2 === 'undefined' && (req.race || {}).kind !== 'training') result.v2Missing = true;
       if (v2 && result.v2src && result.v2src.race.kind !== 'training') {
         try {
           result.v2 = swimV2Pages_(result.v2src, swimPdfParts_(req));

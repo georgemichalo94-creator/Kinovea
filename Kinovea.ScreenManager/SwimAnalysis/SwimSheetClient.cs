@@ -54,6 +54,9 @@ namespace Kinovea.ScreenManager
         public string Message;
         public string RaceId;
         public SwimSheetResult Result;
+
+        /// <summary>(2.38.0) The answer of a PDF printed by Kinovea and sent to be kept ("pdfStore"), not of a state of the race.</summary>
+        public bool Store;
     }
 
     /// <summary>
@@ -73,8 +76,20 @@ namespace Kinovea.ScreenManager
             public string RaceId;
             public bool Pdf;
 
+            /// <summary>
+            /// (2.38.0) A PDF printed by Kinovea to be kept ("pdfStore"): never replaced by a newer state of its race nor replacing it (it
+            /// does not bring the race to the sheet), kept apart when it has to be sent again.
+            /// </summary>
+            public bool Store;
+
             /// <summary>(2.16.6) When it was sent.</summary>
             public DateTime Started;
+
+            /// <summary>(2.38.0) Its place among the requests that wait to be sent again (a PDF to keep apart from the state of its race).</summary>
+            public string FailedKey
+            {
+                get { return Store ? RaceId + "\u0001store" : RaceId; }
+            }
         }
 
         /// <summary>
@@ -83,7 +98,7 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool HasWaiting(string raceId)
         {
-            return raceId != null && (pending.Any(p => p.RaceId == raceId) || failed.ContainsKey(raceId));
+            return raceId != null && (pending.Any(p => p.RaceId == raceId) || failed.Values.Any(f => f.RaceId == raceId));
         }
 
         /// <summary>A PDF can take minutes (the Apps Script can run 6 minutes): it is not cut and sent again meanwhile.</summary>
@@ -134,8 +149,8 @@ namespace Kinovea.ScreenManager
             if (inFlight)
             {
                 // The newest state of a race replaces its older pending request (a pending PDF stays a PDF);
-                // the requests of the other races keep their turn.
-                int index = pending.FindIndex(p => p.RaceId == raceId);
+                // the requests of the other races keep their turn. (2.38.0) A PDF to keep waits for its turn whatever comes.
+                int index = pending.FindIndex(p => p.RaceId == raceId && !p.Store);
                 if (index >= 0)
                 {
                     if (pending[index].Pdf)
@@ -147,6 +162,28 @@ namespace Kinovea.ScreenManager
                     pending.Add(request);
                 }
 
+                return;
+            }
+
+            Start(request);
+        }
+
+        /// <summary>
+        /// (2.38.0) The PDF of the report printed by Kinovea from the pages of the web app, to be kept where the PDF of the sheet goes
+        /// (body: action "pdfStore"). Its answer is the answer of a PDF (StateChanged, with Store); a newer state of the race does not
+        /// replace it, a newer PDF of the race to keep does.
+        /// </summary>
+        public void EnqueueStore(string url, string body, string raceId)
+        {
+            Request request = new Request { Url = url, Body = body, RaceId = raceId, Pdf = true, Store = true };
+            failed.Remove(request.FailedKey);
+            if (inFlight)
+            {
+                int index = pending.FindIndex(p => p.RaceId == raceId && p.Store);
+                if (index >= 0)
+                    pending[index] = request;
+                else
+                    pending.Add(request);
                 return;
             }
 
@@ -376,9 +413,9 @@ namespace Kinovea.ScreenManager
         {
             inFlight = true;
 
-            // A newer state of a race that failed replaces its retry (and keeps a PDF that was asked for).
+            // A newer state of a race that failed replaces its retry (and keeps a PDF that was asked for). (2.38.0) Not a PDF to keep.
             Request old;
-            if (request.RaceId != null && failed.TryGetValue(request.RaceId, out old))
+            if (request.RaceId != null && !request.Store && failed.TryGetValue(request.RaceId, out old))
             {
                 if (old.Pdf)
                     AsPdf(request);
@@ -387,7 +424,8 @@ namespace Kinovea.ScreenManager
                     retryTimer.Stop();
             }
 
-            Raise(SwimSyncState.Sending, request.Pdf ? SwimLang.T("Δημιουργία PDF…") : SwimLang.T("Αποστολή…"), request.RaceId, null);
+            Raise(SwimSyncState.Sending, request.Store ? SwimLang.T("📄 Το PDF ανεβαίνει στο Drive…") : request.Pdf ? SwimLang.T("Δημιουργία PDF…") : SwimLang.T("Αποστολή…"),
+                request.RaceId, null, request.Store);
             request.Started = DateTime.Now;
 
             Task.Factory.StartNew(() => Post(request.Url, request.Body, request.Pdf ? PdfTimeout : UpdateTimeout)).ContinueWith(t =>
@@ -429,17 +467,18 @@ namespace Kinovea.ScreenManager
             {
                 failures = 0;
                 string message = SwimLang.T("Συγχρονίστηκε ") + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-                Raise(SwimSyncState.Synced, message, request.RaceId, result);
+                Raise(SwimSyncState.Synced, message, request.RaceId, result, request.Store);
             }
             else
             {
                 failures++;
                 SwimSyncState state = result.Retry ? SwimSyncState.Offline : SwimSyncState.Error;
-                Raise(state, result.Error, request.RaceId, result);
+                Raise(state, result.Error, request.RaceId, result, request.Store);
 
                 if (result.Retry)
                 {
-                    int index = pending.FindIndex(p => p.RaceId == request.RaceId);
+                    // (2.38.0) A PDF to keep is sent again itself (a newer state of the race does not bring it).
+                    int index = request.Store ? -1 : pending.FindIndex(p => p.RaceId == request.RaceId && !p.Store);
                     if (index >= 0)
                     {
                         // A newer state of the race is waiting: it is sent instead (with the PDF if one was asked for).
@@ -450,7 +489,7 @@ namespace Kinovea.ScreenManager
                     {
                         // Retry later with the same state, unless a newer state arrives first.
                         if (request.RaceId != null)
-                            failed[request.RaceId] = request;
+                            failed[request.FailedKey] = request;
                         int delay = failures <= 1 ? 5000 : (failures <= 3 ? 15000 : 30000);
                         retryTimer.Interval = delay;
                         retryTimer.Start();
@@ -477,7 +516,7 @@ namespace Kinovea.ScreenManager
             retryTimer.Stop();
             foreach (Request request in failed.Values)
             {
-                if (!pending.Any(p => p.RaceId == request.RaceId))
+                if (!pending.Any(p => p.RaceId == request.RaceId && p.Store == request.Store))
                     pending.Add(request);
             }
 
@@ -506,7 +545,7 @@ namespace Kinovea.ScreenManager
             }
         }
 
-        private void Raise(SwimSyncState state, string message, string raceId, SwimSheetResult result)
+        private void Raise(SwimSyncState state, string message, string raceId, SwimSheetResult result, bool store = false)
         {
             EventHandler<SwimSyncEventArgs> handler = StateChanged;
             if (handler == null)
@@ -517,7 +556,7 @@ namespace Kinovea.ScreenManager
             // every analysis after it waited behind it until Kinovea was started again.
             try
             {
-                handler(this, new SwimSyncEventArgs { State = state, Message = message, RaceId = raceId, Result = result });
+                handler(this, new SwimSyncEventArgs { State = state, Message = message, RaceId = raceId, Result = result, Store = store });
             }
             catch (Exception e)
             {

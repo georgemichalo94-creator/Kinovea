@@ -2741,7 +2741,7 @@ namespace Kinovea.ScreenManager
             try
             {
                 string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, scheduledOrigin, Settings, VideoName, "update", FinalForRace(), false,
-                    PackageFlags(Race));
+                    RequestFlags(Race));
                 Race.SheetPending = true;
                 client.Enqueue(Settings.WebAppUrl, body, Race.Id, false);
             }
@@ -3324,6 +3324,10 @@ namespace Kinovea.ScreenManager
                 pdfAfterFinalFrame = null;
             }
 
+            // (2.38.0) Without a browser to print the pages of the report: the PDF of the sheet, as before (said once).
+            if (pdf)
+                V2BrowserNote();
+
             if (!(pdf && UploadReportGraphics(() => SendNow(true, true))))
                 SendNow(pdf, pdf);
             RetryFailedUploads();
@@ -3361,7 +3365,7 @@ namespace Kinovea.ScreenManager
 
             long origin = AnalysisOrigin;
             string body = SwimPayload.Build(Race, Computed, TechPhases, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update", FinalForRace(), pdf && drawCharts,
-                PackageFlags(Race));
+                RequestFlags(Race));
             Race.SheetPending = true;
             client.Enqueue(Settings.WebAppUrl, body, Race.Id, pdf);
         }
@@ -3385,7 +3389,7 @@ namespace Kinovea.ScreenManager
             long origin = AnalysisOrigin;
             race.SheetPending = true;
             client.Enqueue(Settings.WebAppUrl, SwimPayload.Build(race, computed, tech, Timing, origin, Settings, VideoName, pdf ? "pdf" : "update",
-                Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts, PackageFlags(race)), race.Id, pdf);
+                Finals != null ? Finals.For(race, Settings.FinalsSet) : null, pdf && drawCharts, RequestFlags(race)), race.Id, pdf);
         }
 
         public void OpenSheet()
@@ -3412,6 +3416,9 @@ namespace Kinovea.ScreenManager
 
             // (2.10.0) The package for the coaches waits for the PDF of this race: an error of the sending is said in its window.
             PackageSyncFailed(e);
+
+            // (2.38.0) A PDF printed here that the web app could not keep: the PDF of the sheet, as before.
+            V2StoreFailed(e);
 
             // An older Apps Script still computes the stroke rate and length in the last 5 m and over whole 50s.
             Version backend;
@@ -3465,6 +3472,10 @@ namespace Kinovea.ScreenManager
                         race.SheetName = e.Result.SheetName;
                     if (!string.IsNullOrEmpty(e.Result.SheetUrl))
                         race.SheetUrl = e.Result.SheetUrl;
+                    // (2.38.0) The PDF printed here and kept: how long it took from the PDF button (report, print, Drive).
+                    if (e.Store)
+                        V2Timings(race, e.Result);
+
                     if (!string.IsNullOrEmpty(e.Result.PdfUrl))
                     {
                         race.LastPdfUrl = e.Result.PdfUrl;
@@ -3547,6 +3558,9 @@ namespace Kinovea.ScreenManager
                     // The Apps Script waits for the charts of the PDF: drawn here with the graphics of the video, then the PDF.
                     if (e.Result.Raw != null && e.Result.Raw.Value<bool?>("needCharts") == true)
                         DrawChartsForPdf(race, e.Result.Raw["charts"] as JArray);
+
+                    // (2.38.0) The pages of the report of the 2nd version in place of the PDF of the sheet: printed here, then kept.
+                    V2Answer(race, e.Result);
                 }
             }
 

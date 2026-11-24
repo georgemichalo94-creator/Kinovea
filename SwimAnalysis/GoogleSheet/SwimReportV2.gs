@@ -829,10 +829,10 @@ var SwimV2 = (function () {
     const a = x.race;
     if (a.blocks.length <= 2 && !I.relay) {
       const items = a.rows.map(r => ({ label: `${r.prevD}–${r.d}`, time: F(r.seg), dak: NaN, dakText: F(r.vel) + ' m/s', mark: false }));
-      return ch.heatStrip({ w: W, items, neutral: true }).replace(/ΔΑΚ /g, '');
+      return ch.heatStrip({ w: W - 26, items, neutral: true }).replace(/ΔΑΚ /g, '');
     }
     const items = a.blocks.map(bk => ({ label: `${bk.from}–${bk.to}`, time: T(bk.time), dak: bk.dak, dakText: F(bk.dak) }));
-    return ch.heatStrip({ w: W, items, neutral: x.ev.style === 'im' });
+    return ch.heatStrip({ w: W - 26, items, neutral: x.ev.style === 'im' });
   }
 
   /** The three cards under the band: the ΔΑΚ, the race against the PB (or the reference), the target of the recommendations. */

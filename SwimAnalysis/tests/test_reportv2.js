@@ -106,6 +106,10 @@ const pick = key => events.find(p => p.ev.key === key);
   G.SwimV2 = undefined;   // (a 'var' of the project: the file is not there)
   const r = call({ action: 'pdf', v2: true, race: p.race });
   assert.ok(r.ok && !r.v2 && r.pdf && r.pdf.url, 'the PDF of the sheet: ' + JSON.stringify(r).slice(0, 300));
+  assert.strictEqual(r.v2Missing, true, 'Kinovea is told the file is missing');
+  // An update (not a PDF) says nothing of it.
+  const u = call({ action: 'update', v2: true, race: p.race });
+  assert.ok(u.ok && u.v2Missing === undefined, 'nothing said for an update');
 }
 
 // 8. Pages that fail: the PDF of the sheet, and why.

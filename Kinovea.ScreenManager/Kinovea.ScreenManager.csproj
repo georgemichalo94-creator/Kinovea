@@ -1045,6 +1045,8 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Bars.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Dial.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Charts.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.PdfV2.cs" />
+    <Compile Include="SwimAnalysis\SwimPdfPrinter.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Compare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.TechCompare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />
@@ -1439,6 +1441,33 @@
     <None Include="SwimAnalysis\Models\README.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\Inter-Regular.woff">
+      <LogicalName>SwimFonts.Inter-Regular.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\Inter-Medium.woff">
+      <LogicalName>SwimFonts.Inter-Medium.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\Inter-SemiBold.woff">
+      <LogicalName>SwimFonts.Inter-SemiBold.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\Inter-Bold.woff">
+      <LogicalName>SwimFonts.Inter-Bold.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\Inter-ExtraBold.woff">
+      <LogicalName>SwimFonts.Inter-ExtraBold.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\InterDisplay-Medium.woff">
+      <LogicalName>SwimFonts.InterDisplay-Medium.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\InterDisplay-SemiBold.woff">
+      <LogicalName>SwimFonts.InterDisplay-SemiBold.woff</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SwimAnalysis\Fonts\InterDisplay-ExtraBold.woff">
+      <LogicalName>SwimFonts.InterDisplay-ExtraBold.woff</LogicalName>
+    </EmbeddedResource>
+    <None Include="SwimAnalysis\Fonts\OFL.txt" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="DualPlayer\CommonControlsPlayers.resx">

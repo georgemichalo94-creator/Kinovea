@@ -88,10 +88,10 @@ function raceStrip(x, I) {
   const a = x.race;
   if (a.blocks.length <= 2 && !I.relay) {
     const items = a.rows.map(r => ({ label: `${r.prevD}–${r.d}`, time: F(r.seg), dak: r.isFree ? 0 : 0.3, dakText: r.isFree ? F(r.vel) + ' m/s' : F(r.vel) + ' m/s', mark: false }));
-    return ch.heatStrip({ w: W, items: items.map(it => Object.assign(it, { dakText: it.dakText })), neutral: true }).replace(/ΔΑΚ /g, '');
+    return ch.heatStrip({ w: W - 26, items: items.map(it => Object.assign(it, { dakText: it.dakText })), neutral: true }).replace(/ΔΑΚ /g, '');
   }
   const items = a.blocks.map(bk => ({ label: `${bk.from}–${bk.to}`, time: T(bk.time), dak: bk.dak, dakText: F(bk.dak) }));
-  return ch.heatStrip({ w: W, items, neutral: x.ev.style === 'im' });
+  return ch.heatStrip({ w: W - 26, items, neutral: x.ev.style === 'im' });
 }
 
 function pageOverview(x, I, R, n, N) {

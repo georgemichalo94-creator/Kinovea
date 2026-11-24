@@ -294,6 +294,12 @@ namespace Kinovea.ScreenManager
         /// <summary>(2.12.0) Both parts in two separate files (Apps Script 2.12.0): the short analysis and the full one with its comments.</summary>
         public bool PdfSeparate;
 
+        /// <summary>
+        /// (2.38.0) The PDF of a race is the report of the 2nd version (Apps Script 2.22.0 with its file SwimReportV2): its pages printed
+        /// by Kinovea with the Edge of the computer. False: the PDF of the sheet, as before.
+        /// </summary>
+        public bool PdfV2 = true;
+
         /// <summary>(2.13.0) The sheet of criteria last chosen for each kind of phase and style ("start|fs", "turn|br").</summary>
         public Dictionary<string, string> TechSheetChoice = new Dictionary<string, string>();
 

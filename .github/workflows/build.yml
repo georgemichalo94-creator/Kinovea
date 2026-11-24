@@ -306,6 +306,25 @@ jobs:
         path: bar-events/
         if-no-files-found: ignore
 
+    - name: Swim PDF of the report printed by Edge
+      id: pdf-print
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        # (2.38.0) The pages of the report of the 2nd version (fictional races: every kind of event, with and without the PB and the
+        # reference, marks missing) printed by the DLL with the Edge of the runner, through its DevTools and from its command line: A4,
+        # as many pages as the report, the fonts of the report embedded (Inter only), in time; the PDFs beside the draft release.
+        $dir = [System.IO.Path]::Combine($env:RUNNER_TEMP, 'swim_pdf_print')
+        $out = @(& node .\SwimAnalysis\tests\report_v2\rv2_build.js $dir lc-100-fs lc-1500-fs sc-4x50-im lc-200-im scy-500-fs sc-50-br lc-4x200-fs lc-400-im 2>&1)
+        $made = $LASTEXITCODE
+        $out += @(& powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\pdf_print\pp_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -dir $dir -out pdf-print 2>&1)
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($made -ne 0 -or $code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim PDF printed by Edge::exit ' + $made + ' ' + $code + ' | ' + (($bad | Select-Object -First 8) -join ' | ').Replace('%', '%25')); exit 1 }
+        $times = @($out | Where-Object { "$_" -like '*print times*' }) -join ''
+        Write-Output ('::notice title=Swim PDF printed by Edge::' + ($out | Select-Object -Last 1) + ' ·' + $times)
+
     - name: Swim group of screens
       continue-on-error: true
       shell: pwsh
@@ -638,6 +657,16 @@ jobs:
             $up8 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=bar-events.zip"
             $a8 = Invoke-RestMethod $up8 -Method Post -Headers $headers -InFile bar-events.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release bar pictures::$($a8.name) $($a8.size) bytes"
+          }
+          # (2.38.0) The PDFs of the report of the 2nd version printed by Edge on the runner (fictional races), for a look.
+          if (Test-Path pdf-print) {
+            Compress-Archive -Path pdf-print\* -DestinationPath pdf-print.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'pdf-print.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up9 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=pdf-print.zip"
+            $a9 = Invoke-RestMethod $up9 -Method Post -Headers $headers -InFile pdf-print.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release PDF pictures::$($a9.name) $($a9.size) bytes"
           }
         } catch {
           $detail = $_.ErrorDetails.Message
