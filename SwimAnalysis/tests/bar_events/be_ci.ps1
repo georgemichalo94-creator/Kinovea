@@ -135,7 +135,7 @@ foreach ($line in $cases) {
       $at = [int]$currentIndex.Invoke($null, [object[]]@($list, [System.Nullable[double]]$t))
       if ($at -lt $i -or [Math]::Abs((Time $ev[$at]) - $t) -gt 0.006) { Fail $n ($what + ': at ' + $t + ' the list follows ' + $at + ' instead of ' + $i); break }
     }
-    $next = [int]$nextIndex.Invoke($null, [object[]]@($list))
+    $next = [int]$nextIndex.Invoke($null, [object[]]@(,$list))
     $firstOpen = -1
     for ($i = 0; $i -lt $ev.Count; $i++) { if ($ev[$i].Checkpoint -gt 0 -and -not $ev[$i].Marked) { $firstOpen = $i; break } }
     if ($next -ne $firstOpen) { Fail $n ($what + ': the next checkpoint ' + $next + ' instead of ' + $firstOpen) }

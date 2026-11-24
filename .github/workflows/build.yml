@@ -546,7 +546,13 @@ jobs:
           } else {
             # The tag again: a draft updated without it loses it ("untagged-…").
             $body = @{ tag_name = $tag; target_commitish = "${{ github.sha }}"; body = $notes } | ConvertTo-Json
-            $release = Invoke-RestMethod "$api/releases/$($release.id)" -Method Patch -Headers $headers -Body $body -ContentType "application/json"
+            try {
+              $release = Invoke-RestMethod "$api/releases/$($release.id)" -Method Patch -Headers $headers -Body $body -ContentType "application/json"
+            } catch {
+              # (2.37.0) The token of the run cannot make a commit that changes the workflow the target of the release (403, "Resource
+              # not accessible by integration"): the release keeps its target and its files go up all the same.
+              Write-Output "::notice title=Draft release::target kept ($($_.Exception.Message))"
+            }
           }
           foreach ($asset in @($release.assets)) {
             if ($asset -and $asset.name -eq $zip) { Invoke-RestMethod "$api/releases/assets/$($asset.id)" -Method Delete -Headers $headers | Out-Null }
