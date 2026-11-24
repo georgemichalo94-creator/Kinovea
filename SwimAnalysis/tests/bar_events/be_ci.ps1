@@ -266,8 +266,8 @@ try {
   $form = [Activator]::CreateInstance($tForm, [object[]]@($mgr))
   $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
   $form.ShowInTaskbar = $false
-  $form.Location = New-Object System.Drawing.Point 0, 0
-  $form.Size = New-Object System.Drawing.Size 1000, 700
+  $form.Location = [System.Drawing.Point]::new(0, 0)
+  $form.Size = [System.Drawing.Size]::new(1000, 700)
   $form.Show(); [System.Windows.Forms.Application]::DoEvents()
   [void]$tForm.GetMethod('RefreshAll').Invoke($form, @())
   $form.PageIndex = 3; [System.Windows.Forms.Application]::DoEvents()
@@ -282,18 +282,19 @@ try {
   if ($null -eq $editor) { throw 'the cell is not edited' }
   $editor.Text = '7.50'
   $cellArea = $grid.RectangleToScreen($grid.GetCellDisplayRectangle($col, 0, $false))
-  $in = New-Object System.Drawing.Point ($cellArea.X + [int]($cellArea.Width / 2)), ($cellArea.Y + [int]($cellArea.Height / 2))
-  $away = New-Object System.Drawing.Point ($cellArea.X + [int]($cellArea.Width / 2)), ($cellArea.Bottom + 40)
+  # (::new, not New-Object: a value of New-Object comes wrapped, and the reflection below would not take it.)
+  $over = [System.Drawing.Point]::new($cellArea.X + [int]($cellArea.Width / 2), $cellArea.Y + [int]($cellArea.Height / 2))
+  $away = [System.Drawing.Point]::new($cellArea.X + [int]($cellArea.Width / 2), $cellArea.Bottom + 40)
   $turnsWheel = $tForm.GetMethod('TurnsWheel', $all)
   function TurnsWheel($delta, $point, $keys) {
-    $h = New-Object System.Windows.Forms.HandledMouseEventArgs -ArgumentList @([System.Windows.Forms.MouseButtons]::None, 0, 0, 0, [int]$delta)
-    $took = $turnsWheel.Invoke($form, [object[]]@($h, [int]$delta, $point, [System.Windows.Forms.Keys]$keys))
+    $h = [System.Windows.Forms.HandledMouseEventArgs]::new([System.Windows.Forms.MouseButtons]::None, 0, 0, 0, [int]$delta)
+    $took = $turnsWheel.Invoke($form, [object[]]@($h, [int]$delta, [System.Drawing.Point]$point, [System.Windows.Forms.Keys]$keys))
     return @{ took = $took; handled = $h.Handled; text = $editor.Text }
   }
-  $r1 = TurnsWheel 120 $in 'None'
-  $r2 = TurnsWheel -120 $in 'Control'
-  $r3 = TurnsWheel 60 $in 'None'
-  $r4 = TurnsWheel 60 $in 'None'
+  $r1 = TurnsWheel 120 $over 'None'
+  $r2 = TurnsWheel -120 $over 'Control'
+  $r3 = TurnsWheel 60 $over 'None'
+  $r4 = TurnsWheel 60 $over 'None'
   $r5 = TurnsWheel 120 $away 'Shift'
   Check ($r1.took -and $r1.handled -and $r1.text -eq '7.51') ('the wheel over the edited cell of the turns: ' + $r1.text)
   Check ($r2.took -and $r2.text -eq '7.41') ('there with Ctrl a tenth: ' + $r2.text)
@@ -302,12 +303,12 @@ try {
 
   # The wheel as Windows sends it: to the editor of the cell with the mouse over the cell, then with the mouse away from it.
   $want = 7.42
-  [void][BeWheel]::SetCursorPos($in.X, $in.Y)
+  [void][BeWheel]::SetCursorPos($over.X, $over.Y)
   $at = [BeWheel]::Cursor()
-  if ($null -ne $at -and $at[0] -eq $in.X -and $at[1] -eq $in.Y) {
-    [BeWheel]::Wheel($editor.Handle, 120, $in.X, $in.Y); [System.Windows.Forms.Application]::DoEvents()
+  if ($null -ne $at -and $at[0] -eq $over.X -and $at[1] -eq $over.Y) {
+    [BeWheel]::Wheel($editor.Handle, 120, $over.X, $over.Y); [System.Windows.Forms.Application]::DoEvents()
     $s1 = $editor.Text
-    [BeWheel]::Wheel($editor.Handle, -240, $in.X, $in.Y); [System.Windows.Forms.Application]::DoEvents()
+    [BeWheel]::Wheel($editor.Handle, -240, $over.X, $over.Y); [System.Windows.Forms.Application]::DoEvents()
     $s2 = $editor.Text
     [void][BeWheel]::SetCursorPos($away.X, $away.Y)
     [BeWheel]::Wheel($editor.Handle, 120, $away.X, $away.Y); [System.Windows.Forms.Application]::DoEvents()
