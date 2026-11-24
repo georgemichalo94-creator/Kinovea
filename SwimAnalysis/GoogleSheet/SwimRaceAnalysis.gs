@@ -52,7 +52,7 @@
  *      → τοίχος, στροφή, κάτω από το νερό, έξοδος, +15, και μετά τα -5/+15). Τα report ξαναφτιάχνονται μία φορά.
  */
 
-var SWIM_VERSION = '2.21.0';
+var SWIM_VERSION = '2.22.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -290,11 +290,22 @@ function swimHandleRequest_(req) {
       return swimJson_(swimLearningPush_(req, SWIM_TECH_LEARNING_SHEET));
     }
 
+    if (action === 'pdfStore') {
+      // 2.22.0: το PDF της 2ης έκδοσης, όπως το τύπωσε το Kinovea από τις σελίδες του (v2), στο Drive, στη σύνοψη και στο KOE App.
+      var stored = swimStorePdfV2_(req);
+      stored.timings = { lock: locked - started, total: Date.now() - started };
+      return swimJson_(stored);
+    }
+
     if (action === 'update' || action === 'pdf') {
       // drawCharts: το Kinovea σχεδιάζει τα γραφήματα του PDF με τα γραφικά του βίντεο. Όσα δεν έχουν ακόμη εικόνα για τις
       // τρέχουσες τιμές τους επιστρέφονται (τιμές και ρυθμίσεις) χωρίς PDF· το Kinovea τα ανεβάζει και ζητά ξανά το PDF.
       var drawCharts = !!req.drawCharts;
-      var result = swimUpsertRace_(req.race, { parts: swimPdfParts_(req), pdf: action === 'pdf' });
+      // 2.22.0: το report της 2ης έκδοσης (v2): το φύλλο όπως πάντα, και αντί για το PDF του φύλλου οι σελίδες του (HTML), που τις
+      // τυπώνει το Kinovea και τις στέλνει πίσω ('pdfStore'). Χωρίς το αρχείο SwimReportV2 στο project: το PDF του φύλλου.
+      // Οι σελίδες της 2ης έκδοσης είναι στα ελληνικά: ένα report στα αγγλικά βγαίνει όπως πριν.
+      var v2 = action === 'pdf' && req.v2 === true && typeof SwimV2 !== 'undefined' && SWIM_LANG_ !== 'en';
+      var result = swimUpsertRace_(req.race, { parts: swimPdfParts_(req), pdf: action === 'pdf' && !v2 });
       var reported = Date.now();
       var steps = result.steps;
       delete result.steps;
@@ -308,6 +319,17 @@ function swimHandleRequest_(req) {
       };
       var chartData = result.charts;
       delete result.charts;
+      if (v2 && result.v2src && result.v2src.race.kind !== 'training') {
+        try {
+          result.v2 = swimV2Pages_(result.v2src, swimPdfParts_(req));
+          result.timings = timings({ v2: Date.now() - reported });
+          return swimJson_(result);
+        } catch (err) {
+          // Οι σελίδες δεν έγιναν: το PDF του φύλλου, όπως πριν (το Kinovea λέει γιατί).
+          result.v2Error = String(err && err.message ? err.message : err);
+          try { console.log('swim v2 ' + (err && err.stack ? err.stack : result.v2Error)); } catch (e) { /* χωρίς καταγραφή */ }
+        }
+      }
       if (drawCharts && result.chartsMissing.length) {
         result.charts = chartData.filter(function (c) { return result.chartsMissing.indexOf(c.key) >= 0; });
         if (action === 'pdf') {
@@ -1059,6 +1081,8 @@ function swimUpsertRace_(rawRace, opts) {
   Object.defineProperty(result, 'separate', { value: !!parts.separate, enumerable: false });
   // 2.9.5: τα γραφήματα με εικόνα του Kinovea για άλλες τιμές (το PDF τα ζητά ξανά μία φορά, swimChartsAgain_).
   Object.defineProperty(result, 'chartsStale', { value: (charts.stale || []).concat(v2stale), enumerable: false });
+  // 2.22.0: ο αγώνας, η ανάλυσή του και οι συγκρίσεις του (ΑΡ, αναφορά), για τις σελίδες της 2ης έκδοσης.
+  Object.defineProperty(result, 'v2src', { value: { race: race, analysis: analysis, extras: extras }, enumerable: false });
   return result;
 }
 
@@ -7763,6 +7787,75 @@ function swimExportPdfs_(ss, made) {
     out.shortFailed = !out.short;
   }
   return out;
+}
+
+/**
+ * 2.22.0: οι σελίδες του report της 2ης έκδοσης (SwimReportV2.gs) για τα μέρη που ζητήθηκαν: { html: το PDF (η πλήρης ανάλυση, που
+ * αρχίζει με τις σελίδες της σύντομης· μόνο η σύντομη: οι τρεις πρώτες σελίδες), htmlShort: με «σε δύο αρχεία» η σύντομη χωριστά,
+ * pages, pagesShort, title }. src: ό,τι έφτιαξε το swimUpsertRace_ (v2src).
+ */
+function swimV2Pages_(src, parts) {
+  var x = SwimV2.fromScript(src.race, src.analysis, src.extras || {});
+  var p = parts || { short: false, full: true };
+  var onlyShort = !!p.short && !p.full;
+  var main = SwimV2.document(x, onlyShort ? { short: 3 } : {});
+  var out = { html: main.html, pages: main.pages, title: main.title, version: SWIM_VERSION };
+  if (p.separate && p.short && p.full) {
+    var sh = SwimV2.document(x, { short: 3 });
+    out.htmlShort = sh.html;
+    out.pagesShort = sh.pages;
+  }
+  return out;
+}
+
+/**
+ * 2.22.0: το PDF της 2ης έκδοσης που τύπωσε το Kinovea (req.pdf, και req.pdfShort με «σε δύο αρχεία», base64) στον φάκελο των
+ * reports με το όνομα του φύλλου του αγώνα (στη θέση του προηγούμενου), όπως το PDF του φύλλου: στη σύνοψη, στο «Αρχεία
+ * Αθλητών/τριων» του KOE App και, για το πακέτο αποστολής, το ίδιο το PDF και τα email των προπονητών.
+ */
+function swimStorePdfV2_(req) {
+  var raw = req.race || {};
+  var raceId = String(req.raceId || raw.id || '');
+  if (!raceId) throw new Error(swimT_('Λείπει το id του αγώνα.'));
+  var ss = swimReportsSpreadsheet_();
+  var entry = swimFindIndexEntry_(swimIndexSheet_(ss), raceId);
+  var sheet = entry && entry.sheetId ? swimSheetById_(ss, entry.sheetId) : null;
+  if (!sheet) throw new Error(swimT_('Δεν βρέθηκε το report του αγώνα: πρώτα «Αποστολή τώρα».'));
+  var save = function (data, suffix) {
+    var bytes = Utilities.base64Decode(String(data || ''));
+    // Ένα PDF αρχίζει με «%PDF» (37 80 68 70): ό,τι άλλο δεν μπαίνει στη θέση του report.
+    if (!bytes || bytes.length < 1000 || bytes[0] !== 37 || bytes[1] !== 80 || bytes[2] !== 68 || bytes[3] !== 70) {
+      throw new Error(swimT_('Το PDF που ήρθε από το Kinovea δεν είναι έγκυρο.'));
+    }
+    var fileName = sheet.getName() + (suffix || '') + '.pdf';
+    var folder = swimReportFolder_();
+    var old = folder.getFilesByName(fileName);
+    while (old.hasNext()) old.next().setTrashed(true);
+    var blob = Utilities.newBlob(bytes, 'application/pdf', fileName);
+    var file = folder.createFile(blob);
+    var out = { url: file.getUrl(), name: fileName, id: file.getId(), v2: true };
+    Object.defineProperty(out, 'blob', { value: blob, enumerable: false });
+    return out;
+  };
+  var result = { ok: true, version: SWIM_VERSION, raceId: raceId, sheetId: sheet.getSheetId(), sheetName: sheet.getName(),
+    sheetUrl: ss.getUrl() + '#gid=' + sheet.getSheetId() };
+  result.pdf = save(req.pdf, '');
+  if (req.pdfShort) {
+    try {
+      result.pdfShort = save(req.pdfShort, swimT_(' - Σύντομη ανάλυση'));
+    } catch (e) {
+      result.pdfShortFailed = true;
+    }
+  }
+  swimSetSummaryPdf_(raceId, result.pdf.url);
+  var athleteRec = swimRegistryRecordSafe_(raw);
+  if (req.archive !== false) result.archive = swimArchiveReport_(raw, result.pdf, result.pdf.blob, athleteRec);
+  if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
+  if (req.pdfData) {
+    result.pdf.data = String(req.pdf);
+    if (result.pdfShort) result.pdfShort.data = String(req.pdfShort);
+  }
+  return result;
 }
 
 /**
