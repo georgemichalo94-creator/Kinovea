@@ -200,7 +200,7 @@ namespace Kinovea.ScreenManager
                 if (rowAt.TryGetValue(end, out wallRow))
                     list.Add(Checkpoint(wallRow, title, 2, SwimLang.T("Επαφή ") + end.ToString(CultureInfo.InvariantCulture) + unit, unit, next));
 
-                string pushoffLabel = exchange ? SwimLang.T("Ξεκίνημα επόμενου") : SwimLang.T("Αποκόλληση");
+                string pushoffLabel = exchange ? SwimLang.T("Ξεκίνημα") : SwimLang.T("Αποκόλληση");
                 string pushoffTip = exchange ? SwimLang.T("Ο επόμενος κολυμβητής φεύγει από τον βατήρα · ο χρόνος της αλλαγής από την επαφή.")
                     : turn != null && turn.Flip ? SwimLang.T("Τα πόδια φεύγουν από τον τοίχο · ο χρόνος της στροφής από την τελευταία χεριά.")
                     : SwimLang.T("Τα πόδια φεύγουν από τον τοίχο · ο χρόνος της στροφής από την επαφή.");
@@ -229,7 +229,7 @@ namespace Kinovea.ScreenManager
             // The finish: the last stroke to the wall, the touch.
             string finish = SwimLang.T("ΤΕΡΜΑΤΙΣΜΟΣ");
             double? lastStroke = c.FinalTime.HasValue && c.FinishLastStrokeGap.HasValue ? c.FinalTime.Value - c.FinishLastStrokeGap.Value : (double?)null;
-            SwimBarEvent last = Event("last", finish, 3, SwimLang.T("Τελ. χεριά → τοίχος"), lastStroke,
+            SwimBarEvent last = Event("last", finish, 3, SwimLang.T("Τελ. χεριά"), lastStroke,
                 null, SwimLang.T("Η τελευταία χεριά πριν τον τερματισμό · η απόσταση της από τον τοίχο."));
             SetDistance(last, SwimBarDistance.FinishLastStroke, 0, race.FinishLastStrokeDist, false, SeedLastStroke);
             if (c.FinishLastStrokeGap.HasValue)
@@ -238,7 +238,7 @@ namespace Kinovea.ScreenManager
 
             SwimRow finishRow;
             if (rowAt.TryGetValue(distance, out finishRow))
-                list.Add(Checkpoint(finishRow, finish, 3, SwimLang.T("Τερματισμός ") + distance.ToString(CultureInfo.InvariantCulture) + unit, unit, next));
+                list.Add(Checkpoint(finishRow, finish, 3, SwimLang.T("Επαφή ") + distance.ToString(CultureInfo.InvariantCulture) + unit, unit, next));
 
             return list;
         }
@@ -302,7 +302,8 @@ namespace Kinovea.ScreenManager
             if (row.Strokes.HasValue)
             {
                 bool ok = row.StrokesTyped || row.StrokesConfirmed;
-                e.Value = SwimLang.Decimals(row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture)) + SwimLang.T(" χερ.") + (ok ? " ✓" : "");
+                // As the strokes of the tab of the checkpoints (a point, not a comma).
+                e.Value = row.Strokes.Value.ToString("0.#", CultureInfo.InvariantCulture) + SwimLang.T(" χερ.") + (ok ? " ✓" : "");
                 e.ValueOk = ok;
                 e.StrokesValue = true;
             }
