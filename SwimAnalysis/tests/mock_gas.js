@@ -1,6 +1,9 @@
 // Minimal mock of the Apps Script services, to run doPost end-to-end and catch runtime errors.
 const fs = require('fs'); const vm = require('vm'); const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../GoogleSheet/SwimRaceAnalysis.gs'), 'utf8');
+// (2.22.0) The other file of the same Apps Script project (the report of the 2nd version): the files of a project share their names.
+const v2Path = path.join(__dirname, '../GoogleSheet/SwimReportV2.gs');
+const srcV2 = fs.existsSync(v2Path) ? fs.readFileSync(v2Path, 'utf8') : '';
 
 // Τι σχεδιάζει το Google από ένα γράφημα του φύλλου (στο PDF και στην εικόνα του, getAs): μόνο τον τίτλο με την περιοχή του
 // γραφήματος σε % (ως την 2.2.1) ή με τιμές πάνω στις σειρές (dataLabel: στα PDF 2.5–2.9.4 σωζόταν μόνο η πίτα, χωρίς τιμές).
@@ -464,6 +467,7 @@ function makeContext(opts) {
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
+  if (srcV2) vm.runInContext(srcV2, ctx);
   ctx._ss = ss; ctx._all = all; ctx._triggers = triggers; ctx._drive = drive; ctx._ui = ui; ctx._props = props;
   ctx._sleeps = sleeps; ctx._exports = exports; ctx._pdf = pdf; ctx._cache = { store: cacheStore, log: cacheLog }; ctx._console = consoleLines;
   ctx._openFails = openFails; ctx._opens = opens;
