@@ -198,11 +198,13 @@ Check ([Math]::Abs($box.Number - 3.01) -lt 1e-9) ('the arrow: 0.01 (' + $box.Tex
 $culture = [System.Threading.Thread]::CurrentThread.CurrentCulture
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::GetCultureInfo('el-GR')
 try {
+  # Typed: into the text box of the box itself (its Text set by a program is confirmed at once).
+  $edit = @($box.Controls | Where-Object { $_ -is [System.Windows.Forms.TextBox] })[0]
   $box.Number = 3.30
-  $box.Text = '3.30.'
+  $edit.Text = '3.30.'
   $typing = $box.Number
   Check ([Math]::Abs($typing - 3.30) -lt 1e-9 -and $box.Text -eq '3.30.') ('Windows in Greek, "3.30." being typed: the number as it was (' + $typing + ', "' + $box.Text + '")')
-  $box.Text = '3.303.30'
+  $edit.Text = '3.303.30'
   $typing = $box.Number
   $tBox.GetMethod('ValidateEditText', $all).Invoke($box, $null) | Out-Null
   Check ([Math]::Abs($typing - 3.30) -lt 1e-9 -and $box.Text -eq '3.30' -and [Math]::Abs($box.Number - 3.30) -lt 1e-9) ('Windows in Greek, "3.303.30" confirmed: dropped (' + $typing + ', "' + $box.Text + '")')
