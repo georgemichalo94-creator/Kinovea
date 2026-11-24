@@ -300,6 +300,8 @@ try {
   Check ($r2.took -and $r2.text -eq '7.41') ('there with Ctrl a tenth: ' + $r2.text)
   Check ($r3.took -and $r3.handled -and $r3.text -eq '7.41' -and $r4.text -eq '7.42') ('the parts of a notch of a fine wheel add up: ' + $r3.text + ' ' + $r4.text)
   Check (-not $r5.took -and -not $r5.handled -and $r5.text -eq '7.42') ('away from the cell the wheel changes nothing: ' + $r5.text)
+  $tip = [string]$grid.Columns['uwDist'].ToolTipText
+  Check ($tip.Contains('F2') -and $tip.Contains('Esc') -and -not $tip.Contains([string][char]0x25B2)) ('the help of the column of the turns, without the arrows of the boxes: ' + $tip)
 
   # The wheel as Windows sends it: to the editor of the cell with the mouse over the cell, then with the mouse away from it.
   $want = 7.42
@@ -337,7 +339,9 @@ $map = (T 'SwimLangEnglish').GetField('Map', $static).GetValue($null)
 $keys = @('ΓΕΓΟΝΟΤΑ', 'ΑΓΩΝΑΣ', 'ΓΕΓΟΝΟΣ', 'ΤΙΜΗ', 'ΚΟΛΥΜΒΗΣΗ {0}–{1}{2}', 'ΑΛΛΑΓΗ ΣΚΥΤΑΛΗΣ {0}{1}', 'ΑΛΛΑΓΗ ΣΤΥΛ {0}{1}', 'ΣΤΡΟΦΗ {0}{1}',
   'Τελ. χεριά', 'Ξεκίνημα', 'Όλα στον πίνακα  ↗', '✓ επίσημοι χρόνοι', ' χερ.',
   'Κλικ: γράψε την απόσταση ή γύρνα τη ροδέλα (0.01 · Ctrl 0.10 · Shift 1.00), Enter για να μπει, Esc για ακύρωση.',
-  'Γράψε την απόσταση (π.χ. 3.05 ή 3,05) ή γύρνα τη ροδέλα: 0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. ')
+  'Γράψε την απόσταση (π.χ. 3.05 ή 3,05) ή γύρνα τη ροδέλα: 0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. ',
+  'Γράψε την απόσταση στο κελί (π.χ. 3.05 ή 3,05· F2: αλλάζεις αυτή που υπάρχει) ή, όσο γράφεις, γύρνα τη ροδέλα πάνω στο κελί: ',
+  '0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. Enter: μπαίνει · Esc: μένει όπως ήταν. Κενό: χωρίς τιμή.')
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts (' + $missing.Count + ' missing: ' + ($missing -join ' | ') + ')')
 

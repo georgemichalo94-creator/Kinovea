@@ -3024,6 +3024,8 @@ namespace Kinovea.ScreenManager
             { "Άλλη…", "Other…" },
             { "Γράψε την απόσταση (π.χ. 3.05 ή 3,05) ή γύρνα τη ροδέλα: 0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. ", "Type the distance (e.g. 3.05 or 3,05) or turn the wheel: 0.01 a step · Ctrl 0.10 · Shift 1.00. " },
             { "Τα βελάκια ▲▼ (και ↑ ↓) αλλάζουν 0.01, πιο γρήγορα όταν τα κρατάς. Κενό: χωρίς τιμή.", "The arrows ▲▼ (and ↑ ↓) change it by 0.01, faster when held. Empty: no value." },
+            { "Γράψε την απόσταση στο κελί (π.χ. 3.05 ή 3,05· F2: αλλάζεις αυτή που υπάρχει) ή, όσο γράφεις, γύρνα τη ροδέλα πάνω στο κελί: ", "Type the distance in the cell (e.g. 3.05 or 3,05; F2: change the one there) or, while typing, turn the wheel over the cell: " },
+            { "0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. Enter: μπαίνει · Esc: μένει όπως ήταν. Κενό: χωρίς τιμή.", "0.01 a step · Ctrl 0.10 · Shift 1.00. Enter: it goes in · Esc: stays as it was. Empty: no value." },
             { "δεν βρέθηκε ο Microsoft Edge ούτε το Google Chrome", "neither Microsoft Edge nor Google Chrome was found" },
             { "χωρίς σελίδες", "no pages" },
             { "δεν βγήκε PDF", "no PDF came out" },

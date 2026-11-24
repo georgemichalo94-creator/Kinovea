@@ -1087,7 +1087,7 @@ namespace Kinovea.ScreenManager
             // (2.38.1) Through the wheel of the grid: the editor of a cell gives its wheel to the grid and raises no wheel event of its own
             // (DataGridViewTextBoxEditingControl), so the handler of 2.37.0 on the editor never ran. Only with the mouse over the edited
             // cell: elsewhere the wheel scrolls the list as before, and never changes a value.
-            gridTurns.Columns["uwDist"].ToolTipText = DistanceHelp;
+            gridTurns.Columns["uwDist"].ToolTipText = TurnsDistanceHelp;
             gridTurns.MouseWheel += (s, w) => TurnsWheel(w as HandledMouseEventArgs, w.Delta, Control.MousePosition, ModifierKeys);
 
             Label lblTurns = new Label
@@ -1669,6 +1669,19 @@ namespace Kinovea.ScreenManager
             {
                 return SwimLang.T("Γράψε την απόσταση (π.χ. 3.05 ή 3,05) ή γύρνα τη ροδέλα: 0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. ") +
                     SwimLang.T("Τα βελάκια ▲▼ (και ↑ ↓) αλλάζουν 0.01, πιο γρήγορα όταν τα κρατάς. Κενό: χωρίς τιμή.");
+            }
+        }
+
+        /// <summary>
+        /// (2.38.2) How the cell of the distance under the water of the turns works (the tooltip of its column): in the grid the arrows
+        /// go to the next row, so not the text of the boxes (DistanceHelp) with its arrows.
+        /// </summary>
+        private static string TurnsDistanceHelp
+        {
+            get
+            {
+                return SwimLang.T("Γράψε την απόσταση στο κελί (π.χ. 3.05 ή 3,05· F2: αλλάζεις αυτή που υπάρχει) ή, όσο γράφεις, γύρνα τη ροδέλα πάνω στο κελί: ") +
+                    SwimLang.T("0.01 ανά βήμα · Ctrl 0.10 · Shift 1.00. Enter: μπαίνει · Esc: μένει όπως ήταν. Κενό: χωρίς τιμή.");
             }
         }
 
