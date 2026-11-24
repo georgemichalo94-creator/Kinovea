@@ -95,8 +95,8 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.15.0) A turn: where the head is at the push-off (pool units from the wall): the toes leave the wall with the body straight,
-        /// so the head is the body length away. (2.35.0) The body length measured (SwimRace.BodyLength), else the typical height of
-        /// the swimmer + the pointed toes (SwimHead): the analyst marks only the push-off, the head is not seen well under the water.
+        /// so the head is the body length away. (2.35.0) The typical height of the swimmer + the pointed toes (SwimHead): the analyst
+        /// marks only the push-off, the head is not seen well under the water (2.36.0: a body length measured before is not used).
         /// </summary>
         public double? HeadAtPushoff;
 
@@ -1197,8 +1197,9 @@ namespace Kinovea.ScreenManager
     /// (the head is behind the hands) and the push-off of a turn (the toes leave the wall, the head is a body length away). The head
     /// is not clicked there (under the water it is not seen well): its place comes from the height of the swimmer, typical for his
     /// gender and age (the athlete of the registry: nothing is typed). Behind the hands: 0.27 × height, the reach of the arms over
-    /// the head (≈ 1/3 of the height) at an entry of 30–40°; at the push-off: height + 0.10 m (the toes pointed). A body length
-    /// measured or typed before 2.35.0 (SwimRace.BodyLength, toes → head) is the push-off's distance instead.
+    /// the head (≈ 1/3 of the height) at an entry of 30–40°; at the push-off: height + 0.10 m (the toes pointed). (2.36.0) A body
+    /// length measured or typed before (SwimRace.BodyLength, toes → head) is no longer used: its field went, at the analyst's request,
+    /// and a value nobody sees would make the speeds of one race differ from the others.
     /// An error of 10 cm in the height: about 1.5% in the underwater speed of a turn, less than 0.5% in that of a start.
     /// </summary>
     public sealed class SwimHead
@@ -1231,9 +1232,6 @@ namespace Kinovea.ScreenManager
         /// <summary>The head from the wall at the push-off of a turn (m).</summary>
         public double AtPushoff;
 
-        /// <summary>AtPushoff is the body length measured (SwimRace.BodyLength), not from the height.</summary>
-        public bool BodyMeasured;
-
         public static SwimHead Of(SwimRace race)
         {
             SwimHead h = new SwimHead();
@@ -1251,19 +1249,6 @@ namespace Kinovea.ScreenManager
             h.Height = Typical(h.Gender, h.Age);
             h.BehindHands = BehindHandsShare * h.Height;
             h.AtPushoff = h.Height + ToesPointed;
-
-            // A body length of the swimmer measured on the video or typed (pool units): the push-off's distance, when plausible.
-            double k = race.K > 0 ? race.K : 1;
-            if (race.BodyLength.HasValue)
-            {
-                double meters = race.BodyLength.Value * k;
-                if (meters >= SwimTechCalculator.BodyLengthMin && meters <= SwimTechCalculator.BodyLengthMax)
-                {
-                    h.AtPushoff = meters;
-                    h.BodyMeasured = true;
-                }
-            }
-
             return h;
         }
 

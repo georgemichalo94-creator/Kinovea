@@ -49,8 +49,28 @@ const fnOf = (src, name) => {
 };
 // 2.20.0: δύο γραμμές ακόμη στην εκκίνηση (οι ταχύτητες των φάσεων, swimLayoutStart_ του νέου script) και η στήλη έξοδος → +15 των
 // στροφών (swimLayoutTurns_): ο πίνακας των χρόνων δύο γραμμές πιο κάτω.
-const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15', 'L.T0 = L.startRow + 6;': 'L.T0 = L.startRow + 8;',
+// 2.21.0: η εκκίνηση πάλι σε μία γραμμή (ο πίνακας των χρόνων όπου ήταν πριν από το 2.20.0).
+const SR_SAME = { 'WIDE: yards ? 17 : 15': 'WIDE: yards ? 16 : 15',
   "cell(r, 9, '=IF(O' + tr + '=\"\",\"\",O' + tr + ')', SWIM_FMT.dps);": "cell(r, 9, '=IF(M' + tr + '=\"\",\"\",M' + tr + ')', SWIM_FMT.dps);" };
+// 2.21.0: η εκκίνηση και οι στροφές με τη σειρά των γεγονότων (swimLayoutStart_, swimLayoutTurns_ του νέου script): οι τύποι που
+// δείχνουν σε αυτές (σύνθεση, σύγκριση, επίπεδα, γράφημα στροφών) με τα νέα γράμματα στηλών· στροφές: -5/+15 στη L (ήταν C), τοίχος →
+// +15 στη J (ήταν L), χρόνος στροφής στη E (ήταν D), μέση ταχύτητα -5/+15 στη M (ήταν H)· εκκίνηση: είσοδος στη D (ήταν C), πτήση
+// στη C (ήταν N), δελφινισμοί στη H (ήταν J).
+const ORDER_221 = {
+  "'=IF(COUNT(C' + L.turnFirst + ':C' + L.turnLast + ')=0,\"\",SUM(C' + L.turnFirst + ':C' + L.turnLast + '))'":
+    "'=IF(COUNT(L' + L.turnFirst + ':L' + L.turnLast + ')=0,\"\",SUM(L' + L.turnFirst + ':L' + L.turnLast + '))'",
+  "cell(r, 3, '=IF(C' + tr + '=\"\",\"\",C' + tr + ')', SWIM_FMT.time);": "cell(r, 3, '=IF(L' + tr + '=\"\",\"\",L' + tr + ')', SWIM_FMT.time);",
+  "cell(r, 6, '=IF(L' + tr + '=\"\",\"\",L' + tr + ')', SWIM_FMT.time);": "cell(r, 6, '=IF(J' + tr + '=\"\",\"\",J' + tr + ')', SWIM_FMT.time);",
+  "cell(r, 9, '=IF(D' + tr + '=\"\",\"\",D' + tr + ')', SWIM_FMT.time);": "cell(r, 9, '=IF(E' + tr + '=\"\",\"\",E' + tr + ')', SWIM_FMT.time);",
+  "cell(r, 4, '=IF(C' + sv + '=\"\",\"\",C' + sv + ')', SWIM_FMT.time);": "cell(r, 4, '=IF(D' + sv + '=\"\",\"\",D' + sv + ')', SWIM_FMT.time);",
+  "cell(r, 5, '=IF(N' + sv + '=\"\",\"\",N' + sv + ')', SWIM_FMT.time);": "cell(r, 5, '=IF(C' + sv + '=\"\",\"\",C' + sv + ')', SWIM_FMT.time);",
+  "cell(r, 7, '=IF(J' + sv + '=\"\",\"\",J' + sv + ')', SWIM_FMT.int);": "cell(r, 7, '=IF(H' + sv + '=\"\",\"\",H' + sv + ')', SWIM_FMT.int);",
+  "'=IFERROR(AVERAGE(L' + L.turnFirst + ':L' + L.turnLast + '),\"\")'": "'=IFERROR(AVERAGE(J' + L.turnFirst + ':J' + L.turnLast + '),\"\")'",
+  "'=IF(COUNT(L' + L.turnFirst + ':L' + L.turnLast + ')=0,\"\",MIN(L' + L.turnFirst + ':L' + L.turnLast + '))'":
+    "'=IF(COUNT(J' + L.turnFirst + ':J' + L.turnLast + ')=0,\"\",MIN(J' + L.turnFirst + ':J' + L.turnLast + '))'",
+  "'=IF(L' + tr + '=\"\",\"\",L' + tr + ')');\n      bench.im.push(r);": "'=IF(J' + tr + '=\"\",\"\",J' + tr + ')');\n      bench.im.push(r);",
+  "'C' + L.turnFirst + ':C' + L.turnLast, 'H' + L.turnFirst + ':H' + L.turnLast]": "'L' + L.turnFirst + ':L' + L.turnLast, 'M' + L.turnFirst + ':M' + L.turnLast]"
+};
 let ORIGINAL_NAMED = ORIGINAL.replace(UW_OLD, UW_NEW).replace(SR_NOTE_OLD, SR_NOTE_NEW).replace(SL_NOTE_OLD, SL_NOTE_NEW);
 ['swimAnalyze_', 'swimBlocks50_', 'swimLayoutTiming_', 'swimInputPlan_', 'swimCleanFormulas_', 'swimLayoutStart_', 'swimLayoutTurns_'].forEach(name => {
   ORIGINAL_NAMED = ORIGINAL_NAMED.split(fnOf(ORIGINAL_NAMED, name)).join(fnOf(CURRENT, name));
@@ -59,7 +79,17 @@ Object.keys(SR_SAME).forEach(k => {
   assert.ok(ORIGINAL_NAMED.split(k).length === 2 && CURRENT.indexOf(k) < 0 && CURRENT.indexOf(SR_SAME[k]) > 0, 'the 2.11.0 change ' + k);
   ORIGINAL_NAMED = ORIGINAL_NAMED.split(k).join(SR_SAME[k]);
 });
-ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_', 'swimStrokesMissing_'].map(n => fnOf(CURRENT, n)).join('\n') +
+Object.keys(ORDER_221).forEach(k => {
+  assert.ok(ORIGINAL_NAMED.split(k).length === 2, 'the 2.21.0 change ' + k);
+  ORIGINAL_NAMED = ORIGINAL_NAMED.split(k).join(ORDER_221[k]);
+});
+const varOf = (src, name) => {
+  const m = new RegExp('\\nvar ' + name + ' = [\\s\\S]*?;\\n').exec(src);
+  assert.ok(m, 'var ' + name);
+  return m[0].slice(1);
+};
+ORIGINAL_NAMED += '\n' + ['swimCycleRate_', 'swimSrMatches_', 'swimSrFormula_', 'swimStrokesMissing_', 'swimStartColumns_', 'swimTurnColL_'].map(n => fnOf(CURRENT, n)).join('\n') +
+  varOf(CURRENT, 'SWIM_TURN_COL') +
   'function swimT_(el) { return el; }\n' +
   'function swimTF_(el) { var a = arguments; return el.replace(/\\{(\\d+)\\}/g, function (all, n) { var i = Number(n) + 1; return i < a.length ? String(a[i]) : all; }); }\n' +
   'var SWIM_DAK50 = false;\n' +
@@ -349,7 +379,7 @@ const Rold = races(envOld.files, envOld.reference), Rnew = races(envNew.files, e
 const outOld = postAll(envOld, Rold, undefined);
 const outNew = postAll(envNew, Rnew, 'el');
 const vOld = versionOf(ORIGINAL), vNew = versionOf(CURRENT);
-assert.strictEqual(vNew, '2.20.0');
+assert.strictEqual(vNew, '2.21.0');
 const norm = (x, v) => JSON.parse(JSON.stringify(x).split(v).join('<version>'));
 // 2.8.0: οι αναλύσεις του αθλητή και με τους χρόνους τους (για σύγκριση στο βίντεο)· το PDF λέει αν έγινε η πρώτη σελίδα (εδώ
 // όχι: χωρίς copyTo).
@@ -461,7 +491,7 @@ like(/^=IF\(COUNT\(L\d+,L\d+\)=0,"Swimming Performance Index \(average of the 50
 like(/^100m Butterfly · Pool 50m · Final$/, 'event line');
 like(/^Test Swim Club · Reg\. no\. 910001 · Women · 2008$/, 'club line');
 like(/^TESTER Anna {2}\(Lane 4\)$/, 'athlete and lane');
-like(/^Updated .* · version 2\.20\.0$/, 'version line');
+like(/^Updated .* · version 2\.21\.0$/, 'version line');
 has('Turn 50m'); has('Start 2'); has('Turn 3'); has('Angle: Knee (°)'); has('Water entry angle (°)'); has('Angle: ' + CUSTOM_ANGLE + ' (°)');
 has('Shoulder'); has('Trunk'); has('Angle');
 like(/^Start · Start signal · Ready position · t = 0\.00 s$/, 'snapshot title with the event before the stage');

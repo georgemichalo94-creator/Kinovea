@@ -75,6 +75,33 @@ function compare(meta, c, a) {
   pairs('summary', SUMMARY, meta, '', c, a.summary || {});
 }
 
+// (2.36.0) The events in the order of the race (fm_make.js 'mx'): the report has every checkpoint once in its order, a turn at every
+// wall (a change of a relay where its legs end, the styles of the medley), the 50s in order, and the table of the times and the
+// table of the turns of the report in that order.
+let orderedEvents = 0;
+function checkOrder(meta, an, layout) {
+  const r0 = meta.race, mx = meta.matrix, what = meta.what;
+  const cps = r0.Checkpoints;
+  assert.deepStrictEqual(Array.from(an.rows, r => r.d), cps, what + ': the rows of the report are the checkpoints in their order');
+  const times = an.rows.map(r => r.t);
+  times.forEach((x, k) => assert.ok(typeof x === 'number' && (k === 0 || x > times[k - 1]), what + ': the times go up at ' + cps[k]));
+  assert.deepStrictEqual(Array.from(an.turnWalls), mx.walls.map(w => w.wall), what + ': a turn at every wall');
+  assert.deepStrictEqual(Array.from(an.turns, x => x.wall), mx.walls.map(w => w.wall), what + ': the turns in the order of the walls');
+  assert.deepStrictEqual(Array.from(an.turns, x => !!x.exchange), mx.walls.map(w => w.exchange), what + ': the changes of the relay');
+  const ends = (an.blocks || []).map(b => b.to);
+  ends.forEach((x, k) => assert.ok(k === 0 || x > ends[k - 1], what + ': the 50s in order'));
+  // The report: the distances of the table of the times from T0 down, the walls of the table of the turns.
+  const g = layout.grid;
+  const shown = cps.map((d, k) => (g.get(layout.T0 + k, 1) || {}).v);
+  assert.deepStrictEqual(shown, cps, what + ': the table of the times of the report in the order of the checkpoints');
+  if (layout.turnRows && layout.turnRows.first) {
+    const walls = [];
+    for (let r = layout.turnRows.first; r <= layout.turnRows.last; r++) walls.push((g.get(r, 1) || {}).v);
+    assert.deepStrictEqual(walls, mx.walls.map(w => w.wall), what + ': the table of the turns of the report in the order of the walls');
+  }
+  orderedEvents++;
+}
+
 const files = fs.readdirSync(dir).filter(f => /^in_\d+\.json$/.test(f)).sort();
 assert.ok(files.length >= 50, 'the analyses of fm_make.js: ' + files.length);
 const failures = [];
@@ -112,7 +139,9 @@ for (const f of files) {
     const an = G.swimAnalyze_(rr);
     const extras = { pageHeight: w => G.swimPdfPageHeight_(reports, w) };
     if (rr.kind === 'training') extras.techCompare = G.swimTechCompare_(rr);
-    check(G.swimBuildLayout_(rr, an, extras), meta.what, false);
+    const layout = G.swimBuildLayout_(rr, an, extras);
+    check(layout, meta.what, false);
+    if (meta.matrix) checkOrder(meta, an, layout);
     if (rr.kind === 'training') { trainings++; continue; }
 
     races++;
@@ -127,7 +156,8 @@ for (const f of files) {
 
 const fields = Object.keys(stats).filter(k => stats[k].differ > 0).sort((x, y) => stats[y].differ - stats[x].differ);
 const total = Object.keys(stats).reduce((n, k) => n + stats[k].compared, 0);
-console.log(`fm_check: ${sent} analyses sent to the script (${races} races, ${trainings} training videos; refused: ${JSON.stringify(refusals)}), ${compared} races compared (${noStart} without a start signal), ${total} values`);
+console.log(`fm_check: ${sent} analyses sent to the script (${races} races, ${trainings} training videos; refused: ${JSON.stringify(refusals)}), ${compared} races compared (${noStart} without a start signal), ${total} values, ${orderedEvents} events in the order of the race`);
+if (orderedEvents < 60) failures.push(`only ${orderedEvents} events in the order of the race`);
 fields.forEach(k => {
   const s = stats[k];
   console.log(`DIFF ${k}: ${s.differ} of ${s.compared} (${s.asMarked} in analyses as marked)`);

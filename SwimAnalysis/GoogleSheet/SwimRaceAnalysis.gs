@@ -46,9 +46,13 @@
  *      χεριών, είσοδος → έξοδος και έξοδος → 15· στις στροφές μια στήλη με την ταχύτητα έξοδος → +15. Οι τιμές είναι του Kinovea
  *      2.35.0 (από το κεφάλι, όπως και η υποβρύχια ταχύτητα της στροφής)· το report δείχνει μόνο τις τιμές. Τα report
  *      ξαναφτιάχνονται μία φορά.
+ *  17. Καθαρότερο report, με τη σειρά των γεγονότων (2.21.0): η εκκίνηση σε μία γραμμή με τη σειρά που γίνονται (αντίδραση,
+ *      βατήρας, πτήση, είσοδος, ταχύτητα σήμα → είσοδος, δελφινισμοί, έξοδος, ταχύτητα είσοδος → έξοδος, 15 και ταχύτητα έξοδος →
+ *      15), χωρίς την είσοδο των ισχίων και τις ταχύτητες ισχίων και ποδιών· οι στροφές κι αυτές με τη σειρά τους (τελευταία χεριά
+ *      → τοίχος, στροφή, κάτω από το νερό, έξοδος, +15, και μετά τα -5/+15). Τα report ξαναφτιάχνονται μία φορά.
  */
 
-var SWIM_VERSION = '2.20.0';
+var SWIM_VERSION = '2.21.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -2431,9 +2435,9 @@ function swimLayoutSignature_(race, extras, pageHeight, panelsFirst) {
   var sig = function (o) { return o ? String(o.id || '') + ':' + swimHash_(JSON.stringify(o.race)) : ''; };
   var s = {
     // 10 (2.9.5): ο ΔΑΚ κάθε 50άρι στη στήλη L των χρόνων· 11 (2.11.0): μία στήλη συχνότητας· 12 (2.19.0): DPS και SL από την
-    // ταχύτητα και τη συχνότητα· 13 (2.20.0): οι ταχύτητες των φάσεων της εκκίνησης και η έξοδος → +15 των στροφών. Τα report
-    // ξαναφτιάχνονται μία φορά.
-    v: SWIM_DAK50 ? 13 : 9,
+    // ταχύτητα και τη συχνότητα· 13 (2.20.0): οι ταχύτητες των φάσεων της εκκίνησης και η έξοδος → +15 των στροφών· 14 (2.21.0):
+    // η εκκίνηση και οι στροφές με τη σειρά των γεγονότων, χωρίς ισχία και πόδια. Τα report ξαναφτιάχνονται μία φορά.
+    v: SWIM_DAK50 ? 14 : 9,
     kind: race.kind,
     d: race.checkpoints.map(function (c) { return c.d; }),
     pool: race.pool,
@@ -2854,8 +2858,8 @@ function swimBuildRaceLayout_(race, analysis, extras, paging) {
   // Θέσεις που χρειάζονται οι τύποι από την αρχή (KPI): εκκίνηση στη γραμμή 12, χρόνοι από τη 17 (με την κάρτα σύνοψης
   // του βίντεο, μετά από αυτήν).
   L.startRow = 12 + swimSummaryGraphicRows_(race);
-  // 2.20.0: δύο γραμμές ακόμη στην εκκίνηση (οι ταχύτητες των φάσεων).
-  L.T0 = L.startRow + 8;
+  // 2.21.0: η εκκίνηση πάλι σε μία γραμμή (οι ταχύτητες των φάσεων μέσα της, με τη σειρά τους· 2.20.0: δύο γραμμές ακόμη).
+  L.T0 = L.startRow + 6;
   L.rowOf = {};
   L.rows.forEach(function (row, i) { L.rowOf[row.d] = L.T0 + i; });
   L.lastRow = L.T0 + L.n - 1;
@@ -3015,70 +3019,65 @@ function swimDak50Tile_(L) {
   };
 }
 
+/**
+ * (2.21.0) Οι στήλες της εκκίνησης με τη σειρά που γίνονται τα γεγονότα (αντίδραση → βατήρας → πτήση → είσοδος → κάτω από το νερό →
+ * έξοδος → 15), μαζί οι ταχύτητες των φάσεων (2.20.0) εκεί που τελειώνει η καθεμιά· όχι η είσοδος των ισχίων ούτε οι ταχύτητες
+ * ισχίων και ποδιών. [κλειδί, είδος, μορφή, τίτλος]· 'formula': τύπος του φύλλου.
+ */
+function swimStartColumns_(U) {
+  return [
+    ['reaction', 'manual', SWIM_FMT.time, swimT_('Χρόνος Αντίδρασης – πρώτη κίνηση (sec)')],
+    ['blockTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος Πάνω στον βατήρα (sec)')],
+    ['flightTime', 'auto', SWIM_FMT.time, swimT_('Πτήση: βατήρας → είσοδος (sec)')],
+    ['entryTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος έως την είσοδο (sec)')],
+    ['entryDistHands', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση εισόδου (Χέρια) ({0})', U)],
+    ['entryVelHands', 'manual', SWIM_FMT.vel, swimT_('Ταχύτητα εισόδου (Χέρια) (m/s)')],
+    ['sigEntryVel', 'auto', SWIM_FMT.vel, swimT_('Ταχύτητα: σήμα → είσοδος χεριών (m/s)')],
+    ['kicks', 'auto', SWIM_FMT.int, swimT_('Υποβρύχιοι Δελφινισμοί')],
+    ['underwaterTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος έως την έξοδο από το νερό (sec)')],
+    ['underwaterDist', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση κάτω από το νερό ({0})', U)],
+    ['breakoutDist', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση Εξόδου από το νερό (κεφάλι) ({0})', U)],
+    ['entryBreakoutVel', 'auto', SWIM_FMT.vel, swimT_('Ταχύτητα: είσοδος → έξοδος (m/s)')],
+    ['signalBreakoutVel', 'auto', SWIM_FMT.vel, swimT_('Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)')],
+    ['t15', 'formula', SWIM_FMT.time, swimTF_('Χρόνος 15{0} (sec)', U)],
+    ['breakout15Vel', 'auto', SWIM_FMT.vel, swimTF_('Ταχύτητα: έξοδος → 15{0} (m/s)', U)]
+  ];
+}
+
 function swimLayoutStart_(L) {
   var g = L.g, U = L.U, r0 = L.startRow;
   g.section(r0, swimT_('Εκκίνηση (χρόνοι από το σήμα εκκίνησης)'), L.LAST);
-  g.headers(r0 + 1, [
-    swimT_('Χρόνος Αντίδρασης – πρώτη κίνηση (sec)'), swimT_('Χρόνος Πάνω στον βατήρα (sec)'), swimT_('Χρόνος έως την είσοδο (sec)'),
-    swimTF_('Απόσταση εισόδου (Χέρια) ({0})', U), swimTF_('Απόσταση εισόδου (Ισχία) ({0})', U), swimT_('Ταχύτητα εισόδου (Χέρια) (m/s)'),
-    swimT_('Ταχύτητα εισόδου (Ισχία) (m/s)'), swimT_('Ταχύτητα εισόδου (Πόδια) (m/s)'), swimT_('Χρόνος έως την έξοδο από το νερό (sec)'),
-    swimT_('Υποβρύχιοι Δελφινισμοί'), swimTF_('Απόσταση κάτω από το νερό ({0})', U), swimTF_('Απόσταση Εξόδου από το νερό (κεφάλι) ({0})', U),
-    swimT_('Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)'), swimT_('Πτήση: βατήρας → είσοδος (sec)'), swimTF_('Χρόνος 15{0} (sec)', U)
-  ]);
+  var defs = swimStartColumns_(U);
+  g.headers(r0 + 1, defs.map(function (d) { return d[3]; }));
   var rv = r0 + 2;
-  var startDefs = [
-    ['reaction', 'manual', SWIM_FMT.time],
-    ['blockTime', 'auto', SWIM_FMT.time],
-    ['entryTime', 'auto', SWIM_FMT.time],
-    ['entryDistHands', 'manual', SWIM_FMT.vel],
-    ['entryDistHips', 'manual', SWIM_FMT.vel],
-    ['entryVelHands', 'manual', SWIM_FMT.vel],
-    ['entryVelHips', 'manual', SWIM_FMT.vel],
-    ['entryVelFeet', 'manual', SWIM_FMT.vel],
-    ['underwaterTime', 'auto', SWIM_FMT.time],
-    ['kicks', 'auto', SWIM_FMT.int],
-    ['underwaterDist', 'manual', SWIM_FMT.vel],
-    ['breakoutDist', 'manual', SWIM_FMT.vel]
-  ];
+  // Η στήλη κάθε τιμής (για τους τύπους της σύγκρισης, swimLayoutCompare_).
+  L.startCol = {};
+  defs.forEach(function (d, i) { L.startCol[d[0]] = i + 1; });
+  var at = function (key) { return swimColLetter_(L.startCol[key]) + rv; };
   L.layout.inputs.start = [];
-  startDefs.forEach(function (def, i) {
-    g.set(rv, i + 1, '', swimF_(def[2], def[1] === 'auto' ? 'auto' : 'input'));
-    L.layout.inputs.start.push({ r: rv, c: i + 1, key: def[0], kind: def[1] });
+  defs.forEach(function (d, i) {
+    var c = i + 1, key = d[0];
+    if (key === 't15') {
+      var r15 = L.rowOf[15];
+      g.set(rv, c, r15 !== undefined ? '=IF(B' + r15 + '="","",B' + r15 + ')' : '', swimF_(SWIM_FMT.time, 'formula'));
+      return;
+    }
+    if (!SWIM_STRICT_VALUES && key === 'signalBreakoutVel') {
+      g.set(rv, c, '=IF(OR(' + at('underwaterDist') + '="",' + at('underwaterTime') + '="",' + at('underwaterTime') + '=0),"",' +
+        at('underwaterDist') + L.K + '/' + at('underwaterTime') + ')', swimF_(SWIM_FMT.vel, 'formula'));
+      return;
+    }
+    if (!SWIM_STRICT_VALUES && key === 'flightTime') {
+      g.set(rv, c, '=IF(OR(' + at('blockTime') + '="",' + at('entryTime') + '=""),"",' + at('entryTime') + '-' + at('blockTime') + ')',
+        swimF_(SWIM_FMT.time, 'formula'));
+      return;
+    }
+    // 2.15.0 (SWIM_STRICT_VALUES): η μέση ταχύτητα σήμα → έξοδος και η πτήση τιμές του προγράμματος, όχι τύποι.
+    g.set(rv, c, '', swimF_(d[2], d[1] === 'auto' ? 'auto' : 'input'));
+    L.layout.inputs.start.push({ r: rv, c: c, key: key, kind: d[1] });
   });
-  if (SWIM_STRICT_VALUES) {
-    // 2.15.0: η μέση ταχύτητα σήμα → έξοδος όχι από απόσταση που είναι εκτίμηση, και η πτήση από την αποδέσμευση του βίντεο (όταν
-    // στο «Βατήρας» είναι ο επίσημος χρόνος αντίδρασης): τιμές του προγράμματος, όχι τύποι.
-    g.set(rv, 13, '', swimF_(SWIM_FMT.vel, 'auto'));
-    g.set(rv, 14, '', swimF_(SWIM_FMT.time, 'auto'));
-    L.layout.inputs.start.push({ r: rv, c: 13, key: 'signalBreakoutVel', kind: 'auto' });
-    L.layout.inputs.start.push({ r: rv, c: 14, key: 'flightTime', kind: 'auto' });
-  } else {
-    g.set(rv, 13, '=IF(OR(K' + rv + '="",I' + rv + '="",I' + rv + '=0),"",K' + rv + L.K + '/I' + rv + ')', swimF_(SWIM_FMT.vel, 'formula'));
-    g.set(rv, 14, '=IF(OR(B' + rv + '="",C' + rv + '=""),"",C' + rv + '-B' + rv + ')', swimF_(SWIM_FMT.time, 'formula'));
-  }
-  var r15 = L.rowOf[15];
-  g.set(rv, 15, r15 !== undefined ? '=IF(B' + r15 + '="","",B' + r15 + ')' : '', swimF_(SWIM_FMT.time, 'formula'));
   g.box(r0 + 1, 1, rv, 15);
   L.startValues = rv;
-
-  // 2.20.0: οι ταχύτητες των φάσεων της εκκίνησης (του Kinovea 2.35.0), η καθεμιά σε δύο στήλες.
-  var rh = rv + 1, rp = rv + 2;
-  var phases = [
-    ['sigEntryVel', swimT_('Ταχύτητα: σήμα → είσοδος χεριών (m/s)')],
-    ['entryBreakoutVel', swimT_('Ταχύτητα: είσοδος → έξοδος (m/s)')],
-    ['breakout15Vel', swimTF_('Ταχύτητα: έξοδος → 15{0} (m/s)', U)]
-  ];
-  phases.forEach(function (ph, i) {
-    var c = 1 + 2 * i;
-    g.headers(rh, [ph[1], ''], c);
-    g.merge(rh, c, rh, c + 1);
-    g.set(rp, c, '', swimF_(SWIM_FMT.vel, 'auto'));
-    g.set(rp, c + 1, '', swimF_(SWIM_FMT.vel, 'auto'));
-    g.merge(rp, c, rp, c + 1);
-    L.layout.inputs.start.push({ r: rp, c: c, key: ph[0], kind: 'auto' });
-  });
-  g.rowHeights[rh] = 30;
-  g.box(rh, 1, rp, 6);
 }
 
 function swimLayoutTiming_(L) {
@@ -3280,20 +3279,46 @@ function swimLayoutPer50_(L) {
   L.cur = t + 2;
 }
 
+/**
+ * (2.21.0) Οι στήλες του πίνακα των στροφών με τη σειρά που γίνονται τα γεγονότα: ο τοίχος και το είδος της στροφής, η προσέγγιση
+ * (-5 → τοίχος, τελευταία χεριά → τοίχος), η στροφή, το κάτω από το νερό (χρόνος, δελφινισμοί, έξοδος, ταχύτητα), μετά τα +15 (χρόνος,
+ * ταχύτητα από την έξοδο) και στο τέλος τα σύνολα -5/+15. Οι τύποι και η σύγκριση παίρνουν τη στήλη από εδώ.
+ */
+var SWIM_TURN_COL = { wall: 1, kind: 2, in5: 3, gap: 4, turnTime: 5, uwTime: 6, kicks: 7, uwDist: 8, uwSpeed: 9, out15: 10, bo15: 11,
+  inOut: 12, inOutVel: 13, pct: 14 };
+
+/** Το γράμμα της στήλης του πίνακα των στροφών (SWIM_TURN_COL). */
+function swimTurnColL_(key) {
+  return swimColLetter_(SWIM_TURN_COL[key]);
+}
+
 function swimLayoutTurns_(L) {
-  var g = L.g, race = L.race, analysis = L.analysis, rowOf = L.rowOf, U = L.U, K = L.K, cur = L.cur;
+  var g = L.g, race = L.race, analysis = L.analysis, rowOf = L.rowOf, U = L.U, K = L.K, cur = L.cur, TC = SWIM_TURN_COL;
   L.layout.inputs.turns = [];
   L.turnFirst = null; L.turnLast = null;
   L.turnRows = {};
   if (!analysis.turnWalls.length) { L.layout.turnRows = { first: null, last: null }; return; }
   cur = swimKeep_(L, cur, 'turns');
   g.section(cur, swimT_('Στροφές'), L.LAST);
-  g.headers(cur + 1, [swimTF_('Τοίχος ({0})', U), swimTF_('Χρόνος προσέγγισης 5{0} (s)', U), swimTF_('Χρόνος -5/+15{0} (s)', U), swimT_('Χρόνος στροφής (s)'),
-    swimTF_('Μέτρα κάτω από το νερό ({0})', U), swimT_('Χρόνος κάτω από το νερό (s)'), swimT_('Δελφινισμοί'), swimTF_('Μέση ταχύτητα -5/+15{0} (m/s)', U),
-    swimT_(SWIM_TURN_UW_SPEED ? 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)' : 'Μέση ταχύτητα από στροφή έως έξοδο (m/s)'), swimT_('Ποσοστό στον τελικό χρόνο'), swimT_('Τελευταία χεριά → τοίχος (s)'),
-    swimTF_('Τοίχος → κεφάλι στα +15{0} (s)', U), swimT_('Είδος στροφής'), swimTF_('Ταχύτητα: έξοδος → +15{0} (m/s)', U), '']);
-  // 2.20.0: η ταχύτητα από την έξοδο ως το κεφάλι στα +15 (του Kinovea), στις στήλες 14–15.
-  g.merge(cur + 1, 14, cur + 1, 15);
+  var head = [];
+  head[TC.wall] = swimTF_('Τοίχος ({0})', U);
+  head[TC.kind] = swimT_('Είδος στροφής');
+  head[TC.in5] = swimTF_('Χρόνος προσέγγισης 5{0} (s)', U);
+  head[TC.gap] = swimT_('Τελευταία χεριά → τοίχος (s)');
+  head[TC.turnTime] = swimT_('Χρόνος στροφής (s)');
+  head[TC.uwTime] = swimT_('Χρόνος κάτω από το νερό (s)');
+  head[TC.kicks] = swimT_('Δελφινισμοί');
+  head[TC.uwDist] = swimTF_('Μέτρα κάτω από το νερό ({0})', U);
+  head[TC.uwSpeed] = swimT_(SWIM_TURN_UW_SPEED ? 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)' : 'Μέση ταχύτητα από στροφή έως έξοδο (m/s)');
+  head[TC.out15] = swimTF_('Τοίχος → κεφάλι στα +15{0} (s)', U);
+  head[TC.bo15] = swimTF_('Ταχύτητα: έξοδος → +15{0} (m/s)', U);
+  head[TC.inOut] = swimTF_('Χρόνος -5/+15{0} (s)', U);
+  head[TC.inOutVel] = swimTF_('Μέση ταχύτητα -5/+15{0} (m/s)', U);
+  head[TC.pct] = swimT_('Ποσοστό στον τελικό χρόνο');
+  g.headers(cur + 1, head.slice(1).concat(['']));
+  // Το ποσοστό, τελευταίο, στις στήλες 14–15.
+  g.merge(cur + 1, TC.pct, cur + 1, TC.pct + 1);
+  var L_ = function (key, r) { return swimTurnColL_(key) + r; };
   var rt = cur + 2;
   L.turnFirst = rt;
   analysis.turnWalls.forEach(function (wall, idx) {
@@ -3301,29 +3326,30 @@ function swimLayoutTurns_(L) {
     var turn = analysis.turns[idx];
     var rw = rowOf[wall], rm5 = rowOf[wall - 5], rp15 = rowOf[wall + 15];
     L.turnRows[wall] = x;
-    g.set(x, 1, wall, swimF_(null, 'label'));
-    if (rw !== undefined && rm5 !== undefined) g.set(x, 2, '=IF(OR(B' + rw + '="",B' + rm5 + '=""),"",B' + rw + '-B' + rm5 + ')', swimF_(SWIM_FMT.time, 'formula'));
-    else g.set(x, 2, '', swimF_(null, 'formula'));
-    if (rp15 !== undefined && rm5 !== undefined) g.set(x, 3, '=IF(OR(B' + rp15 + '="",B' + rm5 + '=""),"",B' + rp15 + '-B' + rm5 + ')', swimF_(SWIM_FMT.time, 'formula'));
-    else g.set(x, 3, '', swimF_(null, 'formula'));
-    g.set(x, 4, '', swimF_(SWIM_FMT.time, 'auto'));
-    g.set(x, 5, '', swimF_(SWIM_FMT.vel, 'input'));
-    g.set(x, 6, '', swimF_(SWIM_FMT.time, 'auto'));
-    g.set(x, 7, '', swimF_(SWIM_FMT.int, 'auto'));
-    g.set(x, 8, '=IF(OR(C' + x + '="",C' + x + '=0),"",20' + K + '/C' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
-    // (2.15.0) Η υποβρύχια ταχύτητα όπως τη μετρά το Kinovea: (απόσταση εξόδου − μήκος σώματος) / (έξοδος − αποκόλληση). Στην
-    // αποκόλληση τα πόδια είναι ακόμη στον τοίχο, άρα το κεφάλι απέχει όσο το μήκος του σώματος· όχι πια μέτρα / χρόνος από τον
-    // τοίχο (20–25% γρηγορότερη με έξοδο στα 9–10μ., έως 60% στα 4–5μ.) ούτε από απόσταση που είναι εκτίμηση από τους χρόνους.
-    if (SWIM_TURN_UW_SPEED) g.set(x, 9, '', swimF_(SWIM_FMT.vel, 'auto'));
-    else g.set(x, 9, '=IF(OR(E' + x + '="",F' + x + '="",F' + x + '=0),"",E' + x + K + '/F' + x + ')', swimF_(SWIM_FMT.vel, 'formula'));
-    g.set(x, 10, '=IF(OR(C' + x + '="",' + L.FT + '=""),"",C' + x + '/' + L.FT + ')', swimF_(SWIM_FMT.pct, 'formula'));
-    g.set(x, 11, '', swimF_(SWIM_FMT.time, 'auto'));
-    if (rp15 !== undefined && rw !== undefined) g.set(x, 12, '=IF(OR(B' + rp15 + '="",B' + rw + '=""),"",B' + rp15 + '-B' + rw + ')', swimF_(SWIM_FMT.time, 'formula'));
-    else g.set(x, 12, '', swimF_(null, 'formula'));
-    g.set(x, 13, swimTurnKindLabel_(turn), { color: '#555555', align: 'center', size: 9, bg: SWIM_COLORS.label });
-    g.set(x, 14, '', swimF_(SWIM_FMT.vel, 'auto'));
-    g.set(x, 15, '', swimF_(SWIM_FMT.vel, 'auto'));
-    g.merge(x, 14, x, 15);
+    g.set(x, TC.wall, wall, swimF_(null, 'label'));
+    g.set(x, TC.kind, swimTurnKindLabel_(turn), { color: '#555555', align: 'center', size: 9, bg: SWIM_COLORS.label });
+    if (rw !== undefined && rm5 !== undefined) g.set(x, TC.in5, '=IF(OR(B' + rw + '="",B' + rm5 + '=""),"",B' + rw + '-B' + rm5 + ')', swimF_(SWIM_FMT.time, 'formula'));
+    else g.set(x, TC.in5, '', swimF_(null, 'formula'));
+    g.set(x, TC.gap, '', swimF_(SWIM_FMT.time, 'auto'));
+    g.set(x, TC.turnTime, '', swimF_(SWIM_FMT.time, 'auto'));
+    g.set(x, TC.uwTime, '', swimF_(SWIM_FMT.time, 'auto'));
+    g.set(x, TC.kicks, '', swimF_(SWIM_FMT.int, 'auto'));
+    g.set(x, TC.uwDist, '', swimF_(SWIM_FMT.vel, 'input'));
+    // (2.15.0) Η υποβρύχια ταχύτητα όπως τη μετρά το Kinovea: (απόσταση εξόδου − κεφάλι στην αποκόλληση) / (έξοδος − αποκόλληση)·
+    // όχι πια μέτρα / χρόνος από τον τοίχο (20–25% γρηγορότερη με έξοδο στα 9–10μ., έως 60% στα 4–5μ.) ούτε από απόσταση που είναι
+    // εκτίμηση από τους χρόνους.
+    if (SWIM_TURN_UW_SPEED) g.set(x, TC.uwSpeed, '', swimF_(SWIM_FMT.vel, 'auto'));
+    else g.set(x, TC.uwSpeed, '=IF(OR(' + L_('uwDist', x) + '="",' + L_('uwTime', x) + '="",' + L_('uwTime', x) + '=0),"",' + L_('uwDist', x) + K + '/' + L_('uwTime', x) + ')', swimF_(SWIM_FMT.vel, 'formula'));
+    if (rp15 !== undefined && rw !== undefined) g.set(x, TC.out15, '=IF(OR(B' + rp15 + '="",B' + rw + '=""),"",B' + rp15 + '-B' + rw + ')', swimF_(SWIM_FMT.time, 'formula'));
+    else g.set(x, TC.out15, '', swimF_(null, 'formula'));
+    // 2.20.0: η ταχύτητα από την έξοδο ως το κεφάλι στα +15 (του Kinovea).
+    g.set(x, TC.bo15, '', swimF_(SWIM_FMT.vel, 'auto'));
+    if (rp15 !== undefined && rm5 !== undefined) g.set(x, TC.inOut, '=IF(OR(B' + rp15 + '="",B' + rm5 + '=""),"",B' + rp15 + '-B' + rm5 + ')', swimF_(SWIM_FMT.time, 'formula'));
+    else g.set(x, TC.inOut, '', swimF_(null, 'formula'));
+    g.set(x, TC.inOutVel, '=IF(OR(' + L_('inOut', x) + '="",' + L_('inOut', x) + '=0),"",20' + K + '/' + L_('inOut', x) + ')', swimF_(SWIM_FMT.vel, 'formula'));
+    g.set(x, TC.pct, '=IF(OR(' + L_('inOut', x) + '="",' + L.FT + '=""),"",' + L_('inOut', x) + '/' + L.FT + ')', swimF_(SWIM_FMT.pct, 'formula'));
+    g.set(x, TC.pct + 1, '', swimF_(SWIM_FMT.pct, 'formula'));
+    g.merge(x, TC.pct, x, TC.pct + 1);
     L.layout.inputs.turns.push({ r: x, wall: wall });
     L.turnLast = x;
   });
@@ -3420,7 +3446,7 @@ function swimLayoutComposition_(L) {
   g.set(c1, 1, swimT_('Εκκίνηση'), swimF_(null, 'label'));
   g.set(c1, 2, r15first !== undefined ? '=IF(B' + r15first + '="","",B' + r15first + ')' : '', swimF_(SWIM_FMT.time, 'formula'));
   g.set(c1 + 1, 1, swimT_('Στροφές'), swimF_(null, 'label'));
-  var turnsRange = L.turnFirst !== null ? 'C' + L.turnFirst + ':C' + L.turnLast : null;
+  var turnsRange = L.turnFirst !== null ? swimTurnColL_('inOut') + L.turnFirst + ':' + swimTurnColL_('inOut') + L.turnLast : null;
   // 2.15.0 (SWIM_STRICT_VALUES): οι στροφές μόνο όταν μετρήθηκαν όλες, και η κολύμβηση μόνο όταν υπάρχουν όλα τα μέρη (αλλιώς
   // «τελικός − ό,τι υπάρχει» έβγαζε την κολύμβηση μεγαλύτερη).
   g.set(c1 + 1, 2, turnsRange ? '=IF(COUNT(' + turnsRange + ')' + (SWIM_STRICT_VALUES ? '<ROWS(' + turnsRange + ')' : '=0') + ',"",SUM(' + turnsRange + '))' : '', swimF_(SWIM_FMT.time, 'formula'));
@@ -3642,17 +3668,18 @@ function swimLayoutCompare_(L) {
       var pt = swimTurnAt_(pbA, t.wall), et = swimTurnAt_(elA, t.wall);
       g.set(r, 1, t.wall, swimF_(null, 'label'));
       cell(r, 2, pt ? swimV_(pt.inOut) : '', SWIM_FMT.time, 'auto');
-      cell(r, 3, '=IF(C' + tr + '="","",C' + tr + ')', SWIM_FMT.time);
+      var tc = function (key) { return swimTurnColL_(key) + tr; };
+      cell(r, 3, '=IF(' + tc('inOut') + '="","",' + tc('inOut') + ')', SWIM_FMT.time);
       cell(r, 4, et ? swimV_(et.inOut) : '', SWIM_FMT.time, 'auto');
       cell(r, 5, pt ? swimV_(pt.out15) : '', SWIM_FMT.time, 'auto');
-      cell(r, 6, '=IF(L' + tr + '="","",L' + tr + ')', SWIM_FMT.time);
+      cell(r, 6, '=IF(' + tc('out15') + '="","",' + tc('out15') + ')', SWIM_FMT.time);
       cell(r, 7, et ? swimV_(et.out15) : '', SWIM_FMT.time, 'auto');
       cell(r, 8, pt ? swimV_(swimManualTurn_(pbRace, t.wall, 'turnTime', pt.turnTime)) : '', SWIM_FMT.time, 'auto');
-      cell(r, 9, '=IF(D' + tr + '="","",D' + tr + ')', SWIM_FMT.time);
+      cell(r, 9, '=IF(' + tc('turnTime') + '="","",' + tc('turnTime') + ')', SWIM_FMT.time);
       cell(r, 10, pt ? swimV_(pt.underwaterTime) : '', SWIM_FMT.time, 'auto');
-      cell(r, 11, '=IF(F' + tr + '="","",F' + tr + ')', SWIM_FMT.time);
+      cell(r, 11, '=IF(' + tc('uwTime') + '="","",' + tc('uwTime') + ')', SWIM_FMT.time);
       cell(r, 12, pt && pt.kicks !== null ? pt.kicks : '', SWIM_FMT.int, 'auto');
-      cell(r, 13, '=IF(G' + tr + '="","",G' + tr + ')', SWIM_FMT.int);
+      cell(r, 13, '=IF(' + tc('kicks') + '="","",' + tc('kicks') + ')', SWIM_FMT.int);
     });
     cmp.turnLast = cur + turns.length - 1;
     g.box(cmp.turnFirst - 1, 1, cmp.turnLast, 13);
@@ -3672,12 +3699,14 @@ function swimLayoutCompare_(L) {
   var phaseRow = function (r, label, a, rr, isRace) {
     g.set(r, 1, label, swimF_(null, 'label'));
     if (isRace) {
-      cell(r, 2, '=IF(A' + sv + '="","",A' + sv + ')', SWIM_FMT.time);
-      cell(r, 3, '=IF(B' + sv + '="","",B' + sv + ')', SWIM_FMT.time);
-      cell(r, 4, '=IF(C' + sv + '="","",C' + sv + ')', SWIM_FMT.time);
-      cell(r, 5, '=IF(N' + sv + '="","",N' + sv + ')', SWIM_FMT.time);
-      cell(r, 6, '=IF(I' + sv + '="","",I' + sv + ')', SWIM_FMT.time);
-      cell(r, 7, '=IF(J' + sv + '="","",J' + sv + ')', SWIM_FMT.int);
+      // 2.21.0: οι στήλες της εκκίνησης με τη σειρά των γεγονότων (L.startCol).
+      var sc = function (key) { return swimColLetter_(L.startCol[key]) + sv; };
+      cell(r, 2, '=IF(' + sc('reaction') + '="","",' + sc('reaction') + ')', SWIM_FMT.time);
+      cell(r, 3, '=IF(' + sc('blockTime') + '="","",' + sc('blockTime') + ')', SWIM_FMT.time);
+      cell(r, 4, '=IF(' + sc('entryTime') + '="","",' + sc('entryTime') + ')', SWIM_FMT.time);
+      cell(r, 5, '=IF(' + sc('flightTime') + '="","",' + sc('flightTime') + ')', SWIM_FMT.time);
+      cell(r, 6, '=IF(' + sc('underwaterTime') + '="","",' + sc('underwaterTime') + ')', SWIM_FMT.time);
+      cell(r, 7, '=IF(' + sc('kicks') + '="","",' + sc('kicks') + ')', SWIM_FMT.int);
       cell(r, 8, '=IF(B' + L.c1 + '="","",B' + L.c1 + ')', SWIM_FMT.time);
       cell(r, 9, '=IF(B' + (L.c1 + 1) + '="","",B' + (L.c1 + 1) + ')', SWIM_FMT.time);
       cell(r, 10, '=IF(B' + (L.c1 + 2) + '="","",B' + (L.c1 + 2) + ')', SWIM_FMT.time);
@@ -3758,9 +3787,10 @@ function swimLayoutBenchmarks_(L) {
   }
   if (b.turn && L.turnFirst !== null) {
     bench.turn = addRow(swimTF_('Στροφή → +15{0} (μ.ό.)', U), b.turn.values,
-      '=IFERROR(AVERAGE(L' + L.turnFirst + ':L' + L.turnLast + '),"")');
+      '=IFERROR(AVERAGE(' + swimTurnColL_('out15') + L.turnFirst + ':' + swimTurnColL_('out15') + L.turnLast + '),"")');
     bench.turnBest = addRow(swimTF_('Στροφή → +15{0} (καλύτερη)', U), b.turn.values,
-      '=IF(COUNT(L' + L.turnFirst + ':L' + L.turnLast + ')=0,"",MIN(L' + L.turnFirst + ':L' + L.turnLast + '))');
+      '=IF(COUNT(' + swimTurnColL_('out15') + L.turnFirst + ':' + swimTurnColL_('out15') + L.turnLast + ')=0,"",MIN(' +
+      swimTurnColL_('out15') + L.turnFirst + ':' + swimTurnColL_('out15') + L.turnLast + '))');
   }
   bench.im = [];
   if (b.im && b.im.length && L.turnFirst !== null) {
@@ -3769,7 +3799,7 @@ function swimLayoutBenchmarks_(L) {
       if (!match) return;
       var tr = L.turnRows[t.wall];
       var r = addRow(swimTF_('Στροφή {0}: {1} → {2}', t.wall + U, swimStyleName_(t.styleIn), swimStyleName_(t.styleOut)), match.values,
-        '=IF(L' + tr + '="","",L' + tr + ')');
+        '=IF(' + swimTurnColL_('out15') + tr + '="","",' + swimTurnColL_('out15') + tr + ')');
       bench.im.push(r);
     });
   }
@@ -4018,7 +4048,8 @@ function swimLayoutCharts_(L) {
       add({ type: 'column', title: swimTF_('Στροφές τοίχος → +15{0}: PB – αγώνας – elite (s)', U), ranges: ['A' + cmp.turnFirst + ':A' + cmp.turnLast, 'E' + cmp.turnFirst + ':G' + cmp.turnLast],
         colors: trio, vTitle: 's', labels: tl(['PB', 'Αγώνας', 'Elite']) });
     }
-    add({ type: 'combo', title: swimTF_('Στροφές: χρόνος -5/+15{0} και μέση ταχύτητα', U), ranges: ['A' + L.turnFirst + ':A' + L.turnLast, 'C' + L.turnFirst + ':C' + L.turnLast, 'H' + L.turnFirst + ':H' + L.turnLast],
+    var tcr = function (key) { return swimTurnColL_(key) + L.turnFirst + ':' + swimTurnColL_(key) + L.turnLast; };
+    add({ type: 'combo', title: swimTF_('Στροφές: χρόνος -5/+15{0} και μέση ταχύτητα', U), ranges: ['A' + L.turnFirst + ':A' + L.turnLast, tcr('inOut'), tcr('inOutVel')],
       colors: [C.athlete, C.dak], seriesTypes: ['bars', 'line'], secondAxis: [1], vTitle: 's', v2Title: 'm/s', labels: tl(['Χρόνος -5/+15', 'Μέση ταχύτητα']) });
   }
   add({ type: 'pie', title: swimT_('Σύνθεση αγώνα'), ranges: ['A' + L.c1 + ':A' + (L.c1 + 3), 'B' + L.c1 + ':B' + (L.c1 + 3)],
@@ -6288,24 +6319,26 @@ function swimInputPlan_(race, analysis, layout) {
     var gap = a ? a.lastStrokeGap : null;
     var uwSpeed = swimNum_(mt.uwSpeed);
     var bo15Speed = swimNum_(mt.bo15Speed);
+    // 2.21.0: οι στήλες από το SWIM_TURN_COL (οι στροφές με τη σειρά των γεγονότων).
+    var TC = SWIM_TURN_COL;
     if (SWIM_STRICT_VALUES) {
       // 2.15.0: κάθε κελί του προγράμματος γράφεται κάθε φορά, και κενό όταν η τιμή δεν υπάρχει πια (π.χ. διαγράφηκε η αποκόλληση).
-      plan.patches.push({ r: t.r, c: 4, v: swimValueOrBlank_(turnTime, 3) });
-      if (uwDist !== null) plan.patches.push({ r: t.r, c: 5, v: mt.underwaterEstimated ? '≈' + swimFixed_(uwDist, 1) : uwDist });
-      else plan.patches.push({ r: t.r, c: 5, v: '', ifEstimate: true });
-      plan.patches.push({ r: t.r, c: 6, v: swimValueOrBlank_(uwTime, 3) });
-      plan.patches.push({ r: t.r, c: 7, v: kicks !== null && kicks !== undefined ? kicks : '' });
-      plan.patches.push({ r: t.r, c: 11, v: swimValueOrBlank_(gap, 3) });
-      if (SWIM_TURN_UW_SPEED) plan.patches.push({ r: t.r, c: 9, v: swimValueOrBlank_(uwSpeed, 3) });
-      plan.patches.push({ r: t.r, c: 14, v: swimValueOrBlank_(bo15Speed, 3) });
+      plan.patches.push({ r: t.r, c: TC.turnTime, v: swimValueOrBlank_(turnTime, 3) });
+      if (uwDist !== null) plan.patches.push({ r: t.r, c: TC.uwDist, v: mt.underwaterEstimated ? '≈' + swimFixed_(uwDist, 1) : uwDist });
+      else plan.patches.push({ r: t.r, c: TC.uwDist, v: '', ifEstimate: true });
+      plan.patches.push({ r: t.r, c: TC.uwTime, v: swimValueOrBlank_(uwTime, 3) });
+      plan.patches.push({ r: t.r, c: TC.kicks, v: kicks !== null && kicks !== undefined ? kicks : '' });
+      plan.patches.push({ r: t.r, c: TC.gap, v: swimValueOrBlank_(gap, 3) });
+      if (SWIM_TURN_UW_SPEED) plan.patches.push({ r: t.r, c: TC.uwSpeed, v: swimValueOrBlank_(uwSpeed, 3) });
+      plan.patches.push({ r: t.r, c: TC.bo15, v: swimValueOrBlank_(bo15Speed, 3) });
     } else {
-      if (turnTime !== null) plan.patches.push({ r: t.r, c: 4, v: swimFixed_(turnTime, 3) });
-      if (uwDist !== null) plan.patches.push({ r: t.r, c: 5, v: uwDist });
-      if (uwTime !== null) plan.patches.push({ r: t.r, c: 6, v: swimFixed_(uwTime, 3) });
-      if (kicks !== null) plan.patches.push({ r: t.r, c: 7, v: kicks });
-      if (gap !== null) plan.patches.push({ r: t.r, c: 11, v: swimFixed_(gap, 3) });
-      if (SWIM_TURN_UW_SPEED && uwSpeed !== null) plan.patches.push({ r: t.r, c: 9, v: swimFixed_(uwSpeed, 3) });
-      if (bo15Speed !== null) plan.patches.push({ r: t.r, c: 14, v: swimFixed_(bo15Speed, 3) });
+      if (turnTime !== null) plan.patches.push({ r: t.r, c: TC.turnTime, v: swimFixed_(turnTime, 3) });
+      if (uwDist !== null) plan.patches.push({ r: t.r, c: TC.uwDist, v: uwDist });
+      if (uwTime !== null) plan.patches.push({ r: t.r, c: TC.uwTime, v: swimFixed_(uwTime, 3) });
+      if (kicks !== null) plan.patches.push({ r: t.r, c: TC.kicks, v: kicks });
+      if (gap !== null) plan.patches.push({ r: t.r, c: TC.gap, v: swimFixed_(gap, 3) });
+      if (SWIM_TURN_UW_SPEED && uwSpeed !== null) plan.patches.push({ r: t.r, c: TC.uwSpeed, v: swimFixed_(uwSpeed, 3) });
+      if (bo15Speed !== null) plan.patches.push({ r: t.r, c: TC.bo15, v: swimFixed_(bo15Speed, 3) });
     }
   });
 

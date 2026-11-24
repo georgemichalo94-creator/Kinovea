@@ -232,20 +232,114 @@ function makeCase(i) {
   return { i, plausible: mutation < 0, mutation, timing, race };
 }
 
+// (2.36.0) Every event the program offers (every distance of the metre and the yard pools, every style, medley, relays), as a
+// careful analyst marks it, in the order of the race: the signal, the first movement, the release, the entry, the kicks, the
+// breakout, every checkpoint, the strokes, at each wall the push-off (the next swimmer's release at a change of a relay), the kicks and
+// the breakout. No randomness. fm_ci.ps1 checks on them that the program keeps the order (checkpoints, walls, phases, the events of the
+// start and of each turn) and that «Πέρασμα» (S) marks the right checkpoint, pressed in order or coming back to a skipped one;
+// fm_check.js that the report has the same checkpoints, walls and order.
+const MEDLEY = ['fly', 'bk', 'br', 'fs'], MEDLEY_RELAY = ['bk', 'br', 'fly', 'fs'];
+function matrixEvents() {
+  const list = [];
+  const add = (unit, pool, style, distance, relay) => list.push({ unit, pool, style, distance, relay });
+  [['m', 50], ['m', 25], ['yd', 25]].forEach(([unit, pool]) => {
+    (unit === 'yd' ? [50, 100, 200, 400, 500, 1000, 1650] : [50, 100, 200, 400, 800, 1500]).forEach(d => add(unit, pool, 'fs', d, false));
+    ['bk', 'br', 'fly'].forEach(s => [50, 100, 200].forEach(d => add(unit, pool, s, d, false)));
+    (pool === 25 ? [100, 200, 400] : [200, 400]).forEach(d => add(unit, pool, 'im', d, false));
+    [200, 400, 800].forEach(d => add(unit, pool, 'fs', d, true));
+    [200, 400].forEach(d => add(unit, pool, 'im', d, true));
+  });
+  return list;
+}
+
+/** The style at the end of a segment (as SwimPresets.StyleAt). */
+function styleAt(race, dEnd) {
+  if (race.Style !== 'im') return race.Style;
+  const order = race.Relay ? MEDLEY_RELAY : MEDLEY;
+  const k = Math.max(0, Math.min(3, Math.floor((dEnd - 1e-6) / (race.Distance / 4))));
+  return order[k];
+}
+
+function makeMatrixCase(i, cfg) {
+  const timing = TIMINGS[i % TIMINGS.length];
+  const frame = timing.ms / timing.hs / 1000;
+  const origin = Math.round(437 * timing.ats);
+  const stamp = t => origin + Math.round(Math.round(t / frame) * timing.ats);
+  const marks = [];
+  const mark = (type, t, distance) => { marks.push({ Id: 'x' + i + '_' + marks.length, Type: type, Timestamp: stamp(t), Distance: distance || 0, Wall: -1 }); };
+  const { unit, pool, style, distance, relay } = cfg;
+  const race = { Id: 'mx' + i, Athlete: 'FUZZ ATHLETE', AthleteId: '', AthleteGender: 'Γυναικών', Kind: 'race', Style: style, Relay: relay,
+    Distance: distance, Pool: pool, PoolUnit: unit, Competition: 'Order Games', Round: 'Τελικός', Date: '24.11.2026',
+    Checkpoints: checkpoints(distance, pool, relay), StartTimestamp: origin, Marks: marks, StrokeCounts: {}, StrokeConfirmed: {}, Turns: {},
+    EntryDistHands: 3.2, BreakoutDist: 11.0 };
+  // Pool units per second: slower in the long events, a little slower length after length.
+  const base = { fs: 1.85, fly: 1.72, bk: 1.65, br: 1.45, im: 1.6 }[style] * (unit === 'yd' ? 1.0936 : 1) * (distance >= 800 ? 0.88 : distance >= 400 ? 0.93 : 1);
+  const laps = distance / pool, leg = distance / 4;
+  const period = s => (s === 'fs' || s === 'bk' ? 0.6 : s === 'fly' ? 1.15 : 1.2);
+  const kicksOf = s => (s === 'br' ? 1 : s === 'fly' ? 4 : 3);
+  const walls = [];
+  let t = 0;
+  for (let L = 0; L < laps; L++) {
+    const wall = L * pool;
+    const exchange = relay && L > 0 && wall % leg === 0;
+    const dive = L === 0 || exchange;
+    const lapTime = pool / base * (1 + 0.03 * L / laps) * (dive ? 0.93 : 1);
+    const next = t + lapTime;
+    const swum = styleAt(race, wall + pool);
+    let breakout;
+    if (L === 0) {
+      mark('Reaction', 0.2);
+      mark('FeetOff', 0.72);
+      mark('Entry', 1.05);
+      breakout = 4.4;
+      for (let k = 0; k < kicksOf(swum); k++) mark('Kick', 1.6 + k * 0.55);
+    } else if (exchange) {
+      // The change of a relay: the next swimmer leaves the block just after the touch.
+      walls.push({ wall, exchange: true });
+      mark('FeetOff', t + 0.15);
+      mark('Entry', t + 0.5);
+      breakout = t + 4.0;
+      for (let k = 0; k < kicksOf(swum); k++) mark('Kick', t + 1.0 + k * 0.55);
+    } else {
+      walls.push({ wall, exchange: false });
+      const off = t + 0.85;
+      mark('FeetOff', off);
+      breakout = off + 2.3;
+      for (let k = 0; k < kicksOf(swum); k++) mark('Kick', off + 0.45 + k * 0.5);
+      race.Turns[wall] = { UnderwaterDist: 7.5 };
+    }
+    mark('Breakout', breakout);
+    for (let s = breakout + 0.45; s < next - 0.35; s += period(swum)) mark('Stroke', s);
+    race.Checkpoints.filter(d => d > wall && d <= wall + pool).forEach(d => {
+      mark('Split', d === wall + pool ? next : t + lapTime * Math.pow((d - wall) / pool, 1.06), d);
+    });
+    t = next;
+  }
+
+  // The marks as they are kept: in the order they are put, the order of the race.
+  marks.sort((a, b) => a.Timestamp - b.Timestamp);
+  return { i, plausible: true, mutation: -1, matrix: Object.assign({ walls }, cfg), timing, race };
+}
+
 fs.mkdirSync(dir, { recursive: true });
 let plausible = 0, training = 0;
 const list = [];
-for (let i = 0; i < count; i++) {
-  const c = makeCase(i);
-  if (c.plausible) plausible++;
-  if (c.race.Kind === 'training') training++;
+const write = (i, c, flag) => {
   const n = String(i).padStart(4, '0');
   fs.writeFileSync(path.join(dir, 'in_' + n + '.json'), JSON.stringify(c));
   // For the program: the race as a .swim.json keeps it, and the timing of its video (plain numbers).
   fs.writeFileSync(path.join(dir, 'race_' + n + '.json'), JSON.stringify(c.race));
-  list.push([n, c.timing.ats, c.timing.ms, c.timing.hs, c.mutation].join(';'));
+  list.push([n, c.timing.ats, c.timing.ms, c.timing.hs, c.mutation].concat(flag ? [flag] : []).join(';'));
+};
+for (let i = 0; i < count; i++) {
+  const c = makeCase(i);
+  if (c.plausible) plausible++;
+  if (c.race.Kind === 'training') training++;
+  write(i, c);
 }
+const events = matrixEvents();
+events.forEach((cfg, j) => write(count + j, makeMatrixCase(count + j, cfg), 'mx'));
 
 fs.writeFileSync(path.join(dir, 'cases.txt'), list.join('\n') + '\n');
 
-console.log(`fm_make: ${count} fictional analyses (${count - training} races, ${training} training videos; ${plausible} as marked, ${count - plausible} with wrong or missing marks)`);
+console.log(`fm_make: ${count} fictional analyses (${count - training} races, ${training} training videos; ${plausible} as marked, ${count - plausible} with wrong or missing marks) and ${events.length} events in the order of the race`);

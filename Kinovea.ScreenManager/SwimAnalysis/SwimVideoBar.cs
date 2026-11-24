@@ -507,7 +507,8 @@ namespace Kinovea.ScreenManager
 
                 warn = !race.StartTimestamp.HasValue;
                 caption = warn ? SwimLang.T("ΧΩΡΙΣ ΣΗΜΑ ΕΚΚΙΝΗΣΗΣ") : SwimLang.T("ΧΡΟΝΟΣ ΑΓΩΝΑ");
-                int next = race.NextCheckpoint();
+                // (2.36.0) The checkpoint «Πέρασμα» marks at this frame, as its button says.
+                int next = race == manager.Race ? manager.NextSplitAt() : race.NextCheckpoint();
                 chips.Add(new SwimChip(SwimLang.T("ΕΠΟΜΕΝΟ"), next > 0 ? next.ToString(CultureInfo.InvariantCulture) + race.Unit : SwimLang.T("τέλος"), SwimTheme.Amber));
                 chips.Add(new SwimChip(SwimLang.T("ΧΕΡΙΕΣ"), SwimCalculator.PressesSinceLastSplit(manager.Computed).ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
             }

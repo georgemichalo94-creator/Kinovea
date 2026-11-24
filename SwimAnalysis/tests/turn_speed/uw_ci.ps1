@@ -2,7 +2,7 @@
 # analyst's way: the start in phases (signal → entry of the hands, entry → breakout of the head, breakout → 15) and the turn from the
 # push-off to the breakout of the head and from there to +15, each from where the head was at its two ends. The analyst marks only the
 # hands at the entry and the push-off: the head behind the hands (0.27 × height) and the head from the wall at the push-off (height +
-# 0.10 m) come from the typical height of the swimmer for the gender and age (a body length measured instead, when there is one). The
+# 0.10 m) come from the typical height of the swimmer for the gender and age (2.36.0: a body length of before is not used). The
 # distance per kick from the head too. None from a distance estimated from the times or from a distance no swimmer has (a breakout
 # measured at 39.6 m with the calibration of another frame: the Sheet gets the estimate of the video graphics instead, said as an
 # estimate). The official time of the wall is the time of the turn (also when its mark is a little before it): the contact, the −5 and
@@ -104,13 +104,15 @@ Check (Near $r.Turn.Value('uwVel') 2.0125 0.0006) ('a man: ' + $r.Turn.Value('uw
 $race.AthleteGender = 'Γυναικών'; $race.AthleteBirthYear = '2012'
 $r = TurnPhase $race
 Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a girl of 14: ' + $r.Turn.Value('uwVel'))
-# A body length measured (📍, 1.90 m): it instead: (10.0 − 1.90) / 4 = 2.025; one that cannot be (12): the typical height.
+# (2.36.0) A body length in an analysis of before (1.90 m, or 12 that cannot be): no longer used, the typical height (2.06).
 $race.BodyLength = 1.9
 $r = TurnPhase $race
-Check (Near $r.Turn.Value('uwVel') 2.025 0.0006) ('with the body length measured: ' + $r.Turn.Value('uwVel'))
+Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a body length of before is not used: ' + $r.Turn.Value('uwVel'))
 $race.BodyLength = 12
 $r = TurnPhase $race
 Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a body length of 12 m: the typical height (' + $r.Turn.Value('uwVel') + ')')
+$body = Sheet $race $r
+Check ($null -eq $body.race.manual.bodyLength -and $null -eq $body.race.manual.entryDistHips -and $null -eq $body.race.manual.entryVelHips -and $null -eq $body.race.manual.entryVelFeet) 'no body length, hips or feet sent'
 $race.BodyLength = $null; $race.AthleteGender = ''; $race.AthleteBirthYear = ''
 
 # The distance estimated from the times: no speed from it.

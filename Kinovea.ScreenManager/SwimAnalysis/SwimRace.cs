@@ -1136,11 +1136,12 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Distance of the first checkpoint without a split time, or -1 if all are filled.
+        /// Distance of the first checkpoint without a split time, or -1 if all are filled. (2.36.0) In the order of the distances, also
+        /// for a list kept in another order.
         /// </summary>
         public int NextCheckpoint()
         {
-            foreach (int d in Checkpoints)
+            foreach (int d in Checkpoints.OrderBy(x => x))
             {
                 if (GetSplit(d) == null)
                     return d;
@@ -1200,6 +1201,9 @@ namespace Kinovea.ScreenManager
             if (StrokeCounts == null) StrokeCounts = new Dictionary<int, double>();
             if (StrokeConfirmed == null) StrokeConfirmed = new Dictionary<int, double>();
             if (Checkpoints == null) Checkpoints = new List<int>();
+            // (2.36.0) The checkpoints in the order of the distances, each once (the program keeps them so; a file written otherwise).
+            if (Checkpoints.Count > 1)
+                Checkpoints = Checkpoints.Distinct().OrderBy(d => d).ToList();
             if (Turns == null) Turns = new Dictionary<int, SwimTurnManual>();
             if (PhaseValues == null) PhaseValues = new Dictionary<string, SwimPhaseManual>();
             if (Angles == null) Angles = new List<SwimAngle>();
@@ -1304,6 +1308,117 @@ namespace Kinovea.ScreenManager
             r.PilotStart = PilotStart;
             r.Reference = Reference != null ? Reference.Copy() : null;
             return r;
+        }
+    }
+
+    /// <summary>
+    /// (2.36.0) The checkpoint «Πέρασμα» (S) marks at a frame, as a plain function of the race and the timing of its video: the window and
+    /// the video bar give it the checkpoint asked for (a row chosen, a proposal being checked) and whether the video plays
+    /// (SwimAnalysisManager.SplitTargetAt), the chip «ΕΠΟΜΕΝΟ» shows the same, and the CI checks it for every distance, pool and unit.
+    /// (2.9.5) A checkpoint with a time moves to the frame only when asked for and the frame keeps the order of the times; (2.9.5b)
+    /// otherwise a time is never changed: among the checkpoints without a time that the frame keeps in order, the one whose time would be
+    /// nearest to it (expected between the marked ones, or at the speed of the race so far); while the video plays, or none in order,
+    /// the next one without a time; all marked: none (-1).
+    /// </summary>
+    public static class SwimSplits
+    {
+        public static int TargetAt(SwimRace race, SwimTiming timing, long timestamp, int asked, bool playing, out bool move)
+        {
+            move = false;
+            if (race == null)
+                return -1;
+
+            int next = race.NextCheckpoint();
+            if (race.IsTraining || timing == null || !timing.IsValid)
+                return next;
+
+            // The marked checkpoints: their seconds from this frame (negative: before it).
+            List<int> checkpoints = race.Checkpoints.Distinct().OrderBy(d => d).ToList();
+            Dictionary<int, double> marked = new Dictionary<int, double>();
+            foreach (int d in checkpoints)
+            {
+                SwimMark m = race.GetSplit(d);
+                if (m != null)
+                    marked[d] = timing.Seconds(m.Timestamp, timestamp);
+            }
+
+            if (marked.Count == 0)
+                return next;
+
+            // The frame keeps the order: after the times of the checkpoints before it, before the times of the ones after it.
+            Func<int, bool> inOrder = d => marked.All(x => x.Key == d || (x.Key < d ? x.Value < 0 : x.Value > 0));
+            int best = -1;
+            double bestAway = double.MaxValue;
+            foreach (int d in checkpoints)
+            {
+                if (!inOrder(d))
+                    continue;
+
+                double away = Math.Abs(marked.ContainsKey(d) ? marked[d] : ExpectedAway(race, timing, d, marked, timestamp));
+                if (away < bestAway)
+                {
+                    best = d;
+                    bestAway = away;
+                }
+            }
+
+            // The checkpoint asked for (its row chosen, its proposal being checked): marked at this frame, or its time moved here.
+            if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked))
+            {
+                move = marked.ContainsKey(asked);
+                return asked;
+            }
+
+            // While the video plays, the next checkpoint without a time as always (two presses in a row do not move the last one).
+            if (next >= 0 && playing)
+                return next;
+
+            // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot almost 0.4 s
+            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). The nearest
+            // checkpoint without a time that the frame keeps in order (one skipped), else the next one without a time (none: all have a
+            // time, AddSplit says how to change one).
+            if (best >= 0 && marked.ContainsKey(best))
+            {
+                best = -1;
+                bestAway = double.MaxValue;
+                foreach (int d in checkpoints)
+                {
+                    if (marked.ContainsKey(d) || !inOrder(d))
+                        continue;
+
+                    double away = Math.Abs(ExpectedAway(race, timing, d, marked, timestamp));
+                    if (away < bestAway)
+                    {
+                        best = d;
+                        bestAway = away;
+                    }
+                }
+            }
+
+            return best >= 0 ? best : next;
+        }
+
+        /// <summary>
+        /// Where a checkpoint without a time is expected (s from this frame): between the marked ones around it in proportion to the
+        /// distance, or after (before) the last (first) marked one at the mean speed of the race up to it (pool units per second).
+        /// </summary>
+        private static double ExpectedAway(SwimRace race, SwimTiming timing, int distance, Dictionary<int, double> marked, long timestamp)
+        {
+            int before = marked.Keys.Where(k => k < distance).DefaultIfEmpty(-1).Max();
+            int after = marked.Keys.Where(k => k > distance).DefaultIfEmpty(int.MaxValue).Min();
+            if (before >= 0 && after != int.MaxValue)
+                return marked[before] + (marked[after] - marked[before]) * (distance - before) / (after - before);
+
+            int known = before >= 0 ? before : after;
+            double speed = 1.6;
+            if (race.StartTimestamp.HasValue)
+            {
+                double raceTime = marked[known] - timing.Seconds(race.StartTimestamp.Value, timestamp);
+                if (raceTime > 0.5)
+                    speed = Math.Max(0.5, Math.Min(3.0, known / raceTime));
+            }
+
+            return marked[known] + (distance - known) / speed;
         }
     }
 

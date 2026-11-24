@@ -68,8 +68,9 @@ const width = G.swimColumnWidth_(1) + G.swimColumnWidth_(2);
 assert.ok(G.swimRowHeight_(g, 10) >= G.swimTextHeight_('1ο 0.00 · 2ο 0.00', width, 8, false));
 assert.ok(G.swimRowHeight_(g, 10) >= G.swimTextHeight_('Δείκτης Απόδοσης Κολύμβησης (μ.ο. 50άρι)', width, 8, false));
 // 11 (2.11.0): και μία στήλη συχνότητας· 12 (2.19.0): DPS και SL από την ταχύτητα και τη συχνότητα· 13 (2.20.0): οι ταχύτητες των
-// φάσεων της εκκίνησης και η έξοδος → +15 των στροφών· κάθε report ξαναφτιάχνεται μία φορά.
-assert.strictEqual(JSON.parse(layout.signature).v, 13, 'every report is rebuilt once with the new columns');
+// φάσεων της εκκίνησης και η έξοδος → +15 των στροφών· 14 (2.21.0): η εκκίνηση και οι στροφές με τη σειρά των γεγονότων· κάθε
+// report ξαναφτιάχνεται μία φορά.
+assert.strictEqual(JSON.parse(layout.signature).v, 14, 'every report is rebuilt once with the new columns');
 
 // ---------------------------------------------------------------------------------------------
 // 2) 200μ.: τέσσερα 50άρια κάτω από τον μέσο όρο (δύο γραμμές)· 400μ.: οκτώ, μόνο στους πίνακες· 50μ.: ένα, όπως πριν

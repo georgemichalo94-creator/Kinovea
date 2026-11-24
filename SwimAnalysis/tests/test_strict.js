@@ -133,9 +133,8 @@ res = call({ token: 'tok', action: 'update', race: r4b });
 sh = sheetOf(res);
 assert.strictEqual(below(sh, 'Απόσταση κάτω από το νερό (μ.)'), 10.2, 'a value typed in the sheet stays');
 
-// (d3) Kinovea 2.35.0 / Apps Script 2.20.0: οι ταχύτητες των φάσεων της εκκίνησης σε μια γραμμή κάτω από τα στοιχεία της, η
-// ταχύτητα έξοδος → +15 κάθε στροφής σε μια στήλη· οι τιμές του προγράμματος, σβήνουν όταν δεν υπάρχουν πια. Ο πίνακας των χρόνων
-// δύο γραμμές πιο κάτω.
+// (d3) Kinovea 2.35.0 / Apps Script 2.20.0: οι ταχύτητες των φάσεων της εκκίνησης, η ταχύτητα έξοδος → +15 κάθε στροφής· οι τιμές
+// του προγράμματος, σβήνουν όταν δεν υπάρχουν πια. (2.21.0) Η εκκίνηση σε μία γραμμή και οι στροφές με τη σειρά των γεγονότων.
 const r4c = race();
 Object.assign(r4c.manual, { sigEntryVel: 3.17, entryBreakoutVel: 2.15, breakout15Vel: 2.18 });
 r4c.manual.turns['50'].uwSpeed = 2.08;
@@ -150,9 +149,35 @@ near(Number(below(sh, 'Υποβρύχια ταχύτητα: αποκόλληση
 near(Number(below(sh, 'Ταχύτητα: έξοδος → +15μ. (m/s)')), 1.91, 'turn: breakout → +15');
 const startHead = cellBelow(sh, 'Ταχύτητα: σήμα → είσοδος χεριών (m/s)');
 const timesHead = cellBelow(sh, 'Distance (m)');
-assert.ok(startHead && timesHead && timesHead[0] - startHead[0] === 4, 'the times two rows below the phase speeds: ' + startHead + ' / ' + timesHead);
+// (2.21.0) Η εκκίνηση σε μία γραμμή, με τη σειρά των γεγονότων, χωρίς ισχία και πόδια· ο πίνακας των χρόνων αμέσως μετά.
+assert.ok(startHead && timesHead && timesHead[0] - startHead[0] === 4, 'the times right after the start row: ' + startHead + ' / ' + timesHead);
+const headersAt = r => sh.getRange(r, 1, 1, 15).getValues()[0];
+assert.deepStrictEqual(headersAt(startHead[0] - 1), ['Χρόνος Αντίδρασης – πρώτη κίνηση (sec)', 'Χρόνος Πάνω στον βατήρα (sec)',
+  'Πτήση: βατήρας → είσοδος (sec)', 'Χρόνος έως την είσοδο (sec)', 'Απόσταση εισόδου (Χέρια) (μ.)', 'Ταχύτητα εισόδου (Χέρια) (m/s)',
+  'Ταχύτητα: σήμα → είσοδος χεριών (m/s)', 'Υποβρύχιοι Δελφινισμοί', 'Χρόνος έως την έξοδο από το νερό (sec)', 'Απόσταση κάτω από το νερό (μ.)',
+  'Απόσταση Εξόδου από το νερό (κεφάλι) (μ.)', 'Ταχύτητα: είσοδος → έξοδος (m/s)', 'Μέση ταχύτητα από το σήμα έως την έξοδο (m/s)',
+  'Χρόνος 15μ. (sec)', 'Ταχύτητα: έξοδος → 15μ. (m/s)'], 'the start in the order of the events');
+const turnHead = cellBelow(sh, 'Τελευταία χεριά → τοίχος (s)');
+assert.deepStrictEqual(headersAt(turnHead[0] - 1), ['Τοίχος (μ.)', 'Είδος στροφής', 'Χρόνος προσέγγισης 5μ. (s)', 'Τελευταία χεριά → τοίχος (s)',
+  'Χρόνος στροφής (s)', 'Χρόνος κάτω από το νερό (s)', 'Δελφινισμοί', 'Μέτρα κάτω από το νερό (μ.)', 'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)',
+  'Τοίχος → κεφάλι στα +15μ. (s)', 'Ταχύτητα: έξοδος → +15μ. (m/s)', 'Χρόνος -5/+15μ. (s)', 'Μέση ταχύτητα -5/+15μ. (m/s)',
+  'Ποσοστό στον τελικό χρόνο', ''], 'the turns in the order of the events');
+// Οι τιμές της στροφής στις στήλες τους (ανοιχτή στροφή πρόσθιο: επαφή → αποκόλληση 0.85, τελευταία χεριά → τοίχος 0.80, κάτω από
+// το νερό 2.55 με έναν δελφινισμό, έξοδος στα 8.4, τοίχος → +15 7.18) και οι τύποι που δείχνουν σε αυτές.
+near(Number(below(sh, 'Χρόνος στροφής (s)')), 0.85, 'turn time in its column');
+near(Number(below(sh, 'Τελευταία χεριά → τοίχος (s)')), 0.80, 'last stroke → wall in its column');
+near(Number(below(sh, 'Χρόνος κάτω από το νερό (s)')), 2.55, 'underwater time in its column');
+assert.strictEqual(Number(below(sh, 'Δελφινισμοί')), 1, 'kicks in their column');
+near(Number(below(sh, 'Μέτρα κάτω από το νερό (μ.)')), 8.4, 'breakout distance in its column');
+const tw = turnHead[0];
+const colOf = header => headersAt(turnHead[0] - 1).indexOf(header) + 1;
+const letter = c => String.fromCharCode(64 + c);
+assert.strictEqual(sh.getRange(tw, colOf('Μέση ταχύτητα -5/+15μ. (m/s)')).getFormulas()[0][0],
+  '=IF(OR(' + letter(colOf('Χρόνος -5/+15μ. (s)')) + tw + '="",' + letter(colOf('Χρόνος -5/+15μ. (s)')) + tw + '=0),"",20/' + letter(colOf('Χρόνος -5/+15μ. (s)')) + tw + ')',
+  'the mean speed -5/+15 from the -5/+15 time of its row');
 const raw = sh.getRange(1, 1, sh.getLastRow(), 15).getValues().map(r => r.join(' ')).join(' ');
 assert.ok(!/τυπικό ύψος|0\.27|κεφάλι στην/.test(raw), 'no word on how the speeds are found');
+assert.ok(!/Ισχία|Πόδια/.test(raw), 'no hips or feet in the report');
 res = call({ token: 'tok', action: 'update', race: race() });
 sh = sheetOf(res);
 assert.strictEqual(below(sh, 'Ταχύτητα: σήμα → είσοδος χεριών (m/s)'), '', 'the start speeds cleared without the values');

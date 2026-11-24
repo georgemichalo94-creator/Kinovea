@@ -104,10 +104,7 @@ namespace Kinovea.ScreenManager
         private Label lblBlock;
         private Label lblEntry;
         private TextBox tbEntryDistHands;
-        private TextBox tbEntryDistHips;
         private TextBox tbEntryVelHands;
-        private TextBox tbEntryVelHips;
-        private TextBox tbEntryVelFeet;
         private Label lblStartKicks;
         private Label lblBreakout;
         private TextBox tbBreakoutDist;
@@ -162,8 +159,6 @@ namespace Kinovea.ScreenManager
         private Label lblTurnUnderwater;
         private Label lblTurnSpeeds;
 
-        /// <summary>(2.15.0) The body length of the swimmer (toes → head), for the underwater speed of the turns.</summary>
-        private TextBox tbBodyLength;
         private DataGridView gridTurns;
         private int currentTurnWall;
 
@@ -773,18 +768,12 @@ namespace Kinovea.ScreenManager
                 lblEntry, Caption(SwimLang.T("απόσταση:")), tbEntryDistHands, DistanceUnit(),
                 PickButton(SwimPickTarget.EntryHands, SwimLang.T("Κλικ στο βίντεο εκεί που τα χέρια μπαίνουν στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης.")));
 
-            tbEntryDistHips = NumberBox();
-            AddEventRow(t, SwimLang.T("Είσοδος ισχίων"), null, null,
-                SwimLang.T("Τα ισχία μπαίνουν στο νερό. Η απόσταση μετριέται από τον τοίχο εκκίνησης."),
-                Caption(SwimLang.T("απόσταση:")), tbEntryDistHips, DistanceUnit(),
-                PickButton(SwimPickTarget.EntryHips, SwimLang.T("Κλικ στο βίντεο εκεί που τα ισχία μπαίνουν στο νερό.")));
-
+            // (2.36.0) Not the entry of the hips nor the speeds of the hips and the feet (the analyst's request: a clearer page and PDF);
+            // the speed of the hands at their entry stays, typed.
             tbEntryVelHands = NumberBox();
-            tbEntryVelHips = NumberBox();
-            tbEntryVelFeet = NumberBox();
-            AddEventRow(t, SwimLang.T("Ταχύτητες εισόδου (m/s)"), null, null,
-                SwimLang.T("Ταχύτητα των χεριών, των ισχίων και των ποδιών τη στιγμή της εισόδου."),
-                Caption(SwimLang.T("χέρια")), tbEntryVelHands, Caption(SwimLang.T("ισχία")), tbEntryVelHips, Caption(SwimLang.T("πόδια")), tbEntryVelFeet);
+            AddEventRow(t, SwimLang.T("Ταχύτητα εισόδου χεριών"), null, null,
+                SwimLang.T("Ταχύτητα των χεριών τη στιγμή της εισόδου (m/s), αν τη μετράς με άλλο σύστημα."),
+                tbEntryVelHands, Unit("m/s"));
 
             lblStartKicks = ValueLabel();
             AddEventRow(t, SwimLang.T("Υποβρύχιοι δελφινισμοί"), PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"),
@@ -1060,22 +1049,20 @@ namespace Kinovea.ScreenManager
                 lblTurnUnderwater,
                 PickButton(SwimPickTarget.TurnUnderwater, SwimLang.T("Κλικ στο κεφάλι εκεί που βγαίνει από το νερό: μέτρα κάτω από το νερό από τον τοίχο της στροφής.")));
             lblTurnSpeeds = ValueLabel();
-            // (2.15.0) The head at the push-off: the body length, once for the race (the underwater speed of every turn).
-            tbBodyLength = NumberBox();
-            toolTip.SetToolTip(tbBodyLength, BodyLengthHelp());
-            AddEventRow(t, SwimLang.T("Μήκος σώματος (πόδια → κεφάλι)"), null, null, BodyLengthHelp(), tbBodyLength, DistanceUnit(),
-                PickButton(SwimPickTarget.BodyLength, SwimLang.T("Σε ένα καρέ της ολίσθησης μετά την αποκόλληση (σώμα τεντωμένο): κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι.")));
+            // (2.36.0) Not the body length (the analyst's request): the head at the push-off from the typical height (SwimHead).
             AddEventRow(t, SwimLang.T("Ταχύτητες εξόδου"), null, null, BreakoutSpeedsHelp(false), lblTurnSpeeds);
 
+            // (2.36.0) The columns in the order the events happen: the last stroke to the wall, the turn, the underwater part (time, kicks,
+            // where the head comes out), then the speeds after the push-off.
             gridTurns = CreateGrid();
             gridTurns.ReadOnly = false;
             gridTurns.Columns.Add(Column("wall", SwimLang.T("Τοίχος"), 70));
-            gridTurns.Columns.Add(Column("uwDist", SwimLang.T("Απόσταση κάτω από το νερό"), 92));
+            gridTurns.Columns.Add(Column("gap", SwimLang.T("Τελ. χεριά → τοίχος (s)"), 90));
             gridTurns.Columns.Add(Column("turnTime", SwimLang.T("Χρόνος στροφής (s)"), 82));
             gridTurns.Columns["turnTime"].ToolTipText = SwimLang.T("Ανάποδη στροφή (ελεύθερο/ύπτιο): τελευταία είσοδος χεριού → αποκόλληση. Ανοιχτή (πεταλούδα, πρόσθιο, αλλαγή στυλ): επαφή → αποκόλληση. Σκυταλοδρομία: χρόνος αλλαγής. Γράφεται και με το χέρι.");
             gridTurns.Columns.Add(Column("uwTime", SwimLang.T("Υποβρύχιος χρόνος (s)"), 86));
             gridTurns.Columns.Add(Column("kicks", SwimLang.T("Δελφινισμοί"), 72));
-            gridTurns.Columns.Add(Column("gap", SwimLang.T("Τελ. χεριά → τοίχος (s)"), 90));
+            gridTurns.Columns.Add(Column("uwDist", SwimLang.T("Απόσταση κάτω από το νερό"), 92));
             gridTurns.Columns.Add(Column("vOut", SwimLang.T("Αποκόλληση → έξοδος (m/s)"), 96));
             gridTurns.Columns.Add(Column("v15", SwimLang.T("Έξοδος → +15 (m/s)"), 86));
             gridTurns.Columns["vOut"].ToolTipText = BreakoutSpeedsHelp(false);
@@ -1838,16 +1825,10 @@ namespace Kinovea.ScreenManager
                         tbOfficial.Text = official;
                 }
                 SetText(tbEntryDistHands, Format(r.EntryDistHands));
-                SetText(tbEntryDistHips, Format(r.EntryDistHips));
                 SetText(tbEntryVelHands, Format(r.EntryVelHands));
-                SetText(tbEntryVelHips, Format(r.EntryVelHips));
-                SetText(tbEntryVelFeet, Format(r.EntryVelFeet));
                 SetText(tbUnderwaterDist, Format(r.UnderwaterDist));
                 SetText(tbBreakoutDist, Format(r.BreakoutDist));
                 SetText(tbFinishDist, Format(r.FinishLastStrokeDist));
-                SetText(tbBodyLength, Format(r.BodyLength));
-                if (tbTechBodyLength != null)
-                    SetText(tbTechBodyLength, Format(r.BodyLength));
 
                 // (2.9.8) The estimate from the times apart (dim, with a tooltip): no speeds of the breakout from it.
                 if (underwaterColor == Color.Empty)
@@ -2234,7 +2215,9 @@ namespace Kinovea.ScreenManager
             {
                 double? now = manager.CurrentRaceTime;
                 string time = manager.HasVideo && now.HasValue ? (now.Value >= 60 ? SwimReference.FormatTime(now.Value) : now.Value.ToString("0.00", CultureInfo.InvariantCulture)) : "–";
-                int next = race.NextCheckpoint();
+                // (2.36.0) The checkpoint «Πέρασμα» marks at this frame, as the button of the video bar says (the first one without a time
+                // could be another one: one skipped before, the frame already past it).
+                int next = manager.NextSplitAt();
                 List<SwimChip> chips = new List<SwimChip>();
                 chips.Add(new SwimChip(SwimLang.T("ΕΠΟΜΕΝΟ"), next > 0 ? next + race.Unit : SwimLang.T("τέλος"), SwimTheme.Amber));
                 chips.Add(new SwimChip(SwimLang.T("ΧΕΡΙΕΣ"), SwimCalculator.PressesSinceLastSplit(manager.Computed).ToString(CultureInfo.InvariantCulture), SwimTheme.Text));
@@ -3028,10 +3011,7 @@ namespace Kinovea.ScreenManager
             SwimRace r = manager.Race;
             r.Reaction = Parse(tbReaction);
             r.EntryDistHands = Parse(tbEntryDistHands);
-            r.EntryDistHips = Parse(tbEntryDistHips);
             r.EntryVelHands = Parse(tbEntryVelHands);
-            r.EntryVelHips = Parse(tbEntryVelHips);
-            r.EntryVelFeet = Parse(tbEntryVelFeet);
 
             // (2.9.8) A value typed is the analyst's, no longer the estimate from the times (the same value shown again stays one).
             double? underwater = Parse(tbUnderwaterDist);
@@ -3040,15 +3020,6 @@ namespace Kinovea.ScreenManager
             r.UnderwaterDist = underwater;
             r.BreakoutDist = Parse(tbBreakoutDist);
             r.FinishLastStrokeDist = Parse(tbFinishDist);
-            r.BodyLength = Parse(tbBodyLength);
-
-            // (2.15.0) The same value in the turns of the technical analysis (else the one shown there would be put back from it).
-            if (tbTechBodyLength != null && !tbTechBodyLength.Focused)
-            {
-                updating = true;
-                SetText(tbTechBodyLength, Format(r.BodyLength));
-                updating = false;
-            }
 
             manager.ManualValuesChanged();
         }
@@ -3399,9 +3370,6 @@ namespace Kinovea.ScreenManager
 
             if (!phase.HeadAtPushoff.HasValue)
                 return "";
-            if (h.BodyMeasured)
-                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (το μήκος σώματος που μετρήθηκε)"),
-                    phase.HeadAtPushoff.Value, race.Unit);
             return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (τυπικό ύψος {2:0.00} μ. + 0.10, {3})"),
                 phase.HeadAtPushoff.Value, race.Unit, h.Height, h.Who());
         }
@@ -3417,19 +3385,9 @@ namespace Kinovea.ScreenManager
                   SwimLang.T("μετρημένες (📍 Μέτρηση) ή γραμμένες, όχι η εκτίμηση από τους χρόνους.")
                 : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού: στην αποκόλληση τα δάχτυλα των ποδιών είναι ακόμη στον ") +
                   SwimLang.T("τοίχο, άρα το κεφάλι απέχει από τον τοίχο το μήκος του σώματος (το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του ") +
-                  SwimLang.T("+ 0.10 μ., ή το μήκος σώματος αν μετρήθηκε). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος).\n") +
+                  SwimLang.T("+ 0.10 μ.). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος).\n") +
                   SwimLang.T("Χρειάζονται τα σημάδια της αποκόλλησης, της εξόδου και του +15, και η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή ") +
                   SwimLang.T("γραμμένη, όχι η εκτίμηση από τους χρόνους.");
-        }
-
-        /// <summary>(2.15.0) What the body length is and how it is measured. (2.35.0) Not needed: the typical height takes its place.</summary>
-        private static string BodyLengthHelp()
-        {
-            return SwimLang.T("Προαιρετικό. Ο αθλητής τεντωμένος, από τα δάχτυλα των ποδιών ως την κορυφή του κεφαλιού: στην αποκόλληση το κεφάλι ") +
-                SwimLang.T("απέχει τόσο από τον τοίχο. Χωρίς αυτό το πρόγραμμα παίρνει το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του + 0.10 μ.\n") +
-                SwimLang.T("📍 Μέτρηση: σε ένα καρέ της ολίσθησης μετά την αποκόλληση, κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι. Και τα δύο ") +
-                SwimLang.T("είναι κάτω από το νερό στο ίδιο βάθος, οπότε η μετατόπιση που δείχνει το νερό από την κερκίδα δεν μπαίνει στη μέτρηση. ") +
-                SwimLang.T("Μία φορά για όλον τον αγώνα (ή γράψε την τιμή).");
         }
 
         private static string Format(double? value, string format)

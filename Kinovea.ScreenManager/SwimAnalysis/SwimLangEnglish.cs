@@ -2958,6 +2958,10 @@ namespace Kinovea.ScreenManager
             // (2.35.1) The speed from the breakout to 15 for every breakout before the 15.
             { "{0}: η έξοδος ({1:0.0}) δεν είναι πριν από τα 15", "{0}: the breakout ({1:0.0}) is not before 15" },
             { "{0}: το σημάδι της εξόδου είναι μετά το κεφάλι στα 15· έλεγξε τα σημάδια", "{0}: the breakout mark is after the head at 15; check the marks" },
+            // (2.36.0) Not the hips, the feet nor the body length.
+            { "Ταχύτητα εισόδου χεριών", "Hands entry speed" },
+            { "Ταχύτητα των χεριών τη στιγμή της εισόδου (m/s), αν τη μετράς με άλλο σύστημα.", "Speed of the hands at the moment of entry (m/s), if you measure it with another system." },
+            { "+ 0.10 μ.). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος).\n", "+ 0.10 m). And from the breakout to the head at +15 m (what is left / time).\n" },
         };
     }
 }

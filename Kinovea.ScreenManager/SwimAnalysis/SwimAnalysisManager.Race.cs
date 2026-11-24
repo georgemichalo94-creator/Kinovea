@@ -3640,79 +3640,21 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int SplitTargetAt(long timestamp, out bool move)
         {
-            move = false;
+            // (2.36.0) A plain function of the race (SwimSplits), checked by the CI for every distance, pool and unit.
+            return SwimSplits.TargetAt(Race, Timing, timestamp, Race == null ? -1 : AskedSplit(), HasVideo && player.IsCurrentlyPlaying, out move);
+        }
+
+        /// <summary>
+        /// (2.36.0) The checkpoint the chip «ΕΠΟΜΕΝΟ» shows: the one «Πέρασμα» (S) marks at the frame of the video (as its button on the
+        /// video bar says), the next one without a time without a video; -1: all have a time.
+        /// </summary>
+        public int NextSplitAt()
+        {
             if (Race == null)
                 return -1;
-
-            int next = Race.NextCheckpoint();
-            if (Race.IsTraining || !Timing.IsValid)
-                return next;
-
-            // The marked checkpoints: their seconds from this frame (negative: before it).
-            List<int> checkpoints = Race.Checkpoints.Distinct().OrderBy(d => d).ToList();
-            Dictionary<int, double> marked = new Dictionary<int, double>();
-            foreach (int d in checkpoints)
-            {
-                SwimMark m = Race.GetSplit(d);
-                if (m != null)
-                    marked[d] = Timing.Seconds(m.Timestamp, timestamp);
-            }
-
-            if (marked.Count == 0)
-                return next;
-
-            // The frame keeps the order: after the times of the checkpoints before it, before the times of the ones after it.
-            Func<int, bool> inOrder = d => marked.All(x => x.Key == d || (x.Key < d ? x.Value < 0 : x.Value > 0));
-            int best = -1;
-            double bestAway = double.MaxValue;
-            foreach (int d in checkpoints)
-            {
-                if (!inOrder(d))
-                    continue;
-
-                double away = Math.Abs(marked.ContainsKey(d) ? marked[d] : ExpectedSplitAway(d, marked, timestamp));
-                if (away < bestAway)
-                {
-                    best = d;
-                    bestAway = away;
-                }
-            }
-
-            // The checkpoint asked for (its row chosen, its proposal being checked): marked at this frame, or its time moved here.
-            int asked = AskedSplit();
-            if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked))
-            {
-                move = marked.ContainsKey(asked);
-                return asked;
-            }
-
-            // While the video plays, the next checkpoint without a time as always (two presses in a row do not move the last one).
-            if (next >= 0 && HasVideo && player.IsCurrentlyPlaying)
-                return next;
-
-            // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot almost 0.4 s
-            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). The nearest
-            // checkpoint without a time that the frame keeps in order (one skipped), else the next one without a time (none: all have a
-            // time, AddSplit says how to change one).
-            if (best >= 0 && marked.ContainsKey(best))
-            {
-                best = -1;
-                bestAway = double.MaxValue;
-                foreach (int d in checkpoints)
-                {
-                    if (marked.ContainsKey(d) || !inOrder(d))
-                        continue;
-
-                    double away = Math.Abs(ExpectedSplitAway(d, marked, timestamp));
-                    if (away < bestAway)
-                    {
-                        best = d;
-                        bestAway = away;
-                    }
-                }
-            }
-
-            return best >= 0 ? best : next;
+            bool move;
+            long? now = CurrentVideoTimestamp;
+            return now.HasValue ? SplitTargetAt(now.Value, out move) : Race.NextCheckpoint();
         }
 
         /// <summary>«Πέρασμα» pressed: its checkpoint at this frame (SplitTargetAt); the row chosen counts for this press only.</summary>
@@ -3723,29 +3665,6 @@ namespace Kinovea.ScreenManager
             chosenSplitRace = null;
             splitMoved = false;
             return distance;
-        }
-
-        /// <summary>
-        /// Where a checkpoint without a time is expected (s from this frame): between the marked ones around it in proportion to the
-        /// distance, or after (before) the last (first) marked one at the mean speed of the race up to it.
-        /// </summary>
-        private double ExpectedSplitAway(int distance, Dictionary<int, double> marked, long timestamp)
-        {
-            int before = marked.Keys.Where(k => k < distance).DefaultIfEmpty(-1).Max();
-            int after = marked.Keys.Where(k => k > distance).DefaultIfEmpty(int.MaxValue).Min();
-            if (before >= 0 && after != int.MaxValue)
-                return marked[before] + (marked[after] - marked[before]) * (distance - before) / (after - before);
-
-            int known = before >= 0 ? before : after;
-            double speed = 1.6;
-            if (Race.StartTimestamp.HasValue)
-            {
-                double raceTime = marked[known] - Timing.Seconds(Race.StartTimestamp.Value, timestamp);
-                if (raceTime > 0.5)
-                    speed = Math.Max(0.5, Math.Min(3.0, known / raceTime));
-            }
-
-            return marked[known] + (distance - known) / speed;
         }
 
         /// <summary>The time keeps the order of the checkpoints marked before and after it.</summary>
