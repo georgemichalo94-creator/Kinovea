@@ -1316,12 +1316,26 @@ namespace Kinovea.ScreenManager
     /// the video bar give it the checkpoint asked for (a row chosen, a proposal being checked) and whether the video plays
     /// (SwimAnalysisManager.SplitTargetAt), the chip «ΕΠΟΜΕΝΟ» shows the same, and the CI checks it for every distance, pool and unit.
     /// (2.9.5) A checkpoint with a time moves to the frame only when asked for and the frame keeps the order of the times; (2.9.5b)
-    /// otherwise a time is never changed: among the checkpoints without a time that the frame keeps in order, the one whose time would be
-    /// nearest to it (expected between the marked ones, or at the speed of the race so far); while the video plays, or none in order,
-    /// the next one without a time; all marked: none (-1).
+    /// otherwise a time is never changed: among the checkpoints without a time that the frame keeps in order, between two marked ones
+    /// (back to one passed by) the one whose time would be nearest to the frame; (2.36.0) after the last one marked, the first one the
+    /// swimmer can be at by now (SkipShare); while the video plays, or none in order, the next one without a time; all marked: none (-1).
     /// </summary>
     public static class SwimSplits
     {
+        /// <summary>
+        /// (2.36.0) After the last checkpoint marked, «Πέρασμα» takes the first one without a time where the swimmer can be at this frame:
+        /// at least this share of his speed so far (over the last length; after the 15 alone, its speed without the dive, DiveShare).
+        /// The nearest expected time (2.9.5b) took the 50 for the 45 of an 800 (with only the 15 marked the dive made the 45 and the 50
+        /// look due long before the frame) and then the 65 for the 50. One passed by is told apart when the swimmer would have had to be
+        /// a third slower to be at it only now; when that cannot be told (a 45 passed by, S at the 50) the next one is taken, as the
+        /// button and «ΕΠΟΜΕΝΟ» say before the press. On the 69 events of the CI with paces ±15% per segment no press in order went wrong
+        /// with a share from 0.65 to 0.8.
+        /// </summary>
+        internal const double SkipShare = 0.7;
+
+        /// <summary>(2.36.0) The speed of the first 15 of a race against the swimming after it (the dive and the underwater part).</summary>
+        internal const double DiveShare = 0.72;
+
         public static int TargetAt(SwimRace race, SwimTiming timing, long timestamp, int asked, bool playing, out bool move)
         {
             move = false;
@@ -1347,20 +1361,6 @@ namespace Kinovea.ScreenManager
 
             // The frame keeps the order: after the times of the checkpoints before it, before the times of the ones after it.
             Func<int, bool> inOrder = d => marked.All(x => x.Key == d || (x.Key < d ? x.Value < 0 : x.Value > 0));
-            int best = -1;
-            double bestAway = double.MaxValue;
-            foreach (int d in checkpoints)
-            {
-                if (!inOrder(d))
-                    continue;
-
-                double away = Math.Abs(marked.ContainsKey(d) ? marked[d] : ExpectedAway(race, timing, d, marked, timestamp));
-                if (away < bestAway)
-                {
-                    best = d;
-                    bestAway = away;
-                }
-            }
 
             // The checkpoint asked for (its row chosen, its proposal being checked): marked at this frame, or its time moved here.
             if (asked >= 0 && checkpoints.Contains(asked) && inOrder(asked))
@@ -1374,28 +1374,68 @@ namespace Kinovea.ScreenManager
                 return next;
 
             // (2.9.5b) Not asked for, a time marked never moves: a press of S on a paused video moved the 15 m of the pilot almost 0.4 s
-            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). The nearest
-            // checkpoint without a time that the frame keeps in order (one skipped), else the next one without a time (none: all have a
-            // time, AddSplit says how to change one).
-            if (best >= 0 && marked.ContainsKey(best))
-            {
-                best = -1;
-                bestAway = double.MaxValue;
-                foreach (int d in checkpoints)
-                {
-                    if (marked.ContainsKey(d) || !inOrder(d))
-                        continue;
+            // earlier, before the breakout, and the speeds after the start went wrong (15–25 m far too slow, then faster). One of the
+            // checkpoints without a time that the frame keeps in order; none: the next one without a time (none: all have a time,
+            // AddSplit says how to change one).
+            List<int> free = checkpoints.Where(d => !marked.ContainsKey(d) && inOrder(d)).ToList();
+            if (free.Count == 0)
+                return next;
+            if (free.Count == 1)
+                return free[0];
 
-                    double away = Math.Abs(ExpectedAway(race, timing, d, marked, timestamp));
-                    if (away < bestAway)
-                    {
-                        best = d;
-                        bestAway = away;
-                    }
-                }
+            // Between two marked ones (back to one passed by): the one whose time, between theirs in proportion to the distance, is
+            // nearest to the frame.
+            if (marked.Any(x => x.Value > 0))
+                return free.OrderBy(d => Math.Abs(ExpectedAway(race, timing, d, marked, timestamp))).First();
+
+            // (2.36.0) After the last one marked: the first one the swimmer can be at by now (SkipShare), else the last one.
+            List<int> before = marked.Where(x => x.Value < 0).Select(x => x.Key).OrderBy(d => d).ToList();
+            if (before.Count == 0)
+                return free[0];
+            int last = before[before.Count - 1];
+            double since = -marked[last];
+            double reference = ReferenceSpeed(race, timing, marked, before, timestamp);
+            if (since <= 0 || reference <= 0)
+                return free[0];
+            foreach (int d in free)
+            {
+                if ((d - last) / since >= SkipShare * reference)
+                    return d;
             }
 
-            return best >= 0 ? best : next;
+            return free[free.Count - 1];
+        }
+
+        /// <summary>
+        /// (2.36.0) The speed of the swimmer so far (pool units per second) for «Πέρασμα» after the last checkpoint marked: over the last
+        /// length (from the last one marked a length or more before it, else the first one marked); after one checkpoint alone, its
+        /// speed from the signal without the dive (DiveShare at the 15, less further). 0: not known.
+        /// </summary>
+        private static double ReferenceSpeed(SwimRace race, SwimTiming timing, Dictionary<int, double> marked, List<int> before, long timestamp)
+        {
+            int last = before[before.Count - 1];
+            double speed = 0;
+            if (before.Count >= 2)
+            {
+                int from = before[0];
+                foreach (int d in before)
+                {
+                    if (last - d >= race.Pool)
+                        from = d;
+                }
+
+                double time = marked[last] - marked[from];
+                if (time > 0)
+                    speed = (last - from) / time;
+            }
+            else if (race.StartTimestamp.HasValue)
+            {
+                double t = marked[last] + timing.Seconds(timestamp, race.StartTimestamp.Value);
+                if (t > 0 && last > 0)
+                    speed = (1 - (1 - DiveShare) * Math.Min(1.0, 15.0 / last)) * last / t;
+            }
+
+            return speed > 0 ? Math.Max(0.4, Math.Min(3.0, speed)) : 0;
         }
 
         /// <summary>

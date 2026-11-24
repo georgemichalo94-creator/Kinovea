@@ -49,7 +49,7 @@ function Cause($e) {
 # then coming back to them.
 $tPresets = T 'SwimPresets'; $tSplits = T 'SwimSplits'
 $defaultCps = $tPresets.GetMethod('DefaultCheckpoints'); $styleAt = $tPresets.GetMethod('StyleAt'); $targetAt = $tSplits.GetMethod('TargetAt')
-$orderFails = 0; $ordered = 0; $presses = 0
+$orderFails = 0; $ordered = 0; $presses = 0; $passedBy = 0
 function OrderFail($n, $what) { $script:orderFails++; if ($script:orderFails -le 24) { Write-Output ('FAIL order ' + $n + ': ' + $what) } }
 function Ascending($list) { for ($k = 1; $k -lt $list.Count; $k++) { if (-not ($list[$k] -gt $list[$k - 1])) { return $false } }; return $true }
 # «Πέρασμα» at the frame of a checkpoint: the checkpoint it marks.
@@ -106,27 +106,39 @@ function CheckOrder($n, $race, $timing, $computed, $phases) {
     foreach ($k in $p.Kicks) { if ($null -ne $from -and $null -ne $p.Breakout -and ($k -le $from -or $k -ge $p.Breakout)) { OrderFail $n ($what + ': a kick of ' + $p.Id + ' at ' + $k + ' outside ' + $from + '–' + $p.Breakout) } }
   }
 
-  # «Πέρασμα» at each checkpoint in order, the video paused and playing: the checkpoint of that frame.
+  # «Πέρασμα» at each checkpoint in order, the video paused and playing: the checkpoint of that frame (2.9.5b–2.35.1 an 800 in a
+  # 50 m pool: S at the 45 marked the 50).
   $splits = @($race.Marks | Where-Object { $_.Type.ToString() -eq 'Split' } | Sort-Object Timestamp)
   foreach ($m in $splits) { [void]$race.Marks.Remove($m) }
+  $wrong = 0
   foreach ($m in $splits) {
     $paused = Press $race $timing $m.Timestamp $false; $playing = Press $race $timing $m.Timestamp $true
-    if ($paused -ne $m.Distance -or $playing -ne $m.Distance) { OrderFail $n ($what + ': S at ' + $m.Distance + ' marks ' + $paused + ' (paused) / ' + $playing + ' (playing)'); break }
+    if ($paused -ne $m.Distance -or $playing -ne $m.Distance) { $wrong++; if ($wrong -le 2) { OrderFail $n ($what + ': S at ' + $m.Distance + ' marks ' + $paused + ' (paused) / ' + $playing + ' (playing)') } }
     $race.Marks.Add($m)
   }
-  # Passing every other one by (paused at the frames of the others, in order), then back to each one passed by.
+  # Passing by the ones that can be told apart (half the way or less from the last one marked to the next one; not two in a row): S at
+  # the next one's frame marks the next one; then back to each one passed by, between two marked ones.
   foreach ($m in $splits) { [void]$race.Marks.Remove($m) }
-  for ($k = 0; $k -lt $splits.Count; $k += 2) {
-    $m = $splits[$k]; $got = Press $race $timing $m.Timestamp $false
-    if ($got -ne $m.Distance) { OrderFail $n ($what + ': S at ' + $m.Distance + ' after one passed by marks ' + $got); break }
-    $race.Marks.Add($m)
+  $skipped = @(); $last = -1; $justSkipped = $false
+  for ($k = 0; $k -lt $splits.Count; $k++) {
+    $m = $splits[$k]
+    if ($k + 1 -lt $splits.Count -and $last -ge 0 -and -not $justSkipped -and ($m.Distance - $last) / ($splits[$k + 1].Distance - $last) -le 0.5) {
+      $nx = $splits[$k + 1]; $got = Press $race $timing $nx.Timestamp $false
+      if ($got -ne $nx.Distance) { $wrong++; if ($wrong -le 2) { OrderFail $n ($what + ': S at ' + $nx.Distance + ' with ' + $m.Distance + ' passed by marks ' + $got) } }
+      $race.Marks.Add($nx); $skipped += $m; $last = $nx.Distance; $justSkipped = $true; $k++
+      continue
+    }
+    $got = Press $race $timing $m.Timestamp $false
+    if ($got -ne $m.Distance) { $wrong++; if ($wrong -le 2) { OrderFail $n ($what + ': S at ' + $m.Distance + ' (with some passed by) marks ' + $got) } }
+    $race.Marks.Add($m); $last = $m.Distance; $justSkipped = $false
   }
-  for ($k = 1; $k -lt $splits.Count; $k += 2) {
-    $m = $splits[$k]; $got = Press $race $timing $m.Timestamp $false
-    if ($got -ne $m.Distance) { OrderFail $n ($what + ': S back at ' + $m.Distance + ' marks ' + $got); break }
+  foreach ($m in $skipped) {
+    $got = Press $race $timing $m.Timestamp $false
+    if ($got -ne $m.Distance) { $wrong++; if ($wrong -le 2) { OrderFail $n ($what + ': S back at ' + $m.Distance + ' marks ' + $got) } }
     $race.Marks.Add($m)
   }
   if ((Press $race $timing ($splits[$splits.Count - 1].Timestamp + 1000) $false) -ne -1) { OrderFail $n ($what + ': S after all the checkpoints marks one') }
+  if ($skipped.Count -gt 0) { $script:passedBy += $skipped.Count }
   $script:ordered++
 }
 
@@ -165,5 +177,5 @@ foreach ($line in $lines) {
 
 if ($orderFails -gt 0) { Write-Output ('FAILED: ' + $orderFails + ' checks of the order of the events') }
 if ($fails -gt 0 -or $orderFails -gt 0) { Write-Output ('FAILED: ' + $fails + ' of ' + $lines.Count + ' analyses, ' + $orderFails + ' of the order'); exit 1 }
-if ($ordered -lt 60) { Write-Output ('FAILED: only ' + $ordered + ' events in the order of the race'); exit 1 }
-Write-Output ('fuzz marks ok: ' + $done + ' fictional analyses computed by the program; ' + $ordered + ' events in the order of the race, ' + $presses + ' presses of S')
+if ($ordered -lt 60 -or $passedBy -lt 100) { Write-Output ('FAILED: only ' + $ordered + ' events in the order of the race, ' + $passedBy + ' checkpoints passed by'); exit 1 }
+Write-Output ('fuzz marks ok: ' + $done + ' fictional analyses computed by the program; ' + $ordered + ' events in the order of the race, ' + $presses + ' presses of S, ' + $passedBy + ' checkpoints passed by and marked after')
