@@ -64,6 +64,12 @@ namespace Kinovea.ScreenManager
         private static string browserFound;
         private static bool browserLooked;
 
+        /// <summary>
+        /// The DevTools of the browser failed and its command line printed (DevTools blocked on this computer): the command line first
+        /// from then on, until Kinovea starts again (not the wait for DevTools every time).
+        /// </summary>
+        private static bool commandLineFirst;
+
         /// <summary>The browser that prints (Edge, else Chrome), null when none is installed. Looked for once.</summary>
         public static string BrowserPath
         {
@@ -164,33 +170,43 @@ namespace Kinovea.ScreenManager
                 int timeout = Math.Max(30, timeoutSeconds) * 1000;
                 List<string> errors = new List<string>();
                 byte[] pdf = null;
-                if (method == null || method == "devtools")
+                bool devTools = method == null || method == "devtools", commandLine = method == null || method == "commandline";
+                bool lineFirst = method == null && commandLineFirst;
+                for (int pass = 0; pass < 2 && pdf == null; pass++)
                 {
-                    try
+                    bool useDevTools = (pass == 0) != lineFirst;
+                    if (useDevTools && devTools)
                     {
-                        pdf = PrintDevTools(browser, page, Path.Combine(dir, "profile"), timeout);
-                        result.Method = "devtools";
+                        try
+                        {
+                            pdf = PrintDevTools(browser, page, Path.Combine(dir, "profile"), timeout);
+                            result.Method = "devtools";
+                        }
+                        catch (Exception e)
+                        {
+                            log.Warn("The PDF was not printed through DevTools: " + e.Message);
+                            errors.Add(e.Message);
+                        }
                     }
-                    catch (Exception e)
+                    else if (!useDevTools && commandLine)
                     {
-                        log.Warn("The PDF was not printed through DevTools: " + e.Message);
-                        errors.Add(e.Message);
-                    }
-                }
-
-                if (pdf == null && (method == null || method == "commandline"))
-                {
-                    try
-                    {
-                        // What is left of the time (at least half a minute: Edge prints a report in a few seconds).
-                        int left = (int)Math.Max(30000, timeout - watch.ElapsedMilliseconds);
-                        pdf = PrintCommandLine(browser, page, Path.Combine(dir, "report.pdf"), Path.Combine(dir, "profile2"), left);
-                        result.Method = "command line";
-                    }
-                    catch (Exception e)
-                    {
-                        log.Warn("The PDF was not printed from the command line: " + e.Message);
-                        errors.Add(e.Message);
+                        try
+                        {
+                            // What is left of the time (at least half a minute: Edge prints a report in a few seconds).
+                            int left = (int)Math.Max(30000, timeout - watch.ElapsedMilliseconds);
+                            pdf = PrintCommandLine(browser, page, Path.Combine(dir, "report.pdf"), Path.Combine(dir, "profile2"), left);
+                            result.Method = "command line";
+                            if (method == null && errors.Count > 0 && !commandLineFirst)
+                            {
+                                commandLineFirst = true;
+                                log.Info("The PDF printed from the command line of the browser, not through its DevTools: the command line first from now on.");
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            log.Warn("The PDF was not printed from the command line: " + e.Message);
+                            errors.Add(e.Message);
+                        }
                     }
                 }
 

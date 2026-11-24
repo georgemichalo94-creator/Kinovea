@@ -123,7 +123,9 @@ if ($server -and $races) {
   function Body($r, $action, $extra) {
     $c = $tCalc.GetMethod('Compute').Invoke($null, @($r, $timing, [double]0.5))
     $tech = $tTech.GetMethod('Compute').Invoke($null, @($r, $c, $timing))
-    $x = if ($extra) { $parse.Invoke($null, @([string]$extra)) } else { $null }
+    # (Assigned, not through the pipeline: PowerShell would unroll a JObject into its properties.)
+    $x = $null
+    if ($extra) { $x = $parse.Invoke($null, @([string]$extra)) }
     return [string]$build.Invoke($null, @($r, $c, $tech, $timing, [long]0, $settings, 'video.mp4', [string]$action, $null, $false, $x))
   }
   $client = [Activator]::CreateInstance($tClient)
@@ -153,7 +155,8 @@ if ($server -and $races) {
   $race = Race 'e2e-ci-1'
   $client.Enqueue($server, (Body $race 'pdf' '{"v2":true}'), $race.Id, $true)
   $e = Answer $false 120
-  $v2 = if ($e -and $e.Result.Raw) { $e.Result.Raw['v2'] } else { $null }
+  $v2 = $null
+  if ($e -and $e.Result.Raw) { $v2 = $e.Result.Raw['v2'] }
   $pages = if ($v2) { [int]$v2['pages'].ToString() } else { 0 }
   Check ($e -and $e.Result.Ok -and $v2 -and $pages -ge 5 -and -not $e.Result.PdfUrl) ('the pages of the report from the script: ' + $pages + ' pages' + $(if ($e) { ' · ' + $e.Message } else { ' · no answer' }))
   if ($v2) {
@@ -164,7 +167,8 @@ if ($server -and $races) {
       $extra = '{"raceId":"' + $race.Id + '","pdf":"' + [Convert]::ToBase64String($printed.Pdf) + '"}'
       $client.EnqueueStore($server, (Body $race 'pdfStore' $extra), $race.Id)
       $s = Answer $true 120
-      $pdf = if ($s -and $s.Result.Raw) { $s.Result.Raw['pdf'] } else { $null }
+      $pdf = $null
+      if ($s -and $s.Result.Raw) { $pdf = $s.Result.Raw['pdf'] }
       Check ($s -and $s.Result.Ok -and $s.Result.PdfUrl -and $pdf -and $pdf['v2'].ToString() -eq 'True' -and $pdf['name'].ToString().EndsWith('.pdf')) ('the PDF kept by the script: ' + $(if ($s) { $s.Result.PdfUrl + ' ' + $s.Message } else { 'no answer' }))
       $log = ServerLog
       $kept = @($log | Where-Object { $_.action -eq 'pdfStore' -and $_.raceId -eq $race.Id })
@@ -192,6 +196,44 @@ if ($server -and $races) {
       $order = ($after | ForEach-Object { $_.action }) -join ', '
       Check ($order -eq 'update, pdfStore, update' -and @($after | Where-Object { -not $_.ok }).Count -eq 0) ('the queue with a PDF to keep: ' + $order)
       Check ($client.HasWaiting($slow.Id) -eq $false) 'nothing of the race waits after them'
+
+      # 4. The analysis of Kinovea with the answers of the web app (SwimAnalysisManager.V2Answer, as the answer of a PDF comes): the
+      # pages printed and the PDF sent to be kept by its own client; why the PDF of the sheet came, said in the status.
+      $settingsDir = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'kv-pp-ci-' + [Guid]::NewGuid().ToString('N')) + [System.IO.Path]::DirectorySeparatorChar
+      New-Item -ItemType Directory -Force -Path $settingsDir | Out-Null
+      $software = [System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($bin, 'Kinovea.Services.dll')).GetType('Kinovea.Services.Software', $true)
+      $software.GetProperty('SettingsDirectory').SetValue($null, $settingsDir)
+      $mgrType = T 'SwimAnalysisManager'
+      $mgr = $mgrType.GetProperty('Instance').GetValue($null)
+      $mgrType.GetProperty('Settings').SetValue($mgr, $settings)
+      $mgrType.GetProperty('Timing').SetValue($mgr, $timing)
+      $answer = $mgrType.GetMethod('V2Answer', $all)
+      $warned = $mgrType.GetField('v2BackendWarned', $all)
+      [void]$answer.Invoke($mgr, @($race, $e.Result))
+      $stored = $null; $until = (Get-Date).AddSeconds(90)
+      while ($null -eq $stored -and (Get-Date) -lt $until) {
+        Start-Sleep -Milliseconds 500
+        $log = ServerLog
+        $stored = @($log | Where-Object { $_.action -eq 'pdfStore' -and $_.raceId -eq $race.Id })[1]
+      }
+      Check ($stored -and $stored.ok -and $stored.pdfPages -eq $pages) ('the analysis printed the pages of the answer and its client sent the PDF: ' + $(if ($stored) { '' + $stored.pdfPages + ' pages, ' + $stored.bytes + ' bytes' } else { 'nothing' }) + ' · ' + $mgrType.GetProperty('LastStatus').GetValue($mgr))
+      $tResult = T 'SwimSheetResult'
+      function Said($json, $pdfUrl) {
+        $warned.SetValue($mgr, $false)
+        $r = [Activator]::CreateInstance($tResult)
+        $r.Ok = $true; $r.Raw = $parse.Invoke($null, @([string]$json)); $r.PdfUrl = $pdfUrl
+        $mgrType.GetProperty('LastStatus').SetValue($mgr, '')
+        [void]$answer.Invoke($mgr, @($race, $r))
+        return [string]$mgrType.GetProperty('LastStatus').GetValue($mgr)
+      }
+      $said = Said '{"ok":true,"v2Error":"δοκιμή"}' $null
+      Check ($said.Contains('δοκιμή')) ('the pages failed in the script: ' + $said)
+      $said = Said '{"ok":true,"v2Missing":true,"pdf":{"url":"https://x"}}' 'https://x'
+      Check ($said.Contains('SwimReportV2')) ('the file of the pages missing in the project: ' + $said)
+      $said = Said '{"ok":true,"version":"2.21.0","pdf":{"url":"https://x"}}' 'https://x'
+      Check ($said.Contains('2.22.0')) ('an older script: ' + $said)
+      $said = Said '{"ok":true,"version":"2.22.0","pdf":{"url":"https://x"}}' 'https://x'
+      Check ($said -eq '') ('the PDF of the 2nd version kept: nothing to say (' + $said + ')')
     }
   }
   Unregister-Event -SourceIdentifier 'swimsync'
