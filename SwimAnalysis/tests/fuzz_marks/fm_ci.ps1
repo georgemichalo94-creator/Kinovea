@@ -92,12 +92,14 @@ function CheckOrder($n, $race, $timing, $computed, $phases) {
   foreach ($p in $ph) {
     $s15 = $null; if ($p.Splits.ContainsKey(15)) { $s15 = $p.Splits[15] }
     if ($p.Kind.ToString() -eq 'Start') {
-      $seq = @(0, $p.Reaction, $p.Block, $p.Entry, $p.Breakout) + $(if ($null -ne $s15) { @($s15) } else { @() })
+      # (Lists built item by item: a subexpression of one item is that item, and a number + a list fails.)
+      $seq = @(0, $p.Reaction, $p.Block, $p.Entry, $p.Breakout); if ($null -ne $s15) { $seq += $s15 }
       if (@($seq | Where-Object { $null -eq $_ }).Count -gt 0 -or -not (Ascending $seq)) { OrderFail $n ($what + ': start signal, first movement, release, entry, breakout, 15: ' + ($seq -join ' / ')) }
       $from = $p.Entry
     } else {
       $m5 = $null; if ($p.Splits.ContainsKey(-5)) { $m5 = $p.Splits[-5] }
-      $seq = $(if ($null -ne $m5) { @($m5) } else { @() }) + @($p.LastStroke, 0, $p.Pushoff, $p.Breakout) + $(if ($null -ne $s15) { @($s15) } else { @() })
+      $seq = @(); if ($null -ne $m5) { $seq += $m5 }
+      $seq += @($p.LastStroke, 0, $p.Pushoff, $p.Breakout); if ($null -ne $s15) { $seq += $s15 }
       if (@($seq | Where-Object { $null -eq $_ }).Count -gt 0 -or -not (Ascending $seq)) { OrderFail $n ($what + ': turn ' + $p.Wall + ' -5, last stroke, wall, push-off, breakout, +15: ' + ($seq -join ' / ')) }
       $from = $p.Pushoff
     }
