@@ -1,7 +1,8 @@
 /**
  * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time;
  * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way;
- * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's).
+ * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's; 2.25.0: what the comparison
+ * means in the place of the recommendations, and the conclusion of the whole race).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real
  * analysis of a race: the race, the personal best (a stored analysis of the athlete) and the reference (elite times). One self-contained
@@ -462,7 +463,8 @@ var SwimV2 = (function () {
   // ---------------------------------------------------------------------------------------------------------------------------
   // Numbers, recommendations and messages
   // ---------------------------------------------------------------------------------------------------------------------------
-  // Recommendations from the numbers of a race: what the numbers show, what to do, the target, the estimated gain.
+  // What the numbers of a race show against the reference (or the PB), phase by phase, and what the comparison means (2.25.0: a
+  // description for the coach, never what the athlete should do; until 2.24.1 an action and a target).
 
   const T = x => {
     if (x === null || x === undefined || !isFinite(x)) return '–';
@@ -502,6 +504,51 @@ var SwimV2 = (function () {
   /** «value (name value)», the part in brackets only when there is something to compare with. */
   const vs = (v, name, w, n, unit) => `${F(v, n)}${unit || ''}` + (ok(w) ? ` (${name} ${F(w, n)}${unit || ''})` : '');
 
+  /** (2.25.0) The comparison in a sentence: «την αναφορά» / «το ΑΡ» (accusative), «της αναφοράς» / «του ΑΡ» (genitive). */
+  const theC = c => c.ref ? 'την αναφορά' : 'το ' + c.name;
+  const ofC = c => c.ref ? 'της αναφοράς' : 'του ' + c.name;
+  const nearC = c => c.ref ? 'στην αναφορά' : 'στο ' + c.name;
+  const TheC = c => c.ref ? 'Η αναφορά' : 'Το ' + c.name;
+
+  /** (2.25.0) How much a speed is above (+) or below (−) another, in % with a decimal comma. */
+  const VP = (v, w) => ok(v) && ok(w) && w > 0 ? P(100 * (v - w) / w) : '–';
+
+  /**
+   * (2.25.0) Where the speed of the swimming differs from the comparison: speed = rate × cycle length, so the difference of the speed is
+   * the one of the rate and the one of the cycle length (their logarithms add up). A sentence of what the numbers show, the part that
+   * weighs most ('main': 'sl', 'sr' or 'both') and a short phrase for the conclusion; null without the rate and the cycle length.
+   */
+  function swimParts(mine, theirs, name) {
+    if (!ok(mine.sl) || !ok(theirs.sl) || !ok(mine.sr) || !ok(theirs.sr) || !(theirs.sl > 0) || !(theirs.sr > 0)) return null;
+    const lsl = Math.log(mine.sl / theirs.sl), lsr = Math.log(mine.sr / theirs.sr), lv = lsl + lsr;
+    const sl = VP(mine.sl, theirs.sl), sr = VP(mine.sr, theirs.sr);
+    const slTxt = `μήκος κύκλου ${F(mine.sl)} μ. (${name} ${F(theirs.sl)}, ${sl})`, srTxt = `συχνότητα ${F(mine.sr, 1)} (${name} ${F(theirs.sr, 1)}, ${sr})`;
+    let text, main, why;
+    if (lv < 0 && lsl < 0 && lsr < 0) {
+      main = Math.abs(lsl) > 2 * Math.abs(lsr) ? 'sl' : Math.abs(lsr) > 2 * Math.abs(lsl) ? 'sr' : 'both';
+      text = `Και τα δύο είναι χαμηλότερα: ${slTxt}, ${srTxt}` + (main === 'sl' ? ', με το μεγαλύτερο μέρος στο μήκος κύκλου.' : main === 'sr' ? ', με το μεγαλύτερο μέρος στη συχνότητα.' : '.');
+      why = main === 'sl' ? 'μικρότερο μήκος κύκλου' : main === 'sr' ? 'χαμηλότερη συχνότητα' : 'μικρότερο μήκος κύκλου και χαμηλότερη συχνότητα';
+    } else if (lv < 0 && lsl < 0) {
+      main = 'sl';
+      text = `Το ${slTxt} είναι μικρότερο, και η ${srTxt} δεν το καλύπτει.`;
+      why = 'μικρότερο μήκος κύκλου';
+    } else if (lv < 0) {
+      main = 'sr';
+      text = `Η ${srTxt} είναι χαμηλότερη, και το ${slTxt} δεν την καλύπτει.`;
+      why = 'χαμηλότερη συχνότητα';
+    } else {
+      main = lsl >= lsr ? 'sl' : 'sr';
+      text = `Η ταχύτητα δεν είναι χαμηλότερη: ${slTxt}, ${srTxt}.`;
+      why = 'ίδια ή μεγαλύτερη ταχύτητα';
+    }
+    return { text, main, why };
+  }
+
+  /**
+   * The phases of a race against the reference (or the PB) from the numbers: what the numbers show (facts), what the comparison means
+   * (meaning: a description, never what the athlete should do; 2.25.0, the analyst's request: until 2.24.1 an action and a target), a
+   * short phrase for the conclusion (why), the time it loses and how far behind it is (lost, pct), where on the course (zones).
+   */
   function recommendations(x) {
     const ev = x.ev, a = x.race, b = x.pb, D = ev.distance, u = U(ev);
     const relay = ev.relay, im = ev.style === 'im';
@@ -520,33 +567,39 @@ var SwimV2 = (function () {
         const tAb = both.map(p => p.t), tCb = both.map(p => p.c);
         const head0 = `−5/+15 κατά μ.ο. <b>${F(avg(tAb, 'inOut'))} s</b> (${tc.name} ${F(avg(tCb, 'inOut'))}` + (tc.ref && ok(avg(real(b), 'inOut')) ? `, ${who} ${F(avg(real(b), 'inOut'))})` : ')');
         const pct = 100 * gap / tAb.reduce((s0, t) => s0 + t.inOut, 0);
+        const many = both.length > 1 ? `${F(gap / both.length)} s σε κάθε στροφή κατά μ.ο.` : '';
         if (im) {
           const worst = both.map(p => ({ t: p.t, c: p.c, d: p.t.inOut - p.c.inOut })).sort((p, q) => q.d - p.d)[0];
           const name = t => t.styleIn === t.styleOut ? `στροφή ${IN_STYLE[t.styleIn]}` : `${STYLE_NAME[t.styleIn].toLowerCase()} → ${STYLE_NAME[t.styleOut].toLowerCase()}`;
           const changes = tA.filter(t => t.kind === 'change').length;
-          const facts = [head0, `η μεγαλύτερη διαφορά στα ${worst.t.wall}${u} (${name(worst.t)}): <b>${S(worst.d)} s</b> από ${tc.ref ? 'την αναφορά' : 'το ' + who}`];
+          const facts = [head0, `η μεγαλύτερη διαφορά στα ${worst.t.wall}${u} (${name(worst.t)}): <b>${S(worst.d)} s</b> από ${theC(tc)}`];
           if (ok(worst.t.turnTime) || ok(worst.t.bd)) facts.push(`εκεί: στροφή ${vs(worst.t.turnTime, 'σύγκρ.', worst.c.turnTime)} s · έξοδος στα ${vs(worst.t.bd, 'σύγκρ.', worst.c.bd, 1)}${u}`);
-          recs.push({ key: 'turn', title: changes === tA.length ? 'Αλλαγές στυλ' : changes ? 'Στροφές και αλλαγές στυλ' : `Στροφές (${tA.length})`, facts,
-            action: (worst.t.styleIn === worst.t.styleOut ? `Προπόνηση της στροφής ${IN_STYLE[worst.t.styleIn]}` : `Προπόνηση της αλλαγής ${name(worst.t)}`) +
-              (ok(worst.t.turnTime) && ok(worst.c.turnTime) && worst.t.turnTime - worst.c.turnTime > 0.08 ? ': πιο γρήγορη περιστροφή από την επαφή ως την ώθηση.' : ': μεγαλύτερη και πιο γρήγορη υποβρύχια φάση μετά την ώθηση.'),
-            target: null, lost: gap, pct });
+          const spin = ok(worst.t.turnTime) && ok(worst.c.turnTime) ? worst.t.turnTime - worst.c.turnTime : NaN;
+          const meaning = (many ? many + ' ' : '') + `Η μεγαλύτερη διαφορά είναι στα ${worst.t.wall}${u} (${name(worst.t)}): ` +
+            (spin > 0.08 ? `εκεί η στροφή από την επαφή ως την ώθηση κρατά ${F(spin)} s περισσότερο.` : 'εκεί ο χρόνος χάνεται κυρίως μετά την ώθηση, στην υποβρύχια φάση και ως τα +15.');
+          recs.push({ key: 'turn', title: changes === tA.length ? 'Αλλαγές στυλ' : changes ? 'Στροφές και αλλαγές στυλ' : `Στροφές (${tA.length})`, facts, meaning,
+            why: spin > 0.08 ? `πιο αργή περιστροφή στα ${worst.t.wall}${u}` : `μετά την ώθηση, κυρίως στα ${worst.t.wall}${u}`, lost: gap, pct });
         } else {
           const outGap = avg(tAb, 'out15') - avg(tCb, 'out15'), inGap = avg(tAb, 'in5') - avg(tCb, 'in5');
           const bdA = avg(tA, 'bd'), bdC = avg(tCb, 'bd'), kA = avg(tA, 'kicks'), kC = avg(tCb, 'kicks');
           const trend = tA.length >= 3 ? avg(tA.slice(-2), 'inOut') - avg(tA.slice(0, 2), 'inOut') : NaN;
-          const flip = tA.some(t => t.kind === 'flip');
           const facts = [head0];
           if (ok(bdA)) facts.push(`έξοδος στα <b>${F(bdA, 1)}${u}</b>${ok(kA) ? ` με ${F(kA, 1)} δελφινισμούς` : ''}` + (ok(bdC) ? ` (${tc.name} ${F(bdC, 1)}${u}${ok(kC) ? ', ' + F(kC, 1) : ''})` : ''));
           if (ok(inGap) && ok(outGap)) facts.push(`−5 → τοίχος ${vs(avg(tAb, 'in5'), tc.name, avg(tCb, 'in5'))} s · τοίχος → +15 ${vs(avg(tAb, 'out15'), tc.name, avg(tCb, 'out15'))} s`);
           if (trend > 0.2) facts.push(`οι στροφές του τέλους είναι <b>${F(trend)} s</b> πιο αργές από τις πρώτες`);
-          const moreKicks = ok(kC) && ok(kA) ? Math.max(1, Math.round(kC - kA)) : 1;
-          const longer = ok(bdA) && ok(bdC) && bdC > bdA ? `, έξοδος προς τα ${F(bdC, 1)}${u} ${tc.ref ? 'της αναφοράς' : 'του ' + who}` : '';
-          let action = !(inGap > outGap)
-            ? (tA[0].styleOut === 'br' ? `Μεγαλύτερο και πιο γρήγορο υποβρύχιο μετά τον τοίχο (pull-out)${longer} και γρήγορη πρώτη χεριά.`
-              : `Μεγαλύτερη υποβρύχια φάση μετά τον τοίχο: ${kicksText(moreKicks)} ακόμη${longer} και γρήγορη πρώτη χεριά.`)
-            : `Πιο γρήγορη προσέγγιση: χωρίς γλίστρημα στα τελευταία μέτρα και σωστή απόσταση για την τελευταία χεριά πριν ${flip ? 'την τούμπα' : 'την επαφή'}.`;
-          if (trend > 0.2) action += ' Στροφές και στο τέλος των σετ, όταν ο αθλητής είναι κουρασμένος.';
-          recs.push({ key: 'turn', title: tA.length > 1 ? `Στροφές (${tA.length})` : 'Στροφή', facts, action, target: null, lost: gap, pct });
+          let meaning = many;
+          const after0 = !(inGap > outGap);
+          if (ok(inGap) && ok(outGap)) meaning += (after0
+            ? ` Η διαφορά είναι κυρίως μετά τον τοίχο (τοίχος → +15 ${S(outGap)} s, −5 → τοίχος ${S(inGap)} s κατά μ.ο.): η ώθηση, η υποβρύχια φάση και η κολύμβηση ως τα +15.`
+            : ` Η διαφορά είναι κυρίως πριν από τον τοίχο (−5 → τοίχος ${S(inGap)} s, τοίχος → +15 ${S(outGap)} s κατά μ.ο.): η προσέγγιση και η επαφή.`);
+          const shorter = ok(bdA) && ok(bdC) ? bdC - bdA : NaN;
+          if (Math.abs(shorter) >= 0.3) meaning += ` Η έξοδος γίνεται ${F(Math.abs(shorter), 1)}${u} ${shorter > 0 ? 'νωρίτερα' : 'αργότερα'} από ${theC(tc)}` +
+            (ok(kA) && ok(kC) && Math.abs(kA - kC) >= 0.5 ? `, με ${F(kA, 1)} δελφινισμούς (${F(kC, 1)}).` : '.');
+          if (trend > 0.2) meaning += ` Οι στροφές του τέλους είναι ${F(trend)} s πιο αργές από τις πρώτες.`;
+          if (!meaning) meaning = `Η σύγκριση έχει μόνο τον χρόνο −5/+15: ${P(-pct)} ταχύτητα.`;
+          meaning = meaning.trim();
+          const why = after0 ? 'μετά τον τοίχο' + (shorter >= 0.3 ? ', με πιο κοντινή έξοδο' : '') : 'στην προσέγγιση του τοίχου';
+          recs.push({ key: 'turn', title: tA.length > 1 ? `Στροφές (${tA.length})` : 'Στροφή', facts, meaning, why, lost: gap, pct });
         }
         recs[recs.length - 1].zones = both.map(p => ({ from: p.t.wall - 5, to: p.t.wall + 15, w: Math.max(0, p.t.inOut - p.c.inOut) }));
       }
@@ -562,12 +615,30 @@ var SwimV2 = (function () {
       const facts = [`15${u} σε <b>${F(s0.t15)} s</b> (${sc.name} ${F(c0.t15)}` + (sc.ref && ok(b.start.t15) ? `, ${who} ${F(b.start.t15)})` : ')')];
       if (ok(s0.block) || ok(s0.entryDist)) facts.push(`${s0.style === 'bk' ? 'ώθηση από τον τοίχο' : 'βατήρας'} ${vs(s0.block, sc.name, c0.block)} s` + (ok(s0.entryDist) ? ` · είσοδος στα ${vs(s0.entryDist, sc.name, c0.entryDist)}${u}` : ''));
       if (ok(s0.bd)) facts.push(`έξοδος στα <b>${F(s0.bd, 1)}${u}</b>${ok(s0.kicks) ? `, ${s0.kicks} δελφινισμοί` : ''}` + (ok(c0.bd) ? ` (${sc.name} ${F(c0.bd, 1)}${u}${ok(c0.kicks) ? ', ' + c0.kicks : ''})` : ''));
-      let action;
-      if (bdLoss >= 0.8) action = end(`Μεγαλύτερη υποβρύχια φάση: ${s0.style === 'br' ? 'πιο μακρύ και πιο γρήγορο υποβρύχιο (pull-out)' : kicksText(ok(c0.kicks) && ok(s0.kicks) ? Math.max(1, c0.kicks - s0.kicks) : 1) + ' ακόμη'}, έξοδος προς τα ${F(c0.bd, 1)}${u} ${sc.ref ? 'της αναφοράς' : 'του ' + who}`);
-      else if (blockLoss >= 0.03) action = `Πιο γρήγορη αντίδραση στο σήμα: εκκινήσεις με ήχο (${s0.style === 'bk' ? 'ώθηση' : 'βατήρας'} ${F(s0.block)} s, ${sc.name} ${F(c0.block)} s).`;
-      else if (entryLoss >= 0.15) action = `Πιο μακριά είσοδος: δυνατότερη ώθηση (είσοδος στα ${F(s0.entryDist)}${u}, ${sc.name} ${F(c0.entryDist)}${u}).`;
-      else action = 'Πιο γρήγορη μετάβαση από την υποβρύχια φάση στην πρώτη χεριά.';
-      recs.push({ key: 'start', title: 'Εκκίνηση', facts, action, target: null, lost: sGap, pct: 100 * sGap / s0.t15 });
+      // What the comparison shows: which part of the start holds the difference (the same order as the facts).
+      const on = s0.style === 'bk' ? 'στην ώθηση από τον τοίχο' : 'στον βατήρα';
+      let meaning, why;
+      const known = [[ok(blockLoss), s0.style === 'bk' ? 'η ώθηση' : 'ο βατήρας'], [ok(entryLoss), 'η είσοδος'], [ok(bdLoss), 'η έξοδος']].filter(q => q[0]).map(q => q[1]);
+      if (bdLoss >= 0.8) {
+        meaning = `Η μεγαλύτερη διαφορά είναι στην υποβρύχια φάση: βγαίνει από το νερό ${F(bdLoss, 1)}${u} νωρίτερα (${F(s0.bd, 1)} έναντι ${F(c0.bd, 1)}${u})` +
+          (ok(s0.kicks) && ok(c0.kicks) && s0.kicks !== c0.kicks ? `, με ${s0.kicks} δελφινισμούς (${c0.kicks}).` : '.');
+        why = `έξοδος ${F(bdLoss, 1)}${u} νωρίτερα`;
+      } else if (blockLoss >= 0.03) {
+        meaning = `Η διαφορά ξεκινά ${on}: ${F(s0.block)} s έναντι ${F(c0.block)} s.`;
+        why = s0.style === 'bk' ? 'πιο αργή ώθηση από τον τοίχο' : 'περισσότερος χρόνος στον βατήρα';
+      } else if (entryLoss >= 0.15) {
+        meaning = `Μπαίνει στο νερό ${F(entryLoss)}${u} πιο κοντά (${F(s0.entryDist)} έναντι ${F(c0.entryDist)}${u}).`;
+        why = 'πιο κοντινή είσοδος στο νερό';
+      } else if (known.length) {
+        const list = known.length > 1 ? known.slice(0, -1).join(', ') + ' και ' + known[known.length - 1] : known[0];
+        meaning = end(`${list.charAt(0).toUpperCase() + list.slice(1)} είναι κοντά ${nearC(sc)}: η διαφορά μαζεύεται στη διαδρομή ως τα 15${u}` +
+          (ok(s0.bo15Vel) && ok(c0.bo15Vel) ? ` (έξοδος → 15: ${F(s0.bo15Vel)} έναντι ${F(c0.bo15Vel)} m/s)` : ''));
+        why = 'στη διαδρομή ως τα 15' + u;
+      } else {
+        meaning = end(`${TheC(sc)} έχει μόνο τον χρόνο στα 15${u}: δεν φαίνεται σε ποιο κομμάτι της εκκίνησης είναι η διαφορά (${P(-100 * sGap / s0.t15)} ταχύτητα ως τα 15${u})`);
+        why = 'ως τα 15' + u;
+      }
+      recs.push({ key: 'start', title: 'Εκκίνηση', facts, meaning, why, lost: sGap, pct: 100 * sGap / s0.t15 });
     }
 
     // 3. Swimming and ΔΑΚ: the time of the clean swimming against the reference (or the PB).
@@ -575,26 +646,19 @@ var SwimV2 = (function () {
     const swGap = wc ? a.composition.swim - wc.m.composition.swim : NaN;
     if (swGap > 0.1) {
       const c0 = wc.m;
-      const slGap = c0.avg.sl - a.avg.sl, srGap = c0.avg.sr - a.avg.sr;
       const facts = [];
       if (ok(a.avg.dak)) facts.push(`ΔΑΚ κατά μ.ο. <b>${F(a.avg.dak)}</b>` + [[who, b.avg.dak], ['αναφορά', x.ref.avg.dak]].filter(p => ok(p[1])).map(p => `${p[0]} ${F(p[1])}`).join(', ').replace(/^(.+)$/, ' ($1)'));
       facts.push(`ταχύτητα κολύμβησης <b>${F(ok(a.avg.vClean) ? a.avg.vClean : NaN)} m/s</b>` + (ok(c0.avg.vClean) ? ` (${wc.name} ${F(c0.avg.vClean)})` : ''));
       if (ok(a.avg.sl)) facts.push(`μήκος κύκλου ${vs(a.avg.sl, wc.name, c0.avg.sl)} μ. · συχνότητα ${vs(a.avg.sr, wc.name, c0.avg.sr, 1)} · tempo ${F(a.avg.tempo)} s/κύκλο`);
       facts.push(`κολύμβηση (χωρίς εκκίνηση, στροφές, τερματισμό) <b>${S(swGap)} s</b> από ${wc.ref ? 'την αναφορά' : 'το ' + who}`);
-      let action;
-      if (slGap >= 0.03 && slGap / c0.avg.sl >= srGap / c0.avg.sr) {
-        action = 'Μεγαλύτερο μήκος κύκλου στην ίδια συχνότητα: σετ με μέτρηση χεριών και χρόνου σε κάθε 50άρι (ΔΑΚ).';
-      } else if (srGap >= 1.5) {
-        action = `Πιο γρήγορο tempo χεριών με το ίδιο μήκος: tempo trainer προς τα ${F(60 / c0.avg.sr)} s/κύκλο ${wc.ref ? 'της αναφοράς' : 'του ' + who} (τώρα ${F(a.avg.tempo)}).`;
-      } else if (ok(c0.avg.vClean) && ok(a.avg.vClean)) {
-        action = 'Ταχύτητα κολύμβησης στον ρυθμό του αγώνα, με μέτρηση του ΔΑΚ σε κάθε επανάληψη.';
-      } else {
-        action = 'Ταχύτητα κολύμβησης στον ρυθμό του αγώνα, με μέτρηση χεριών και χρόνου σε κάθε 50άρι (ΔΑΚ).';
-      }
-      recs.push({ key: 'swim', title: 'Κολύμβηση και ΔΑΚ', facts, action, target: null, lost: swGap, pct: 100 * swGap / a.composition.swim });
+      const parts = swimParts(a.avg, c0.avg, wc.name);
+      let meaning = parts ? parts.text : (ok(a.avg.vClean) && ok(c0.avg.vClean) ? `Η ταχύτητα της κολύμβησης είναι ${VP(a.avg.vClean, c0.avg.vClean)} από ${ofC(wc)}.` :
+        `Η καθαρή κολύμβηση είναι ${F(swGap)} s πιο αργή.`);
+      if (ok(a.avg.dak) && ok(c0.avg.dak)) meaning += ` Ο ΔΑΚ είναι ${F(a.avg.dak)} (${wc.name} ${F(c0.avg.dak)}): ${a.avg.dak > c0.avg.dak + 0.03 ? 'περισσότερες χεριές και δευτερόλεπτα για την ίδια απόσταση' : 'ίδια περίπου αποδοτικότητα'}.`;
+      recs.push({ key: 'swim', title: 'Κολύμβηση και ΔΑΚ', facts, meaning, why: parts ? parts.why : 'πιο αργή κολύμβηση', lost: swGap, pct: 100 * swGap / a.composition.swim });
     }
 
-    // 4. ΔΑΚ through the race (the second half against the first): from the race alone.
+    // 4. ΔΑΚ through the race (the second half against the first): from the race alone, beside the reference's when it has it.
     const bl = a.blocks;
     const blD = bl.filter(bk => ok(bk.dak));
     if (blD.length >= 4 && blD.length === bl.length && !im) {
@@ -608,10 +672,15 @@ var SwimV2 = (function () {
         const facts = [`ΔΑΚ 1ου μισού <b>${F(avg(first, 'dak'))}</b> → 2ου μισού <b>${F(avg(second, 'dak'))}</b> (${S(rise)})`];
         if (ok(rS) && ok(rT)) facts.push(`από τις χεριές ${S(rS)} και από τον χρόνο ${S(rT)} ανά 10 μ.`);
         facts.push(`ο υψηλότερος ΔΑΚ στο 50άρι ${top.from}–${top.to}${u} (${F(top.dak)})`);
-        recs.push({ key: 'dak', title: 'ΔΑΚ στο 2ο μισό', facts,
-          action: rS > rT ? 'Οι χεριές πληθαίνουν όταν κουράζεται: σετ αποδοτικότητας στο τέλος της προπόνησης, με το ίδιο μήκος κύκλου ως το τέλος.'
-            : 'Ο χρόνος ανεβαίνει περισσότερο από τις χεριές: σετ ρυθμού στο 2ο μισό, με τον ΔΑΚ του 1ου μισού ως στόχο.',
-          target: null, lost: save > 0.05 ? save : null, pct: null });
+        let meaning = 'Η ίδια απόσταση κοστίζει περισσότερο στο 2ο μισό' + (!(ok(rS) && ok(rT)) ? '.' : rS > rT
+          ? `, κυρίως σε χεριές (${S(rS)} ανά 10 μ.): ο κύκλος μικραίνει.` : `, κυρίως σε χρόνο (${S(rT)} s ανά 10 μ.): η ταχύτητα πέφτει περισσότερο από όσο αλλάζουν οι χεριές.`);
+        const rb = x.ref.blocks;
+        if (rb && rb.length === bl.length && rb.every(bk => ok(bk.dak))) {
+          const riseC = avg(rb.slice(h), 'dak') - avg(rb.slice(0, h), 'dak');
+          meaning += ` Στην αναφορά ο ΔΑΚ αλλάζει ${S(riseC)}.`;
+        }
+        recs.push({ key: 'dak', title: 'ΔΑΚ στο 2ο μισό', facts, meaning, why: `ΔΑΚ ${S(rise)} στο 2ο μισό` + (ok(rS) && ok(rT) ? (rS > rT ? ' (χεριές)' : ' (χρόνος)') : ''),
+          lost: save > 0.05 ? save : null, pct: null });
       }
     }
 
@@ -619,22 +688,32 @@ var SwimV2 = (function () {
     let splits = null, pace = null;
     const allTimes = r => r.blocks.length === bl.length && r.blocks.every(bk => ok(bk.time));
     if (bl.length >= 4 && !im && allTimes(a)) {
-      const pc = allTimes(x.ref) ? { m: x.ref, name: 'αναφορά' } : allTimes(b) ? { m: b, name: who } : null;
+      const pc = allTimes(x.ref) ? { m: x.ref, name: 'αναφορά', ref: true } : allTimes(b) ? { m: b, name: who, ref: false } : null;
       const mean = r => avg(r.blocks.slice(1), 'time');
       const half = r => { const n = Math.floor(r.blocks.length / 2); return sum(r.blocks.slice(n), 'time') - sum(r.blocks.slice(0, n), 'time'); };
       const facts = [`1ο 50άρι <b>${T(bl[0].time)}</b>, μ.ο. των υπολοίπων ${T(mean(a))}` + (pc ? ` (${pc.name} ${T(pc.m.blocks[0].time)} / ${T(mean(pc.m))})` : ''),
         `2ο μισό ${S(half(a))} s από το 1ο` + (pc ? ` (${pc.name} ${S(half(pc.m))})` : '')];
-      let action = null;
+      let meaning = null, why = null;
       const dev0 = bl[0].time - mean(a);
       if (pc) {
         const dev0c = pc.m.blocks[0].time - mean(pc.m), fade = half(a) - half(pc.m);
-        if (dev0 - dev0c < -0.4) action = 'Πιο ελεγχόμενο 1ο 50άρι: λίγο πιο αργά στην αρχή, για να μείνει ταχύτητα για το τέλος.';
-        else if (fade > 0.6) action = 'Κράτημα του ρυθμού στο 2ο μισό: επαναλήψεις στους χρόνους-στόχους με μικρά διαλείμματα.';
-        else if (bl.length >= 6 && avg(bl.slice(-2), 'time') - avg(pc.m.blocks.slice(-2), 'time') > avg(bl.slice(1, -2), 'time') - avg(pc.m.blocks.slice(1, -2), 'time') + 0.2) action = 'Δυνατότερο τέλος: το τελευταίο 100άρι πιο γρήγορα από τον μέσο όρο του αγώνα.';
+        const lastGap = avg(bl.slice(-2), 'time') - avg(pc.m.blocks.slice(-2), 'time'), midGap = avg(bl.slice(1, -2), 'time') - avg(pc.m.blocks.slice(1, -2), 'time');
+        if (dev0 - dev0c < -0.4) {
+          meaning = `Το 1ο 50άρι είναι ${F(-dev0)} s πιο γρήγορο από τον μέσο όρο των υπολοίπων, ενώ ${pc.ref ? 'στην αναφορά' : 'στο ' + pc.name} ${F(-dev0c)} s: ο αθλητής ξεκινά αναλογικά πιο γρήγορα.` +
+            (fade > 0.3 ? ` Το 2ο μισό είναι ${S(half(a))} s από το 1ο (${pc.name} ${S(half(pc.m))}).` : '');
+          why = 'αναλογικά πιο γρήγορο 1ο 50άρι';
+        } else if (fade > 0.6) {
+          meaning = `Το 2ο μισό είναι ${S(half(a))} s από το 1ο, ${pc.ref ? 'στην αναφορά' : 'στο ' + pc.name} ${S(half(pc.m))}: στο 2ο μισό ο αθλητής χάνει ${F(fade)} s περισσότερα.`;
+          why = `${F(fade)} s περισσότερα στο 2ο μισό`;
+        } else if (bl.length >= 6 && lastGap > midGap + 0.2) {
+          meaning = `Τα δύο τελευταία 50άρια είναι ${F(lastGap)} s πιο αργά από ${theC(pc)} κατά μ.ο., τα μεσαία ${F(midGap)} s: η διαφορά μεγαλώνει στο τέλος.`;
+          why = 'η διαφορά μεγαλώνει στο τελευταίο 100άρι';
+        }
       } else if (half(a) / a.final > 0.05) {
-        action = 'Κράτημα του ρυθμού στο 2ο μισό: επαναλήψεις στους χρόνους-στόχους με μικρά διαλείμματα.';
+        meaning = `Το 2ο μισό είναι ${S(half(a))} s πιο αργό από το 1ο (${P(100 * half(a) / a.final).replace(/^\+/, '')} του χρόνου).`;
+        why = 'πιο αργό 2ο μισό';
       }
-      if (action) recs.push({ key: 'pace', title: 'Ρυθμός αγώνα', facts, action, target: 'η κατανομή ανά 50άρι στη σελίδα του ρυθμού', lost: null, pct: null });
+      if (meaning) recs.push({ key: 'pace', title: 'Ρυθμός αγώνα', facts, meaning, why, lost: null, pct: null });
       pace = pc;
     }
 
@@ -646,22 +725,34 @@ var SwimV2 = (function () {
       const gapLoss = a.finish.lastGap - c0.lastGap;
       const facts = [`τελευταία 5${u} σε <b>${F(a.finish.last5)} s</b> (${fc.name} ${F(c0.last5)}` + (fc.ref && ok(b.finish.last5) ? `, ${who} ${F(b.finish.last5)})` : ')')];
       if (ok(a.finish.lastGap)) facts.push(`τελευταία χεριά → επαφή ${vs(a.finish.lastGap, fc.name, c0.lastGap)} s`);
-      recs.push({ key: 'finish', title: 'Τερματισμός', facts,
-        action: gapLoss > 0.04 ? 'Η τελευταία χεριά να «κλείνει» στον τοίχο: τερματισμοί χωρίς γλίστρημα, με το κεφάλι κάτω.'
-          : 'Δυνατότερα τελευταία μέτρα: τερματισμοί με γρήγορο ρυθμό στα τελευταία 10 μ.',
-        target: null, lost: fGap, pct: 100 * fGap / a.finish.last5 });
+      const meaning = ok(a.finish.lastGap) && ok(c0.lastGap) ? (gapLoss > 0.04
+        ? `Από την τελευταία χεριά ως την επαφή περνούν ${F(a.finish.lastGap)} s (${fc.name} ${F(c0.lastGap)}): η διαφορά είναι κυρίως εκεί, στο κομμάτι χωρίς χεριά ως τον τοίχο.`
+        : `Από την τελευταία χεριά ως την επαφή ${F(a.finish.lastGap)} s, όσο περίπου ${ofC(fc)} (${F(c0.lastGap)}): η διαφορά είναι στην ταχύτητα των τελευταίων μέτρων.`)
+        : end(`${TheC(fc)} δεν έχει τον χρόνο της τελευταίας χεριάς: φαίνεται μόνο η ταχύτητα των τελευταίων 5${u}, ${P(-100 * fGap / a.finish.last5)}`);
+      recs.push({ key: 'finish', title: 'Τερματισμός', facts, meaning, why: gapLoss > 0.04 ? 'τελευταία χεριά → επαφή' : ok(gapLoss) ? 'πιο αργά τελευταία μέτρα' : 'τελευταία 5' + u,
+        lost: fGap, pct: 100 * fGap / a.finish.last5 });
     }
 
-    // 7. Stroke rate in the second half (100 and longer, not the medley): from the race alone.
+    // 7. Stroke rate in the second half (100 and longer, not the medley): from the race alone, beside the reference's when it has it.
     const free = a.rows.filter(r => ok(r.sr));
     if (!im && free.length >= 4) {
       const n = free.length, early = free.slice(0, Math.max(1, Math.floor(n / 3))), late = free.slice(Math.floor(2 * n / 3), D >= 400 ? n - 2 : n);
       const drop = late.length ? avg(early, 'sr') - avg(late, 'sr') : 0;
-      if (drop >= 1.8) recs.push({ key: 'rate', title: 'Συχνότητα στο τέλος', facts: [
-        `συχνότητα στην αρχή <b>${F(avg(early, 'sr'), 1)}</b> → στο τέλος <b>${F(avg(late, 'sr'), 1)}</b> κύκλοι/λεπτό (${S(-drop, 1)})`,
-        `tempo ${F(60 / avg(early, 'sr'))} → ${F(60 / avg(late, 'sr'))} s/κύκλο`],
-        action: `Κράτημα της συχνότητας: σετ με tempo trainer στα ${F(60 / avg(early, 'sr'))} s/κύκλο στο τέλος των επαναλήψεων.`,
-        target: null, lost: null, pct: null });
+      if (drop >= 1.8) {
+        const slE = avg(early, 'sl'), slL = avg(late, 'sl'), vE = avg(early, 'vel'), vL = avg(late, 'vel');
+        let meaning = `Η συχνότητα πέφτει ${VP(avg(late, 'sr'), avg(early, 'sr'))} από την αρχή ως το τέλος.`;
+        if (ok(slE) && ok(slL)) meaning += ` Το μήκος κύκλου ${slL >= slE - 0.02 ? 'μένει ίδιο ή μεγαλώνει' : 'μικραίνει κι αυτό'} (${F(slE)} → ${F(slL)} μ.)` +
+          (ok(vE) && ok(vL) ? ` και η ταχύτητα πηγαίνει από ${F(vE)} σε ${F(vL)} m/s` : '') + (slL >= slE - 0.02 ? ': η πτώση της ταχύτητας έρχεται από τη συχνότητα.' : '.');
+        const cr = x.ref.rows.filter(r => ok(r.sr));
+        if (cr.length === n) {
+          const cE = avg(cr.slice(0, Math.max(1, Math.floor(n / 3))), 'sr'), cL = avg(cr.slice(Math.floor(2 * n / 3), D >= 400 ? n - 2 : n), 'sr');
+          if (ok(cE) && ok(cL)) meaning += ` Στην αναφορά: ${F(cE, 1)} → ${F(cL, 1)}.`;
+        }
+        recs.push({ key: 'rate', title: 'Συχνότητα στο τέλος', facts: [
+          `συχνότητα στην αρχή <b>${F(avg(early, 'sr'), 1)}</b> → στο τέλος <b>${F(avg(late, 'sr'), 1)}</b> κύκλοι/λεπτό (${S(-drop, 1)})`,
+          `tempo ${F(60 / avg(early, 'sr'))} → ${F(60 / avg(late, 'sr'))} s/κύκλο`],
+          meaning, why: `συχνότητα ${S(-drop, 1)} στο τέλος`, lost: null, pct: null });
+      }
     }
 
     // 8. Relays: the takeovers (the zone of 0.10–0.20 s needs nothing to compare with).
@@ -672,8 +763,8 @@ var SwimV2 = (function () {
           .filter(p => ok(p[1])).map(p => `${p[0]} ${F(p[1])}`).join(', ').replace(/^(.+)$/, ' ($1)')];
         if (ok(l.out15)) facts.push(`15${u} από την επαφή σε ${F(l.out15)} s`);
         recs.push({ key: 'ex' + (j + 2), title: `Αλλαγή ${j + 1} → ${j + 2}`, facts, zones: [{ from: l.from - 5, to: l.from + 15, w: 1 }],
-          action: 'Προπόνηση αλλαγών με τον ίδιο κολυμβητή που φτάνει: ξεκίνημα της κίνησης όταν το χέρι του είναι στα τελευταία 1–1.5 μ.',
-          target: 'αλλαγή σε <b>0.10–0.20 s</b>', lost: l.ex - 0.18, pct: null });
+          meaning: `Από την επαφή του ${j + 1}ου ως το ξεκίνημα του ${j + 2}ου περνούν ${F(l.ex)} s. Στις γρήγορες αλλαγές είναι 0.10–0.20 s: εδώ περίπου ${F(l.ex - 0.18)} s παραπάνω.`,
+          why: `αλλαγή ${F(l.ex)} s`, lost: l.ex - 0.18, pct: null });
       });
     }
 
@@ -762,9 +853,9 @@ var SwimV2 = (function () {
     const weak = behind.slice().sort((p0, q0) => q0.pct - p0.pct)[0], most = behind.slice().sort((p0, q0) => q0.lost - p0.lost)[0];
     if (weak) out.push(`<b>Η πιο αδύνατη φάση: ${low(weak.title)}, ${P(-weak.pct)}</b> ${weak.ref ? 'από την αναφορά' : 'από το ' + weak.name}` +
       (most === weak ? `· χάνει ${F(weak.lost)}&nbsp;s.` : `· ${IN_PHASE[most.key]} χάνει τα περισσότερα (${F(most.lost)}&nbsp;s).`));
-    else if (R.recs.length) out.push(`<b>${R.recs[0].title}</b>: ${R.recs[0].action}`);
+    else if (R.recs.length) out.push(`<b>${R.recs[0].title}</b>: ${R.recs[0].why}.`);
     else if (ok(c.final) || ok(b.final)) out.push('Σε όλες τις φάσεις ο αγώνας είναι κοντά στις συγκρίσεις του.');
-    else out.push('Χωρίς ΑΡ και αναφορά οι προτάσεις βγαίνουν μόνο από τον ίδιο τον αγώνα (ΔΑΚ, ρυθμός, συχνότητα).');
+    else out.push('Χωρίς ΑΡ και αναφορά τα ευρήματα βγαίνουν μόνο από τον ίδιο τον αγώνα (ΔΑΚ, ρυθμός, συχνότητα).');
     return out;
   }
 
@@ -1010,7 +1101,7 @@ var SwimV2 = (function () {
     return page(I, '', body, n, N, true);
   }
 
-  // ---- page 2: recommendations
+  // ---- page 2: the phases against the reference (2.25.0: what the comparison means; until 2.24.1 recommendations)
   function pageRecs(x, I, R, n, N) {
     const a = x.race;
     const list = R.recs.slice(0, 5);
@@ -1029,12 +1120,105 @@ var SwimV2 = (function () {
     const cards = list.map((r, i) => `<div class="rc">
       <div class="rc-h"><span class="rc-n">${i + 1}</span><span class="rc-t">${esc(r.title)}</span>${badge(r)}</div>
       <div class="rc-b"><div class="rc-col"><div class="rc-l">Τι δείχνουν τα νούμερα</div><ul>${r.facts.map(f => `<li>${f}</li>`).join('')}</ul></div>
-        <div class="rc-col"><div class="rc-l">Πρόταση</div><div class="rc-a">${r.action}</div>${r.target ? `<div class="rc-l">Στόχος</div><div class="rc-a">${r.target}</div>` : ''}</div></div>
+        <div class="rc-col"><div class="rc-l">Τι σημαίνει</div><div class="rc-a">${r.meaning}</div></div></div>
     </div>`).join('');
-    const how = lv.length ? `Με σειρά υστέρησης: πόσο % πιο αργή είναι κάθε φάση από ${against1} στην ίδια απόσταση και πόσος χρόνος χάνεται εκεί.`
+    const how = lv.length ? `Με σειρά υστέρησης: πόσο % πιο αργή είναι κάθε φάση από ${against1} στην ίδια απόσταση, πόσος χρόνος χάνεται εκεί και τι σημαίνει.`
       : 'Από τα νούμερα του ίδιου του αγώνα.';
-    const body = section('Προτάσεις με βάση τα νούμερα', how) + top + cards;
-    return page(I, 'Προτάσεις', body, n, N);
+    const body = section('Τι δείχνει η σύγκριση ανά φάση', how) + top + cards;
+    return page(I, 'Σύγκριση ανά φάση', body, n, N);
+  }
+
+  // ---- the conclusion (2.25.0, the analyst's request)
+  /**
+   * What the data showed over the whole race, for the coach to read and decide what to change with the athlete: the result against the
+   * reference (else the PB), where the difference is (the start, the clean swimming, the turns, the takeovers, the finish: they make up
+   * the whole race, so their differences make up the whole gap), how the race went (the halves or the legs, the swimming speed from the
+   * stroke rate and the cycle length, the ΔΑΚ and the rate through the race) and the findings in the order of the time they hold. A
+   * description, never what the athlete should do. Without a PB and a reference, the race against itself.
+   */
+  function conclusion(x, I, R) {
+    const a = x.race, u = I.u, uu = I.uu;
+    const cm = ok(x.ref.final) ? { m: x.ref, name: 'αναφορά', ref: true } : ok(x.pb.final) ? { m: x.pb, name: I.pbShort, ref: false } : null;
+    const recOf = key => R.recs.find(r => r.key === key) || null;
+    let html = '';
+
+    // The result.
+    const total = cm ? a.final - cm.m.final : NaN;
+    const lines = [];
+    if (I.has.ref) lines.push(`από την αναφορά <b>${S(a.final - x.ref.final)} s</b> (${T(x.ref.final)})`);
+    if (I.has.pb) lines.push(`από ${I.relay ? 'το ρεκόρ της ομάδας' : 'το ΑΡ'} <b>${S(a.final - x.pb.final)} s</b> (${T(x.pb.final)})`);
+    html += `<div class="cc"><div class="cc-big">${cm ? S(total) + '<small> s</small>' : T(a.final)}</div><div class="cc-txt">` +
+      (cm ? `<b>${T(a.final)}</b> · ${lines.join(' · ')}.` : `<b>${T(a.final)}</b>, μέση ταχύτητα ${F(I.D * a.k / a.final)} m/s. Χωρίς ΑΡ και αναφορά: ό,τι δείχνει ο ίδιος ο αγώνας.`) +
+      `</div></div>`;
+
+    // Where the difference is: the parts of the race, each against the comparison.
+    const parts = [['start', 'Εκκίνηση', `0–15${uu}`], ['swim', 'Κολύμβηση', 'χωρίς εκκίνηση, στροφές, τερματισμό'], ['turn', I.relay ? 'Στροφές' : 'Στροφές',
+      '−5 ως +15 κάθε τοίχου'], ['exchange', 'Αλλαγές', '−5 ως +15 κάθε αλλαγής'], ['finish', 'Τερματισμός', `τελευταία 5${uu}`]]
+      .map(([key, title, sub]) => ({ key, title, sub, mine: a.composition[key], theirs: cm ? cm.m.composition[key] : NaN }))
+      .filter(p0 => ok(p0.mine) && p0.mine > 0);
+    parts.forEach(p0 => { p0.gap = p0.mine - p0.theirs; p0.pct = ok(p0.gap) ? 100 * p0.gap / p0.mine : NaN; });
+    const compared = parts.filter(p0 => ok(p0.gap));
+    if (cm && compared.length) {
+      const sumGap = compared.reduce((s0, p0) => s0 + p0.gap, 0);
+      const behind = compared.filter(p0 => p0.gap > 0.005), behindSum = behind.reduce((s0, p0) => s0 + p0.gap, 0);
+      const color = { start: '#123B8A', swim: '#E07A2E', turn: '#0E8A7E', exchange: '#5A8EDC', finish: '#7A4FB5' };
+      const share = behindSum > 0 ? `<div class="share">${behind.map(p0 => `<i style="width:${(100 * p0.gap / behindSum).toFixed(1)}%;background:${color[p0.key]}">${100 * p0.gap / behindSum >= 18 ? esc(p0.title) + ' ' + Math.round(100 * p0.gap / behindSum) + '%' : 100 * p0.gap / behindSum >= 6 ? Math.round(100 * p0.gap / behindSum) + '%' : ''}</i>`).join('')}</div>` +
+        `<div class="share-n">Το μερίδιο κάθε φάσης στον χρόνο που χάνεται${compared.length === parts.length && Math.abs(sumGap - total) < 0.02 ? '' : ' (όπου υπάρχει σύγκριση)'}.</div>` : '';
+      html += section('Πού βρίσκεται η διαφορά', `Κάθε φάση απέναντι ${cm.ref ? 'στην αναφορά' : 'στο ' + cm.name}: όλες μαζί είναι όλος ο αγώνας, άρα και όλη η διαφορά.`) +
+        `<div class="box"><table class="tbl"><thead><tr><th>Φάση</th><th>Αγώνας</th><th>${esc(cm.ref ? 'Αναφ.' : cm.name)}</th><th>Διαφορά</th><th>Ταχύτητα</th></tr></thead><tbody>
+        ${parts.map(p0 => `<tr><td class="l">${p0.gap > 0.005 ? `<span class="dot" style="background:${color[p0.key]}"></span>` : ''}<b>${esc(p0.title)}</b> <span class="sub-i">${esc(p0.sub)}</span></td><td>${T(p0.mine)}</td><td>${T(p0.theirs)}</td><td>${chip(p0.gap, 'lower') || '–'}</td><td>${ok(p0.pct) ? chip(-p0.pct, 'higher', 1, '%').replace('.', ',') : '–'}</td></tr>`).join('')}
+        <tr class="tot"><td class="l"><b>Αγώνας</b></td><td><b>${T(a.final)}</b></td><td>${T(cm.m.final)}</td><td>${chip(total, 'lower') || '–'}</td><td></td></tr>
+        </tbody></table>${share}</div>`;
+    }
+
+    // How the race went.
+    const told = [];
+    const bl = a.blocks;
+    if (I.relay && a.legs && a.legs.every(l => ok(l.split))) {
+      const cl = cm && cm.m.legs && cm.m.legs.every(l => ok(l.split)) ? cm.m.legs : null;
+      told.push(`<b>Τα σκέλη:</b> ${a.legs.map((l, i) => `${i + 1}ο ${T(l.split)}` + (cl ? ` (${S(l.split - cl[i].split)})` : '')).join(' · ')}` +
+        (cl ? `. Τη μεγαλύτερη διαφορά από ${theC(cm)} την έχει το ${a.legs.reduce((p0, l, i) => l.split - cl[i].split > p0.d ? { i, d: l.split - cl[i].split } : p0, { i: 0, d: -Infinity }).i + 1}ο σκέλος.` : '.'));
+    } else if (bl.length >= 2 && bl.every(bk => ok(bk.time))) {
+      const h = Math.floor(bl.length / 2), h1 = sum(bl.slice(0, h), 'time'), h2 = sum(bl.slice(h), 'time');
+      let t0 = `<b>Τα δύο μισά:</b> ${T(h1)} και ${T(h2)} (${S(h2 - h1)} s στο 2ο).`;
+      const cb = cm ? cm.m.blocks : null;
+      if (cb && cb.length === bl.length && cb.every(bk => ok(bk.time))) {
+        const c1 = sum(cb.slice(0, h), 'time'), c2 = sum(cb.slice(h), 'time'), d1 = h1 - c1, d2 = h2 - c2;
+        t0 += ` Από ${theC(cm)}: ${S(d1)} s στο 1ο μισό, ${S(d2)} s στο 2ο` + (d2 > d1 + 0.2 ? ': η διαφορά μεγαλώνει στο 2ο μισό.' : d1 > d2 + 0.2 ? ': η διαφορά είναι κυρίως στο 1ο μισό.' : ': η διαφορά μοιράζεται στα δύο μισά.');
+      }
+      told.push(t0);
+    }
+    if (cm && ok(a.avg.vClean) && ok(cm.m.avg.vClean)) {
+      const sp = swimParts(a.avg, cm.m.avg, cm.ref ? 'αναφ.' : cm.name);
+      told.push(`<b>Η κολύμβηση:</b> ${F(a.avg.vClean)} m/s (${cm.ref ? 'αναφ.' : cm.name} ${F(cm.m.avg.vClean)}, ${VP(a.avg.vClean, cm.m.avg.vClean)}).` + (sp ? ' ' + sp.text : '') +
+        (ok(a.avg.dak) && ok(cm.m.avg.dak) ? ` ΔΑΚ ${F(a.avg.dak)} (${F(cm.m.avg.dak)}).` : ''));
+    } else if (ok(a.avg.vClean)) {
+      told.push(`<b>Η κολύμβηση:</b> ${F(a.avg.vClean)} m/s, συχνότητα ${F(a.avg.sr, 1)}, μήκος κύκλου ${F(a.avg.sl)} μ.` + (ok(a.avg.dak) ? `, ΔΑΚ ${F(a.avg.dak)}.` : '.'));
+    }
+    ['pace', 'dak', 'rate'].forEach(key => { const r = recOf(key); if (r) told.push(`<b>${esc(r.title)}:</b> ${r.meaning}`); });
+    if (told.length) html += section('Πώς πήγε ο αγώνας', '') + `<div class="cn">${told.map(t0 => `<p>${t0}</p>`).join('')}</div>`;
+
+    // The findings in the order of the time they hold, then what is as the comparison or better.
+    const items = [];
+    compared.filter(p0 => p0.gap > 0.05).sort((p0, q0) => q0.gap - p0.gap).forEach(p0 => {
+      const r = recOf(p0.key === 'exchange' ? 'ex2' : p0.key);
+      items.push(`<b>${esc(p0.title)}: ${S(p0.gap)} s</b> (${P(-p0.pct)} ταχύτητα)` + (r && r.why ? ` — ${end(esc(r.why))}` : '.'));
+    });
+    R.recs.filter(r => r.pct === null && ['pace', 'dak', 'rate'].includes(r.key)).forEach(r => items.push(`<b>${esc(r.title)}</b> — ${end(esc(r.why))}`));
+    R.recs.filter(r => /^ex\d/.test(r.key)).forEach(r => items.push(`<b>${esc(r.title)}</b> — ${end(esc(r.why))}`));
+    const fine = compared.filter(p0 => p0.gap <= 0.05);
+    if (fine.length && cm) items.push(`<b>${fine.length === compared.length ? 'Όλες οι φάσεις είναι ίδιες ή καλύτερες από' : 'Ίδια ή καλύτερα από'} ${theC(cm)}:</b> ` +
+      fine.map(p0 => `${low(p0.title)} ${S(p0.gap)} s`).join(' · ') + '.');
+    const top = compared.filter(p0 => p0.gap > 0.05).sort((p0, q0) => q0.gap - p0.gap)[0];
+    const closing = top && total > 0.05 ? `Από τη διαφορά των ${F(total)} s, τα ${F(top.gap)} s (${Math.round(100 * top.gap / total)}%) είναι ${IN_PHASE[top.key] || 'στις αλλαγές'}.` : '';
+    if (items.length) html += section('Συνοπτικά', 'Με τη σειρά του χρόνου που χάνεται: τι δείχνουν τα νούμερα, για να αποφασίσει ο προπονητής τι θα αλλάξει.') +
+      `<div class="msgs">${items.slice(0, 7).map((m0, i) => `<div class="msg"><span class="num">${i + 1}</span><div>${m0}</div></div>`).join('')}</div>` +
+      (closing ? `<div class="cmpn concl">${closing}</div>` : '');
+    return html;
+  }
+
+  function pageConclusion(x, I, R, n, N) {
+    return page(I, 'Συμπέρασμα', section('Τι έδειξε ο αγώνας', 'Όλη η κούρσα με μια ματιά: από τα νούμερα των προηγούμενων σελίδων.') + conclusion(x, I, R), n, N);
   }
 
   // ---- page 3: ΔΑΚ
@@ -1276,7 +1460,10 @@ var SwimV2 = (function () {
       const dbar = dd => dmax > 0 ? `<span class="db"><i class="${dd < 0 ? 'f' : 's'}" style="width:${Math.round(15 * Math.min(1, Math.abs(dd) / dmax))}px"></i></span>` : '';
       const table = list => `<table class="tbl${rows.length > 16 ? ' sm' : ''}"><thead><tr><th>${k > 1 ? '100άρι' : '50άρι'}</th><th>Αγώνας</th><th>Κατανομή</th><th>Διαφορά</th></tr></thead><tbody>
         ${list.map(r => `<tr><td class="l">${r.from}–${r.to}</td><td>${T(r.a)}</td><td class="aimv"><b>${T(r.t)}</b></td><td class="dv">${dbar(r.t - r.a)}${chip(r.t - r.a, 'lower')}</td></tr>`).join('')}</tbody></table>`;
-      body += section('Ίδιος χρόνος, καλύτερη κατανομή', `Ο σημερινός χρόνος (${T(a.final)}) μοιρασμένος με τον ρυθμό ` + (R.splitsFrom === 'αναφορά' ? 'της αναφοράς' : 'του ' + I.pbShort) + ': μπλε όπου χρειάζεται πιο γρήγορα, πορτοκαλί όπου χρειάζεται πιο συγκρατημένα.');
+      // (2.25.0) What the distribution of the comparison would make of today's time, described (until 2.24.1 «καλύτερη κατανομή»).
+      const byRef = R.splitsFrom === 'αναφορά';
+      body += section('Ο ίδιος χρόνος με την κατανομή ' + (byRef ? 'της αναφοράς' : 'του ' + I.pbShort), `Ο σημερινός χρόνος (${T(a.final)}) μοιρασμένος στα 50άρια όπως τον μοιράζει ` +
+        (byRef ? 'η αναφορά' : 'το ' + I.pbShort) + ': μπλε όπου ' + (byRef ? 'η αναφορά πηγαίνει' : 'το ' + I.pbShort + ' πηγαίνει') + ' αναλογικά πιο γρήγορα, πορτοκαλί όπου πιο συγκρατημένα.');
       body += `<div class="two"><div class="box">${table(rows.slice(0, per))}</div><div class="box">${table(rows.slice(per))}</div></div>`;
     } else {
       const per100 = [];
@@ -1606,9 +1793,13 @@ var SwimV2 = (function () {
     const a = x.race;
     const tA = realTurns(a);
     const P = [];
-    P.push((R, n, N) => pageOverview(x, I, R, n, N));
-    if (R0.recs.length) P.push((R, n, N) => pageRecs(x, I, R, n, N));
-    if (a.blocks.some(bk => ok(bk.dak))) P.push((R, n, N) => pageDak(x, I, n, N));
+    // (2.25.0) The pages of the short analysis by their kind (SHORT_PAGES).
+    const add = (kind, f) => { f.kind = kind; P.push(f); };
+    add('overview', (R, n, N) => pageOverview(x, I, R, n, N));
+    if (R0.recs.length) add('phases', (R, n, N) => pageRecs(x, I, R, n, N));
+    // (2.25.0) The conclusion of the whole race right after the phases (in the short analysis too).
+    add('conclusion', (R, n, N) => pageConclusion(x, I, R, n, N));
+    if (a.blocks.some(bk => ok(bk.dak))) add('dak', (R, n, N) => pageDak(x, I, n, N));
     if (I.relay && a.legs && a.legs.some(l => ok(l.split))) P.push((R, n, N) => pageLegs(x, I, n, N));
     if (I.D <= 100 && !I.relay) P.push((R, n, N) => pageSpeed(x, I, n, N));
     else P.push((R, n, N) => pageComposition(x, I, n, N));
@@ -1620,9 +1811,12 @@ var SwimV2 = (function () {
     return P;
   }
 
+  /** (2.25.0) The pages of the short analysis: the race at a glance, the phases against the reference, the conclusion, the ΔΑΚ. */
+  const SHORT_PAGES = ['overview', 'phases', 'conclusion', 'dak'];
+
   /**
-   * The whole report (x: { ev, race, pb, ref, details }, see fromScript): { html, pages, title }. opts.short: only the first pages
-   * (the short analysis: the race at a glance, the recommendations, the ΔΑΚ), without the appendix.
+   * The whole report (x: { ev, race, pb, ref, details }, see fromScript): { html, pages, title }. opts.short: only the pages of the
+   * short analysis (SHORT_PAGES; until 2.24.1 the first three: the race at a glance, the recommendations, the ΔΑΚ), without the appendix.
    */
   function document(x, opts) {
     opts = opts || {};
@@ -1630,7 +1824,7 @@ var SwimV2 = (function () {
     footText = 'Kinovea Swim · Ανάλυση αγώνα' + (I.competition ? ' · ' + I.competition : '');
     const R = recommendations(x);
     let P = plan(x, I, R);
-    if (opts.short) P = P.slice(0, Math.max(1, opts.short));
+    if (opts.short) P = P.filter(f => SHORT_PAGES.indexOf(f.kind) >= 0);
     const extra = opts.short ? 0 : (x.race.rows.length > 40 || (I.D <= 100 && !I.relay && x.race.rows.length > 10) ? 2 : 1);
     const N = P.length + extra;
     const pages = P.map((f, i) => f(R, i + 1, N));
@@ -1948,17 +2142,17 @@ var SwimV2 = (function () {
   .ac-sub { margin: 6px 0 0; } .nw { white-space: nowrap; }
   .db { display: inline-block; position: relative; width: 32px; height: 8px; vertical-align: middle; margin-right: 4px; background: linear-gradient(#C9D2DC, #C9D2DC) center / 1px 100% no-repeat; }
   .db i { position: absolute; top: 1px; height: 6px; border-radius: 3px; } .db i.f { right: 50%; background: ${C.gainMark}; } .db i.s { left: 50%; background: ${C.lossMark}; }
-  .rc { border: 1px solid #E3E8EE; border-left: 5px solid #2E6BD6; border-radius: 10px; padding: 9px 13px 10px; margin-bottom: 8px; background: #fff; }
+  .rc { border: 1px solid #E3E8EE; border-left: 5px solid #2E6BD6; border-radius: 10px; padding: 7px 13px 8px; margin-bottom: 7px; background: #fff; }
   .rc:nth-of-type(1) { border-left-color: #E65100; }
-  .rc-h { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .rc-h { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .rc-n { width: 26px; height: 26px; border-radius: 50%; background: ${C.navy}; color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 13px; }
   .rc-t { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 16px; font-weight: 800; color: ${C.ink}; flex: 1; }
   .rc-g { font-size: 13px; font-weight: 800; color: #0E6B62; background: #DDF3EF; padding: 3px 10px; border-radius: 12px; white-space: nowrap; } .rc-g.n { color: #5B6B7B; background: #EDF0F4; }
   .rc-g.l { color: ${C.loss}; background: #FBEADF; }
   .rc-b { display: grid; grid-template-columns: 1.05fr 1fr; gap: 16px; }
   .rc-l { font-size: 9.8px; letter-spacing: 0.07em; text-transform: uppercase; color: ${C.dim}; font-weight: 800; margin: 2px 0 3px; }
-  .rc ul { margin: 0; padding-left: 15px; } .rc li { font-size: 11.2px; margin: 2px 0; line-height: 1.38; }
-  .rc-a { font-size: 11.6px; line-height: 1.42; margin-bottom: 5px; }
+  .rc ul { margin: 0; padding-left: 15px; } .rc li { font-size: 11px; margin: 1.5px 0; line-height: 1.34; }
+  .rc-a { font-size: 11.2px; line-height: 1.38; margin-bottom: 2px; }
   .tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
   .tbl th { background: #E8EEF5; color: #2B3F55; font-weight: 700; font-size: 9.8px; padding: 4px 5px; text-align: right; line-height: 1.2; }
   .tbl th:first-child { text-align: left; border-top-left-radius: 6px; } .tbl th:last-child { border-top-right-radius: 6px; }
@@ -1994,6 +2188,19 @@ var SwimV2 = (function () {
   .hs { font-size: 9.6px; fill: ${C.dim}; font-weight: 600; } .hv { font-size: 15px; font-weight: 800; fill: ${C.ink}; } .hd { font-size: 10px; fill: #8A3A00; font-weight: 700; }
   .hs.s { font-size: 8.6px; } .hv.s { font-size: 12.5px; } .hd.s { font-size: 8.8px; }
   .cmpn { font-size: 9.8px; color: ${C.dim}; margin: 5px 4px 0; line-height: 1.35; }
+  /* (2.25.0) The conclusion. */
+  .cc { display: flex; gap: 20px; align-items: center; background: linear-gradient(135deg, #0B111A, #14243A); color: #fff; border-radius: 12px; padding: 14px 20px; margin: 2px 0 10px; }
+  .cc-big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 40px; font-weight: 800; color: #FFB08A; line-height: 1; white-space: nowrap; }
+  .cc-big small { font-size: 16px; color: #DCE6F0; font-weight: 700; }
+  .cc-txt { font-size: 12.6px; color: #DCE6F0; line-height: 1.5; } .cc-txt b { color: #fff; }
+  .share { display: flex; height: 22px; border-radius: 6px; overflow: hidden; margin: 9px 0 3px; background: #EEF2F6; }
+  .share i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 10.4px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; border-right: 2px solid #fff; }
+  .share i:last-child { border-right: 0; }
+  .share-n { font-size: 9.8px; color: ${C.dim}; }
+  .sub-i { font-size: 9.6px; color: ${C.faint}; font-weight: 500; margin-left: 4px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -0.5px; }
+  .cn p { font-size: 12px; line-height: 1.5; margin: 0 0 7px; color: ${C.text}; } .cn p b { color: ${C.ink}; }
+  .cmpn.concl { font-size: 12.2px; color: ${C.ink}; font-weight: 700; margin: 9px 2px 0; }
   .nt0 { font-size: 10.6px; color: ${C.dim}; padding: 8px 4px; }
   `;
 

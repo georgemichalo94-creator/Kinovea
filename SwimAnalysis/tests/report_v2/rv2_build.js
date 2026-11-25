@@ -95,7 +95,7 @@ if (!wantPdf) { process.exit(fails ? 1 : 0); }
       const foot = pg.querySelector('.pf');
       const limit = foot ? foot.getBoundingClientRect().top : pg.getBoundingClientRect().bottom;
       let max = 0;
-      pg.querySelectorAll('.box, .tiles, .msgs, .gloss, .sec, .cols, .two, .rc, .aim-card, .heros, .ins, .cmpn').forEach(el => { max = Math.max(max, el.getBoundingClientRect().bottom); });
+      pg.querySelectorAll('.box, .tiles, .msgs, .gloss, .sec, .cols, .two, .rc, .aim-card, .heros, .ins, .cmpn, .cc, .cn').forEach(el => { max = Math.max(max, el.getBoundingClientRect().bottom); });
       let wide = 0;
       pg.querySelectorAll('table').forEach(t => { if (t.getBoundingClientRect().right > pg.getBoundingClientRect().right - 30) wide++; });
       // (2.22.0) Nothing past the right side of its box (a chart drawn wider than the box stood out of it).

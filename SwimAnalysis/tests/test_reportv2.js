@@ -31,7 +31,7 @@ const pick = key => events.find(p => p.ev.key === key);
   const race = Object.assign({}, p.race, { compare: { pb: p.pb.id }, reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race });
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
-  assert.strictEqual(r.version, '2.24.1');
+  assert.strictEqual(r.version, '2.25.0');
   assert.ok(r.v2 && typeof r.v2.html === 'string' && r.v2.html.length > 50000, 'the pages of the 2nd version');
   assert.ok(!r.pdf, 'no PDF of the sheet with v2');
   assert.ok(!r.needCharts, 'no charts to draw for the pages of the 2nd version');
@@ -75,13 +75,15 @@ const pick = key => events.find(p => p.ev.key === key);
   const p = pick('lc-200-fs');
   const race = Object.assign({}, p.race, { reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race, pdfParts: { short: true, full: true, separate: true } });
-  assert.ok(r.ok && r.v2 && r.v2.htmlShort && r.v2.pagesShort === 3, 'the pages of the short analysis: ' + JSON.stringify(r.v2 ? { p: r.v2.pages, s: r.v2.pagesShort } : r).slice(0, 200));
-  assert.ok(r.v2.pages > 3, 'the full analysis');
+  // (2.25.0) Four: the race at a glance, the phases against the reference, the conclusion, the ΔΑΚ (until 2.24.1 three, without the conclusion).
+  assert.ok(r.ok && r.v2 && r.v2.htmlShort && r.v2.pagesShort === 4, 'the pages of the short analysis: ' + JSON.stringify(r.v2 ? { p: r.v2.pages, s: r.v2.pagesShort } : r).slice(0, 200));
+  assert.ok(r.v2.pages > 4, 'the full analysis');
+  assert.ok(/Τι έδειξε ο αγώνας/.test(r.v2.htmlShort) && /Τι δείχνει η σύγκριση ανά φάση/.test(r.v2.htmlShort), 'the short analysis has the phases and the conclusion');
   const stored = call({ action: 'pdfStore', race, raceId: race.id, pdf: fakePdf('full'), pdfShort: fakePdf('short') });
   assert.ok(stored.ok && stored.pdfShort && / - Σύντομη ανάλυση\.pdf$/.test(stored.pdfShort.name), 'the short analysis in its own file');
-  // Only the short analysis: the three pages.
+  // Only the short analysis: its four pages.
   const onlyShort = call({ action: 'pdf', v2: true, race, pdfParts: { short: true, full: false } });
-  assert.ok(onlyShort.ok && onlyShort.v2 && onlyShort.v2.pages === 3 && !onlyShort.v2.htmlShort, 'only the short analysis');
+  assert.ok(onlyShort.ok && onlyShort.v2 && onlyShort.v2.pages === 4 && !onlyShort.v2.htmlShort, 'only the short analysis');
 }
 
 // 6. Every event once (the relays, the medley, 25 m and yards): the pages without an error, without the PB and the reference too.
@@ -162,7 +164,7 @@ const pick = key => events.find(p => p.ev.key === key);
       paces++;
       const sum = R.splits.reduce((s0, t) => s0 + t, 0);
       assert.ok(Math.abs(sum - x.race.final) < 1e-6, key + ': the same time ' + sum + ' / ' + x.race.final);
-      if (!x.ev.relay) assert.ok(/Ίδιος χρόνος, καλύτερη κατανομή/.test(text), key + ': the pacing page');
+      if (!x.ev.relay) assert.ok(/Ο ίδιος χρόνος με την κατανομή (της αναφοράς|του )/.test(text) && !/καλύτερη κατανομή|όπου χρειάζεται/.test(text), key + ': the pacing page, described');
     }
   });
   assert.ok(maps >= 40 && paces >= 20, 'maps ' + maps + ', pacing ' + paces);
@@ -207,7 +209,8 @@ const pick = key => events.find(p => p.ev.key === key);
       assert.ok(!seenNoPct && r.pct <= prev + 1e-12 && r.lost > 0, key + ': the order of the % at ' + r.key);
       prev = r.pct;
     });
-    R.recs.forEach(r => assert.ok(r.target === null || r.key === 'pace' || /^ex\d/.test(r.key), key + ': no target of half the way in ' + r.key));
+    // (2.25.0) No action and no target: what the comparison means, and a short phrase for the conclusion.
+    R.recs.forEach(r => assert.ok(!('target' in r) && !('action' in r) && typeof r.meaning === 'string' && r.meaning.length > 20 && typeof r.why === 'string' && r.why.length > 3, key + ': a description in ' + r.key));
     assert.ok(!/μέση της απόστασης|μισή απόσταση|περιθωρ|κερδίζεται|Με σειρά κέρδους/.test(plain), key + ': none of the words of the gains');
     const behind = R.levels.filter(l => l.pct > 0.05);
     if (behind.length) {
@@ -292,6 +295,57 @@ const pick = key => events.find(p => p.ev.key === key);
     });
   });
   assert.ok(compared >= 60 && missing >= 10, 'compared ' + compared + ', without ' + missing);
+}
+
+// 13. (2.25.0) What the comparison means, not what to change (the analyst's request): no proposal, target, training set or exercise in
+// the pages; every card of page 2 with «Τι σημαίνει»; the conclusion page after it, with the phases that make up the whole race against
+// the reference (their differences are the whole gap when all of them have it) and the findings; without a PB and a reference the race
+// against itself.
+{
+  const G = makeContext({ athletes: ATHLETES });
+  const V2 = G.SwimV2;
+  const PRESCRIBE = /Πρόταση|Στόχος|με tempo trainer|σετ |Προπόνηση|προπόνησ|επαναλήψεις|Πιο γρήγορη|Μεγαλύτερη υποβρύχια|Κράτημα/;
+  let conclusions = 0, partitions = 0, summaries = 0;
+  events.forEach(p => {
+    const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+    const pr = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.pb)));
+    const er = G.swimReferenceRace_(p.ref);
+    const cmp = { pb: { race: pr, analysis: G.swimAnalyze_(pr), label: 'PB' }, elite: { race: er, analysis: G.swimAnalyze_(er), label: 'Αναφορά δείγμα' } };
+    const x = V2.fromScript(race, G.swimAnalyze_(race), cmp);
+    const doc = V2.document(x, {});
+    const text = doc.html.replace(/<style>[\s\S]*?<\/style>/, '');
+    const plain = text.replace(/<[^>]+>/g, ' ');
+    const key = p.ev.key;
+    assert.ok(!PRESCRIBE.test(plain), key + ': nothing prescribed: ' + (plain.match(PRESCRIBE) || [''])[0]);
+    const cards = Math.min(5, doc.R.recs.length);
+    assert.strictEqual((text.match(/<div class="rc-l">Τι σημαίνει<\/div>/g) || []).length, cards, key + ': every card with what it means');
+    assert.ok(/Τι έδειξε ο αγώνας/.test(text), key + ': the conclusion');
+    conclusions++;
+    // The pages in order: the conclusion right after the phases.
+    const at = t0 => text.indexOf(t0);
+    if (cards) assert.ok(at('Τι δείχνει η σύγκριση ανά φάση') < at('Τι έδειξε ο αγώνας'), key + ': the conclusion after the phases');
+    // The phases make up the whole race: their differences from the reference are the whole gap.
+    const parts = ['start', 'swim', 'turn', 'exchange', 'finish'].filter(k => typeof x.race.composition[k] === 'number' && x.race.composition[k] > 0);
+    const fin = v => typeof v === 'number' && isFinite(v);
+    if (parts.every(k => fin(x.race.composition[k]) && fin(x.ref.composition[k])) && fin(x.race.final) && fin(x.ref.final)) {
+      const sum = parts.reduce((s0, k) => s0 + x.race.composition[k] - x.ref.composition[k], 0);
+      assert.ok(Math.abs(sum - (x.race.final - x.ref.final)) < 0.011, key + ': the phases are the whole gap ' + sum + ' / ' + (x.race.final - x.ref.final));
+      assert.ok(/Πού βρίσκεται η διαφορά/.test(text), key + ': the table of the phases');
+      partitions++;
+      if (parts.some(k => x.race.composition[k] - x.ref.composition[k] > 0.05)) {
+        assert.ok(/Συνοπτικά/.test(text) && /class="msg"/.test(text.slice(at('Τι έδειξε ο αγώνας'))), key + ': the findings');
+        summaries++;
+      }
+    }
+  });
+  assert.ok(conclusions === events.length && partitions >= 30 && summaries >= 30, 'conclusions ' + conclusions + ', partitions ' + partitions + ', findings ' + summaries);
+
+  // Without a PB and a reference: the race against itself, no table of the phases.
+  const p = pick('lc-200-fs');
+  const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+  const x = V2.fromScript(race, G.swimAnalyze_(race), {});
+  const text = V2.document(x, {}).html;
+  assert.ok(/Τι έδειξε ο αγώνας/.test(text) && /Χωρίς ΑΡ και αναφορά/.test(text) && !/Πού βρίσκεται η διαφορά/.test(text), 'the conclusion without a comparison');
 }
 
 console.log('test_reportv2: ok');
