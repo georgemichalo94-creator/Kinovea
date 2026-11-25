@@ -3463,7 +3463,7 @@ namespace Kinovea.ScreenManager
         /// as the analyst asked: "σήμα → είσοδος 3.17 · είσοδος → έξοδος 2.15 · έξοδος → 15μ. 2.18 m/s"; a turn: "αποκόλληση → έξοδος 2.08 ·
         /// έξοδος → +15μ. 1.91 m/s"; on a second line where the program put the head (the analyst does not click it).
         /// </summary>
-        private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race, SwimTechPhase start = null)
+        private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race, SwimTechPhase startPhase = null)
         {
             if (phase == null || race == null)
                 return "–";
@@ -3497,7 +3497,7 @@ namespace Kinovea.ScreenManager
                 text += "\n" + head;
 
             // (2.38.5) A turn faster under the water than the start: a mark or a distance is off.
-            string faster = SwimTechCalculator.FasterThanStart(race, phase, start);
+            string faster = SwimTechCalculator.FasterThanStart(race, phase, startPhase);
             if (faster != null)
                 text += "\n" + faster;
             return text;
