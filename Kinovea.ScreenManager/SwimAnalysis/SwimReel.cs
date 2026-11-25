@@ -790,6 +790,11 @@ namespace Kinovea.ScreenManager
         /// the 50–65 m after a butterfly turn (8.01 s with the 1.10 s on the wall) gave a flat 1.89 m/s under the water and moved the
         /// swimmer off the wall while he was turning; now 2.9 m/s after the push down to the breakout, as the start. A mark out of its
         /// place (a knot that would make the curve go back, or speeds no swimmer has) is left out. True if one was put.
+        /// (2.38.4) The entry and the push off a wall where the head is then, as the speeds of the start and the turns in the panel and
+        /// the PDF (SwimTech, 2.35.0): the head behind the hands at their entry, the body length from the wall at the push-off (SwimHead).
+        /// The breakout and the checkpoints are where the head is too, so the curve under the water is the head's way and its average the
+        /// PDF's speed: from the wall it was faster after a turn by OutDist / (OutDist − body length) (≈2.38 down to 1.72 m/s on the
+        /// video after a turn whose push-off → breakout the PDF gives 1.64 m/s). Not at the changes of a relay (a dive, not a push).
         /// </summary>
         private bool AddPhaseKnots(SwimRace race, SwimComputed computed)
         {
@@ -799,6 +804,7 @@ namespace Kinovea.ScreenManager
             // The times of the race of these marks as between the checkpoints around them (the knots of the checkpoints alone).
             List<double> cpV = new List<double>(knotV), cpT = new List<double>(knotT);
             List<PhaseKnot> knots = new List<PhaseKnot>();
+            SwimHead head = SwimHead.Of(race);
 
             // The start.
             double release = computed.BlockMarkTime ?? computed.BlockTime ?? double.NaN;
@@ -807,7 +813,7 @@ namespace Kinovea.ScreenManager
 
             double entryDistance = race.EntryDistHands ?? double.NaN;
             if (Entry.HasValue && !double.IsNaN(entryDistance) && entryDistance * K >= 0.5 && entryDistance * K <= 6.5)
-                knots.Add(new PhaseKnot { Video = Entry.Value, Distance = entryDistance, Break = true, What = "entry" });
+                knots.Add(new PhaseKnot { Video = Entry.Value, Distance = entryDistance - head.BehindHands / K, Break = true, What = "entry" });
 
             double startDistance;
             if (lapBreakouts.Count > 0 && !double.IsNaN(lapBreakouts[0]) && BreakoutDistances.TryGetValue(0, out startDistance))
@@ -825,8 +831,11 @@ namespace Kinovea.ScreenManager
                 string before = StyleOfLap(lap - 1), after = StyleOfLap(lap);
                 bool tumble = before == after && (after == "fs" || after == "bk");
                 double push = !double.IsNaN(lapFeetOff[lap]) ? lapFeetOff[lap] : touch + (tumble ? TumblePush : HandsPush);
+                bool change = race.Relay && Distance >= 4 && wall % (Distance / 4) == 0;
                 if (push - touch > 0.05 && push - touch < 2.5 && (double.IsNaN(breakout) || push < breakout - 0.3))
-                    knots.Add(new PhaseKnot { Video = push, Distance = wall, Break = true, Hold = true, What = "push" });
+                    knots.Add(change
+                        ? new PhaseKnot { Video = push, Distance = wall, Break = true, Hold = true, What = "push" }
+                        : new PhaseKnot { Video = push, Distance = wall + head.AtPushoff / K, Break = true, What = "push", After = wall });
 
                 double length;
                 if (!double.IsNaN(breakout) && BreakoutDistances.TryGetValue(lap, out length))
@@ -847,6 +856,9 @@ namespace Kinovea.ScreenManager
             public bool Break;
             public bool Hold;
             public string What;
+
+            /// <summary>(2.38.4) Where the knot before it has to be (the push-off: right after the touch of its wall, as with Hold).</summary>
+            public double? After;
         }
 
         /// <summary>
@@ -870,14 +882,19 @@ namespace Kinovea.ScreenManager
             double before = knotD[k - 1], next = knotD[k];
             if (knot.Hold ? Math.Abs(knot.Distance - before) > 1e-9 : knot.Distance < before + 0.2 / K || knot.Distance > next - 0.2 / K)
                 return false;
+            if (knot.After.HasValue && Math.Abs(before - knot.After.Value) > 1e-9)
+                return false;
 
             if (!knot.Hold)
             {
                 double speedIn = (knot.Distance - before) / (race - knotT[k - 1]) * K;
                 double speedOut = (next - knot.Distance) / (knotT[k] - race) * K;
-                double most = knot.What == "entry" ? 15.0 : 3.5;
-                double least = knot.What == "entry" ? 1.5 : 1.0;
-                if (speedIn < least || speedIn > most || speedOut < 0.6 || speedOut > (knot.What == "entry" ? 3.5 : 2.8))
+                // (2.38.4) Up to the push off a wall the head goes from the wall to the body length while the swimmer turns (no speed
+                // shown there): as the flight, a wide range; after it under the water, as after the entry.
+                bool push = knot.What == "push";
+                double most = knot.What == "entry" || push ? 15.0 : 3.5;
+                double least = knot.What == "entry" ? 1.5 : push ? 0.3 : 1.0;
+                if (speedIn < least || speedIn > most || speedOut < 0.6 || speedOut > (knot.What == "entry" || push ? 3.5 : 2.8))
                     return false;
             }
 

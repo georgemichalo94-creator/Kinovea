@@ -5,7 +5,7 @@
 # turns on the curve from their own marks: on the block up to the release, the entry at its distance, the breakout at its distance, the
 # swimmer at the wall up to the push off it (estimated here, 0.3 s after the touch of a tumble turn), so that the speed after the push
 # is high as after the start (until 2.31.0 a flat 1.89 m/s under the water after a turn). The speed in the water also under it, the
-# samples of the chart of the whole race.
+# samples of the chart of the whole race. 2.38.4: the entry and the push-off where the head is then (as the speeds of the PDF).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File rs_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -85,16 +85,24 @@ Check ($null -ne $part -and $part.Strokes -gt 30) ('its strokes up to its offici
 $wall = $reel.Walls[0]
 Check ([Math]::Abs($wall - 25.40) -lt 1e-9) ('the wall at 50 m: ' + (F2 $wall))
 
-# --- (2.32.0) The turn on the curve: at the wall up to the push off it (not marked: 0.3 s after the touch of a tumble turn), then fast
-# and slower down to the breakout at its distance (estimated from the times: about 9 m), as after the start.
-Check ([Math]::Abs($reel.DistanceAt(25.55) - 50) -lt 1e-6 -and [Math]::Abs($reel.DistanceAt(25.69) - 50) -lt 1e-6) ('at the wall while turning: ' + (F2 $reel.DistanceAt(25.55)) + ' m')
+# --- (2.32.0) The turn on the curve: up to the push off the wall (not marked: 0.3 s after the touch of a tumble turn), then faster
+# and slower down to the breakout at its distance (estimated from the times: about 9 m), as after the start. (2.38.4) Where the head
+# is, as the speeds of the panel and the PDF (SwimTech): from the wall at the touch to the body length at the push-off (SwimHead), under
+# the water from there; before, from the wall, its average was faster by the body length (2.18 on the video, 1.64 m/s in the PDF).
+$tHead = T 'SwimHead'
+function HeadOf($race) { return $tHead.GetMethod('Of').Invoke($null, [object[]]@($race.psobject.BaseObject)) }
+$h = HeadOf (NewRace @(52.85))
+$pushAt = 50 + $h.AtPushoff
+$turning = $reel.DistanceAt(25.55)
+Check ([Math]::Abs($reel.DistanceAt(25.40) - 50) -lt 1e-6 -and [Math]::Abs($reel.DistanceAt(25.70) - $pushAt) -lt 0.01 -and $turning -gt 50 -and $turning -lt $pushAt) ('while turning from the wall to the head at the push-off: ' + (F2 $turning) + ' m, at the push ' + (F2 $reel.DistanceAt(25.70)) + ' (' + (F2 $pushAt) + ')')
 $bo = $reel.BreakoutDistances[1]
 Check ([Math]::Abs($reel.DistanceAt(29.4) - (50 + $bo)) -lt 0.01) ('the breakout of the turn at its distance: ' + (F2 $reel.DistanceAt(29.4)) + ' m (' + (F2 $bo) + ' from the wall)')
 $s1 = $reel.SpeedAt(25.75); $s2 = $reel.SpeedAt(27.0); $s3 = $reel.SpeedAt(28.0); $s4 = $reel.SpeedAt(29.3)
-Check ($s1 -gt 2.5 -and $s1 -gt $s2 -and $s2 -gt $s3 -and $s3 -gt $s4) ('fast after the push, slower to the breakout: ' + (F2 $s1) + ' > ' + (F2 $s2) + ' > ' + (F2 $s3) + ' > ' + (F2 $s4))
-$seg = 6 / 3.2; $avg = $bo / (29.4 - 25.70)
+Check ($s1 -gt $s2 -and $s2 -gt $s3 -and $s3 -gt $s4) ('faster after the push, slower to the breakout: ' + (F2 $s1) + ' > ' + (F2 $s2) + ' > ' + (F2 $s3) + ' > ' + (F2 $s4))
+$seg = 6 / 3.2; $avg = ($bo - $h.AtPushoff) / (29.4 - 25.70)
 Check ([Math]::Abs($s4 - $seg) -lt 0.15) ('at the breakout the speed of the swimming after it: ' + (F2 $s4) + ' (to 65 m ' + (F2 $seg) + ')')
-Check ($avg -gt 2.2 -and $avg -lt 2.7) ('under the water ' + (F2 $avg) + ' m/s on average (the distance of the breakout over the time from the push)')
+$curveAvg = ($reel.DistanceAt(29.4) - $reel.DistanceAt(25.70)) / (29.4 - 25.70)
+Check ([Math]::Abs($curveAvg - $avg) -lt 0.01 -and $avg -gt 1.5 -and $avg -lt 2.5) ('under the water ' + (F2 $curveAvg) + ' m/s on average, as the PDF: (breakout − head at the push-off) / time = ' + (F2 $avg))
 
 # --- In the water: from about the entry of the start (1.5 m in backstroke, not marked here) and from the push off the wall, the speed
 # with ≈ under the water up to each breakout.
@@ -136,12 +144,14 @@ $rs.EntryDistHands = 2.0
 $rs.BreakoutDist = 11.5
 $st = (Reel $rs).Reel
 Check ([Math]::Abs($st.DistanceAt(0.5)) -lt 1e-6) ('on the wall up to the release: ' + (F2 $st.DistanceAt(0.5)) + ' m')
-Check ([Math]::Abs($st.DistanceAt(0.96) - 2.0) -lt 0.01 -and [Math]::Abs($st.DistanceAt(4.6) - 11.5) -lt 0.01) ('the entry and the breakout at their distances: ' + (F2 $st.DistanceAt(0.96)) + ' / ' + (F2 $st.DistanceAt(4.6)) + ' m')
+# (2.38.4) At the entry the head, behind the hands (SwimHead), as the speed of the PDF.
+$entryHead = 2.0 - (HeadOf $rs).BehindHands
+Check ([Math]::Abs($st.DistanceAt(0.96) - $entryHead) -lt 0.01 -and [Math]::Abs($st.DistanceAt(4.6) - 11.5) -lt 0.01) ('the entry (the head behind the hands) and the breakout at their distances: ' + (F2 $st.DistanceAt(0.96)) + ' (' + (F2 $entryHead) + ') / ' + (F2 $st.DistanceAt(4.6)) + ' m')
 $e1 = $st.SpeedAt(1.0); $e2 = $st.SpeedAt(3.0); $e3 = $st.SpeedAt(4.5)
 Check ($e1 -gt $e2 -and $e2 -gt $e3 -and $e1 -lt 3.5 -and $e3 -gt 1.8) ('fast after the entry, slower to the breakout: ' + (F2 $e1) + ' > ' + (F2 $e2) + ' > ' + (F2 $e3))
 Check ($st.InWater(0.962) -and $st.SpeedAt(0.962) -lt 3.5) ('in the water just after the entry, not at the speed of the flight: ' + (F2 $st.SpeedAt(0.962)))
-$uwAvg = (11.5 - 2.0) / (4.6 - 0.96)
-Check ([Math]::Abs(($st.DistanceAt(4.6) - $st.DistanceAt(0.96)) / (4.6 - 0.96) - $uwAvg) -lt 0.01) ('under the water ' + (F2 $uwAvg) + ' m/s on average, as the PDF')
+$uwAvg = (11.5 - $entryHead) / (4.6 - 0.96)
+Check ([Math]::Abs(($st.DistanceAt(4.6) - $st.DistanceAt(0.96)) / (4.6 - 0.96) - $uwAvg) -lt 0.01) ('under the water ' + (F2 $uwAvg) + ' m/s on average, as the PDF (from the head at the entry)')
 
 # --- Without an official time: the curve on the marks (the last 5 m at the speed of the marks).
 $r0 = Reel (NewRace $null)
