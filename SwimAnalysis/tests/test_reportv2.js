@@ -31,7 +31,7 @@ const pick = key => events.find(p => p.ev.key === key);
   const race = Object.assign({}, p.race, { compare: { pb: p.pb.id }, reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race });
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
-  assert.strictEqual(r.version, '2.24.0');
+  assert.strictEqual(r.version, '2.24.1');
   assert.ok(r.v2 && typeof r.v2.html === 'string' && r.v2.html.length > 50000, 'the pages of the 2nd version');
   assert.ok(!r.pdf, 'no PDF of the sheet with v2');
   assert.ok(!r.needCharts, 'no charts to draw for the pages of the 2nd version');
@@ -232,6 +232,66 @@ const pick = key => events.find(p => p.ev.key === key);
   assert.ok(!R.recs.some(r => ['start', 'turn', 'swim', 'finish'].includes(r.key)), 'the same race: no recommendation of a phase');
   const doc = V2.document(x, {});
   assert.ok(!/Η πιο αδύνατη φάση/.test(doc.html), 'the same race: no weakest phase');
+}
+
+// 12. (2.24.1) The last metres against the PB and the reference only at the same distance from the finish: a final without a time 15
+// before the finish (its analysis: 15, 25, 5 before each wall, the wall, 15 and 25 after it, 5 before the finish) gave its last 25
+// against the race's last 15 (−4.41 s, in blue). Now nothing there («–»); a reference with the time there: its own last 15.
+{
+  const G = makeContext({ athletes: ATHLETES });
+  const V2 = G.SwimV2;
+  const fin = v => typeof v === 'number' && isFinite(v);
+  const model = (p, refTimes) => {
+    const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+    const pr = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.pb)));
+    const er = G.swimReferenceRace_(Object.assign({}, p.ref, { times: refTimes }));
+    const cmp = { pb: { race: pr, analysis: G.swimAnalyze_(pr), label: 'PB' }, elite: { race: er, analysis: G.swimAnalyze_(er), label: 'Αναφορά δείγμα' } };
+    return V2.fromScript(race, G.swimAnalyze_(race), cmp);
+  };
+  // The points of the analysis of a final.
+  const finalPoints = ev => {
+    const D0 = ev.distance, P = ev.pool, keep = new Set([15, 25, D0 - 5, D0]);
+    for (let w = P; w < D0; w += P) [w - 5, w, w + 15, w + 25].forEach(d => keep.add(d));
+    return keep;
+  };
+  const p = pick('lc-100-fs');
+  const D = p.ev.distance;
+  assert.ok(!finalPoints(p.ev).has(D - 15) && p.race.checkpoints.some(c => c.d === D - 15), 'the race has its 85, the final not');
+  const x = model(p, p.ref.times.filter(q => finalPoints(p.ev).has(q.d)));
+  assert.strictEqual(x.race.finish.lastX, 15);
+  assert.strictEqual(x.ref.finish.lastX, 15, 'the reference at the distance of the race');
+  assert.ok(!fin(x.ref.finish.lastXt), 'no last 15 of a final without its 85: ' + x.ref.finish.lastXt);
+  const html = V2.document(x, {}).html;
+  const at = html.indexOf('>Τελευταία 15');
+  const card = at >= 0 ? html.slice(at, html.indexOf('</div></div>', html.indexOf('class="t-d"', at)) + 12) : '';
+  assert.ok(/Αναφ\. –<\/span>/.test(card) && !/Αναφ\. <span/.test(card), 'the card of the last 15 without the final: ' + card);
+  // With its 85: its own last 15.
+  const y = model(p, p.ref.times);
+  const tRef = d => p.ref.times.find(q => q.d === d).t;
+  assert.ok(Math.abs(y.ref.finish.lastXt - (tRef(D) - tRef(D - 15))) < 1e-6, 'the last 15 of the reference: ' + y.ref.finish.lastXt);
+  // Every event, with all the points of the reference and with those of a final: the last metres of the PB and of the reference only at
+  // the distance of the race, from their own times there, and always when they have them.
+  let compared = 0, missing = 0;
+  events.forEach(q => {
+    const Dq = q.ev.distance;
+    [q.ref.times, q.ref.times.filter(c => finalPoints(q.ev).has(c.d))].forEach(times => {
+      const m = model(q, times);
+      const lx = m.race.finish.lastX;
+      [[m.pb.finish, q.pb.checkpoints, 'PB'], [m.ref.finish, times, 'reference']].forEach(([f, own, who]) => {
+        assert.ok(f.lastX === lx || (!fin(f.lastX) && !fin(lx)), q.ev.key + ': the ' + who + ' at the same distance ' + f.lastX + ' / ' + lx);
+        const t = d => { const c = own.find(c0 => c0.d === d); return c ? c.t : NaN; };
+        const want = fin(lx) ? t(Dq) - t(Dq - lx) : NaN;
+        if (fin(want)) {
+          assert.ok(Math.abs(f.lastXt - want) < 1e-6, q.ev.key + ': the last ' + lx + ' of the ' + who + ' ' + f.lastXt + ' / ' + want);
+          compared++;
+        } else {
+          assert.ok(!fin(f.lastXt), q.ev.key + ': no last ' + lx + ' of the ' + who + ' without its times there: ' + f.lastXt);
+          missing++;
+        }
+      });
+    });
+  });
+  assert.ok(compared >= 60 && missing >= 10, 'compared ' + compared + ', without ' + missing);
 }
 
 console.log('test_reportv2: ok');

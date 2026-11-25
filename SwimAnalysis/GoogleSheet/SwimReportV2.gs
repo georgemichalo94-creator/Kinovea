@@ -1,6 +1,7 @@
 /**
  * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time;
- * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way).
+ * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way;
+ * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real
  * analysis of a race: the race, the personal best (a stored analysis of the athlete) and the reference (elite times). One self-contained
@@ -1822,7 +1823,7 @@ var SwimV2 = (function () {
    * A race to compare with, on the rows of the race: its values at the same distances (a reference with other checkpoints has NaN where
    * it has no time), so that every comparison is at the same place.
    */
-  function aligned(model, like) {
+  function aligned(model, like, D) {
     const out = blank(like);
     out.final = model.final;
     out.rows.forEach((r, i) => { const o = model.byD[r.d]; if (o && o.prevD === r.prevD) out.rows[i] = o; else if (o) out.rows[i] = Object.assign({}, r, { t: o.t }); });
@@ -1832,6 +1833,12 @@ var SwimV2 = (function () {
     out.turns = like.turns.map(t => model.turns.find(o => o.wall === t.wall) || Object.assign({}, t, { in5: NaN, out15: NaN, inOut: NaN, turnTime: NaN, uw: NaN, kicks: NaN, bd: NaN, vUw: NaN, vBo15: NaN, lastGap: NaN, ex: NaN }));
     ['start', 'finish', 'composition', 'avg', 'phases', 'legs'].forEach(key => { out[key] = model[key]; });
     if (like.phases && model.phases && like.phases.length !== model.phases.length) out.phases = blank({ phases: like.phases }).phases;
+    // (2.24.1) The last metres at the distance of the race's own (its last 15, else 25 or 35), from the times of the PB or the reference
+    // there, NaN without them: each race chose its own, and a final with no time 15 before the finish (15, 25, 45, 50, 65, 75, 95, 100)
+    // gave its last 25 against the race's last 15 (a −4.41 s «better» in blue).
+    const lastX = like.finish.lastX;
+    const at = d => model.byD[d] && ok(model.byD[d].t) ? model.byD[d].t : NaN;
+    out.finish = Object.assign({}, model.finish, { lastX, lastXt: ok(lastX) ? at(D) - at(D - lastX) : NaN });
     return out;
   }
 
@@ -1845,7 +1852,7 @@ var SwimV2 = (function () {
     const ev = { distance: race.distance, pool: race.pool, unit: yd ? 'yd' : 'm', style: race.style, relay: !!race.relay,
       poolName: race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25 γιάρδες' : 'Πισίνα 25μ.' };
     const a = analyse(race, analysis);
-    const other = c => c && c.race && c.analysis ? aligned(analyse(c.race, c.analysis), a) : blank(a);
+    const other = c => c && c.race && c.analysis ? aligned(analyse(c.race, c.analysis), a, race.distance) : blank(a);
     const gender = String(race.gender || race.category || '').trim();
     const meta = [race.competition, race.location, race.date, race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25yd' : 'Πισίνα 25μ.', race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
       .map(s => String(s || '').trim()).filter(s => s);
