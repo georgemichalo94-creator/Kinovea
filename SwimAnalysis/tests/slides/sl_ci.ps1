@@ -80,7 +80,7 @@ foreach ($f in $files) {
     Check ($lr.Max -gt 200) ($f.BaseName + ': the logo on the 2nd slide (brightest ' + [int]$lr.Max + ')')
     $b = BitmapOf $s[0].Png; $fr = Region $b 120 260 960 700; $b.Dispose()
     Check ($fr.R -gt $fr.B + 60) ($f.BaseName + ': the frame of the video in the cover (red {0:0}, blue {1:0})' -f $fr.R, $fr.B)
-    if ($null -eq $firstVideo) { $firstVideo = @($v | ForEach-Object { $_.Png }) }
+    if ($null -eq $firstVideo) { $firstVideo = [System.Collections.Generic.List[byte[]]]::new(); foreach ($x in @($v | Select-Object -First 3)) { $firstVideo.Add([byte[]]$x.Png) } }
   }
 }
 if ($times.Count -gt 0) { $sorted = @($times | Sort-Object); Write-Output ('     slide times: median {0:0.0} s, longest {1:0.0} s ({2} races)' -f $sorted[[int][Math]::Floor($sorted.Count / 2)], $sorted[-1], $sorted.Count) }
@@ -102,19 +102,19 @@ $g.FillRectangle((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::
 $g.FillRectangle((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(40, 40, 200))), 960, 0, 960, 1080); $g.Dispose()
 $slide = PngOf $sb; $sb.Dispose()
 function Px([byte[]]$bgr, $w, $x, $y) { $i = ($y * $w + $x) * 3; return @([int]$bgr[$i + 2], [int]$bgr[$i + 1], [int]$bgr[$i]) }
-$wide = [byte[]]$fit.Invoke($null, [object[]]@([byte[]]$slide, (New-Object System.Drawing.Size 1280, 720)))
+$wide = [byte[]]$fit.Invoke($null, [object[]]@([byte[]]$slide, [System.Drawing.Size]::new(1280, 720)))
 $p1 = Px $wide 1280 20 360; $p2 = Px $wide 1280 1260 360
 Check ($wide.Length -eq 1280 * 720 * 3 -and $p1[0] -gt 150 -and $p1[2] -lt 90 -and $p2[2] -gt 150 -and $p2[0] -lt 90) ('a slide in a 16:9 video: the whole of it (left {0}, right {1})' -f ($p1 -join ','), ($p2 -join ','))
-$tall = [byte[]]$fit.Invoke($null, [object[]]@([byte[]]$slide, (New-Object System.Drawing.Size 960, 720)))
+$tall = [byte[]]$fit.Invoke($null, [object[]]@([byte[]]$slide, [System.Drawing.Size]::new(960, 720)))
 $top = Px $tall 960 480 20; $mid = Px $tall 960 200 360
 Check ($tall.Length -eq 960 * 720 * 3 -and $top[0] -eq 10 -and $top[1] -eq 19 -and $top[2] -eq 34 -and $mid[0] -gt 150) ('a slide in a 4:3 video: the dark above it ({0}), the slide in the middle ({1})' -f ($top -join ','), ($mid -join ','))
 $fade = $tSlides.GetMethod('Fade')
-$into = New-Object byte[] $wide.Length
-$fade.Invoke($null, [object[]]@([byte[]]$wide, [byte[]]$into, [double]0)) | Out-Null
+$into = (New-Object byte[] ($wide.Length)).psobject.BaseObject
+$fade.Invoke($null, [object[]]@([byte[]]$wide, $into, [double]0)) | Out-Null
 $d0 = Px $into 1280 20 360
-$fade.Invoke($null, [object[]]@([byte[]]$wide, [byte[]]$into, [double]1)) | Out-Null
+$fade.Invoke($null, [object[]]@([byte[]]$wide, $into, [double]1)) | Out-Null
 $d1 = Px $into 1280 20 360
-$fade.Invoke($null, [object[]]@([byte[]]$wide, [byte[]]$into, [double]0.5)) | Out-Null
+$fade.Invoke($null, [object[]]@([byte[]]$wide, $into, [double]0.5)) | Out-Null
 $dh = Px $into 1280 20 360
 Check (($d0 -join ',') -eq '10,19,34' -and ($d1 -join ',') -eq ($p1 -join ',') -and $dh[0] -gt 60 -and $dh[0] -lt $p1[0]) ('the fades: 0 the dark ({0}), 1 the slide ({1}), half between ({2})' -f ($d0 -join ','), ($d1 -join ','), ($dh -join ','))
 $framesOf = $tSlides.GetMethod('FramesOf'); $op = $tSlides.GetMethod('Opacity')
@@ -133,17 +133,15 @@ if ($null -ne $firstVideo -and [System.IO.File]::Exists($ff)) {
   $buf = New-Object byte[] (640 * 360 * 3)
   for ($i = 0; $i -lt $buf.Length; $i += 3) { $buf[$i] = 120; $buf[$i + 1] = 90; $buf[$i + 2] = 20 }
   for ($i = 0; $i -lt 50; $i++) { [void]$enc.Write($buf) }
-  $list = New-Object 'System.Collections.Generic.List[byte[]]'
-  foreach ($png in ($firstVideo | Select-Object -First 3)) { $list.Add([byte[]]$png) }
   $write = $tSlides.GetMethod('Write')
-  $wArgs = [object[]]@($enc, $list, (New-Object System.Drawing.Size 640, 360), [double]25, $null, $null, $null, $null)
+  $wArgs = [object[]]@($enc, $firstVideo.psobject.BaseObject, [System.Drawing.Size]::new(640, 360), [double]25, $null, $null, $null, $null)
   $frames = [int]$write.Invoke($null, $wArgs)
   $finishArgs = [object[]]@([int]60000, $null)
   $finished = $tEnc.GetMethod('Finish').Invoke($enc, $finishArgs)
   $enc.Dispose()
-  Check ($frames -eq 3 * 75 -and $wArgs[6] -eq $true -and $wArgs[7] -eq $false -and $finished) ('the slides at the end of the video: {0} frames (taken {1}, stopped {2}) {3}' -f $frames, $wArgs[6], $wArgs[7], $finishArgs[1])
+  Check ($firstVideo.Count -eq 3 -and $frames -eq 3 * 75 -and $wArgs[6] -eq $true -and $wArgs[7] -eq $false -and $finished) ('the slides at the end of the video: {0} frames (taken {1}, stopped {2}) {3}' -f $frames, $wArgs[6], $wArgs[7], $finishArgs[1])
   $probe = $tEnc.GetMethod('Probe')
-  $pArgs = [object[]]@([string]$ff, [string]$video, [double]0, (New-Object System.Drawing.Size 0, 0), $false)
+  $pArgs = [object[]]@([string]$ff, [string]$video, $null, $null, $null)
   $read = $probe.Invoke($null, $pArgs)
   Check ($read -and [Math]::Abs([double]$pArgs[2] - 11.0) -lt 0.3) ('the video with its slides: {0:0.00} s (2 s and 3 x 3 s)' -f [double]$pArgs[2])
 }
