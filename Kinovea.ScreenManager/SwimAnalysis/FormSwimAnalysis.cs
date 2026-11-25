@@ -3145,6 +3145,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             SwimRace r = manager.Race;
+            double?[] start = manager.StartDistances();
             r.Reaction = Parse(tbReaction);
             r.EntryDistHands = tbEntryDistHands.Number;
             r.EntryVelHands = Parse(tbEntryVelHands);
@@ -3157,6 +3158,8 @@ namespace Kinovea.ScreenManager
             r.BreakoutDist = tbBreakoutDist.Number;
             r.FinishLastStrokeDist = tbFinishDist.Number;
 
+            // (2.38.3) The distance of the start written over the estimate (≈), or over an answer about it: an answer for the learning.
+            manager.StartChanged(start);
             manager.ManualValuesChanged();
         }
 
@@ -3208,8 +3211,11 @@ namespace Kinovea.ScreenManager
             SwimTurnManual manual = manager.Race.GetTurn(wall, true);
             if (column == "uwDist")
             {
+                // (2.38.3) Written over the estimate (≈), or over an answer about it: an answer for the learning.
+                double? estimate = manual.UnderwaterEstimated ? manual.UnderwaterDist : null;
                 manual.UnderwaterDist = value;
                 manual.UnderwaterEstimated = false;
+                manager.LearnUnderwater(wall, estimate, value);
             }
             else if (column == "turnTime")
                 manual.TurnTime = value;

@@ -321,17 +321,160 @@ try {
     Write-Output ('note: the wheel as Windows sends it not checked (the mouse of this machine did not move: ' + ($at -join ',') + ')')
   }
 
+  # (2.38.3) As if the distance there was the estimate from the times (≈), with a video open: the end of the edit is also an answer
+  # for the learning, kept once the distance has settled.
+  $estTurn = $l.race.GetTurn($wall, $true); $estTurn.UnderwaterDist = [System.Nullable[double]]8.0; $estTurn.UnderwaterEstimated = $true
+  $mgrType.GetField('videoPath', $all).SetValue($mgr, 'C:\ci\race_ci_values.mp4')
+
   # The value into the race at the end of the edit.
   [void]$grid.EndEdit(); [System.Windows.Forms.Application]::DoEvents()
   $manual = $l.race.GetTurn($wall, $false)
   $got = $null
   if ($null -ne $manual -and $null -ne $manual.UnderwaterDist) { $got = [double]$manual.UnderwaterDist }
   Check ($null -ne $got -and [Math]::Abs($got - $want) -lt 1e-9) ('the distance into the race at the end of the edit: ' + $got)
+  $gridWaiting = $mgrType.GetField('pendingValues', $all).GetValue($mgr).Count
+  [void]$mgrType.GetMethod('FlushValueAnswers', $all).Invoke($mgr, @())
+  $gridAnswer = @($mgr.Learning.Records | Where-Object { $_.Kind -eq 'race.underwater' })
+  $gridText = '-'
+  if ($gridAnswer.Count -gt 0) { $gridText = [string]$gridAnswer[0].Measures['shown'] + ' > ' + [string]$gridAnswer[0].Measures['kept'] }
+  Check ($gridWaiting -eq 1 -and $gridAnswer.Count -eq 1 -and [Math]::Abs($gridAnswer[0].Measures['shown'] - 8.0) -lt 1e-9 -and [Math]::Abs($gridAnswer[0].Measures['kept'] - $want) -lt 1e-9) ('(2.38.3) the distance of the grid written over the estimate: an answer once settled (' + $gridWaiting + ' waiting, then ' + $gridAnswer.Count + ': ' + $gridText + ')')
 } catch {
   $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
   Check $false ('the wheel in the edited cell of the turns: ' + $x.GetType().Name + ': ' + $x.Message + ' @ ' + (($x.StackTrace -split "`n" | Select-Object -First 3 | ForEach-Object { $_.Trim() }) -join ' < '))
 } finally {
   if ($null -ne $form) { try { $form.Close(); $form.Dispose() } catch { } }
+}
+
+# ---- (2.38.3) The answers about the values in the learning (numbers only, a fictional 100 m): the strokes of a segment (the count
+# of its marks and the count kept) and the underwater distance written or measured over the estimate (≈), once it has settled; the
+# same segment or wall again replaces its answer, a distance taken away takes it back, a distance without an estimate says nothing.
+try {
+  $mgrType = T 'SwimAnalysisManager'
+  $mgr = $mgrType.GetProperty('Instance').GetValue($null)
+  $tLearning = T 'SwimLearning'
+  $valueAnswer = $mgrType.GetMethod('ValueAnswer', $static)
+  $m0 = [System.Collections.Generic.Dictionary[string, double]]::new()
+  $m0['auto'] = 13; $m0['bad'] = [double]::NaN
+  $r0 = $valueAnswer.Invoke($null, [object[]]@('race.strokes', 'v1', 'abcdefghijklmnop', [int]35, [double]14, [double]15, $m0, [DateTime]::Now))
+  Check ($r0.Kind -eq 'race.strokes' -and $r0.Key -eq 'v1|abcdefghijkl|race.strokes|35' -and -not $r0.Right -and [Math]::Abs($r0.Error - 1) -lt 1e-9 -and
+    $r0.Measures['shown'] -eq 14 -and $r0.Measures['kept'] -eq 15 -and $r0.Measures['auto'] -eq 13 -and -not $r0.Measures.ContainsKey('bad')) ('an answer about a value: ' + $r0.Key + ', error ' + $r0.Error)
+  $r1 = $valueAnswer.Invoke($null, [object[]]@('race.strokes', 'v1', 'r', [int]35, [double]14.5, [double]14.504, $null, [DateTime]::Now))
+  $r2 = $valueAnswer.Invoke($null, [object[]]@('race.strokes', 'v1', 'r', [int]35, [double]::NaN, [double]14, $null, [DateTime]::Now))
+  Check ($r1.Right -and $null -eq $r2) 'the same value is a right answer; not a number: no answer'
+
+  $mgrType.GetProperty('Settings').SetValue($mgr, [Activator]::CreateInstance((T 'SwimSettings')))
+  $p = $picks['100|50|m|fs|False']
+  $l = Load $p.n $p.f
+  $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
+  $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
+  $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
+  $video = 'C:\ci\race_ci_values.mp4'
+  $mgrType.GetField('videoPath', $all).SetValue($mgr, $video)
+  $vc = [string]$tLearning.GetMethod('VideoCode').Invoke($null, @($video))
+  $race12 = $l.race.Id.Substring(0, [Math]::Min(12, $l.race.Id.Length))
+  $learning = $mgr.Learning
+  $pending = $mgrType.GetField('pendingValues', $all).GetValue($mgr)
+  $flush = $mgrType.GetMethod('FlushValueAnswers', $all)
+  $barDistance = $mgrType.GetMethod('SetBarDistance', $all)
+  $tBarDistance = T 'SwimBarDistance'
+  function Answer($key) { return @($learning.Records | Where-Object { $_.Key -eq $key }) }
+  function Bar($which, $wall, $value) { [void]$barDistance.Invoke($mgr, [object[]]@([Enum]::Parse($tBarDistance, $which), [int]$wall, $value)) }
+
+  # The turn in the bar, over the estimate, two steps of the wheel: one answer once settled, with the last distance.
+  $wall = [int]$l.race.Pool
+  $turn = $l.race.GetTurn($wall, $true); $turn.UnderwaterDist = [System.Nullable[double]]8.0; $turn.UnderwaterEstimated = $true
+  $uwKey = $vc + '|' + $race12 + '|race.underwater|' + $wall
+  Bar 'TurnBreakout' $wall ([System.Nullable[double]]8.3)
+  Bar 'TurnBreakout' $wall ([System.Nullable[double]]8.4)
+  $waiting = $pending.Count
+  [void]$flush.Invoke($mgr, @())
+  $a = Answer $uwKey
+  Check ($waiting -eq 1 -and $a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and [Math]::Abs($a[0].Measures['kept'] - 8.4) -lt 1e-9 -and
+    [Math]::Abs($a[0].Error - 0.4) -lt 1e-9 -and -not $a[0].Right -and $a[0].Measures['style'] -eq 1 -and $a[0].Measures['dive'] -eq 0) ('the turn in the bar over the estimate, the wheel twice: ' + $waiting + ' waiting, ' + $a.Count + ' answer, error ' + $(if ($a.Count -gt 0) { $a[0].Error } else { '-' }))
+  # Changed again later (the estimate gone): the same answer, from the same estimate.
+  Bar 'TurnBreakout' $wall ([System.Nullable[double]]9.0)
+  [void]$flush.Invoke($mgr, @())
+  $a = Answer $uwKey
+  Check ($a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and $a[0].Measures['kept'] -eq 9) ('changed again: the same answer from the same estimate (' + $a.Count + ')')
+  # Taken away: the answer goes (for the other Kinovea too).
+  Bar 'TurnBreakout' $wall $null
+  [void]$flush.Invoke($mgr, @())
+  $a = Answer $uwKey
+  $forgot = @($learning.Forgotten | Where-Object { $_.Key -eq $uwKey }).Count
+  Check ($a.Count -eq 0 -and $forgot -ge 1) ('the distance taken away: its answer goes (' + $a.Count + ' left, ' + $forgot + ' forgotten)')
+
+  # The start: a distance without an estimate says nothing; over the estimate, the breakout distance is the answer.
+  $startKey = $vc + '|' + $race12 + '|race.underwater|0'
+  $l.race.UnderwaterDist = $null; $l.race.UnderwaterEstimated = $false; $l.race.BreakoutDist = $null
+  Bar 'StartBreakout' 0 ([System.Nullable[double]]11.0)
+  $none = $pending.Count
+  [void]$flush.Invoke($mgr, @())
+  Check ($none -eq 0 -and (Answer $startKey).Count -eq 0) ('a distance of the start without an estimate: no answer (' + $none + ' waiting)')
+  $l.race.BreakoutDist = $null; $l.race.UnderwaterDist = [System.Nullable[double]]11.4; $l.race.UnderwaterEstimated = $true
+  Bar 'StartBreakout' 0 ([System.Nullable[double]]12.0)
+  [void]$flush.Invoke($mgr, @())
+  $a = Answer $startKey
+  Check ($a.Count -eq 1 -and [Math]::Abs($a[0].Measures['shown'] - 11.4) -lt 1e-9 -and $a[0].Measures['kept'] -eq 12 -and $a[0].Measures['dive'] -eq 1) ('the start in the bar over the estimate: ' + $a.Count + ' answer')
+
+  # Measured (📍) over the estimate of the turn.
+  $turn.UnderwaterDist = [System.Nullable[double]]7.0; $turn.UnderwaterEstimated = $true
+  [void]$mgrType.GetMethod('StoreMeasurement', $all).Invoke($mgr, [object[]]@([Enum]::Parse((T 'SwimPickTarget'), 'TurnUnderwater'), [int]$wall, [double]7.25))
+  [void]$flush.Invoke($mgr, @())
+  $a = Answer $uwKey
+  Check ($a.Count -eq 1 -and $a[0].Measures['shown'] -eq 7 -and [Math]::Abs($a[0].Measures['kept'] - 7.25) -lt 1e-9) ('measured over the estimate of the turn: ' + $a.Count + ' answer')
+
+  # The strokes of a segment with three automatic marks: the count of the marks and the count kept; accepted as shown, the same
+  # answer, right. A segment without automatic marks, not read now: no answer; read now: one.
+  $rows = $l.computed.Rows
+  $seg = $null; $seg2 = $null
+  for ($i = 0; $i -lt $rows.Count; $i++) {
+    $r = $rows[$i]
+    if ($r.PrevD -le 0 -or $null -eq $l.race.GetSplit($r.PrevD) -or $null -eq $l.race.GetSplit($r.D)) { continue }
+    if ($null -eq $seg) { $seg = $r } elseif ($null -eq $seg2) { $seg2 = $r }
+  }
+  if ($null -eq $seg -or $null -eq $seg2) { throw 'no two segments between marked checkpoints' }
+  $strokeType = [Enum]::Parse((T 'SwimMarkType'), 'Stroke')
+  function MarksIn($row) {
+    $t0 = $l.race.GetSplit($row.PrevD).Timestamp; $t1 = $l.race.GetSplit($row.D).Timestamp
+    $auto = 0; $hand = 0
+    foreach ($m in $l.race.Marks) { if ($m.Type -eq $strokeType -and $m.Timestamp -gt $t0 -and $m.Timestamp -le $t1) { if ($null -ne $m.Batch) { $auto++ } else { $hand++ } } }
+    return @{ t0 = $t0; t1 = $t1; auto = $auto; hand = $hand }
+  }
+  $in = MarksIn $seg
+  for ($k = 1; $k -le 3; $k++) {
+    $m = [Activator]::CreateInstance((T 'SwimMark')); $m.Type = $strokeType; $m.Timestamp = [long]($in.t0 + ($in.t1 - $in.t0) * $k / 4); $m.Batch = 'auto:ci'
+    $l.race.Marks.Add($m)
+  }
+  $learnStroke = $mgrType.GetMethod('LearnStrokeCount', $all)
+  [void]$learnStroke.Invoke($mgr, [object[]]@($seg.psobject.BaseObject, [double]14, [double]15, [double]1.25, $false))
+  $sKey = $vc + '|' + $race12 + '|race.strokes|' + $seg.D
+  $s = Answer $sKey
+  Check ($s.Count -eq 1 -and -not $s[0].Right -and [Math]::Abs($s[0].Error - 1) -lt 1e-9 -and $s[0].Measures['auto'] -eq ($in.auto + 3) -and $s[0].Measures['hand'] -eq $in.hand -and
+    [Math]::Abs($s[0].Measures['len'] - ($seg.D - $seg.PrevD)) -lt 1e-9 -and $s[0].Measures['style'] -eq 1 -and [Math]::Abs($s[0].Measures['cycle'] - 1.25) -lt 1e-9 -and
+    $s[0].Measures['from'] -eq $seg.PrevD) ('the strokes ' + $seg.PrevD + '-' + $seg.D + ': ' + $s.Count + ' answer, auto ' + $(if ($s.Count -gt 0) { $s[0].Measures['auto'] } else { '-' }) + ' of ' + ($in.auto + 3))
+  [void]$learnStroke.Invoke($mgr, [object[]]@($seg.psobject.BaseObject, [double]14, [double]14, [double]0, $false))
+  $s = Answer $sKey
+  Check ($s.Count -eq 1 -and $s[0].Right -and $s[0].Error -eq 0 -and -not $s[0].Measures.ContainsKey('cycle')) ('accepted as shown: the same answer, right (' + $s.Count + ')')
+  $in2 = MarksIn $seg2
+  $s2Key = $vc + '|' + $race12 + '|race.strokes|' + $seg2.D
+  [void]$learnStroke.Invoke($mgr, [object[]]@($seg2.psobject.BaseObject, [double]12, [double]13, [double]0, $false))
+  $notRead = (Answer $s2Key).Count
+  [void]$learnStroke.Invoke($mgr, [object[]]@($seg2.psobject.BaseObject, [double]12, [double]13, [double]1.3, $true))
+  $read = (Answer $s2Key).Count
+  Check ((($in2.auto -eq 0 -and $notRead -eq 0) -or ($in2.auto -gt 0 -and $notRead -eq 1)) -and $read -eq 1) ('a segment without automatic marks: an answer only when read now (' + $notRead + ', ' + $read + ')')
+
+  # In the file of the learning as they are, and taken by another Kinovea.
+  $loaded = $tLearning.GetMethod('Load').Invoke($null, [object[]]@($null))
+  $back = @($loaded.Records | Where-Object { $_.Key -eq $sKey })
+  $other = [Activator]::CreateInstance($tLearning)
+  [void]$other.Merge($learning.Records)
+  $taken = @($other.Records | Where-Object { $_.Kind -eq 'race.strokes' -or $_.Kind -eq 'race.underwater' }).Count
+  Check ($back.Count -eq 1 -and $back[0].Measures['auto'] -eq ($in.auto + 3) -and $back[0].Right -and $taken -ge 4) ('in the file of the learning and taken by another Kinovea (' + $back.Count + ', ' + $taken + ')')
+} catch {
+  $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
+  Check $false ('the answers about the values: ' + $x.GetType().Name + ': ' + $x.Message + ' @ ' + (($x.StackTrace -split "`n" | Select-Object -First 3 | ForEach-Object { $_.Trim() }) -join ' < '))
+} finally {
+  try { (T 'SwimAnalysisManager').GetField('videoPath', $all).SetValue((T 'SwimAnalysisManager').GetProperty('Instance').GetValue($null), $null) } catch { }
 }
 
 # ---- The English of the new texts.

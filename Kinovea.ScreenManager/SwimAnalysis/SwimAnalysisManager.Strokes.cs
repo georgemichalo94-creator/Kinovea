@@ -566,6 +566,11 @@ namespace Kinovea.ScreenManager
                     same ? " ✓" : (found.HasValue ? SwimLang.T(" (διόρθωση από ") + FormatCount(found.Value) + ")" : "")), false);
             }
 
+            // (2.38.3) The answer about the count of the marks, for the learning (numbers only): what they gave and what was kept (an
+            // empty box: the marks again).
+            if (found.HasValue && (cleared || value.HasValue))
+                LearnStrokeCount(row, found.Value, cleared ? found.Value : value.Value, detection != null ? detection.Cycle : 0, detection != null);
+
             Changed(true);
             return true;
         }

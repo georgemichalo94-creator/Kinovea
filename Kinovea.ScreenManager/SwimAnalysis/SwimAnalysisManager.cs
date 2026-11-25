@@ -316,6 +316,16 @@ namespace Kinovea.ScreenManager
                 {
                     log.Error("Could not save the swim analysis as Kinovea closed.", ex);
                 }
+
+                // (2.38.3) The answers about the distances changed in the last two seconds.
+                try
+                {
+                    FlushValueAnswers();
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Could not keep the last answers of the learning as Kinovea closed.", ex);
+                }
             };
 
             // Edits of text fields are sent after a short pause instead of at every keystroke.
@@ -1579,13 +1589,31 @@ namespace Kinovea.ScreenManager
                 case SwimPickTarget.EntryHands: Race.EntryDistHands = value; break;
                 case SwimPickTarget.EntryHips: Race.EntryDistHips = value; break;
                 // (2.9.8) Measured on the video: no longer the estimate from the times.
-                case SwimPickTarget.StartUnderwater: Race.UnderwaterDist = value; Race.UnderwaterEstimated = false; break;
-                case SwimPickTarget.StartBreakout: Race.BreakoutDist = value; break;
+                case SwimPickTarget.StartUnderwater:
+                {
+                    // (2.38.3) Measured over the estimate (≈), or over an answer about it: an answer for the learning.
+                    double?[] start = StartDistances();
+                    Race.UnderwaterDist = value;
+                    Race.UnderwaterEstimated = false;
+                    StartChanged(start);
+                    break;
+                }
+                case SwimPickTarget.StartBreakout:
+                {
+                    double?[] start = StartDistances();
+                    Race.BreakoutDist = value;
+                    StartChanged(start);
+                    break;
+                }
                 case SwimPickTarget.TurnUnderwater:
+                {
                     SwimTurnManual turn = Race.GetTurn(wall, true);
+                    double? estimate = turn.UnderwaterEstimated ? turn.UnderwaterDist : null;
                     turn.UnderwaterDist = value;
                     turn.UnderwaterEstimated = false;
+                    LearnUnderwater(wall, estimate, value);
                     break;
+                }
                 case SwimPickTarget.FinishLastStroke: Race.FinishLastStrokeDist = value; break;
                 case SwimPickTarget.PhaseEntry: Race.GetPhaseValues(pendingPhaseId, true).EntryDist = value; break;
                 case SwimPickTarget.PhaseBreakout: Race.GetPhaseValues(pendingPhaseId, true).BreakoutDist = value; break;

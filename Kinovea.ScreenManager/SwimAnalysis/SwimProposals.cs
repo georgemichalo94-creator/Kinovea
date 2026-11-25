@@ -109,10 +109,13 @@ namespace Kinovea.ScreenManager
         /// <summary>Short code of the video file (the learning of the same video counts more: same camera).</summary>
         public string Video;
 
-        /// <summary>True: the event is there (at the proposed frame or corrected). False: there is no such event (Delete).</summary>
+        /// <summary>
+        /// True: the event is there (at the proposed frame or corrected). False: there is no such event (Delete). (2.38.3) For an answer
+        /// about a value (race.strokes, race.underwater): the value kept is the one shown.
+        /// </summary>
         public bool Right;
 
-        /// <summary>Frame accepted − frame proposed (s).</summary>
+        /// <summary>Frame accepted − frame proposed (s). (2.38.3) For an answer about a value: value kept − value shown (strokes, metres).</summary>
         public double Error;
 
         /// <summary>Frame accepted − frame of each cue (s).</summary>

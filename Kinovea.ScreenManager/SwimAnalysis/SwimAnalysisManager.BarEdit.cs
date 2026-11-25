@@ -62,10 +62,14 @@ namespace Kinovea.ScreenManager
                     Race.EntryDistHands = value;
                     break;
                 case SwimBarDistance.StartBreakout:
+                {
                     if (Same(Race.BreakoutDist, value))
                         return;
+                    double?[] start = StartDistances();
                     Race.BreakoutDist = value;
+                    StartChanged(start);
                     break;
+                }
                 case SwimBarDistance.TurnBreakout:
                 {
                     if (wall <= 0)
@@ -73,8 +77,12 @@ namespace Kinovea.ScreenManager
                     SwimTurnManual turn = Race.GetTurn(wall, value.HasValue);
                     if (turn == null || (Same(turn.UnderwaterDist, value) && !turn.UnderwaterEstimated))
                         return;
+                    double? estimate = turn.UnderwaterEstimated ? turn.UnderwaterDist : null;
                     turn.UnderwaterDist = value;
                     turn.UnderwaterEstimated = false;
+
+                    // (2.38.3) Written over the estimate (≈), or over an answer about it: an answer for the learning.
+                    LearnUnderwater(wall, estimate, value);
                     break;
                 }
                 case SwimBarDistance.FinishLastStroke:
