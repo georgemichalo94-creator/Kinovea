@@ -45,6 +45,12 @@ $text = @'
 $err = $null
 $finals = $tFinals.GetMethod('Parse').Invoke($null, @($text, $err))
 Check ($null -ne $finals -and $finals.Finals.Count -eq 3) 'the fictional finals'
+# (2.38.4) The place in the name of a reference from a final: «(1η)» for a woman, «(1ος)» for a man.
+$refOf = $tFinals.GetMethod('Reference')
+$wF = @($finals.Finals | Where-Object { $_.Gender -eq 'F' -and $_.Style -eq 'fs' })[0]
+$mF = @($finals.Finals | Where-Object { $_.Gender -eq 'M' })[0]
+$wName = $refOf.Invoke($null, @($wF, $wF.Swimmers[1])).Name; $mName = $refOf.Invoke($null, @($mF, $mF.Swimmers[0])).Name
+Check ($wName.EndsWith('(2η)') -and $mName.EndsWith('(1ος)')) ('the place in the name of the reference: ' + $wName + ' / ' + $mName)
 
 $race = [Activator]::CreateInstance($tRace)
 $race.Kind = 'training'; $race.Style = 'fs'; $race.Pool = 25; $race.AthleteGender = 'Γυναικών'; $race.Date = '12.11.2026'

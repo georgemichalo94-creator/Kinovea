@@ -566,7 +566,8 @@ namespace Kinovea.ScreenManager
             SwimReference r = new SwimReference
             {
                 Id = ReferenceId(f, s),
-                Name = string.Format(CultureInfo.InvariantCulture, "{0} · {1} ({2}ος)", s.Name, f.Short, s.Rank),
+                // (2.38.4) The place of a woman: «(1η)», not «(1ος)».
+                Name = string.Format(CultureInfo.InvariantCulture, SwimLang.T(f.Gender == "F" ? "{0} · {1} ({2}η)" : "{0} · {1} ({2}ος)"), s.Name, f.Short, s.Rank),
                 Gender = f.Gender,
                 Style = f.Style,
                 Distance = f.Distance,
