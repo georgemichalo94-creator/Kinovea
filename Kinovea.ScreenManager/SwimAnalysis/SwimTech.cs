@@ -1005,6 +1005,27 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.38.5) The analyst's rule: under the water after the push off a wall the swimmer is not faster than after the start (the dive
+        /// gives more speed than the wall). A turn whose push-off → breakout is above the start's entry → breakout (as the panel and the
+        /// PDF show them, to the hundredth) has a mark or a distance off: the warning for the panel, else null. Not in a relay (another
+        /// swimmer started) or a technique video.
+        /// </summary>
+        public static string FasterThanStart(SwimRace race, SwimTechPhase turn, SwimTechPhase start)
+        {
+            if (race == null || race.Relay || race.IsTraining || turn == null || start == null || turn.Kind != SwimPhaseKind.Turn ||
+                start.Kind != SwimPhaseKind.Start)
+                return null;
+
+            double? t = turn.Value("uwVel"), s = start.Value("uwVel");
+            if (!t.HasValue || !s.HasValue || Math.Round(t.Value, 2) <= Math.Round(s.Value, 2))
+                return null;
+
+            return string.Format(CultureInfo.InvariantCulture,
+                SwimLang.T("⚠ πιο γρήγορα από την εκκίνηση ({0:0.00} m/s), που δεν γίνεται: έλεγξε την αποκόλληση, την έξοδο και την απόσταση της εξόδου (και της εκκίνησης)"),
+                s.Value);
+        }
+
+        /// <summary>
         /// (2.15.0) Mean speed of the underwater phase of a turn, from the push-off to the breakout. At the push-off the toes leave the
         /// wall with the body straight: the head is the body length from the wall (HeadAtPushoff); at the breakout it comes out at the
         /// distance measured where it breaks the surface (OutDist). Speed = (OutDist − HeadAtPushoff) / (breakout − push-off). With the

@@ -1770,6 +1770,7 @@ namespace Kinovea.ScreenManager
             { "⚠ Δεν μοιάζει με τον αθλητή του αγώνα («{0}»): έλεγξε ότι είναι η σωστή γραμμή.", "⚠ Not like the swimmer of the race («{0}»): check that it is the right row." },
             { "⚠ Δεν φάνηκε το φως της εκκίνησης ούτε ακούστηκε το σήμα: η πρόταση είναι λίγο πριν αρχίσουν να κινούνται οι αθλητές. ", "⚠ The start light was not seen and the signal was not heard: the suggestion is just before the swimmers start to move. " },
             { "⚠ Η εκκίνηση του πιλότου μένει: βάλε τη σωστή με το «Εκκίνηση» στο καρέ του σήματος (οι χρόνοι υπολογίζονται ξανά).", "⚠ The autopilot's start stays: set the right one with \"Start\" at the frame of the signal (the times are recalculated)." },
+            { "⚠ πιο γρήγορα από την εκκίνηση ({0:0.00} m/s), που δεν γίνεται: έλεγξε την αποκόλληση, την έξοδο και την απόσταση της εξόδου (και της εκκίνησης)", "⚠ faster than after the start ({0:0.00} m/s), which cannot be: check the push-off, the breakout and the breakout distance (and the start's)" },
             { "⚠ Μετά την εκκίνηση που βρέθηκε μένουν μόνο {0:0} s βίντεο, ενώ τα {1} m θέλουν τουλάχιστον {2:0} s: μάλλον δεν είναι η εκκίνηση αυτού του αγώνα. ", "⚠ After the start that was found only {0:0} s of video remain, while a {1} m race needs at least {2:0} s: it is probably not the start of this race. " },
             { "⚠ Ο επίσημος χρόνος είναι ", "⚠ The official time is " },
             { "⚠ δεν μπαίνουν στην ανάλυση: ", "⚠ not used in the analysis: " },

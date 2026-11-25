@@ -2256,7 +2256,10 @@ namespace Kinovea.ScreenManager
                     gr.Cells["vOut"].Value = phase != null ? Format(phase.Value("uwVel")) : "";
                     gr.Cells["v15"].Value = phase != null ? Format(phase.Value("bo15Vel")) : "";
                     string note = phase != null && phase.Breakout.HasValue && phase.SpeedNote != null ? phase.SpeedNote : "";
-                    gr.Cells["vOut"].ToolTipText = note;
+                    // (2.38.5) Faster under the water than after the start: amber, and why in the tooltip.
+                    string faster = SwimTechCalculator.FasterThanStart(race, phase, PhaseOf(0));
+                    gr.Cells["vOut"].Style.ForeColor = faster != null ? SwimTheme.Amber : Color.Empty;
+                    gr.Cells["vOut"].ToolTipText = faster != null ? faster + (note.Length > 0 ? "\n" + note : "") : note;
                     gr.Cells["v15"].ToolTipText = note;
                     bool estimated = manual != null && manual.UnderwaterDist.HasValue && manual.UnderwaterEstimated;
                     gr.Cells["uwDist"].ToolTipText = estimated ? SwimLang.T("Εκτίμηση από τους χρόνους (για ακρίβεια 📍 Μέτρηση ή γράψε την τιμή).") : "";
@@ -2319,7 +2322,7 @@ namespace Kinovea.ScreenManager
             string uwDist = manual != null && manual.UnderwaterDist.HasValue
                 ? " · " + (manual.UnderwaterEstimated ? "≈" : "") + Format(manual.UnderwaterDist) + " " + race.Unit : "";
             lblTurnUnderwater.Text = uwTime + uwDist;
-            lblTurnSpeeds.Text = wall > 0 ? BreakoutSpeedsText(PhaseOf(wall), race) : "–";
+            lblTurnSpeeds.Text = wall > 0 ? BreakoutSpeedsText(PhaseOf(wall), race, PhaseOf(0)) : "–";
 
             foreach (DataGridViewRow gr in gridTurns.Rows)
             {
@@ -3460,7 +3463,7 @@ namespace Kinovea.ScreenManager
         /// as the analyst asked: "σήμα → είσοδος 3.17 · είσοδος → έξοδος 2.15 · έξοδος → 15μ. 2.18 m/s"; a turn: "αποκόλληση → έξοδος 2.08 ·
         /// έξοδος → +15μ. 1.91 m/s"; on a second line where the program put the head (the analyst does not click it).
         /// </summary>
-        private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race)
+        private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race, SwimTechPhase start = null)
         {
             if (phase == null || race == null)
                 return "–";
@@ -3492,6 +3495,11 @@ namespace Kinovea.ScreenManager
             string head = HeadText(phase, race);
             if (head.Length > 0 && parts.Count > 0)
                 text += "\n" + head;
+
+            // (2.38.5) A turn faster under the water than the start: a mark or a distance is off.
+            string faster = SwimTechCalculator.FasterThanStart(race, phase, start);
+            if (faster != null)
+                text += "\n" + faster;
             return text;
         }
 

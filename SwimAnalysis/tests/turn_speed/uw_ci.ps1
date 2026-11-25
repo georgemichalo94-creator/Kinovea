@@ -224,5 +224,32 @@ foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } 
 Check ($null -eq $start.Value('bo15Vel')) 'the breakout marked after the 15: no speed to 15'
 Check ("$($start.SpeedNote)" -like '*μετά το κεφάλι στα 15*') ('the note: ' + $start.SpeedNote)
 
+# (2.38.5) The analyst's rule: under the water after the push off a wall not faster than after the start (the dive gives more). The
+# start out at 14.2 m (entry → breakout 2.37 m/s); a turn out at 10.0 m (2.01): no warning; out at 12.0 m (2.51): the warning of the
+# panel; not in a relay.
+$race7 = NewRace; Fill $race7 $true
+$race7.AthleteGender = 'Ανδρών'; $race7.AthleteBirthYear = '2000'; $race7.Date = '23.11.2026'
+Mark $race7 'Entry' 1.04 $null
+Mark $race7 'Breakout' 5.84 $null
+$race7.EntryDistHands = 3.30; $race7.BreakoutDist = 14.2
+$t7 = $race7.GetTurn(50, $true); $t7.UnderwaterDist = 10.0
+$fasterOf = $tTech.GetMethod('FasterThanStart')
+function Phases7() {
+  $r7 = TurnPhase $race7
+  $s7 = $null; foreach ($p in $r7.Phases) { if ($p.Kind.ToString() -eq 'Start') { $s7 = $p } }
+  return @{ Turn = $r7.Turn; Start = $s7 }
+}
+function Faster($q) { return $fasterOf.Invoke($null, [object[]]@($race7.psobject.BaseObject, $q.Turn.psobject.BaseObject, $q.Start.psobject.BaseObject)) }
+$q = Phases7
+Check ((Near $q.Start.Value('uwVel') ((14.2 - 2.8005) / 4.80) 0.0006) -and (Near $q.Turn.Value('uwVel') ((10.0 - 1.95) / 4.0) 0.0006)) ('the start ' + $q.Start.Value('uwVel') + ', the turn ' + $q.Turn.Value('uwVel'))
+Check ($null -eq (Faster $q)) 'a turn slower under the water than the start: no warning'
+$t7.UnderwaterDist = 12.0
+$q = Phases7
+$w = Faster $q
+Check ((Near $q.Turn.Value('uwVel') ((12.0 - 1.95) / 4.0) 0.0006) -and "$w" -like '*πιο γρήγορα από την εκκίνηση (2.37 m/s)*') ('a turn faster than the start (' + $q.Turn.Value('uwVel') + '): ' + $w)
+$race7.Relay = $true
+Check ($null -eq (Faster $q)) 'not in a relay'
+$race7.Relay = $false
+
 if ($fails -gt 0) { Write-Output ("$fails check(s) failed"); exit 1 }
 Write-Output 'speeds of the start and of the turns: all checks passed'
