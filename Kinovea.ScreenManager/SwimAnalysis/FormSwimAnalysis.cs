@@ -3461,7 +3461,7 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// (2.9.8) The speeds of the start and of a turn, with why one is missing once its marks are there. (2.35.0) The phases of a start
         /// as the analyst asked: "σήμα → είσοδος 3.17 · είσοδος → έξοδος 2.15 · έξοδος → 15μ. 2.18 m/s"; a turn: "αποκόλληση → έξοδος 2.08 ·
-        /// έξοδος → +15μ. 1.91 m/s"; on a second line where the program put the head (the analyst does not click it).
+        /// έξοδος → +15μ. 1.91 m/s". (2.38.6) On the lines below what the analyst's rules changed (2.35.0–2.38.5: where the head was put).
         /// </summary>
         private static string BreakoutSpeedsText(SwimTechPhase phase, SwimRace race, SwimTechPhase startPhase = null)
         {
@@ -3492,11 +3492,12 @@ namespace Kinovea.ScreenManager
             if (parts.Count < (start ? 3 : 2) && marked && !string.IsNullOrEmpty(phase.SpeedNote))
                 text += " · " + phase.SpeedNote;
 
-            string head = HeadText(phase, race);
-            if (head.Length > 0 && parts.Count > 0)
-                text += "\n" + head;
+            // (2.38.6) What the analyst's rules changed in the speeds (the panel only, not the reports).
+            if (!string.IsNullOrEmpty(phase.RuleNote) && parts.Count > 0)
+                text += "\n" + phase.RuleNote;
 
-            // (2.38.5) A turn faster under the water than the start: a mark or a distance is off.
+            // (2.38.5) A turn faster under the water than the start: a mark or a distance is off. (2.38.6) Only when the rule of the start
+            // could not hold it within the body length.
             string faster = SwimTechCalculator.FasterThanStart(race, phase, startPhase);
             if (faster != null)
                 text += "\n" + faster;
@@ -3504,38 +3505,20 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.35.0) Where the program put the head for the speeds, in the panel only (not in the reports): behind the hands at their entry,
-        /// from the wall at the push-off; from the typical height of the swimmer (or the body length measured).
+        /// (2.9.8) What the speeds of the breakout are and what they need. (2.35.0) The phases of the start. (2.38.6) The previous model
+        /// (from where the hands entered, from the wall) with the analyst's two rules.
         /// </summary>
-        private static string HeadText(SwimTechPhase phase, SwimRace race)
-        {
-            SwimHead h = SwimHead.Of(race);
-            if (phase.Kind == SwimPhaseKind.Start)
-            {
-                if (!phase.HeadBehindHands.HasValue)
-                    return "";
-                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην είσοδο: {0:0.00}{1} πίσω από τα χέρια (τυπικό ύψος {2:0.00} μ., {3})"),
-                    phase.HeadBehindHands.Value, race.Unit, h.Height, h.Who());
-            }
-
-            if (!phase.HeadAtPushoff.HasValue)
-                return "";
-            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (τυπικό ύψος {2:0.00} μ. + 0.10, {3})"),
-                phase.HeadAtPushoff.Value, race.Unit, h.Height, h.Who());
-        }
-
-        /// <summary>(2.9.8) What the speeds of the breakout are and what they need. (2.35.0) The phases of the start; both from the head.</summary>
         private static string BreakoutSpeedsHelp(bool start)
         {
             return start
                 ? SwimLang.T("Ταχύτητες των φάσεων της εκκίνησης: σήμα → είσοδος (τα χέρια, από τον βατήρα ως εκεί που μπαίνουν στο νερό), ") +
-                  SwimLang.T("είσοδος → έξοδος (το κεφάλι: τη στιγμή της εισόδου είναι πίσω από τα χέρια κατά 0.27 × το τυπικό ύψος του αθλητή για το φύλο ") +
-                  SwimLang.T("και την ηλικία του, ως εκεί που βγαίνει από το νερό) και έξοδος → 15μ. (ό,τι μένει ως τα 15μ. / χρόνος).\n") +
+                  SwimLang.T("είσοδος → έξοδος (από εκεί που μπήκαν τα χέρια ως εκεί που βγαίνει το κεφάλι) και έξοδος → 15μ. (ό,τι μένει ως τα 15μ. / χρόνος). ") +
+                  SwimLang.T("Κανόνας: η έξοδος → 15μ. δεν βγαίνει λίγο πιο αργή από την κολύμβηση μετά τα 15μ. (έως 5%: γράφεται ίση).\n") +
                   SwimLang.T("Χρειάζονται τα σημάδια της εισόδου, της εξόδου και των 15μ., και οι αποστάσεις εισόδου των χεριών και εξόδου ") +
                   SwimLang.T("μετρημένες (📍 Μέτρηση) ή γραμμένες, όχι η εκτίμηση από τους χρόνους.")
-                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού: στην αποκόλληση τα δάχτυλα των ποδιών είναι ακόμη στον ") +
-                  SwimLang.T("τοίχο, άρα το κεφάλι απέχει από τον τοίχο το μήκος του σώματος (το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του ") +
-                  SwimLang.T("+ 0.10 μ.). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος).\n") +
+                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού, από τον τοίχο. Και από την έξοδο έως το κεφάλι στα ") +
+                  SwimLang.T("+15μ. (ό,τι μένει / χρόνος). Κανόνες: κάτω από το νερό όχι πιο γρήγορα από την εκκίνηση, ούτε ο μέσος όρος ούτε η μεγαλύτερη ") +
+                  SwimLang.T("τιμή του βίντεο (αλλιώς γράφεται όσο της εκκίνησης)· η έξοδος → +15μ. όχι λίγο πιο αργή από την κολύμβηση μετά (έως 5%: γράφεται ίση).\n") +
                   SwimLang.T("Χρειάζονται τα σημάδια της αποκόλλησης, της εξόδου και του +15, και η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή ") +
                   SwimLang.T("γραμμένη, όχι η εκτίμηση από τους χρόνους.");
         }

@@ -8,6 +8,11 @@
 # estimate). The official time of the wall is the time of the turn (also when its mark is a little before it): the contact, the −5 and
 # the +15 from it, as the splits of the race. 2.35.1: the speed from the breakout to 15 for every breakout before it (a late turn, a
 # late start), none past it or with its mark after the head at 15.
+# 2.38.6: the previous model again, the analyst's request: under the water from where the hands entered (the start) and from the wall
+# (a turn), the distance per kick as measured, with the analyst's two rules: (1) from the breakout to the 15 not a little slower than
+# the swimming after it (up to 5% slower: the breakout a few centimetres nearer for the speeds, the distance sent as measured); (2) a turn
+# not faster under the water than the start, on the mean or at the highest speed of the video (the speed of the turn starts a little
+# out from the wall; the warning only past the body length).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File uw_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -75,45 +80,59 @@ Check ([Math]::Abs($typ.Invoke($null, @('', 0)) - 1.785) -lt 1e-9) 'gender unkno
 Check ($tHead.GetMethod('AgeOf').Invoke($null, @('2012', '23.11.2026')) -eq 14) 'the age in the year of the race'
 Check ($tHead.GetMethod('AgeOf').Invoke($null, @('', '23.11.2026')) -eq 0) 'no year of birth: 0 (the adults)'
 
-# The breakout measured at 10.0 m (📍), push-off 26.6, breakout 30.6. Nothing known of the swimmer: the head at 1.785 + 0.10 = 1.885 m,
-# (10.0 − 1.885) / 4.0 = 2.02875 m/s (2.32.0–2.34.0 from the wall: 2.50).
+# The breakout measured at 10.0 m (📍), push-off 26.6, breakout 30.6. (2.38.6) From the wall, the previous model: 10.0 / 4.0 = 2.50
+# m/s (2.35.0–2.38.5 from the head at the push-off, 1.885 m out: 2.029); the distance per kick from the wall. From the breakout to the
+# +15 5 / 2.9 = 1.724, faster than the swimming after it (65–75: 10 / 5.9 = 1.695): as measured.
 $race = NewRace; Fill $race $true
 $turn = $race.GetTurn(50, $true); $turn.UnderwaterDist = 10.0
 $r = TurnPhase $race
 Check ($null -ne $r.Turn) 'the turn at 50 m'
-Check ([Math]::Abs($r.Turn.HeadAtPushoff - 1.885) -lt 1e-9) ('the head at the push-off: ' + $r.Turn.HeadAtPushoff)
+Check ([Math]::Abs($r.Turn.HeadAtPushoff - 1.885) -lt 1e-9) ('the head at the push-off (the bound of the rule of the start): ' + $r.Turn.HeadAtPushoff)
 $v = $r.Turn.Value('uwVel')
-Check (Near $v 2.029 0.0006) ('underwater speed from the head at the push-off: ' + $v)
+Check (Near $v 2.5 0.0006) ('underwater speed from the wall: ' + $v)
 $kd = $r.Turn.Value('kickDist')
-Check (Near $kd (8.115 / 6) 0.0006) ('distance per kick from the head: ' + $kd)
+Check (Near $kd (10.0 / 6) 0.0006) ('distance per kick from the wall: ' + $kd)
 $b15 = $r.Turn.Value('bo15Vel')
 Check (Near $b15 (5 / (33.5 - 30.6)) 0.0005) ('from the breakout to the 15 m: ' + $b15)
-Check ($null -eq $r.Turn.SpeedNote) ('no note: ' + $r.Turn.SpeedNote)
+Check ($null -eq $r.Turn.SpeedNote -and $null -eq $r.Turn.RuleNote -and $r.Turn.PushAway -eq 0) ('no note, no rule: ' + $r.Turn.SpeedNote + ' / ' + $r.Turn.RuleNote)
 $body = Sheet $race $r
-Check (Near $body.race.manual.turns.'50'.uwSpeed 2.029 0.0006) ('uwSpeed sent: ' + $body.race.manual.turns.'50'.uwSpeed)
+Check (Near $body.race.manual.turns.'50'.uwSpeed 2.5 0.0006) ('uwSpeed sent: ' + $body.race.manual.turns.'50'.uwSpeed)
 Check (Near $body.race.manual.turns.'50'.bo15Speed (5 / (33.5 - 30.6)) 0.0006) ('bo15Speed sent: ' + $body.race.manual.turns.'50'.bo15Speed)
 Check (Near $body.race.manual.turns.'50'.underwaterDist 10.0 1e-9) 'the distance measured sent'
 Check ($null -eq $body.race.manual.turns.'50'.underwaterEstimated) 'a measured distance is not said to be an estimate'
 $json = $tClient.GetMethod('Build').Invoke($null, @($race, $r.Computed, $r.Phases, $timing, [long]1000, $settings, 'demo.mp4', 'update', $null, $false, $null))
-Check ($json -notmatch 'τυπικό|typical|BehindHands|HeadAt') 'how the speeds are found is not sent'
+Check ($json -notmatch 'τυπικό|typical|BehindHands|HeadAt|κανόνας|PushAway|OutForSpeeds|RuleNote') 'how the speeds are found is not sent'
 
-# A man of 26: the head at 1.85 + 0.10 = 1.95 m: (10.0 − 1.95) / 4 = 2.0125. A girl of 14: 1.66 + 0.10 = 1.76: (10.0 − 1.76) / 4 = 2.06.
+# (2.38.6) The height of the swimmer no longer in the speed: a man of 26, a girl of 14, a body length of before: 2.50 all.
 $race.AthleteGender = 'Ανδρών'; $race.AthleteBirthYear = '2000'; $race.Date = '23.11.2026'
 $r = TurnPhase $race
-Check (Near $r.Turn.Value('uwVel') 2.0125 0.0006) ('a man: ' + $r.Turn.Value('uwVel'))
+Check ((Near $r.Turn.Value('uwVel') 2.5 0.0006) -and [Math]::Abs($r.Turn.HeadAtPushoff - 1.95) -lt 1e-9) ('a man: ' + $r.Turn.Value('uwVel'))
 $race.AthleteGender = 'Γυναικών'; $race.AthleteBirthYear = '2012'
 $r = TurnPhase $race
-Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a girl of 14: ' + $r.Turn.Value('uwVel'))
-# (2.36.0) A body length in an analysis of before (1.90 m, or 12 that cannot be): no longer used, the typical height (2.06).
-$race.BodyLength = 1.9
-$r = TurnPhase $race
-Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a body length of before is not used: ' + $r.Turn.Value('uwVel'))
+Check (Near $r.Turn.Value('uwVel') 2.5 0.0006) ('a girl of 14: ' + $r.Turn.Value('uwVel'))
 $race.BodyLength = 12
 $r = TurnPhase $race
-Check (Near $r.Turn.Value('uwVel') 2.06 0.0006) ('a body length of 12 m: the typical height (' + $r.Turn.Value('uwVel') + ')')
+Check (Near $r.Turn.Value('uwVel') 2.5 0.0006) ('a body length of 12 m of before: ' + $r.Turn.Value('uwVel'))
 $body = Sheet $race $r
 Check ($null -eq $body.race.manual.bodyLength -and $null -eq $body.race.manual.entryDistHips -and $null -eq $body.race.manual.entryVelHips -and $null -eq $body.race.manual.entryVelFeet) 'no body length, hips or feet sent'
 $race.BodyLength = $null; $race.AthleteGender = ''; $race.AthleteBirthYear = ''
+
+# (2.38.6) The rule of the breakout: out at 10.19 m, to the +15 4.81 / 2.9 = 1.659, 2.1% below the swimming after it (1.695): the speeds
+# from 10.0847 (15 − 1.695 × 2.9), the speed to the +15 as the swimming's; the distance sent as measured. 8% below (10.478): as measured.
+$turn.UnderwaterDist = 10.19
+$r = TurnPhase $race
+$next = 10 / (39.4 - 33.5)
+Check ([Math]::Abs($r.Turn.NextSpeed - $next) -lt 1e-9) ('the swimming after the +15: ' + $r.Turn.NextSpeed)
+Check ([Math]::Abs($r.Turn.OutForSpeeds - (15 - $next * 2.9)) -lt 1e-6) ('the breakout for the speeds: ' + $r.Turn.OutForSpeeds)
+Check ((Near $r.Turn.Value('bo15Vel') $next 0.0006) -and (Near $r.Turn.Value('uwVel') ((15 - $next * 2.9) / 4.0) 0.0006)) ('to the +15 as the swimming ' + $r.Turn.Value('bo15Vel') + ', under the water ' + $r.Turn.Value('uwVel'))
+Check ("$($r.Turn.RuleNote)" -like '*1.66 από τα σημάδια, γράφεται 1.69*') ('the note of the panel: ' + $r.Turn.RuleNote)
+Check (Near $r.Turn.Value('kickDist') (10.19 / 6) 0.0006) ('the distance per kick as measured: ' + $r.Turn.Value('kickDist'))
+$body = Sheet $race $r
+Check ((Near $body.race.manual.turns.'50'.underwaterDist 10.19 1e-9) -and (Near $body.race.manual.turns.'50'.bo15Speed $next 0.0006)) ('sent: the distance measured ' + $body.race.manual.turns.'50'.underwaterDist + ', the speed ' + $body.race.manual.turns.'50'.bo15Speed)
+$turn.UnderwaterDist = 10.478
+$r = TurnPhase $race
+Check ((Near $r.Turn.Value('bo15Vel') (4.522 / 2.9) 0.0006) -and $null -eq $r.Turn.RuleNote -and [Math]::Abs($r.Turn.OutForSpeeds - 10.478) -lt 1e-9) ('8% slower: as measured (' + $r.Turn.Value('bo15Vel') + ')')
+$turn.UnderwaterDist = 10.0
 
 # The distance estimated from the times: no speed from it.
 $turn.UnderwaterEstimated = $true
@@ -124,11 +143,15 @@ Check ("$($r.Turn.SpeedNote)" -like '*εκτίμηση*') ('the note: ' + $r.Tur
 $body = Sheet $race $r
 Check ($body.race.manual.turns.'50'.underwaterEstimated -eq $true) 'the estimate is said to the Sheet'
 
-# A breakout typed at 2.5 m: 0.6 m from the head at the push-off: no speed, a note.
-$turn.UnderwaterEstimated = $false; $turn.UnderwaterDist = 2.5
+# A breakout typed at 0.8 m: under the metre from the wall: no speed, a note. (2.38.6: from the wall; 2.35.0–2.38.5 2.5 m was 0.6
+# from the head.) At 2.5 m: 0.625 m/s, not a speed a swimmer has: none, the note says so.
+$turn.UnderwaterEstimated = $false; $turn.UnderwaterDist = 0.8
 $r = TurnPhase $race
-Check ($null -eq $r.Turn.Value('uwVel')) 'no speed for 2.5 m'
+Check ($null -eq $r.Turn.Value('uwVel')) 'no speed for 0.8 m'
 Check ("$($r.Turn.SpeedNote)" -like '*κοντά στον τοίχο*') ('the note: ' + $r.Turn.SpeedNote)
+$turn.UnderwaterDist = 2.5
+$r = TurnPhase $race
+Check ($null -eq $r.Turn.Value('uwVel') -and "$($r.Turn.SpeedNote)" -like '*αποκόλληση → έξοδος: 0.6? m/s δεν γίνεται*') ('2.5 m in 4 s: ' + $r.Turn.SpeedNote)
 
 # A breakout measured at 39.6 m (the calibration of another frame): no speed, no distance per kick, a note; the Sheet gets the estimate.
 $turn.UnderwaterDist = 39.6
@@ -154,10 +177,10 @@ $r = TurnPhase $race3
 Check (Near $r.Turn.Value('contact') 0.30 0.0015) ('the contact from the official touch: ' + $r.Turn.Value('contact') + ' (from the mark 0.42)')
 Check (Near $r.Turn.Value('in5') 2.90 0.0015) ('45 m → the wall as the splits: ' + $r.Turn.Value('in5') + ' (from the mark 2.78)')
 Check (Near $r.Turn.Value('out15') 7.20 0.0015) ('the wall → 65 m as the splits: ' + $r.Turn.Value('out15') + ' (from the mark 7.32)')
-Check (Near $r.Turn.Value('uwVel') 2.029 0.0006) ('the underwater speed from its own marks: ' + $r.Turn.Value('uwVel'))
+Check (Near $r.Turn.Value('uwVel') 2.5 0.0006) ('the underwater speed from its own marks: ' + $r.Turn.Value('uwVel'))
 
 # The start in phases: a man of 26; entry of the hands at 1.04 s, 3.30 m; three kicks; breakout at 5.30 s, 13.0 m; 15 m at 6.20 s.
-# The head behind the hands: 0.27 × 1.85 = 0.4995 m.
+# (2.38.6) Under the water from where the hands entered, the previous model (2.35.0–2.38.5 from the head 0.4995 m behind them).
 $race4 = NewRace; Fill $race4 $true
 $race4.AthleteGender = 'Ανδρών'; $race4.AthleteBirthYear = '2000'; $race4.Date = '23.11.2026'
 Mark $race4 'Entry' 1.04 $null
@@ -168,12 +191,11 @@ $r = TurnPhase $race4
 $start = $null
 foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
 Check ($null -ne $start) 'the start'
-Check ([Math]::Abs($start.HeadBehindHands - 0.4995) -lt 1e-9) ('the head behind the hands: ' + $start.HeadBehindHands)
 Check (Near $start.Value('sigEntryVel') (3.30 / 1.04) 0.0006) ('signal → entry of the hands: ' + $start.Value('sigEntryVel'))
-$way = 13.0 - (3.30 - 0.4995)
-Check (Near $start.Value('uwVel') ($way / (5.30 - 1.04)) 0.0006) ('entry → breakout of the head: ' + $start.Value('uwVel') + ' (from the hands: ' + ((13.0 - 3.30) / 4.26) + ')')
+$way = 13.0 - 3.30
+Check (Near $start.Value('uwVel') ($way / (5.30 - 1.04)) 0.0006) ('entry of the hands → breakout: ' + $start.Value('uwVel'))
 Check (Near $start.Value('bo15Vel') (2.0 / 0.9) 0.0006) ('breakout → 15: ' + $start.Value('bo15Vel'))
-Check (Near $start.Value('kickDist') ($way / 3) 0.0006) ('distance per kick from the head: ' + $start.Value('kickDist'))
+Check (Near $start.Value('kickDist') ($way / 3) 0.0006) ('distance per kick from where the hands entered: ' + $start.Value('kickDist'))
 $body = Sheet $race4 $r
 $m = $body.race.manual
 Check ((Near $m.sigEntryVel (3.30 / 1.04) 0.0006) -and (Near $m.entryBreakoutVel ($way / 4.26) 0.0006) -and (Near $m.breakout15Vel (2.0 / 0.9) 0.0006)) ('the three phases sent: ' + $m.sigEntryVel + ' / ' + $m.entryBreakoutVel + ' / ' + $m.breakout15Vel)
@@ -187,16 +209,16 @@ $body = Sheet $race4 $r
 Check ($null -eq $body.race.manual.sigEntryVel -and $null -eq $body.race.manual.entryBreakoutVel) 'nothing sent for them'
 
 # (2.35.1) Late breakouts, the analyst's request: the speed to 15 for every breakout before it (2.9.8–2.35.0 only 2 m and more before).
-# A turn out at 13.5 m: breakout at 32.8 s, +15 (65 m) at 33.5 s: 1.5 / 0.7 = 2.142857; push-off → breakout (13.5 − 1.885) / 6.2.
+# A turn out at 13.5 m: breakout at 32.8 s, +15 (65 m) at 33.5 s: 1.5 / 0.7 = 2.142857; push-off → breakout 13.5 / 6.2 (from the wall).
 $race5 = NewRace; Fill $race5 $true 26.3 32.8
 $t5 = $race5.GetTurn(50, $true); $t5.UnderwaterDist = 13.5
 $r = TurnPhase $race5
 Check (Near $r.Turn.Value('bo15Vel') (1.5 / 0.7) 0.0006) ('a turn out at 13.5 m, breakout → +15: ' + $r.Turn.Value('bo15Vel'))
-Check (Near $r.Turn.Value('uwVel') ((13.5 - 1.885) / 6.2) 0.0006) ('and push-off → breakout: ' + $r.Turn.Value('uwVel'))
+Check (Near $r.Turn.Value('uwVel') (13.5 / 6.2) 0.0006) ('and push-off → breakout: ' + $r.Turn.Value('uwVel'))
 Check ($null -eq $r.Turn.SpeedNote) ('no note: ' + $r.Turn.SpeedNote)
 $body = Sheet $race5 $r
 Check (Near $body.race.manual.turns.'50'.bo15Speed (1.5 / 0.7) 0.0006) ('bo15Speed sent: ' + $body.race.manual.turns.'50'.bo15Speed)
-# A start out at 14.2 m (0.8 m before the 15): breakout at 5.84 s, 15 m at 6.20 s: 0.8 / 0.36; entry → breakout (14.2 − 2.8005) / 4.80.
+# A start out at 14.2 m (0.8 m before the 15): breakout at 5.84 s, 15 m at 6.20 s: 0.8 / 0.36; entry → breakout (14.2 − 3.30) / 4.80.
 $race6 = NewRace; Fill $race6 $true
 $race6.AthleteGender = 'Ανδρών'; $race6.AthleteBirthYear = '2000'; $race6.Date = '23.11.2026'
 Mark $race6 'Entry' 1.04 $null
@@ -206,7 +228,7 @@ $race6.EntryDistHands = 3.30; $race6.BreakoutDist = 14.2
 $r = TurnPhase $race6
 foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
 Check (Near $start.Value('bo15Vel') (0.8 / 0.36) 0.0006) ('a start out at 14.2 m, breakout → 15: ' + $start.Value('bo15Vel'))
-Check (Near $start.Value('uwVel') ((14.2 - 2.8005) / 4.80) 0.0006) ('and entry → breakout: ' + $start.Value('uwVel'))
+Check (Near $start.Value('uwVel') ((14.2 - 3.30) / 4.80) 0.0006) ('and entry → breakout: ' + $start.Value('uwVel'))
 Check ($null -eq $start.SpeedNote) ('no note: ' + $start.SpeedNote)
 $body = Sheet $race6 $r
 Check (Near $body.race.manual.breakout15Vel (0.8 / 0.36) 0.0006) ('breakout15Vel sent: ' + $body.race.manual.breakout15Vel)
@@ -224,9 +246,11 @@ foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } 
 Check ($null -eq $start.Value('bo15Vel')) 'the breakout marked after the 15: no speed to 15'
 Check ("$($start.SpeedNote)" -like '*μετά το κεφάλι στα 15*') ('the note: ' + $start.SpeedNote)
 
-# (2.38.5) The analyst's rule: under the water after the push off a wall not faster than after the start (the dive gives more). The
-# start out at 14.2 m (entry → breakout 2.37 m/s); a turn out at 10.0 m (2.01): no warning; out at 12.0 m (2.51): the warning of the
-# panel; not in a relay.
+# (2.38.5, 2.38.6) The analyst's rule of the start: under the water after the push off a wall not faster than after the start (the dive
+# gives more), neither on the mean nor at the highest speed the video shows (SwimSpeedRules.Peak). The start out at 14.2 m (entry →
+# breakout 10.9 / 4.80 = 2.2708 m/s, to the 15 2.2222, the highest on the video 2.3161). A turn out at 10.0 m: from the wall 2.50 m/s:
+# its speed starts 1.60 m out (within the body length of a man, 1.95): 2.0988, its highest as the start's; no warning, a note. Out at
+# 12.0 m: 4.62 m out, past the body length: 1.8458 and the warning of the panel. Not in a relay.
 $race7 = NewRace; Fill $race7 $true
 $race7.AthleteGender = 'Ανδρών'; $race7.AthleteBirthYear = '2000'; $race7.Date = '23.11.2026'
 Mark $race7 'Entry' 1.04 $null
@@ -234,21 +258,34 @@ Mark $race7 'Breakout' 5.84 $null
 $race7.EntryDistHands = 3.30; $race7.BreakoutDist = 14.2
 $t7 = $race7.GetTurn(50, $true); $t7.UnderwaterDist = 10.0
 $fasterOf = $tTech.GetMethod('FasterThanStart')
+$tRules = T 'SwimSpeedRules'
+$peakOf = $tRules.GetMethod('Peak')
 function Phases7() {
   $r7 = TurnPhase $race7
   $s7 = $null; foreach ($p in $r7.Phases) { if ($p.Kind.ToString() -eq 'Start') { $s7 = $p } }
   return @{ Turn = $r7.Turn; Start = $s7 }
 }
 function Faster($q) { return $fasterOf.Invoke($null, [object[]]@($race7.psobject.BaseObject, $q.Turn.psobject.BaseObject, $q.Start.psobject.BaseObject)) }
+function PeakOf($under, $after, $ut, $at) { return [double]$peakOf.Invoke($null, [object[]]@([double]$under, [double]$after, [double]$ut, [double]$at)) }
 $q = Phases7
-Check ((Near $q.Start.Value('uwVel') ((14.2 - 2.8005) / 4.80) 0.0006) -and (Near $q.Turn.Value('uwVel') ((10.0 - 1.95) / 4.0) 0.0006)) ('the start ' + $q.Start.Value('uwVel') + ', the turn ' + $q.Turn.Value('uwVel'))
-Check ($null -eq (Faster $q)) 'a turn slower under the water than the start: no warning'
+$startUw = (14.2 - 3.30) / 4.80; $startPeak = PeakOf $startUw (0.8 / 0.36) 4.80 0.36
+Check ((Near $q.Start.Value('uwVel') $startUw 0.0006) -and [Math]::Abs($q.Start.UnderwaterMean - $startUw) -lt 1e-6 -and [Math]::Abs($q.Start.UnderwaterPeak - $startPeak) -lt 1e-6) ('the start: ' + $q.Start.Value('uwVel') + ', the highest on the video ' + $q.Start.UnderwaterPeak)
+$turnUw = [double]$q.Turn.Value('uwVel')
+$turnPeak = PeakOf ((10.0 - $q.Turn.PushAway) / 4.0) (5 / 2.9) 4.0 2.9
+Check ((Near $turnUw 2.0988 0.0006) -and $turnUw -le $startUw + 1e-9) ('a turn out at 10.0 m: ' + $turnUw + ' (from the wall 2.50), not above the start ' + $startUw)
+Check ($q.Turn.PushAway -gt 1.55 -and $q.Turn.PushAway -lt 1.95 -and -not $q.Turn.PastHead) ('its speed from ' + $q.Turn.PushAway + ' m out, within the body length (1.95)')
+Check ([Math]::Abs($turnPeak - $startPeak) -lt 1e-6) ('its highest on the video as the start: ' + $turnPeak + ' / ' + $startPeak)
+Check ($null -eq (Faster $q)) 'within the body length: no warning'
+Check ("$($q.Turn.RuleNote)" -like '*2.50 από τα σημάδια, γράφεται 2.10: όχι πιο γρήγορα από την εκκίνηση*') ('the note of the panel: ' + $q.Turn.RuleNote)
+Check (Near $q.Turn.Value('kickDist') (10.0 / 6) 0.0006) ('the distance per kick as measured: ' + $q.Turn.Value('kickDist'))
+$body = Sheet $race7 (TurnPhase $race7)
+Check ((Near $body.race.manual.turns.'50'.uwSpeed 2.0988 0.0006) -and (Near $body.race.manual.turns.'50'.underwaterDist 10.0 1e-9)) ('sent: ' + $body.race.manual.turns.'50'.uwSpeed + ' from ' + $body.race.manual.turns.'50'.underwaterDist + ' m')
 $t7.UnderwaterDist = 12.0
 $q = Phases7
 $w = Faster $q
-# (The speed of the start as the panel shows it, to the hundredth: 2.3749–2.3755 by the frames of the marks.)
+# (The speed of the start as the panel shows it, to the hundredth.)
 $startShown = ([double]$q.Start.Value('uwVel')).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture)
-Check ((Near $q.Turn.Value('uwVel') ((12.0 - 1.95) / 4.0) 0.0006) -and "$w" -like ('*πιο γρήγορα από την εκκίνηση (' + $startShown + ' m/s)*')) ('a turn faster than the start (' + $q.Turn.Value('uwVel') + '): ' + $w)
+Check ((Near $q.Turn.Value('uwVel') 1.8458 0.0006) -and $q.Turn.PastHead -and "$w" -like ('*πολύ πιο γρήγορη από την εκκίνηση (' + $startShown + ' m/s)*')) ('a turn out at 12.0 m (' + $q.Turn.Value('uwVel') + ', from ' + $q.Turn.PushAway + ' m): ' + $w)
 $race7.Relay = $true
 Check ($null -eq (Faster $q)) 'not in a relay'
 $race7.Relay = $false
