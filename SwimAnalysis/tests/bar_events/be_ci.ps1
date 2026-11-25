@@ -391,20 +391,20 @@ try {
   Bar 'TurnBreakout' $wall 8.4
   $waiting = $pending.Count
   [void]$flush.Invoke($mgr, @())
-  $a = Answer $uwKey
-  Check ($waiting -eq 1 -and $a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and [Math]::Abs($a[0].Measures['kept'] - 8.4) -lt 1e-9 -and
-    [Math]::Abs($a[0].Error - 0.4) -lt 1e-9 -and -not $a[0].Right -and $a[0].Measures['style'] -eq 1 -and $a[0].Measures['dive'] -eq 0) ('the turn in the bar over the estimate, the wheel twice: ' + $waiting + ' waiting, ' + $a.Count + ' answer, error ' + $(if ($a.Count -gt 0) { $a[0].Error } else { '-' }))
+  $ans = Answer $uwKey
+  Check ($waiting -eq 1 -and $ans.Count -eq 1 -and $ans[0].Measures['shown'] -eq 8 -and [Math]::Abs($ans[0].Measures['kept'] - 8.4) -lt 1e-9 -and
+    [Math]::Abs($ans[0].Error - 0.4) -lt 1e-9 -and -not $ans[0].Right -and $ans[0].Measures['style'] -eq 1 -and $ans[0].Measures['dive'] -eq 0) ('the turn in the bar over the estimate, the wheel twice: ' + $waiting + ' waiting, ' + $ans.Count + ' answer, error ' + $(if ($ans.Count -gt 0) { $ans[0].Error } else { '-' }))
   # Changed again later (the estimate gone): the same answer, from the same estimate.
   Bar 'TurnBreakout' $wall 9.0
   [void]$flush.Invoke($mgr, @())
-  $a = Answer $uwKey
-  Check ($a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and $a[0].Measures['kept'] -eq 9) ('changed again: the same answer from the same estimate (' + $a.Count + ')')
+  $ans = Answer $uwKey
+  Check ($ans.Count -eq 1 -and $ans[0].Measures['shown'] -eq 8 -and $ans[0].Measures['kept'] -eq 9) ('changed again: the same answer from the same estimate (' + $ans.Count + ')')
   # Taken away: the answer goes (for the other Kinovea too).
   Bar 'TurnBreakout' $wall $null
   [void]$flush.Invoke($mgr, @())
-  $a = Answer $uwKey
+  $ans = Answer $uwKey
   $forgot = @($learning.Forgotten | Where-Object { $_.Key -eq $uwKey }).Count
-  Check ($a.Count -eq 0 -and $forgot -ge 1) ('the distance taken away: its answer goes (' + $a.Count + ' left, ' + $forgot + ' forgotten)')
+  Check ($ans.Count -eq 0 -and $forgot -ge 1) ('the distance taken away: its answer goes (' + $ans.Count + ' left, ' + $forgot + ' forgotten)')
 
   # The start: a distance without an estimate says nothing; over the estimate, the breakout distance is the answer.
   $startKey = $vc + '|' + $race12 + '|race.underwater|0'
@@ -416,15 +416,15 @@ try {
   SetField $l.race 'BreakoutDist' $null; SetField $l.race 'UnderwaterDist' 11.4; $l.race.UnderwaterEstimated = $true
   Bar 'StartBreakout' 0 12.0
   [void]$flush.Invoke($mgr, @())
-  $a = Answer $startKey
-  Check ($a.Count -eq 1 -and [Math]::Abs($a[0].Measures['shown'] - 11.4) -lt 1e-9 -and $a[0].Measures['kept'] -eq 12 -and $a[0].Measures['dive'] -eq 1) ('the start in the bar over the estimate: ' + $a.Count + ' answer')
+  $ans = Answer $startKey
+  Check ($ans.Count -eq 1 -and [Math]::Abs($ans[0].Measures['shown'] - 11.4) -lt 1e-9 -and $ans[0].Measures['kept'] -eq 12 -and $ans[0].Measures['dive'] -eq 1) ('the start in the bar over the estimate: ' + $ans.Count + ' answer')
 
   # Measured (📍) over the estimate of the turn.
   SetField $turn 'UnderwaterDist' 7.0; $turn.UnderwaterEstimated = $true
   [void]$mgrType.GetMethod('StoreMeasurement', $all).Invoke($mgr, [object[]]@([Enum]::Parse((T 'SwimPickTarget'), 'TurnUnderwater'), [int]$wall, [double]7.25))
   [void]$flush.Invoke($mgr, @())
-  $a = Answer $uwKey
-  Check ($a.Count -eq 1 -and $a[0].Measures['shown'] -eq 7 -and [Math]::Abs($a[0].Measures['kept'] - 7.25) -lt 1e-9) ('measured over the estimate of the turn: ' + $a.Count + ' answer')
+  $ans = Answer $uwKey
+  Check ($ans.Count -eq 1 -and $ans[0].Measures['shown'] -eq 7 -and [Math]::Abs($ans[0].Measures['kept'] - 7.25) -lt 1e-9) ('measured over the estimate of the turn: ' + $ans.Count + ' answer')
 
   # The strokes of a segment with three automatic marks: the count of the marks and the count kept; accepted as shown, the same
   # answer, right. A segment without automatic marks, not read now: no answer; read now: one.
