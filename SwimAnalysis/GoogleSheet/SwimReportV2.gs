@@ -2,7 +2,8 @@
  * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time;
  * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way;
  * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's; 2.25.0: what the comparison
- * means in the place of the recommendations, and the conclusion of the whole race).
+ * means in the place of the recommendations, and the conclusion of the whole race; 2.26.0 (mockup): the slides of the race, the
+ * pages at the end of the video (16:9) and the posts for the social media of the federation (4:5)).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real
  * analysis of a race: the race, the personal best (a stored analysis of the athlete) and the reference (elite times). One self-contained
@@ -1800,14 +1801,14 @@ var SwimV2 = (function () {
     // (2.25.0) The conclusion of the whole race right after the phases (in the short analysis too).
     add('conclusion', (R, n, N) => pageConclusion(x, I, R, n, N));
     if (a.blocks.some(bk => ok(bk.dak))) add('dak', (R, n, N) => pageDak(x, I, n, N));
-    if (I.relay && a.legs && a.legs.some(l => ok(l.split))) P.push((R, n, N) => pageLegs(x, I, n, N));
-    if (I.D <= 100 && !I.relay) P.push((R, n, N) => pageSpeed(x, I, n, N));
-    else P.push((R, n, N) => pageComposition(x, I, n, N));
-    if (I.im && !I.relay && a.rows.some(r => ok(r.t))) P.push((R, n, N) => pageStyles(x, I, n, N));
-    if ((I.D >= 200 || I.relay) && a.blocks.length >= 2 && a.blocks.filter(bk => ok(bk.time)).length >= 2) P.push((R, n, N) => pagePace(x, I, R, n, N));
-    if (a.rows.some(r => ok(r.sr))) P.push((R, n, N) => pageStrokes(x, I, n, N));
-    P.push((R, n, N) => pageStart(x, I, n, N));
-    if ((tA.length >= 2 || (I.relay && tA.length >= 1)) && tA.some(t => ok(t.inOut))) P.push((R, n, N) => pageTurns(x, I, n, N));
+    if (I.relay && a.legs && a.legs.some(l => ok(l.split))) add('legs', (R, n, N) => pageLegs(x, I, n, N));
+    if (I.D <= 100 && !I.relay) add('speed', (R, n, N) => pageSpeed(x, I, n, N));
+    else add('composition', (R, n, N) => pageComposition(x, I, n, N));
+    if (I.im && !I.relay && a.rows.some(r => ok(r.t))) add('styles', (R, n, N) => pageStyles(x, I, n, N));
+    if ((I.D >= 200 || I.relay) && a.blocks.length >= 2 && a.blocks.filter(bk => ok(bk.time)).length >= 2) add('pace', (R, n, N) => pagePace(x, I, R, n, N));
+    if (a.rows.some(r => ok(r.sr))) add('strokes', (R, n, N) => pageStrokes(x, I, n, N));
+    add('start', (R, n, N) => pageStart(x, I, n, N));
+    if ((tA.length >= 2 || (I.relay && tA.length >= 1)) && tA.some(t => ok(t.inOut))) add('turns', (R, n, N) => pageTurns(x, I, n, N));
     return P;
   }
 
@@ -2051,9 +2052,776 @@ var SwimV2 = (function () {
     const meta = [race.competition, race.location, race.date, race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25yd' : 'Πισίνα 25μ.', race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
       .map(s => String(s || '').trim()).filter(s => s);
     return { ev, race: a, pb: other(cmp.pb), ref: other(cmp.elite),
-      details: { who: race.athlete || '', kind: gender || (race.relay ? 'Ομαδικό' : ''), competition: String(race.competition || '').trim(),
+      details: { who: race.athlete || '', kind: gender || (race.relay ? 'Ομαδικό' : ''), competition: String(race.competition || '').trim(), club: race.relay ? '' : String(race.club || '').trim(),
         round: String(race.round || '').trim(), meta, pbLabel: cmp.pb ? String(cmp.pb.label || '') : '', refLabel: cmp.elite ? String(cmp.elite.label || '') : '' } };
   }
+
+  // ---------------------------------------------------------------------------------------------------------------------------
+  // (2.26.0) Slides: the pages as a presentation, and the posts for the social media
+  // ---------------------------------------------------------------------------------------------------------------------------
+  // The pages of the report as slides (16:9, 1920 × 1080) at the end of the video of the race, 3 s each, in the order of the pages;
+  // and the posts for the social media of the federation (4:5, 1080 × 1350): the race's own numbers only (no PB, no reference, no
+  // conclusion). The same model and the same numbers as the pages. Dark, as the band of the first page; the logo of the federation and
+  // a frame of the video are put in by Kinovea when it renders them ({{LOGO}}, {{FRAME}}: the data of the two images).
+
+  /** The colours of the slides, on the dark of the band: the race, the PB, the reference; better (blue) and worse (orange). */
+  const K = {
+    race: '#47A3FF', pb: '#9AA7B8', ref: '#E9EEF5', grid: 'rgba(255,255,255,0.10)', axis: 'rgba(255,255,255,0.30)', text: '#FFFFFF',
+    soft: '#C9D6E3', dim: '#8CA0B6', gain: '#4C8DFF', loss: '#FF9A4D', dak: '#FFB08A', teal: '#5FE3C9', cyan: '#00C8FF', bg: '#0E1D33',
+    phase: { start: '#4F86E8', swim: '#F08A3E', turn: '#24B3A1', exchange: '#8DB7F2', finish: '#A07CDB' },
+    phaseName: { start: 'Εκκίνηση', swim: 'Κολύμβηση', turn: 'Στροφές', exchange: 'Αλλαγές', finish: 'Τερματισμός' }
+  };
+  const dashK = d => d === 'dash' ? '16 10' : d === 'dot' ? '2 9' : '';
+
+  /**
+   * A line chart on the dark (the slides): one y axis, the categories on x, up to three series (the race solid, the PB dashed, the
+   * reference dotted), the value of each at its end, a reference line (the mean). fs: the size of the type.
+   */
+  function slLine(o) {
+    const fs = o.fs || 24, padL = fs * 3.6, padR = o.end === false ? fs * 1.2 : fs * 4.4, padT = fs * 1.2, padB = fs * 2.3;
+    const iw = o.w - padL - padR, ih = o.h - padT - padB;
+    const vals = [];
+    o.series.forEach(s => s.values.forEach(v => { if (ok(v)) vals.push(v); }));
+    if (o.ref && ok(o.ref.value)) vals.push(o.ref.value);
+    if (!vals.length || !o.cats.length) return '';
+    const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    const pad = (mx - mn) * 0.15 || Math.abs(mx) * 0.04 || 1;
+    const tk = niceTicks(mn - pad, mx + pad, o.ticks || 4);
+    const n = o.cats.length;
+    const X = i => padL + (n === 1 ? iw / 2 : iw * i / (n - 1));
+    const Y = v => padT + ih * (1 - (v - tk.lo) / (tk.hi - tk.lo));
+    const fmt = o.fmt || (v => F(v));
+    let g = '';
+    tk.ticks.forEach(t => {
+      g += `<line x1="${padL}" x2="${(padL + iw).toFixed(1)}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="${K.grid}" stroke-width="1.5"/>` +
+        `<text x="${(padL - fs * 0.5).toFixed(1)}" y="${(Y(t) + fs * 0.33).toFixed(1)}" text-anchor="end" font-size="${(fs * 0.8).toFixed(1)}" fill="${K.dim}">${o.tick ? o.tick(t) : fmt(t)}</text>`;
+    });
+    const every = o.every || 1;
+    o.cats.forEach((c, i) => {
+      if (i !== n - 1 && (i % every !== 0 || n - 1 - i < Math.max(1, every * 0.75))) return;
+      g += `<text x="${X(i).toFixed(1)}" y="${(padT + ih + fs * 1.45).toFixed(1)}" text-anchor="middle" font-size="${(fs * 0.8).toFixed(1)}" fill="${K.dim}">${esc(c)}</text>`;
+    });
+    if (o.xTitle) g += `<text x="${(padL + iw).toFixed(1)}" y="${(padT + ih + fs * 2.25).toFixed(1)}" text-anchor="end" font-size="${(fs * 0.7).toFixed(1)}" fill="${K.dim}">${esc(o.xTitle)}</text>`;
+    if (o.ref && ok(o.ref.value)) {
+      const y = Y(o.ref.value).toFixed(1);
+      g += `<line x1="${padL}" x2="${(padL + iw).toFixed(1)}" y1="${y}" y2="${y}" stroke="${K.soft}" stroke-width="2" stroke-dasharray="10 8" opacity="0.7"/>` +
+        (o.end === false ? `<text x="${(padL + iw).toFixed(1)}" y="${(Number(y) - fs * 0.45).toFixed(1)}" text-anchor="end" font-size="${(fs * 0.75).toFixed(1)}" fill="${K.soft}">${esc(o.ref.label)} ${fmt(o.ref.value)}</text>`
+          : `<text x="${(padL + 6).toFixed(1)}" y="${(Number(y) - fs * 0.45).toFixed(1)}" font-size="${(fs * 0.75).toFixed(1)}" fill="${K.soft}">${esc(o.ref.label)} ${fmt(o.ref.value)}</text>`);
+    }
+    const ends = [];
+    o.series.forEach(s => {
+      const w = s.width || 5;
+      const pts = s.values.map((v, i) => ok(v) ? [X(i), Y(v)] : null);
+      let d = '', pen = false;
+      pts.forEach(p => { if (!p) { pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); pen = true; });
+      if (!d) return;
+      g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${w}" stroke-dasharray="${dashK(s.dash)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      if (s.dots !== false && (!o.dotsMax || n <= o.dotsMax)) pts.forEach(p => { if (p) g += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(w * 1.35).toFixed(1)}" fill="${s.color}" stroke="${K.bg}" stroke-width="3"/>`; });
+      let li = -1;
+      s.values.forEach((v, i) => { if (ok(v)) li = i; });
+      if (li >= 0 && o.end !== false) ends.push({ y: Y(s.values[li]), x: X(li), text: fmt(s.values[li]), color: s.main ? K.text : s.color, bold: !!s.main });
+    });
+    // The values at the end, apart from each other.
+    ends.sort((p, q) => p.y - q.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < fs * 1.05) ends[i].y = ends[i - 1].y + fs * 1.05;
+    ends.forEach(e => { g += `<text x="${(e.x + fs * 0.7).toFixed(1)}" y="${(e.y + fs * 0.35).toFixed(1)}" font-size="${(fs * (e.bold ? 0.95 : 0.85)).toFixed(1)}" font-weight="${e.bold ? 800 : 600}" fill="${e.color}">${e.text}</text>`; });
+    return `<svg class="slc" viewBox="0 0 ${o.w} ${o.h}" width="${o.w}" height="${o.h}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+  }
+
+  /** The legend of the slides: the race, the PB, the reference, those that are there. */
+  function slLegend(I, which) {
+    const items = [['Αυτός ο αγώνας', K.race, ''], I.has.pb && which !== 'race' ? [I.pbName, K.pb, 'dash'] : null, I.has.ref && which !== 'race' ? [I.refName, K.ref, 'dot'] : null].filter(q => q);
+    return `<div class="sl-lg">${items.map(([t, col, d]) => `<span><svg width="54" height="14"><line x1="4" x2="50" y1="7" y2="7" stroke="${col}" stroke-width="5" stroke-dasharray="${dashK(d)}" stroke-linecap="round"/></svg>${esc(t)}</span>`).join('')}</div>`;
+  }
+
+  /** A chip of the slides (as the chips of the band: blue better, orange worse). */
+  const sChip = (x, better, n, suffix) => chip(x, better, n, suffix);
+
+  /** «ΑΡ 1:48.78 +0.42 · Αναφ. 1:45.71 +3.49»: the comparisons that are there, of a value of the race. */
+  function slVs(I, va, vb, vc, better, fmt, n) {
+    const out = [];
+    if (I.has.pb && ok(vb)) out.push(`<span>${esc(I.pbShort)} ${fmt(vb)} ${sChip(va - vb, better, n)}</span>`);
+    if (I.has.ref && ok(vc)) out.push(`<span>Αναφ. ${fmt(vc)} ${sChip(va - vc, better, n)}</span>`);
+    return out.length ? `<div class="sl-vs">${out.join('')}</div>` : '';
+  }
+
+  /** The frame of a slide: the strip of colours, the event and the athlete, the logo, the title, the body, the counter. */
+  function slFrame(kind, I, title, sub, body, n, N, cls) {
+    return `<section class="sl ${kind}${cls ? ' ' + cls : ''}">
+      <div class="sl-strip"></div>
+      <div class="sl-top"><div class="sl-ev"><b>${esc(I.title)}</b>${I.kind ? ` <span class="sl-cat">${esc(I.kind)}</span>` : ''}<i>·</i>${esc(I.who)}</div><img class="sl-logo" src="{{LOGO}}" alt=""></div>
+      ${title ? `<div class="sl-hd"><h1><span class="tmark"></span>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ''}</div>` : ''}
+      <div class="sl-bd">${body}</div>
+      <div class="sl-ft"><span>${esc(footText)}</span><span class="sl-n">${n} / ${N}</span></div>
+    </section>`;
+  }
+
+  /** At most 'max' groups of the 50s (the 50s themselves when they are few): from, to, time, ΔΑΚ (mean), strokes. */
+  function slGroups(bl, max) {
+    const k = Math.max(1, Math.ceil(bl.length / max));
+    const out = [];
+    for (let i = 0; i < bl.length; i += k) {
+      const part = bl.slice(i, i + k);
+      out.push({ from: part[0].from, to: part[part.length - 1].to, time: sum(part, 'time'), dak: avg(part, 'dak'), strokes: sum(part, 'strokes'),
+        sr: avg(part, 'sr'), sl: avg(part, 'sl'), vClean: avg(part, 'vClean'), cum: part[part.length - 1].cum, n: part.length });
+    }
+    return out;
+  }
+
+  // ---- 16:9: the pages
+  function vOverview(x, I, R, n, N) {
+    const a = x.race, b = x.pb, c = x.ref;
+    const subs = [];
+    if (I.has.pb) subs.push(`<span>${esc(I.pbShort)} ${T(b.final)} ${sChip(a.final - b.final, 'lower')}</span>`);
+    if (I.has.ref) subs.push(`<span>Αναφ. ${T(c.final)} ${sChip(a.final - c.final, 'lower')}</span>`);
+    if (!subs.length && ok(a.final)) subs.push(`<span>μέση ταχύτητα ${F(I.D * a.k / a.final)} m/s</span>`);
+    const head = `<div class="ov-top"><span class="kick">ΑΝΑΛΥΣΗ ΑΓΩΝΑ · RACE ANALYSIS</span>${I.round ? `<span class="pill">${esc(upper(I.round))}</span>` : ''}</div>
+      <div class="ov-main"><div class="ov-who"><div class="ov-ev">${esc(I.title)}${I.kind ? ` <span>${esc(I.kind)}</span>` : ''}</div><div class="ov-name">${esc(I.who)}</div>
+        <div class="ov-meta">${I.meta.map(esc).join(' · ')}</div></div>
+        <div class="ov-time"><div class="lab">Τελικός χρόνος</div><div class="big">${T(a.final)}</div><div class="ov-subs">${subs.join('')}</div></div></div>`;
+    // The three cards of the first page.
+    const dak = a.avg.dak;
+    const dakCmp = [[I.pbShort, b.avg.dak], ['Αναφ.', c.avg.dak]].filter(p => ok(p[1])).map(p => `<span>${esc(p[0])} ${F(p[1])} ${sChip(dak - p[1], 'lower')}</span>`).join('');
+    const card1 = `<div class="hc2 dak"><div class="lab">ΔΑΚ · ο βασικός δείκτης</div><div class="val">${F(dak)}</div><div class="sub">${dakCmp || 'χεριές + δευτερόλεπτα ανά 10 μ.'}</div></div>`;
+    let card2;
+    if (I.has.pb) card2 = `<div class="hc2"><div class="lab">${a.final < b.final ? (I.relay ? 'Νέο ρεκόρ ομάδας' : 'Νέο ατομικό ρεκόρ') : 'Από το ' + esc(I.pbShort)}</div><div class="val">${S(a.final - b.final)}<small> s</small></div><div class="sub">${T(b.final)} → ${T(a.final)}</div></div>`;
+    else if (I.has.ref) card2 = `<div class="hc2"><div class="lab">Από την αναφορά</div><div class="val">${S(a.final - c.final)}<small> s</small></div><div class="sub">${T(c.final)} → ${T(a.final)}</div></div>`;
+    else card2 = `<div class="hc2"><div class="lab">Μέση ταχύτητα</div><div class="val">${F(I.D * a.k / a.final)}<small> m/s</small></div><div class="sub">${T(a.final)} στα ${I.D}${I.u}</div></div>`;
+    const lv = R.levels || [];
+    const weak = lv.filter(l => l.pct > 0.05).sort((p0, q0) => q0.pct - p0.pct)[0];
+    const card3 = weak
+      ? `<div class="hc2 aim"><div class="lab">Η πιο αδύνατη φάση</div><div class="val word">${esc(weak.title)} <b>${P(-weak.pct)}</b></div><div class="sub">${lv.filter(l => l !== weak).map(l => `<span>${esc(low(l.title))} ${P(-l.pct)}</span>`).join('')}</div></div>`
+      : `<div class="hc2 aim"><div class="lab">Κολύμβηση</div><div class="val">${F(a.avg.vClean)}<small> m/s</small></div><div class="sub"><span>συχνότητα ${F(a.avg.sr, 1)}</span><span>μήκος κύκλου ${F(a.avg.sl)} μ.</span></div></div>`;
+    // The race by its 50s (or its parts), with the ΔΑΚ: blue better than the race's own mean, orange worse.
+    let strip, stripLab;
+    if (a.blocks.length <= 2 && !I.relay) {
+      stripLab = 'Ο αγώνας ανά τμήμα · ο χρόνος και η ταχύτητα';
+      strip = a.rows.map(r => `<div class="st"><div class="st-l">${r.prevD}–${r.d}</div><div class="st-v">${F(r.seg)}</div><div class="st-d">${F(r.vel)} m/s</div></div>`).join('');
+    } else {
+      const gs = slGroups(a.blocks, 8), mean = avg(gs, 'dak'), im = x.ev.style === 'im';
+      stripLab = `Ο αγώνας ανά ${gs[0] && gs[0].n > 1 ? 'τμήμα' : '50άρι'} · χρόνος και ΔΑΚ${im ? '' : ' · μπλε καλύτερος, πορτοκαλί χειρότερος από τον μ.ο.'}`;
+      strip = gs.map(gp => `<div class="st${!im && ok(gp.dak) && ok(mean) ? (gp.dak < mean - 0.05 ? ' g' : gp.dak > mean + 0.05 ? ' l' : '') : ''}"><div class="st-l">${gp.from}–${gp.to}</div><div class="st-v">${T(gp.time)}</div><div class="st-d">ΔΑΚ ${F(gp.dak)}</div></div>`).join('');
+    }
+    const body = head + `<div class="hc2s">${card1}${card2}${card3}</div><div class="sl-sub2">${stripLab}</div><div class="strip">${strip}</div>`;
+    return slFrame('v', I, '', '', body, n, N, 'ov');
+  }
+
+  function vPhases(x, I, R, n, N) {
+    const lv = R.levels || [];
+    const against1 = lv.every(l => l.ref) ? 'την αναφορά' : lv.every(l => !l.ref) ? 'το ' + lv[0].name : 'τη σύγκριση';
+    const lo = 85, hi = 105, at = v => Math.max(3, Math.min(100, 100 * (v - lo) / (hi - lo)));
+    const bars = `<div class="pb2">${lv.map(l => `<div class="pb2-r"><span class="t">${esc(l.title)}</span><span class="bar"><i class="${l.pct <= 0.05 ? 'up' : ''}" style="width:${at(100 - l.pct).toFixed(1)}%"></i><b style="left:${at(100).toFixed(1)}%"></b></span><span class="v">${P(-l.pct)}${l.pct > 0.05 ? `<small>χάνει ${F(l.lost)} s</small>` : ''}</span></div>`).join('')}</div>`;
+    const map = raceMap(R.map, true, 'slm');
+    const body = bars + (map ? `<div class="sl-sub2">Πού χάνεται ο χρόνος</div><div class="mapw">${map}</div>` : '');
+    return slFrame('v', I, 'Σύγκριση ανά φάση', `Η ταχύτητα κάθε φάσης απέναντι στ${against1.slice(1)} στην ίδια απόσταση · η λευκή γραμμή: ίδια ταχύτητα`, body, n, N, 'ph');
+  }
+
+  function vConclusion(x, I, R, n, N) {
+    const a = x.race;
+    const cm = ok(x.ref.final) ? { m: x.ref, name: 'αναφορά', ref: true } : ok(x.pb.final) ? { m: x.pb, name: I.pbShort, ref: false } : null;
+    if (!cm) {
+      // Without a PB and a reference: the race against itself (the two halves, the swimming).
+      const bl = a.blocks, h = Math.floor(bl.length / 2);
+      const h1 = sum(bl.slice(0, h), 'time'), h2 = sum(bl.slice(h), 'time');
+      const tiles = [['Τα δύο μισά', ok(h1) && ok(h2) ? `${T(h1)} · ${T(h2)}` : '–', ok(h2 - h1) ? `2ο μισό ${S(h2 - h1)} s` : ''],
+        ['Κολύμβηση', `${F(a.avg.vClean)}<small> m/s</small>`, `συχνότητα ${F(a.avg.sr, 1)} · μήκος κύκλου ${F(a.avg.sl)} μ.`],
+        ['ΔΑΚ', F(a.avg.dak), 'μ.ο. 50άρι']];
+      return slFrame('v', I, 'Συμπέρασμα', 'Χωρίς ΑΡ και αναφορά: ό,τι δείχνει ο ίδιος ο αγώνας', `<div class="tl3">${tiles.map(([l, v, s]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('')}</div>`, n, N, 'cc2');
+    }
+    const parts = ['start', 'swim', 'turn', 'exchange', 'finish'].map(key => ({ key, title: K.phaseName[key], mine: a.composition[key], theirs: cm.m.composition[key] }))
+      .filter(p0 => ok(p0.mine) && p0.mine > 0);
+    parts.forEach(p0 => { p0.gap = p0.mine - p0.theirs; p0.pct = ok(p0.gap) ? 100 * p0.gap / p0.mine : NaN; });
+    const compared = parts.filter(p0 => ok(p0.gap));
+    const total = a.final - cm.m.final;
+    const behind = compared.filter(p0 => p0.gap > 0.005), behindSum = behind.reduce((s0, p0) => s0 + p0.gap, 0);
+    const share = behindSum > 0 ? `<div class="share2">${behind.map(p0 => { const pc = 100 * p0.gap / behindSum; return `<i style="width:${pc.toFixed(1)}%;background:${K.phase[p0.key]}">${pc >= 16 ? esc(p0.title) + ' ' + Math.round(pc) + '%' : pc >= 6 ? Math.round(pc) + '%' : ''}</i>`; }).join('')}</div>` : '';
+    const lines = [];
+    if (I.has.ref) lines.push(`από την αναφορά <b>${S(a.final - x.ref.final)} s</b> (${T(x.ref.final)})`);
+    if (I.has.pb) lines.push(`από ${I.relay ? 'το ρεκόρ της ομάδας' : 'το ΑΡ'} <b>${S(a.final - x.pb.final)} s</b> (${T(x.pb.final)})`);
+    const top = `<div class="cc2-top"><div class="big">${S(total)}<small> s</small></div><div class="txt"><b>${T(a.final)}</b><br>${lines.join('<br>')}</div></div>`;
+    const tiles = `<div class="parts">${parts.map(p0 => `<div class="part"><div class="lab"><i style="background:${K.phase[p0.key]}"></i>${esc(p0.title)}</div><div class="val ${ok(p0.gap) && p0.gap > 0.005 ? 'l' : 'g'}">${ok(p0.gap) ? S(p0.gap) + '<small> s</small>' : '–'}</div><div class="sub">${T(p0.mine)} · ${cm.ref ? 'αναφ.' : esc(cm.name)} ${T(p0.theirs)}</div></div>`).join('')}</div>`;
+    const topPart = compared.filter(p0 => p0.gap > 0.05).sort((p0, q0) => q0.gap - p0.gap)[0];
+    const IN = { start: 'στην εκκίνηση', swim: 'στην κολύμβηση', turn: 'στις στροφές', exchange: 'στις αλλαγές', finish: 'στον τερματισμό' };
+    const closing = topPart && total > 0.05 ? `Από τη διαφορά των ${F(total)} s, τα ${F(topPart.gap)} s (${Math.round(100 * topPart.gap / total)}%) είναι ${IN[topPart.key]}.` : '';
+    const body = top + (share ? `<div class="sl-sub2">Το μερίδιο κάθε φάσης στον χρόνο που χάνεται</div>${share}` : '') + tiles + (closing ? `<div class="closing">${closing}</div>` : '');
+    return slFrame('v', I, 'Συμπέρασμα', `Πού βρίσκεται η διαφορά από ${cm.ref ? 'την αναφορά' : 'το ' + esc(cm.name)}: εκκίνηση, κολύμβηση, στροφές, τερματισμός μαζί είναι όλος ο αγώνας`, body, n, N, 'cc2');
+  }
+
+  /** The ΔΑΚ of the 50s as bars (its two parts: the strokes and the seconds per 10 m), the means of the PB and the reference as lines. */
+  function slDakBars(x, I, w, h, fs, withCmp) {
+    const a = x.race, gs = slGroups(a.blocks, 8);
+    const parts = a.blocks.length === gs.length;
+    const vals = gs.map(gp => gp.dak).filter(ok);
+    const lines = withCmp ? [[I.pbShort, x.pb.avg.dak, K.pb, 'dash'], ['Αναφ.', x.ref.avg.dak, K.ref, 'dot']].filter(q => ok(q[1])) : [];
+    if (!vals.length) return '';
+    const top = Math.max.apply(null, vals.concat(lines.map(q => q[1])));
+    const tk = niceTicks(0, top * 1.12, 4);
+    const padL = fs * 2.4, padR = lines.length ? fs * 5.2 : fs, padT = fs * 1.6, padB = fs * 2.2, iw = w - padL - padR, ih = h - padT - padB;
+    const Y = v => padT + ih * (1 - v / tk.hi);
+    const bw = Math.min(fs * 5, iw / gs.length * 0.58), X = i => padL + iw * (i + 0.5) / gs.length;
+    let g = '';
+    tk.ticks.forEach(t => { g += `<line x1="${padL}" x2="${padL + iw}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="${K.grid}" stroke-width="1.5"/><text x="${padL - fs * 0.5}" y="${(Y(t) + fs * 0.33).toFixed(1)}" text-anchor="end" font-size="${fs * 0.8}" fill="${K.dim}">${t}</text>`; });
+    const mean = avg(gs, 'dak');
+    gs.forEach((gp, i) => {
+      if (!ok(gp.dak)) return;
+      const x0 = X(i) - bw / 2;
+      const bk = parts ? a.blocks[i] : null;
+      if (bk && ok(bk.dakStrokes) && ok(bk.dakTime)) {
+        const yS = Y(bk.dakStrokes), yT = Y(bk.dakStrokes + bk.dakTime);
+        g += `<rect x="${x0.toFixed(1)}" y="${yS.toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0) - yS).toFixed(1)}" fill="#2F6FD8"/>`;
+        g += `<rect x="${x0.toFixed(1)}" y="${yT.toFixed(1)}" width="${bw.toFixed(1)}" height="${(yS - yT - 3).toFixed(1)}" rx="6" fill="#F08A3E"/>`;
+        g += `<text x="${X(i).toFixed(1)}" y="${((yS + Y(0)) / 2 + fs * 0.3).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.75}" fill="#FFFFFF" font-weight="700">${F(bk.dakStrokes)}</text>`;
+        g += `<text x="${X(i).toFixed(1)}" y="${((yT + yS) / 2 + fs * 0.3).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.75}" fill="#0B111A" font-weight="700">${F(bk.dakTime)}</text>`;
+      } else {
+        g += `<rect x="${x0.toFixed(1)}" y="${Y(gp.dak).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0) - Y(gp.dak)).toFixed(1)}" rx="6" fill="#F08A3E"/>`;
+      }
+      const col = x.ev.style === 'im' || !ok(mean) ? K.text : gp.dak < mean - 0.05 ? '#8FC0FF' : gp.dak > mean + 0.05 ? K.dak : K.text;
+      g += `<text x="${X(i).toFixed(1)}" y="${(Y(gp.dak) - fs * 0.45).toFixed(1)}" text-anchor="middle" font-size="${fs * 1.15}" font-weight="800" fill="${col}">${F(gp.dak)}</text>`;
+      g += `<text x="${X(i).toFixed(1)}" y="${(Y(0) + fs * 1.4).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.8}" fill="${K.dim}">${gp.from}–${gp.to}</text>`;
+    });
+    const labs = lines.map(([name, v, col]) => ({ y: Y(v), name, v, col })).sort((p0, q0) => p0.y - q0.y);
+    for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < fs * 0.95) labs[i].y = labs[i - 1].y + fs * 0.95;
+    lines.forEach(([name, v, col, d]) => {
+      g += `<line x1="${padL}" x2="${padL + iw}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${col}" stroke-width="3" stroke-dasharray="${dashK(d)}" stroke-linecap="round"/>`;
+    });
+    labs.forEach(l => { g += `<text x="${padL + iw + fs * 0.4}" y="${(l.y + fs * 0.33).toFixed(1)}" font-size="${fs * 0.75}" fill="${l.col}">${esc(l.name)} ${F(l.v)}</text>`; });
+    g += `<line x1="${padL}" x2="${padL + iw}" y1="${Y(0)}" y2="${Y(0)}" stroke="${K.axis}" stroke-width="2"/>`;
+    return `<svg class="slc" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+  }
+
+  function vDak(x, I, R, n, N) {
+    const a = x.race, b = x.pb, c = x.ref, gs = slGroups(a.blocks, 8).filter(gp => ok(gp.dak));
+    const best = gs.length ? gs.reduce((p0, q0) => q0.dak < p0.dak ? q0 : p0) : null, worst = gs.length ? gs.reduce((p0, q0) => q0.dak > p0.dak ? q0 : p0) : null;
+    const left = `<div class="dk-l"><div class="lab">μ.ο. 50άρι</div><div class="dk-big">${F(a.avg.dak)}</div>${slVs(I, a.avg.dak, b.avg.dak, c.avg.dak, 'lower', v => F(v))}
+      ${best && worst && best !== worst ? `<div class="dk-bw"><div><span>καλύτερο</span><b>${F(best.dak)}</b><em>${best.from}–${best.to}${I.u}</em></div><div><span>χειρότερο</span><b>${F(worst.dak)}</b><em>${worst.from}–${worst.to}${I.u}</em></div></div>` : ''}
+      <div class="dk-key"><span><i style="background:#2F6FD8"></i>χεριές ανά 10 μ.</span><span><i style="background:#F08A3E"></i>δευτερόλεπτα ανά 10 μ.</span></div></div>`;
+    const body = `<div class="dk">${left}<div class="dk-r">${slDakBars(x, I, 1160, 640, 30, true)}</div></div>`;
+    return slFrame('v', I, 'ΔΑΚ · ο βασικός δείκτης', 'Χεριές + δευτερόλεπτα ανά 10 μ. κάθε 50άρι, από τα 15 μ. ως τον τοίχο · όσο μικρότερος, τόσο καλύτερα', body, n, N, 'dkp');
+  }
+
+  function vComposition(x, I, R, n, N) {
+    const keys = ['start', 'swim', 'turn', 'exchange', 'finish'];
+    const rows = [['Αυτός ο αγώνας', x.race], I.has.pb ? [I.pbName, x.pb] : null, I.has.ref ? [I.refName, x.ref] : null].filter(q => q && keys.some(k0 => ok(q[1].composition[k0]) && q[1].composition[k0] > 0));
+    const span = Math.max.apply(null, rows.map(([, m]) => keys.reduce((s0, k0) => s0 + (ok(m.composition[k0]) ? m.composition[k0] : 0), 0)));
+    const bars = rows.map(([name, m], i) => {
+      const segs = keys.filter(k0 => ok(m.composition[k0]) && m.composition[k0] > 0).map(k0 => {
+        const t = m.composition[k0], wpc = 100 * t / span;
+        return `<i style="width:${wpc.toFixed(2)}%;background:${K.phase[k0]}">${wpc >= 14 ? `<span>${esc(K.phaseName[k0])}</span><b>${T(t)}</b>` : wpc >= 7 ? `<b>${T(t)}</b>` : ''}</i>`;
+      }).join('');
+      return `<div class="cp-r${i === 0 ? ' main' : ''}"><div class="cp-n">${esc(name)}</div><div class="cp-b">${segs}</div><div class="cp-t">${T(m.final)}</div></div>`;
+    }).join('');
+    const legend = `<div class="cp-lg">${keys.filter(k0 => ok(x.race.composition[k0]) && x.race.composition[k0] > 0).map(k0 => `<span><i style="background:${K.phase[k0]}"></i>${esc(K.phaseName[k0])}${k0 === 'start' || k0 === 'finish' ? ' ' + T(x.race.composition[k0]) : ''}</span>`).join('')}</div>`;
+    // Where time was won and lost, phase by phase, as on the page: against the PB (the reference beside it), else the reference.
+    const pb = phaseBase(I);
+    let div = '';
+    const gs = pb ? groups(x) : [];
+    if (pb && gs.length <= 16) {
+      const items = gs.map(g0 => ({ label: g0.label, v: g0.a - g0[pb.key], o: pb.other ? g0.a - g0[pb.other] : NaN }));
+      const w = 1728, h = 300, fs = 24, top = fs * 1.5, bottom = fs * 3.1, ih = h - top - bottom;
+      const m0 = Math.max.apply(null, items.map(it => ok(it.v) ? Math.abs(it.v) : 0).concat([0.05]));
+      const zero = top + ih / 2, Yh = v => ih / 2 * Math.min(1, Math.abs(v) / m0);
+      const cw = w / items.length, bw = Math.min(fs * 3.2, cw * 0.5);
+      let g = `<line x1="0" x2="${w}" y1="${zero}" y2="${zero}" stroke="${K.axis}" stroke-width="2"/>`;
+      items.forEach((it, i) => {
+        const cx = cw * (i + 0.5);
+        if (ok(it.v)) {
+          const hh = Math.max(3, Yh(it.v)), up = it.v > 0;
+          g += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(up ? zero - hh : zero).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="5" fill="${up ? '#F08A3E' : '#4C8DFF'}"/>`;
+          g += `<text x="${cx.toFixed(1)}" y="${(up ? zero - hh - fs * 0.45 : zero + hh + fs * 1.05).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${up ? K.dak : '#8FC0FF'}">${S(it.v)}</text>`;
+        }
+        const sp = it.label.indexOf(' ');
+        const l1 = sp > 0 ? it.label.slice(0, sp) : it.label, l2 = sp > 0 ? it.label.slice(sp + 1) : '';
+        g += `<text x="${cx.toFixed(1)}" y="${(h - bottom + fs * 1.5).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.85}" font-weight="700" fill="${K.soft}">${esc(l1)}</text>`;
+        if (l2) g += `<text x="${cx.toFixed(1)}" y="${(h - bottom + fs * 2.6).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.8}" fill="${K.dim}">${esc(l2)}</text>`;
+      });
+      div = `<div class="sl-sub2">Πού κερδήθηκε και πού χάθηκε χρόνος · από ${pb.key === 'pb' ? 'το ' + esc(I.pbShort) : 'την αναφορά'} (μπλε κέρδος, πορτοκαλί απώλεια)</div>` +
+        `<svg class="slc" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+    }
+    return slFrame('v', I, 'Σύνθεση του χρόνου', `Εκκίνηση 0–15${I.u}, καθαρή κολύμβηση, στροφές −5/+15${I.u}, τερματισμός (τελευταία 5${I.u})`, bars + legend + div, n, N, 'cp');
+  }
+
+  function vSpeed(x, I, R, n, N) {
+    const a = x.race, cats = a.rows.map(r => String(r.d));
+    const s3 = [{ values: a.rows.map(r => r.vel), color: K.race, main: true }];
+    if (I.has.pb) s3.push({ values: x.pb.rows.map(r => r.vel), color: K.pb, dash: 'dash', width: 4 });
+    if (I.has.ref) s3.push({ values: x.ref.rows.map(r => r.vel), color: K.ref, dash: 'dot', width: 4 });
+    const chart = slLine({ w: 1728, h: 600, fs: 28, cats, series: s3, xTitle: 'απόσταση (' + I.uu.trim() + ')', every: cats.length > 14 ? 2 : 1 });
+    return slFrame('v', I, 'Ταχύτητα ανά τμήμα', 'Η μέση ταχύτητα κάθε τμήματος (m/s), από την εκκίνηση ως τον τερματισμό', chart + slLegend(I), n, N, 'sp');
+  }
+
+  function vPace(x, I, R, n, N) {
+    const a = x.race, b = x.pb, c = x.ref, bl = a.blocks, cats = bl.map(bk => String(bk.to));
+    const mean = avg(bl.slice(1), 'time');
+    const s3 = [{ values: bl.map(bk => bk.time), color: K.race, main: true }];
+    if (I.has.pb) s3.push({ values: b.blocks.map(bk => bk.time), color: K.pb, dash: 'dash', width: 4 });
+    if (I.has.ref) s3.push({ values: c.blocks.map(bk => bk.time), color: K.ref, dash: 'dot', width: 4 });
+    const chart = slLine({ w: 1120, h: 640, fs: 28, cats, series: s3, fmt: v => T(v), tick: v => T(v), xTitle: '50άρι (' + I.uu.trim() + ')', every: Math.max(1, Math.ceil(bl.length / 10)), dotsMax: 24,
+      ref: I.im || I.relay || !ok(mean) ? null : { value: mean, label: 'μ.ο.' } });
+    let tiles = '';
+    if (!I.im && !I.relay) {
+      const nb = bl.length, hh = Math.floor(nb / 2), h1 = sum(bl.slice(0, hh), 'time'), h2 = sum(bl.slice(hh), 'time');
+      const timed = bl.slice(1).filter(bk => ok(bk.time));
+      const sd = Math.sqrt(avg(timed, bk => (bk.time - mean) * (bk.time - mean)));
+      const fast = timed.length ? timed.reduce((p0, q0) => q0.time < p0.time ? q0 : p0) : null, slow = timed.length ? timed.reduce((p0, q0) => q0.time > p0.time ? q0 : p0) : null;
+      const rel = (h2 - h1) / (h1 + h2);
+      const type = !ok(rel) ? '–' : rel < -0.002 ? 'Αρνητικός' : rel < 0.012 ? (bl[nb - 1].time < mean - 0.3 ? 'Σταθερός, δυνατό τέλος' : 'Σταθερός') : 'Θετικός';
+      const last2 = sum(bl.slice(-2), 'time');
+      tiles = [['Ρυθμός αγώνα', type, ok(h2 - h1) ? `2ο μισό ${S(h2 - h1)} s` : ''], ['Διακύμανση 50άρι', ok(sd / mean) ? (100 * sd / mean).toFixed(1) + '<small> %</small>' : '–', `τυπική απόκλιση ${F(sd)} s`],
+        fast ? ['Πιο γρήγορο / αργό', `${T(fast.time)}<small> / </small>${T(slow.time)}`, `στα ${fast.to} και ${slow.to}${I.u}`] : null,
+        ['Τελευταίο 100άρι', T(last2) + '<small> s</small>', slVs(I, last2, sum(b.blocks.slice(-2), 'time'), sum(c.blocks.slice(-2), 'time'), 'lower', v => T(v))]]
+        .filter(q => q).map(([l, v, s]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
+    }
+    const body = `<div class="pc"><div class="pc-l">${chart}${slLegend(I)}</div><div class="pc-r">${tiles}</div></div>`;
+    return slFrame('v', I, 'Ρυθμός αγώνα', 'Ο χρόνος κάθε 50άρι' + (I.im || I.relay ? '' : ' · η διακεκομμένη: ο μέσος όρος από το 2ο 50άρι'), body, n, N, 'pcp');
+  }
+
+  /** The clean swimming of the segments (the rows with a rate): the speed, the rate and the cycle length of the race, the PB, the reference. */
+  function slSwimRows(m) { return m.rows.filter(r => ok(r.sr)); }
+
+  function vStrokes(x, I, R, n, N) {
+    const a = x.race, b = x.pb, c = x.ref;
+    const rowsA = slSwimRows(a);
+    const cats = rowsA.map(r => String(r.d));
+    const pick = (m, f) => { const by = {}; slSwimRows(m).forEach(r => { by[r.d] = f(r); }); return rowsA.map(r => ok(by[r.d]) ? by[r.d] : NaN); };
+    const panel = (title, unit, f, va, vb, vc, better, nd) => {
+      const s3 = [{ values: rowsA.map(f), color: K.race, main: true, width: 4 }];
+      if (I.has.pb) s3.push({ values: pick(b, f), color: K.pb, dash: 'dash', width: 3, dots: false });
+      if (I.has.ref) s3.push({ values: pick(c, f), color: K.ref, dash: 'dot', width: 3, dots: false });
+      return `<div class="sk"><div class="lab">${esc(title)}</div><div class="val">${F(va, nd)}<small> ${unit}</small></div>${slVs(I, va, vb, vc, better, v => F(v, nd), nd)}
+        ${slLine({ w: 540, h: 420, fs: 22, cats, series: s3, fmt: v => F(v, nd), end: false, every: Math.max(1, Math.ceil(cats.length / 6)) })}</div>`;
+    };
+    const body = `<div class="sks">${panel('Ταχύτητα κολύμβησης', 'm/s', r => r.vel, a.avg.vClean, b.avg.vClean, c.avg.vClean, 'higher', 2)}
+      ${panel('Συχνότητα', 'κύκλ./λ.', r => r.sr, a.avg.sr, b.avg.sr, c.avg.sr, 'none', 1)}
+      ${panel('Μήκος κύκλου', 'μ.', r => r.sl, a.avg.sl, b.avg.sl, c.avg.sl, 'higher', 2)}</div>` + slLegend(I);
+    return slFrame('v', I, 'Χεριές', 'Η καθαρή κολύμβηση: 15 μ. μετά τον τοίχο ως 5 μ. πριν τον επόμενο · ταχύτητα = συχνότητα × μήκος κύκλου', body, n, N, 'skp');
+  }
+
+  function slStartTrack(s, I, w, fs) {
+    const h = fs * 7.4, x0 = fs * 1.2, x1 = w - fs * 1.6, Xd = d => x0 + (x1 - x0) * d / 15, yT = fs * 3.3, th = fs * 1.5;
+    const ev = [{ d: 0, t: s.block, name: 'Βατήρας' }, ok(s.entryDist) ? { d: s.entryDist, t: s.entryT, name: 'Είσοδος' } : null,
+      ok(s.bd) ? { d: s.bd, t: s.bt, name: 'Έξοδος' } : null, { d: 15, t: s.t15, name: '15' + I.u }].filter(q => q);
+    let g = `<rect x="${x0}" y="${yT}" width="${x1 - x0}" height="${th}" rx="${th / 2}" fill="rgba(255,255,255,0.08)"/>`;
+    const names = { 'Βατήρας': 'Πτήση', 'Είσοδος': 'Υποβρύχια φάση', 'Έξοδος': 'Κολύμβηση' };
+    const cols = { 'Πτήση': '#5A8EDC', 'Υποβρύχια φάση': '#2BB3A0', 'Κολύμβηση': '#F08A3E' };
+    const vel = { 'Πτήση': s.sigEntryVel, 'Υποβρύχια φάση': s.entryBoVel, 'Κολύμβηση': s.bo15Vel };
+    for (let i = 0; i < ev.length - 1; i++) {
+      const A = ev[i], B = ev[i + 1], nm = names[A.name] || '', xa = Xd(A.d), xb = Xd(B.d);
+      g += `<rect x="${(xa + 3).toFixed(1)}" y="${yT}" width="${Math.max(2, xb - xa - 6).toFixed(1)}" height="${th}" rx="${th / 2}" fill="${cols[nm] || '#5A8EDC'}"/>`;
+      const label = nm === 'Υποβρύχια φάση' && ok(s.kicks) ? `${nm} · ${s.kicks} δελφ.` : nm;
+      if (xb - xa > fs * 4) g += `<text x="${((xa + xb) / 2).toFixed(1)}" y="${(yT + th * 0.5 + fs * 0.33).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.8}" font-weight="800" fill="#0B111A">${esc(xb - xa > fs * 9 ? label : nm.split(' ')[0])}</text>`;
+      if (ok(vel[nm])) g += `<text x="${((xa + xb) / 2).toFixed(1)}" y="${(yT + th + fs * 1.75).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.95}" font-weight="800" fill="#FFFFFF">${F(vel[nm])} <tspan font-size="${fs * 0.7}" font-weight="600" fill="${K.dim}">m/s</tspan></text>`;
+    }
+    ev.forEach((e, i) => {
+      const xx = Xd(e.d), anchor = i === 0 ? 'start' : i === ev.length - 1 ? 'end' : 'middle';
+      g += `<line x1="${xx.toFixed(1)}" x2="${xx.toFixed(1)}" y1="${yT - fs * 0.5}" y2="${yT + th + fs * 0.5}" stroke="#FFFFFF" stroke-width="3"/>`;
+      g += `<text x="${xx.toFixed(1)}" y="${(yT - fs * 1.75).toFixed(1)}" text-anchor="${anchor}" font-size="${fs * 0.8}" fill="${K.dim}" font-weight="700">${esc(upper(e.name))}</text>`;
+      g += `<text x="${xx.toFixed(1)}" y="${(yT - fs * 0.6).toFixed(1)}" text-anchor="${anchor}" font-size="${fs * 1.05}" fill="#FFFFFF" font-weight="800">${F(e.t)} s${e.d > 0 && e.d < 15 ? ` <tspan fill="${K.cyan}">· ${F(e.d)}${I.u}</tspan>` : ''}</text>`;
+    });
+    return `<svg class="slc" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+  }
+
+  function vStart(x, I, R, n, N) {
+    const a = x.race, b = x.pb, c = x.ref, s = a.start, f = a.finish;
+    const t = (lab, v, unit, vb, vc, better, nd) => `<div class="tl"><div class="lab">${lab}</div><div class="val">${F(v, nd)}<small> ${unit}</small></div>${slVs(I, v, vb, vc, better, q => F(q, nd), nd)}</div>`;
+    const startTiles = [ok(s.block) ? t('Βατήρας', s.block, 's', b.start.block, c.start.block, 'lower') : '',
+      ok(s.entryDist) ? t('Είσοδος', s.entryDist, 'μ.', b.start.entryDist, c.start.entryDist, 'higher') : '',
+      ok(s.kicks) ? `<div class="tl"><div class="lab">Δελφινισμοί</div><div class="val">${F(s.kicks, 0)}</div>${slVs(I, s.kicks, b.start.kicks, c.start.kicks, 'none', q => F(q, 0), 0)}</div>` : '',
+      ok(s.bd) ? t('Έξοδος', s.bd, 'μ.', b.start.bd, c.start.bd, 'higher') : '',
+      t('15' + I.u, s.t15, 's', b.start.t15, c.start.t15, 'lower')].join('');
+    const finTiles = [t('Τελευταία 5' + I.u, f.last5, 's', b.finish.last5, c.finish.last5, 'lower'),
+      ok(f.lastGap) ? t('Τελ. χεριά → επαφή', f.lastGap, 's', b.finish.lastGap, c.finish.lastGap, 'lower') : '',
+      ok(f.vLast5) ? t('Ταχύτητα τελ. 5' + I.u, f.vLast5, 'm/s', b.finish.vLast5, c.finish.vLast5, 'higher') : '',
+      ok(f.lastXt) ? t(`Τελευταία ${f.lastX}${I.u}`, f.lastXt, 's', b.finish.lastXt, c.finish.lastXt, 'lower') : ''].join('');
+    const body = `<div class="trk">${slStartTrack(s, I, 1728, 28)}</div><div class="tl5">${startTiles}</div><div class="sl-sub2">Τερματισμός</div><div class="tl4">${finTiles}</div>`;
+    return slFrame('v', I, 'Εκκίνηση και τερματισμός', `Από το σήμα ως τα 15${I.u}: οι χρόνοι από το σήμα, οι αποστάσεις από τον τοίχο`, body, n, N, 'stp');
+  }
+
+  function vTurns(x, I, R, n, N) {
+    const a = x.race, tA = realTurns(a), tB = realTurns(x.pb), tC = realTurns(x.ref);
+    const mean = avg(tA, 'inOut');
+    const foot = `<div class="tr-m"><span>Μέσος όρος <b>${F(mean)} s</b></span>${slVs(I, mean, avg(tB, 'inOut'), avg(tC, 'inOut'), 'lower', v => F(v))}</div>`;
+    const title = `Στροφές (${tA.length})`, sub = `Από 5${I.u} πριν ως 15${I.u} μετά τον τοίχο: η άφιξη, η στροφή και η έξοδος`;
+    if (tA.length > 3) {
+      // Many turns: each one in the race (the −5/+15), as the chart of the page, and the numbers of all of them.
+      const cats = tA.map(t => String(t.wall));
+      const s3 = [{ values: tA.map(t => t.inOut), color: K.race, main: true }];
+      if (I.has.pb) s3.push({ values: tA.map((t, i) => tB[i] ? tB[i].inOut : NaN), color: K.pb, dash: 'dash', width: 4, dots: false });
+      if (I.has.ref) s3.push({ values: tA.map((t, i) => tC[i] ? tC[i].inOut : NaN), color: K.ref, dash: 'dot', width: 4, dots: false });
+      const chart = slLine({ w: 1180, h: 560, fs: 26, cats, series: s3, xTitle: 'τοίχος (' + I.uu.trim() + ')', every: Math.max(1, Math.ceil(cats.length / 10)), ticks: 4, dotsMax: 24 });
+      const timed = tA.filter(t => ok(t.inOut));
+      const best = timed.length ? timed.reduce((p0, q0) => q0.inOut < p0.inOut ? q0 : p0) : null, worst = timed.length ? timed.reduce((p0, q0) => q0.inOut > p0.inOut ? q0 : p0) : null;
+      const tiles = [['Μέσος όρος', `${F(mean)}<small> s</small>`, slVs(I, mean, avg(tB, 'inOut'), avg(tC, 'inOut'), 'lower', v => F(v))],
+        best ? ['Η καλύτερη', `${F(best.inOut)}<small> s</small>`, `στα ${best.wall}${I.u}`] : null, worst ? ['Η πιο αργή', `${F(worst.inOut)}<small> s</small>`, `στα ${worst.wall}${I.u}`] : null,
+        ['Έξοδος · δελφινισμοί', `${F(avg(tA, 'bd'))}<small>${I.u}</small> · ${F(avg(tA, 'kicks'), 1)}`, 'μέσοι όροι']].filter(q => q)
+        .map(([l, v, s0]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s0}</div></div>`).join('');
+      return slFrame('v', I, title, sub, `<div class="pc"><div class="pc-l">${chart}${slLegend(I)}</div><div class="pc-r">${tiles}</div></div>`, n, N, 'pcp');
+    }
+    const max = Math.max.apply(null, tA.map(t => ok(t.in5) && ok(t.out15) ? t.in5 + t.out15 : ok(t.inOut) ? t.inOut : 0).concat([1]));
+    const row = (t, i) => {
+      const cmp = slVs(I, t.inOut, tB[i] ? tB[i].inOut : NaN, tC[i] ? tC[i].inOut : NaN, 'lower', v => F(v));
+      const w5 = ok(t.in5) ? 100 * t.in5 / max : 0, w15 = ok(t.out15) ? 100 * t.out15 / max : 0;
+      return `<div class="tr"><div class="tr-w">${t.wall}<small>${I.u}</small></div>
+        <div class="tr-b"><i class="in" style="width:${w5.toFixed(1)}%">${F(t.in5)}</i><i class="out" style="width:${w15.toFixed(1)}%">${F(t.out15)}</i></div>
+        <div class="tr-t"><div>${F(t.inOut)}<small> s</small></div>${cmp}</div>
+        <div class="tr-x"><span>${ok(t.bd) ? F(t.bd) + '<small>' + I.u + '</small>' : '–'}</span><span>${ok(t.kicks) ? F(t.kicks, 0) : '–'}</span><span>${ok(t.uw) ? F(t.uw) + '<small> s</small>' : '–'}</span></div></div>`;
+    };
+    const head = `<div class="tr h"><div>τοίχος</div><div class="tr-hb"><span><i class="in"></i>−5 → τοίχος</span><span><i class="out"></i>τοίχος → +15</span></div><div>−5 / +15</div><div class="tr-x"><span>έξοδος</span><span>δελφ.</span><span>υποβρύχια</span></div></div>`;
+    return slFrame('v', I, title, sub, `<div class="trs${tA.length > 3 ? ' c4' : ''}">${head}${tA.map(row).join('')}</div>` + foot, n, N, 'trp');
+  }
+
+  function vSplits(x, I, R, n, N) {
+    const a = x.race, D = I.D, step = D <= 400 ? 50 : D <= 800 ? 100 : 200;
+    const rows = [];
+    for (let s0 = 0; s0 < D; s0 += step) {
+      const e = Math.min(D, s0 + step), split = tOf(a, e) - tOf(a, s0);
+      const halves = step === 50 ? [tOf(a, s0 + 25) - tOf(a, s0), tOf(a, e) - tOf(a, s0 + 25)] : [];
+      const bls = a.blocks.filter(bk => bk.from >= s0 - 1e-9 && bk.to <= e + 1e-9);
+      rows.push({ s0, e, cum: tOf(a, e), split, halves, v: split > 0 ? (e - s0) * a.k / split : NaN, strokes: sum(bls, 'strokes'), dak: avg(bls, 'dak'),
+        pb: tOf(x.pb, e) - tOf(x.pb, s0), ref: tOf(x.ref, e) - tOf(x.ref, s0) });
+    }
+    const size = rows.length <= 4 ? ' xl' : rows.length <= 6 ? '' : ' sm';
+    const tbl = `<table class="spl${size}"><thead><tr><th>${step}άρι</th><th>Χρόνος</th><th>Ενδιάμεσος</th>${step === 50 ? '<th>25 + 25</th>' : ''}<th>m/s</th><th>Χεριές</th><th>ΔΑΚ</th>${I.has.pb ? `<th>Δ ${esc(I.pbShort)}</th>` : ''}${I.has.ref ? '<th>Δ Αναφ.</th>' : ''}</tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${r.s0}–${r.e}</td><td class="c">${T(r.cum)}</td><td class="b">${T(r.split)}</td>${step === 50 ? `<td>${r.halves.every(ok) ? `${F(r.halves[0])} + ${F(r.halves[1])}` : '–'}</td>` : ''}<td>${F(r.v)}</td><td>${ok(r.strokes) ? F(r.strokes, 0) : '–'}</td><td>${F(r.dak)}</td>${I.has.pb ? `<td>${sChip(r.split - r.pb, 'lower') || '–'}</td>` : ''}${I.has.ref ? `<td>${sChip(r.split - r.ref, 'lower') || '–'}</td>` : ''}</tr>`).join('')}
+      </tbody></table>`;
+    return slFrame('v', I, 'Περάσματα', `Ο χρόνος, ο ενδιάμεσος και η ταχύτητα ανά ${step}${I.u}`, tbl, n, N, 'spp');
+  }
+
+  function vLegs(x, I, R, n, N) {
+    const a = x.race, legs = a.legs || [];
+    const cl = I.has.ref && x.ref.legs ? x.ref.legs : I.has.pb && x.pb.legs ? x.pb.legs : null;
+    const cname = I.has.ref ? 'Αναφ.' : esc(I.pbShort);
+    const tiles = legs.map((l, i) => `<div class="tl"><div class="lab">Σκέλος ${i + 1} · ${esc(STYLE_NAME[l.style] || '')}</div>${(I.swimmers || [])[i] ? `<div class="who">${esc(I.swimmers[i])}</div>` : ''}
+      <div class="val">${T(l.split)}</div>${cl && ok(cl[i].split) ? `<div class="sub">${cname} ${T(cl[i].split)} ${sChip(l.split - cl[i].split, 'lower')}</div>` : ''}
+      <div class="more"><span><em>${i > 0 ? 'αλλαγή' : 'βατήρας'}</em>${i > 0 ? (ok(l.ex) ? F(l.ex) + ' s' : '–') : (ok(l.reaction) ? F(l.reaction) + ' s' : '–')}</span><span><em>ΔΑΚ</em>${F(l.dak)}</span><span><em>κολύμβηση</em>${F(l.vClean)} m/s</span></div></div>`).join('');
+    return slFrame('v', I, 'Τα σκέλη', 'Ο χρόνος κάθε σκέλους, η αλλαγή, ο ΔΑΚ και η ταχύτητα της κολύμβησης', `<div class="tl4 fill">${tiles}</div>`, n, N, 'lgp');
+  }
+
+  function vStyles(x, I, R, n, N) {
+    const a = x.race, step = I.D / 4;
+    const tiles = [0, 1, 2, 3].map(i => {
+      const s0 = i * step, e = s0 + step, t = m => tOf(m, e) - tOf(m, s0);
+      const bl = a.blocks.filter(bk => bk.from >= s0 - 1e-9 && bk.to <= e + 1e-9);
+      return `<div class="tl"><div class="lab">${esc(STYLE_NAME[IM_ORDER[i]])} · ${s0}–${e}${I.u}</div><div class="val">${T(t(a))}</div>${slVs(I, t(a), t(x.pb), t(x.ref), 'lower', v => T(v))}
+        <div class="more"><span><em>ΔΑΚ</em>${F(avg(bl, 'dak'))}</span><span><em>συχνότητα</em>${F(avg(bl, 'sr'), 1)}</span><span><em>μήκος κύκλου</em>${F(avg(bl, 'sl'))} μ.</span></div></div>`;
+    }).join('');
+    return slFrame('v', I, 'Ανά στυλ', 'Ο χρόνος, ο ΔΑΚ, η συχνότητα και το μήκος κύκλου κάθε στυλ της μικτής', `<div class="tl4 fill">${tiles}</div>`, n, N, 'lgp');
+  }
+
+  // ---- 4:5: the posts (the race's own numbers only)
+  function sCover(x, I, n, N) {
+    const a = x.race, d = x.details || {};
+    const where = [d.competition, (d.meta || []).find(m0 => /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(m0)) || ''].filter(q => q).map(esc).join(' · ');
+    return `<section class="sl s cover">
+      <div class="sl-strip"></div>
+      <div class="cv-top"><img class="cv-logo" src="{{LOGO}}" alt=""><div class="cv-kick">ΑΝΑΛΥΣΗ ΑΓΩΝΑ<br><span>RACE ANALYSIS</span></div></div>
+      <div class="cv-frame"><div class="cv-img"></div>${I.round ? `<span class="pill">${esc(upper(I.round))}${(d.meta || []).find(m0 => /^Διαδρομή/.test(m0)) ? ' · ' + esc(upper((d.meta || []).find(m0 => /^Διαδρομή/.test(m0)))) : ''}</span>` : ''}</div>
+      <div class="cv-ev">${esc(I.title)}${I.kind ? ` <span>${esc(I.kind)}</span>` : ''}</div>
+      <div class="cv-name">${esc(I.who)}</div>
+      ${d.club ? `<div class="cv-club">${esc(d.club)}</div>` : ''}
+      <div class="cv-time"><div class="lab">Τελικός χρόνος</div><div class="big">${T(a.final)}</div></div>
+      <div class="cv-where">${where}</div>
+      <div class="sl-ft"><span>${esc(footText)}</span><span class="sl-n">${n} / ${N}</span></div>
+    </section>`;
+  }
+
+  function sSplits(x, I, n, N) {
+    // The shortest step with at most 4 (to 100) or 6 parts, all of them timed: 25, 50, 100, … (the 25s of a 50 beside it).
+    const a = x.race, D = I.D, want = D <= 100 ? 4 : 6;
+    const timedAt = st => { for (let d = st; d <= D + 1e-9; d += st) if (!ok(tOf(a, d))) return false; return true; };
+    const step = [25, 50, 75, 100, 150, 200, 250, 275, 300, 400, 500].find(st => D % st === 0 && D / st <= want && timedAt(st)) || D;
+    const rows = [];
+    for (let s0 = 0; s0 < D; s0 += step) {
+      const e = Math.min(D, s0 + step), split = tOf(a, e) - tOf(a, s0);
+      const halves = step === 50 && ok(tOf(a, s0 + 25)) ? [tOf(a, s0 + 25) - tOf(a, s0), tOf(a, e) - tOf(a, s0 + 25)] : [];
+      rows.push({ s0, e, split, cum: tOf(a, e), halves, v: split > 0 ? (e - s0) * a.k / split : NaN });
+    }
+    const vs = rows.map(r => r.v).filter(ok), vmax = Math.max.apply(null, vs), vmin = Math.min.apply(null, vs);
+    const list = rows;
+    const big = list.length <= 4 ? ' big' : list.length <= 5 ? '' : ' sm';
+    const body = `<div class="ss${big}">${list.map(r => `<div class="ss-r"><div class="ss-d">${r.e}<small>${I.u}</small></div>
+      <div class="ss-m"><div class="ss-v">${T(r.split)}${r.halves.length && r.halves.every(ok) ? `<em>${F(r.halves[0])} + ${F(r.halves[1])}</em>` : ''}</div>
+        <div class="ss-bar"><span class="tr0"><i style="width:${ok(r.v) ? (35 + 65 * (r.v - vmin) / Math.max(1e-9, vmax - vmin)).toFixed(1) : 0}%"></i></span><span class="vv">${F(r.v)} <small>m/s</small></span></div></div>
+      <div class="ss-c"><small>σύνολο</small>${T(r.cum)}</div></div>`).join('')}</div>`;
+    return slFrame('s', I, 'Περάσματα', `Ο ενδιάμεσος κάθε ${step}${I.u}${rows.some(r => r.halves.length) ? ' (τα δύο 25άρια)' : ''}, η ταχύτητά του και ο χρόνος ως εκεί`, body, n, N, 'ssp');
+  }
+
+  function sSpeed(x, I, n, N) {
+    const a = x.race;
+    // The swimming of the race, after the start (its dive would flatten the rest of the chart): the start in its own tile.
+    const rows = a.rows.filter(r => r.prevD >= 15 - 1e-9 || I.D <= 15);
+    const cats = rows.map(r => String(r.d));
+    const mean = I.D * a.k / a.final;
+    const chart = slLine({ w: 936, h: 640, fs: 26, cats, series: [{ values: rows.map(r => r.vel), color: K.race, main: true, width: 5 }], ref: { value: mean, label: 'μέση' },
+      xTitle: 'απόσταση (' + I.uu.trim() + ')', every: Math.max(1, Math.ceil(cats.length / 7)), end: false });
+    const s15 = a.rows.find(r => r.prevD === 0);
+    const tiles = [['Μέση ταχύτητα', `${F(mean)}<small> m/s</small>`, `${I.D}${I.u} σε ${T(a.final)}`], ['Κολύμβηση', `${F(a.avg.vClean)}<small> m/s</small>`, 'χωρίς εκκίνηση, στροφές, τερματισμό'],
+      s15 && ok(s15.vel) ? ['Εκκίνηση', `${F(s15.vel)}<small> m/s</small>`, `0–${s15.d}${I.u} σε ${F(s15.seg)} s`] : null].filter(q => q)
+      .map(([l, val, s0]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${val}</div><div class="sub">${s0}</div></div>`).join('');
+    return slFrame('s', I, 'Ταχύτητα', `Η ταχύτητα κάθε τμήματος (m/s) μετά την εκκίνηση· οι κορυφές: η ώθηση από κάθε τοίχο`, `<div class="chw">${chart}</div><div class="tl3">${tiles}</div>`, n, N, 'spd');
+  }
+
+  function sStart(x, I, n, N) {
+    const s = x.race.start;
+    const t = (lab, v, unit, nd, sub) => ok(v) ? `<div class="tl"><div class="lab">${lab}</div><div class="val">${F(v, nd)}<small> ${unit}</small></div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>` : '';
+    const tiles = [t('Βατήρας', s.block, 's', 2, 'από το σήμα ως τα πόδια'), t('Είσοδος', s.entryDist, 'μ.', 2, ok(s.entryT) ? `στα ${F(s.entryT)} s` : ''), t('Δελφινισμοί', s.kicks, '', 0, 'υποβρύχια'),
+      t('Έξοδος', s.bd, 'μ.', 2, ok(s.bt) ? `στα ${F(s.bt)} s` : ''), t('15' + I.u, s.t15, 's', 2, 'από το σήμα'), t('Έξοδος → 15' + I.u, s.bo15Vel, 'm/s', 2, 'ταχύτητα')].join('');
+    return slFrame('s', I, 'Εκκίνηση', `Από το σήμα ως τα 15${I.u}`, `<div class="trk">${slStartTrack(s, I, 936, 24)}</div><div class="tl6">${tiles}</div>`, n, N, 'sst');
+  }
+
+  function sTurns(x, I, n, N) {
+    const tA = realTurns(x.race);
+    const mean = avg(tA, 'inOut');
+    if (tA.length > 4) {
+      const cats = tA.map(t => String(t.wall));
+      const chart = slLine({ w: 936, h: 620, fs: 26, cats, series: [{ values: tA.map(t => t.inOut), color: K.race, main: true, width: 5 }], ref: { value: mean, label: 'μ.ο.' },
+        xTitle: 'τοίχος (' + I.uu.trim() + ')', every: Math.max(1, Math.ceil(cats.length / 7)), end: false, dotsMax: 24 });
+      const timed = tA.filter(t => ok(t.inOut));
+      const best = timed.length ? timed.reduce((p0, q0) => q0.inOut < p0.inOut ? q0 : p0) : null;
+      const tiles = [['Μέσος όρος', `${F(mean)}<small> s</small>`, `${tA.length} στροφές`], best ? ['Η καλύτερη', `${F(best.inOut)}<small> s</small>`, `στα ${best.wall}${I.u}`] : null,
+        ['Έξοδος', `${F(avg(tA, 'bd'))}<small>${I.u}</small>`, `${F(avg(tA, 'kicks'), 1)} δελφινισμοί`]].filter(q => q)
+        .map(([l, v, s0]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s0}</div></div>`).join('');
+      return slFrame('s', I, 'Στροφές', `Ο χρόνος από 5${I.u} πριν ως 15${I.u} μετά από κάθε τοίχο`, `<div class="chw">${chart}</div><div class="tl3">${tiles}</div>`, n, N, 'spd');
+    }
+    const body = `<div class="stn${tA.length <= 3 ? ' big' : ''}">${tA.map((t, i) => `<div class="stn-r"><div class="stn-h"><span>Στροφή ${i + 1}</span><em>${t.wall}${I.u}</em></div>
+      <div class="stn-v">${F(t.inOut)}<small> s</small><em>−5 → +15${I.u}</em></div>
+      <div class="stn-x"><span><b>${ok(t.bd) ? F(t.bd) : '–'}</b><small>${I.u}</small> έξοδος</span><span><b>${ok(t.kicks) ? F(t.kicks, 0) : '–'}</b> δελφινισμοί</span><span><b>${ok(t.uw) ? F(t.uw) : '–'}</b><small> s</small> υποβρύχια</span></div></div>`).join('')}</div>
+      <div class="stn-m">Μέσος όρος <b>${F(mean)} s</b></div>`;
+    return slFrame('s', I, 'Στροφές', `Από 5${I.u} πριν ως 15${I.u} μετά τον τοίχο`, body, n, N, 'stt');
+  }
+
+  function sStrokes(x, I, n, N) {
+    const a = x.race, gs = slGroups(a.blocks, 8);
+    const cols = [['Χεριές', gp => ok(gp.strokes) ? F(gp.strokes, 0) : '–'], ['Συχνότητα', gp => F(gp.sr, 1)], ['Μήκος κύκλου', gp => F(gp.sl)]];
+    const tbl = `<div class="sstw"><table class="sst2"><thead><tr><th>${gs.length && gs[0].n > 1 ? 'τμήμα' : '50άρι'}</th>${cols.map(([h0]) => `<th>${h0}</th>`).join('')}</tr></thead><tbody>
+      ${gs.map(gp => `<tr><td class="l">${gp.from}–${gp.to}</td>${cols.map(([, f]) => `<td>${f(gp)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    const tiles = [['Συχνότητα', `${F(a.avg.sr, 1)}<small> κύκλ./λ.</small>`], ['Μήκος κύκλου', `${F(a.avg.sl)}<small> μ.</small>`], ['Ταχύτητα', `${F(a.avg.vClean)}<small> m/s</small>`]]
+      .map(([l, v]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">μ.ο. καθαρής κολύμβησης</div></div>`).join('');
+    return slFrame('s', I, 'Χεριές', 'Συχνότητα (κύκλοι το λεπτό) και μήκος κύκλου (μέτρα ανά κύκλο χεριών): ταχύτητα = συχνότητα × μήκος κύκλου', `<div class="tl3">${tiles}</div>` + tbl, n, N, 'ssk');
+  }
+
+  function sDak(x, I, n, N) {
+    const a = x.race;
+    const body = `<div class="sdk"><div><div class="lab">ΔΑΚ · μ.ο. 50άρι</div><div class="dk-big">${F(a.avg.dak)}</div></div><div class="dk-key"><span><i style="background:#2F6FD8"></i>χεριές ανά 10 μ.</span><span><i style="background:#F08A3E"></i>δευτερόλεπτα ανά 10 μ.</span></div></div>
+      <div class="chw">${slDakBars(x, I, 936, 640, 28, false)}</div>`;
+    return slFrame('s', I, 'ΔΑΚ', 'Ο δείκτης της ΚΟΕ: χεριές + δευτερόλεπτα ανά 10 μ. κάθε 50άρι · όσο μικρότερος, τόσο πιο αποδοτική η κολύμβηση', body, n, N, 'sdkp');
+  }
+
+  /**
+   * The slides of a report (x as for document): { html, video: n, social: n } — the sections of the 16:9 slides (class "v") and of the
+   * 4:5 posts (class "s"), each its own size, one under the other; Kinovea renders each section as a picture. opts.short: the slides of
+   * the pages of the short analysis.
+   */
+  function slides(x, opts) {
+    opts = opts || {};
+    const I = info(x);
+    footText = 'Kinovea Swim · Ανάλυση αγώνα' + (I.competition ? ' · ' + I.competition : '');
+    const R = recommendations(x);
+    let kinds = plan(x, I, R).map(f => f.kind);
+    if (opts.short) kinds = kinds.filter(k0 => SHORT_PAGES.indexOf(k0) >= 0);
+    else kinds.push('splits');
+    const V = { overview: vOverview, phases: vPhases, conclusion: vConclusion, dak: vDak, legs: vLegs, speed: vSpeed, composition: vComposition,
+      styles: vStyles, pace: vPace, strokes: vStrokes, start: vStart, turns: vTurns, splits: vSplits };
+    kinds = kinds.filter(k0 => V[k0] && (k0 !== 'phases' || (R.levels || []).length));
+    const video = kinds.map((k0, i) => V[k0](x, I, R, i + 1, kinds.length));
+    // The posts: the race's own numbers.
+    const a = x.race;
+    const S0 = [sCover, sSplits, a.rows.some(r => ok(r.vel)) ? sSpeed : null, sStart, realTurns(a).length ? sTurns : null,
+      a.rows.some(r => ok(r.sr)) ? sStrokes : null, a.blocks.some(bk => ok(bk.dak)) && !I.im ? sDak : null].filter(f => f);
+    const social = S0.map((f, i) => f(x, I, i + 1, S0.length));
+    const title = [I.title, I.who, I.competition].filter(s0 => s0).join(' · ');
+    return { html: `<!doctype html><html lang="el"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${SLIDE_CSS}</style></head><body>${video.join('\n')}\n${social.join('\n')}</body></html>`,
+      video: video.length, social: social.length, kinds };
+  }
+
+  const SLIDE_CSS = `
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #05090F; }
+  body { font-family: 'Inter', 'DejaVu Sans', sans-serif; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'cv11' 1; -webkit-print-color-adjust: exact; }
+  img[src^="{{"] { visibility: hidden; }
+  .sl { position: relative; overflow: hidden; color: #fff; display: flex; flex-direction: column;
+    background: radial-gradient(1300px 820px at 92% -12%, rgba(16, 82, 148, 0.85), rgba(16, 82, 148, 0) 72%), radial-gradient(900px 600px at -10% 110%, rgba(0, 200, 255, 0.10), rgba(0, 200, 255, 0) 70%), linear-gradient(165deg, #0B1626 0%, #0D2342 52%, #0A1322 100%); }
+  .sl::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, rgba(255,255,255,0.018) 0 2px, transparent 2px 160px); }
+  .sl > * { position: relative; z-index: 1; }
+  .sl.v { width: 1920px; height: 1080px; padding: 58px 96px 44px; }
+  .sl.s { width: 1080px; height: 1350px; padding: 60px 72px 46px; }
+  .sl-strip { position: absolute !important; left: 0; right: 0; top: 0; height: 10px; background: linear-gradient(90deg, #00C8FF, #2E6BD6 60%, #E65100); }
+  .sl-top { display: flex; justify-content: space-between; align-items: center; min-height: 72px; }
+  .sl-ev { font-size: 27px; color: #C9D6E3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 30px; }
+  .sl-ev b { color: #fff; font-weight: 800; } .sl-ev .sl-cat { color: #8CA0B6; } .sl-ev i { font-style: normal; color: #5E7088; margin: 0 14px; }
+  .sl-logo { height: 76px; width: auto; flex: 0 0 auto; }
+  .sl.s .sl-logo { height: 64px; } .sl.s .sl-ev { font-size: 25px; }
+  .sl-hd { margin: 22px 0 26px; }
+  .sl-hd h1 { margin: 0; font-family: 'Inter Display', 'Inter', sans-serif; font-weight: 800; font-size: 66px; letter-spacing: -0.015em; line-height: 1.05; display: flex; align-items: center; gap: 22px; }
+  .sl.s .sl-hd h1 { font-size: 64px; }
+  .tmark { position: relative; display: inline-block; width: 46px; height: 12px; background: #00C8FF; border-radius: 3px; flex: 0 0 auto; }
+  .tmark::after { content: ''; position: absolute; right: -4px; top: -16px; width: 12px; height: 44px; background: #00C8FF; border-radius: 3px; }
+  .sl-hd p { margin: 12px 0 0; font-size: 27px; color: #A9BACB; line-height: 1.35; max-width: 1500px; }
+  .sl.s .sl-hd p { font-size: 26px; }
+  .sl-bd { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .sl-ft { display: flex; justify-content: space-between; font-size: 21px; color: #6F8299; border-top: 1px solid rgba(255,255,255,0.10); padding-top: 14px; margin-top: 18px; }
+  .sl-n { font-weight: 800; color: #C9D6E3; letter-spacing: 0.06em; }
+  .sl-sub2 { font-size: 24px; letter-spacing: 0.1em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; margin: 26px 0 12px; }
+  .sl .chip { display: inline-block; font-size: 22px; font-weight: 800; padding: 3px 12px; border-radius: 16px; line-height: 1.3; white-space: nowrap; vertical-align: 2px; }
+  .sl .chip.g { background: #1C55B8; color: #fff; } .sl .chip.l { background: #E57B22; color: #0B111A; } .sl .chip.n { background: rgba(255,255,255,0.14); color: #C9D6E3; }
+  .sl-vs { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 23px; color: #C9D6E3; margin-top: 10px; } .sl-vs span { white-space: nowrap; }
+  .sl-lg { display: flex; gap: 40px; justify-content: center; font-size: 23px; color: #C9D6E3; margin-top: 8px; } .sl-lg span { display: inline-flex; align-items: center; gap: 10px; }
+  .slc { display: block; overflow: visible; } .slc text { font-family: 'Inter', 'DejaVu Sans', sans-serif; }
+  .pill { font-size: 22px; letter-spacing: 0.1em; color: #0B111A; background: #00C8FF; padding: 6px 16px; border-radius: 6px; font-weight: 800; }
+  /* tiles */
+  .tl { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 20px; padding: 22px 26px 20px; min-width: 0; }
+  .tl .lab { font-size: 22px; letter-spacing: 0.08em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 62px; font-weight: 800; line-height: 1.08; margin-top: 6px; white-space: nowrap; }
+  .tl .val small { font-family: 'Inter', sans-serif; font-size: 26px; font-weight: 600; color: #A9BACB; }
+  .tl .sub { font-size: 22px; color: #A9BACB; margin-top: 6px; }
+  .tl3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; } .tl4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+  .tl5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; } .tl6 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .tl4.fill { flex: 1 1 auto; } .tl4.fill .tl { display: flex; flex-direction: column; justify-content: center; padding: 30px 30px; }
+  .tl4.fill .tl .val { font-size: 84px; margin: 14px 0 6px; } .tl4.fill .who { font-size: 28px; font-weight: 700; margin-top: 10px; }
+  .tl4.fill .more { display: grid; gap: 14px; margin-top: 34px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.12); }
+  .tl4.fill .more span { display: flex; justify-content: space-between; font-size: 30px; font-weight: 800; } .tl4.fill .more em { font-style: normal; font-size: 22px; color: #8CA0B6; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  /* overview */
+  .ov .sl-top { position: absolute; right: 96px; top: 50px; }
+  .ov .sl-top .sl-ev { display: none; }
+  .ov-top { display: flex; align-items: center; gap: 22px; min-height: 72px; }
+  .kick { font-size: 24px; letter-spacing: 0.18em; color: #8CA0B6; font-weight: 700; }
+  .ov-main { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; margin: 34px 0 34px; }
+  .ov-who { min-width: 0; flex: 1 1 auto; }
+  .ov-ev { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 80px; font-weight: 800; letter-spacing: -0.015em; line-height: 1.02; white-space: nowrap; } .ov-ev span { font-size: 40px; color: #8CA0B6; font-weight: 600; }
+  .ov-name { font-size: 50px; font-weight: 700; margin-top: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-meta { font-size: 25px; color: #A9BACB; margin-top: 12px; line-height: 1.35; max-height: 68px; overflow: hidden; }
+  .ov-time { text-align: right; flex: 0 0 auto; } .ov-time .lab { font-size: 24px; letter-spacing: 0.14em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; }
+  .ov-time .big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 196px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.95; margin: 6px 0 14px; }
+  .ov-subs { display: flex; gap: 26px; justify-content: flex-end; font-size: 26px; color: #C9D6E3; } .ov-subs span { white-space: nowrap; }
+  .hc2s { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .hc2 { border-radius: 22px; padding: 22px 28px 20px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-top: 6px solid #4C8DFF; min-width: 0; }
+  .hc2.dak { border-top-color: #FF9A4D; background: linear-gradient(160deg, rgba(255,154,77,0.16), rgba(255,154,77,0.04)); } .hc2.aim { border-top-color: #5FE3C9; background: linear-gradient(160deg, rgba(95,227,201,0.14), rgba(95,227,201,0.03)); }
+  .hc2 .lab { font-size: 22px; letter-spacing: 0.1em; text-transform: uppercase; color: #A9BACB; font-weight: 800; }
+  .hc2 .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 76px; font-weight: 800; line-height: 1.05; margin: 6px 0 6px; white-space: nowrap; }
+  .hc2.dak .val { color: #FFB08A; } .hc2 .val small { font-size: 32px; color: #A9BACB; font-weight: 700; }
+  .hc2 .val.word { font-size: 52px; margin: 16px 0 14px; } .hc2 .val.word b { color: #FFB08A; font-size: 0.82em; }
+  .hc2 .sub { font-size: 23px; color: #C9D6E3; display: flex; flex-wrap: wrap; gap: 4px 20px; } .hc2 .sub span { white-space: nowrap; }
+  .strip { display: flex; gap: 14px; margin-top: 26px; }
+  .st { flex: 1 1 0; min-width: 0; border-radius: 16px; padding: 14px 18px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-bottom: 5px solid rgba(255,255,255,0.25); }
+  .st.g { border-bottom-color: #4C8DFF; } .st.l { border-bottom-color: #FF9A4D; }
+  .st-l { font-size: 21px; color: #8CA0B6; font-weight: 700; } .st-v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 44px; font-weight: 800; margin: 2px 0; } .st-d { font-size: 21px; color: #C9D6E3; }
+  .st.g .st-d { color: #8FC0FF; } .st.l .st-d { color: #FFB08A; }
+  /* phases */
+  .pb2 { display: grid; gap: 26px; margin-top: 6px; }
+  .pb2-r { display: grid; grid-template-columns: 330px 1fr 330px; gap: 34px; align-items: center; }
+  .pb2-r .t { font-size: 40px; font-weight: 800; }
+  .pb2-r .bar { position: relative; height: 34px; background: rgba(255,255,255,0.08); border-radius: 17px; }
+  .pb2-r .bar i { display: block; height: 100%; border-radius: 17px; background: linear-gradient(90deg, #E07A2E, #F5A35C); } .pb2-r .bar i.up { background: linear-gradient(90deg, #2BB3A0, #5FE3C9); }
+  .pb2-r .bar b { position: absolute; top: -10px; bottom: -10px; width: 4px; background: #fff; border-radius: 2px; }
+  .pb2-r .v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 50px; font-weight: 800; text-align: right; white-space: nowrap; } .pb2-r .v small { display: block; font-family: 'Inter', sans-serif; font-size: 23px; color: #A9BACB; font-weight: 700; }
+  .mapw .rmap { width: 100%; height: auto; }
+  /* conclusion */
+  .cc2-top { display: flex; align-items: center; gap: 46px; }
+  .cc2-top .big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 150px; font-weight: 800; color: #FFB08A; line-height: 1; white-space: nowrap; } .cc2-top .big small { font-size: 50px; color: #DCE6F0; }
+  .cc2-top .txt { font-size: 30px; color: #C9D6E3; line-height: 1.5; } .cc2-top .txt b { color: #fff; }
+  .share2 { display: flex; height: 70px; border-radius: 14px; overflow: hidden; }
+  .share2 i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 26px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; border-right: 4px solid #0D2342; }
+  .share2 i:last-child { border-right: 0; }
+  .parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 20px; margin-top: 28px; }
+  .part { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 18px; padding: 18px 22px; min-width: 0; }
+  .part .lab { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; } .part .lab i { width: 18px; height: 18px; border-radius: 5px; }
+  .part .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 56px; font-weight: 800; margin: 4px 0; } .part .val.l { color: #FFB08A; } .part .val.g { color: #8FC0FF; } .part .val small { font-size: 26px; color: #A9BACB; }
+  .part .sub { font-size: 21px; color: #A9BACB; }
+  .closing { margin-top: 26px; font-size: 34px; font-weight: 800; color: #fff; border-left: 8px solid #00C8FF; padding: 6px 0 6px 24px; }
+  /* ΔΑΚ */
+  .dk { display: flex; gap: 60px; align-items: stretch; }
+  .dk-l { flex: 0 0 470px; display: flex; flex-direction: column; } .dk-l .lab, .sdk .lab { font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; }
+  .dk-big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 170px; font-weight: 800; color: #FFB08A; line-height: 1; margin: 8px 0 6px; }
+  .dk-bw { display: grid; gap: 14px; margin-top: 34px; } .dk-bw div { display: flex; align-items: baseline; gap: 16px; font-size: 24px; color: #A9BACB; } .dk-bw b { font-size: 40px; color: #fff; } .dk-bw em { font-style: normal; }
+  .dk-bw span { width: 150px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; font-size: 21px; }
+  .dk-key { display: flex; gap: 30px; font-size: 22px; color: #C9D6E3; margin-top: auto; flex-wrap: wrap; } .dk-key span { display: inline-flex; align-items: center; gap: 10px; } .dk-key i { width: 22px; height: 22px; border-radius: 6px; }
+  .sl.s .dk-key { justify-content: center; margin-top: 18px; }
+  /* composition */
+  .cp-r { display: grid; grid-template-columns: 330px 1fr 190px; gap: 30px; align-items: center; margin-bottom: 20px; }
+  .cp-n { font-size: 30px; font-weight: 700; color: #C9D6E3; } .cp-r.main .cp-n { color: #fff; font-weight: 800; }
+  .cp-b { display: flex; height: 100px; border-radius: 16px; overflow: hidden; } .cp-r:not(.main) .cp-b { height: 62px; }
+  .cp-b i { display: flex; flex-direction: column; justify-content: center; padding: 0 14px; font-style: normal; color: #fff; white-space: nowrap; overflow: hidden; border-right: 4px solid #0D2342; }
+  .cp-b i:last-child { border-right: 0; } .cp-b i span { font-size: 22px; font-weight: 700; } .cp-b i b { font-size: 32px; font-weight: 800; }
+  .cp-r:not(.main) .cp-b i span { display: none; } .cp-r:not(.main) .cp-b i b { font-size: 26px; }
+  .cp-t { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 50px; font-weight: 800; text-align: right; }
+  .cp-lg { display: flex; gap: 34px; font-size: 24px; color: #C9D6E3; margin: 4px 0 6px 360px; } .cp-lg span { display: inline-flex; align-items: center; gap: 10px; } .cp-lg i { width: 22px; height: 22px; border-radius: 6px; }
+  .cp-d { display: flex; gap: 36px; align-items: center; margin-top: 46px; font-size: 28px; color: #C9D6E3; flex-wrap: wrap; } .cp-d div { display: flex; gap: 12px; align-items: center; } .cp-d em { font-style: normal; color: #8CA0B6; font-size: 23px; }
+  /* pace */
+  .pc { display: flex; gap: 50px; } .pc-l { flex: 0 0 1120px; } .pc-r { flex: 1 1 auto; display: grid; gap: 18px; align-content: start; }
+  .pc-r .tl { padding: 14px 22px 14px; } .pc-r .tl .val { font-size: 46px; } .pc-r .tl .sl-vs { font-size: 21px; margin-top: 4px; } .pc-r .tl .sub { font-size: 21px; }
+  /* strokes */
+  .sks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+  .sk { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 20px; padding: 20px 22px 6px; }
+  .sk .lab { font-size: 22px; letter-spacing: 0.1em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; }
+  .sk .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 66px; font-weight: 800; line-height: 1.1; } .sk .val small { font-family: 'Inter', sans-serif; font-size: 26px; color: #A9BACB; font-weight: 600; }
+  .sk .sl-vs { font-size: 21px; margin: 4px 0 6px; min-height: 34px; } .sk .slc { width: 100%; height: auto; }
+  /* start */
+  .trk { margin: 0 0 16px; }
+  .stp .tl .val { font-size: 50px; } .stp .tl5 .tl, .stp .tl4 .tl { padding: 14px 22px 12px; } .stp .sl-sub2 { margin: 18px 0 10px; } .stp .sl-hd { margin: 16px 0 14px; }
+  .stp .tl .sl-vs { font-size: 20px; gap: 2px 14px; }
+  /* turns */
+  .trs { display: grid; align-content: start; }
+  .tr { display: grid; grid-template-columns: 170px 1fr 450px 430px; gap: 34px; align-items: center; padding: 22px 0; border-bottom: 1px solid rgba(255,255,255,0.10); }
+  .tr.h { padding: 0 0 12px; font-size: 21px; color: #8CA0B6; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
+  .tr-hb { display: flex; gap: 34px; } .tr-hb span { display: inline-flex; align-items: center; gap: 10px; } .tr-hb i { width: 24px; height: 16px; border-radius: 4px; }
+  .tr-hb i.in { background: #5A8EDC; } .tr-hb i.out { background: #24B3A1; }
+  .tr-w { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 54px; font-weight: 800; } .tr-w small { font-size: 24px; color: #A9BACB; margin-left: 4px; }
+  .tr-b { display: flex; height: 64px; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.05); }
+  .tr-b i { display: flex; align-items: center; justify-content: center; font-style: normal; font-weight: 800; font-size: 28px; }
+  .tr-b i.in { background: #5A8EDC; color: #0B111A; } .tr-b i.out { background: #24B3A1; color: #0B111A; border-left: 4px solid #0D2342; }
+  .tr-t > div { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 62px; font-weight: 800; line-height: 1; white-space: nowrap; } .tr-t small { font-size: 26px; color: #A9BACB; }
+  .tr-t .sl-vs { font-size: 21px; margin-top: 8px; gap: 2px 18px; }
+  .tr-x { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; font-size: 40px; font-weight: 800; text-align: right; } .tr-x small { font-size: 22px; color: #A9BACB; font-weight: 600; }
+  .tr.h .tr-x { font-size: 21px; font-weight: 800; }
+  .trs.c4 .tr { padding: 12px 0; } .trs.c4 .tr-t > div { font-size: 52px; } .trs.c4 .tr-b { height: 54px; } .trs.c4 .tr-t .sl-vs { margin-top: 4px; }
+  .tr-m { margin-top: 24px; font-size: 30px; display: flex; align-items: center; gap: 34px; color: #C9D6E3; } .tr-m b { color: #fff; } .tr-m .sl-vs { margin: 0; } .tr-m em { font-style: normal; font-size: 22px; color: #8CA0B6; }
+  /* splits */
+  .spl { width: 100%; border-collapse: collapse; }
+  .spl th { font-size: 22px; letter-spacing: 0.08em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; text-align: right; padding: 0 18px 14px; border-bottom: 2px solid rgba(255,255,255,0.2); }
+  .spl th:first-child { text-align: left; }
+  .spl td { font-size: 34px; text-align: right; padding: 16px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #C9D6E3; white-space: nowrap; }
+  .spl td.l { text-align: left; color: #8CA0B6; font-weight: 700; } .spl td.c { color: #fff; font-weight: 700; } .spl td.b { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 46px; font-weight: 800; color: #fff; }
+  .spl.sm td { font-size: 26px; padding: 9px 14px; } .spl.sm td.b { font-size: 32px; }
+  .spl.xl td { font-size: 40px; padding: 28px 18px; } .spl.xl td.b { font-size: 62px; } .spl.xl th { font-size: 23px; }
+  /* the posts */
+  .cover { padding: 56px 64px 46px; }
+  .cv-top { display: flex; justify-content: space-between; align-items: center; } .cv-logo { height: 118px; width: auto; }
+  .cv-kick { text-align: right; font-size: 24px; letter-spacing: 0.2em; font-weight: 800; color: #fff; line-height: 1.4; } .cv-kick span { color: #00C8FF; }
+  .cv-frame { position: relative; height: 500px; margin: 36px 0 30px; border-radius: 30px; overflow: hidden; border: 1px solid rgba(255,255,255,0.14); }
+  .cv-img { position: absolute; inset: 0; background: url({{FRAME}}) center / cover no-repeat, repeating-linear-gradient(0deg, #0F3B6E 0 92px, #0C335F 92px 100px); }
+  .cv-frame::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,19,34,0) 55%, rgba(10,19,34,0.85) 100%); }
+  .cv-frame .pill { position: absolute; left: 26px; bottom: 24px; z-index: 2; }
+  .cv-ev { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 60px; font-weight: 800; letter-spacing: -0.01em; } .cv-ev span { font-size: 36px; color: #8CA0B6; font-weight: 600; }
+  .cv-name { font-size: 66px; font-weight: 800; margin-top: 8px; line-height: 1.05; }
+  .cv-club { font-size: 32px; color: #A9BACB; margin-top: 6px; }
+  .cv-time { margin-top: auto; } .cv-time .lab { font-size: 24px; letter-spacing: 0.16em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; }
+  .cv-time .big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 176px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.95; }
+  .cv-where { font-size: 27px; color: #C9D6E3; margin-top: 10px; }
+  .ss { flex: 1 1 auto; display: grid; grid-auto-rows: 1fr; gap: 18px; }
+  .ss-r { display: grid; grid-template-columns: 170px 1fr 210px; gap: 26px; align-items: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 22px; padding: 14px 28px; }
+  .ss-d { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 58px; font-weight: 800; } .ss-d small { font-size: 24px; color: #A9BACB; margin-left: 3px; }
+  .ss-v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 66px; font-weight: 800; line-height: 1; display: flex; align-items: baseline; gap: 20px; white-space: nowrap; }
+  .ss-v em { font-family: 'Inter', sans-serif; font-style: normal; font-size: 24px; color: #A9BACB; font-weight: 600; }
+  .ss-bar { display: flex; align-items: center; gap: 18px; margin-top: 16px; }
+  .ss-bar .tr0 { flex: 1 1 auto; height: 14px; background: rgba(255,255,255,0.08); border-radius: 7px; overflow: hidden; } .ss-bar .tr0 i { display: block; height: 100%; border-radius: 7px; background: linear-gradient(90deg, #2E6BD6, #00C8FF); }
+  .ss-bar .vv { font-size: 26px; font-weight: 800; white-space: nowrap; } .ss-bar .vv small { font-size: 20px; color: #A9BACB; font-weight: 600; }
+  .ss-c { text-align: right; font-family: 'Inter Display', 'Inter', sans-serif; font-size: 40px; font-weight: 800; white-space: nowrap; } .ss-c small { display: block; font-family: 'Inter', sans-serif; font-size: 18px; color: #8CA0B6; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 800; margin-bottom: 4px; }
+  .ss.big .ss-d { font-size: 70px; } .ss.big .ss-v { font-size: 92px; } .ss.big .ss-c { font-size: 44px; }
+  .ss.sm { gap: 12px; } .ss.sm .ss-r { padding: 8px 26px; } .ss.sm .ss-d { font-size: 44px; } .ss.sm .ss-v { font-size: 50px; } .ss.sm .ss-bar { margin-top: 6px; } .ss.sm .ss-c { font-size: 32px; }
+  .chw { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  .spd .tl3, .ssk .tl3 { gap: 16px; } .sl.s .tl { padding: 18px 20px 16px; } .sl.s .tl .val { font-size: 50px; } .sl.s .tl .lab { font-size: 20px; } .sl.s .tl .sub { font-size: 20px; }
+  .sst .trk { margin: 6px 0 26px; } .tl6 { flex: 1 1 auto; grid-auto-rows: 1fr; } .tl6 .tl { display: flex; flex-direction: column; justify-content: center; } .sl.s .tl6 .tl .val { font-size: 74px; }
+  .stn { flex: 1 1 auto; display: grid; grid-auto-rows: 1fr; gap: 20px; }
+  .stn-r { display: grid; grid-template-columns: 250px 1fr; grid-template-rows: auto auto; align-content: center; gap: 12px 26px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 22px; padding: 20px 30px; }
+  .stn-h { grid-row: 1 / 3; display: flex; flex-direction: column; justify-content: center; } .stn-h span { font-size: 34px; font-weight: 800; } .stn-h em { font-style: normal; font-size: 28px; color: #8CA0B6; margin-top: 4px; }
+  .stn-v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 72px; font-weight: 800; line-height: 1; display: flex; align-items: baseline; gap: 18px; } .stn-v small { font-size: 30px; color: #A9BACB; } .stn-v em { font-family: 'Inter', sans-serif; font-style: normal; font-size: 22px; color: #8CA0B6; font-weight: 700; }
+  .stn.big .stn-v { font-size: 96px; }
+  .stn-x { display: flex; gap: 30px; font-size: 22px; color: #A9BACB; } .stn-x b { font-size: 36px; color: #fff; } .stn-x small { font-size: 22px; color: #A9BACB; }
+  .stn-m { font-size: 30px; color: #C9D6E3; margin-top: 18px; } .stn-m b { color: #fff; }
+  .sstw { flex: 1 1 auto; display: flex; margin-top: 26px; } .sst2 { width: 100%; height: 100%; border-collapse: collapse; }
+  .sst2 th { font-size: 21px; letter-spacing: 0.08em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; text-align: right; padding: 0 14px 12px; border-bottom: 2px solid rgba(255,255,255,0.2); height: 40px; } .sst2 th:first-child { text-align: left; }
+  .sst2 td { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 52px; font-weight: 800; text-align: right; padding: 8px 14px; border-bottom: 1px solid rgba(255,255,255,0.08); } .sst2 td.l { font-family: 'Inter', sans-serif; text-align: left; font-size: 30px; color: #8CA0B6; font-weight: 700; }
+  .sdk { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 6px; } .sdk .dk-big { font-size: 140px; } .sdk .dk-key { flex-direction: column; gap: 10px; margin: 0 0 20px; }
+  `;
 
   const CSS = `
   @page { size: A4; margin: 0; }
@@ -2204,5 +2972,5 @@ var SwimV2 = (function () {
   .nt0 { font-size: 10.6px; color: ${C.dim}; padding: 8px 4px; }
   `;
 
-  return { document, fromScript, analyse, recommendations, blank, aligned, num, ok };
+  return { document, slides, fromScript, analyse, recommendations, blank, aligned, num, ok };
 })();
