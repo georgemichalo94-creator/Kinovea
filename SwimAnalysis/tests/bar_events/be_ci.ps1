@@ -252,6 +252,8 @@ public static class BeWheel
     }
 }
 '@
+# (2.38.3) A field that can be empty (double?) set by reflection: PowerShell 5.1 does not assign one from a [Nullable[double]] value.
+function SetField($obj, $name, $value) { $b = $obj.psobject.BaseObject; $b.GetType().GetField($name).SetValue($b, $value) }
 $form = $null
 try {
   $mgrType = T 'SwimAnalysisManager'
@@ -323,7 +325,7 @@ try {
 
   # (2.38.3) As if the distance there was the estimate from the times (≈), with a video open: the end of the edit is also an answer
   # for the learning, kept once the distance has settled.
-  $estTurn = $l.race.GetTurn($wall, $true); $estTurn.UnderwaterDist = [System.Nullable[double]]8.0; $estTurn.UnderwaterEstimated = $true
+  $estTurn = $l.race.GetTurn($wall, $true); SetField $estTurn 'UnderwaterDist' 8.0; $estTurn.UnderwaterEstimated = $true
   $mgrType.GetField('videoPath', $all).SetValue($mgr, 'C:\ci\race_ci_values.mp4')
 
   # The value into the race at the end of the edit.
@@ -382,17 +384,17 @@ try {
 
   # The turn in the bar, over the estimate, two steps of the wheel: one answer once settled, with the last distance.
   $wall = [int]$l.race.Pool
-  $turn = $l.race.GetTurn($wall, $true); $turn.UnderwaterDist = [System.Nullable[double]]8.0; $turn.UnderwaterEstimated = $true
+  $turn = $l.race.GetTurn($wall, $true); SetField $turn 'UnderwaterDist' 8.0; $turn.UnderwaterEstimated = $true
   $uwKey = $vc + '|' + $race12 + '|race.underwater|' + $wall
-  Bar 'TurnBreakout' $wall ([System.Nullable[double]]8.3)
-  Bar 'TurnBreakout' $wall ([System.Nullable[double]]8.4)
+  Bar 'TurnBreakout' $wall 8.3
+  Bar 'TurnBreakout' $wall 8.4
   $waiting = $pending.Count
   [void]$flush.Invoke($mgr, @())
   $a = Answer $uwKey
   Check ($waiting -eq 1 -and $a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and [Math]::Abs($a[0].Measures['kept'] - 8.4) -lt 1e-9 -and
     [Math]::Abs($a[0].Error - 0.4) -lt 1e-9 -and -not $a[0].Right -and $a[0].Measures['style'] -eq 1 -and $a[0].Measures['dive'] -eq 0) ('the turn in the bar over the estimate, the wheel twice: ' + $waiting + ' waiting, ' + $a.Count + ' answer, error ' + $(if ($a.Count -gt 0) { $a[0].Error } else { '-' }))
   # Changed again later (the estimate gone): the same answer, from the same estimate.
-  Bar 'TurnBreakout' $wall ([System.Nullable[double]]9.0)
+  Bar 'TurnBreakout' $wall 9.0
   [void]$flush.Invoke($mgr, @())
   $a = Answer $uwKey
   Check ($a.Count -eq 1 -and $a[0].Measures['shown'] -eq 8 -and $a[0].Measures['kept'] -eq 9) ('changed again: the same answer from the same estimate (' + $a.Count + ')')
@@ -405,19 +407,19 @@ try {
 
   # The start: a distance without an estimate says nothing; over the estimate, the breakout distance is the answer.
   $startKey = $vc + '|' + $race12 + '|race.underwater|0'
-  $l.race.UnderwaterDist = $null; $l.race.UnderwaterEstimated = $false; $l.race.BreakoutDist = $null
-  Bar 'StartBreakout' 0 ([System.Nullable[double]]11.0)
+  SetField $l.race 'UnderwaterDist' $null; $l.race.UnderwaterEstimated = $false; SetField $l.race 'BreakoutDist' $null
+  Bar 'StartBreakout' 0 11.0
   $none = $pending.Count
   [void]$flush.Invoke($mgr, @())
   Check ($none -eq 0 -and (Answer $startKey).Count -eq 0) ('a distance of the start without an estimate: no answer (' + $none + ' waiting)')
-  $l.race.BreakoutDist = $null; $l.race.UnderwaterDist = [System.Nullable[double]]11.4; $l.race.UnderwaterEstimated = $true
-  Bar 'StartBreakout' 0 ([System.Nullable[double]]12.0)
+  SetField $l.race 'BreakoutDist' $null; SetField $l.race 'UnderwaterDist' 11.4; $l.race.UnderwaterEstimated = $true
+  Bar 'StartBreakout' 0 12.0
   [void]$flush.Invoke($mgr, @())
   $a = Answer $startKey
   Check ($a.Count -eq 1 -and [Math]::Abs($a[0].Measures['shown'] - 11.4) -lt 1e-9 -and $a[0].Measures['kept'] -eq 12 -and $a[0].Measures['dive'] -eq 1) ('the start in the bar over the estimate: ' + $a.Count + ' answer')
 
   # Measured (📍) over the estimate of the turn.
-  $turn.UnderwaterDist = [System.Nullable[double]]7.0; $turn.UnderwaterEstimated = $true
+  SetField $turn 'UnderwaterDist' 7.0; $turn.UnderwaterEstimated = $true
   [void]$mgrType.GetMethod('StoreMeasurement', $all).Invoke($mgr, [object[]]@([Enum]::Parse((T 'SwimPickTarget'), 'TurnUnderwater'), [int]$wall, [double]7.25))
   [void]$flush.Invoke($mgr, @())
   $a = Answer $uwKey
