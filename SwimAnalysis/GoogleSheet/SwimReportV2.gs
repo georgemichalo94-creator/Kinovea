@@ -972,8 +972,10 @@ var SwimV2 = (function () {
   }
 
   /** (2.23.0) The colour of the heat of the map: 0 (little time there) teal → 1 (the most) orange-red. */
-  function heatColor(v) {
-    const st = [[0, [31, 111, 120]], [0.4, [43, 179, 160]], [0.7, [245, 163, 92]], [1, [255, 90, 54]]];
+  function heatColor(v, cool) {
+    // (2.26.0) cool: the blues of the slides (the analyst: blue, not pink), from the dark blue (little time there) to the light.
+    const st = cool ? [[0, [24, 66, 128]], [0.4, [46, 107, 214]], [0.7, [0, 170, 240]], [1, [150, 228, 255]]]
+      : [[0, [31, 111, 120]], [0.4, [43, 179, 160]], [0.7, [245, 163, 92]], [1, [255, 90, 54]]];
     const x0 = Math.max(0, Math.min(1, v));
     let k = 1;
     while (k < st.length - 1 && x0 > st[k][0]) k++;
@@ -985,8 +987,9 @@ var SwimV2 = (function () {
    * (2.23.0) «Πού κρύβεται ο χρόνος»: the race on its course (start → finish, every wall), each part lit by the time the phases lose
    * there against the reference (or the PB, 2.24.0: the whole of it), in seconds per metre (the most: the brightest, with a glow).
    * 'big': the map of page 2 (dark, the distances and the seconds of the hottest spots); otherwise a strip. Nothing without a zone.
+   * cool (2.26.0): in the blues of the slides.
    */
-  function raceMap(m, big, id) {
+  function raceMap(m, big, id, cool) {
     if (!m || !m.zones || !m.zones.length || !(m.D > 0)) return '';
     const W = big ? 640 : 220, x0 = big ? 14 : 1, lw = W - 2 * x0, H = big ? 64 : 14, ly = big ? 22 : 2, lh = big ? 18 : 10;
     const X = v => x0 + lw * v / m.D;
@@ -1004,7 +1007,7 @@ var SwimV2 = (function () {
       if (bins[i] > 0) segs.push({ from: i, to: Math.min(j, m.D), v: bins[i] / max });
       i = j;
     }
-    const rect = (s, dy, o) => `<rect x="${X(s.from).toFixed(1)}" y="${(ly - dy).toFixed(1)}" width="${Math.max(0.8, X(s.to) - X(s.from)).toFixed(1)}" height="${(lh + 2 * dy).toFixed(1)}" fill="${heatColor(s.v)}" ${o}/>`;
+    const rect = (s, dy, o) => `<rect x="${X(s.from).toFixed(1)}" y="${(ly - dy).toFixed(1)}" width="${Math.max(0.8, X(s.to) - X(s.from)).toFixed(1)}" height="${(lh + 2 * dy).toFixed(1)}" fill="${heatColor(s.v, cool)}" ${o}/>`;
     let g = `<defs><filter id="${id}g" x="-50%" y="-200%" width="200%" height="500%"><feGaussianBlur stdDeviation="${big ? 3.5 : 1.6}"/></filter>` +
       `<clipPath id="${id}c"><rect x="${x0}" y="${ly}" width="${lw}" height="${lh}" rx="${lh / 2}"/></clipPath></defs>`;
     g += `<rect x="${x0}" y="${ly}" width="${lw}" height="${lh}" rx="${lh / 2}" fill="${big ? '#1B2B42' : '#E3E9F0'}"/>`;
@@ -1036,8 +1039,8 @@ var SwimV2 = (function () {
       });
       g += placed.map(s => {
         const x = Math.max(x0 + 24, Math.min(X(m.D) - 24, s.x));
-        return `<line x1="${s.x.toFixed(1)}" x2="${s.x.toFixed(1)}" y1="${ly - 6}" y2="${ly - 1}" stroke="${heatColor(s.v)}" stroke-width="1.5"/>` +
-          `<text x="${x.toFixed(1)}" y="${ly - 9}" text-anchor="middle" font-size="11" font-weight="800" fill="${s.v > 0.6 ? '#FFB08A' : '#E6F4F1'}" font-family="Inter, sans-serif">${S(-s.lost)} s</text>`;
+        return `<line x1="${s.x.toFixed(1)}" x2="${s.x.toFixed(1)}" y1="${ly - 6}" y2="${ly - 1}" stroke="${heatColor(s.v, cool)}" stroke-width="1.5"/>` +
+          `<text x="${x.toFixed(1)}" y="${ly - 9}" text-anchor="middle" font-size="11" font-weight="800" fill="${s.v > 0.6 ? (cool ? '#FFFFFF' : '#FFB08A') : (cool ? '#A9D8F5' : '#E6F4F1')}" font-family="Inter, sans-serif">${S(-s.lost)} s</text>`;
       }).join('');
     }
     return `<svg class="rmap${big ? ' big' : ''}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
@@ -2067,7 +2070,7 @@ var SwimV2 = (function () {
   /** The colours of the slides, on the dark of the band: the race, the PB, the reference; better (blue) and worse (orange). */
   const K = {
     race: '#47A3FF', pb: '#9AA7B8', ref: '#E9EEF5', grid: 'rgba(255,255,255,0.10)', axis: 'rgba(255,255,255,0.30)', text: '#FFFFFF',
-    soft: '#C9D6E3', dim: '#8CA0B6', gain: '#4C8DFF', loss: '#FF9A4D', dak: '#FFB08A', teal: '#5FE3C9', cyan: '#00C8FF', bg: '#0E1D33',
+    soft: '#C9D6E3', dim: '#8CA0B6', gain: '#4C8DFF', loss: '#FF9A4D', accent: '#5CC8FF', teal: '#5FE3C9', cyan: '#00C8FF', bg: '#0E1D33',
     phase: { start: '#4F86E8', swim: '#F08A3E', turn: '#24B3A1', exchange: '#8DB7F2', finish: '#A07CDB' },
     phaseName: { start: 'Εκκίνηση', swim: 'Κολύμβηση', turn: 'Στροφές', exchange: 'Αλλαγές', finish: 'Τερματισμός' }
   };
@@ -2211,7 +2214,7 @@ var SwimV2 = (function () {
     const against1 = lv.every(l => l.ref) ? 'την αναφορά' : lv.every(l => !l.ref) ? 'το ' + lv[0].name : 'τη σύγκριση';
     const lo = 85, hi = 105, at = v => Math.max(3, Math.min(100, 100 * (v - lo) / (hi - lo)));
     const bars = `<div class="pb2">${lv.map(l => `<div class="pb2-r"><span class="t">${esc(l.title)}</span><span class="bar"><i class="${l.pct <= 0.05 ? 'up' : ''}" style="width:${at(100 - l.pct).toFixed(1)}%"></i><b style="left:${at(100).toFixed(1)}%"></b></span><span class="v">${P(-l.pct)}${l.pct > 0.05 ? `<small>χάνει ${F(l.lost)} s</small>` : ''}</span></div>`).join('')}</div>`;
-    const map = raceMap(R.map, true, 'slm');
+    const map = raceMap(R.map, true, 'slm', true);
     const body = bars + (map ? `<div class="sl-sub2">Πού χάνεται ο χρόνος</div><div class="mapw">${map}</div>` : '');
     return slFrame('v', I, 'Σύγκριση ανά φάση', `Η ταχύτητα κάθε φάσης απέναντι στ${against1.slice(1)} στην ίδια απόσταση · η λευκή γραμμή: ίδια ταχύτητα`, body, n, N, 'ph');
   }
@@ -2275,7 +2278,7 @@ var SwimV2 = (function () {
       } else {
         g += `<rect x="${x0.toFixed(1)}" y="${Y(gp.dak).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0) - Y(gp.dak)).toFixed(1)}" rx="6" fill="#F08A3E"/>`;
       }
-      const col = x.ev.style === 'im' || !ok(mean) ? K.text : gp.dak < mean - 0.05 ? '#8FC0FF' : gp.dak > mean + 0.05 ? K.dak : K.text;
+      const col = x.ev.style === 'im' || !ok(mean) ? K.text : gp.dak < mean - 0.05 ? K.accent : gp.dak > mean + 0.05 ? K.loss : K.text;
       g += `<text x="${X(i).toFixed(1)}" y="${(Y(gp.dak) - fs * 0.45).toFixed(1)}" text-anchor="middle" font-size="${fs * 1.15}" font-weight="800" fill="${col}">${F(gp.dak)}</text>`;
       g += `<text x="${X(i).toFixed(1)}" y="${(Y(0) + fs * 1.4).toFixed(1)}" text-anchor="middle" font-size="${fs * 0.8}" fill="${K.dim}">${gp.from}–${gp.to}</text>`;
     });
@@ -2327,7 +2330,7 @@ var SwimV2 = (function () {
         if (ok(it.v)) {
           const hh = Math.max(3, Yh(it.v)), up = it.v > 0;
           g += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(up ? zero - hh : zero).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="5" fill="${up ? '#F08A3E' : '#4C8DFF'}"/>`;
-          g += `<text x="${cx.toFixed(1)}" y="${(up ? zero - hh - fs * 0.45 : zero + hh + fs * 1.05).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${up ? K.dak : '#8FC0FF'}">${S(it.v)}</text>`;
+          g += `<text x="${cx.toFixed(1)}" y="${(up ? zero - hh - fs * 0.45 : zero + hh + fs * 1.05).toFixed(1)}" text-anchor="middle" font-size="${fs}" font-weight="800" fill="${up ? K.loss : K.accent}">${S(it.v)}</text>`;
         }
         const sp = it.label.indexOf(' ');
         const l1 = sp > 0 ? it.label.slice(0, sp) : it.label, l2 = sp > 0 ? it.label.slice(sp + 1) : '';
@@ -2694,17 +2697,17 @@ var SwimV2 = (function () {
   .ov-subs { display: flex; gap: 26px; justify-content: flex-end; font-size: 26px; color: #C9D6E3; } .ov-subs span { white-space: nowrap; }
   .hc2s { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
   .hc2 { border-radius: 22px; padding: 22px 28px 20px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-top: 6px solid #4C8DFF; min-width: 0; }
-  .hc2.dak { border-top-color: #FF9A4D; background: linear-gradient(160deg, rgba(255,154,77,0.16), rgba(255,154,77,0.04)); } .hc2.aim { border-top-color: #5FE3C9; background: linear-gradient(160deg, rgba(95,227,201,0.14), rgba(95,227,201,0.03)); }
+  .hc2.dak { border-top-color: #00C8FF; background: linear-gradient(160deg, rgba(0,200,255,0.18), rgba(0,200,255,0.04)); } .hc2.aim { border-top-color: #5FE3C9; background: linear-gradient(160deg, rgba(95,227,201,0.14), rgba(95,227,201,0.03)); }
   .hc2 .lab { font-size: 22px; letter-spacing: 0.1em; text-transform: uppercase; color: #A9BACB; font-weight: 800; }
   .hc2 .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 76px; font-weight: 800; line-height: 1.05; margin: 6px 0 6px; white-space: nowrap; }
-  .hc2.dak .val { color: #FFB08A; } .hc2 .val small { font-size: 32px; color: #A9BACB; font-weight: 700; }
-  .hc2 .val.word { font-size: 52px; margin: 16px 0 14px; } .hc2 .val.word b { color: #FFB08A; font-size: 0.82em; }
+  .hc2.dak .val { color: #5CC8FF; } .hc2 .val small { font-size: 32px; color: #A9BACB; font-weight: 700; }
+  .hc2 .val.word { font-size: 52px; margin: 16px 0 14px; } .hc2 .val.word b { color: #5CC8FF; font-size: 0.82em; }
   .hc2 .sub { font-size: 23px; color: #C9D6E3; display: flex; flex-wrap: wrap; gap: 4px 20px; } .hc2 .sub span { white-space: nowrap; }
   .strip { display: flex; gap: 14px; margin-top: 26px; }
   .st { flex: 1 1 0; min-width: 0; border-radius: 16px; padding: 14px 18px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-bottom: 5px solid rgba(255,255,255,0.25); }
   .st.g { border-bottom-color: #4C8DFF; } .st.l { border-bottom-color: #FF9A4D; }
   .st-l { font-size: 21px; color: #8CA0B6; font-weight: 700; } .st-v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 44px; font-weight: 800; margin: 2px 0; } .st-d { font-size: 21px; color: #C9D6E3; }
-  .st.g .st-d { color: #8FC0FF; } .st.l .st-d { color: #FFB08A; }
+  .st.g .st-d { color: #5CC8FF; } .st.l .st-d { color: #FF9A4D; }
   /* phases */
   .pb2 { display: grid; gap: 26px; margin-top: 6px; }
   .pb2-r { display: grid; grid-template-columns: 330px 1fr 330px; gap: 34px; align-items: center; }
@@ -2716,7 +2719,7 @@ var SwimV2 = (function () {
   .mapw .rmap { width: 100%; height: auto; }
   /* conclusion */
   .cc2-top { display: flex; align-items: center; gap: 46px; }
-  .cc2-top .big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 150px; font-weight: 800; color: #FFB08A; line-height: 1; white-space: nowrap; } .cc2-top .big small { font-size: 50px; color: #DCE6F0; }
+  .cc2-top .big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 150px; font-weight: 800; color: #5CC8FF; line-height: 1; white-space: nowrap; } .cc2-top .big small { font-size: 50px; color: #DCE6F0; }
   .cc2-top .txt { font-size: 30px; color: #C9D6E3; line-height: 1.5; } .cc2-top .txt b { color: #fff; }
   .share2 { display: flex; height: 70px; border-radius: 14px; overflow: hidden; }
   .share2 i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 26px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; border-right: 4px solid #0D2342; }
@@ -2724,13 +2727,13 @@ var SwimV2 = (function () {
   .parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 20px; margin-top: 28px; }
   .part { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 18px; padding: 18px 22px; min-width: 0; }
   .part .lab { font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 12px; } .part .lab i { width: 18px; height: 18px; border-radius: 5px; }
-  .part .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 56px; font-weight: 800; margin: 4px 0; } .part .val.l { color: #FFB08A; } .part .val.g { color: #8FC0FF; } .part .val small { font-size: 26px; color: #A9BACB; }
+  .part .val { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 56px; font-weight: 800; margin: 4px 0; } .part .val.l { color: #FFFFFF; } .part .val.g { color: #5CC8FF; } .part .val small { font-size: 26px; color: #A9BACB; }
   .part .sub { font-size: 21px; color: #A9BACB; }
   .closing { margin-top: 26px; font-size: 34px; font-weight: 800; color: #fff; border-left: 8px solid #00C8FF; padding: 6px 0 6px 24px; }
   /* ΔΑΚ */
   .dk { display: flex; gap: 60px; align-items: stretch; }
   .dk-l { flex: 0 0 470px; display: flex; flex-direction: column; } .dk-l .lab, .sdk .lab { font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; color: #8CA0B6; font-weight: 800; }
-  .dk-big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 170px; font-weight: 800; color: #FFB08A; line-height: 1; margin: 8px 0 6px; }
+  .dk-big { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 170px; font-weight: 800; color: #5CC8FF; line-height: 1; margin: 8px 0 6px; }
   .dk-bw { display: grid; gap: 14px; margin-top: 34px; } .dk-bw div { display: flex; align-items: baseline; gap: 16px; font-size: 24px; color: #A9BACB; } .dk-bw b { font-size: 40px; color: #fff; } .dk-bw em { font-style: normal; }
   .dk-bw span { width: 150px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800; font-size: 21px; }
   .dk-key { display: flex; gap: 30px; font-size: 22px; color: #C9D6E3; margin-top: auto; flex-wrap: wrap; } .dk-key span { display: inline-flex; align-items: center; gap: 10px; } .dk-key i { width: 22px; height: 22px; border-radius: 6px; }
