@@ -709,6 +709,16 @@ jobs:
             $a9 = Invoke-RestMethod $up9 -Method Post -Headers $headers -InFile pdf-print.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release PDF pictures::$($a9.name) $($a9.size) bytes"
           }
+          # (2.39.0) The slides of the race made pictures by Edge on the runner and the fictional video with them at its end, for a look.
+          if (Test-Path slides-check) {
+            Compress-Archive -Path slides-check\* -DestinationPath slides-check.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'slides-check.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up10 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=slides-check.zip"
+            $a10 = Invoke-RestMethod $up10 -Method Post -Headers $headers -InFile slides-check.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release slides pictures::$($a10.name) $($a10.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
