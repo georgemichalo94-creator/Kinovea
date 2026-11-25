@@ -463,13 +463,16 @@ try {
   $read = (Answer $s2Key).Count
   Check ((($in2.auto -eq 0 -and $notRead -eq 0) -or ($in2.auto -gt 0 -and $notRead -eq 1)) -and $read -eq 1) ('a segment without automatic marks: an answer only when read now (' + $notRead + ', ' + $read + ')')
 
-  # In the file of the learning as they are, and taken by another Kinovea.
+  # In the file of the learning as they are (written a little later, with the next ones), and taken by another Kinovea.
+  $dueBefore = [bool]$mgrType.GetField('valueSaveDue', $all).GetValue($mgr)
+  [void]$flush.Invoke($mgr, @())
+  $dueAfter = [bool]$mgrType.GetField('valueSaveDue', $all).GetValue($mgr)
   $loaded = $tLearning.GetMethod('Load').Invoke($null, [object[]]@($null))
   $back = @($loaded.Records | Where-Object { $_.Key -eq $sKey })
   $other = [Activator]::CreateInstance($tLearning)
   [void]$other.Merge($learning.Records)
   $taken = @($other.Records | Where-Object { $_.Kind -eq 'race.strokes' -or $_.Kind -eq 'race.underwater' }).Count
-  Check ($back.Count -eq 1 -and $back[0].Measures['auto'] -eq ($in.auto + 3) -and $back[0].Right -and $taken -ge 4) ('in the file of the learning and taken by another Kinovea (' + $back.Count + ', ' + $taken + ')')
+  Check ($dueBefore -and -not $dueAfter -and $back.Count -eq 1 -and $back[0].Measures['auto'] -eq ($in.auto + 3) -and $back[0].Right -and $taken -ge 4) ('in the file of the learning (written after: ' + $dueBefore + ' ' + $dueAfter + ') and taken by another Kinovea (' + $back.Count + ', ' + $taken + ')')
 } catch {
   $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
   Check $false ('the answers about the values: ' + $x.GetType().Name + ': ' + $x.Message + ' @ ' + (($x.StackTrace -split "`n" | Select-Object -First 3 | ForEach-Object { $_.Trim() }) -join ' < '))

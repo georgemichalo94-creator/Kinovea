@@ -59,9 +59,12 @@ namespace Kinovea.ScreenManager
             if (record == null)
                 return;
 
+            // Kept now, written to the file a little later (with the next ones: a file of thousands of answers at each checkpoint
+            // would slow the analysis down).
             Learning.Add(record);
-            Learning.Save();
             LearningChanged();
+            valueSaveDue = true;
+            StartValueTimer();
         }
 
         /// <summary>The stroke marks of the segment of this row (from the checkpoint before it, or the start, to its checkpoint): automatic and by hand.</summary>
@@ -94,6 +97,9 @@ namespace Kinovea.ScreenManager
         /// <summary>The answers about the underwater distances that wait for the distance to settle, by their key.</summary>
         private readonly Dictionary<string, PendingValue> pendingValues = new Dictionary<string, PendingValue>();
         private System.Windows.Forms.Timer pendingValuesTimer;
+
+        /// <summary>Answers about the strokes kept since the learning was last written to its file.</summary>
+        private bool valueSaveDue;
 
         private sealed class PendingValue
         {
@@ -133,6 +139,12 @@ namespace Kinovea.ScreenManager
             }
 
             p.Kept = kept;
+            StartValueTimer();
+        }
+
+        /// <summary>The answers that wait are kept ValueSettle after the last change (again from now).</summary>
+        private void StartValueTimer()
+        {
             if (pendingValuesTimer == null)
             {
                 pendingValuesTimer = new System.Windows.Forms.Timer { Interval = ValueSettle };
@@ -143,12 +155,15 @@ namespace Kinovea.ScreenManager
             pendingValuesTimer.Start();
         }
 
-        /// <summary>The answers about the distances that waited: kept (their distance settled, or Kinovea closes).</summary>
+        /// <summary>
+        /// The answers about the distances that waited are kept (their distance settled, or Kinovea closes), and the learning is written to
+        /// its file with the answers about the strokes kept meanwhile.
+        /// </summary>
         internal void FlushValueAnswers()
         {
             if (pendingValuesTimer != null)
                 pendingValuesTimer.Stop();
-            if (pendingValues.Count == 0)
+            if (pendingValues.Count == 0 && !valueSaveDue)
                 return;
 
             List<KeyValuePair<string, PendingValue>> all = pendingValues.ToList();
@@ -187,11 +202,13 @@ namespace Kinovea.ScreenManager
                 changed = true;
             }
 
-            if (!changed)
+            if (!changed && !valueSaveDue)
                 return;
 
+            valueSaveDue = false;
             learning.Save();
-            LearningChanged();
+            if (changed)
+                LearningChanged();
         }
 
         /// <summary>The start's distances before a change (for StartChanged): the estimate (≈) and the distance of the analyst.</summary>
