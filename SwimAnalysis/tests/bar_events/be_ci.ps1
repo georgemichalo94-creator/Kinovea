@@ -253,7 +253,7 @@ public static class BeWheel
 }
 '@
 # (2.38.3) A field that can be empty (double?) set by reflection: PowerShell 5.1 does not assign one from a [Nullable[double]] value.
-function SetField($obj, $name, $value) { $b = $obj.psobject.BaseObject; $b.GetType().GetField($name).SetValue($b, $value) }
+function SetField($obj, $name, $value) { $b = $obj.psobject.BaseObject; $v = $null; if ($null -ne $value) { $v = [double]$value }; $b.GetType().GetField($name).SetValue($b, $v) }
 $form = $null
 try {
   $mgrType = T 'SwimAnalysisManager'
@@ -380,7 +380,8 @@ try {
   $barDistance = $mgrType.GetMethod('SetBarDistance', $all)
   $tBarDistance = T 'SwimBarDistance'
   function Answer($key) { return @($learning.Records | Where-Object { $_.Key -eq $key }) }
-  function Bar($which, $wall, $value) { [void]$barDistance.Invoke($mgr, [object[]]@([Enum]::Parse($tBarDistance, $which), [int]$wall, $value)) }
+  # (A value given to a function comes wrapped: a plain double, or null, for the reflection.)
+  function Bar($which, $wall, $value) { $v = $null; if ($null -ne $value) { $v = [double]$value }; [void]$barDistance.Invoke($mgr, [object[]]@([Enum]::Parse($tBarDistance, $which), [int]$wall, $v)) }
 
   # The turn in the bar, over the estimate, two steps of the wheel: one answer once settled, with the last distance.
   $wall = [int]$l.race.Pool
