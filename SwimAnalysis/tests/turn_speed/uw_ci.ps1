@@ -246,7 +246,9 @@ Check ($null -eq (Faster $q)) 'a turn slower under the water than the start: no 
 $t7.UnderwaterDist = 12.0
 $q = Phases7
 $w = Faster $q
-Check ((Near $q.Turn.Value('uwVel') ((12.0 - 1.95) / 4.0) 0.0006) -and "$w" -like '*πιο γρήγορα από την εκκίνηση (2.37 m/s)*') ('a turn faster than the start (' + $q.Turn.Value('uwVel') + '): ' + $w)
+# (The speed of the start as the panel shows it, to the hundredth: 2.3749–2.3755 by the frames of the marks.)
+$startShown = ([double]$q.Start.Value('uwVel')).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture)
+Check ((Near $q.Turn.Value('uwVel') ((12.0 - 1.95) / 4.0) 0.0006) -and "$w" -like ('*πιο γρήγορα από την εκκίνηση (' + $startShown + ' m/s)*')) ('a turn faster than the start (' + $q.Turn.Value('uwVel') + '): ' + $w)
 $race7.Relay = $true
 Check ($null -eq (Faster $q)) 'not in a relay'
 $race7.Relay = $false
