@@ -31,7 +31,7 @@ const pick = key => events.find(p => p.ev.key === key);
   const race = Object.assign({}, p.race, { compare: { pb: p.pb.id }, reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race });
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
-  assert.strictEqual(r.version, '2.23.0');
+  assert.strictEqual(r.version, '2.24.0');
   assert.ok(r.v2 && typeof r.v2.html === 'string' && r.v2.html.length > 50000, 'the pages of the 2nd version');
   assert.ok(!r.pdf, 'no PDF of the sheet with v2');
   assert.ok(!r.needCharts, 'no charts to draw for the pages of the 2nd version');
@@ -129,8 +129,8 @@ const pick = key => events.find(p => p.ev.key === key);
   assert.ok(r.ok && !r.v2, 'no race pages for a training video');
 }
 
-// 10. (2.23.0) «Πού κρύβεται ο χρόνος» in the place of the target time: no target time anywhere; the map of the race with the time
-// of every recommendation in its zones (the same total, nothing outside the course); the pacing with today's time; the ΔΑΚ in capitals.
+// 10. (2.23.0, 2.24.0) No target time anywhere; the map of the race with the whole time each phase loses in its zones (the same total,
+// nothing outside the course, not the ΔΑΚ of the second half); the pacing with today's time; the ΔΑΚ in capitals.
 {
   const G = makeContext({ athletes: ATHLETES });
   const V2 = G.SwimV2;
@@ -149,17 +149,14 @@ const pick = key => events.find(p => p.ev.key === key);
     const key = p.ev.key;
     assert.ok(!/Στόχος για τον επόμενο αγώνα|Στόχος με τις προτάσεις|Χρόνοι-στόχοι|ο στόχος είναι/.test(text), key + ': no target time');
     assert.ok(!lowDak.test(text.replace(/<[^>]+>/g, ' ')), key + ': the ΔΑΚ in capitals');
-    const withGain = R.recs.filter(r => r.gain !== null && r.gain > 0);
-    const total = withGain.reduce((s0, r) => s0 + r.gain, 0);
-    assert.ok(Math.abs(R.total - total) < 1e-9, key + ': the total of the gains');
-    const inZones = R.map.zones.reduce((s0, z) => s0 + z.gain, 0);
-    const mapped = withGain.filter(r => r.zones && r.zones.some(z => z.w > 0)).reduce((s0, r) => s0 + r.gain, 0);
-    assert.ok(Math.abs(inZones - mapped) < 1e-6, key + ': every gain in its zones ' + inZones + ' / ' + mapped);
-    R.map.zones.forEach(z => assert.ok(z.from >= 0 && z.to <= R.map.D && z.to > z.from && z.gain > 0, key + ': a zone on the course ' + JSON.stringify(z)));
-    if (withGain.length) {
+    const lost = R.recs.filter(r => r.lost !== null && r.lost > 0 && r.key !== 'dak');
+    const inZones = R.map.zones.reduce((s0, z) => s0 + z.lost, 0);
+    const mapped = lost.filter(r => r.zones && r.zones.some(z => z.w > 0)).reduce((s0, r) => s0 + r.lost, 0);
+    assert.ok(Math.abs(inZones - mapped) < 1e-6, key + ': every time lost in its zones ' + inZones + ' / ' + mapped);
+    R.map.zones.forEach(z => assert.ok(z.from >= 0 && z.to <= R.map.D && z.to > z.from && z.lost > 0 && z.key !== 'dak', key + ': a zone on the course ' + JSON.stringify(z)));
+    if (R.map.zones.length) {
       maps++;
-      assert.ok(/Πού κρύβεται ο χρόνος/.test(text) && /class="rmap big"/.test(text) && /class="rmap"/.test(text), key + ': the map on pages 1 and 2');
-      assert.ok(/Η μεγαλύτερη ευκαιρία/.test(text), key + ': the biggest opportunity');
+      assert.ok(/Πού χάνεται ο χρόνος/.test(text) && /class="rmap big"/.test(text), key + ': the map on page 2');
     }
     if (R.splits) {
       paces++;
@@ -169,6 +166,72 @@ const pick = key => events.find(p => p.ev.key === key);
     }
   });
   assert.ok(maps >= 40 && paces >= 20, 'maps ' + maps + ', pacing ' + paces);
+}
+
+// 11. (2.24.0) How far behind the reference each phase is, in %: the level of each phase from its own times (100 × lost / time, the
+// reference first, else the PB); the recommendations in the order of the %, then the others; no gain of half the way, no target of
+// half the way (the takeovers and the pacing keep theirs); the weakest phase on page 1 and in the third message; the bars on page 2.
+{
+  const G = makeContext({ athletes: ATHLETES });
+  const V2 = G.SwimV2;
+  let weakCards = 0, checkedLevels = 0;
+  events.forEach(p => {
+    const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+    const pr = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.pb)));
+    const er = G.swimReferenceRace_(p.ref);
+    const cmp = { pb: { race: pr, analysis: G.swimAnalyze_(pr), label: 'PB' }, elite: { race: er, analysis: G.swimAnalyze_(er), label: 'Αναφορά δείγμα' } };
+    const x = V2.fromScript(race, G.swimAnalyze_(race), cmp);
+    const R = V2.recommendations(x);
+    const doc = V2.document(x, {});
+    const text = doc.html.replace(/<style>[\s\S]*?<\/style>/, '');
+    const plain = text.replace(/<[^>]+>/g, ' ');
+    const key = p.ev.key;
+    const fin = v => typeof v === 'number' && isFinite(v);
+    // The start and the finish from their own times.
+    const own = (k, get) => {
+      const l = R.levels.find(q => q.key === k);
+      const c = fin(get(x.ref)) ? x.ref : fin(get(x.pb)) ? x.pb : null;
+      if (!c || !fin(get(x.race))) { assert.ok(!l, key + ': no level of ' + k + ' without a comparison'); return; }
+      const want = 100 * (get(x.race) - get(c)) / get(x.race);
+      assert.ok(l && Math.abs(l.pct - want) < 1e-9 && Math.abs(l.lost - (get(x.race) - get(c))) < 1e-9 && l.ref === (c === x.ref), key + ': the level of ' + k + ' ' + (l ? l.pct : '-') + ' / ' + want);
+      checkedLevels++;
+    };
+    own('start', r => r.start.t15);
+    own('finish', r => r.finish.last5);
+    R.levels.forEach(l => assert.ok(fin(l.pct) && fin(l.lost) && ['start', 'swim', 'turn', 'finish'].includes(l.key), key + ': a level ' + JSON.stringify(l)));
+    // The order: with a % first, by the %; then by the time lost.
+    let seenNoPct = false, prev = Infinity;
+    R.recs.forEach(r => {
+      assert.ok(!('gain' in r), key + ': no gain of half the way in ' + r.key);
+      if (r.pct === null) { seenNoPct = true; return; }
+      assert.ok(!seenNoPct && r.pct <= prev + 1e-12 && r.lost > 0, key + ': the order of the % at ' + r.key);
+      prev = r.pct;
+    });
+    R.recs.forEach(r => assert.ok(r.target === null || r.key === 'pace' || /^ex\d/.test(r.key), key + ': no target of half the way in ' + r.key));
+    assert.ok(!/μέση της απόστασης|μισή απόσταση|περιθωρ|κερδίζεται|Με σειρά κέρδους/.test(plain), key + ': none of the words of the gains');
+    const behind = R.levels.filter(l => l.pct > 0.05);
+    if (behind.length) {
+      weakCards++;
+      const weak = behind.slice().sort((p0, q0) => q0.pct - p0.pct)[0];
+      const pctText = '−' + weak.pct.toFixed(1).replace('.', ',') + '%';
+      assert.ok(plain.includes('Η πιο αδύνατη φάση') && plain.includes(pctText), key + ': the weakest phase on page 1 ' + pctText);
+      assert.ok(/Υστέρηση ανά φάση/.test(text) && (text.match(/class="acb"/g) || []).length === R.levels.length, key + ': the bars of page 2');
+      assert.ok(/χάνει \d+\.\d\d s/.test(plain), key + ': the time lost on the cards');
+    }
+  });
+  assert.ok(weakCards >= 40 && checkedLevels >= 80, 'weakest phases ' + weakCards + ', levels checked ' + checkedLevels);
+
+  // The race against itself as its reference: every phase at 0%, no phase behind, no recommendation of a phase, the card of the swimming.
+  const p = pick('lc-200-fs');
+  const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+  const same = { race: G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race))), label: 'Ίδιος' };
+  same.analysis = G.swimAnalyze_(same.race);
+  const x = V2.fromScript(race, G.swimAnalyze_(race), { pb: same, elite: same });
+  const R = V2.recommendations(x);
+  assert.ok(R.levels.length >= 3 && R.levels.every(l => Math.abs(l.pct) < 1e-9), 'the same race: every phase at 0% ' + JSON.stringify(R.levels));
+  assert.ok(!R.recs.some(r => ['start', 'turn', 'swim', 'finish'].includes(r.key)), 'the same race: no recommendation of a phase');
+  const doc = V2.document(x, {});
+  assert.ok(!/Η πιο αδύνατη φάση/.test(doc.html), 'the same race: no weakest phase');
 }
 
 console.log('test_reportv2: ok');

@@ -1,5 +1,6 @@
 /**
- * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time).
+ * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time;
+ * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real
  * analysis of a race: the race, the personal best (a stored analysis of the athlete) and the reference (elite times). One self-contained
@@ -517,7 +518,7 @@ var SwimV2 = (function () {
       if (both.length && gap > 0.08) {
         const tAb = both.map(p => p.t), tCb = both.map(p => p.c);
         const head0 = `−5/+15 κατά μ.ο. <b>${F(avg(tAb, 'inOut'))} s</b> (${tc.name} ${F(avg(tCb, 'inOut'))}` + (tc.ref && ok(avg(real(b), 'inOut')) ? `, ${who} ${F(avg(real(b), 'inOut'))})` : ')');
-        const target = avg(tAb, 'inOut') - gap / both.length / 2;
+        const pct = 100 * gap / tAb.reduce((s0, t) => s0 + t.inOut, 0);
         if (im) {
           const worst = both.map(p => ({ t: p.t, c: p.c, d: p.t.inOut - p.c.inOut })).sort((p, q) => q.d - p.d)[0];
           const name = t => t.styleIn === t.styleOut ? `στροφή ${IN_STYLE[t.styleIn]}` : `${STYLE_NAME[t.styleIn].toLowerCase()} → ${STYLE_NAME[t.styleOut].toLowerCase()}`;
@@ -527,7 +528,7 @@ var SwimV2 = (function () {
           recs.push({ key: 'turn', title: changes === tA.length ? 'Αλλαγές στυλ' : changes ? 'Στροφές και αλλαγές στυλ' : `Στροφές (${tA.length})`, facts,
             action: (worst.t.styleIn === worst.t.styleOut ? `Προπόνηση της στροφής ${IN_STYLE[worst.t.styleIn]}` : `Προπόνηση της αλλαγής ${name(worst.t)}`) +
               (ok(worst.t.turnTime) && ok(worst.c.turnTime) && worst.t.turnTime - worst.c.turnTime > 0.08 ? ': πιο γρήγορη περιστροφή από την επαφή ως την ώθηση.' : ': μεγαλύτερη και πιο γρήγορη υποβρύχια φάση μετά την ώθηση.'),
-            target: `−5/+15 ≤ <b>${F(target)} s</b> κατά μ.ο.`, gain: gap / 2 });
+            target: null, lost: gap, pct });
         } else {
           const outGap = avg(tAb, 'out15') - avg(tCb, 'out15'), inGap = avg(tAb, 'in5') - avg(tCb, 'in5');
           const bdA = avg(tA, 'bd'), bdC = avg(tCb, 'bd'), kA = avg(tA, 'kicks'), kC = avg(tCb, 'kicks');
@@ -538,15 +539,13 @@ var SwimV2 = (function () {
           if (ok(inGap) && ok(outGap)) facts.push(`−5 → τοίχος ${vs(avg(tAb, 'in5'), tc.name, avg(tCb, 'in5'))} s · τοίχος → +15 ${vs(avg(tAb, 'out15'), tc.name, avg(tCb, 'out15'))} s`);
           if (trend > 0.2) facts.push(`οι στροφές του τέλους είναι <b>${F(trend)} s</b> πιο αργές από τις πρώτες`);
           const moreKicks = ok(kC) && ok(kA) ? Math.max(1, Math.round(kC - kA)) : 1;
-          const bdT = ok(bdA) && ok(bdC) ? Math.round((bdA + bdC) / 2 * 2) / 2 : NaN;
-          const longer = ok(bdT) ? `, έξοδος στα ${F(bdT, 1)}${u}` : '';
+          const longer = ok(bdA) && ok(bdC) && bdC > bdA ? `, έξοδος προς τα ${F(bdC, 1)}${u} ${tc.ref ? 'της αναφοράς' : 'του ' + who}` : '';
           let action = !(inGap > outGap)
             ? (tA[0].styleOut === 'br' ? `Μεγαλύτερο και πιο γρήγορο υποβρύχιο μετά τον τοίχο (pull-out)${longer} και γρήγορη πρώτη χεριά.`
               : `Μεγαλύτερη υποβρύχια φάση μετά τον τοίχο: ${kicksText(moreKicks)} ακόμη${longer} και γρήγορη πρώτη χεριά.`)
             : `Πιο γρήγορη προσέγγιση: χωρίς γλίστρημα στα τελευταία μέτρα και σωστή απόσταση για την τελευταία χεριά πριν ${flip ? 'την τούμπα' : 'την επαφή'}.`;
           if (trend > 0.2) action += ' Στροφές και στο τέλος των σετ, όταν ο αθλητής είναι κουρασμένος.';
-          recs.push({ key: 'turn', title: tA.length > 1 ? `Στροφές (${tA.length})` : 'Στροφή', facts, action,
-            target: `−5/+15 ≤ <b>${F(target)} s</b> κατά μ.ο.` + (ok(bdT) ? ` · έξοδος ≥ <b>${F(bdT, 1)}${u}</b>` : ''), gain: gap / 2 });
+          recs.push({ key: 'turn', title: tA.length > 1 ? `Στροφές (${tA.length})` : 'Στροφή', facts, action, target: null, lost: gap, pct });
         }
         recs[recs.length - 1].zones = both.map(p => ({ from: p.t.wall - 5, to: p.t.wall + 15, w: Math.max(0, p.t.inOut - p.c.inOut) }));
       }
@@ -563,11 +562,11 @@ var SwimV2 = (function () {
       if (ok(s0.block) || ok(s0.entryDist)) facts.push(`${s0.style === 'bk' ? 'ώθηση από τον τοίχο' : 'βατήρας'} ${vs(s0.block, sc.name, c0.block)} s` + (ok(s0.entryDist) ? ` · είσοδος στα ${vs(s0.entryDist, sc.name, c0.entryDist)}${u}` : ''));
       if (ok(s0.bd)) facts.push(`έξοδος στα <b>${F(s0.bd, 1)}${u}</b>${ok(s0.kicks) ? `, ${s0.kicks} δελφινισμοί` : ''}` + (ok(c0.bd) ? ` (${sc.name} ${F(c0.bd, 1)}${u}${ok(c0.kicks) ? ', ' + c0.kicks : ''})` : ''));
       let action;
-      if (bdLoss >= 0.8) action = end(`Μεγαλύτερη υποβρύχια φάση: ${s0.style === 'br' ? 'πιο μακρύ και πιο γρήγορο υποβρύχιο (pull-out)' : kicksText(ok(c0.kicks) && ok(s0.kicks) ? Math.max(1, c0.kicks - s0.kicks) : 1) + ' ακόμη'}, έξοδος στα ${F(Math.round((s0.bd + c0.bd) / 2 * 2) / 2, 1)}${u}`);
-      else if (blockLoss >= 0.03) action = `Πιο γρήγορη αντίδραση στο σήμα: εκκινήσεις με ήχο, στόχος ${s0.style === 'bk' ? 'ώθηση' : 'βατήρας'} ≤ ${F(s0.block - blockLoss / 2)} s.`;
-      else if (entryLoss >= 0.15) action = end(`Πιο μακριά είσοδος: δυνατότερη ώθηση, είσοδος στα ${F(s0.entryDist + entryLoss / 2)}${u}`);
+      if (bdLoss >= 0.8) action = end(`Μεγαλύτερη υποβρύχια φάση: ${s0.style === 'br' ? 'πιο μακρύ και πιο γρήγορο υποβρύχιο (pull-out)' : kicksText(ok(c0.kicks) && ok(s0.kicks) ? Math.max(1, c0.kicks - s0.kicks) : 1) + ' ακόμη'}, έξοδος προς τα ${F(c0.bd, 1)}${u} ${sc.ref ? 'της αναφοράς' : 'του ' + who}`);
+      else if (blockLoss >= 0.03) action = `Πιο γρήγορη αντίδραση στο σήμα: εκκινήσεις με ήχο (${s0.style === 'bk' ? 'ώθηση' : 'βατήρας'} ${F(s0.block)} s, ${sc.name} ${F(c0.block)} s).`;
+      else if (entryLoss >= 0.15) action = `Πιο μακριά είσοδος: δυνατότερη ώθηση (είσοδος στα ${F(s0.entryDist)}${u}, ${sc.name} ${F(c0.entryDist)}${u}).`;
       else action = 'Πιο γρήγορη μετάβαση από την υποβρύχια φάση στην πρώτη χεριά.';
-      recs.push({ key: 'start', title: 'Εκκίνηση', facts, action, target: `15${u} σε ≤ <b>${F(s0.t15 - sGap / 2)} s</b>`, gain: sGap / 2 });
+      recs.push({ key: 'start', title: 'Εκκίνηση', facts, action, target: null, lost: sGap, pct: 100 * sGap / s0.t15 });
     }
 
     // 3. Swimming and ΔΑΚ: the time of the clean swimming against the reference (or the PB).
@@ -581,23 +580,17 @@ var SwimV2 = (function () {
       facts.push(`ταχύτητα κολύμβησης <b>${F(ok(a.avg.vClean) ? a.avg.vClean : NaN)} m/s</b>` + (ok(c0.avg.vClean) ? ` (${wc.name} ${F(c0.avg.vClean)})` : ''));
       if (ok(a.avg.sl)) facts.push(`μήκος κύκλου ${vs(a.avg.sl, wc.name, c0.avg.sl)} μ. · συχνότητα ${vs(a.avg.sr, wc.name, c0.avg.sr, 1)} · tempo ${F(a.avg.tempo)} s/κύκλο`);
       facts.push(`κολύμβηση (χωρίς εκκίνηση, στροφές, τερματισμό) <b>${S(swGap)} s</b> από ${wc.ref ? 'την αναφορά' : 'το ' + who}`);
-      let action, target;
-      const dakT = ok(c0.avg.dak) && ok(a.avg.dak) ? a.avg.dak - (a.avg.dak - c0.avg.dak) / 2 : NaN;
-      const dakAim = ok(dakT) ? ` · ΔΑΚ ≤ <b>${F(dakT)}</b>` : '';
+      let action;
       if (slGap >= 0.03 && slGap / c0.avg.sl >= srGap / c0.avg.sr) {
         action = 'Μεγαλύτερο μήκος κύκλου στην ίδια συχνότητα: σετ με μέτρηση χεριών και χρόνου σε κάθε 50άρι (ΔΑΚ).';
-        target = `μήκος κύκλου ≥ <b>${F(a.avg.sl + slGap / 2)} μ.</b>${dakAim}`;
       } else if (srGap >= 1.5) {
-        action = `Πιο γρήγορο tempo χεριών με το ίδιο μήκος: tempo trainer στα ${F(60 / (a.avg.sr + srGap / 2))} s/κύκλο (τώρα ${F(a.avg.tempo)}).`;
-        target = `συχνότητα ≥ <b>${F(a.avg.sr + srGap / 2, 1)}</b> κύκλοι/λεπτό${dakAim}`;
+        action = `Πιο γρήγορο tempo χεριών με το ίδιο μήκος: tempo trainer προς τα ${F(60 / c0.avg.sr)} s/κύκλο ${wc.ref ? 'της αναφοράς' : 'του ' + who} (τώρα ${F(a.avg.tempo)}).`;
       } else if (ok(c0.avg.vClean) && ok(a.avg.vClean)) {
         action = 'Ταχύτητα κολύμβησης στον ρυθμό του αγώνα, με μέτρηση του ΔΑΚ σε κάθε επανάληψη.';
-        target = `ταχύτητα ≥ <b>${F(a.avg.vClean + (c0.avg.vClean - a.avg.vClean) / 2)} m/s</b>${dakAim}`;
       } else {
         action = 'Ταχύτητα κολύμβησης στον ρυθμό του αγώνα, με μέτρηση χεριών και χρόνου σε κάθε 50άρι (ΔΑΚ).';
-        target = `κολύμβηση ${S(-swGap / 2)} s στον ίδιο αγώνα`;
       }
-      recs.push({ key: 'swim', title: 'Κολύμβηση και ΔΑΚ', facts, action, target, gain: swGap / 2 });
+      recs.push({ key: 'swim', title: 'Κολύμβηση και ΔΑΚ', facts, action, target: null, lost: swGap, pct: 100 * swGap / a.composition.swim });
     }
 
     // 4. ΔΑΚ through the race (the second half against the first): from the race alone.
@@ -609,7 +602,7 @@ var SwimV2 = (function () {
       if (rise >= 0.3) {
         const rS = avg(second, 'dakStrokes') - avg(first, 'dakStrokes'), rT = avg(second, 'dakTime') - avg(first, 'dakTime');
         const fT = avg(first, 'dakTime');
-        const save = second.reduce((acc, bk) => acc + (ok(bk.dakTime) && ok(fT) && bk.dakTime > 0 ? Math.max(0, bk.dakTime - fT) * (bk.winTime / bk.dakTime) : 0), 0) / 2;
+        const save = second.reduce((acc, bk) => acc + (ok(bk.dakTime) && ok(fT) && bk.dakTime > 0 ? Math.max(0, bk.dakTime - fT) * (bk.winTime / bk.dakTime) : 0), 0);
         const top = bl.reduce((p, q) => q.dak > p.dak ? q : p);
         const facts = [`ΔΑΚ 1ου μισού <b>${F(avg(first, 'dak'))}</b> → 2ου μισού <b>${F(avg(second, 'dak'))}</b> (${S(rise)})`];
         if (ok(rS) && ok(rT)) facts.push(`από τις χεριές ${S(rS)} και από τον χρόνο ${S(rT)} ανά 10 μ.`);
@@ -617,7 +610,7 @@ var SwimV2 = (function () {
         recs.push({ key: 'dak', title: 'ΔΑΚ στο 2ο μισό', facts,
           action: rS > rT ? 'Οι χεριές πληθαίνουν όταν κουράζεται: σετ αποδοτικότητας στο τέλος της προπόνησης, με το ίδιο μήκος κύκλου ως το τέλος.'
             : 'Ο χρόνος ανεβαίνει περισσότερο από τις χεριές: σετ ρυθμού στο 2ο μισό, με τον ΔΑΚ του 1ου μισού ως στόχο.',
-          target: `ΔΑΚ 2ου μισού ≤ <b>${F(avg(first, 'dak') + rise / 2)}</b>`, gain: save > 0.05 ? save : null });
+          target: null, lost: save > 0.05 ? save : null, pct: null });
       }
     }
 
@@ -640,7 +633,7 @@ var SwimV2 = (function () {
       } else if (half(a) / a.final > 0.05) {
         action = 'Κράτημα του ρυθμού στο 2ο μισό: επαναλήψεις στους χρόνους-στόχους με μικρά διαλείμματα.';
       }
-      if (action) recs.push({ key: 'pace', title: 'Ρυθμός αγώνα', facts, action, target: 'η κατανομή ανά 50άρι στη σελίδα του ρυθμού', gain: null });
+      if (action) recs.push({ key: 'pace', title: 'Ρυθμός αγώνα', facts, action, target: 'η κατανομή ανά 50άρι στη σελίδα του ρυθμού', lost: null, pct: null });
       pace = pc;
     }
 
@@ -655,7 +648,7 @@ var SwimV2 = (function () {
       recs.push({ key: 'finish', title: 'Τερματισμός', facts,
         action: gapLoss > 0.04 ? 'Η τελευταία χεριά να «κλείνει» στον τοίχο: τερματισμοί χωρίς γλίστρημα, με το κεφάλι κάτω.'
           : 'Δυνατότερα τελευταία μέτρα: τερματισμοί με γρήγορο ρυθμό στα τελευταία 10 μ.',
-        target: `τελευταία 5${u} σε ≤ <b>${F(a.finish.last5 - fGap / 2)} s</b>`, gain: fGap / 2 });
+        target: null, lost: fGap, pct: 100 * fGap / a.finish.last5 });
     }
 
     // 7. Stroke rate in the second half (100 and longer, not the medley): from the race alone.
@@ -667,7 +660,7 @@ var SwimV2 = (function () {
         `συχνότητα στην αρχή <b>${F(avg(early, 'sr'), 1)}</b> → στο τέλος <b>${F(avg(late, 'sr'), 1)}</b> κύκλοι/λεπτό (${S(-drop, 1)})`,
         `tempo ${F(60 / avg(early, 'sr'))} → ${F(60 / avg(late, 'sr'))} s/κύκλο`],
         action: `Κράτημα της συχνότητας: σετ με tempo trainer στα ${F(60 / avg(early, 'sr'))} s/κύκλο στο τέλος των επαναλήψεων.`,
-        target: `συχνότητα τέλους ≥ <b>${F(avg(late, 'sr') + drop / 2, 1)}</b>`, gain: null });
+        target: null, lost: null, pct: null });
     }
 
     // 8. Relays: the takeovers (the zone of 0.10–0.20 s needs nothing to compare with).
@@ -679,12 +672,13 @@ var SwimV2 = (function () {
         if (ok(l.out15)) facts.push(`15${u} από την επαφή σε ${F(l.out15)} s`);
         recs.push({ key: 'ex' + (j + 2), title: `Αλλαγή ${j + 1} → ${j + 2}`, facts, zones: [{ from: l.from - 5, to: l.from + 15, w: 1 }],
           action: 'Προπόνηση αλλαγών με τον ίδιο κολυμβητή που φτάνει: ξεκίνημα της κίνησης όταν το χέρι του είναι στα τελευταία 1–1.5 μ.',
-          target: 'αλλαγή σε <b>0.10–0.20 s</b>', gain: l.ex - 0.18 });
+          target: 'αλλαγή σε <b>0.10–0.20 s</b>', lost: l.ex - 0.18, pct: null });
       });
     }
 
-    // (2.23.0) Where on the course the time of each recommendation is (the map of the race): the start (to 15), the clean swimming of
-    // every length (15 after a wall to 5 before the next; the ΔΑΚ only in the second half), the finish (the last 5).
+    // (2.24.0) Where on the course each phase loses its time against the reference (or the PB), the map of the race: the start (to 15),
+    // the clean swimming of every length (15 after a wall to 5 before the next), each turn (−5/+15), the finish (the last 5), the
+    // takeovers. The ΔΑΚ of the second half is the race against itself, its time is in the swimming: not on the map.
     const lengths = [];
     for (let s0 = 0; s0 < D; s0 += ev.pool) lengths.push({ from: s0, to: Math.min(D, s0 + ev.pool) });
     const swimIn = (lo, hi) => lengths.map(l => ({ from: Math.max(l.from + 15, lo), to: Math.min(l.to >= D ? D - 5 : l.to - 5, hi) }))
@@ -693,25 +687,46 @@ var SwimV2 = (function () {
       if (r.zones) return;
       if (r.key === 'start') r.zones = [{ from: 0, to: 15, w: 1 }];
       else if (r.key === 'swim') r.zones = swimIn(0, D);
-      else if (r.key === 'dak') r.zones = swimIn(D / 2, D);
       else if (r.key === 'finish') r.zones = [{ from: D - 5, to: D, w: 1 }];
     });
-    recs.forEach(r => { if (r.gain !== null && !ok(r.gain)) r.gain = null; });
-    recs.sort((p, q) => (q.gain === null ? -1 : q.gain) - (p.gain === null ? -1 : p.gain));
-    const gains = recs.filter(r => r.gain !== null).slice(0, 4).reduce((acc, r) => acc + r.gain, 0);
-    const targetTime = ok(a.final) ? a.final - gains : NaN;
-    // The target splits per 50: the profile of the reference (or the PB) on the target time.
+    recs.forEach(r => {
+      if (r.lost !== null && !ok(r.lost)) r.lost = null;
+      if (r.pct !== null && !ok(r.pct)) r.pct = null;
+    });
+    // (2.24.0) The order: the phases against the reference (or the PB) by how far behind they are (%), then the others by the time
+    // they lose, then the rest (until 2.23.0: by the time won if the phase came half the way to the reference).
+    recs.sort((p, q) => (q.pct !== null) - (p.pct !== null) || (p.pct !== null ? q.pct - p.pct : 0) ||
+      (q.lost !== null) - (p.lost !== null) || (p.lost !== null ? q.lost - p.lost : 0));
     // (2.23.0) The splits per 50: today's time with the pacing of the reference (or the PB): the same time, a better distribution.
     if (bl.length >= 4 && !im && pace && ok(pace.m.final) && ok(a.final)) splits = pace.m.blocks.map(bk => bk.time * a.final / pace.m.final);
-    const withGain = recs.filter(r => r.gain !== null && r.gain > 0);
-    const total = withGain.reduce((acc, r) => acc + r.gain, 0);
+
+    // (2.24.0) The level of each phase: how far its speed is behind the reference (or the PB) on the same distance, in % of the speed
+    // of the race (100 × lost / time; less than 0: faster), and the time it loses there. Every phase that both have, as they are.
+    const levels = [];
+    const lvl = (key, title, c, mine, theirs) => {
+      if (c && ok(mine) && ok(theirs) && mine > 0) levels.push({ key, title, pct: 100 * (mine - theirs) / mine, lost: mine - theirs, name: c.name, ref: !!c.ref });
+    };
+    if (sc) lvl('start', 'Εκκίνηση', sc, s0.t15, sc.m.start.t15);
+    if (wc) lvl('swim', 'Κολύμβηση', wc, a.composition.swim, wc.m.composition.swim);
+    if (tc && tA.length) {
+      const pairs = tA.map((t, i) => ({ t, c: real(tc.m)[i] })).filter(q => q.c && ok(q.t.inOut) && ok(q.c.inOut));
+      if (pairs.length) lvl('turn', 'Στροφές', tc, pairs.reduce((s1, q) => s1 + q.t.inOut, 0), pairs.reduce((s1, q) => s1 + q.c.inOut, 0));
+    }
+    if (fc) lvl('finish', 'Τερματισμός', fc, a.finish.last5, fc.m.finish.last5);
+
     const zones = [];
-    withGain.forEach(r => {
+    recs.filter(r => r.lost !== null && r.lost > 0 && r.key !== 'dak').forEach(r => {
       const ws = (r.zones || []).reduce((acc, z) => acc + (z.w > 0 ? z.w : 0), 0);
-      if (ws > 0) r.zones.forEach(z => { if (z.w > 0 && Math.min(D, z.to) > Math.max(0, z.from)) zones.push({ key: r.key, title: r.title, from: Math.max(0, z.from), to: Math.min(D, z.to), gain: r.gain * z.w / ws }); });
+      if (ws > 0) r.zones.forEach(z => { if (z.w > 0 && Math.min(D, z.to) > Math.max(0, z.from)) zones.push({ key: r.key, title: r.title, from: Math.max(0, z.from), to: Math.min(D, z.to), lost: r.lost * z.w / ws }); });
     });
-    return { recs, gains, targetTime, splits, splitsFrom: pace ? pace.name : '', total, map: { D, pool: ev.pool, u, zones } };
+    return { recs, splits, splitsFrom: pace ? pace.name : '', levels, map: { D, pool: ev.pool, u, zones } };
   }
+
+  /** (2.24.0) A % with its sign and a decimal comma: «−7,4%», «+2,1%». */
+  const P = v => (v > 0.05 ? '+' : v < -0.05 ? '−' : '') + Math.abs(v).toFixed(1).replace('.', ',') + '%';
+
+  /** (2.24.0) Where the time of a phase is lost (the third message). */
+  const IN_PHASE = { start: 'στην εκκίνηση', swim: 'στην κολύμβηση', turn: 'στις στροφές', finish: 'στον τερματισμό' };
 
   /** The three messages of the first page. */
   function messages(x, R) {
@@ -740,9 +755,12 @@ var SwimV2 = (function () {
     } else {
       out.push('Ο ΔΑΚ θέλει τις χεριές του αγώνα (στα 15 → τοίχος κάθε μήκους): δεν μετρήθηκαν όλες.');
     }
-    const top = R.recs.find(r => r.gain !== null);
-    // One line, as the message of the target time was (the first page has no room for more): the order of all the phases is on page 2.
-    if (top) out.push(`<b>Η μεγαλύτερη ευκαιρία: ${low(top.title)}</b>, περίπου ${S(-top.gain)} s` + (R.total > 0 ? `, το ${Math.round(100 * top.gain / R.total)}% του περιθωρίου.` : '.'));
+    // (2.24.0) The weakest phase against the reference (or the PB), and where the most time is lost when it is another phase: one line
+    // (the first page has no room for more), the order of all the phases on page 2.
+    const behind = (R.levels || []).filter(l => l.pct > 0.05);
+    const weak = behind.slice().sort((p0, q0) => q0.pct - p0.pct)[0], most = behind.slice().sort((p0, q0) => q0.lost - p0.lost)[0];
+    if (weak) out.push(`<b>Η πιο αδύνατη φάση: ${low(weak.title)}, ${P(-weak.pct)}</b> ${weak.ref ? 'από την αναφορά' : 'από το ' + weak.name}` +
+      (most === weak ? `· χάνει ${F(weak.lost)}&nbsp;s.` : `· ${IN_PHASE[most.key]} χάνει τα περισσότερα (${F(most.lost)}&nbsp;s).`));
     else if (R.recs.length) out.push(`<b>${R.recs[0].title}</b>: ${R.recs[0].action}`);
     else if (ok(c.final) || ok(b.final)) out.push('Σε όλες τις φάσεις ο αγώνας είναι κοντά στις συγκρίσεις του.');
     else out.push('Χωρίς ΑΡ και αναφορά οι προτάσεις βγαίνουν μόνο από τον ίδιο τον αγώνα (ΔΑΚ, ρυθμός, συχνότητα).');
@@ -871,9 +889,9 @@ var SwimV2 = (function () {
   }
 
   /**
-   * (2.23.0) «Πού κρύβεται ο χρόνος»: the race on its course (start → finish, every wall), each part lit by the time the recommendations
-   * find there, in seconds per metre (the most: the brightest, with a glow). 'big': the map of page 2 (dark, the distances and the
-   * seconds of the hottest spots); otherwise the strip of the card of page 1. Nothing without a zone.
+   * (2.23.0) «Πού κρύβεται ο χρόνος»: the race on its course (start → finish, every wall), each part lit by the time the phases lose
+   * there against the reference (or the PB, 2.24.0: the whole of it), in seconds per metre (the most: the brightest, with a glow).
+   * 'big': the map of page 2 (dark, the distances and the seconds of the hottest spots); otherwise a strip. Nothing without a zone.
    */
   function raceMap(m, big, id) {
     if (!m || !m.zones || !m.zones.length || !(m.D > 0)) return '';
@@ -882,7 +900,7 @@ var SwimV2 = (function () {
     const n = Math.ceil(m.D), bins = new Array(n).fill(0);
     m.zones.forEach(z => {
       const a0 = Math.max(0, Math.floor(z.from)), b0 = Math.min(n, Math.ceil(z.to));
-      for (let i = a0; i < b0; i++) bins[i] += z.gain / (b0 - a0);
+      for (let i = a0; i < b0; i++) bins[i] += z.lost / (b0 - a0);
     });
     const max = bins.reduce((p0, q0) => Math.max(p0, q0), 0);
     if (!(max > 0)) return '';
@@ -907,32 +925,32 @@ var SwimV2 = (function () {
       const k = Math.max(1, Math.ceil(38 / (lw * m.pool / m.D)));
       const lab = (x, t, anchor) => `<text x="${x.toFixed(1)}" y="${ly + lh + 15}" text-anchor="${anchor}" font-size="9.5" fill="#8CA0B6" font-family="Inter, sans-serif">${t}</text>`;
       g += lab(x0, '0', 'start') + walls.filter((w, i) => (i + 1) % k === 0 && X(m.D) - X(w) > 22 + 5.6 * String(m.D + m.u).length).map(w => lab(X(w), String(w), 'middle')).join('') + lab(X(m.D), m.D + m.u, 'end');
-      // The seconds of the hottest spots: a turn, the start, the finish, a takeover one by one; the swimming (and the ΔΑΚ) once.
+      // The seconds of the hottest spots: a turn, the start, the finish, a takeover one by one; the swimming once.
       const spots = [];
       const spread = {};
       m.zones.forEach(z => {
-        if (z.key === 'swim' || z.key === 'dak') {
-          const s = spread[z.key] || (spread[z.key] = { gain: 0, at: z, len: 0 });
-          s.gain += z.gain;
+        if (z.key === 'swim') {
+          const s = spread[z.key] || (spread[z.key] = { lost: 0, at: z, len: 0 });
+          s.lost += z.lost;
           if (z.to - z.from > s.len) { s.len = z.to - z.from; s.at = z; }
-        } else spots.push({ x: X((z.from + z.to) / 2), gain: z.gain, v: (z.gain / Math.max(1, z.to - z.from)) / max });
+        } else spots.push({ x: X((z.from + z.to) / 2), lost: z.lost, v: (z.lost / Math.max(1, z.to - z.from)) / max });
       });
-      Object.keys(spread).forEach(key => { const s = spread[key]; spots.push({ x: X((s.at.from + s.at.to) / 2), gain: s.gain, v: (s.at.gain / Math.max(1, s.at.to - s.at.from)) / max }); });
+      Object.keys(spread).forEach(key => { const s = spread[key]; spots.push({ x: X((s.at.from + s.at.to) / 2), lost: s.lost, v: (s.at.lost / Math.max(1, s.at.to - s.at.from)) / max }); });
       const placed = [];
-      spots.filter(s => s.gain >= 0.02).sort((p0, q0) => q0.gain - p0.gain).forEach(s => {
+      spots.filter(s => s.lost >= 0.02).sort((p0, q0) => q0.lost - p0.lost).forEach(s => {
         if (placed.length >= 5 || placed.some(q0 => Math.abs(q0.x - s.x) < 54)) return;
         placed.push(s);
       });
       g += placed.map(s => {
         const x = Math.max(x0 + 24, Math.min(X(m.D) - 24, s.x));
         return `<line x1="${s.x.toFixed(1)}" x2="${s.x.toFixed(1)}" y1="${ly - 6}" y2="${ly - 1}" stroke="${heatColor(s.v)}" stroke-width="1.5"/>` +
-          `<text x="${x.toFixed(1)}" y="${ly - 9}" text-anchor="middle" font-size="11" font-weight="800" fill="${s.v > 0.6 ? '#FFB08A' : '#E6F4F1'}" font-family="Inter, sans-serif">≈ ${S(-s.gain)}</text>`;
+          `<text x="${x.toFixed(1)}" y="${ly - 9}" text-anchor="middle" font-size="11" font-weight="800" fill="${s.v > 0.6 ? '#FFB08A' : '#E6F4F1'}" font-family="Inter, sans-serif">${S(-s.lost)} s</text>`;
       }).join('');
     }
     return `<svg class="rmap${big ? ' big' : ''}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
   }
 
-  /** The three cards under the band: the ΔΑΚ, the race against the PB (or the reference), the biggest opportunity (2.23.0). */
+  /** The three cards under the band: the ΔΑΚ, the race against the PB (or the reference), the weakest phase (2.24.0). */
   function heroCards(x, I, R) {
     const a = x.race, b = x.pb, c = x.ref;
     const dak = a.avg.dak;
@@ -955,11 +973,13 @@ var SwimV2 = (function () {
         <div class="hc-sub">${T(a.final)} στα ${I.D}${I.u}</div><div class="hc-x">χωρίς ΑΡ και αναφορά στην ανάλυση</div></div>`;
     }
     let third;
-    const big = R.recs.find(r => r.gain !== null && r.gain > 0);
-    if (big && R.total > 0) {
-      third = `<div class="hc aim"><div class="hc-lab">Η μεγαλύτερη ευκαιρία</div><div class="hc-val hc-word${big.title.length > 16 ? ' xl' : big.title.length > 12 ? ' l' : ''}">${esc(big.title)}</div>
-        <div class="hc-sub">≈ <b>${S(-big.gain)} s</b> · το <b>${Math.round(100 * big.gain / R.total)}%</b> του περιθωρίου</div>${raceMap(R.map, false, 'rm1')}
-        <div class="hc-x">ο χάρτης του χρόνου: σελίδα 2</div></div>`;
+    const lv = R.levels || [];
+    const weak = lv.filter(l => l.pct > 0.05).sort((p0, q0) => q0.pct - p0.pct)[0];
+    if (weak) {
+      const len = weak.title.length + P(-weak.pct).length;
+      third = `<div class="hc aim"><div class="hc-lab">Η πιο αδύνατη φάση</div><div class="hc-val hc-word${len > 18 ? ' xl' : len > 14 ? ' l' : ''}">${esc(weak.title)} <span class="hc-pct">${P(-weak.pct)}</span></div>
+        <div class="hc-sub">${lv.filter(l => l !== weak).map((l, i, all) => `<span class="nw">${esc(low(l.title))} <b>${P(-l.pct)}</b>${i < all.length - 1 ? ' ·' : ''}</span>`).join(' ')}</div>
+        <div class="hc-x">ταχύτητα ${lv.every(l => l.ref) ? 'απέναντι στην αναφορά' : 'απέναντι στη σύγκριση'} · σελίδα 2</div></div>`;
     } else {
       third = `<div class="hc aim"><div class="hc-lab">Κολύμβηση</div><div class="hc-val">${F(a.avg.vClean)}<span class="hc-u"> m/s</span></div>
         <div class="hc-sub">συχνότητα ${F(a.avg.sr, 1)} · μήκος κύκλου ${F(a.avg.sl)} μ.</div><div class="hc-x">καθαρή κολύμβηση (χωρίς εκκίνηση, στροφές, τερματισμό)</div></div>`;
@@ -993,25 +1013,26 @@ var SwimV2 = (function () {
   function pageRecs(x, I, R, n, N) {
     const a = x.race;
     const list = R.recs.slice(0, 5);
-    const withGain = R.recs.filter(r => r.gain !== null).length;
-    const gl = R.recs.filter(r => r.gain !== null && r.gain > 0);
-    // The dot of each phase in the colour of its zones on the map (its seconds per metre, the hottest phase: 1).
-    const dens = {};
-    (R.map ? R.map.zones : []).forEach(z => { const e = dens[z.key] || (dens[z.key] = { g: 0, l: 0 }); e.g += z.gain; e.l += z.to - z.from; });
-    const dv = key => dens[key] && dens[key].l > 0 ? dens[key].g / dens[key].l : 0;
-    const dvMax = gl.reduce((m0, r) => Math.max(m0, dv(r.key)), 0);
-    const top = gl.length && R.total > 0 ? `<div class="aim-card map"><div class="ac-head"><div class="ac-lab">Πού κρύβεται ο χρόνος</div>
-      <div class="ac-txt">Κάθε ζώνη φωτίζεται όσο χρόνο κρύβει (η μισή απόσταση ${I.has.ref ? 'από την αναφορά' : 'από τη σύγκριση'}).</div></div>
-      ${raceMap(R.map, true, 'rm2')}
-      <div class="ac-rank">${gl.slice(0, 5).map(r => `<span class="ach"><i style="background:${heatColor(dvMax > 0 ? dv(r.key) / dvMax : 0)}"></i><b>${esc(r.title)}</b> ≈ ${S(-r.gain)} s · ${Math.round(100 * r.gain / R.total) < 1 ? '&lt;1' : Math.round(100 * r.gain / R.total)}%</span>`).join('')}</div></div>` : '';
+    const lv = R.levels || [];
+    const against1 = !lv.length ? '' : lv.every(l => l.ref) ? 'την αναφορά' : lv.every(l => !l.ref) ? 'το ' + lv[0].name : 'τη σύγκριση';
+    // The bars: the speed of each phase as a % of the one it is compared with (85% to 105%, the line: the same speed).
+    const lo = 85, hi = 105, at = v => Math.max(3, Math.min(100, 100 * (v - lo) / (hi - lo)));
+    const map = raceMap(R.map, true, 'rm2');
+    const top = lv.length ? `<div class="aim-card map"><div class="ac-head"><div class="ac-lab">Υστέρηση ανά φάση</div>
+      <div class="ac-txt">Η ταχύτητα κάθε φάσης απέναντι στ${against1.slice(1)}· η γραμμή: ίδια ταχύτητα.</div></div>
+      <div class="ac-bars">${lv.map(l => `<div class="acb"><span class="acb-t">${esc(l.title)}</span><span class="acb-bar"><i class="${l.pct <= 0.05 ? 'up' : ''}" style="width:${at(100 - l.pct).toFixed(1)}%"></i><b style="left:${at(100).toFixed(1)}%"></b></span><span class="acb-v">${P(-l.pct)}${l.pct > 0.05 ? `<small> · ${F(l.lost)} s</small>` : ''}</span></div>`).join('')}</div>
+      ${map ? `<div class="ac-lab ac-sub">Πού χάνεται ο χρόνος</div>${map}` : ''}</div>` : '';
+    const badge = r => r.pct !== null ? `<span class="rc-g l">${P(-r.pct)} · χάνει ${F(r.lost)} s</span>`
+      : r.lost !== null ? `<span class="rc-g l">χάνει ${F(r.lost)} s${r.key === 'dak' ? ' στο 2ο μισό' : ''}</span>`
+        : `<span class="rc-g n">${r.key === 'rate' ? 'συχνότητα' : 'ρυθμός'}</span>`;
     const cards = list.map((r, i) => `<div class="rc">
-      <div class="rc-h"><span class="rc-n">${i + 1}</span><span class="rc-t">${esc(r.title)}</span>${r.gain !== null ? `<span class="rc-g">≈ ${S(-r.gain)} s</span>` : '<span class="rc-g n">ρυθμός</span>'}</div>
+      <div class="rc-h"><span class="rc-n">${i + 1}</span><span class="rc-t">${esc(r.title)}</span>${badge(r)}</div>
       <div class="rc-b"><div class="rc-col"><div class="rc-l">Τι δείχνουν τα νούμερα</div><ul>${r.facts.map(f => `<li>${f}</li>`).join('')}</ul></div>
-        <div class="rc-col"><div class="rc-l">Πρόταση</div><div class="rc-a">${r.action}</div><div class="rc-l">Στόχος</div><div class="rc-a">${r.target}</div></div></div>
+        <div class="rc-col"><div class="rc-l">Πρόταση</div><div class="rc-a">${r.action}</div>${r.target ? `<div class="rc-l">Στόχος</div><div class="rc-a">${r.target}</div>` : ''}</div></div>
     </div>`).join('');
-    const how = I.has.ref ? 'πόσος χρόνος κερδίζεται αν η φάση φτάσει στη μέση της απόστασης από την αναφορά'
-      : I.has.pb ? 'πόσος χρόνος κερδίζεται αν η φάση φτάσει στη μέση της απόστασης από το ' + I.pbShort : 'από τα νούμερα του ίδιου του αγώνα';
-    const body = section('Προτάσεις με βάση τα νούμερα', 'Με σειρά κέρδους: ' + how + '.') + top + cards;
+    const how = lv.length ? `Με σειρά υστέρησης: πόσο % πιο αργή είναι κάθε φάση από ${against1} στην ίδια απόσταση και πόσος χρόνος χάνεται εκεί.`
+      : 'Από τα νούμερα του ίδιου του αγώνα.';
+    const body = section('Προτάσεις με βάση τα νούμερα', how) + top + cards;
     return page(I, 'Προτάσεις', body, n, N);
   }
 
@@ -1911,9 +1932,13 @@ var SwimV2 = (function () {
   .rmap { display: block; width: 100%; height: auto; } .hc .rmap { margin: 5px 0 0; }
   .aim-card.map { display: block; padding: 11px 16px 10px; }
   .ac-head { display: flex; gap: 16px; align-items: baseline; justify-content: space-between; margin-bottom: 2px; } .ac-head .ac-txt { font-size: 10.5px; color: #A9BACB; text-align: right; max-width: 64%; line-height: 1.35; }
-  .ac-rank { display: flex; flex-wrap: wrap; gap: 3px 13px; margin-top: 1px; }
-  .ach { font-size: 10.8px; color: #DCE6F0; display: inline-flex; align-items: center; gap: 5px; } .ach b { color: #fff; font-weight: 800; }
-  .ach i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .hc-pct { font-size: 0.84em; color: ${C.loss}; white-space: nowrap; } .hc.aim .hc-sub b { color: ${C.loss}; font-weight: 800; }
+  .ac-bars { display: grid; gap: 5px; margin: 6px 0 4px; }
+  .acb { display: grid; grid-template-columns: 112px 1fr 128px; gap: 10px; align-items: center; } .acb-t { font-weight: 800; font-size: 12px; color: #fff; }
+  .acb-bar { position: relative; height: 11px; background: rgba(255,255,255,0.08); border-radius: 6px; } .acb-bar i { display: block; height: 100%; background: linear-gradient(90deg, #E07A2E, #F5A35C); border-radius: 6px; }
+  .acb-bar i.up { background: linear-gradient(90deg, #2BB3A0, #5FE3C9); } .acb-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; }
+  .acb-v { font-size: 12.5px; color: #fff; font-weight: 800; text-align: right; white-space: nowrap; } .acb-v small { font-size: 10.5px; color: #A9BACB; font-weight: 700; }
+  .ac-sub { margin: 6px 0 0; } .nw { white-space: nowrap; }
   .db { display: inline-block; position: relative; width: 32px; height: 8px; vertical-align: middle; margin-right: 4px; background: linear-gradient(#C9D2DC, #C9D2DC) center / 1px 100% no-repeat; }
   .db i { position: absolute; top: 1px; height: 6px; border-radius: 3px; } .db i.f { right: 50%; background: ${C.gainMark}; } .db i.s { left: 50%; background: ${C.lossMark}; }
   .rc { border: 1px solid #E3E8EE; border-left: 5px solid #2E6BD6; border-radius: 10px; padding: 9px 13px 10px; margin-bottom: 8px; background: #fff; }
@@ -1921,7 +1946,8 @@ var SwimV2 = (function () {
   .rc-h { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .rc-n { width: 26px; height: 26px; border-radius: 50%; background: ${C.navy}; color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 13px; }
   .rc-t { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 16px; font-weight: 800; color: ${C.ink}; flex: 1; }
-  .rc-g { font-size: 13px; font-weight: 800; color: #0E6B62; background: #DDF3EF; padding: 3px 10px; border-radius: 12px; } .rc-g.n { color: #5B6B7B; background: #EDF0F4; }
+  .rc-g { font-size: 13px; font-weight: 800; color: #0E6B62; background: #DDF3EF; padding: 3px 10px; border-radius: 12px; white-space: nowrap; } .rc-g.n { color: #5B6B7B; background: #EDF0F4; }
+  .rc-g.l { color: ${C.loss}; background: #FBEADF; }
   .rc-b { display: grid; grid-template-columns: 1.05fr 1fr; gap: 16px; }
   .rc-l { font-size: 9.8px; letter-spacing: 0.07em; text-transform: uppercase; color: ${C.dim}; font-weight: 800; margin: 2px 0 3px; }
   .rc ul { margin: 0; padding-left: 15px; } .rc li { font-size: 11.2px; margin: 2px 0; line-height: 1.38; }
