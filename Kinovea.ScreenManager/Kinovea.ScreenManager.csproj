@@ -1048,6 +1048,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.PdfV2.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.LearnValues.cs" />
     <Compile Include="SwimAnalysis\SwimPdfPrinter.cs" />
+    <Compile Include="SwimAnalysis\SwimSlides.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Compare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.TechCompare.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Pose.cs" />

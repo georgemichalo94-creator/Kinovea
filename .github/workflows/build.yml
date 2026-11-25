@@ -336,6 +336,36 @@ jobs:
         $summary = @($out | Where-Object { "$_" -like 'pdf print:*' }) -join ''
         Write-Output ('::notice title=Swim PDF printed by Edge::' + $summary + ' ·' + $times)
 
+    - name: Swim slides of the race
+      id: slides
+      continue-on-error: true
+      shell: pwsh
+      timeout-minutes: 8
+      run: |
+        # (2.39.0) The slides of fictional races as the Apps Script 2.26.0 sends them with the PDF of a package (sl_build.js on the mock of
+        # Apps Script), made pictures by the DLL with the Edge of the runner (a logo and a frame of the video put in): one per slide,
+        # 1920 x 1080 and 1080 x 1350, the logo and the frame where they go; fitted to a video of another shape, faded; and at the end of a
+        # fictional video by the encoder and the ffmpeg of the build (3 s each). The pictures and the video as an artifact.
+        $dir = [System.IO.Path]::Combine($env:RUNNER_TEMP, 'swim_slides')
+        $out = @(& node .\SwimAnalysis\tests\slides\sl_build.js $dir lc-200-fs sc-100-fs lc-4x100-fs lc-1500-fs 2>&1)
+        $made = $LASTEXITCODE
+        $out += @(& powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\slides\sl_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -dir $dir -out slides-check 2>&1)
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($made -ne 0 -or $code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim slides of the race::exit ' + $made + ' ' + $code + ' | ' + (($bad | Select-Object -First 8) -join ' | ').Replace('%', '%25')); exit 1 }
+        $times = @($out | Where-Object { "$_" -like '*slide times*' }) -join ''
+        Write-Output ('::notice title=Swim slides of the race::' + ($out | Select-Object -Last 1) + ' ·' + $times)
+
+    - name: Swim slides of the race pictures
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: slides-check
+        path: slides-check
+        if-no-files-found: ignore
+
     - name: Swim group of screens
       continue-on-error: true
       shell: pwsh

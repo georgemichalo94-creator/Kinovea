@@ -314,6 +314,35 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static byte[] PrintDevTools(string browser, string page, string profile, int timeout)
         {
+            return OnPage(browser, page, profile, timeout, (tab, left) =>
+            {
+                JObject printed = tab.Call("Page.printToPDF", new JObject
+                {
+                    ["printBackground"] = true,
+                    ["preferCSSPageSize"] = true,
+                    ["paperWidth"] = PaperWidth,
+                    ["paperHeight"] = PaperHeight,
+                    ["marginTop"] = 0,
+                    ["marginBottom"] = 0,
+                    ["marginLeft"] = 0,
+                    ["marginRight"] = 0,
+                    ["displayHeaderFooter"] = false,
+                    ["scale"] = 1,
+                    ["transferMode"] = "ReturnAsBase64"
+                }, Math.Max(20000, left));
+                string data = printed.Value<string>("data");
+                if (string.IsNullOrEmpty(data))
+                    throw new InvalidDataException(SwimLang.T("ο browser δεν έδωσε PDF"));
+                return Convert.FromBase64String(data);
+            });
+        }
+
+        /// <summary>
+        /// (2.39.0) The page in the browser through its DevTools: loaded, its fonts ready, then the work (the tab, the milliseconds left):
+        /// the PDF of the report, the pictures of the slides. The browser closed after it, whatever happened.
+        /// </summary>
+        private static T OnPage<T>(string browser, string page, string profile, int timeout, Func<DevTools, int, T> work, Action<DevTools> before = null)
+        {
             Stopwatch watch = Stopwatch.StartNew();
             Directory.CreateDirectory(profile);
             ProcessStartInfo info = new ProcessStartInfo(browser, Arguments(profile, "--remote-debugging-port=0", "about:blank"))
@@ -354,9 +383,13 @@ namespace Kinovea.ScreenManager
                         }
                     }
 
-                    byte[] pdf;
+                    T done;
                     using (DevTools tab = new DevTools(PageTarget(port), 15000))
                     {
+                        // (2.39.0) What the work needs before the page (the size of the window of the pictures).
+                        if (before != null)
+                            before(tab);
+
                         JObject navigated = tab.Call("Page.navigate", new JObject { ["url"] = new Uri(page).AbsoluteUri }, 20000);
                         string failed = navigated.Value<string>("errorText");
                         if (!string.IsNullOrEmpty(failed))
@@ -394,24 +427,7 @@ namespace Kinovea.ScreenManager
                             ["returnByValue"] = true
                         }, 20000);
 
-                        JObject printed = tab.Call("Page.printToPDF", new JObject
-                        {
-                            ["printBackground"] = true,
-                            ["preferCSSPageSize"] = true,
-                            ["paperWidth"] = PaperWidth,
-                            ["paperHeight"] = PaperHeight,
-                            ["marginTop"] = 0,
-                            ["marginBottom"] = 0,
-                            ["marginLeft"] = 0,
-                            ["marginRight"] = 0,
-                            ["displayHeaderFooter"] = false,
-                            ["scale"] = 1,
-                            ["transferMode"] = "ReturnAsBase64"
-                        }, (int)Math.Max(20000, timeout - watch.ElapsedMilliseconds));
-                        string data = printed.Value<string>("data");
-                        if (string.IsNullOrEmpty(data))
-                            throw new InvalidDataException(SwimLang.T("ο browser δεν έδωσε PDF"));
-                        pdf = Convert.FromBase64String(data);
+                        done = work(tab, (int)(timeout - watch.ElapsedMilliseconds));
                     }
 
                     // The browser closes itself (and its processes); else it is stopped.
@@ -429,12 +445,138 @@ namespace Kinovea.ScreenManager
                     }
 
                     process.WaitForExit(8000);
-                    return pdf;
+                    return done;
                 }
                 finally
                 {
                     Stop(process);
                 }
+            }
+        }
+
+        /// <summary>(2.39.0) A picture of the slides of a race: "v" a slide of the video (16:9), "s" a post for the social media (4:5).</summary>
+        public class Shot
+        {
+            public string Kind;
+            public byte[] Png;
+            public int Width;
+            public int Height;
+        }
+
+        public class ShotResult
+        {
+            public bool Ok;
+            public List<Shot> Shots = new List<Shot>();
+            public string Error;
+            public double Seconds;
+            public string Browser;
+        }
+
+        /// <summary>The width and the height of a PNG (its header), 0 when it is not one.</summary>
+        public static int[] PngSize(byte[] png)
+        {
+            if (png == null || png.Length < 24 || png[0] != 0x89 || png[1] != 'P' || png[2] != 'N' || png[3] != 'G')
+                return new[] { 0, 0 };
+            Func<int, int> at = i => (png[i] << 24) | (png[i + 1] << 16) | (png[i + 2] << 8) | png[i + 3];
+            return new[] { at(16), at(20) };
+        }
+
+        /// <summary>
+        /// (2.39.0) The slides of a race (the Apps Script 2.26.0, SwimV2.slides: the sections "sl v", 1920 x 1080, and "sl s", 1080 x 1350)
+        /// as PNG pictures, one for each section in its order, through the DevTools of the browser, with the fonts of the report as its PDF.
+        /// Called on a background thread. Never throws: Ok false and the reason.
+        /// </summary>
+        public static ShotResult Shoot(string html, int timeoutSeconds = 120)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            ShotResult result = new ShotResult();
+            string browser = BrowserPath;
+            result.Browser = browser != null ? Path.GetFileNameWithoutExtension(browser) : "";
+            if (browser == null)
+            {
+                result.Error = SwimLang.T("δεν βρέθηκε ο Microsoft Edge ούτε το Google Chrome");
+                return result;
+            }
+
+            if (string.IsNullOrEmpty(html))
+            {
+                result.Error = SwimLang.T("χωρίς διαφάνειες");
+                return result;
+            }
+
+            string root = Path.Combine(Path.GetTempPath(), "KinoveaSwimPdf");
+            string dir = Path.Combine(root, DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                CleanOld(root);
+                Directory.CreateDirectory(dir);
+                string page = Path.Combine(dir, "slides.html");
+                File.WriteAllText(page, WithFonts(html), new UTF8Encoding(false));
+                int timeout = Math.Max(30, timeoutSeconds) * 1000;
+                result.Shots = OnPage(browser, page, Path.Combine(dir, "profile"), timeout, (tab, left) =>
+                {
+                    // The pictures of the page drawn (two frames after its fonts), then the places of its sections.
+                    tab.Call("Runtime.evaluate", new JObject
+                    {
+                        ["expression"] = "new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(function () { r(true); }); }); })",
+                        ["awaitPromise"] = true,
+                        ["returnByValue"] = true
+                    }, 10000);
+                    JObject places = tab.Call("Runtime.evaluate", new JObject
+                    {
+                        ["expression"] = "JSON.stringify(Array.prototype.map.call(document.querySelectorAll('section.sl'), function (s) { var r = s.getBoundingClientRect(); " +
+                            "return { k: s.classList.contains('v') ? 'v' : 's', x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height }; }))",
+                        ["returnByValue"] = true
+                    }, 10000);
+                    JObject value = places["result"] as JObject;
+                    string json = value != null ? value.Value<string>("value") : null;
+                    if (string.IsNullOrEmpty(json))
+                        throw new InvalidDataException(SwimLang.T("χωρίς διαφάνειες"));
+
+                    List<Shot> shots = new List<Shot>();
+                    foreach (JObject place in JArray.Parse(json).OfType<JObject>())
+                    {
+                        double w = place.Value<double>("w"), h = place.Value<double>("h");
+                        if (w < 10 || h < 10)
+                            continue;
+                        JObject shot = tab.Call("Page.captureScreenshot", new JObject
+                        {
+                            ["format"] = "png",
+                            ["fromSurface"] = true,
+                            ["captureBeyondViewport"] = true,
+                            ["clip"] = new JObject { ["x"] = place.Value<double>("x"), ["y"] = place.Value<double>("y"), ["width"] = w, ["height"] = h, ["scale"] = 1 }
+                        }, 30000);
+                        string data = shot.Value<string>("data");
+                        if (string.IsNullOrEmpty(data))
+                            throw new InvalidDataException(SwimLang.T("ο browser δεν έδωσε εικόνα"));
+                        byte[] png = Convert.FromBase64String(data);
+                        int[] size = PngSize(png);
+                        shots.Add(new Shot { Kind = place.Value<string>("k"), Png = png, Width = size[0], Height = size[1] });
+                    }
+
+                    return shots;
+                }, tab => tab.Call("Emulation.setDeviceMetricsOverride", new JObject
+                {
+                    ["width"] = 1920,
+                    ["height"] = 1080,
+                    ["deviceScaleFactor"] = 1,
+                    ["mobile"] = false
+                }, 10000));
+                result.Ok = result.Shots.Count > 0;
+                if (!result.Ok)
+                    result.Error = SwimLang.T("χωρίς διαφάνειες");
+                return result;
+            }
+            catch (Exception e)
+            {
+                log.Warn("The slides were not made: " + e.Message);
+                result.Error = e.Message;
+                return result;
+            }
+            finally
+            {
+                result.Seconds = watch.Elapsed.TotalSeconds;
+                Remove(dir);
             }
         }
 

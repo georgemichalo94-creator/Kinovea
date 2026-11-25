@@ -1,4 +1,4 @@
-// (2.26.0 mockup) The slides of the report: the pages as a presentation at the end of the video (16:9, 3 s each) and the posts for
+// (2.26.0) The slides of the report: the pages as a presentation at the end of the video (16:9, 3 s each) and the posts for
 // the social media (4:5). Every event of the templates with the PB and the reference, with the reference only, with none, and the
 // short analysis: built without an error, without NaN / undefined, one slide for each page of the report in its order (the passings
 // last), the posts with the race's own numbers only (no PB, no reference). Fictional races and names only (report_v2/rv2_races.js).
@@ -55,4 +55,20 @@ all().forEach(p => VARIANTS.forEach(v => {
   assert.ok(r.html.indexOf('{{FRAME}}') > 0, tag);
   built++;
 }));
+// The web app: the slides with the pages of the PDF only when the package asks for them (req.slides), of the same pages (the short
+// analysis alone: its own slides); the pages the same with or without them.
+{
+  const p = all().find(q => q.ev.key === 'lc-200-fs');
+  const race = G.swimNormalizeRace_(JSON.parse(JSON.stringify(p.race)));
+  const er = G.swimReferenceRace_(p.ref);
+  const src = { race, analysis: G.swimAnalyze_(race), extras: { elite: { race: er, analysis: G.swimAnalyze_(er), label: 'Αναφορά δείγμα' } } };
+  const plain = G.swimV2Pages_(src, { short: false, full: true });
+  const asked = G.swimV2Pages_(src, { short: false, full: true }, true);
+  const short = G.swimV2Pages_(src, { short: true, full: false }, true);
+  assert.ok(!plain.slides, 'no slides when not asked');
+  assert.ok(asked.slides && asked.slides.html.indexOf('<section class="sl v') > 0 && asked.slides.video >= 8 && asked.slides.social >= 6, 'the slides when asked');
+  assert.strictEqual(asked.html, plain.html, 'the pages the same with the slides');
+  assert.ok(short.slides && short.slides.video <= 4, 'the slides of the short analysis: ' + (short.slides && short.slides.video));
+  assert.strictEqual(asked.version, '2.26.0');
+}
 console.log('test_slides: ' + built + ' slide sets OK');

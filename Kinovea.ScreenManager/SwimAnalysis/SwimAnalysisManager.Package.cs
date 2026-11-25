@@ -7,12 +7,14 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 using Kinovea.Services;
 using Kinovea.Video;
@@ -157,6 +159,12 @@ namespace Kinovea.ScreenManager
             if (Settings.IsConfigured)
             {
                 package.PdfWaiting = true;
+
+                // (2.39.0) The slides of the race with its pages (the 2nd version, printed here): at the end of the video and for the
+                // social media; the picture of their cover from the video (the entry of the start).
+                package.SlidesWanted = Settings.PackageSlides && WantsV2(race);
+                package.SlidesWaiting = package.SlidesWanted;
+                package.CoverTimestamp = package.SlidesWanted ? CoverMoment(race) : long.MinValue;
                 packagePdfPending[race.Id] = new KeyValuePair<SwimPackage, DateTime>(package, DateTime.Now);
                 SendByUser(true);
             }
@@ -411,6 +419,14 @@ namespace Kinovea.ScreenManager
                 return;
             job.Package.PdfError = null;
             job.Package.PdfWaiting = true;
+
+            // (2.39.0) The slides asked again with it, when they did not come.
+            if (job.Package.SlidesWanted && !job.Package.SlidesShooting && job.Package.Slides.Count == 0)
+            {
+                job.Package.SlidesWaiting = true;
+                job.Package.SlidesNote = null;
+            }
+
             packagePdfPending[job.RaceId] = new KeyValuePair<SwimPackage, DateTime>(job.Package, DateTime.Now);
             SendByUser(true);
         }
@@ -469,11 +485,16 @@ namespace Kinovea.ScreenManager
         /// <summary>The flags of the requests of a race while its package waits for the PDF: the PDF itself and the coaches' emails.</summary>
         private JObject PackageFlags(SwimRace race)
         {
-            if (PackageWaitingPdf(race) == null)
+            SwimPackage p = PackageWaitingPdf(race);
+            if (p == null)
                 return null;
             JObject flags = new JObject();
             flags["pdfData"] = true;
             flags["coaches"] = true;
+
+            // (2.39.0) The slides of the race with its pages (the Apps Script 2.26.0).
+            if (p.SlidesWanted && p.SlidesWaiting && !p.SlidesShooting)
+                flags["slides"] = true;
             return flags;
         }
 
@@ -493,6 +514,13 @@ namespace Kinovea.ScreenManager
             p.PdfWaiting = false;
             p.PdfError = null;
             p.PdfUrl = result.PdfUrl;
+
+            // (2.39.0) The PDF of the sheet (the pages were not printed here, an older Apps Script): no slides come.
+            if (p.SlidesWaiting && !p.SlidesShooting)
+            {
+                p.SlidesWaiting = false;
+                p.SlidesNote = SwimLang.T("Χωρίς διαφάνειες: το PDF έγινε από το φύλλο (οι διαφάνειες έρχονται με τη νέα αναφορά).");
+            }
             JObject pdf = result.Raw != null ? result.Raw["pdf"] as JObject : null;
             string data = pdf != null ? pdf.Value<string>("data") : null;
             if (!string.IsNullOrEmpty(data))
@@ -667,6 +695,13 @@ namespace Kinovea.ScreenManager
                 return;
 
             job.Package.PdfError = string.IsNullOrEmpty(e.Message) ? SwimLang.T("Το PDF δεν έγινε.") : e.Message;
+            if (job.Package.SlidesWaiting && !job.Package.SlidesShooting)
+            {
+                // (2.39.0) No slides without the pages (they come with the PDF asked again).
+                job.Package.SlidesWaiting = false;
+                job.Package.SlidesNote = SwimLang.T("Χωρίς διαφάνειες: το PDF δεν έγινε.");
+            }
+
             if (job.Form != null && !job.Form.IsDisposed)
                 job.Form.PdfChanged();
         }
@@ -838,6 +873,7 @@ namespace Kinovea.ScreenManager
                         using (OpenCvSharp.Mat bgr = SwimStrokeVideo.ToWorking(flushed, size.Width, size.Height))
                         {
                             CopyBgr(bgr, buffer, size);
+                            TakeCover(package, frame.Timestamp, buffer, size);
                             if (moment < moments.Count && frame.Timestamp >= moments[moment].Key)
                             {
                                 string label = moments[moment].Value;
@@ -878,6 +914,27 @@ namespace Kinovea.ScreenManager
 
                     if (!started)
                         return SwimLang.T("Δεν διαβάστηκε κανένα καρέ του βίντεο.");
+
+                    // (2.39.0) The slides of the race at the end of its video.
+                    bool slidesTaken, slidesCancelled;
+                    count += AppendSlides(encoder, package, size, fps, worker, out slidesTaken, out slidesCancelled);
+                    if (slidesCancelled)
+                    {
+                        encoder.Abort();
+                        return null;
+                    }
+
+                    if (!slidesTaken)
+                    {
+                        string stopped;
+                        if (!encoder.Finish(60000, out stopped))
+                            return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), string.IsNullOrEmpty(stopped) ? encoder.Errors : stopped);
+                        log.WarnFormat("Swim package video: ffmpeg ended in the slides, after {0} frames.", count);
+                        package.VideoPath = ReplaceFile(temp, package.VideoPath);
+                        package.VideoSeconds = count / fps;
+                        package.VideoReady = true;
+                        return null;
+                    }
 
                     worker.ReportProgress(99, SwimLang.T("Το βίντεο κλείνει…"));
                     string finishError;
@@ -961,6 +1018,181 @@ namespace Kinovea.ScreenManager
 
             for (int y = 0; y < size.Height; y++)
                 Marshal.Copy(bgr.Ptr(y), buffer, y * row, row);
+        }
+
+        /// <summary>(2.39.0) How long the end of the video of a package waits for its slides (they are made with its PDF).</summary>
+        private const double SlidesWaitSeconds = 120;
+
+        /// <summary>
+        /// (2.39.0) The moment of the picture of the cover of the posts: the entry of the start (else 1 s after the signal); none without
+        /// a start.
+        /// </summary>
+        private long CoverMoment(SwimRace race)
+        {
+            if (race == null || race.IsTraining || !race.StartTimestamp.HasValue)
+                return long.MinValue;
+            SwimTechPhase start = TechPhases != null ? TechPhases.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start) : null;
+            double entry = start != null && start.Entry.HasValue && start.Entry.Value > 0.2 && start.Entry.Value < 3 ? start.Entry.Value : 1.0;
+            return race.StartTimestamp.Value + RealSpan(entry);
+        }
+
+        /// <summary>(2.39.0) The picture of the cover of the posts, from the first image of the video at its moment (24-bit BGR rows).</summary>
+        private static void TakeCover(SwimPackage package, long timestamp, byte[] bgr, Size size)
+        {
+            if (package == null || package.CoverJpeg != null || package.CoverTimestamp == long.MinValue || timestamp < package.CoverTimestamp)
+                return;
+            try
+            {
+                package.CoverJpeg = SwimSlides.Jpeg(bgr, size);
+            }
+            catch (Exception e)
+            {
+                log.Warn("The picture of the cover of the slides was not taken: " + e.Message);
+                package.CoverTimestamp = long.MinValue;
+            }
+        }
+
+        /// <summary>
+        /// (2.39.0) The slides of the race at the end of the video of its package (SwimSlides.Write: 3 s each), after waiting for them a
+        /// while when they are being made (with the PDF). Returns the frames written; taken false when ffmpeg stopped taking images,
+        /// cancelled when the analyst stopped the package.
+        /// </summary>
+        private int AppendSlides(SwimVideoEncoder encoder, SwimPackage package, Size size, double fps, BackgroundWorker worker, out bool taken, out bool cancelled)
+        {
+            taken = true;
+            cancelled = false;
+            if (package == null || !package.SlidesWanted)
+                return 0;
+
+            Stopwatch wait = Stopwatch.StartNew();
+            while (package.SlidesWaiting && wait.Elapsed.TotalSeconds < SlidesWaitSeconds)
+            {
+                if (worker.CancellationPending)
+                {
+                    cancelled = true;
+                    return 0;
+                }
+
+                worker.ReportProgress(99, string.Format(CultureInfo.InvariantCulture, SwimLang.T("Οι διαφάνειες του αγώνα ετοιμάζονται… {0} δλ."), (int)wait.Elapsed.TotalSeconds));
+                Thread.Sleep(500);
+            }
+
+            List<byte[]> slides;
+            lock (package.Slides)
+                slides = package.Slides.ToList();
+            if (slides.Count == 0)
+            {
+                if (package.SlidesWaiting)
+                {
+                    log.Warn("The slides of the package did not come in time: the video without them.");
+                    package.SlidesNote = SwimLang.T("Οι διαφάνειες δεν ήρθαν εγκαίρως: το βίντεο χωρίς αυτές («Νέα δημιουργία» για να μπουν).");
+                }
+
+                return 0;
+            }
+
+            int frames = SwimSlides.Write(encoder, slides, size, fps, () => worker.CancellationPending,
+                (done, all) => worker.ReportProgress(99, string.Format(CultureInfo.InvariantCulture, SwimLang.T("Οι διαφάνειες μπαίνουν στο τέλος του βίντεο: {0}/{1}"), done, all)),
+                out taken, out cancelled);
+            package.VideoSlides = frames / SwimSlides.FramesOf(fps);
+            log.InfoFormat("Swim package video: {0} slides at the end ({1} frames).", package.VideoSlides, frames);
+            return frames;
+        }
+
+        /// <summary>
+        /// (2.39.0) The slides of a race for its package (on a background thread, after its PDF is printed): the picture of the cover from
+        /// the video (a while for it), the pictures from the Edge of the computer, the slides of the video kept for its end and the posts
+        /// written in the folder «Instagram» of the package; the window told on its thread.
+        /// </summary>
+        private void ShootSlides(SwimPackage p, string html, SynchronizationContext ui)
+        {
+            try
+            {
+                Stopwatch wait = Stopwatch.StartNew();
+                while (p.CoverJpeg == null && p.CoverTimestamp != long.MinValue && !p.VideoReady && wait.Elapsed.TotalSeconds < 45)
+                    Thread.Sleep(250);
+
+                SwimPdfPrinter.ShotResult shot = SwimPdfPrinter.Shoot(SwimSlides.WithImages(html, SwimSlides.Logo(), p.CoverJpeg));
+                if (!shot.Ok)
+                {
+                    log.Warn("The slides of the package were not made: " + shot.Error);
+                    p.SlidesNote = string.Format(SwimLang.T("Οι διαφάνειες δεν έγιναν ({0}): το βίντεο χωρίς αυτές."), shot.Error);
+                    return;
+                }
+
+                List<byte[]> video = shot.Shots.Where(x => x.Kind == "v").Select(x => x.Png).ToList();
+                List<byte[]> social = shot.Shots.Where(x => x.Kind == "s").Select(x => x.Png).ToList();
+                List<string> written = new List<string>();
+                try
+                {
+                    written = WriteSocial(p, social);
+                }
+                catch (Exception e)
+                {
+                    log.Error("The posts of the package were not written.", e);
+                    p.SlidesNote = SwimLang.T("Οι εικόνες για τα social δεν γράφτηκαν στον φάκελο: ") + e.Message;
+                }
+
+                lock (p.Slides)
+                {
+                    p.Slides.Clear();
+                    p.Slides.AddRange(video);
+                }
+
+                p.SocialPaths = written;
+                log.InfoFormat(CultureInfo.InvariantCulture, "The slides of the package: {0} for the video, {1} posts, in {2:0.0} s (the cover {3}).",
+                    video.Count, written.Count, shot.Seconds, p.CoverJpeg != null ? "from the video" : "without a picture");
+            }
+            catch (Exception e)
+            {
+                log.Error("The slides of the package failed.", e);
+                p.SlidesNote = string.Format(SwimLang.T("Οι διαφάνειες δεν έγιναν ({0}): το βίντεο χωρίς αυτές."), e.Message);
+            }
+            finally
+            {
+                p.SlidesWaiting = false;
+                p.SlidesShooting = false;
+                ui.Post(_ => SlidesChanged(p), null);
+            }
+        }
+
+        /// <summary>(2.39.0) The posts in the folder «Instagram» of the package, in place of those of before (their names are their numbers).</summary>
+        private static List<string> WriteSocial(SwimPackage p, List<byte[]> social)
+        {
+            List<string> written = new List<string>();
+            if (social == null || social.Count == 0)
+                return written;
+            string folder = p.SocialFolder;
+            Directory.CreateDirectory(folder);
+            foreach (string old in Directory.GetFiles(folder, "Instagram *.png"))
+            {
+                try
+                {
+                    File.Delete(old);
+                }
+                catch (Exception)
+                {
+                    // Open in a program: its number is written beside it (ReplaceFile).
+                }
+            }
+
+            for (int i = 0; i < social.Count; i++)
+            {
+                string target = Path.Combine(folder, SwimSlides.SocialName(i + 1));
+                string temp = target + ".part";
+                File.WriteAllBytes(temp, social[i]);
+                written.Add(ReplaceFile(temp, target));
+            }
+
+            return written;
+        }
+
+        /// <summary>(2.39.0) The slides made (or not): the window of the package says it (on the thread of the analysis).</summary>
+        private void SlidesChanged(SwimPackage p)
+        {
+            PackageJob job = packageJob;
+            if (job != null && job.Package == p && job.Form != null && !job.Form.IsDisposed)
+                job.Form.SlidesChanged();
         }
 
         /// <summary>A picture of the preview (480 wide at most) from an image of the video of the package.</summary>

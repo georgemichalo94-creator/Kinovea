@@ -2,7 +2,7 @@
  * Kinovea Swim · the race report, 2nd version (Apps Script 2.22.0; 2.23.0: «Πού κρύβεται ο χρόνος» in the place of the target time;
  * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way;
  * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's; 2.25.0: what the comparison
- * means in the place of the recommendations, and the conclusion of the whole race; 2.26.0 (mockup): the slides of the race, the
+ * means in the place of the recommendations, and the conclusion of the whole race; 2.26.0: the slides of the race, the
  * pages at the end of the video (16:9) and the posts for the social media of the federation (4:5)).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real

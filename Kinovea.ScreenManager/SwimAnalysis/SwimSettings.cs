@@ -300,6 +300,12 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public bool PdfV2 = true;
 
+        /// <summary>
+        /// (2.39.0) The package has the slides of the race (Apps Script 2.26.0): the pages of the report as slides at the end of its video,
+        /// 3 s each, and the posts for the social media (4:5) in its folder «Instagram». False: as before.
+        /// </summary>
+        public bool PackageSlides = true;
+
         /// <summary>(2.13.0) The sheet of criteria last chosen for each kind of phase and style ("start|fs", "turn|br").</summary>
         public Dictionary<string, string> TechSheetChoice = new Dictionary<string, string>();
 

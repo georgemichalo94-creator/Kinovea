@@ -135,6 +135,28 @@ namespace Kinovea.ScreenManager
 
             string htmlShort = v2.Value<string>("htmlShort");
             int pages = v2.Value<int?>("pages") ?? 0;
+
+            // (2.39.0) The slides of the race for its package, asked with its pages: made after its PDF (ShootSlides). An Apps Script
+            // before 2.26.0 does not send them: said in the window of the package.
+            SwimPackage slidesFor = PackageWaitingPdf(race);
+            JObject slides = v2["slides"] as JObject;
+            string slidesHtml = slides != null ? slides.Value<string>("html") : null;
+            if (slidesFor != null && (!slidesFor.SlidesWanted || !slidesFor.SlidesWaiting || slidesFor.SlidesShooting))
+                slidesFor = null;
+            if (slidesFor != null && string.IsNullOrEmpty(slidesHtml))
+            {
+                string slidesError = v2.Value<string>("slidesError");
+                slidesFor.SlidesWaiting = false;
+                slidesFor.SlidesNote = !string.IsNullOrEmpty(slidesError)
+                    ? string.Format(SwimLang.T("Οι διαφάνειες δεν έγιναν στο Apps Script ({0}): το βίντεο χωρίς αυτές."), slidesError)
+                    : SwimLang.T("Χωρίς διαφάνειες: θέλουν το Apps Script 2.26.0 στο KOE App (δες τον οδηγό, «Ενημέρωση του script»).");
+                if (!string.IsNullOrEmpty(slidesError))
+                    log.Warn("The web app did not make the slides: " + slidesError);
+                slidesFor = null;
+            }
+
+            if (slidesFor != null)
+                slidesFor.SlidesShooting = true;
             SyncState = SwimSyncState.Sending;
             SyncMessage = SwimLang.T("🖨️ Το PDF τυπώνεται…");
             Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🖨️ Η αναφορά ({0} σελίδες) τυπώνεται σε PDF…"), pages), false);
@@ -153,6 +175,10 @@ namespace Kinovea.ScreenManager
                     ? new[] { new SwimPdfPrinter.Result { Error = t.Exception.GetBaseException().Message }, null }
                     : t.Result;
                 ui.Post(_ => V2Printed(race, printed[0], printed[1], pages, requestSeconds), null);
+
+                // (2.39.0) Then the slides of its package (the browser of the PDF closed first).
+                if (slidesFor != null)
+                    ShootSlides(slidesFor, slidesHtml, ui);
             });
         }
 

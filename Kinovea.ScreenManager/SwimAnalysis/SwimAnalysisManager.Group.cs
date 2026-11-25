@@ -754,6 +754,10 @@ namespace Kinovea.ScreenManager
                         }
 
                         CopyBgr(joined, buffer);
+
+                        // (2.39.0) The picture of the cover of the slides of a package (the entry of the start).
+                        if (job.Package != null)
+                            TakeCover(job.Package, ts, buffer, job.Size);
                         if (!encoder.Write(buffer))
                         {
                             // ffmpeg stopped taking images: a video it finished well is kept (the images to here), else its error.
@@ -794,6 +798,28 @@ namespace Kinovea.ScreenManager
                         bool taken;
                         count += WriteClosingPanel(encoder, joined, buffer, place, closing, fps, count, job, worker, out taken);
                         if (!taken)
+                        {
+                            string stopped;
+                            if (!encoder.Finish(60000, out stopped))
+                                return string.Format(SwimLang.T("Το ffmpeg σταμάτησε: {0}"), string.IsNullOrEmpty(stopped) ? encoder.Errors : stopped);
+                            job.Frames = count;
+                            return null;
+                        }
+                    }
+
+                    // (2.39.0) The slides of the race at the end of the video of its package.
+                    if (job.Package != null)
+                    {
+                        bool slidesTaken, slidesCancelled;
+                        count += AppendSlides(encoder, job.Package, job.Size, fps, worker, out slidesTaken, out slidesCancelled);
+                        if (slidesCancelled)
+                        {
+                            job.Cancelled = true;
+                            encoder.Abort();
+                            return null;
+                        }
+
+                        if (!slidesTaken)
                         {
                             string stopped;
                             if (!encoder.Finish(60000, out stopped))

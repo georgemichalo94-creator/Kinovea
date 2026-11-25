@@ -44,6 +44,10 @@ namespace Kinovea.ScreenManager
         private readonly PictureBox videoPicture;
         private readonly FlowLayoutPanel thumbs;
         private readonly SwimButton btnPlay;
+
+        /// <summary>(2.39.0) The slides of the race (at the end of the video, the posts in the folder «Instagram») and their folder.</summary>
+        private readonly Label slidesStatus;
+        private readonly SwimButton btnSocial;
         private readonly TextBox txtTo;
         private readonly TextBox txtSubject;
         private readonly TextBox txtBody;
@@ -228,9 +232,19 @@ namespace Kinovea.ScreenManager
             btnPlay = new SwimButton(true) { Text = SwimLang.T("▶ Αναπαραγωγή"), AutoSize = true, Height = 30, Enabled = false, Primary = true };
             btnPlay.Click += (s, e) => PlayVideo();
             videoButtons.Controls.Add(btnPlay);
+            btnSocial = new SwimButton(true) { Text = SwimLang.T("📱 Εικόνες Instagram"), AutoSize = true, Height = 30, Enabled = false, Visible = false };
+            btnSocial.Click += (s, e) =>
+            {
+                if (Directory.Exists(package.SocialFolder))
+                    Open(package.SocialFolder);
+            };
+            tips.SetToolTip(btnSocial, SwimLang.T("Ο φάκελος «Instagram» της αποστολής: οι εικόνες του αγώνα για τα social (4:5), μόνο με τα νούμερα του αγώνα."));
+            videoButtons.Controls.Add(btnSocial);
+            slidesStatus = new Label { Dock = DockStyle.Top, Height = 22, ForeColor = SwimTheme.Dim, AutoEllipsis = true, Visible = false, Padding = new Padding(0, 4, 0, 0) };
             split.Panel2.Controls.Add(videoPicture);
             split.Panel2.Controls.Add(thumbs);
             split.Panel2.Controls.Add(videoButtons);
+            split.Panel2.Controls.Add(slidesStatus);
             split.Panel2.Controls.Add(videoProgress);
             split.Panel2.Controls.Add(videoStatus);
             split.Panel2.Controls.Add(videoTitle);
@@ -928,7 +942,8 @@ namespace Kinovea.ScreenManager
                     (package.VideoSize.Width > 0 ? " · " + package.VideoSize.Width + "x" + package.VideoSize.Height : "") +
                     (size.Length > 0 ? " · " + size : "") +
                     (package.VideoHasSound ? SwimLang.T(" · με ήχο") : SwimLang.T(" · χωρίς ήχο")) +
-                    (package.VideoScreens >= 2 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} οθόνες μαζί"), package.VideoScreens) : "");
+                    (package.VideoScreens >= 2 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} οθόνες μαζί"), package.VideoScreens) : "") +
+                    (package.VideoSlides > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · {0} διαφάνειες στο τέλος"), package.VideoSlides) : "");
                 btnPlay.Enabled = true;
                 btnClose.Text = SwimLang.T("Κλείσιμο");
             }
@@ -941,6 +956,7 @@ namespace Kinovea.ScreenManager
 
             btnOk.Enabled = videoDone && !pdfWaiting;
             btnOk.Text = videoDone && pdfWaiting ? SwimLang.T("Περιμένω το PDF…") : SwimLang.T("✓ OK – Αποστολή με Smash");
+            SlidesChanged();
             string[] files = package.Files;
             long bytes = files.Sum(f => new FileInfo(f).Length);
 
@@ -955,6 +971,54 @@ namespace Kinovea.ScreenManager
             lblInfo.ForeColor = SwimTheme.Dim;
             lblInfo.Text = SwimLang.T("Φάκελος: ") + package.Folder + (files.Length > 0 ? "   ·   " + files.Length + SwimLang.T(" αρχεία, ") + SwimPackage.SizeText(bytes) : "") +
                 (bytes > 25L * 1024 * 1024 ? SwimLang.T("   ·   μεγάλο για email: με Smash") : "");
+        }
+
+        /// <summary>
+        /// (2.39.0) The slides of the race: being made with the PDF, made (for the end of the video, and the posts in the folder
+        /// «Instagram»), put in the video, or why not (called by the analysis too, on the window's thread).
+        /// </summary>
+        public void SlidesChanged()
+        {
+            if (IsDisposed)
+                return;
+
+            int social = package.SocialCount;
+            int slides;
+            lock (package.Slides)
+                slides = package.Slides.Count;
+            bool shown = package.SlidesWanted || social > 0;
+            slidesStatus.Visible = shown;
+            btnSocial.Visible = shown;
+            btnSocial.Enabled = social > 0;
+            if (!shown)
+                return;
+
+            string posts = social > 0 ? string.Format(CultureInfo.InvariantCulture, SwimLang.T(" · 📱 {0} εικόνες για τα social στον φάκελο «Instagram»"), social) : "";
+            if (package.SlidesWaiting)
+            {
+                slidesStatus.ForeColor = SwimTheme.Dim;
+                slidesStatus.Text = SwimLang.T("🎞️ Οι διαφάνειες του αγώνα γίνονται με το PDF…");
+            }
+            else if (package.VideoSlides > 0)
+            {
+                slidesStatus.ForeColor = SwimTheme.Green;
+                slidesStatus.Text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("✓ 🎞️ {0} διαφάνειες στο τέλος του βίντεο (3″ η καθεμία)"), package.VideoSlides) + posts;
+            }
+            else if (slides > 0 && !package.VideoReady)
+            {
+                slidesStatus.ForeColor = SwimTheme.Dim;
+                slidesStatus.Text = string.Format(CultureInfo.InvariantCulture, SwimLang.T("🎞️ {0} διαφάνειες έτοιμες για το τέλος του βίντεο"), slides) + posts;
+            }
+            else if (!string.IsNullOrEmpty(package.SlidesNote))
+            {
+                slidesStatus.ForeColor = SwimTheme.Warn;
+                slidesStatus.Text = "⚠ " + package.SlidesNote + posts;
+            }
+            else
+            {
+                slidesStatus.ForeColor = SwimTheme.Dim;
+                slidesStatus.Text = social > 0 ? posts.TrimStart(' ', '·').Trim() : SwimLang.T("🎞️ Χωρίς διαφάνειες στο βίντεο.");
+            }
         }
 
         private void Ok()

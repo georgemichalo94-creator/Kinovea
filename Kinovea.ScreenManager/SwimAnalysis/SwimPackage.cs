@@ -71,6 +71,45 @@ namespace Kinovea.ScreenManager
         public int VideoScreens = 1;
         public List<SwimPackageThumb> Thumbs = new List<SwimPackageThumb>();
 
+        /// <summary>
+        /// (2.39.0) The slides of the race (SwimSlides): asked with its PDF (the 2nd version, the Apps Script 2.26.0); waited for (the video
+        /// waits for them at its end, a while); being made (their pictures by the Edge of the computer); the slides of the video (PNG, kept
+        /// for its end, lock on it) and the posts written in the folder «Instagram»; why there are none; the slides put in the video.
+        /// </summary>
+        public bool SlidesWanted;
+        public volatile bool SlidesWaiting;
+        public volatile bool SlidesShooting;
+        public List<byte[]> Slides = new List<byte[]>();
+        public List<string> SocialPaths = new List<string>();
+        public string SlidesNote;
+        public int VideoSlides;
+
+        /// <summary>(2.39.0) The moment of the picture of the cover of the posts (the entry of the start; long.MinValue: none) and the picture.</summary>
+        public long CoverTimestamp = long.MinValue;
+        public volatile byte[] CoverJpeg;
+
+        /// <summary>(2.39.0) The folder of the posts for the social media, in the folder of the package.</summary>
+        public string SocialFolder
+        {
+            get { return Path.Combine(Folder ?? "", SwimSlides.SocialFolderName); }
+        }
+
+        /// <summary>(2.39.0) The posts in the folder of the package (made now or before).</summary>
+        public int SocialCount
+        {
+            get
+            {
+                try
+                {
+                    return !string.IsNullOrEmpty(Folder) && Directory.Exists(SocialFolder) ? Directory.GetFiles(SocialFolder, "Instagram *.png").Length : 0;
+                }
+                catch (Exception)
+                {
+                    return 0;
+                }
+            }
+        }
+
         /// <summary>(2.24.3) A package made before (Ready): the moments of the pictures of its video, taken from it by ffmpeg.</summary>
         public List<SwimPackageMoment> Moments = new List<SwimPackageMoment>();
 

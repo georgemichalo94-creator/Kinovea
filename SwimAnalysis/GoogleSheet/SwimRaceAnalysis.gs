@@ -68,9 +68,14 @@
  *      συχνότητα και το μήκος κύκλου, ο ΔΑΚ, η συχνότητα) και τα ευρήματα με τη σειρά του χρόνου που κρατούν, για να αποφασίσει ο
  *      προπονητής. Στη σελίδα του ρυθμού «Ο ίδιος χρόνος με την κατανομή της αναφοράς» (όχι «καλύτερη κατανομή»). Η σύντομη ανάλυση
  *      τέσσερις σελίδες (με το συμπέρασμα).
+ *  22. Οι διαφάνειες του αγώνα (2.26.0, SwimReportV2.gs: SwimV2.slides), όπως τις ζήτησε ο αναλυτής: με το «slides» στο αίτημα του
+ *      PDF (το πακέτο αποστολής του Kinovea 2.39.0) οι σελίδες της αναφοράς έρχονται και ως διαφάνειες 16:9 για το τέλος του βίντεο
+ *      (3'' η καθεμία, με τη σειρά των σελίδων· η σύντομη ανάλυση οι δικές της) και ως αναρτήσεις 4:5 για τα social της ομοσπονδίας,
+ *      μόνο με τα νούμερα του ίδιου του αγώνα (χωρίς ΑΡ, αναφορά και συμπέρασμα). Τα ίδια νούμερα με το PDF· το Kinovea βάζει το
+ *      λογότυπο και ένα καρέ του βίντεο και τις κάνει εικόνες με τον Edge.
  */
 
-var SWIM_VERSION = '2.25.0';
+var SWIM_VERSION = '2.26.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -341,7 +346,7 @@ function swimHandleRequest_(req) {
       if (action === 'pdf' && req.v2 === true && typeof SwimV2 === 'undefined' && (req.race || {}).kind !== 'training') result.v2Missing = true;
       if (v2 && result.v2src && result.v2src.race.kind !== 'training') {
         try {
-          result.v2 = swimV2Pages_(result.v2src, swimPdfParts_(req));
+          result.v2 = swimV2Pages_(result.v2src, swimPdfParts_(req), req.slides === true);
           result.timings = timings({ v2: Date.now() - reported });
           return swimJson_(result);
         } catch (err) {
@@ -7812,9 +7817,10 @@ function swimExportPdfs_(ss, made) {
 /**
  * 2.22.0: οι σελίδες του report της 2ης έκδοσης (SwimReportV2.gs) για τα μέρη που ζητήθηκαν: { html: το PDF (η πλήρης ανάλυση, που
  * αρχίζει με τις σελίδες της σύντομης· μόνο η σύντομη: οι τρεις πρώτες σελίδες), htmlShort: με «σε δύο αρχεία» η σύντομη χωριστά,
- * pages, pagesShort, title }. src: ό,τι έφτιαξε το swimUpsertRace_ (v2src).
+ * pages, pagesShort, title }. src: ό,τι έφτιαξε το swimUpsertRace_ (v2src). 2.26.0: slides (το πακέτο αποστολής τις ζητά): και οι
+ * διαφάνειες του αγώνα, { html, video, social }, των σελίδων του PDF (μόνο η σύντομη: οι δικές της)· ένα σφάλμα τους δεν χαλά το PDF.
  */
-function swimV2Pages_(src, parts) {
+function swimV2Pages_(src, parts, slides) {
   var x = SwimV2.fromScript(src.race, src.analysis, src.extras || {});
   var p = parts || { short: false, full: true };
   var onlyShort = !!p.short && !p.full;
@@ -7824,6 +7830,15 @@ function swimV2Pages_(src, parts) {
     var sh = SwimV2.document(x, { short: 3 });
     out.htmlShort = sh.html;
     out.pagesShort = sh.pages;
+  }
+  if (slides && typeof SwimV2.slides === 'function') {
+    try {
+      var sl = SwimV2.slides(x, onlyShort ? { short: 3 } : {});
+      out.slides = { html: sl.html, video: sl.video, social: sl.social };
+    } catch (err) {
+      out.slidesError = String(err && err.message ? err.message : err);
+      try { console.log('swim slides ' + (err && err.stack ? err.stack : out.slidesError)); } catch (e) { /* χωρίς καταγραφή */ }
+    }
   }
   return out;
 }
