@@ -2,7 +2,7 @@
 # the race in their order for every event of the program (fm_make.js 'mx': every distance of the metre and yard pools, every style,
 # medley, relays), the event the list follows, the box of the distances (typed, the wheel, the arrows, two decimals), the English of
 # the new texts, and pictures of the bar in its three tabs (an artifact); (2.39.1) the 📍 beside the marks of the left bar at the start
-# and its pictures. Windows PowerShell 5.1 (.NET Framework, as Kinovea).
+# and its pictures, (2.39.2) in the tab of the turn before the first wall. Windows PowerShell 5.1 (.NET Framework, as Kinovea).
 #   powershell -File be_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls> -dir <folder of fm_make.js> -out <folder>
 param([string]$sm, [string]$bin, [string]$dir, [string]$out)
 $ErrorActionPreference = 'Stop'
@@ -565,6 +565,33 @@ if ($out) {
           Write-Output ('picture: ' + $lc.name)
         } finally { $leftBar.Dispose() }
       }
+
+      # (2.39.2) The tab of the turn with the video before the first wall (here: no video): the 📍 of the first turn (50 m), with its
+      # distance (8.40, measured), not none (2.39.1 had none: the analyst looked at the tab from the start); a picture of the tab.
+      $l = Load $p.n $p.f
+      $l.race.Athlete = 'Αθλητής Δείγμα'; $l.race.Competition = 'Αγώνας δείγμα'; $l.race.Location = 'Πόλη δείγμα'; $l.race.Round = 'Τελικός'; $l.race.Lane = 4
+      $turn50 = $tRace.GetMethod('GetTurn').Invoke($l.race, [object[]]@([int]50, $true))
+      $turn50.UnderwaterDist = 8.4; $turn50.UnderwaterEstimated = $false
+      $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
+      $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
+      $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
+      $leftBar = [Activator]::CreateInstance($tBar, [object[]]@($mgr, $true))
+      try {
+        $margs = [object[]]@($l.race, $false, [int]2, $null)
+        $buttons = $markButtons.Invoke($leftBar, $margs)
+        $side = $null
+        foreach ($b in $buttons) { if ([string]$fId.GetValue($b) -eq 'breakout') { $side = $fSide.GetValue($b) } }
+        $got = $(if ($null -ne $side) { [string]$fId.GetValue($side) + ' ' + [string]$fValue.GetValue($side) } else { 'none' })
+        Check ($got -eq 'measure-turn 8.40') ('the 📍 of the tab of the turn before the first wall: the first turn, ' + $got + ' (measure-turn 8.40)')
+        # The tab of the turn shown (as after a click on it), its picture.
+        $tBar.GetField('manualFrom', $all).SetValue($leftBar, 0)
+        $tBar.GetField('manualTab', $all).SetValue($leftBar, 2)
+        $leftBar.Size = New-Object System.Drawing.Size 248, 980
+        $bmp = New-Object System.Drawing.Bitmap 248, 980
+        $leftBar.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle 0, 0, 248, 980))
+        $bmp.Save([System.IO.Path]::Combine($out, 'bar_left_turn_before_the_wall.png'), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+        Write-Output 'picture: bar_left_turn_before_the_wall.png'
+      } finally { $leftBar.Dispose() }
     }
   } catch {
     $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }

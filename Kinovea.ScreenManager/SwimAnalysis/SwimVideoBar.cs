@@ -1486,7 +1486,10 @@ namespace Kinovea.ScreenManager
                         SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
                     Btn turnOut = B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), turn != null ? Seconds(turn.UnderwaterTime) : null,
                         SwimLang.T("Το κεφάλι βγαίνει από το νερό."));
-                    list.Add(wall > 0 ? Measured(turnOut, SwimPickTarget.TurnUnderwater, wall) : turnOut);
+                    // (2.39.2) The 📍 also with the video before the first wall (the analyst looked at the tab of the turn from the start and
+                    // did not see it): the first turn then; its press takes the video to the breakout of that turn.
+                    int measureWall = wall > 0 ? wall : manager.TurnWalls.FirstOrDefault();
+                    list.Add(measureWall > 0 ? Measured(turnOut, SwimPickTarget.TurnUnderwater, measureWall) : turnOut);
                     list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     break;
                 default:
@@ -1795,7 +1798,7 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.39.1) The 📍 beside a mark: a button with a pin (drawn, not a glyph of a font) over the distance of its event (measured in the
-        /// accent, ≈ the estimate dim, – none faint); the pin alone in a low row.
+        /// accent, ≈ the estimate and – none dim); the pin alone in a low row.
         /// </summary>
         private void DrawPin(Graphics g, List<Item> list, SwimBarButton b, RectangleF r)
         {
@@ -1826,7 +1829,7 @@ namespace Kinovea.ScreenManager
             if (!two)
                 return;
 
-            Color color = b.Look == Look.Primary ? Color.White : b.Value == "–" ? SwimTheme.Faint : b.Value.StartsWith("≈", StringComparison.Ordinal) ? SwimTheme.Dim : SwimTheme.Accent;
+            Color color = b.Look == Look.Primary ? Color.White : b.Value == "–" || b.Value.StartsWith("≈", StringComparison.Ordinal) ? SwimTheme.Dim : SwimTheme.Accent;
             Write(g, b.Value, SwimTheme.Ui(7f, FontStyle.Bold), new RectangleF(r.Left + S(1), top + ph + S(1), r.Width - S(2), valueHeight), color,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine);
         }
