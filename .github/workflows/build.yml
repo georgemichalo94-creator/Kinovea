@@ -366,6 +366,22 @@ jobs:
         path: slides-check
         if-no-files-found: ignore
 
+    - name: Swim lanes by the colours of the ropes
+      continue-on-error: true
+      shell: pwsh
+      timeout-minutes: 6
+      run: |
+        # (2.39.1) The lane of the swimmer the camera follows by the three yellow ropes of lanes 4 and 5 (World Aquatics), on drawn pools:
+        # level, tilted, converging and in the perspective of a camera, with splashes, noise and a yellow banner; the place of every lane,
+        # the other ropes by the perspective, no three with four yellow ropes or none, the horizon of the water, the lane numbers both
+        # ways. Also the wait of a package for its slides, the label of the athlete on by default, the English of the new texts.
+        $out = @(& powershell -NoProfile -ExecutionPolicy Bypass -File .\SwimAnalysis\tests\ropes\rc_ci.ps1 -sm Kinovea\bin\x64\Release\Kinovea.ScreenManager.dll -bin Kinovea\bin\x64\Release -out ropes-check 2>&1)
+        $code = $LASTEXITCODE
+        $out | ForEach-Object { Write-Output $_ }
+        $bad = @($out | Where-Object { "$_" -like 'FAIL *' })
+        if ($code -ne 0 -or $bad.Count -gt 0) { Write-Output ('::error title=Swim lanes by the colours of the ropes::exit ' + $code + ' | ' + (($bad + ($out | Select-Object -Last 4)) -join ' | ').Replace('%', '%25')); exit 1 }
+        Write-Output ('::notice title=Swim lanes by the colours of the ropes::' + ($out | Select-Object -Last 1))
+
     - name: Swim group of screens
       continue-on-error: true
       shell: pwsh

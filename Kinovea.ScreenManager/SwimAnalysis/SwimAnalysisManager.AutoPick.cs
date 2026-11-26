@@ -88,6 +88,30 @@ namespace Kinovea.ScreenManager
             /// at the proposal, where narrow far lanes let it take two lanes for one (lab).
             /// </summary>
             public SwimStrokeLane? Lane;
+
+            /// <summary>(2.39.1) The place of his lane against the three yellow ropes of lanes 4 and 5 (SwimRopeColours.Place), null unknown.</summary>
+            public int? ColourPlace;
+
+            /// <summary>(2.39.1) His lane by the yellow ropes and the side of lane 1, 0 unknown.</summary>
+            public int ColourLane;
+
+            /// <summary>(2.39.1) The lane by the yellow ropes of the swimmer in the middle of the image, when the proposal was moved from him.</summary>
+            public int ColourSeen;
+
+            /// <summary>(2.39.1) Lanes the proposal was moved from the swimmer in the middle (down +, up −) to the lane of the race.</summary>
+            public int ColourMoved;
+
+            /// <summary>(2.39.1) The swimmer in the middle is in another lane than the race's, too far to move to: the analyst chooses.</summary>
+            public bool ColourMismatch;
+
+            /// <summary>(2.39.1) Where lane 1 was taken to be: "learned", "numbering", "rule" (World Aquatics, from the start end).</summary>
+            public string ColourFrom;
+
+            /// <summary>The lane shown for him: of the grid, else of the yellow ropes (0: the swimmer the camera follows).</summary>
+            public int ShownLane
+            {
+                get { return LaneNumber > 0 ? LaneNumber : ColourLane; }
+            }
         }
 
         /// <summary>The swimmer proposed for the reading of the whole race, null if none.</summary>
@@ -219,6 +243,19 @@ namespace Kinovea.ScreenManager
                     SwimLang.T("Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: ") +
                     SwimLang.T("κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."), found.LaneNumber, found.LanePlace + 1,
                     found.LaneLearned ? "" : SwimLang.T(" · με το Enter το πρόγραμμα μαθαίνει την αρίθμηση αυτής της πισίνας")), false);
+            else if (found.ColourMoved != 0)
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Στη μέση της εικόνας ήταν ο αθλητής της διαδρομής {0} (από τα κίτρινα σχοινιά των διαδρόμων 4 και 5)· ") +
+                    SwimLang.T("ο αγώνας είναι στη διαδρομή {1}: σημειώθηκε ο αθλητής της. Enter αν είναι αυτός και η ανάγνωση όλου του αγώνα ξεκινά · ") +
+                    SwimLang.T("↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."),
+                    found.ColourSeen, found.ColourLane), true);
+            else if (found.ColourMismatch)
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 ⚠ Ο αθλητής στη μέση της εικόνας φαίνεται να είναι στη διαδρομή {0} (από τα κίτρινα σχοινιά), όχι στη {1} του αγώνα: ") +
+                    SwimLang.T("↑/↓ για τη σωστή διαδρομή και Enter, ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."),
+                    found.ColourSeen, RaceLaneNumber()), true);
+            else if (found.ColourLane > 0)
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο (διαδρομή {0}, από τα κίτρινα σχοινιά): ") +
+                    SwimLang.T("Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · ") +
+                    SwimLang.T("για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."), found.ColourLane), false);
             else
                 Status(SwimLang.T("🤖 Ο αθλητής που ακολουθεί η κάμερα σημειώθηκε στο βίντεο: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν · ") +
                     SwimLang.T("↑/↓: ο αθλητής της διαδρομής από πάνω / από κάτω · για άλλον αθλητή: κλικ στο κεφάλι του και μετά στα πόδια του (Esc: ακύρωση)."), false);
@@ -335,7 +372,7 @@ namespace Kinovea.ScreenManager
             }
 
             double length = AutoPickLength * laneWidth;
-            return new AutoPickResult
+            AutoPickResult result = new AutoPickResult
             {
                 Head = new PointF((float)((xm + direction * 0.5 * length) / sx), (float)(middle / sy)),
                 Feet = new PointF((float)((xm - direction * 0.5 * length) / sx), (float)(middle / sy)),
@@ -343,6 +380,174 @@ namespace Kinovea.ScreenManager
                 LaneWidth = (float)(laneWidth / sy),
                 Agree = agree
             };
+
+            // (2.39.1) The lane of the swimmer in the middle by the yellow ropes of lanes 4 and 5, against the lane of the race: moved to
+            // the race's lane when it is another one (the pilot asks then). Whatever goes wrong here, the proposal stays as it was.
+            try
+            {
+                LaneByColour(result, frame, width, height, sx, sy, lane, xm, middle, laneWidth, direction, at, worker);
+            }
+            catch (Exception e)
+            {
+                log.Error("The lane by the colours of the ropes was not checked.", e);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// (2.39.1) The lane of the proposal by the yellow ropes of lanes 4 and 5 (SwimRopeColours) on its frame: its place against them,
+        /// its lane number by the side of lane 1 (LaneOneFar), and, when the race is in another lane up to two lanes away, the proposal
+        /// moved to the middle of that lane (as ↑/↓ move it). Nothing changes when the three yellow ropes are not seen, the lane the
+        /// probes found is not on them, or the side of lane 1 is not known.
+        /// </summary>
+        private void LaneByColour(AutoPickResult p, long frame, int width, int height, double sx, double sy, SwimStrokeLane lane, double xm, double middle,
+            double laneWidth, int direction, long at, BackgroundWorker worker)
+        {
+            List<KeyValuePair<long, SwimStrokeImage>> images = ReadImages(new[] { frame }, width, height, worker);
+            if (images == null || images.Count == 0)
+                return;
+
+            List<SwimRopeColours.Line> yellow = SwimRopeColours.Yellow(images[0].Value);
+            double[] triple = SwimRopeColours.Triple(yellow, xm, laneWidth);
+            if (triple == null)
+            {
+                log.DebugFormat("Lane by the ropes: {0} yellow lines, not the three of lanes 4 and 5.", yellow.Count);
+                return;
+            }
+
+            int? place = SwimRopeColours.Place(triple, middle);
+            if (!place.HasValue)
+                return;
+
+            // The lane the probes found must have the ropes of its place (the yellow ones, or the others by the perspective): not a line
+            // of the floor, nor yellow lines that are not the ropes of lanes 4 and 5.
+            {
+                double r1 = SwimRopeColours.Rope(triple, place.Value + 1), r2 = SwimRopeColours.Rope(triple, place.Value + 2);
+                double y1 = Math.Min(lane.Y1(xm), lane.Y2(xm)), y2 = Math.Max(lane.Y1(xm), lane.Y2(xm));
+                double gap = r2 - r1;
+                if (double.IsNaN(gap) || gap <= 0 || Math.Abs(y1 - r1) > 0.35 * gap || Math.Abs(y2 - r2) > 0.35 * gap)
+                {
+                    log.DebugFormat("Lane by the ropes: the lane found ({0:0}–{1:0}) is not on the ropes of place {4} ({2:0}–{3:0}).", y1, y2, r1, r2, place.Value);
+                    return;
+                }
+            }
+
+            p.ColourPlace = place.Value;
+            int number = RaceLaneNumber();
+            string from;
+            bool? oneFar = LaneOneFar(direction, at, out from);
+            if (number <= 0 || !oneFar.HasValue)
+            {
+                log.DebugFormat("Lane by the ropes: place {0}, the lane {1}.", place.Value, number <= 0 ? "of the race not known" : "1 side not known");
+                return;
+            }
+
+            p.ColourFrom = from;
+            int seen = SwimRopeColours.LaneAt(place.Value, oneFar.Value);
+            log.DebugFormat("Lane by the ropes: place {0}, lane {1} (lane 1 at the {2} side, {3}), the race in lane {4}.", place.Value, seen,
+                oneFar.Value ? "far" : "near", from, number);
+            if (seen == number)
+            {
+                p.ColourLane = number;
+                return;
+            }
+
+            int target = SwimRopeColours.PlaceOf(number, oneFar.Value);
+            int move = target - place.Value;
+            if (Math.Abs(move) > 2)
+            {
+                p.ColourSeen = seen;
+                p.ColourMismatch = true;
+                return;
+            }
+
+            // To the middle of the race's lane, along the same column (the reading finds its ropes there).
+            double dy = (SwimRopeColours.Middle(triple, target) - middle) / sy;
+            Size reference = ReadingReader.Info.ReferenceSize;
+            double y = 0.5 * (p.Head.Y + p.Feet.Y) + dy;
+            if (double.IsNaN(y) || double.IsInfinity(y) || y < 0.25 * p.LaneWidth || y > reference.Height - 0.25 * p.LaneWidth)
+            {
+                p.ColourSeen = seen;
+                p.ColourMismatch = true;
+                return;
+            }
+
+            p.Head = new PointF(p.Head.X, (float)(p.Head.Y + dy));
+            p.Feet = new PointF(p.Feet.X, (float)(p.Feet.Y + dy));
+            p.ColourSeen = seen;
+            p.ColourMoved = move;
+            p.ColourPlace = target;
+            p.ColourLane = number;
+        }
+
+        /// <summary>
+        /// (2.39.1) Lane 1 at the far side of the pool (the top of the image)? The side the analyst showed in this folder (his Enter on a
+        /// proposal told by the yellow ropes), else the side of the numbering of the lanes confirmed in it (views of the whole pool), else
+        /// the rule of World Aquatics: lane 0 or 1 on the right hand when facing the course from the start end, so at the far side when
+        /// the first length goes to the left of the image. Not for 50 m in a 50 m pool without the folder's side (they may start from the
+        /// other end). Null: not known.
+        /// </summary>
+        private bool? LaneOneFar(int direction, long at, out string from)
+        {
+            from = null;
+            string key = LaneNumberingKey;
+            string side;
+            if (key != null && Settings.LaneColourSide != null && Settings.LaneColourSide.TryGetValue(key, out side))
+            {
+                from = "learned";
+                if (side == "far")
+                    return true;
+                if (side == "near")
+                    return false;
+            }
+
+            LaneRule rule = LaneRuleOf();
+            if (rule.Seen > 0)
+            {
+                from = "numbering";
+                return rule.FromFar;
+            }
+
+            if (direction == 0 || Race == null || Race.Pool <= 0)
+                return null;
+            if (Race.Pool >= 50 && Race.Distance <= Race.Pool)
+                return null;
+
+            int length = NextWallDistance(at) / Math.Max(1, Race.Pool) - 1;
+            int first = length % 2 == 1 ? -direction : direction;
+            from = "rule";
+            return first < 0;
+        }
+
+        /// <summary>(2.39.1) The analyst's Enter on a proposal told by the yellow ropes: the side of lane 1 in this folder.</summary>
+        private void LearnColourSide(AutoPickResult p)
+        {
+            string key = LaneNumberingKey;
+            int number = RaceLaneNumber();
+            if (p == null || p.Grid != null || !p.ColourPlace.HasValue || key == null || number <= 0)
+                return;
+
+            bool far = SwimRopeColours.PlaceOf(number, true) == p.ColourPlace.Value, near = SwimRopeColours.PlaceOf(number, false) == p.ColourPlace.Value;
+            if (far == near)
+                return;
+
+            if (Settings.LaneColourSide == null)
+                Settings.LaneColourSide = new Dictionary<string, string>();
+            string side = far ? "far" : "near";
+            string was;
+            if (Settings.LaneColourSide.TryGetValue(key, out was) && was == side)
+                return;
+
+            Settings.LaneColourSide[key] = side;
+            try
+            {
+                Settings.Save();
+            }
+            catch (Exception e)
+            {
+                log.Error("The side of lane 1 could not be saved.", e);
+            }
         }
 
         /// <summary>
@@ -395,11 +600,29 @@ namespace Kinovea.ScreenManager
             if (middle < 0.25f * p.LaneWidth || middle > reference.Height - 0.25f * p.LaneWidth)
                 return true;
 
-            autoPick = new AutoPickResult { Head = head, Feet = feet, Frame = p.Frame, LaneWidth = p.LaneWidth };
+            // (2.39.1) Its place against the yellow ropes, one lane over (the lane number again with the side of lane 1 of before).
+            AutoPickResult next = new AutoPickResult { Head = head, Feet = feet, Frame = p.Frame, LaneWidth = p.LaneWidth };
+            if (p.ColourPlace.HasValue)
+            {
+                next.ColourPlace = p.ColourPlace.Value + step;
+                next.ColourFrom = p.ColourFrom;
+                if (p.ColourLane > 0)
+                {
+                    bool oneFar = SwimRopeColours.LaneAt(p.ColourPlace.Value, true) == p.ColourLane;
+                    int lane = SwimRopeColours.LaneAt(next.ColourPlace.Value, oneFar);
+                    next.ColourLane = lane >= 0 && lane <= 9 ? lane : 0;
+                }
+            }
+
+            autoPick = next;
             SeekTo(p.Frame);
             InvalidatePlayer();
-            Status(SwimLang.T("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · ") +
-                SwimLang.T("ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
+            if (next.ColourLane > 0)
+                Status(string.Format(CultureInfo.InvariantCulture, SwimLang.T("🤖 Η πρόταση άλλαξε διαδρομή (διαδρομή {0}, από τα κίτρινα σχοινιά): Enter και η ανάγνωση όλου του αγώνα ") +
+                    SwimLang.T("ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), next.ColourLane), false);
+            else
+                Status(SwimLang.T("🤖 Η πρόταση άλλαξε διαδρομή: Enter και η ανάγνωση όλου του αγώνα ξεκινά με αυτόν τον αθλητή · ↑/↓ για άλλη διαδρομή · ") +
+                    SwimLang.T("ή κλικ στο κεφάλι του αθλητή και μετά στα πόδια του (Esc: ακύρωση)."), false);
 
             // The auto pilot does not take a swimmer the analyst is choosing: it waits for his Enter.
             if (PilotActive && (pilotStep == PilotStep.Swimmer || pilotStep == PilotStep.Lost))
@@ -422,6 +645,10 @@ namespace Kinovea.ScreenManager
 
             if (byAnalyst && p.Grid != null && p.LaneNumber > 0)
                 LearnLane(p.LaneNumber, p.LanePlace, p.Grid.Lanes);
+
+            // (2.39.1) The analyst's Enter on the swimmer of the race told by the yellow ropes: where lane 1 is in this folder.
+            if (byAnalyst)
+                LearnColourSide(p);
 
             autoPick = null;
             pickForTrack = false;

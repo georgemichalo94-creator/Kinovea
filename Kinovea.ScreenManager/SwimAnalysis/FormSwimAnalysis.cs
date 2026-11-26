@@ -124,6 +124,7 @@ namespace Kinovea.ScreenManager
         private Label lblAutoStrokes;
         private CheckBox chkReel;
         private CheckBox chkReelSummary;
+        private CheckBox chkReelLabel;
         private Button btnTrack;
         private Label lblTrack;
         private Button btnPilot;
@@ -975,8 +976,17 @@ namespace Kinovea.ScreenManager
                 SwimLang.T("αντίδραση, 15μ., breakout, ενδιάμεσοι, χεριές, συχνότητα, απόσταση ανά κύκλο και ταχύτητα ανά τμήμα, ΔΑΚ κάθε 50άρι, στροφές −5/+15,\n") +
                 SwimLang.T("breakout στροφών, τελευταία 5μ. και η απόσταση κάθε κύκλου. Έρχεται ένα δευτερόλεπτο μετά τον τερματισμό (μετά τον πίνακα του τελικού, όταν υπάρχει).\n") +
                 SwimLang.T("Στο HUD είναι «Η ανάλυση με μια ματιά»."));
+            // (2.39.1) The label of the athlete on the video on or off, the following kept (also the button of the bar beside the video).
+            chkReelLabel = new CheckBox { Text = SwimLang.T("ταμπέλα αθλητή"), AutoSize = true, Margin = new Padding(10, 7, 3, 3) };
+            chkReelLabel.CheckedChanged += (s, e) =>
+            {
+                if (!updating)
+                    manager.SetReelLabel(chkReelLabel.Checked);
+            };
+            toolTip.SetToolTip(chkReelLabel, SwimLang.T("Η ταμπέλα με το όνομα και τη διαδρομή του αθλητή και ο κύκλος γύρω του, στο βίντεο και στις εξαγωγές (και στο βίντεο της αποστολής).\n") +
+                SwimLang.T("Χωρίς αυτήν η ακολούθηση μένει (τη χρειάζεται η σύγκριση με την αναφορά)."));
             lblTrack = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(6, 7, 0, 3), Text = "–" };
-            AddEventRow(t, SwimLang.T("Τεχνική ανάλυση (reel)"), null, null, reelHelp, chkReel, btnTrack, btnDeleteTrack, chkReelSummary, lblTrack);
+            AddEventRow(t, SwimLang.T("Τεχνική ανάλυση (reel)"), null, null, reelHelp, chkReel, btnTrack, btnDeleteTrack, chkReelLabel, chkReelSummary, lblTrack);
 
             AddEventRow(t, SwimLang.T("Πέρασμα σημείου ελέγχου"), PlayerScreenCommands.SwimSplit, SwimLang.T("Πέρασμα"),
                 SwimLang.T("Το κεφάλι περνά το επόμενο σημείο ελέγχου (25μ., 35μ., …). Στους τοίχους: το χέρι ακουμπά τον τοίχο."), Caption(SwimLang.T("Η κίτρινη γραμμή είναι το επόμενο σημείο.")));
@@ -1777,6 +1787,7 @@ namespace Kinovea.ScreenManager
                 chkLearnMarks.Checked = settings.LearnFromMarks;
                 chkReel.Checked = settings.ReelOverlay;
                 chkReelSummary.Checked = settings.ReelSummary;
+                chkReelLabel.Checked = settings.ReelLabel;
                 cmbCorner.SelectedIndex = Math.Max(0, Array.IndexOf(corners, settings.OverlayCorner));
             }
             finally
@@ -3644,6 +3655,14 @@ namespace Kinovea.ScreenManager
                 bool was = updating;
                 updating = true;
                 chkReel.Checked = manager.Settings.ReelOverlay;
+                updating = was;
+            }
+
+            if (manager.Settings != null && chkReelLabel != null && chkReelLabel.Checked != manager.Settings.ReelLabel)
+            {
+                bool was = updating;
+                updating = true;
+                chkReelLabel.Checked = manager.Settings.ReelLabel;
                 updating = was;
             }
 

@@ -69,6 +69,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The technical view («Τεχνική» of the bar): the strokes, the rate and the speed beside the swimmer.</summary>
         public bool SwimmerLabel;
+
+        /// <summary>
+        /// (2.39.1) The swimmer marked on the video: the lock at the start, the arcs around him and his label (the analyst's «Ταμπέλα
+        /// αθλητή»; off, the start signal from the middle of the video).
+        /// </summary>
+        public bool Marker = true;
     }
 
     /// <summary>
@@ -82,7 +88,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.39.0";
+        public const string AppVersion = "2.39.1";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -1556,7 +1562,7 @@ namespace Kinovea.ScreenManager
             SwimReel reel = s.Reel;
             float lane = 0;
             PointF swimmer = PointF.Empty;
-            bool located = Locate(s, L, out swimmer, out lane);
+            bool located = s.Marker && Locate(s, L, out swimmer, out lane);
 
             // Lock-on of the swimmer: corners that close in around the start signal, then four arcs that follow him (with the strokes,
             // the rate and the speed beside him in the technical view).

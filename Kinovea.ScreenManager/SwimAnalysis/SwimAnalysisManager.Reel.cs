@@ -93,6 +93,18 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
         }
 
+        /// <summary>(2.39.1) The label of the athlete on the video on or off (the bar «Ταμπέλα αθλητή», the box of the panel).</summary>
+        public void SetReelLabel(bool on)
+        {
+            Settings.ReelLabel = on;
+            Settings.Save();
+            Status(on ? SwimLang.T("Η ταμπέλα του αθλητή φαίνεται στο βίντεο (και στις εξαγωγές).")
+                      : SwimLang.T("Η ταμπέλα του αθλητή δεν φαίνεται στο βίντεο ούτε στις εξαγωγές· η ακολούθηση μένει."), false);
+            InvalidatePlayer();
+            if (form != null && !form.IsDisposed)
+                form.RefreshReel();
+        }
+
         private SwimReel Reel
         {
             get
@@ -381,6 +393,7 @@ namespace Kinovea.ScreenManager
                 Timestamp = timestamp,
                 Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value),
                 FromImage = fromImage,
+                Label = Settings.ReelLabel,
                 Summary = Settings.ReelSummary,
                 Final = Settings.ShowFinalsBoard && PickTarget == SwimPickTarget.None ? FinalForRace() : null,
                 BoardName = BoardName(Race.Athlete),

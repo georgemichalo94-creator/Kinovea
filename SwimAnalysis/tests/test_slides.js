@@ -27,7 +27,7 @@ function model(p, variant) {
 
 const VARIANTS = [{ name: 'full', pb: true, ref: true }, { name: 'ref', pb: false, ref: true }, { name: 'none', pb: false, ref: false },
   { name: 'short', pb: true, ref: true, short: true }];
-let built = 0;
+let built = 0, speedPosts = 0;
 all().forEach(p => VARIANTS.forEach(v => {
   const x = model(p, v);
   const r = V2.slides(x, v.short ? { short: 3 } : {});
@@ -53,6 +53,16 @@ all().forEach(p => VARIANTS.forEach(v => {
   // The images Kinovea puts in: the logo on every slide and post, the frame on the cover.
   assert.strictEqual((r.html.match(/src="\{\{LOGO\}\}"/g) || []).length, r.video + r.social, tag);
   assert.ok(r.html.indexOf('{{FRAME}}') > 0, tag);
+  // (2.26.1) The post of the speed: every segment from the start, the start (0–15) the first point of its chart, as the PDF.
+  const sp = posts.split('<section').find(s => /<h1><span class="tmark"><\/span>Ταχύτητα<\/h1>/.test(s));
+  if (sp && x.race.rows.length) {
+    const dots = (sp.match(/<circle /g) || []).length;
+    const timed = x.race.rows.filter(row => typeof row.vel === 'number' && isFinite(row.vel)).length;
+    assert.strictEqual(dots, timed, tag + ': the speed post has every segment');
+    assert.ok(x.race.rows[0].prevD === 0, tag + ': the first segment is the start');
+    assert.ok(sp.indexOf('από το σήμα ως τον τερματισμό') > 0, tag);
+    speedPosts++;
+  }
   built++;
 }));
 // The web app: the slides with the pages of the PDF only when the package asks for them (req.slides), of the same pages (the short
@@ -69,6 +79,7 @@ all().forEach(p => VARIANTS.forEach(v => {
   assert.ok(asked.slides && asked.slides.html.indexOf('<section class="sl v') > 0 && asked.slides.video >= 8 && asked.slides.social >= 6, 'the slides when asked');
   assert.strictEqual(asked.html, plain.html, 'the pages the same with the slides');
   assert.ok(short.slides && short.slides.video <= 4, 'the slides of the short analysis: ' + (short.slides && short.slides.video));
-  assert.strictEqual(asked.version, '2.26.0');
+  assert.strictEqual(asked.version, '2.26.1');
 }
-console.log('test_slides: ' + built + ' slide sets OK');
+assert.ok(speedPosts > 100, 'speed posts checked: ' + speedPosts);
+console.log('test_slides: ' + built + ' slide sets OK (' + speedPosts + ' speed posts with the start)');

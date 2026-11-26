@@ -76,6 +76,7 @@ namespace Kinovea.ScreenManager
                 VideoEnd = VideoEndSeconds(),
                 Technical = TechnicalView || Settings.ReelOverlay,
                 SwimmerLabel = Settings.ReelOverlay,
+                Marker = Settings.ReelLabel,
                 Sync = SyncState,
                 PdfReady = !string.IsNullOrEmpty(Race.LastPdfUrl),
                 Calibrated = VideoFile != null && VideoFile.Calibrations.Count > 0

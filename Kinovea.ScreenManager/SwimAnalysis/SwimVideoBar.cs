@@ -48,6 +48,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>The round button stays open after it (from stroke to stroke, from phase to phase).</summary>
         public bool Repeat;
+
+        /// <summary>
+        /// (2.39.1) A small button beside it in the left bar, at its right: the 📍 of the distance of its event (Value: the distance now).
+        /// Not on the round button of the full screen.
+        /// </summary>
+        public SwimBarButton Side;
     }
 
     /// <summary>
@@ -110,6 +116,10 @@ namespace Kinovea.ScreenManager
 
             /// <summary>Instead of the command (a button that is not a key of the player).</summary>
             public Action Action;
+
+            /// <summary>(2.39.1) The distance of its event, measured with the 📍 beside it (None: no 📍), and the wall of a turn.</summary>
+            public SwimPickTarget Measure;
+            public int MeasureWall;
         }
 
         private readonly SwimAnalysisManager manager;
@@ -312,6 +322,7 @@ namespace Kinovea.ScreenManager
             b.Append(manager.LastStatus).Append('|').Append(manager.LastStatusIsWarning).Append('|');
             b.Append((int)manager.SyncState).Append('|').Append(manager.SyncMessage).Append('|').Append(race.SheetName).Append('|');
             b.Append(manager.PanelOpen).Append('|').Append(manager.TechnicalView).Append('|').Append((int)manager.PickTarget).Append('|');
+            b.Append((int)manager.PendingMeasure).Append('|').Append(manager.PendingWall).Append('|');
             b.Append(manager.Settings.AutoStrokes).Append('|').Append(manager.Settings.IsConfigured).Append('|');
             b.Append(manager.AutoStrokesRunning).Append('|').Append(manager.StrokeSessionWall).Append('|');
             b.Append(race.Athlete).Append('|').Append(race.Lane).Append('|').Append(race.Style).Append('|');
@@ -601,6 +612,16 @@ namespace Kinovea.ScreenManager
                     break;
 
                 SwimBarButton b = buttons[i];
+                if (b.Side != null)
+                {
+                    // (2.39.1) The 📍 of the distance of the event at the right of its row.
+                    float side = columns == 1 ? S(40) : S(28);
+                    RectangleF main = new RectangleF(r.Left, r.Top, r.Width - side - S(4), r.Height);
+                    DrawButton(g, list, b.Id, main, b.Text, columns == 1 ? b.Value : null, b.Key, b.Look, b.Dim, b.Tip, b.Click);
+                    DrawPin(g, list, b.Side, new RectangleF(main.Right + S(4), r.Top, side, r.Height));
+                    continue;
+                }
+
                 DrawButton(g, list, b.Id, r, b.Text, columns == 1 ? b.Value : null, b.Key, b.Look, b.Dim, b.Tip, b.Click);
             }
 
@@ -960,12 +981,22 @@ namespace Kinovea.ScreenManager
                 (tracked.Length > 0 ? SwimLang.T("\nΑκολουθείται: ") + tracked : ""),
                 () => manager.BeginTrackSwimmer());
 
+            // (2.39.1) The label of the athlete on the video on or off, the following kept (the analyst: «κουμπί να βγάζω την ταμπέλα
+            // με τον αθλητή άμα θέλω»): on the screen, in the exports and in the video of a package.
+            RectangleF labelRow = new RectangleF(area.Left, row.Top - S(6) - S(28), area.Width, S(28));
+            bool labelOn = manager.Settings.ReelLabel;
+            DrawButton(g, list, "label", labelRow, (labelOn ? "◉ " : "○ ") + SwimLang.T("Ταμπέλα αθλητή"), null, null, labelOn ? Look.Normal : Look.Quiet, false,
+                labelOn ? SwimLang.T("Κρύβει την ταμπέλα με το όνομα και τη διαδρομή του αθλητή και τον κύκλο γύρω του, από το βίντεο και τις εξαγωγές.\n") +
+                          SwimLang.T("Η ακολούθηση δεν σβήνεται (τη χρειάζεται η σύγκριση με την αναφορά): με ένα κλικ ξαναφαίνεται.")
+                        : SwimLang.T("Ξαναδείχνει την ταμπέλα του αθλητή στο βίντεο και στις εξαγωγές."),
+                () => manager.SetReelLabel(!manager.Settings.ReelLabel));
+
             // The check of the proposals of the race (whole race, auto pilot), also from here (since 2026-10-18).
             List<SwimBarButton> checks = RaceCheckButtons(race);
             if (checks.Count == 0)
-                return row.Top;
+                return labelRow.Top;
 
-            RectangleF check = new RectangleF(area.Left, row.Top - S(6) - S(28), area.Width, S(28));
+            RectangleF check = new RectangleF(area.Left, labelRow.Top - S(6) - S(28), area.Width, S(28));
             if (checks.Count == 3)
             {
                 float third = (check.Width - 2 * S(4)) / 3;
@@ -1014,11 +1045,76 @@ namespace Kinovea.ScreenManager
                     Look = b.Primary ? Look.Primary : Look.Normal,
                     Dim = b.Dim,
                     Tip = b.Tip,
-                    Click = b.Action ?? (() => Run(command))
+                    Click = b.Action ?? (() => Run(command)),
+                    Side = b.Measure != SwimPickTarget.None ? MeasureButton(race, b.Measure, b.MeasureWall) : null
                 });
             }
 
             return list;
+        }
+
+        /// <summary>
+        /// (2.39.1) The 📍 beside a mark of the left bar (the analyst: «το κουμπί των μετρήσεων στα πλαϊνά κουμπιά», for the entry of the
+        /// hands and the breakout of the start and of a turn): the distance of its event measured with a click on the video, as «📍
+        /// Μέτρηση» of the window (BeginMeasure: the video to the frame of the event, a calibration first when there is none, a second
+        /// press cancels). Under the pin the distance now: measured, ≈ the estimate from the times, – none.
+        /// </summary>
+        private SwimBarButton MeasureButton(SwimRace race, SwimPickTarget target, int wall)
+        {
+            double? value;
+            bool estimated;
+            string what;
+            switch (target)
+            {
+                case SwimPickTarget.EntryHands:
+                    value = race.EntryDistHands;
+                    estimated = false;
+                    what = SwimLang.T("📍 Απόσταση εισόδου των χεριών από τον τοίχο εκκίνησης: κλικ εδώ και μετά κλικ στα χέρια στο βίντεο (στο καρέ της εισόδου).");
+                    break;
+                case SwimPickTarget.StartBreakout:
+                    // As the bar of the events: the breakout typed or measured, else the distance under the water (≈ the estimate).
+                    value = race.BreakoutDist ?? race.UnderwaterDist;
+                    estimated = !race.BreakoutDist.HasValue && race.UnderwaterDist.HasValue && race.UnderwaterEstimated;
+                    what = SwimLang.T("📍 Απόσταση εξόδου (κεφάλι) από τον τοίχο εκκίνησης: κλικ εδώ και μετά κλικ στο κεφάλι στο βίντεο (στο καρέ της εξόδου).");
+                    break;
+                default:
+                    SwimTurnManual turn = null;
+                    if (race.Turns != null)
+                        race.Turns.TryGetValue(wall, out turn);
+                    value = turn != null ? turn.UnderwaterDist : null;
+                    estimated = turn != null && turn.UnderwaterEstimated && turn.UnderwaterDist.HasValue;
+                    what = string.Format(CultureInfo.InvariantCulture,
+                        SwimLang.T("📍 Απόσταση εξόδου (κεφάλι) από τον τοίχο της στροφής {0}{1}: κλικ εδώ και μετά κλικ στο κεφάλι στο βίντεο (στο καρέ της εξόδου)."),
+                        wall, race.Unit);
+                    break;
+            }
+
+            bool picking = (manager.PickTarget == target || (manager.PickTarget == SwimPickTarget.Calibration && manager.PendingMeasure == target))
+                && (target != SwimPickTarget.TurnUnderwater || manager.PendingWall == wall);
+            bool known = value.HasValue && !double.IsNaN(value.Value) && !double.IsInfinity(value.Value);
+            string unit = race.IsYards ? "yd" : SwimLang.T("μ.");
+            string now = known
+                ? SwimLang.T("\nΤώρα: ") + (estimated ? "≈" : "") + SwimDecimalBox.Format(value) + " " + unit +
+                    (estimated ? SwimLang.T(" (εκτίμηση από τους χρόνους, όχι μέτρηση).") : ".")
+                : SwimLang.T("\nΔεν έχει μετρηθεί ακόμα.");
+            string shown = !known ? "–" : estimated ? "≈" + value.Value.ToString("0.0", CultureInfo.InvariantCulture) : SwimDecimalBox.Format(value);
+            return new SwimBarButton
+            {
+                Id = "measure-" + (target == SwimPickTarget.EntryHands ? "entry" : target == SwimPickTarget.StartBreakout ? "breakout" : "turn"),
+                Text = "📍",
+                Value = picking ? SwimLang.T("κλικ…") : shown,
+                Look = picking ? Look.Primary : Look.Normal,
+                Tip = what + SwimLang.T(" Χωρίς βαθμονόμηση, ζητείται πρώτα. Δεύτερο πάτημα ή Esc: ακύρωση.") + now,
+                Click = () => manager.BeginMeasure(target, wall)
+            };
+        }
+
+        /// <summary>A mark of the bar with the 📍 of the distance of its event beside it.</summary>
+        private static Btn Measured(Btn b, SwimPickTarget target, int wall)
+        {
+            b.Measure = target;
+            b.MeasureWall = wall;
+            return b;
         }
 
         /// <summary>Technical analysis: the skeleton of the swimmer (one click), its angles at the frame, its deletion.</summary>
@@ -1357,12 +1453,12 @@ namespace Kinovea.ScreenManager
                         SwimLang.T("Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης).")));
                     list.Add(B("block", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"), Seconds(c.BlockTime),
                         SwimLang.T("Τα πόδια φεύγουν από τον βατήρα: αντιστοιχεί στον επίσημο χρόνο αντίδρασης.")));
-                    list.Add(B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"), Seconds(c.EntryTime),
-                        SwimLang.T("Τα χέρια μπαίνουν στο νερό.")));
+                    list.Add(Measured(B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"), Seconds(c.EntryTime),
+                        SwimLang.T("Τα χέρια μπαίνουν στο νερό.")), SwimPickTarget.EntryHands, 0));
                     list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), Count(c.StartKicks),
                         SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
-                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), Seconds(c.StartUnderwaterTime),
-                        SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    list.Add(Measured(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), Seconds(c.StartUnderwaterTime),
+                        SwimLang.T("Το κεφάλι βγαίνει από το νερό.")), SwimPickTarget.StartBreakout, 0));
                     list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     break;
                 case 1:
@@ -1388,8 +1484,9 @@ namespace Kinovea.ScreenManager
                         SwimLang.T("Τα πόδια φεύγουν από τον τοίχο.")));
                     list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), turn != null ? Count(turn.Kicks) : null,
                         SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
-                    list.Add(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), turn != null ? Seconds(turn.UnderwaterTime) : null,
-                        SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
+                    Btn turnOut = B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), turn != null ? Seconds(turn.UnderwaterTime) : null,
+                        SwimLang.T("Το κεφάλι βγαίνει από το νερό."));
+                    list.Add(wall > 0 ? Measured(turnOut, SwimPickTarget.TurnUnderwater, wall) : turnOut);
                     list.Add(B("stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Χεριά"), null, StrokeTip));
                     break;
                 default:
@@ -1694,6 +1791,44 @@ namespace Kinovea.ScreenManager
         private void DrawButton(Graphics g, List<Item> list, SwimBarButton b, RectangleF r)
         {
             DrawButton(g, list, b.Id, r, b.Text, b.Value, b.Key, b.Look, b.Dim, b.Tip, b.Click);
+        }
+
+        /// <summary>
+        /// (2.39.1) The 📍 beside a mark: a button with a pin (drawn, not a glyph of a font) over the distance of its event (measured in the
+        /// accent, ≈ the estimate dim, – none faint); the pin alone in a low row.
+        /// </summary>
+        private void DrawPin(Graphics g, List<Item> list, SwimBarButton b, RectangleF r)
+        {
+            DrawButton(g, list, b.Id, r, "", null, null, b.Look, b.Dim, b.Tip, b.Click);
+            bool hover = hoverId == b.Id;
+            bool two = r.Height >= S(28) && !string.IsNullOrEmpty(b.Value);
+            float ph = Math.Min(S(13), r.Height * 0.45f);
+            float pw = ph * 0.78f;
+            float valueHeight = S(11);
+            float cx = r.Left + r.Width / 2;
+            float top = two ? r.Top + (r.Height - ph - S(1) - valueHeight) / 2 : r.Top + (r.Height - ph) / 2;
+            Color ink = b.Look == Look.Primary || hover ? Color.White : (b.Dim ? SwimTheme.Faint : SwimTheme.Text);
+            SmoothingMode smoothing = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath pin = new GraphicsPath(FillMode.Alternate))
+            {
+                // The head (a circle without its lower wedge), the point under it, the hole.
+                pin.AddArc(cx - pw / 2, top, pw, pw, 150, 240);
+                pin.AddLine(cx + pw / 2 * (float)Math.Cos(Math.PI / 6), top + pw / 2 + pw / 2 * 0.5f, cx, top + ph);
+                pin.CloseFigure();
+                float hole = pw * 0.38f;
+                pin.AddEllipse(cx - hole / 2, top + pw / 2 - hole / 2, hole, hole);
+                using (SolidBrush brush = new SolidBrush(ink))
+                    g.FillPath(brush, pin);
+            }
+
+            g.SmoothingMode = smoothing;
+            if (!two)
+                return;
+
+            Color color = b.Look == Look.Primary ? Color.White : b.Value == "–" ? SwimTheme.Faint : b.Value.StartsWith("≈", StringComparison.Ordinal) ? SwimTheme.Dim : SwimTheme.Accent;
+            Write(g, b.Value, SwimTheme.Ui(7f, FontStyle.Bold), new RectangleF(r.Left + S(1), top + ph + S(1), r.Width - S(2), valueHeight), color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine);
         }
 
         /// <summary>Tabs of the phases. The tab of the phase of the video is in the accent color when another one is shown.</summary>

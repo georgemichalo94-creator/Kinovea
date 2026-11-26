@@ -396,6 +396,11 @@ namespace Kinovea.ScreenManager
             if (p.LaneNumber > 0)
                 return p.LaneLearned && p.Clear >= LanePickClear;
 
+            // (2.39.1) The swimmer in the middle was in another lane than the race's by the yellow ropes: the analyst sees the proposal
+            // moved to the race's lane (or chooses), never the pilot alone.
+            if (p.ColourMoved != 0 || p.ColourMismatch)
+                return false;
+
             string ext = string.IsNullOrEmpty(videoPath) ? "" : System.IO.Path.GetExtension(videoPath).ToLowerInvariant();
             if ((ext != ".mts" && ext != ".m2ts") || p.Agree < AutoPickProbes.Length)
                 return false;

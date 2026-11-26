@@ -1,7 +1,8 @@
 ﻿# be_ci.ps1 (2.37.0): the CI check of the right bar beside the video on FICTIONAL races (fm_make.js, no real athlete): the events of
 # the race in their order for every event of the program (fm_make.js 'mx': every distance of the metre and yard pools, every style,
 # medley, relays), the event the list follows, the box of the distances (typed, the wheel, the arrows, two decimals), the English of
-# the new texts, and pictures of the bar in its three tabs (an artifact). Windows PowerShell 5.1 (.NET Framework, as Kinovea).
+# the new texts, and pictures of the bar in its three tabs (an artifact); (2.39.1) the 📍 beside the marks of the left bar at the start
+# and its pictures. Windows PowerShell 5.1 (.NET Framework, as Kinovea).
 #   powershell -File be_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls> -dir <folder of fm_make.js> -out <folder>
 param([string]$sm, [string]$bin, [string]$dir, [string]$out)
 $ErrorActionPreference = 'Stop'
@@ -528,6 +529,42 @@ if ($out) {
         $bmp.Save([System.IO.Path]::Combine($out, $s.name), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
         Write-Output ('picture: ' + $s.name)
       } finally { $bar.Dispose() }
+    }
+
+    # (2.39.1) The left bar at the start of a fictional 100 m: the 📍 beside the entry of the hands (measured) and beside the breakout
+    # (≈ the estimate from the times), or without distances (–); a picture of each. (The 📍 of a turn needs the video at the turn.)
+    $p = $picks['100|50|m|fs|False']
+    if ($null -ne $p) {
+      $markButtons = $tBar.GetMethod('MarkButtons', $all)
+      $tButton = T 'SwimBarButton'
+      $fId = $tButton.GetField('Id'); $fText = $tButton.GetField('Text'); $fValue = $tButton.GetField('Value'); $fSide = $tButton.GetField('Side')
+      $leftCases = @(
+        @{ name = 'bar_left_start_100free.png'; entry = 3.3; under = 9.6; est = $true; want = '3.30|≈9.6' },
+        @{ name = 'bar_left_start_no_distances.png'; entry = $null; under = $null; est = $false; want = '–|–' }
+      )
+      foreach ($lc in $leftCases) {
+        $l = Load $p.n $p.f
+        $l.race.Athlete = 'Αθλητής Δείγμα'; $l.race.Competition = 'Αγώνας δείγμα'; $l.race.Location = 'Πόλη δείγμα'; $l.race.Round = 'Τελικός'; $l.race.Lane = 4
+        $l.race.EntryDistHands = $lc.entry; $l.race.BreakoutDist = $null; $l.race.UnderwaterDist = $lc.under; $l.race.UnderwaterEstimated = $lc.est
+        $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
+        $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
+        $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
+        $leftBar = [Activator]::CreateInstance($tBar, [object[]]@($mgr, $true))
+        try {
+          $margs = [object[]]@($l.race, $false, [int]0, $null)
+          $buttons = $markButtons.Invoke($leftBar, $margs)
+          $sides = @{}
+          foreach ($b in $buttons) { $side = $fSide.GetValue($b); if ($null -ne $side) { $sides[[string]$fId.GetValue($b)] = $side } }
+          $got = $(if ($sides.ContainsKey('entry')) { [string]$fValue.GetValue($sides['entry']) } else { 'none' }) + '|' + $(if ($sides.ContainsKey('breakout')) { [string]$fValue.GetValue($sides['breakout']) } else { 'none' })
+          $ids = $(if ($sides.Count -eq 2) { [string]$fId.GetValue($sides['entry']) + ',' + [string]$fId.GetValue($sides['breakout']) + ',' + [string]$fText.GetValue($sides['entry']) } else { '' })
+          Check ($got -eq $lc.want -and $sides.Count -eq 2 -and $ids -eq 'measure-entry,measure-breakout,📍') ('the 📍 of the left bar at the start (entry|breakout): ' + $got + ' (' + $lc.want + '), ' + $sides.Count + ' pins ' + $ids)
+          $leftBar.Size = New-Object System.Drawing.Size 248, 980
+          $bmp = New-Object System.Drawing.Bitmap 248, 980
+          $leftBar.DrawToBitmap($bmp, (New-Object System.Drawing.Rectangle 0, 0, 248, 980))
+          $bmp.Save([System.IO.Path]::Combine($out, $lc.name), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+          Write-Output ('picture: ' + $lc.name)
+        } finally { $leftBar.Dispose() }
+      }
     }
   } catch {
     $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }

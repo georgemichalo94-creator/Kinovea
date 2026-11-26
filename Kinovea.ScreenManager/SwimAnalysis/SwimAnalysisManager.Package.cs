@@ -1020,8 +1020,12 @@ namespace Kinovea.ScreenManager
                 Marshal.Copy(bgr.Ptr(y), buffer, y * row, row);
         }
 
-        /// <summary>(2.39.0) How long the end of the video of a package waits for its slides (they are made with its PDF).</summary>
-        private const double SlidesWaitSeconds = 120;
+        /// <summary>
+        /// (2.39.0) How long the end of the video of a package waits for its slides (they are made with its PDF). (2.39.1) As long as its
+        /// PDF and its slides are on the way, at most 10 minutes: the first PDF of a race sends its graphics to the Drive first, then
+        /// the sheet makes it, then Edge prints it (the first package with slides missed them after 2 minutes).
+        /// </summary>
+        private const double SlidesWaitSeconds = 600;
 
         /// <summary>
         /// (2.39.0) The moment of the picture of the cover of the posts: the entry of the start (else 1 s after the signal); none without
@@ -1073,7 +1077,13 @@ namespace Kinovea.ScreenManager
                     return 0;
                 }
 
-                worker.ReportProgress(99, string.Format(CultureInfo.InvariantCulture, SwimLang.T("Οι διαφάνειες του αγώνα ετοιμάζονται… {0} δλ."), (int)wait.Elapsed.TotalSeconds));
+                // (2.39.1) The step they are at, so that a long wait does not look stuck.
+                string waited = SlidesWaited(wait.Elapsed);
+                worker.ReportProgress(99, package.SlidesShooting
+                    ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("Φτιάχνονται οι διαφάνειες του αγώνα… {0}"), waited)
+                    : package.PdfWaiting
+                        ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("Οι διαφάνειες έρχονται με το PDF του φύλλου… {0}"), waited)
+                        : string.Format(CultureInfo.InvariantCulture, SwimLang.T("Οι διαφάνειες του αγώνα ετοιμάζονται… {0} δλ."), (int)wait.Elapsed.TotalSeconds));
                 Thread.Sleep(500);
             }
 
@@ -1097,6 +1107,14 @@ namespace Kinovea.ScreenManager
             package.VideoSlides = frames / SwimSlides.FramesOf(fps);
             log.InfoFormat("Swim package video: {0} slides at the end ({1} frames).", package.VideoSlides, frames);
             return frames;
+        }
+
+        /// <summary>(2.39.1) A wait as the window shows it: "45 δλ.", "2:05".</summary>
+        internal static string SlidesWaited(TimeSpan elapsed)
+        {
+            int seconds = (int)Math.Max(0, elapsed.TotalSeconds);
+            return seconds < 60 ? seconds.ToString(CultureInfo.InvariantCulture) + SwimLang.T(" δλ.")
+                : string.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", seconds / 60, seconds % 60);
         }
 
         /// <summary>

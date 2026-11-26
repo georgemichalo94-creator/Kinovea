@@ -3,7 +3,8 @@
  * 2.24.0: how far behind the reference each phase is, in %, and the whole time it loses, in the place of the gains of half the way;
  * 2.24.1: the last metres against the PB and the reference only at the same distance as the race's; 2.25.0: what the comparison
  * means in the place of the recommendations, and the conclusion of the whole race; 2.26.0: the slides of the race, the
- * pages at the end of the video (16:9) and the posts for the social media of the federation (4:5)).
+ * pages at the end of the video (16:9) and the posts for the social media of the federation (4:5); 2.26.1: the start in the chart of
+ * the post of the speed).
  *
  * The pages of the templates approved by the analysts on 24.11.2026 (SwimAnalysis/report_templates, 2nd version), made from the real
  * analysis of a race: the race, the personal best (a stored analysis of the athlete) and the reference (elite times). One self-contained
@@ -2550,8 +2551,9 @@ var SwimV2 = (function () {
 
   function sSpeed(x, I, n, N) {
     const a = x.race;
-    // The swimming of the race, after the start (its dive would flatten the rest of the chart): the start in its own tile.
-    const rows = a.rows.filter(r => r.prevD >= 15 - 1e-9 || I.D <= 15);
+    // (2.26.1) Every segment from the signal to the finish, the start (0–15) first, as the PDF and the slide of the video have them (the
+    // analyst: «δεν είχε την ταχύτητα της εκκίνησης»); the start also in its own tile.
+    const rows = a.rows;
     const cats = rows.map(r => String(r.d));
     const mean = I.D * a.k / a.final;
     const chart = slLine({ w: 936, h: 640, fs: 26, cats, series: [{ values: rows.map(r => r.vel), color: K.race, main: true, width: 5 }], ref: { value: mean, label: 'μέση' },
@@ -2560,7 +2562,8 @@ var SwimV2 = (function () {
     const tiles = [['Μέση ταχύτητα', `${F(mean)}<small> m/s</small>`, `${I.D}${I.u} σε ${T(a.final)}`], ['Κολύμβηση', `${F(a.avg.vClean)}<small> m/s</small>`, 'χωρίς εκκίνηση, στροφές, τερματισμό'],
       s15 && ok(s15.vel) ? ['Εκκίνηση', `${F(s15.vel)}<small> m/s</small>`, `0–${s15.d}${I.u} σε ${F(s15.seg)} s`] : null].filter(q => q)
       .map(([l, val, s0]) => `<div class="tl"><div class="lab">${l}</div><div class="val">${val}</div><div class="sub">${s0}</div></div>`).join('');
-    return slFrame('s', I, 'Ταχύτητα', `Η ταχύτητα κάθε τμήματος (m/s) μετά την εκκίνηση· οι κορυφές: η ώθηση από κάθε τοίχο`, `<div class="chw">${chart}</div><div class="tl3">${tiles}</div>`, n, N, 'spd');
+    return slFrame('s', I, 'Ταχύτητα', `Η ταχύτητα κάθε τμήματος (m/s) από το σήμα ως τον τερματισμό· οι κορυφές: η εκκίνηση και η ώθηση από κάθε τοίχο`,
+      `<div class="chw">${chart}</div><div class="tl3">${tiles}</div>`, n, N, 'spd');
   }
 
   function sStart(x, I, n, N) {

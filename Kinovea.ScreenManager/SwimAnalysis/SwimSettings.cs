@@ -216,6 +216,12 @@ namespace Kinovea.ScreenManager
         /// <summary>Technical view: summary card of the race after the finish.</summary>
         public bool ReelSummary = true;
 
+        /// <summary>
+        /// (2.39.1) The label of the athlete on the video (his name and lane, the arcs around him) where he is followed: on the screen, in
+        /// the exports and in the video of a package. Off: the following stays (for the reference), the label is not drawn.
+        /// </summary>
+        public bool ReelLabel = true;
+
         /// <summary>Technical analysis: the skeleton of the swimmer on the video (where it was found).</summary>
         public bool SkeletonOverlay = true;
 
@@ -251,6 +257,12 @@ namespace Kinovea.ScreenManager
         /// "number:place:lanes;..." (the place counted from the near wall, 0 at the near wall).
         /// </summary>
         public Dictionary<string, string> LaneNumbering = new Dictionary<string, string>();
+
+        /// <summary>
+        /// (2.39.1) Where lane 1 is in the videos of a folder, "far" (the top of the image) or "near", from the analyst's Enter on a
+        /// proposal whose lane the yellow ropes of lanes 4 and 5 told (SwimRopeColours).
+        /// </summary>
+        public Dictionary<string, string> LaneColourSide = new Dictionary<string, string>();
 
         /// <summary>
         /// The link of the official results last used for each competition (its name as typed, normalized; since 2.7.6): the next race

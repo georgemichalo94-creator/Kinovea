@@ -130,6 +130,12 @@ namespace Kinovea.ScreenManager
             get { return pendingMeasure; }
         }
 
+        /// <summary>(2.39.1) The wall of the distance being measured (a turn), 0 for the start.</summary>
+        internal int PendingWall
+        {
+            get { return pendingWall; }
+        }
+
         /// <summary>Line distances of the calibration in progress (or of the last one).</summary>
         public double CalibrationLine1 { get; private set; }
         public double CalibrationLine2 { get; private set; }

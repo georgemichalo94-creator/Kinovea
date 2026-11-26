@@ -28,6 +28,9 @@ namespace Kinovea.ScreenManager
         /// <summary>Point of the video image (reference pixels) → point of the drawing, null without the athlete label.</summary>
         public Func<PointF, PointF> FromImage;
 
+        /// <summary>(2.39.1) The label of the athlete and its arcs around him (the analyst's «Ταμπέλα αθλητή»).</summary>
+        public bool Label = true;
+
         /// <summary>Summary card after the finish.</summary>
         public bool Summary = true;
 
@@ -135,7 +138,7 @@ namespace Kinovea.ScreenManager
             double t = s.Time;
             bool summary = s.Summary && s.Reel.Finish.HasValue && t >= SummaryStart(s);
 
-            if (s.FromImage != null && !summary)
+            if (s.FromImage != null && s.Label && !summary)
                 DrawLabel(g, s, layout);
             DrawHeader(g, s, layout);
             DrawChart(g, s, layout);
