@@ -109,8 +109,8 @@ namespace Kinovea.ScreenManager
         public double? NextSpeed;
 
         /// <summary>
-        /// (2.38.6) Where the head comes out for the speeds (pool units from the wall): OutDist, or a few centimetres nearer by the rule of
-        /// the breakout (SwimSpeedRules.Breakout). The distance shown and sent stays OutDist.
+        /// (2.38.6) Where the head comes out for the speeds (pool units from the wall): OutDist, or up to 0.5 m nearer by the rule of the
+        /// breakout (SwimSpeedRules.Breakout). The distance shown and sent stays OutDist.
         /// </summary>
         public double? OutForSpeeds;
 
@@ -1023,9 +1023,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.38.6) The analyst's rule of the breakout (SwimSpeedRules.Breakout): from the breakout to the 15 (+15 after a wall) the swimmer
-        /// is not a little slower than in the swimming after it (NextSpeed). The speeds then take the breakout a few centimetres nearer
-        /// (OutForSpeeds), so that the speed to the 15 is the swimming's; the distance shown and sent stays the one measured. Only from a
-        /// distance that gives speeds (Usable says why not, from the speeds).
+        /// is not slower than in the swimming after it (NextSpeed). The speeds then take the breakout up to 0.5 m nearer (OutForSpeeds),
+        /// so that the speed to the 15 is the swimming's; the distance shown and sent stays the one measured (2.39.3: whatever the share
+        /// slower, before up to 5%). Only from a distance that gives speeds (Usable says why not, from the speeds).
         /// </summary>
         private static void BreakoutRule(SwimTechPhase p, double? at15, double k)
         {
@@ -1042,8 +1042,8 @@ namespace Kinovea.ScreenManager
             p.OutForSpeeds = nearer;
             bool start = p.Kind == SwimPhaseKind.Start;
             AddRule(p, string.Format(CultureInfo.InvariantCulture,
-                SwimLang.T(start ? "έξοδος → 15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα 15 (κανόνας: όχι λίγο πιο αργά)"
-                    : "έξοδος → +15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα +15 (κανόνας: όχι λίγο πιο αργά)"),
+                SwimLang.T(start ? "έξοδος → 15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα 15 (κανόνας: όχι πιο αργά)"
+                    : "έξοδος → +15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα +15 (κανόνας: όχι πιο αργά)"),
                 (15 - p.OutDist.Value) * k / time, (15 - nearer) * k / time));
         }
 
@@ -1324,18 +1324,18 @@ namespace Kinovea.ScreenManager
     /// <summary>
     /// (2.38.6) The analyst's two rules on the speeds of the start and the turns, the same in the panel and the PDF (SwimTechCalculator)
     /// and on the video (SwimReel), each on its own times:
-    /// 1. The breakout: from the breakout to the 15 (+15 after a wall) the swimmer is not a little slower than in the swimming after it.
-    ///    Up to SlowerShare slower is a breakout measured a few centimetres too far (a click on the head as it breaks the surface): the
-    ///    speeds take it nearer, where the speed to the 15 is the swimming's (at most MostNearer nearer); slower still, as measured.
+    /// 1. The breakout: from the breakout to the 15 (+15 after a wall) the swimmer is not slower than in the swimming after it (the
+    ///    push-off still carries him). Slower is a breakout measured a little too far (a click on the head as it breaks the surface): the
+    ///    speeds take it nearer, where the speed to the 15 is the swimming's, when that is at most MostNearer nearer; farther, as measured
+    ///    (a slow breakout indeed). (2.39.3: whatever the share; until 2.39.2 only up to 5% slower, and the video showed small dips
+    ///    after turns 5–6% slower, a few decimetres too far: the analyst, «να μην υπάρχει αυτή η μικρή πτώση από την έξοδο έως την
+    ///    ταχύτητα των 15».) Faster than the swimming after it, as measured: never made faster.
     /// 2. The start: under the water after the push off a wall the swimmer is not faster than after the start (the dive gives more than
     ///    the wall), neither on average nor at the highest speed the video shows. Above it, the speed of the turn starts a little out
     ///    from the wall (where the head is at the push-off is between the wall and the body length), just so far that it is as the start.
     /// </summary>
     public static class SwimSpeedRules
     {
-        /// <summary>The breakout: up to this much slower to the 15 than the swimming after it is "a little" (5%).</summary>
-        public const double SlowerShare = 0.05;
-
         /// <summary>The breakout: at most this much nearer (m), the precision of a click on the head as it breaks the surface.</summary>
         public const double MostNearer = 0.5;
 
@@ -1354,8 +1354,9 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// Rule 1: where the head comes out for the speeds (pool units from the wall): the distance measured (outDist), or nearer when the
-        /// speed from there to the 15 in timeTo15 (s) is up to SlowerShare below nextSpeed (m/s): where it is nextSpeed, at most
-        /// MostNearer nearer. k: metres per pool unit.
+        /// speed from there to the 15 in timeTo15 (s) is below nextSpeed (m/s): where it is nextSpeed, when that is at most MostNearer
+        /// nearer (else outDist). k: metres per pool unit. (2.39.3) As fast to a millionth of a m/s (the same speed, other roundings of
+        /// the times): as measured, no note.
         /// </summary>
         public static double Breakout(double outDist, double timeTo15, double nextSpeed, double k)
         {
@@ -1363,7 +1364,7 @@ namespace Kinovea.ScreenManager
                 return outDist;
 
             double speed = (15 - outDist) * k / timeTo15;
-            if (speed >= nextSpeed || speed < nextSpeed * (1 - SlowerShare))
+            if (speed >= nextSpeed - 1e-6)
                 return outDist;
 
             double nearer = 15 - nextSpeed * timeTo15 / k;

@@ -889,8 +889,8 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.38.6) The analyst's rule of the breakout (SwimSpeedRules.Breakout) on the times of the race: where the curve takes the breakout
-        /// after a wall (0: the start; pool units from it), a few centimetres nearer than 'length' when the speed from there to the 15 (its
-        /// time of the race at15) would be a little below the swimming after it, as the panel and the PDF.
+        /// after a wall (0: the start; pool units from it), up to 0.5 m nearer than 'length' when the speed from there to the 15 (its time
+        /// of the race at15) would be below the swimming after it, as the panel and the PDF (2.39.3: whatever the share, before up to 5%).
         /// </summary>
         private double NearerBreakout(SwimComputed computed, int wall, double length, double breakout, double at15)
         {
