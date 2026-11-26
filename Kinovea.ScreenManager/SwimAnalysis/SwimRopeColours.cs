@@ -261,7 +261,11 @@ namespace Kinovea.ScreenManager
             a = g1 + triple[1] * c;
         }
 
-        /// <summary>The y of rope d at the column of the triple (Perspective); NaN beyond the horizon of the water.</summary>
+        /// <summary>
+        /// The y of rope d at the column of the triple (Perspective); NaN beyond the horizon of the water. Near the yellow ropes to a
+        /// pixel or so; three or four lanes away within a quarter of a lane or so (the perspective from three ropes found to a pixel:
+        /// CI 26.11), which Place allows for (15% of a lane at each rope) and LaneByColour checks (the lane found on the ropes of its place).
+        /// </summary>
         public static double Rope(double[] triple, double d)
         {
             if (triple == null || triple.Length != 3 || triple[2] <= triple[1] || triple[1] <= triple[0])
