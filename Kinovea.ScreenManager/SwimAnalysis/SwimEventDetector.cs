@@ -220,7 +220,8 @@ namespace Kinovea.ScreenManager
         public const string StartHands = "start.hands";
         public const string StartBack = "start.back";
         public const string StartFeet = "start.feet";
-        public const string StartEntry = "start.entry";
+        /// <summary>(2.41.0) The entry of the head ("start.entry" until 2.40.0, the hands: its learning is not taken for the head).</summary>
+        public const string StartEntry = "start.headentry";
         public const string UnderKick = "under.kick";
         public const string UnderBreakout = "under.breakout";
         public const string TurnContact = "turn.contact";
@@ -462,7 +463,7 @@ namespace Kinovea.ScreenManager
             if (feetOff.Cues.Count > 0)
                 found.Add(feetOff);
 
-            // Entry: the hands at the water, under the block by the level learned (body sizes).
+            // Entry: (2.41.0) the head at the water, under the block by the level learned (body sizes); the hands a little before it.
             info.Block = block != null && !float.IsNaN(block.BlockLevel) ? block.BlockLevel : FeetLevel(s, setSamples);
             info.EndSample = feetOff.Cues.Count > 0 ? (int)Math.Round(feetOff.Cues.Values.Max()) : half;
             if (!float.IsNaN(info.Block))
@@ -486,10 +487,10 @@ namespace Kinovea.ScreenManager
                 }
 
                 SwimDetection entry = new SwimDetection(StartEntry, SwimMarkType.Entry) { Confidence = 0.6 };
-                if (entryWrist >= 0)
-                    entry.Cue("wrist" + suffix, entryWrist, sameVideo > 0 ? 1.0 : 0.7, sameVideo > 0 ? 0.035 : 0.05);
                 if (entryHead >= 0)
-                    entry.Cue("head" + suffix, entryHead - 0.08 * sps, sameVideo > 0 ? 0.6 : 1.0, 0.05);
+                    entry.Cue("head" + suffix, entryHead, 1.0, sameVideo > 0 ? 0.035 : 0.05);
+                if (entryWrist >= 0)
+                    entry.Cue("wrist" + suffix, entryWrist + SwimTechPhase.HandsBeforeHead * sps, sameVideo > 0 ? 0.6 : 0.7, 0.05);
                 entry.Measures["block"] = info.Block;
                 entry.Measures["L"] = L;
                 if (entry.Cues.Count > 0)

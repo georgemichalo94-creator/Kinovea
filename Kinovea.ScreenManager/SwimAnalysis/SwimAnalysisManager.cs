@@ -483,7 +483,8 @@ namespace Kinovea.ScreenManager
                     AddMark(SwimMarkType.FeetOff, timestamp, SwimLang.T("Αποκόλληση ποδιών"));
                     break;
                 case PlayerScreenCommands.SwimEntry:
-                    AddMark(SwimMarkType.Entry, timestamp, SwimLang.T("Είσοδος χεριών στο νερό"));
+                    // (2.41.0) The entry of the head (an analysis marked with the hands passes to it).
+                    AddEntryMark(timestamp);
                     break;
                 case PlayerScreenCommands.SwimReaction:
                     AddMark(SwimMarkType.Reaction, timestamp, SwimLang.T("Αντίδραση"));
@@ -811,6 +812,9 @@ namespace Kinovea.ScreenManager
                 // A change of the official times (since 2026-10-19): the times before it, the checkpoints it moved back.
                 if (UndoOfficial(id))
                     return;
+                // (2.41.0) The passing of an analysis to the entry of the head: the entry of the hands back.
+                if (UndoHeadEntry(id))
+                    return;
                 mark = Race.Marks.FirstOrDefault(m => m.Id == id);
             }
 
@@ -896,6 +900,7 @@ namespace Kinovea.ScreenManager
             undoStack.Clear();
             replacedBy.Clear();
             officialUndo.Clear();
+            entryUndo.Clear();
             ClearWaitingFrames();
             CancelQuietReading();
         }
@@ -958,7 +963,7 @@ namespace Kinovea.ScreenManager
                 case SwimMarkType.Kick: return SwimLang.T("δελφινισμός");
                 case SwimMarkType.Breakout: return SwimLang.T("έξοδος από το νερό");
                 case SwimMarkType.FeetOff: return SwimLang.T("αποκόλληση ποδιών");
-                case SwimMarkType.Entry: return SwimLang.T("είσοδος χεριών στο νερό");
+                case SwimMarkType.Entry: return SwimLang.T("είσοδος στο νερό");
                 case SwimMarkType.Reaction: return SwimLang.T("αντίδραση");
                 case SwimMarkType.HandsOff: return SwimLang.T("χέρια από τον βατήρα");
                 case SwimMarkType.BackFoot: return SwimLang.T("πίσω πόδι");
@@ -1274,6 +1279,7 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            entryPassed = null;
             StoreMeasurement(target, wall, value);
 
             string label = MeasureLabel(target, wall);
@@ -1318,6 +1324,11 @@ namespace Kinovea.ScreenManager
 
             if (warn)
                 SystemSounds.Exclamation.Play();
+
+            // (2.41.0) An analysis marked with the hands passed to the entry of the head.
+            if (entryPassed != null)
+                message += "\n" + entryPassed;
+            entryPassed = null;
 
             Status(message, warn);
             Changed(false);
@@ -1492,13 +1503,13 @@ namespace Kinovea.ScreenManager
             string what;
             switch (target)
             {
-                case SwimPickTarget.EntryHands: what = SwimLang.T("Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό."); break;
+                case SwimPickTarget.EntryHands: what = SwimLang.T("Κάνε κλικ στο κεφάλι, εκεί που μπαίνει στο νερό."); break;
                 case SwimPickTarget.EntryHips: what = SwimLang.T("Κάνε κλικ στο σημείο όπου τα ισχία μπαίνουν στο νερό."); break;
                 case SwimPickTarget.StartUnderwater: what = SwimLang.T("Κάνε κλικ στο κεφάλι, εκεί που φτάνει στην επιφάνεια."); break;
                 case SwimPickTarget.StartBreakout: what = SwimLang.T("Κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό."); break;
                 case SwimPickTarget.TurnUnderwater: what = string.Format(CultureInfo.InvariantCulture, SwimLang.T("Στροφή {0}{1}: κάνε κλικ στο κεφάλι, εκεί που βγαίνει από το νερό."), wall, UnitLabel); break;
                 case SwimPickTarget.FinishLastStroke: what = SwimLang.T("Κάνε κλικ στο σημείο εισόδου του χεριού στην τελευταία χεριά."); break;
-                case SwimPickTarget.PhaseEntry: what = SwimLang.T("Κάνε κλικ στο σημείο όπου τα χέρια μπαίνουν στο νερό (απόσταση από τη γραμμή 0)."); break;
+                case SwimPickTarget.PhaseEntry: what = SwimLang.T("Κάνε κλικ στο κεφάλι εκεί που μπαίνει στο νερό (απόσταση από τη γραμμή 0)."); break;
                 case SwimPickTarget.PhaseBreakout: what = SwimLang.T("Κάνε κλικ στο κεφάλι εκεί που βγαίνει από το νερό (απόσταση από τη γραμμή 0)."); break;
                 case SwimPickTarget.BodyLength: what = SwimLang.T("Μήκος σώματος: σε ένα καρέ της ολίσθησης (σώμα τεντωμένο), κλικ στα δάχτυλα των ποδιών και μετά στο κεφάλι."); break;
                 default: what = SwimLang.T("Κάνε κλικ στο βίντεο."); break;
@@ -1511,7 +1522,7 @@ namespace Kinovea.ScreenManager
         {
             switch (target)
             {
-                case SwimPickTarget.EntryHands: return SwimLang.T("Απόσταση εισόδου (χέρια)");
+                case SwimPickTarget.EntryHands: return SwimLang.T("Απόσταση εισόδου (κεφάλι)");
                 case SwimPickTarget.EntryHips: return SwimLang.T("Απόσταση εισόδου (ισχία)");
                 case SwimPickTarget.StartUnderwater: return SwimLang.T("Απόσταση κάτω από το νερό");
                 case SwimPickTarget.StartBreakout: return SwimLang.T("Απόσταση εξόδου (κεφάλι)");
@@ -1588,11 +1599,15 @@ namespace Kinovea.ScreenManager
             return text;
         }
 
+        /// <summary>(2.41.0) What the measurement of the entry said when its analysis passed to the entry of the head, else null.</summary>
+        private string entryPassed;
+
         private void StoreMeasurement(SwimPickTarget target, int wall, double value)
         {
             switch (target)
             {
-                case SwimPickTarget.EntryHands: Race.EntryDistHands = value; break;
+                // (2.41.0) The entry of the head (an analysis marked with the hands passes to it).
+                case SwimPickTarget.EntryHands: entryPassed = SetEntryDistance(value); break;
                 case SwimPickTarget.EntryHips: Race.EntryDistHips = value; break;
                 // (2.9.8) Measured on the video: no longer the estimate from the times.
                 case SwimPickTarget.StartUnderwater:
@@ -1621,7 +1636,7 @@ namespace Kinovea.ScreenManager
                     break;
                 }
                 case SwimPickTarget.FinishLastStroke: Race.FinishLastStrokeDist = value; break;
-                case SwimPickTarget.PhaseEntry: Race.GetPhaseValues(pendingPhaseId, true).EntryDist = value; break;
+                case SwimPickTarget.PhaseEntry: entryPassed = SetPhaseEntryDistance(pendingPhaseId, value); break;
                 case SwimPickTarget.PhaseBreakout: Race.GetPhaseValues(pendingPhaseId, true).BreakoutDist = value; break;
             }
         }
@@ -1718,11 +1733,15 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Frame of the mark that goes with a distance (hands entry, breakout, last stroke), if marked.
+        /// Frame of the mark that goes with a distance (head entry, breakout, last stroke), if marked.
         /// </summary>
         private long? MeasureFrame(SwimPickTarget target, int wall)
         {
             if (Race == null)
+                return null;
+
+            // (2.41.0) An entry of the hands is not where the head goes in: no frame of it to measure the head at.
+            if ((target == SwimPickTarget.EntryHands || target == SwimPickTarget.PhaseEntry) && !Race.HeadEntry())
                 return null;
 
             if (target == SwimPickTarget.PhaseEntry || target == SwimPickTarget.PhaseBreakout)
@@ -2813,6 +2832,8 @@ namespace Kinovea.ScreenManager
         {
             SwimRace race = new SwimRace();
             race.Checkpoints = SwimPresets.DefaultCheckpoints(race.Distance, race.Pool, race.Relay);
+            // (2.41.0) The entry of the start of a new analysis is where the head goes into the water.
+            race.EntryHead = true;
             return race;
         }
         #endregion

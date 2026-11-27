@@ -766,16 +766,17 @@ namespace Kinovea.ScreenManager
 
             lblEntry = ValueLabel();
             tbEntryDistHands = DistanceBox(3m);
-            AddEventRow(t, SwimLang.T("Είσοδος χεριών στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"),
-                SwimLang.T("Τα χέρια μπαίνουν στο νερό: χρόνος από το σήμα και χρόνος πτήσης (αποδέσμευση → είσοδος). Η απόσταση μετριέται από τον τοίχο εκκίνησης."),
+            // (2.41.0) The entry of the head, the analyst's request (until 2.40.0 the entry of the hands).
+            AddEventRow(t, SwimLang.T("Είσοδος κεφαλιού στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος κεφαλιού"),
+                SwimLang.T("Το κεφάλι μπαίνει στο νερό: χρόνος από το σήμα και χρόνος πτήσης (αποδέσμευση → είσοδος). Η απόσταση μετριέται από τον τοίχο εκκίνησης."),
                 lblEntry, Caption(SwimLang.T("απόσταση:")), tbEntryDistHands, DistanceUnit(),
-                PickButton(SwimPickTarget.EntryHands, SwimLang.T("Κλικ στο βίντεο εκεί που τα χέρια μπαίνουν στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης.")));
+                PickButton(SwimPickTarget.EntryHands, SwimLang.T("Κλικ στο βίντεο εκεί που το κεφάλι μπαίνει στο νερό: υπολογίζεται η απόσταση από τον τοίχο εκκίνησης.")));
 
             // (2.36.0) Not the entry of the hips nor the speeds of the hips and the feet (the analyst's request: a clearer page and PDF);
-            // the speed of the hands at their entry stays, typed.
+            // the speed at the entry stays, typed (2.41.0: of the head).
             tbEntryVelHands = NumberBox();
-            AddEventRow(t, SwimLang.T("Ταχύτητα εισόδου χεριών"), null, null,
-                SwimLang.T("Ταχύτητα των χεριών τη στιγμή της εισόδου (m/s), αν τη μετράς με άλλο σύστημα."),
+            AddEventRow(t, SwimLang.T("Ταχύτητα εισόδου κεφαλιού"), null, null,
+                SwimLang.T("Ταχύτητα του κεφαλιού τη στιγμή της εισόδου (m/s), αν τη μετράς με άλλο σύστημα."),
                 tbEntryVelHands, Unit("m/s"));
 
             lblStartKicks = ValueLabel();
@@ -1971,8 +1972,9 @@ namespace Kinovea.ScreenManager
                     if (tbOfficial.Text != official)
                         tbOfficial.Text = official;
                 }
-                tbEntryDistHands.ShowNumber(r.EntryDistHands);
-                SetText(tbEntryVelHands, Format(r.EntryVelHands));
+                // (2.41.0) The entry marked: the head's (the hands' in an analysis marked so before 2.41.0).
+                tbEntryDistHands.ShowNumber(r.EntryDistance());
+                SetText(tbEntryVelHands, Format(r.EntryVelocity()));
                 tbUnderwaterDist.ShowNumber(r.UnderwaterDist);
                 tbBreakoutDist.ShowNumber(r.BreakoutDist);
                 tbFinishDist.ShowNumber(r.FinishLastStrokeDist);
@@ -2189,7 +2191,8 @@ namespace Kinovea.ScreenManager
             lblStartSignal.ForeColor = race.StartTimestamp.HasValue && !race.PilotStart ? colorOk : colorWarn;
             lblReactionAuto.Text = Seconds(computed.ReactionTime);
             lblBlock.Text = Seconds(computed.BlockTime) + (computed.BlockOfficial ? SwimLang.T(" (επίσημος χρόνος αντίδρασης)") : "");
-            lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? SwimLang.T(" · πτήση ") + Seconds(computed.FlightTime) : "");
+            lblEntry.Text = Seconds(computed.EntryTime) + (computed.FlightTime.HasValue ? SwimLang.T(" · πτήση ") + Seconds(computed.FlightTime) : "") +
+                (race.HeadEntry() ? "" : SwimLang.T(" · ⚠ χέρια (παλιά ανάλυση)"));
             lblStartKicks.Text = computed.StartKicks.HasValue ? computed.StartKicks.Value.ToString(CultureInfo.InvariantCulture) : "–";
             lblBreakout.Text = Seconds(computed.StartUnderwaterTime);
 
@@ -3161,8 +3164,8 @@ namespace Kinovea.ScreenManager
             SwimRace r = manager.Race;
             double?[] start = manager.StartDistances();
             r.Reaction = Parse(tbReaction);
-            r.EntryDistHands = tbEntryDistHands.Number;
-            r.EntryVelHands = Parse(tbEntryVelHands);
+            // (2.41.0) The entry of the head (an analysis marked with the hands passes to it when one of the two changed).
+            manager.SetTypedEntry(tbEntryDistHands.Number, Parse(tbEntryVelHands));
 
             // (2.9.8) A value typed is the analyst's, no longer the estimate from the times (the same value shown again stays one).
             double? underwater = tbUnderwaterDist.Number;
@@ -3503,6 +3506,11 @@ namespace Kinovea.ScreenManager
             if (parts.Count < (start ? 3 : 2) && marked && !string.IsNullOrEmpty(phase.SpeedNote))
                 text += " · " + phase.SpeedNote;
 
+            // (2.41.0) Where the head is at the entry of the hands of an analysis marked so, or at the push-off of a turn (the panel only).
+            string head = HeadText(phase, race);
+            if (head.Length > 0 && (parts.Count > 0 || (start && !phase.EntryHead)))
+                text += "\n" + head;
+
             // (2.38.6) What the analyst's rules changed in the speeds (the panel only, not the reports).
             if (!string.IsNullOrEmpty(phase.RuleNote) && parts.Count > 0)
                 text += "\n" + phase.RuleNote;
@@ -3516,20 +3524,44 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.9.8) What the speeds of the breakout are and what they need. (2.35.0) The phases of the start. (2.38.6) The previous model
-        /// (from where the hands entered, from the wall) with the analyst's two rules.
+        /// (2.41.0) Where the program puts the head for the speeds, in the panel only (not in the reports): at the push-off of a turn the
+        /// typical height + 0.10 from the wall; in an analysis marked with the entry of the hands (before 2.41.0) behind the hands.
+        /// </summary>
+        private static string HeadText(SwimTechPhase phase, SwimRace race)
+        {
+            SwimHead h = SwimHead.Of(race);
+            if (phase.Kind == SwimPhaseKind.Start)
+            {
+                if (phase.EntryHead || !phase.HeadBehindHands.HasValue)
+                    return "";
+                return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην είσοδο: {0:0.00}{1} πίσω από τα χέρια (τυπικό ύψος {2:0.00} μ., {3})"),
+                    phase.HeadBehindHands.Value, race.Unit, h.Height, h.Who()) +
+                    SwimLang.T(" · παλιά ανάλυση με την είσοδο των χεριών: «Είσοδος κεφαλιού» (E) στο καρέ που μπαίνει το κεφάλι και 📍 για να περάσει στο κεφάλι");
+            }
+
+            if (!phase.HeadAtPushoff.HasValue)
+                return "";
+            return string.Format(CultureInfo.InvariantCulture, SwimLang.T("κεφάλι στην αποκόλληση: {0:0.00}{1} από τον τοίχο (τυπικό ύψος {2:0.00} μ. + 0.10, {3})"),
+                phase.HeadAtPushoff.Value, race.Unit, h.Height, h.Who());
+        }
+
+        /// <summary>
+        /// (2.9.8) What the speeds of the breakout are and what they need. (2.35.0) The phases of the start. (2.41.0) From the head to the
+        /// head, the analyst's request: the entry of the head, the head at the push-off from the typical height; with the analyst's two rules.
         /// </summary>
         private static string BreakoutSpeedsHelp(bool start)
         {
             return start
-                ? SwimLang.T("Ταχύτητες των φάσεων της εκκίνησης: σήμα → είσοδος (τα χέρια, από τον βατήρα ως εκεί που μπαίνουν στο νερό), ") +
-                  SwimLang.T("είσοδος → έξοδος (από εκεί που μπήκαν τα χέρια ως εκεί που βγαίνει το κεφάλι) και έξοδος → 15μ. (ό,τι μένει ως τα 15μ. / χρόνος). ") +
+                ? SwimLang.T("Ταχύτητες των φάσεων της εκκίνησης: σήμα → είσοδος (το κεφάλι, από τον βατήρα ως εκεί που μπαίνει στο νερό), ") +
+                  SwimLang.T("είσοδος → έξοδος (από εκεί που μπήκε το κεφάλι ως εκεί που βγαίνει) και έξοδος → 15μ. (ό,τι μένει ως τα 15μ. / χρόνος). ") +
                   SwimLang.T("Κανόνας: η έξοδος → 15μ. δεν βγαίνει πιο αργή από την κολύμβηση μετά τα 15μ. (πιο αργή: γράφεται ίση· πιο γρήγορη: όπως μετρήθηκε).\n") +
-                  SwimLang.T("Χρειάζονται τα σημάδια της εισόδου, της εξόδου και των 15μ., και οι αποστάσεις εισόδου των χεριών και εξόδου ") +
+                  SwimLang.T("Χρειάζονται τα σημάδια της εισόδου, της εξόδου και των 15μ., και οι αποστάσεις εισόδου και εξόδου του κεφαλιού ") +
                   SwimLang.T("μετρημένες (📍 Μέτρηση) ή γραμμένες, όχι η εκτίμηση από τους χρόνους.")
-                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο του κεφαλιού, από τον τοίχο. Και από την έξοδο έως το κεφάλι στα ") +
-                  SwimLang.T("+15μ. (ό,τι μένει / χρόνος). Κανόνες: κάτω από το νερό όχι πιο γρήγορα από την εκκίνηση, ούτε ο μέσος όρος ούτε η μεγαλύτερη ") +
-                  SwimLang.T("τιμή του βίντεο (αλλιώς γράφεται όσο της εκκίνησης)· η έξοδος → +15μ. όχι πιο αργή από την κολύμβηση μετά (πιο αργή: γράφεται ίση· πιο γρήγορη: όπως μετρήθηκε).\n") +
+                : SwimLang.T("Υποβρύχια ταχύτητα από την αποκόλληση έως την έξοδο, από το κεφάλι ως το κεφάλι: στην αποκόλληση τα δάχτυλα των ποδιών ") +
+                  SwimLang.T("είναι ακόμη στον τοίχο, άρα το κεφάλι απέχει από τον τοίχο το τυπικό ύψος του αθλητή για το φύλο και την ηλικία του + 0.10 μ. ") +
+                  SwimLang.T("(δεν γράφεις τίποτα). Και από την έξοδο έως το κεφάλι στα +15μ. (ό,τι μένει / χρόνος). Κανόνες: κάτω από το νερό όχι πιο ") +
+                  SwimLang.T("γρήγορα από την εκκίνηση, ούτε ο μέσος όρος ούτε η μεγαλύτερη τιμή του βίντεο (αλλιώς γράφεται όσο της εκκίνησης και το πρόγραμμα ") +
+                  SwimLang.T("σε προειδοποιεί)· η έξοδος → +15μ. όχι πιο αργή από την κολύμβηση μετά (πιο αργή: γράφεται ίση· πιο γρήγορη: όπως μετρήθηκε).\n") +
                   SwimLang.T("Χρειάζονται τα σημάδια της αποκόλλησης, της εξόδου και του +15, και η απόσταση της εξόδου μετρημένη (📍 Μέτρηση) ή ") +
                   SwimLang.T("γραμμένη, όχι η εκτίμηση από τους χρόνους.");
         }

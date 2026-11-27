@@ -929,7 +929,7 @@ namespace Kinovea.ScreenManager
                     name = p.Kind == KindRacePushoff ? SwimLang.T("Αποκόλληση από τον τοίχο των ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") :
                         p.Kind == SwimEventDetector.TurnFeet || p.Kind == KindTechPushoff ? SwimLang.T("Αποκόλληση από τον τοίχο") : p.Kind == KindRaceBlock ? SwimLang.T("Αποκόλληση ποδιών (εκκίνηση)") : SwimLang.T("Αποκόλληση ποδιών");
                     break;
-                case SwimMarkType.Entry: name = SwimLang.T("Είσοδος χεριών στο νερό"); break;
+                case SwimMarkType.Entry: name = SwimLang.T("Είσοδος κεφαλιού στο νερό"); break;
                 case SwimMarkType.Kick: name = SwimLang.T("Δελφινισμός") + (p.Index > 0 ? " " + p.Index : ""); break;
                 case SwimMarkType.Breakout: name = SwimLang.T("Έξοδος από το νερό") + (p.Kind == KindRaceBreakout ? (p.Index > 0 ? SwimLang.T(" μετά τα ") + p.Index.ToString(CultureInfo.InvariantCulture) + SwimLang.T("μ.") : SwimLang.T(" μετά την εκκίνηση")) : ""); break;
                 case SwimMarkType.WallContact: name = SwimLang.T("Επαφή στον τοίχο"); break;

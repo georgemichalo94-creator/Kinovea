@@ -182,7 +182,9 @@ public static class ReelPreview
         race.Competition = "Δοκιμή γραφικών";
         race.Checkpoints = SwimPresets.DefaultCheckpoints(400, 50, false);
         race.StartTimestamp = Ts(0);
-        race.EntryDistHands = 3.6;
+        // (2.41.0) The entry of the head.
+        race.EntryHead = true;
+        race.EntryDistHead = 3.6;
         race.BreakoutDist = 11.2;
 
         Add(race, SwimMarkType.Reaction, 0.60, 0);

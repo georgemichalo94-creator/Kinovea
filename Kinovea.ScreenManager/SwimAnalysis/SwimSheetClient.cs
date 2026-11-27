@@ -781,8 +781,14 @@ namespace Kinovea.ScreenManager
             double? reaction = race.Reaction ?? (computed.ReactionTime.HasValue ? (double?)Math.Round(computed.ReactionTime.Value, 3) : null);
             manual["reaction"] = reaction;
             // (2.36.0) Not the entry of the hips nor the speeds of the hips and the feet: their fields went (the analyst's request).
-            manual["entryDistHands"] = race.EntryDistHands;
-            manual["entryVelHands"] = race.EntryVelHands;
+            // (2.41.0) The entry of the head (Apps Script 2.27.0 writes «(κεφάλι)» and compares it only with entries of the head); the
+            // hands' only in an analysis marked so before 2.41.0, and then nothing of the head (the times of "entries" are the hands').
+            bool headEntry = race.HeadEntry();
+            manual["entryHead"] = headEntry;
+            manual["entryDistHead"] = headEntry ? race.EntryDistHead : null;
+            manual["entryVelHead"] = headEntry ? race.EntryVelHead : null;
+            manual["entryDistHands"] = headEntry ? null : race.EntryDistHands;
+            manual["entryVelHands"] = headEntry ? null : race.EntryVelHands;
             // (2.32.0) A distance no swimmer has is not sent (a measurement with the calibration of another frame of a moving camera); the
             // estimate of the video graphics instead, said as an estimate.
             // Only for an estimate in place of such a distance: the send never fails because of it.
@@ -816,7 +822,7 @@ namespace Kinovea.ScreenManager
                 manual["signalBreakoutVel"] = Math.Round(race.BreakoutDist.Value * race.K / computed.StartUnderwaterTime.Value, 3);
 
             // (2.35.0) The phases of the start as the program measures them (Apps Script 2.20.0: a row of the start of the report):
-            // signal → entry of the hands, entry → breakout of the head, breakout → 15; m/s. Only the values, not how.
+            // signal → entry, entry → breakout, breakout → 15; m/s (2.41.0: from the head to the head). Only the values, not how.
             SwimTechPhase startPhase = tech == null || race.IsTraining ? null : tech.FirstOrDefault(p => p.Kind == SwimPhaseKind.Start);
             if (startPhase != null)
             {

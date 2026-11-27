@@ -16,7 +16,7 @@ namespace Kinovea.ScreenManager
     {
         None,
 
-        /// <summary>The entry of the hands after the start, from the start wall (SwimRace.EntryDistHands).</summary>
+        /// <summary>The entry after the start, from the start wall: (2.41.0) of the head (SwimRace.EntryDistance; the hands' in an old analysis).</summary>
         EntryHands,
 
         /// <summary>The head out of the water after the start (SwimRace.BreakoutDist).</summary>
@@ -153,9 +153,12 @@ namespace Kinovea.ScreenManager
             }
             list.Add(block);
 
-            SwimBarEvent entry = Event("entry", start, 0, SwimLang.T("Είσοδος χεριών"), c.EntryTime, null,
-                SwimLang.T("Τα χέρια μπαίνουν στο νερό · απόσταση από τον τοίχο εκκίνησης."));
-            SetDistance(entry, SwimBarDistance.EntryHands, 0, race.EntryDistHands, false, SeedEntry);
+            // (2.41.0) The entry of the head; an analysis marked with the hands before 2.41.0 says so until the head is marked.
+            bool headEntry = race.HeadEntry();
+            SwimBarEvent entry = Event("entry", start, 0, headEntry ? SwimLang.T("Είσοδος κεφαλιού") : SwimLang.T("Είσοδος χεριών"), c.EntryTime, null,
+                headEntry ? SwimLang.T("Το κεφάλι μπαίνει στο νερό · απόσταση από τον τοίχο εκκίνησης.")
+                    : SwimLang.T("Παλιά ανάλυση: η είσοδος των χεριών. Πάτα E στο καρέ που μπαίνει το κεφάλι στο νερό και μέτρησε την απόστασή του (📍) για να περάσει στο κεφάλι."));
+            SetDistance(entry, SwimBarDistance.EntryHands, 0, race.EntryDistance(), false, SeedEntry);
             list.Add(entry);
 
             double? startBreakout = c.StartUnderwaterTime;

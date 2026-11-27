@@ -531,7 +531,7 @@ if ($out) {
       } finally { $bar.Dispose() }
     }
 
-    # (2.39.1) The left bar at the start of a fictional 100 m: the 📍 beside the entry of the hands (measured) and beside the breakout
+    # (2.39.1) The left bar at the start of a fictional 100 m: the 📍 beside the entry (2.41.0: of the head; measured) and beside the breakout
     # (≈ the estimate from the times), or without distances (–); a picture of each. (The 📍 of a turn needs the video at the turn.)
     $p = $picks['100|50|m|fs|False']
     if ($null -ne $p) {
@@ -545,7 +545,8 @@ if ($out) {
       foreach ($lc in $leftCases) {
         $l = Load $p.n $p.f
         $l.race.Athlete = 'Αθλητής Δείγμα'; $l.race.Competition = 'Αγώνας δείγμα'; $l.race.Location = 'Πόλη δείγμα'; $l.race.Round = 'Τελικός'; $l.race.Lane = 4
-        $l.race.EntryDistHands = $lc.entry; $l.race.BreakoutDist = $null; $l.race.UnderwaterDist = $lc.under; $l.race.UnderwaterEstimated = $lc.est
+        # (2.41.0) The entry of the head.
+        $l.race.EntryHead = $true; $l.race.EntryDistHead = $lc.entry; $l.race.BreakoutDist = $null; $l.race.UnderwaterDist = $lc.under; $l.race.UnderwaterEstimated = $lc.est
         $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
         $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
         $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)

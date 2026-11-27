@@ -12,7 +12,7 @@ namespace Kinovea.ScreenManager
 {
     /// <summary>
     /// The events of the whole race that a camera in the stands does not show clearly enough for a detector: the first movement,
-    /// the feet off the block and the entry of the hands after the start, and the feet off the wall after each turn. They are
+    /// the feet off the block and the entry after the start (2.41.0: of the head), and the feet off the wall after each turn. They are
     /// proposed at their usual times (medians of the analyses of the library, 372 races) moved by the learning (the usual
     /// correction of the analyst; in the same video at once), and each answer moves the next one: the feet off the block from the
     /// first movement, the entry from the feet off, the push off from the wall kept.
@@ -26,8 +26,14 @@ namespace Kinovea.ScreenManager
         /// <summary>Proposal of the feet off the block (backstroke: off the wall) after the start.</summary>
         public const string KindRaceBlock = "race.block";
 
-        /// <summary>Proposal of the entry of the hands in the water after the start.</summary>
-        public const string KindRaceEntry = "race.entry";
+        /// <summary>
+        /// Proposal of the entry in the water after the start: (2.41.0) of the head, the analyst's request (until 2.40.0 "race.entry", the
+        /// hands: its learning is not taken for the head, which goes in about 0.12 s later).
+        /// </summary>
+        public const string KindRaceEntry = "race.headentry";
+
+        /// <summary>(2.41.0) The proposals of the entry of the hands of before 2.41.0 (the ones still waiting go when a race is read).</summary>
+        public const string KindRaceHandsEntry = "race.entry";
 
         /// <summary>Proposal of the feet off the wall after a turn (Index: the wall).</summary>
         public const string KindRacePushoff = "race.pushoff";
@@ -80,15 +86,17 @@ namespace Kinovea.ScreenManager
                     }
                     break;
                 case KindRaceEntry:
+                    // (2.41.0) The head: the medians of the hands of the library + SwimTechPhase.HandsBeforeHead (the head about 0.5 m
+                    // behind them at about 4 m/s), a little wider until the learning has the analyst's answers.
                     if (cue == CueFromStart)
                     {
-                        delay = back ? 0.67 : style == "br" ? 0.985 : style == "fly" ? 0.96 : 0.97;
-                        spread = 0.06;
+                        delay = (back ? 0.67 : style == "br" ? 0.985 : style == "fly" ? 0.96 : 0.97) + SwimTechPhase.HandsBeforeHead;
+                        spread = 0.07;
                     }
                     else if (cue == CueFromBlock)
                     {
-                        delay = back ? 0.09 : 0.30;
-                        spread = 0.04;
+                        delay = (back ? 0.09 : 0.30) + SwimTechPhase.HandsBeforeHead;
+                        spread = 0.05;
                     }
                     break;
                 case KindRacePushoff:

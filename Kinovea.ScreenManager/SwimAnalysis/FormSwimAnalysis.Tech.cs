@@ -215,9 +215,10 @@ namespace Kinovea.ScreenManager
             AddEventRow(t, SwimLang.T("Αποδέσμευση (μπροστινό πόδι)"), PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"),
                 SwimLang.T("Το μπροστινό πόδι αφήνει τον βατήρα: τέλος της φάσης βατήρα (ο επίσημος χρόνος αντίδρασης)."), lblTsBlock);
             lblTsEntry = ValueLabel();
-            AddEventRow(t, SwimLang.T("Είσοδος χεριών στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"),
-                SwimLang.T("Τα χέρια μπαίνουν στο νερό: τέλος της πτήσης."), lblTsEntry,
-                TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ εκεί που τα χέρια μπαίνουν στο νερό: απόσταση εισόδου."), () => SelectedPhase(cmbStartPhase), true,
+            // (2.41.0) The entry of the head, the analyst's request.
+            AddEventRow(t, SwimLang.T("Είσοδος κεφαλιού στο νερό"), PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"),
+                SwimLang.T("Το κεφάλι μπαίνει στο νερό: τέλος της πτήσης."), lblTsEntry,
+                TechPickButton(SwimLang.T("📍 Απόσταση"), SwimLang.T("Κλικ εκεί που το κεφάλι μπαίνει στο νερό: απόσταση εισόδου."), () => SelectedPhase(cmbStartPhase), true,
                     SwimPickTarget.EntryHands, SwimPickTarget.PhaseEntry));
             lblTsKicks = ValueLabel();
             AddEventRow(t, SwimLang.T("Υποβρύχιοι δελφινισμοί"), PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"),
@@ -847,7 +848,8 @@ namespace Kinovea.ScreenManager
                 string blockPhase = val("blockPhase");
                 lblTsBlock.Text = sec(phase != null ? phase.Block : null) + (blockPhase != null ? SwimLang.T(" · φάση βατήρα ") + blockPhase + " s" : "");
                 string flight = val("flight");
-                lblTsEntry.Text = sec(phase != null ? phase.Entry : null) + (flight != null ? SwimLang.T(" · πτήση ") + flight + " s" : "") + dist(phase != null ? phase.EntryDist : null, SwimLang.T("απόσταση"));
+                lblTsEntry.Text = sec(phase != null ? phase.Entry : null) + (flight != null ? SwimLang.T(" · πτήση ") + flight + " s" : "") + dist(phase != null ? phase.EntryDist : null, SwimLang.T("απόσταση")) +
+                    (phase != null && !phase.EntryHead ? SwimLang.T(" · ⚠ χέρια (παλιά ανάλυση)") : "");
                 lblTsKicks.Text = kicks();
                 string uw = val("underwater");
                 lblTsBreakout.Text = sec(phase != null ? phase.Breakout : null) + (uw != null ? SwimLang.T(" · υποβρύχια ") + uw + " s" : "") + dist(phase != null ? phase.BreakoutDist : null, SwimLang.T("στα"));

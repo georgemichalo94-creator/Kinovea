@@ -254,7 +254,7 @@ namespace Kinovea.ScreenManager
         public double? BlockMarkTime;
         public bool BlockMarkApart;
 
-        /// <summary>Flight: feet leave the block → hands enter the water.</summary>
+        /// <summary>Flight: feet leave the block → the entry into the water (2.41.0: of the head; of the hands in an analysis of before).</summary>
         public double? FlightTime;
         public double? StartUnderwaterTime;
         public int? StartKicks;
@@ -935,7 +935,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Start events in their natural order: first movement → block release → hands entry → breakout.
+        /// Start events in their natural order: first movement → block release → entry (2.41.0: of the head) → breakout.
         /// The block release is what the touch pads give as the official reaction time (about 0.55–0.95 s).
         /// </summary>
         private static void CheckStart(SwimComputed result)

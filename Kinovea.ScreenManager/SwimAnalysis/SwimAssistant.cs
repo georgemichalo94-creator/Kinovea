@@ -1338,7 +1338,7 @@ namespace Kinovea.ScreenManager
                 { "SwimStart", "σήμα εκκίνησης", "start signal" },
                 { "SwimReaction", "αντίδραση", "reaction" },
                 { "SwimFeetOff", "αποδέσμευση / αποκόλληση", "block / push-off" },
-                { "SwimEntry", "είσοδος χεριών", "hands entry" },
+                { "SwimEntry", "είσοδος κεφαλιού", "head entry" },
                 { "SwimKick", "δελφινισμός", "kick" },
                 { "SwimBreakout", "έξοδος", "breakout" },
                 { "SwimStroke", "χεριά", "stroke" },

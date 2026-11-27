@@ -25,7 +25,8 @@ namespace Kinovea.ScreenManager
         public const string KindTechLastStroke = "tech.turn.stroke.last";
         public const string KindTechFirstStroke = "tech.turn.stroke.first";
         public const string KindTechStroke = "tech.turn.stroke";
-        public const string KindTechEntry = "tech.start.entry";
+        /// <summary>(2.41.0) The entry of the head ("tech.start.entry" until 2.40.0, the hands: its learning is not taken for the head).</summary>
+        public const string KindTechEntry = "tech.start.headentry";
         public const string KindTechHeadStart = "tech.start.head5";
         public const string KindTechHeadIn = "tech.turn.head.in5";
         public const string KindTechHeadOut = "tech.turn.head.out5";

@@ -1785,7 +1785,7 @@ namespace Kinovea.ScreenManager
                 new SwimBarButton { Id = "auto-pilot", Text = SwimLang.T("✈ Αυτόματος πιλότος") },
                 new SwimBarButton { Id = "reaction", Text = SwimLang.T("Αντίδραση"), Value = "0.62", Key = "R" },
                 new SwimBarButton { Id = "block", Text = SwimLang.T("Αποδέσμευση"), Value = "0.71", Key = "F" },
-                new SwimBarButton { Id = "entry", Text = SwimLang.T("Είσοδος χεριών"), Key = "E" },
+                new SwimBarButton { Id = "entry", Text = SwimLang.T("Είσοδος κεφαλιού"), Key = "E" },
                 new SwimBarButton { Id = "kick", Text = SwimLang.T("Δελφινισμός"), Key = "K", Dim = true },
                 new SwimBarButton { Id = "breakout", Text = SwimLang.T("Έξοδος"), Key = "B" },
                 new SwimBarButton { Id = "stroke", Text = SwimLang.T("Χεριά"), Key = "C" },

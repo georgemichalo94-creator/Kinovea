@@ -78,6 +78,9 @@ namespace Kinovea.ScreenManager
             if (p == null || string.IsNullOrEmpty(anchor))
                 return null;
 
+            // (2.41.0) The moments of the entry from the hands (the entry marked is the head's).
+            p = SwimTechPhase.HandsView(p);
+
             double? v;
             if (p.Kind == SwimPhaseKind.Start)
             {
@@ -165,6 +168,9 @@ namespace Kinovea.ScreenManager
             Dictionary<string, SwimTechMeasure> m = new Dictionary<string, SwimTechMeasure>();
             if (race == null || p == null || catalog == null)
                 return m;
+
+            // (2.41.0) The moments of the entry from the hands (the entry marked is the head's).
+            p = SwimTechPhase.HandsView(p);
 
             Action<string, double, string, double, long?> put = (check, value, text, confidence, ts) =>
             {

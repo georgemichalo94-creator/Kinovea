@@ -1067,9 +1067,10 @@ namespace Kinovea.ScreenManager
             switch (target)
             {
                 case SwimPickTarget.EntryHands:
-                    value = race.EntryDistHands;
+                    // (2.41.0) The entry of the head (the hands' in an analysis marked so before 2.41.0, until the head is measured).
+                    value = race.EntryDistance();
                     estimated = false;
-                    what = SwimLang.T("📍 Απόσταση εισόδου των χεριών από τον τοίχο εκκίνησης: κλικ εδώ και μετά κλικ στα χέρια στο βίντεο (στο καρέ της εισόδου).");
+                    what = SwimLang.T("📍 Απόσταση εισόδου του κεφαλιού από τον τοίχο εκκίνησης: κλικ εδώ και μετά κλικ στο κεφάλι στο βίντεο (στο καρέ της εισόδου).");
                     break;
                 case SwimPickTarget.StartBreakout:
                     // As the bar of the events: the breakout typed or measured, else the distance under the water (≈ the estimate).
@@ -1453,8 +1454,12 @@ namespace Kinovea.ScreenManager
                         SwimLang.T("Η πρώτη κίνηση του αθλητή μετά το σήμα (όχι ο επίσημος χρόνος αντίδρασης).")));
                     list.Add(B("block", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"), Seconds(c.BlockTime),
                         SwimLang.T("Τα πόδια φεύγουν από τον βατήρα: αντιστοιχεί στον επίσημο χρόνο αντίδρασης.")));
-                    list.Add(Measured(B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"), Seconds(c.EntryTime),
-                        SwimLang.T("Τα χέρια μπαίνουν στο νερό.")), SwimPickTarget.EntryHands, 0));
+                    // (2.41.0) The entry of the head (an analysis marked with the hands says so until the head is marked).
+                    list.Add(Measured(race.HeadEntry()
+                        ? B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος κεφαλιού"), Seconds(c.EntryTime), SwimLang.T("Το κεφάλι μπαίνει στο νερό."))
+                        : B("entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος χεριών"), Seconds(c.EntryTime),
+                            SwimLang.T("Παλιά ανάλυση: η είσοδος των χεριών. E στο καρέ που μπαίνει το κεφάλι: περνά στην είσοδο του κεφαλιού.")),
+                        SwimPickTarget.EntryHands, 0));
                     list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), Count(c.StartKicks),
                         SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
                     list.Add(Measured(B("breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), Seconds(c.StartUnderwaterTime),
@@ -1575,7 +1580,7 @@ namespace Kinovea.ScreenManager
                     list.Add(B("t-hands", PlayerScreenCommands.SwimHandsOff, SwimLang.T("Χέρια"), null, SwimLang.T("Τα χέρια φεύγουν από τον βατήρα.")));
                     list.Add(B("t-backfoot", PlayerScreenCommands.SwimBackFoot, SwimLang.T("Πίσω πόδι"), null, SwimLang.T("Το πίσω πόδι φεύγει από τον βατήρα.")));
                     list.Add(B("t-feetoff", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποδέσμευση"), null, SwimLang.T("Το μπροστινό πόδι φεύγει από τον βατήρα.")));
-                    list.Add(B("t-entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"), null, SwimLang.T("Τα χέρια μπαίνουν στο νερό.")));
+                    list.Add(B("t-entry", PlayerScreenCommands.SwimEntry, SwimLang.T("Είσοδος"), null, SwimLang.T("Το κεφάλι μπαίνει στο νερό.")));
                     list.Add(B("t-kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), null, SwimLang.T("Κάθε υποβρύχιος δελφινισμός.")));
                     list.Add(B("t-breakout", PlayerScreenCommands.SwimBreakout, SwimLang.T("Έξοδος"), null, SwimLang.T("Το κεφάλι βγαίνει από το νερό.")));
                     list.Add(B("t-split", PlayerScreenCommands.SwimTechSplit, SwimLang.T("Κεφάλι 5 / 10 / 15"), null, SwimLang.T("Το κεφάλι περνά τα 5, 10 και 15 μέτρα.")));

@@ -29,7 +29,10 @@ namespace Kinovea.ScreenManager
         Breakout,
         /// <summary>Feet leave the block (start) or the wall (turn).</summary>
         FeetOff,
-        /// <summary>Hands enter the water after the start.</summary>
+        /// <summary>
+        /// The entry into the water after the start: (2.41.0) where the head goes in, the analyst's request (SwimRace.HeadEntry); in an
+        /// analysis marked before 2.41.0, where the hands went in.
+        /// </summary>
         Entry,
         /// <summary>First movement of the swimmer after the start signal (reaction).</summary>
         Reaction,
@@ -757,6 +760,51 @@ namespace Kinovea.ScreenManager
         public double? EntryVelHands;
         public double? EntryVelHips;
         public double? EntryVelFeet;
+
+        /// <summary>
+        /// (2.41.0) The entry of the start where the head goes into the water, the analyst's request («θα βγάλουμε από την εκκίνηση το
+        /// είσοδος χεριών και θα βάλουμε είσοδος κεφάλι»): its distance from the start wall (pool units, measured with 📍 or typed) and
+        /// its speed when measured with another system. The entry of the hands (EntryDistHands, EntryVelHands) stays only in an
+        /// analysis marked so before 2.41.0 (HeadEntry false), until the analyst marks or measures the head there.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? EntryDistHead;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? EntryVelHead;
+
+        /// <summary>
+        /// (2.41.0) The entry marked is the head's (true: every analysis made from 2.41.0, and one passed to it) or the hands' (false: an
+        /// analysis marked so before 2.41.0). Null only in a file of before 2.41.0 not read yet: EnsureLists keeps what HeadEntry says.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public bool? EntryHead;
+
+        /// <summary>
+        /// (2.41.0) The entry of the start is where the head goes into the water: EntryHead, else (a file of before 2.41.0) when nothing of
+        /// an entry of the hands is there (no mark, distance or speed of it).
+        /// </summary>
+        public bool HeadEntry()
+        {
+            if (EntryHead.HasValue)
+                return EntryHead.Value;
+
+            return !EntryDistHands.HasValue && !EntryVelHands.HasValue && (Marks == null || !Marks.Any(m => m != null && m.Type == SwimMarkType.Entry)) &&
+                (PhaseValues == null || !PhaseValues.Values.Any(v => v != null && v.EntryDist.HasValue));
+        }
+
+        /// <summary>(2.41.0) The distance of the entry marked from the start wall: the head's, or the hands' in an analysis marked so.</summary>
+        public double? EntryDistance()
+        {
+            return HeadEntry() ? EntryDistHead : EntryDistHands;
+        }
+
+        /// <summary>(2.41.0) The speed at the entry typed for the entry marked (the head's, or the hands' in an analysis marked so).</summary>
+        public double? EntryVelocity()
+        {
+            return HeadEntry() ? EntryVelHead : EntryVelHands;
+        }
+
         public double? UnderwaterDist;
         public double? BreakoutDist;
         public double? FinishLastStrokeDist;
@@ -1221,6 +1269,9 @@ namespace Kinovea.ScreenManager
             Proposals.RemoveAll(p => p == null || string.IsNullOrEmpty(p.Kind));
             if (QuietProposals == null) QuietProposals = new List<SwimProposal>();
             QuietProposals.RemoveAll(p => p == null || string.IsNullOrEmpty(p.Kind));
+            // (2.41.0) The proposals of the entry of the hands still waiting from before 2.41.0: the entry is the head's now.
+            Proposals.RemoveAll(p => p.Kind == SwimAnalysisManager.KindRaceHandsEntry);
+            QuietProposals.RemoveAll(p => p.Kind == SwimAnalysisManager.KindRaceHandsEntry);
             foreach (SwimProposal p in Proposals.Concat(QuietProposals))
             {
                 if (p.Cues == null)
@@ -1228,6 +1279,9 @@ namespace Kinovea.ScreenManager
             }
             if (string.IsNullOrEmpty(Kind)) Kind = KindRace;
             if (string.IsNullOrEmpty(PoolUnit)) PoolUnit = UnitMeters;
+            // (2.41.0) The entry of an analysis of before 2.41.0: the hands' when it has one of them, else the head's; kept from now on, so
+            // that an entry marked later (by the analyst, a proposal or the pilot) is the head's.
+            if (!EntryHead.HasValue) EntryHead = HeadEntry();
             if (ComparePb == null) ComparePb = "auto";
             if (TechPrev == null) TechPrev = "";
             if (TechPrevLabel == null) TechPrevLabel = "";
@@ -1293,6 +1347,7 @@ namespace Kinovea.ScreenManager
         public SwimRace CloneForNewSwimmer()
         {
             SwimRace r = new SwimRace();
+            r.EntryHead = true;
             r.Kind = Kind;
             r.Style = Style;
             r.Relay = Relay;

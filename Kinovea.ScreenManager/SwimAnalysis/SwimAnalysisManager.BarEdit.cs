@@ -57,10 +57,15 @@ namespace Kinovea.ScreenManager
             switch (which)
             {
                 case SwimBarDistance.EntryHands:
-                    if (Same(Race.EntryDistHands, value))
+                {
+                    // (2.41.0) The entry of the head (an analysis marked with the hands passes to it).
+                    if (Same(Race.EntryDistance(), value))
                         return;
-                    Race.EntryDistHands = value;
+                    string passed = SetEntryDistance(value);
+                    if (passed != null)
+                        Status(passed, false);
                     break;
+                }
                 case SwimBarDistance.StartBreakout:
                 {
                     if (Same(Race.BreakoutDist, value))

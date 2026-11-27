@@ -653,9 +653,12 @@ namespace Kinovea.ScreenManager
 
             if (Entry.HasValue)
             {
-                string detail = race.EntryDistHands.HasValue
-                    ? string.Format(CultureInfo.InvariantCulture, SwimLang.T("χέρια στο νερό στα {0:0.0} {1}"), race.EntryDistHands.Value, UnitShort)
-                    : SwimLang.T("χέρια στο νερό");
+                // (2.41.0) The entry of the head (of the hands in an analysis marked so before 2.41.0).
+                bool head = race.HeadEntry();
+                double? at = race.EntryDistance();
+                string detail = at.HasValue
+                    ? string.Format(CultureInfo.InvariantCulture, head ? SwimLang.T("κεφάλι στο νερό στα {0:0.0} {1}") : SwimLang.T("χέρια στο νερό στα {0:0.0} {1}"), at.Value, UnitShort)
+                    : head ? SwimLang.T("κεφάλι στο νερό") : SwimLang.T("χέρια στο νερό");
                 Badges.Add(new SwimReelBadge { Time = Entry.Value, Title = SwimLang.T("ΕΙΣΟΔΟΣ"), Value = Seconds(Entry.Value), Detail = detail, Tone = SwimReelTone.Accent });
             }
 
@@ -795,6 +798,9 @@ namespace Kinovea.ScreenManager
         /// rules on the same marks (SwimSpeedRules): the breakout a few centimetres nearer when the speed from it to the 15 would be a
         /// little below the swimming after it (the distance shown stays the one measured), and the push off a wall a little out from it
         /// when the turn would be faster under the water than the start (its mean, or the highest speed of the curve after the push).
+        /// (2.41.0) From the head to the head again, the analyst's request, as the panel and the PDF: the entry where the head went into the
+        /// water (in an analysis marked with the hands, the head behind them), the push off a wall where the head is then (the typical height
+        /// + 0.10 from it: the swimmer goes out from the wall to there while he pushes), farther only by the rule of the start.
         /// </summary>
         private bool AddPhaseKnots(SwimRace race, SwimComputed computed)
         {
@@ -810,7 +816,10 @@ namespace Kinovea.ScreenManager
             if (!double.IsNaN(release) && release > 0.2 && release < 1.5)
                 knots.Add(new PhaseKnot { Video = release, Distance = 0, Break = true, Hold = true, What = "release" });
 
-            double entryDistance = race.EntryDistHands ?? double.NaN;
+            // (2.41.0) Where the head is at the entry: where it went in, or behind the hands in an analysis marked with them.
+            SwimHead head = SwimHead.Of(race);
+            double? entryAt = race.EntryDistance();
+            double entryDistance = !entryAt.HasValue ? double.NaN : race.HeadEntry() ? entryAt.Value : entryAt.Value - head.BehindHands / K;
             bool entered = Entry.HasValue && !double.IsNaN(entryDistance) && entryDistance * K >= 0.5 && entryDistance * K <= 6.5;
             if (entered)
                 knots.Add(new PhaseKnot { Video = Entry.Value, Distance = entryDistance, Break = true, What = "entry" });
@@ -853,25 +862,31 @@ namespace Kinovea.ScreenManager
                 double push = !double.IsNaN(lapFeetOff[lap]) ? lapFeetOff[lap] : touch + (tumble ? TumblePush : HandsPush);
                 bool change = race.Relay && Distance >= 4 && wall % (Distance / 4) == 0;
 
+                // (2.41.0) Where the head is at the push-off (the typical height + 0.10 from the wall); at the change of a relay the next
+                // swimmer dives (from the wall, as the start).
+                double headOut = change ? 0 : head.AtPushoff / K;
                 double length, out1 = double.NaN, bo = double.NaN, at15 = RaceTimeAt(wall + 15);
                 if (!double.IsNaN(breakout) && BreakoutDistances.TryGetValue(lap, out length))
                 {
                     bo = Map(breakout, cpV, cpT);
-                    out1 = NearerBreakout(computed, wall, length, bo, at15, SwimSpeedRules.LeastOut);
+                    out1 = NearerBreakout(computed, wall, length, bo, at15, Math.Max(SwimSpeedRules.LeastOut, headOut + SwimTechCalculator.UnderwaterMinSpan));
                 }
 
-                // (2.38.6) The rule of the start: from the wall, unless the turn would be faster under the water than the start (on its
-                // mean or at the highest speed of the curve after the push); then a little out from it.
-                double away = 0;
+                // (2.38.6) The rule of the start: (2.41.0) from the head at the push-off, unless the turn would be faster under the water than
+                // the start even from there (on its mean or at the highest speed of the curve after the push); then a little farther.
+                double away = headOut;
                 if (!change && !race.Relay && !double.IsNaN(startMean) && !double.IsNaN(out1) && !double.IsNaN(at15) &&
-                    out1 >= SwimTechCalculator.UnderwaterMinSpan && out1 < 15)
+                    out1 - headOut >= SwimTechCalculator.UnderwaterMinSpan && out1 < 15)
                 {
                     double underTime = bo - Map(push, cpV, cpT), afterTime = at15 - bo;
                     if (underTime >= SwimTechCalculator.SpeedMinTime && afterTime > 0)
                         away = SwimSpeedRules.PushAway(out1, underTime, (15 - out1) * K / afterTime, afterTime, K, startMean, startPeak,
-                            out1 - SwimTechCalculator.UnderwaterMinSpan);
+                            out1 - SwimTechCalculator.UnderwaterMinSpan, headOut);
                 }
 
+                // The head out from the wall while he pushes (no speed shown there), unless the breakout is not past it.
+                if (!double.IsNaN(out1) && out1 - away < SwimTechCalculator.UnderwaterMinSpan)
+                    away = 0;
                 if (push - touch > 0.05 && push - touch < 2.5 && (double.IsNaN(breakout) || push < breakout - 0.3))
                     knots.Add(away > 1e-6
                         ? new PhaseKnot { Video = push, Distance = wall + away, Break = true, What = "push", After = wall }

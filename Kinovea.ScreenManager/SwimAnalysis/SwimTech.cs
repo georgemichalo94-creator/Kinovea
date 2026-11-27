@@ -76,9 +76,25 @@ namespace Kinovea.ScreenManager
         /// <summary>Head at a technical distance: offset (5, 10, 15 or −5, +5, +10, +15) → seconds from the origin.</summary>
         public SortedDictionary<int, double> Splits = new SortedDictionary<int, double>();
 
-        /// <summary>Distances measured on the video (pool units from the wall).</summary>
+        /// <summary>
+        /// Distances measured on the video (pool units from the wall). (2.41.0) EntryDist: where the head went into the water (EntryHead),
+        /// in an analysis marked with the hands before 2.41.0 where the hands went in.
+        /// </summary>
         public double? EntryDist;
         public double? BreakoutDist;
+
+        /// <summary>
+        /// (2.41.0) The entry of a start is where the head goes into the water (the analyst's request): Entry and EntryDist are the head's.
+        /// False in an analysis marked with the entry of the hands before 2.41.0 (SwimRace.HeadEntry): its speeds take the head
+        /// HeadBehindHands behind them at that moment.
+        /// </summary>
+        public bool EntryHead = true;
+
+        /// <summary>
+        /// (2.35.0) A start marked with the entry of the hands (EntryHead false): how far the head is behind the hands when they enter the
+        /// water (pool units), from the typical height of the swimmer (SwimHead). (2.41.0) Only for those analyses.
+        /// </summary>
+        public double? HeadBehindHands;
 
         /// <summary>
         /// (2.9.8) Where the head came out for the speeds of the breakout (pool units from the wall): BreakoutDist, at the start of a race
@@ -97,8 +113,8 @@ namespace Kinovea.ScreenManager
         /// (2.15.0) A turn: where the head is at the push-off (pool units from the wall): the toes leave the wall with the body straight,
         /// so the head is the body length away. (2.35.0) The typical height of the swimmer + the pointed toes (SwimHead): the analyst
         /// marks only the push-off, the head is not seen well under the water (2.36.0: a body length measured before is not used).
-        /// (2.38.6) Not in the speeds any more (the previous model, the analyst's request): the farthest the speed under the water of a
-        /// turn can start from the wall by the rule of the start (SwimSpeedRules.PushAway); past it the marks are off (PastHead).
+        /// (2.41.0) The speed under the water of a turn starts there again, the analyst's request («τα νούμερα … κεφάλι - κεφάλι είναι πιο
+        /// σωστά»; «δεν θα έχω το ύψος, εσύ βάλε το μέσα στον κανόνα»): 2.38.6–2.40.0 from the wall, 20–45% faster.
         /// </summary>
         public double? HeadAtPushoff;
 
@@ -115,8 +131,9 @@ namespace Kinovea.ScreenManager
         public double? OutForSpeeds;
 
         /// <summary>
-        /// (2.38.6) A turn: where its speed under the water starts (pool units from the wall): 0, the wall (the previous model), or a little
-        /// out by the rule of the start (SwimSpeedRules.PushAway).
+        /// (2.38.6) A turn: where its speed under the water starts (pool units from the wall). (2.41.0) Where the head is at the push-off
+        /// (HeadAtPushoff), or farther by the rule of the start (SwimSpeedRules.PushAway) when the marks give the turn faster than the start
+        /// even from the head (PastHead: a mark or a distance is off; 2.38.6–2.40.0 from the wall).
         /// </summary>
         public double PushAway;
 
@@ -138,6 +155,27 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Values sent to the report, with the keys of SWIM_TECH_METRICS of the backend.</summary>
         public Dictionary<string, double> Values = new Dictionary<string, double>();
+
+        /// <summary>
+        /// (2.41.0) The hands go into the water about this long before the head (s): the head is 0.27 × the height behind them (≈0.5 m)
+        /// and the swimmer goes in at about 4 m/s.
+        /// </summary>
+        public const double HandsBeforeHead = 0.12;
+
+        /// <summary>
+        /// (2.41.0) A start as the technical evaluation sees it: its moments of the entry are from the hands (the hand entry, the hips
+        /// 0.12 s after it, the glide…), so with the entry of the head the hands HandsBeforeHead before it. The phase itself otherwise.
+        /// </summary>
+        public static SwimTechPhase HandsView(SwimTechPhase p)
+        {
+            if (p == null || p.Kind != SwimPhaseKind.Start || !p.EntryHead || !p.Entry.HasValue)
+                return p;
+
+            SwimTechPhase c = (SwimTechPhase)p.MemberwiseClone();
+            c.Entry = p.Entry.Value - HandsBeforeHead;
+            c.EntryHead = false;
+            return c;
+        }
 
         public double? Value(string key)
         {
@@ -253,7 +291,7 @@ namespace Kinovea.ScreenManager
             new SwimTechMetric("blockTime", "Αποδέσμευση (μπροστινό πόδι)", "s", SwimPhaseKind.Start),
             new SwimTechMetric("blockPhase", "Φάση βατήρα: κίνηση → αποδέσμευση", "s", SwimPhaseKind.Start),
             new SwimTechMetric("flight", "Πτήση: αποδέσμευση → είσοδος", "s", SwimPhaseKind.Start),
-            new SwimTechMetric("entryTime", "Είσοδος χεριών", "s", SwimPhaseKind.Start),
+            new SwimTechMetric("entryTime", "Είσοδος κεφαλιού", "s", SwimPhaseKind.Start),
             new SwimTechMetric("entryDist", "Απόσταση εισόδου", "d", SwimPhaseKind.Start),
             new SwimTechMetric("in5", "Προσέγγιση −5 → τοίχος", "s", SwimPhaseKind.Turn),
             new SwimTechMetric("lastStrokeGap", "Τελευταία χεριά → τοίχος", "s", SwimPhaseKind.Turn),
@@ -280,9 +318,8 @@ namespace Kinovea.ScreenManager
             new SwimTechMetric("breakoutDist", "Απόσταση εξόδου", "d", null),
             // (2.9.8) The speeds of the breakout: before it (start: from the entry and from the release; turn: from the push-off,
             // the same value as before under another name) and after it to the 15. (2.35.0) The phases of a start as the analyst
-            // asked: signal → entry of the hands, entry → breakout of the head, breakout → 15; each from where the head (or the
-            // hands) was at its two ends.
-            new SwimTechMetric("sigEntryVel", "Ταχύτητα σήμα → είσοδος χεριών", "v", SwimPhaseKind.Start),
+            // asked: signal → entry, entry → breakout, breakout → 15. (2.41.0) The entry of the head: each from the head to the head.
+            new SwimTechMetric("sigEntryVel", "Ταχύτητα σήμα → είσοδος κεφαλιού", "v", SwimPhaseKind.Start),
             new SwimTechMetric("uwVel", "Ταχύτητα υποβρύχιας φάσης (είσοδος → έξοδος)", "v", SwimPhaseKind.Start),
             new SwimTechMetric("pushVel", "Ταχύτητα αποδέσμευση → έξοδος", "v", SwimPhaseKind.Start),
             new SwimTechMetric("uwVel", "Ταχύτητα αποκόλληση → έξοδος", "v", SwimPhaseKind.Turn),
@@ -447,7 +484,10 @@ namespace Kinovea.ScreenManager
                 {
                     if (race.Reaction.HasValue)
                         p.Reaction = race.Reaction.Value;
-                    p.EntryDist = race.EntryDistHands;
+                    // (2.41.0) The entry of the head; in an analysis marked with the hands, the head behind them (SwimHead).
+                    p.EntryHead = race.HeadEntry();
+                    p.EntryDist = race.EntryDistance();
+                    p.HeadBehindHands = p.EntryHead ? (double?)null : head.BehindHands / k;
                     p.BreakoutDist = race.BreakoutDist;
 
                     // (2.9.8) The speeds of the breakout: where the head came out (else the underwater distance, as the video shows it).
@@ -481,7 +521,7 @@ namespace Kinovea.ScreenManager
                         p.Pushoff = turn.Pushoff.Value - wallVideo;
 
                     // (2.15.0) The head at the push-off: the body length of the swimmer (the same at every wall of the race). (2.35.0)
-                    // Measured, else the typical height + the pointed toes (SwimHead). (2.38.6) The bound of the rule of the start.
+                    // The typical height + the pointed toes (SwimHead). (2.41.0) Where its speed under the water starts again.
                     p.HeadAtPushoff = head.AtPushoff / k;
                 }
 
@@ -572,9 +612,15 @@ namespace Kinovea.ScreenManager
                 }
 
                 // (2.15.0) A turn of the training video: the head at the push-off is the body length of the swimmer of the video.
-                // (2.35.0) Measured, else from his typical height (SwimHead). (2.38.6) Not in its speeds (the previous model).
+                // (2.35.0) From his typical height (SwimHead). (2.41.0) Where the speed under the water starts; a start: the entry of
+                // the head (of the hands in a video marked so before 2.41.0, the head behind them).
                 if (p.Kind == SwimPhaseKind.Turn)
                     p.HeadAtPushoff = head.AtPushoff / k;
+                else
+                {
+                    p.EntryHead = race.HeadEntry();
+                    p.HeadBehindHands = p.EntryHead ? (double?)null : head.BehindHands / k;
+                }
             }
 
             long frame = Frame(timing);
@@ -855,19 +901,19 @@ namespace Kinovea.ScreenManager
                 set("v10_15", vel(5, diff(t15, t10)));
                 set("underwater", diff(p.Breakout, p.Entry));
                 // Distances are in pool units (μ. or yd), velocities in m/s.
-                // (2.35.0) The phases of a start the analyst's way: from the signal to the entry of the hands (the hands from the
-                // block, at the wall, to where they enter), from the entry to the breakout and from the breakout to the 15 (below).
-                // (2.38.6) The previous model, the analyst's request: under the water from where the hands entered to where the head
-                // comes out (2.35.0–2.38.5 from the head behind the hands: 6–9% faster), with the rule of the breakout. None from a
-                // distance estimated from the times or that no swimmer has.
+                // (2.35.0) The phases of a start the analyst's way: from the signal to the entry, from the entry to the breakout and from
+                // the breakout to the 15 (below). (2.41.0) From the head to the head, the analyst's request: the entry is where the head
+                // went into the water (2.38.6–2.40.0 from where the hands entered: 3–7% slower), with the rule of the breakout. None from
+                // a distance estimated from the times or that no swimmer has.
                 BreakoutRule(p, t15, k);
                 set("sigEntryVel", SignalEntrySpeed(p, k));
                 double? under = EntryBreakoutSpeed(p, k);
                 set("uwVel", under);
-                // The distance per kick from where the hands entered, as measured (2.9.8–2.34.0; 2.35.0–2.38.5 from the head).
-                if (p.EntryDist.HasValue && p.OutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && !p.OutImpossible &&
-                    p.OutDist.Value - p.EntryDist.Value >= UnderwaterMinSpan)
-                    set("kickDist", (p.OutDist.Value - p.EntryDist.Value) / p.Kicks.Count);
+                // The distance per kick from where the head went in, as measured (2.38.6–2.40.0 from where the hands entered).
+                double? headIn = HeadAtEntry(p);
+                if (headIn.HasValue && p.OutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && !p.OutImpossible &&
+                    p.OutDist.Value - headIn.Value >= UnderwaterMinSpan)
+                    set("kickDist", (p.OutDist.Value - headIn.Value) / p.Kicks.Count);
 
                 // (2.9.8) The speeds of the breakout: from the release from the block (marked, else the official reaction time) to the
                 // breakout, and from the breakout to the head at 15.
@@ -917,12 +963,13 @@ namespace Kinovea.ScreenManager
                 set("underwater", diff(p.Breakout, p.Pushoff));
                 // (2.9.8) The speed from the push-off to the breakout (the "underwater" speed of a turn) and from the breakout to the head
                 // at +15; not from a distance estimated from the times (the speed after the breakout would be the one the estimate took).
-                // (2.38.6) The previous model, the analyst's request: from the wall, as the video showed it up to 2.38.3 (2.32.0–2.34.0
-                // too; 2.35.0–2.38.5 from the head at the push-off, the body length out), with the analyst's two rules: the breakout
-                // (BreakoutRule) and the start (below). The distance per kick from the wall, as measured.
+                // (2.41.0) From the head to the head, the analyst's request: at the push-off the head is HeadAtPushoff from the wall (the
+                // typical height + 0.10; 2.38.6–2.40.0 from the wall: 20–45% faster, so that every turn of a tumble was held to the start),
+                // with the analyst's two rules: the breakout (BreakoutRule) and the start (below). The distance per kick from the head too.
                 BreakoutRule(p, o15, k);
-                if (p.OutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && !p.OutImpossible && p.OutDist.Value >= UnderwaterMinSpan)
-                    set("kickDist", p.OutDist.Value / p.Kicks.Count);
+                double headOut = p.HeadAtPushoff ?? 0;
+                if (p.OutDist.HasValue && p.Kicks.Count > 0 && !p.OutEstimated && !p.OutImpossible && p.OutDist.Value - headOut >= UnderwaterMinSpan)
+                    set("kickDist", (p.OutDist.Value - headOut) / p.Kicks.Count);
                 // The speed to the +15 for the rule of the start first, its note after the one of the speed under the water (as before).
                 string note = p.SpeedNote;
                 double? after = SpeedTo15(p, o15, k);
@@ -1002,7 +1049,8 @@ namespace Kinovea.ScreenManager
 
             if (!p.EntryDist.HasValue || p.EntryDist.Value <= 0)
             {
-                Note(p, SwimLang.T("χρειάζεται η απόσταση εισόδου των χεριών (📍 Μέτρηση ή γράψ' την)"));
+                Note(p, p.EntryHead ? SwimLang.T("χρειάζεται η απόσταση εισόδου του κεφαλιού (📍 Μέτρηση ή γράψ' την)")
+                    : SwimLang.T("χρειάζεται η απόσταση εισόδου των χεριών (📍 Μέτρηση ή γράψ' την)"));
                 return null;
             }
 
@@ -1022,6 +1070,18 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.41.0) Where the head is at the entry of a start (pool units from the wall): where it went into the water (EntryDist); in an
+        /// analysis marked with the entry of the hands, HeadBehindHands behind them at that moment. Null without the distance.
+        /// </summary>
+        internal static double? HeadAtEntry(SwimTechPhase p)
+        {
+            if (p == null || !p.EntryDist.HasValue || p.EntryDist.Value <= 0)
+                return null;
+
+            return p.EntryHead ? p.EntryDist.Value : p.EntryDist.Value - (p.HeadBehindHands ?? 0);
+        }
+
+        /// <summary>
         /// (2.38.6) The analyst's rule of the breakout (SwimSpeedRules.Breakout): from the breakout to the 15 (+15 after a wall) the swimmer
         /// is not slower than in the swimming after it (NextSpeed). The speeds then take the breakout nearer (OutForSpeeds), so that the
         /// speed to the 15 is the swimming's; the distance shown and sent stays the one measured (2.39.4: as far as it takes; 2.39.3 up to
@@ -1036,8 +1096,9 @@ namespace Kinovea.ScreenManager
                 return;
 
             double time = at15.Value - p.Breakout.Value;
-            double least = p.Kind == SwimPhaseKind.Start && p.EntryDist.HasValue && p.EntryDist.Value > 0
-                ? Math.Max(SwimSpeedRules.LeastOut, p.EntryDist.Value + UnderwaterMinSpan) : SwimSpeedRules.LeastOut;
+            // (2.41.0) Not nearer than where the head went in (start) or was at the push-off (turn), + the shortest way under the water.
+            double? headFrom = p.Kind == SwimPhaseKind.Start ? HeadAtEntry(p) : p.HeadAtPushoff;
+            double least = headFrom.HasValue && headFrom.Value > 0 ? Math.Max(SwimSpeedRules.LeastOut, headFrom.Value + UnderwaterMinSpan) : SwimSpeedRules.LeastOut;
             double nearer = SwimSpeedRules.Breakout(p.OutDist.Value, time, p.NextSpeed.Value, k, least);
             if (!(nearer < p.OutDist.Value))
                 return;
@@ -1058,7 +1119,8 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private static void StartRule(SwimTechPhase p, SwimTechPhase start, double? at15, double? after, double k)
         {
-            p.PushAway = 0;
+            // (2.41.0) The speed under the water of a turn starts where the head is at the push-off (2.38.6–2.40.0 at the wall).
+            p.PushAway = p.HeadAtPushoff ?? 0;
             p.PastHead = false;
             if (start == null || start == p || !start.UnderwaterMean.HasValue || !start.UnderwaterPeak.HasValue || !after.HasValue ||
                 !at15.HasValue || !p.Pushoff.HasValue || !p.Breakout.HasValue || !p.OutForSpeeds.HasValue || p.OutEstimated || p.OutImpossible)
@@ -1069,17 +1131,18 @@ namespace Kinovea.ScreenManager
             if (under < SpeedMinTime || afterTime <= 0 || out0 < UnderwaterMinSpan)
                 return;
 
+            // (2.41.0) From the head at the push-off: farther only when even from there the turn is faster than the start (a mark is off).
+            double head = Math.Max(0, Math.Min(p.PushAway, out0 - UnderwaterMinSpan));
             double mean = start.UnderwaterMean.Value, peak = start.UnderwaterPeak.Value;
-            double away = SwimSpeedRules.PushAway(out0, under, after.Value, afterTime, k, mean, peak, out0 - UnderwaterMinSpan);
-            if (!(away > 0))
+            double away = SwimSpeedRules.PushAway(out0, under, after.Value, afterTime, k, mean, peak, out0 - UnderwaterMinSpan, head);
+            if (!(away > head + 1e-9))
                 return;
 
             p.PushAway = away;
-            p.PastHead = (p.HeadAtPushoff.HasValue && away > p.HeadAtPushoff.Value + 1e-9) ||
-                !SwimSpeedRules.NotFaster(out0, away, under, after.Value, afterTime, k, mean, peak);
+            p.PastHead = true;
             AddRule(p, string.Format(CultureInfo.InvariantCulture,
                 SwimLang.T("αποκόλληση → έξοδος: {0:0.00} από τα σημάδια, γράφεται {1:0.00}: όχι πιο γρήγορα από την εκκίνηση, ούτε στο βίντεο (κανόνας)"),
-                out0 * k / under, (out0 - away) * k / under));
+                (out0 - head) * k / under, (out0 - away) * k / under));
         }
 
         private static void AddRule(SwimTechPhase p, string note)
@@ -1088,10 +1151,10 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.35.0) Mean speed of the underwater phase of a start, from the entry to the breakout. (2.38.6) The previous model, the
-        /// analyst's request: from where the hands entered (EntryDist) to where the head comes out (OutForSpeeds, the rule of the
-        /// breakout), as in 2.9.8–2.34.0 and on the video up to 2.38.3 (2.35.0–2.38.5 from the head behind the hands: 6–9% faster). Null,
-        /// with a note, when something is missing, the distance is the estimate from the times or the result is not plausible.
+        /// (2.35.0) Mean speed of the underwater phase of a start, from the entry to the breakout. (2.41.0) From the head to the head, the
+        /// analyst's request: from where the head went into the water (HeadAtEntry; in an analysis marked with the hands, the head behind
+        /// them) to where it comes out (OutForSpeeds, the rule of the breakout). 2.38.6–2.40.0 from where the hands entered: 3–7% slower.
+        /// Null, with a note, when something is missing, the distance is the estimate from the times or the result is not plausible.
         /// </summary>
         private static double? EntryBreakoutSpeed(SwimTechPhase p, double k)
         {
@@ -1103,7 +1166,7 @@ namespace Kinovea.ScreenManager
             if (time < SpeedMinTime)
                 return null;
 
-            double way = Out(p) - p.EntryDist.Value;
+            double way = Out(p) - (HeadAtEntry(p) ?? p.EntryDist.Value);
             if (way < UnderwaterMinSpan)
             {
                 Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: η έξοδος ({1:0.0}) είναι πολύ κοντά στην είσοδο ({2:0.0})· έλεγξε τις δύο αποστάσεις"),
@@ -1138,11 +1201,12 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.15.0) Mean speed of the underwater phase of a turn, from the push-off to the breakout. (2.38.6) The previous model, the
-        /// analyst's request: from the wall to where the head comes out (OutForSpeeds, the rule of the breakout), as the video showed it up
-        /// to 2.38.3 and the panel in 2.32.0–2.34.0 (2.15.0–2.31.0 and 2.35.0–2.38.5 from the head at the push-off, the body length out:
-        /// 20–25% slower with a breakout at 9–10 m); a little out from the wall by the rule of the start (PushAway). Null, with a note, when
-        /// something is missing, the distance is the estimate from the times or the result is not plausible.
+        /// (2.15.0) Mean speed of the underwater phase of a turn, from the push-off to the breakout. (2.41.0) From the head to the head, the
+        /// analyst's request: at the push-off the toes leave the wall with the body straight, so the head is HeadAtPushoff from it (the
+        /// typical height + 0.10, SwimHead: nothing typed), at the breakout where it comes out (OutForSpeeds, the rule of the breakout);
+        /// farther than the head only by the rule of the start (PushAway, a warning). 2.38.6–2.40.0 from the wall: 20–25% faster with a
+        /// breakout at 9–10 m, 40–50% at 5–6 m. Null, with a note, when something is missing, the distance is the estimate from the times
+        /// or the result is not plausible.
         /// </summary>
         private static double? UnderwaterSpeed(SwimTechPhase p, double k)
         {
@@ -1157,8 +1221,8 @@ namespace Kinovea.ScreenManager
             double way = Out(p) - p.PushAway;
             if (way < UnderwaterMinSpan)
             {
-                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: η έξοδος ({1:0.0}) είναι πολύ κοντά στον τοίχο· έλεγξε την απόσταση της εξόδου"),
-                    name, p.OutDist.Value));
+                Note(p, string.Format(CultureInfo.InvariantCulture, SwimLang.T("{0}: η έξοδος ({1:0.0}) είναι πολύ κοντά στο κεφάλι στην αποκόλληση ({2:0.0})· έλεγξε την απόσταση της εξόδου"),
+                    name, p.OutDist.Value, p.PushAway));
                 return null;
             }
 
@@ -1337,6 +1401,8 @@ namespace Kinovea.ScreenManager
     /// 2. The start: under the water after the push off a wall the swimmer is not faster than after the start (the dive gives more than
     ///    the wall), neither on average nor at the highest speed the video shows. Above it, the speed of the turn starts a little out
     ///    from the wall (where the head is at the push-off is between the wall and the body length), just so far that it is as the start.
+    ///    (2.41.0) Both from the head to the head: the speed of a turn starts where the head is at the push-off, farther only when even
+    ///    from there it is faster than the start (a mark or a distance is off: the panel warns).
     /// </summary>
     public static class SwimSpeedRules
     {
@@ -1416,18 +1482,20 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Rule 2: how far from the wall (pool units) the speed under the water of a turn starts: 0 (the wall) when it is not faster than
-        /// the start (NotFaster), else just so far that it is not; at most 'most' (then it may still be).
+        /// Rule 2: how far from the wall (pool units) the speed under the water of a turn starts: 'least' (2.41.0: where the head is at the
+        /// push-off; 0, the wall, before) when it is not faster than the start (NotFaster), else just so far that it is not; at most 'most'
+        /// (then it may still be).
         /// </summary>
         public static double PushAway(double outDist, double underTime, double afterSpeed, double afterTime, double k, double startMean, double startPeak,
-            double most)
+            double most, double least = 0)
         {
-            if (NotFaster(outDist, 0, underTime, afterSpeed, afterTime, k, startMean, startPeak) || !(most > 0))
-                return 0;
+            least = Math.Max(0, least);
+            if (NotFaster(outDist, least, underTime, afterSpeed, afterTime, k, startMean, startPeak) || !(most > least))
+                return least;
             if (!NotFaster(outDist, most, underTime, afterSpeed, afterTime, k, startMean, startPeak))
                 return most;
 
-            double lo = 0, hi = most;
+            double lo = least, hi = most;
             for (int i = 0; i < 60; i++)
             {
                 double mid = (lo + hi) / 2;

@@ -59,7 +59,7 @@ namespace Kinovea.ScreenManager
                 "6. summary: 3 to 5 sentences for the report: what is good, what to correct first, and how it compares with what is expected " +
                 "for the athlete's gender, category, age and level.",
                 "7. priorities: the 1 to 3 corrections that matter most, each with a short cue or drill the coach can use.",
-                "8. doubts: marks or measurements that look wrong from the frames (e.g. the hand entry mark looks two frames late); else none.",
+                "8. doubts: marks or measurements that look wrong from the frames (e.g. the head entry mark looks two frames late); else none.",
                 "",
                 "No name of any person is given, and you must not try to identify anyone.",
                 LanguageLine(lang),
@@ -650,7 +650,11 @@ namespace Kinovea.ScreenManager
 
             add(0, en ? "start signal" : "σήμα εκκίνησης");
             add(computed.BlockTime, en ? "feet off the block" : "τα πόδια φεύγουν από το βατήρα");
-            add(computed.EntryTime, en ? "hand entry" : "είσοδος χεριών");
+            // (2.41.0) The entry of the head (of the hands in an analysis marked so before 2.41.0).
+            if (race.HeadEntry())
+                add(computed.EntryTime, en ? "head entry" : "είσοδος κεφαλιού");
+            else
+                add(computed.EntryTime, en ? "hand entry" : "είσοδος χεριών");
             List<double> breakouts = computed.Breakouts.OrderBy(b => b).ToList();
             if (breakouts.Count > 0)
                 add(breakouts[0], en ? "breakout after the start" : "έξοδος μετά την εκκίνηση");
