@@ -1035,6 +1035,9 @@ namespace Kinovea.ScreenManager
                 o["wall"] = p.Wall;
                 o["attempt"] = p.Attempt;
                 o["label"] = p.TitleGreek ?? p.Title;
+                // (2.41.0) The entry of a start is the head's (Apps Script 2.27.0 compares it only with an entry of the head).
+                if (p.Kind == SwimPhaseKind.Start)
+                    o["entryHead"] = p.EntryHead;
                 JObject values = new JObject();
                 foreach (KeyValuePair<string, double> pair in p.Values)
                     values[pair.Key] = pair.Value;

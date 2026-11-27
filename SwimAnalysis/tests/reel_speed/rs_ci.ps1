@@ -122,6 +122,18 @@ Check ($reel.InWater(10.0) -and -not $reel.Underwater(10.0)) 'after the breakout
 Check (-not $reel.InWater(25.55) -and $reel.PhaseAt(25.55) -eq 'ΣΤΡΟΦΗ') 'the turn up to the push off the wall: no speed'
 Check (-not $reel.InWater(25.70) -and $reel.InWater(25.75) -and $reel.Underwater(25.75) -and $reel.PhaseAt(26.0) -eq 'ΥΠΟΒΡΥΧΙΑ') 'after the push under the water (not on its knot)'
 Check ($reel.InWater(29.5) -and -not $reel.Underwater(29.5)) 'after the breakout of the turn'
+# (2.41.0) No speed shown while he pushes off the wall (the curve takes the head out to where it is at the push-off: not a speed of his)
+# nor before the entry; on the chart of the HUD only the speeds in the water, none above a swimmer's.
+$measured = $false
+$atWall = $reel.ShownSpeed(25.55, [ref]$measured); $onBlock = $reel.ShownSpeed(0.2, [ref]$measured)
+Check ($atWall -eq 0 -and $onBlock -eq 0) ('no speed shown at the wall up to the push nor before the entry: ' + (F2 $atWall) + ', ' + (F2 $onBlock))
+$shown = $reel.ShownSpeed(25.75, [ref]$measured)
+Check ($shown -gt 1.5 -and $shown -lt 3.5) ('right after the push: ' + (F2 $shown) + ' m/s')
+$tHud = T 'SwimHudPainter'
+$trace = @($tHud.GetMethod('TraceSpeeds', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($reel, [double]100, [double]100)))
+$inPush = @($trace | Where-Object { $_[0] -gt 50 + 1e-6 -and $_[0] -lt $pushAt - 1e-6 })
+$odd = @($trace | Where-Object { $_[1] -gt 3.5 -or $_[1] -lt 1.0 })
+Check ($trace.Count -gt 100 -and $inPush.Count -eq 0 -and $odd.Count -eq 0) ('the chart of the HUD: ' + $trace.Count + ' points, none while he pushes (' + $inPush.Count + '), none out of 1–3.5 m/s (' + $odd.Count + ')')
 Check (-not $reel.InWater(52.85)) 'no speed after the finish'
 $uw = $reel.SpeedAt(3.0)
 Check ($uw -gt 2.0 -and $uw -lt 3.0) ('the speed under the water after the start: ' + (F2 $uw) + ' m/s')

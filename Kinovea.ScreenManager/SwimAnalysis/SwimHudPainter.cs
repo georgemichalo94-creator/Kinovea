@@ -1137,6 +1137,27 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>The speed along the race up to now (from the model through the checkpoints), the reference dashed.</summary>
+        /// <summary>
+        /// The speed by distance of the chart of the HUD up to a distance ({distance, m/s}): every 1/160 of the race (at least 0.5 m)
+        /// while the swimmer is in the water. (2.41.0) Not while he pushes off a wall (the curve takes the head from the wall to where it
+        /// is at the push-off: about 6 m/s, not a speed of his) nor in the flight of the start.
+        /// </summary>
+        internal static List<double[]> TraceSpeeds(SwimReel reel, double raceDistance, double upTo)
+        {
+            List<double[]> list = new List<double[]>();
+            double stepD = Math.Max(0.5, raceDistance / 160.0);
+            for (double d = Math.Min(2, upTo); d <= upTo + 1e-6; d += stepD)
+            {
+                double t = Math.Max(0.05, reel.TimeAtDistance(d));
+                if (!reel.InWater(t))
+                    continue;
+
+                list.Add(new[] { d, reel.SpeedAt(t) });
+            }
+
+            return list;
+        }
+
         private static void DrawTrace(Graphics g, SwimHudScene s, State st, RectangleF r)
         {
             Caps(g, SwimLang.T("ΤΑΧΥΤΗΤΑ ΑΝΑ ΑΠΟΣΤΑΣΗ (m/s)"), Ui(11), Lbl, r.Left + 2, r.Top - 18, 0.2f);
@@ -1177,15 +1198,7 @@ namespace Kinovea.ScreenManager
             if (!st.Started || reel == null || !reel.HasModel || st.D <= 0.5)
                 return;
 
-            List<PointF> pts = new List<PointF>();
-            double stepD = Math.Max(0.5, s.Race.Distance / 160.0);
-            for (double d = Math.Min(2, st.D); d <= st.D + 1e-6; d += stepD)
-            {
-                double t = reel.TimeAtDistance(d);
-                double v = reel.SpeedAt(Math.Max(0.05, t));
-                pts.Add(new PointF(X(d), Y(v)));
-            }
-
+            List<PointF> pts = TraceSpeeds(reel, s.Race.Distance, st.D).Select(p => new PointF(X(p[0]), Y(p[1]))).ToList();
             if (pts.Count < 2)
                 return;
 

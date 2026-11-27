@@ -73,11 +73,16 @@
  *      (3'' η καθεμία, με τη σειρά των σελίδων· η σύντομη ανάλυση οι δικές της) και ως αναρτήσεις 4:5 για τα social της ομοσπονδίας,
  *      μόνο με τα νούμερα του ίδιου του αγώνα (χωρίς ΑΡ, αναφορά και συμπέρασμα). Τα ίδια νούμερα με το PDF· το Kinovea βάζει το
  *      λογότυπο και ένα καρέ του βίντεο και τις κάνει εικόνες με τον Edge.
+ *  24. Η είσοδος του κεφαλιού (2.27.0, με το Kinovea 2.41.0), όπως τη ζήτησε ο αναλυτής: η εκκίνηση γράφει «Απόσταση εισόδου
+ *      (κεφάλι)», «Ταχύτητα εισόδου (κεφάλι)», «σήμα → είσοδος κεφαλιού» (manual.entryHead, entryDistHead, entryVelHead) και οι
+ *      ταχύτητες είναι από το κεφάλι ως το κεφάλι (και της στροφής, από το κεφάλι στην αποκόλληση)· οι αναλύσεις πριν από αυτό
+ *      κρατούν την είσοδο των χεριών και τη γράφουν έτσι. Το ΑΡ και η προηγούμενη ανάλυση τεχνικής συγκρίνονται στην είσοδο μόνο
+ *      όταν έχουν το ίδιο είδος εισόδου (αλλιώς «–»).
  *  23. Η εκκίνηση στο γράφημα της ανάρτησης «Ταχύτητα» (2.26.1, SwimReportV2.gs), όπως τη ζήτησε ο αναλυτής: το γράφημα ξεκινά
  *      από το τμήμα 0–15 (όπως το PDF και η διαφάνεια του βίντεο), όχι από τα 25.
  */
 
-var SWIM_VERSION = '2.26.1';
+var SWIM_VERSION = '2.27.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -1880,11 +1885,14 @@ function swimNormalizeTech_(raw) {
   };
   (t.phases || []).forEach(function (p) {
     if (!p || typeof p !== 'object') return;
-    tech.phases.push({
+    var phase = {
       id: String(p.id || ''), kind: p.kind === 'turn' ? 'turn' : 'start', wall: swimNum_(p.wall) || 0,
       attempt: swimNum_(p.attempt) || 0, origin: swimNum_(p.origin), label: String(p.label || ''),
       values: p.values && typeof p.values === 'object' ? p.values : {}
-    });
+    };
+    // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0)· μόνο όταν είναι (οι αναλύσεις πριν από αυτό μένουν όπως ήταν).
+    if (p.entryHead === true) phase.entryHead = true;
+    tech.phases.push(phase);
   });
   (t.angles || []).forEach(function (a) {
     if (!a || typeof a !== 'object') return;
@@ -3071,19 +3079,30 @@ function swimDak50Tile_(L) {
 }
 
 /**
+ * 2.27.0: η είσοδος της εκκίνησης είναι του κεφαλιού (Kinovea 2.41.0, manual.entryHead)· σε ανάλυση πριν από αυτό, των χεριών.
+ */
+function swimEntryHead_(race) {
+  return !!(race && race.manual && race.manual.entryHead === true);
+}
+
+/**
  * (2.21.0) Οι στήλες της εκκίνησης με τη σειρά που γίνονται τα γεγονότα (αντίδραση → βατήρας → πτήση → είσοδος → κάτω από το νερό →
  * έξοδος → 15), μαζί οι ταχύτητες των φάσεων (2.20.0) εκεί που τελειώνει η καθεμιά· όχι η είσοδος των ισχίων ούτε οι ταχύτητες
  * ισχίων και ποδιών. [κλειδί, είδος, μορφή, τίτλος]· 'formula': τύπος του φύλλου.
  */
-function swimStartColumns_(U) {
+function swimStartColumns_(U, head) {
+  // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0: manual.entryHead, entryDistHead, entryVelHead)· οι αναλύσεις πριν από αυτό με
+  // την είσοδο των χεριών όπως ήταν.
   return [
     ['reaction', 'manual', SWIM_FMT.time, swimT_('Χρόνος Αντίδρασης – πρώτη κίνηση (sec)')],
     ['blockTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος Πάνω στον βατήρα (sec)')],
     ['flightTime', 'auto', SWIM_FMT.time, swimT_('Πτήση: βατήρας → είσοδος (sec)')],
-    ['entryTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος έως την είσοδο (sec)')],
-    ['entryDistHands', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση εισόδου (Χέρια) ({0})', U)],
-    ['entryVelHands', 'manual', SWIM_FMT.vel, swimT_('Ταχύτητα εισόδου (Χέρια) (m/s)')],
-    ['sigEntryVel', 'auto', SWIM_FMT.vel, swimT_('Ταχύτητα: σήμα → είσοδος χεριών (m/s)')],
+    ['entryTime', 'auto', SWIM_FMT.time, head ? swimT_('Χρόνος έως την είσοδο του κεφαλιού (sec)') : swimT_('Χρόνος έως την είσοδο (sec)')],
+    head ? ['entryDistHead', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση εισόδου (κεφάλι) ({0})', U)]
+      : ['entryDistHands', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση εισόδου (Χέρια) ({0})', U)],
+    head ? ['entryVelHead', 'manual', SWIM_FMT.vel, swimT_('Ταχύτητα εισόδου (κεφάλι) (m/s)')]
+      : ['entryVelHands', 'manual', SWIM_FMT.vel, swimT_('Ταχύτητα εισόδου (Χέρια) (m/s)')],
+    ['sigEntryVel', 'auto', SWIM_FMT.vel, head ? swimT_('Ταχύτητα: σήμα → είσοδος κεφαλιού (m/s)') : swimT_('Ταχύτητα: σήμα → είσοδος χεριών (m/s)')],
     ['kicks', 'auto', SWIM_FMT.int, swimT_('Υποβρύχιοι Δελφινισμοί')],
     ['underwaterTime', 'auto', SWIM_FMT.time, swimT_('Χρόνος έως την έξοδο από το νερό (sec)')],
     ['underwaterDist', 'manual', SWIM_FMT.vel, swimTF_('Απόσταση κάτω από το νερό ({0})', U)],
@@ -3098,7 +3117,7 @@ function swimStartColumns_(U) {
 function swimLayoutStart_(L) {
   var g = L.g, U = L.U, r0 = L.startRow;
   g.section(r0, swimT_('Εκκίνηση (χρόνοι από το σήμα εκκίνησης)'), L.LAST);
-  var defs = swimStartColumns_(U);
+  var defs = swimStartColumns_(U, swimEntryHead_(L.race));
   g.headers(r0 + 1, defs.map(function (d) { return d[3]; }));
   var rv = r0 + 2;
   // Η στήλη κάθε τιμής (για τους τύπους της σύγκρισης, swimLayoutCompare_).
@@ -3743,7 +3762,9 @@ function swimLayoutCompare_(L) {
   g.set(cur, 1, swimT_('Εκκίνηση, φάσεις και τελικός χρόνος'), { bold: true, color: SWIM_COLORS.title, size: 10 });
   g.merge(cur, 1, cur, L.LAST);
   cur++;
-  hdr(['', 'Αντίδραση (s)', 'Βατήρας (s)', 'Είσοδος (s)', 'Πτήση (s)', 'Έξοδος (s)', 'Δελφινισμοί', swimTF_('Εκκίνηση 0-15{0} (s)', U),
+  // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0)· του ΑΡ και του elite μόνο με το ίδιο είδος εισόδου με τον αγώνα.
+  var head = swimEntryHead_(race);
+  hdr(['', 'Αντίδραση (s)', 'Βατήρας (s)', head ? 'Είσοδος κεφαλιού (s)' : 'Είσοδος (s)', 'Πτήση (s)', 'Έξοδος (s)', 'Δελφινισμοί', swimTF_('Εκκίνηση 0-15{0} (s)', U),
     'Στροφές -5/+15 (s)', swimTF_('Τελευταία 5{0} (s)', U), 'Κολύμβηση (s)', 'Τελικός χρόνος (s)']);
   cmp.phaseFirst = cur;
   var sv = L.startValues;
@@ -3770,8 +3791,9 @@ function swimLayoutCompare_(L) {
     var pick = function (manual, auto) { var v = swimNum_(manual); return v !== null ? v : auto; };
     cell(r, 2, swimV_(swimNum_(m.reaction)), SWIM_FMT.time, 'auto');
     cell(r, 3, swimV_(pick(m.blockTime, st.blockTime)), SWIM_FMT.time, 'auto');
-    cell(r, 4, swimV_(pick(m.entryTime, st.entryTime)), SWIM_FMT.time, 'auto');
-    cell(r, 5, swimV_(st.flightTime), SWIM_FMT.time, 'auto');
+    var sameEntry = swimEntryHead_(rr) === head;
+    cell(r, 4, sameEntry ? swimV_(pick(m.entryTime, st.entryTime)) : '', SWIM_FMT.time, 'auto');
+    cell(r, 5, sameEntry ? swimV_(st.flightTime) : '', SWIM_FMT.time, 'auto');
     cell(r, 6, swimV_(pick(m.underwaterTime, st.underwaterTime)), SWIM_FMT.time, 'auto');
     cell(r, 7, st.kicks !== null && st.kicks !== undefined ? st.kicks : '', SWIM_FMT.int, 'auto');
     var s = a ? a.summary : {};
@@ -4157,10 +4179,12 @@ var SWIM_TECH_METRICS = [
   { key: 'blockTime', label: 'Αποδέσμευση (μπροστινό πόδι)', unit: 's', kind: 'start', best: 'min' },
   { key: 'blockPhase', label: 'Φάση βατήρα: πρώτη κίνηση → αποδέσμευση', unit: 's', kind: 'start', best: 'min' },
   { key: 'flight', label: 'Πτήση: αποδέσμευση → είσοδος', unit: 's', kind: 'start' },
-  { key: 'entryTime', label: 'Είσοδος χεριών', unit: 's', kind: 'start', best: 'min' },
-  { key: 'entryDist', label: 'Απόσταση εισόδου χεριών', unit: 'd', kind: 'start', best: 'max' },
-  // 2.20.0: η ταχύτητα από το σήμα ως την είσοδο των χεριών (Kinovea 2.35.0).
-  { key: 'sigEntryVel', label: 'Μέση ταχύτητα σήμα → είσοδος χεριών', unit: 'v', kind: 'start', best: 'max' },
+  // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0, head: η ετικέτα της)· οι αναλύσεις πριν από αυτό με την είσοδο των χεριών
+  // (label). Συγκρίνεται μόνο με το ίδιο είδος εισόδου (swimTechCompare_).
+  { key: 'entryTime', label: 'Είσοδος χεριών', head: 'Είσοδος κεφαλιού', unit: 's', kind: 'start', best: 'min' },
+  { key: 'entryDist', label: 'Απόσταση εισόδου χεριών', head: 'Απόσταση εισόδου κεφαλιού', unit: 'd', kind: 'start', best: 'max' },
+  // 2.20.0: η ταχύτητα από το σήμα ως την είσοδο (Kinovea 2.35.0· 2.41.0 του κεφαλιού).
+  { key: 'sigEntryVel', label: 'Μέση ταχύτητα σήμα → είσοδος χεριών', head: 'Μέση ταχύτητα σήμα → είσοδος κεφαλιού', unit: 'v', kind: 'start', best: 'max' },
   { key: 'in5', label: 'Προσέγγιση: -5 → τοίχος', unit: 's', kind: 'turn', best: 'min' },
   { key: 'lastStrokeGap', label: 'Τελευταία χεριά → τοίχος', unit: 's', kind: 'turn' },
   { key: 'lastStrokeDist', label: 'Απόσταση τελευταίας χεριάς από τον τοίχο', unit: 'd', kind: 'turn' },
@@ -4194,9 +4218,12 @@ var SWIM_TECH_METRICS = [
   { key: 'firstStroke', label: 'Πρώτη χεριά μετά την έξοδο', unit: 's', kind: 'both' }
 ];
 
-/** Ετικέτα μιας τιμής με τη μονάδα: "Χρόνος στα 5μ. (s)", "Ταχύτητα 0 → 5μ. (m/s)". */
-function swimTechLabel_(m, U) {
-  var label = swimT_(m.label);
+/**
+ * Ετικέτα μιας τιμής με τη μονάδα: "Χρόνος στα 5μ. (s)", "Ταχύτητα 0 → 5μ. (m/s)". head: η είσοδος είναι του κεφαλιού
+ * (2.27.0: "Είσοδος κεφαλιού (s)", αλλιώς των χεριών).
+ */
+function swimTechLabel_(m, U, head) {
+  var label = swimT_(head && m.head ? m.head : m.label);
   if (/(στα|\+|-) ?(5|10|15)$/.test(m.label) || /→ \+?(5|10|15)$/.test(m.label)) label += U;
   var unit = { s: 's', d: U, v: 'm/s', n: '', r: swimT_('δελφ./s') }[m.unit];
   return unit ? label + ' (' + unit + ')' : label;
@@ -4217,7 +4244,7 @@ function swimPhaseTitle_(p, race) {
 function swimTechPhases_(race) {
   var tech = race.tech || { phases: [], angles: [], snapshots: [] };
   return tech.phases.map(function (p) {
-    return { id: p.id, kind: p.kind, wall: p.wall, attempt: p.attempt, values: p.values || {},
+    return { id: p.id, kind: p.kind, wall: p.wall, attempt: p.attempt, values: p.values || {}, entryHead: p.entryHead === true,
       angles: tech.angles.filter(function (a) { return a.phase === p.id; }) };
   });
 }
@@ -4287,8 +4314,10 @@ function swimTechTable_(L, phases, kind, row, title, writeSection) {
   if (!metrics.length && !angleNames.length) return null;
   var many = phases.length > 1;
   var per = W - (V0 - 1) - (many ? 2 : 0);
+  // 2.27.0: η είσοδος του κεφαλιού όταν είναι όλων των εκκινήσεων του πίνακα (το Kinovea περνά μια ανάλυση ολόκληρη).
+  var head = kind === 'start' && phases.length > 0 && phases.every(function (p) { return p.entryHead === true; });
   var lines = metrics.map(function (m) {
-    return { key: m.key, label: swimTechLabel_(m, U), fmt: swimTechFormat_(m), best: m.best || '',
+    return { key: m.key, label: swimTechLabel_(m, U, head), fmt: swimTechFormat_(m), best: m.best || '',
       get: function (p) { return swimNum_(p.values[m.key]); } };
   });
   angleNames.forEach(function (name) {
@@ -5145,7 +5174,8 @@ function swimTcShortDate_(s) {
 /** Ο μέσος όρος κάθε τιμής (και κάθε γωνίας) στις φάσεις ενός είδους: { n, values: { key: μ.ό. }, best: { key: καλύτερη } }. */
 function swimTechMeans_(phases, kind) {
   var list = phases.filter(function (p) { return p.kind === kind; });
-  var out = { n: list.length, values: {}, best: {} };
+  // 2.27.0: οι εκκινήσεις με την είσοδο του κεφαλιού (Kinovea 2.41.0)· με των χεριών, πριν από αυτό.
+  var out = { n: list.length, values: {}, best: {}, entryHead: list.length > 0 && list.every(function (p) { return p.entryHead === true; }) };
   var keys = {};
   list.forEach(function (p) {
     Object.keys(p.values || {}).forEach(function (k) { keys[k] = true; });
@@ -5222,7 +5252,7 @@ function swimTechSide_(r, id, type) {
     kind: byId[s.phase] ? byId[s.phase].kind : '', comment: String(s.comment || ''), w: s.w, h: s.h }; });
   return { type: type, id: id, label: swimTcShortDate_(r.date) || r.date || '', date: r.date || '', athlete: r.athlete || '',
     values: { turn: turn.values, start: start.values }, n: { turn: turn.n, start: start.n }, snapshots: snaps, evals: swimTechEvalList_(r),
-    style: r.style, pool: r.pool };
+    style: r.style, pool: r.pool, entryHead: start.entryHead };
 }
 
 /**
@@ -5375,6 +5405,13 @@ function swimTechCompare_(race) {
       }
     }
   } catch (e2) { out.elite = null; }
+  // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0) συγκρίνεται μόνο με είσοδο κεφαλιού, των χεριών μόνο με των χεριών: σε μια
+  // ανάλυση τεχνικής του άλλου είδους οι τιμές της εκκίνησης που εξαρτώνται από την είσοδο λείπουν (–).
+  var nowHead = swimTechMeans_(swimTechPhases_(race), 'start').entryHead;
+  [out.prev, out.elite && out.elite.type === 'ref' ? out.elite : null].forEach(function (s) {
+    if (!s || !s.values || !s.values.start || s.entryHead === nowHead) return;
+    ['entryTime', 'entryDist', 'flight', 'sigEntryVel', 'uwVel', 'underwater', 'kickDist'].forEach(function (k) { delete s.values.start[k]; });
+  });
   return out;
 }
 
@@ -5419,8 +5456,11 @@ function swimTcDeltaFmt_(style) {
   return { color: '#B4C0CC' };
 }
 
-/** Οι γραμμές (ορισμοί) του πίνακα ενός είδους: μόνο όσες έχουν τιμή σήμερα, στην προηγούμενη ή στο elite. */
-function swimTcRows_(L, kind, phases, sides) {
+/**
+ * Οι γραμμές (ορισμοί) του πίνακα ενός είδους: μόνο όσες έχουν τιμή σήμερα, στην προηγούμενη ή στο elite. head: η είσοδος της
+ * σημερινής είναι του κεφαλιού (2.27.0).
+ */
+function swimTcRows_(L, kind, phases, sides, head) {
   var U = L.U;
   var angleNames = swimTechAngleNames_(phases.filter(function (p) { return p.kind === kind; }));
   var has = function (key) {
@@ -5441,7 +5481,7 @@ function swimTcRows_(L, kind, phases, sides) {
       }
       var m = swimTcMetric_(key, kind);
       if (!m || !has(key)) return;
-      rows.push({ key: key, label: swimTechLabel_(m, U), unit: m.unit, best: m.best || '',
+      rows.push({ key: key, label: swimTechLabel_(m, U, head), unit: m.unit, best: m.best || '',
         digits: m.unit === 'n' ? swimTcCountDigits_(sides.map(function (s) { return s && s.values ? s.values[key] : null; })) : swimTcDigits_(m.unit, key) });
     });
     if (rows.length) groups.push({ id: gr.group, group: gr.group === 'Ταχύτητα ανά 5' ? swimTF_('Ταχύτητα ανά 5{0}', U) : swimT_(gr.group), rows: rows });
@@ -5461,7 +5501,8 @@ function swimTcMainTable_(L, kind, row) {
   var prev = cmp.prev && cmp.prev.n && cmp.prev.n[kind] ? cmp.prev : null;
   var elite = cmp.elite && cmp.elite.values && Object.keys(cmp.elite.values[kind] || {}).length ? cmp.elite : null;
   var nowSide = { values: now.values };
-  var groups = swimTcRows_(L, kind, phases, [nowSide, prev ? { values: prev.values[kind] } : null, elite ? { values: elite.values[kind] } : null]);
+  var groups = swimTcRows_(L, kind, phases, [nowSide, prev ? { values: prev.values[kind] } : null, elite ? { values: elite.values[kind] } : null],
+    kind === 'start' && now.entryHead === true);
   if (!groups.length) return row;
   var C = swimTcColumns_(!!prev, !!elite);
   var title = kind === 'turn' ? swimT_('Όλα τα νούμερα της στροφής') : swimT_('Όλα τα νούμερα της εκκίνησης');
@@ -5819,7 +5860,7 @@ function swimTcTiles_(L, row) {
   if (L.means.start.n) {
     add('start', 'blockTime', swimT_('ΑΠΟΔΕΣΜΕΥΣΗ'), swimT_('από το σήμα'), 2, 'min');
     add('start', 't15', swimTF_('ΣΤΑ 15{0}', L.U.toUpperCase()), swimT_('από το σήμα'), 2, 'min');
-    add('start', 'entryDist', swimT_('ΕΙΣΟΔΟΣ'), swimTF_('{0} από τον τοίχο', L.U), 1, 'max');
+    add('start', 'entryDist', L.means.start.entryHead ? swimT_('ΕΙΣΟΔΟΣ ΚΕΦΑΛΙΟΥ') : swimT_('ΕΙΣΟΔΟΣ'), swimTF_('{0} από τον τοίχο', L.U), 1, 'max');
   }
   if (!both) {
     var k = L.means.turn.n ? 'turn' : 'start';
@@ -8944,7 +8985,9 @@ function swimV2Data_(race, analysis, extras, kpi) {
   var st = analysis.start || {}, pst = pbA ? (pbA.start || {}) : {};
   d.start = {
     reaction: swimV2Manual_(race, 'reaction', null), pbReaction: pbR ? swimV2Manual_(pbR, 'reaction', null) : null,
-    entry: n(st.entryTime), entryDist: swimV2Manual_(race, 'entryDistHands', swimV2Manual_(race, 'entryDistHips', null)),
+    // 2.27.0: η είσοδος του κεφαλιού (Kinovea 2.41.0)· σε ανάλυση πριν από αυτό, των χεριών (ή των ισχίων).
+    entry: n(st.entryTime), entryHead: swimEntryHead_(race),
+    entryDist: swimEntryHead_(race) ? swimV2Manual_(race, 'entryDistHead', null) : swimV2Manual_(race, 'entryDistHands', swimV2Manual_(race, 'entryDistHips', null)),
     kicks: n(st.kicks), pbKicks: n(pst.kicks),
     breakout: n(st.breakout), breakoutDist: swimV2Manual_(race, 'breakoutDist', null), pbBreakoutDist: pbR ? swimV2Manual_(pbR, 'breakoutDist', null) : null,
     t15: own[15] !== undefined ? own[15] : null, pb15: pbT && pbT[15] !== undefined ? pbT[15] : null, ref15: refT && refT[15] !== undefined ? refT[15] : null
@@ -9761,7 +9804,7 @@ function swimV2Page2_(pg, d, lv) {
     steps: [
       { label: swimT_('Σήμα'), value: '0.00', sub: swimT_('ήχος εκκίνησης') },
       { label: swimT_('Αντίδραση'), value: swimV2F_(s.reaction, 2), sub: s.pbReaction !== null ? swimTF_('ρεκόρ {0}', swimV2F_(s.pbReaction, 2)) : '' },
-      { label: swimT_('Είσοδος'), value: swimV2F_(s.entry, 2), sub: s.entryDist !== null ? swimTF_('στα {0}{1}', swimV2F_(s.entryDist, 1), U) : '' },
+      { label: s.entryHead ? swimT_('Είσοδος κεφαλιού') : swimT_('Είσοδος'), value: swimV2F_(s.entry, 2), sub: s.entryDist !== null ? swimTF_('στα {0}{1}', swimV2F_(s.entryDist, 1), U) : '' },
       { label: swimT_('Υποβρύχια'), value: s.kicks !== null ? swimTF_('{0} δελφινισμοί', s.kicks) : '', sub: s.pbKicks !== null ? swimTF_('ρεκόρ {0}', s.pbKicks) : '' },
       { label: swimT_('Έξοδος'), value: swimV2F_(s.breakout, 2), sub: s.breakoutDist !== null ? swimTF_('στα {0}{1}', swimV2F_(s.breakoutDist, 1), U) : '' },
       { label: '15' + U, value: s.t15 !== null ? T(s.t15) : '', sub: s.pb15 !== null ? swimTF_('ρεκόρ {0}', T(s.pb15)) : '' }
@@ -12055,6 +12098,9 @@ var SWIM_EN_ = {
   'Χρόνος Αντίδρασης – πρώτη κίνηση (sec)': 'Reaction time – first movement (sec)',
   'Χρόνος Πάνω στον βατήρα (sec)': 'Time on the block (sec)',
   'Χρόνος έως την είσοδο (sec)': 'Time to the entry (sec)',
+  'Χρόνος έως την είσοδο του κεφαλιού (sec)': 'Time to the head entry (sec)',
+  'Απόσταση εισόδου (κεφάλι) ({0})': 'Entry distance (head) ({0})',
+  'Ταχύτητα εισόδου (κεφάλι) (m/s)': 'Entry speed (head) (m/s)',
   'Απόσταση εισόδου (Χέρια) ({0})': 'Entry distance (hands) ({0})',
   'Απόσταση εισόδου (Ισχία) ({0})': 'Entry distance (hips) ({0})',
   'Ταχύτητα εισόδου (Χέρια) (m/s)': 'Entry speed (hands) (m/s)',
@@ -12101,6 +12147,8 @@ var SWIM_EN_ = {
   'Υποβρύχια ταχύτητα: αποκόλληση → έξοδος (m/s)': 'Underwater speed: push-off → breakout (m/s)',
   'Ταχύτητα: σήμα → είσοδος χεριών (m/s)': 'Speed: signal → hands entry (m/s)',
   'Μέση ταχύτητα σήμα → είσοδος χεριών': 'Average speed signal → hands entry',
+  'Ταχύτητα: σήμα → είσοδος κεφαλιού (m/s)': 'Speed: signal → head entry (m/s)',
+  'Μέση ταχύτητα σήμα → είσοδος κεφαλιού': 'Average speed signal → head entry',
   'Ταχύτητα: είσοδος → έξοδος (m/s)': 'Speed: entry → breakout (m/s)',
   'Ταχύτητα: έξοδος → 15{0} (m/s)': 'Speed: breakout → 15{0} (m/s)',
   'Ταχύτητα: έξοδος → +15{0} (m/s)': 'Speed: breakout → +15{0} (m/s)',
@@ -12182,6 +12230,7 @@ var SWIM_EN_ = {
   'Αντίδραση (s)': 'Reaction (s)',
   'Βατήρας (s)': 'Block (s)',
   'Είσοδος (s)': 'Entry (s)',
+  'Είσοδος κεφαλιού (s)': 'Head entry (s)',
   'Πτήση (s)': 'Flight (s)',
   'Έξοδος (s)': 'Breakout (s)',
   'Εκκίνηση 0-15{0} (s)': 'Start 0-15{0} (s)',
@@ -12279,6 +12328,8 @@ var SWIM_EN_ = {
   'Πτήση: αποδέσμευση → είσοδος': 'Flight: release → entry',
   'Είσοδος χεριών': 'Hand entry',
   'Απόσταση εισόδου χεριών': 'Hand entry distance',
+  'Είσοδος κεφαλιού': 'Head entry',
+  'Απόσταση εισόδου κεφαλιού': 'Head entry distance',
   'Προσέγγιση: -5 → τοίχος': 'Approach: -5 → wall',
   'Τελευταία χεριά → τοίχος': 'Last stroke → wall',
   'Απόσταση τελευταίας χεριάς από τον τοίχο': 'Distance of the last stroke from the wall',
@@ -12700,6 +12751,7 @@ var SWIM_EN_ = {
   'ΑΠΟΔΕΣΜΕΥΣΗ': 'RELEASE',
   'ΣΤΑ 15{0}': 'AT 15{0}',
   'ΕΙΣΟΔΟΣ': 'ENTRY',
+  'ΕΙΣΟΔΟΣ ΚΕΦΑΛΙΟΥ': 'HEAD ENTRY',
   '{0} από τον τοίχο': '{0} from the wall',
   'υποβρύχιοι': 'underwater',
   'μ.ό. {0} · καλύτερη {1}': 'mean of {0} · best {1}',

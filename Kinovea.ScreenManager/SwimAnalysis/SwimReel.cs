@@ -1414,13 +1414,18 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.34.0) The speed the video shows at this time: in the clean swimming the speed of the segment as the analysis and the PDF
-        /// have it (measured: between two checkpoints), elsewhere the speed of the curve (an estimate, shown with ≈).
+        /// have it (measured: between two checkpoints), elsewhere the speed of the curve (an estimate, shown with ≈). (2.41.0) Out of the
+        /// water (before the entry, at a wall up to the push off it) 0: the curve takes the head from the wall to where it is at the
+        /// push-off while the swimmer pushes, not a speed of his (as the panel of the video, which shows none there).
         /// </summary>
         public double ShownSpeed(double t, out bool measured)
         {
             SwimReelClean c = CleanAt(t);
             measured = c != null;
-            return c != null ? c.Speed : Math.Max(0, SpeedAt(t));
+            if (c != null)
+                return c.Speed;
+
+            return InWater(t) ? Math.Max(0, SpeedAt(t)) : 0;
         }
 
         /// <summary>The last complete cycle of the current length at this time, null before the first one.</summary>

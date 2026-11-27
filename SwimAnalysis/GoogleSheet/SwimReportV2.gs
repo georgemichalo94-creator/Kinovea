@@ -315,7 +315,7 @@ var SwimV2 = (function () {
     g += `<line x1="${X(0)}" y1="88" x2="${X(15)}" y2="88" stroke="${C.axis}"/>`;
     const ev = [
       { d: 0, t: s.block, top: 'Βατήρας', sub: o.fmt(s.block) + ' s' },
-      { d: s.entryDist, t: s.entryT, top: 'Είσοδος', sub: o.fmt(s.entryT) + ' s · ' + fx(s.entryDist, 2) + ' μ.' },
+      { d: s.entryDist, t: s.entryT, top: s.entryHead ? 'Είσοδος κεφαλιού' : 'Είσοδος', sub: o.fmt(s.entryT) + ' s · ' + fx(s.entryDist, 2) + ' μ.' },
       { d: s.bd, t: s.bt, top: 'Έξοδος', sub: o.fmt(s.bt) + ' s · ' + fx(s.bd, 2) + ' μ.' },
       { d: 15, t: s.t15, top: '15 μ.', sub: o.fmt(s.t15) + ' s' }
     ];
@@ -1549,8 +1549,8 @@ var SwimV2 = (function () {
       ['Αντίδραση (πρώτη κίνηση)', 'reaction', 's', 'lower', 2],
       [bk ? 'Ώθηση από τον τοίχο' : 'Χρόνος στον βατήρα', 'block', 's', 'lower', 2],
       ['Πτήση ως την είσοδο', 'flight', 's', 'none', 2],
-      ['Απόσταση εισόδου (χέρια)', 'entryDist', I.uu.trim(), 'higher', 2],
-      ['Ταχύτητα εισόδου (χέρια)', 'entryVel', 'm/s', 'higher', 2],
+      [a.entryHead ? 'Απόσταση εισόδου (κεφάλι)' : 'Απόσταση εισόδου (χέρια)', 'entryDist', I.uu.trim(), 'higher', 2],
+      [a.entryHead ? 'Ταχύτητα εισόδου (κεφάλι)' : 'Ταχύτητα εισόδου (χέρια)', 'entryVel', 'm/s', 'higher', 2],
       [a.style === 'br' ? 'Δελφινισμός στο υποβρύχιο' : 'Υποβρύχιοι δελφινισμοί', 'kicks', '', 'none', 0],
       ['Χρόνος ως την έξοδο', 'bt', 's', 'none', 2],
       ['Απόσταση εξόδου (κεφάλι)', 'bd', I.uu.trim(), 'higher', 2],
@@ -1905,14 +1905,17 @@ var SwimV2 = (function () {
     const startDist = m.underwaterEstimated ? NaN : mn('underwaterDist');
     const startB = pick('underwaterTime', s0.underwaterTime);
     const bd = ok(mn('breakoutDist')) ? mn('breakoutDist') : startDist;
-    const entryDist = mn('entryDistHands');
+    // (2.27.0) The entry of the head (Kinovea 2.41.0: manual.entryHead, entryDistHead, entryVelHead); an analysis of before: the hands'.
+    const entryHead = m.entryHead === true;
+    const entryDist = entryHead ? mn('entryDistHead') : mn('entryDistHands');
     const start = {
+      entryHead,
       reaction: mn('reaction'),
       block: pick('blockTime', s0.blockTime),
       flight: pick('flightTime', s0.flightTime),
       entryT: pick('entryTime', s0.entryTime),
       entryDist,
-      entryVel: mn('entryVelHands'),
+      entryVel: entryHead ? mn('entryVelHead') : mn('entryVelHands'),
       sigEntryVel: mn('sigEntryVel'),
       kicks: pick('kicks', s0.kicks),
       bt: startB,
@@ -2051,7 +2054,14 @@ var SwimV2 = (function () {
     const ev = { distance: race.distance, pool: race.pool, unit: yd ? 'yd' : 'm', style: race.style, relay: !!race.relay,
       poolName: race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25 γιάρδες' : 'Πισίνα 25μ.' };
     const a = analyse(race, analysis);
-    const other = c => c && c.race && c.analysis ? aligned(analyse(c.race, c.analysis), a, race.distance) : blank(a);
+    // (2.27.0) The entry of the head (Kinovea 2.41.0) is compared only with an entry of the head, the hands' only with the hands': in the
+    // other analysis the values that depend on it are left out (–).
+    const sameEntry = o => {
+      if (o && o.start && o.start.entryHead !== a.start.entryHead)
+        ['entryT', 'flight', 'entryDist', 'entryVel', 'sigEntryVel', 'entryBoVel', 'uwDist'].forEach(k => { o.start[k] = NaN; });
+      return o;
+    };
+    const other = c => c && c.race && c.analysis ? sameEntry(aligned(analyse(c.race, c.analysis), a, race.distance)) : blank(a);
     const gender = String(race.gender || race.category || '').trim();
     const meta = [race.competition, race.location, race.date, race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25yd' : 'Πισίνα 25μ.', race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
       .map(s => String(s || '').trim()).filter(s => s);
