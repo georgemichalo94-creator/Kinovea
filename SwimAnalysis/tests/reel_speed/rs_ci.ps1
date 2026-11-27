@@ -130,10 +130,11 @@ Check ($atWall -eq 0 -and $onBlock -eq 0) ('no speed shown at the wall up to the
 $shown = $reel.ShownSpeed(25.75, [ref]$measured)
 Check ($shown -gt 1.5 -and $shown -lt 3.5) ('right after the push: ' + (F2 $shown) + ' m/s')
 $tHud = T 'SwimHudPainter'
-$trace = @($tHud.GetMethod('TraceSpeeds', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($reel, [double]100, [double]100)))
-$inPush = @($trace | Where-Object { $_[0] -gt 50 + 1e-6 -and $_[0] -lt $pushAt - 1e-6 })
-$odd = @($trace | Where-Object { $_[1] -gt 3.5 -or $_[1] -lt 1.0 })
-Check ($trace.Count -gt 100 -and $inPush.Count -eq 0 -and $odd.Count -eq 0) ('the chart of the HUD: ' + $trace.Count + ' points, none while he pushes (' + $inPush.Count + '), none out of 1–3.5 m/s (' + $odd.Count + ')')
+# (PowerShell names are not case-sensitive: not $trace, which is $tRace, the type of the race.)
+$hudPoints = @($tHud.GetMethod('TraceSpeeds', [Reflection.BindingFlags]'Static,NonPublic').Invoke($null, @($reel, [double]100, [double]100)))
+$inPush = @($hudPoints | Where-Object { $_[0] -gt 50 + 1e-6 -and $_[0] -lt $pushAt - 1e-6 })
+$odd = @($hudPoints | Where-Object { $_[1] -gt 3.5 -or $_[1] -lt 1.0 })
+Check ($hudPoints.Count -gt 100 -and $inPush.Count -eq 0 -and $odd.Count -eq 0) ('the chart of the HUD: ' + $hudPoints.Count + ' points, none while he pushes (' + $inPush.Count + '), none out of 1–3.5 m/s (' + $odd.Count + ')')
 Check (-not $reel.InWater(52.85)) 'no speed after the finish'
 $uw = $reel.SpeedAt(3.0)
 Check ($uw -gt 2.0 -and $uw -lt 3.0) ('the speed under the water after the start: ' + (F2 $uw) + ' m/s')
