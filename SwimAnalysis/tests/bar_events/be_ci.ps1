@@ -598,6 +598,22 @@ if ($out) {
         $bmp.Save([System.IO.Path]::Combine($out, 'bar_left_turn_before_the_wall.png'), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
         Write-Output 'picture: bar_left_turn_before_the_wall.png'
       } finally { $leftBar.Dispose() }
+
+      # (2.41.0) An analysis marked with the entry of the hands (before 2.41.0) passes to the head's when the distance of the entry is
+      # typed: its entry of the hands goes; «Αναίρεση» puts back all of it as it was (the head's distance too, so that a later passing
+      # does not find it).
+      $l = Load $p.n $p.f
+      $l.race.EntryHead = $false; $l.race.EntryDistHands = 3.2; $l.race.EntryDistHead = $null; $l.race.EntryVelHead = $null
+      $tEntry = [Enum]::Parse((T 'SwimMarkType'), 'Entry')
+      $marksOf = { param($r) @($r.Marks | Where-Object { $_.Type -eq $tEntry }).Count }
+      $n0 = & $marksOf $l.race
+      $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
+      $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
+      $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
+      $mgr.SetTypedEntry([System.Nullable[double]]3.1, $null)
+      Check ($l.race.EntryHead -eq $true -and $l.race.EntryDistHead -eq 3.1 -and (& $marksOf $l.race) -eq 0 -and $l.race.EntryDistance() -eq 3.1) ('the distance typed in an analysis of the hands: of the head, ' + $l.race.EntryDistance() + ', entries of the hands left ' + (& $marksOf $l.race) + ' of ' + $n0)
+      $mgr.Undo()
+      Check ($l.race.EntryHead -eq $false -and $null -eq $l.race.EntryDistHead -and (& $marksOf $l.race) -eq $n0 -and $l.race.EntryDistance() -eq 3.2) ('«Αναίρεση»: the entry of the hands back (' + $l.race.EntryDistance() + ', ' + (& $marksOf $l.race) + ' of ' + $n0 + ', head ' + $l.race.EntryDistHead + ')')
     }
   } catch {
     $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }

@@ -19,6 +19,7 @@ namespace Kinovea.ScreenManager
         private sealed class EntryUndo
         {
             public bool? EntryHead;
+            public double? DistHead, VelHead;
             public List<SwimMark> Marks = new List<SwimMark>();
             public Dictionary<string, double?> PhaseEntries = new Dictionary<string, double?>();
         }
@@ -41,7 +42,7 @@ namespace Kinovea.ScreenManager
                 return null;
             }
 
-            EntryUndo undo = new EntryUndo { EntryHead = Race.EntryHead };
+            EntryUndo undo = new EntryUndo { EntryHead = Race.EntryHead, DistHead = Race.EntryDistHead, VelHead = Race.EntryVelHead };
             undo.Marks.AddRange(Race.Marks.Where(m => m.Type == SwimMarkType.Entry));
             Race.Marks.RemoveAll(m => m.Type == SwimMarkType.Entry);
             foreach (SwimMark old in undo.Marks)
@@ -62,8 +63,27 @@ namespace Kinovea.ScreenManager
             string id = EntryUndoPrefix + Guid.NewGuid().ToString("N");
             entryUndo[id] = undo;
             undoStack.Add(id);
+            RefreshEntryFields();
 
             return SwimLang.T("Η ανάλυση πέρασε στην είσοδο του κεφαλιού: η είσοδος των χεριών βγήκε (η Αναίρεση τη φέρνει πίσω).");
+        }
+
+        /// <summary>
+        /// After a passing to the entry of the head or its «Αναίρεση»: the boxes of the entry in the window show the entry of the analysis
+        /// now (after what changed it has finished). A box left with the other entry's distance would be read back as a value typed
+        /// (the hands' distance taken for the head's, or the head passing again).
+        /// </summary>
+        private void RefreshEntryFields()
+        {
+            FormSwimAnalysis window = form;
+            if (window == null || window.IsDisposed || !window.IsHandleCreated)
+                return;
+
+            window.BeginInvoke((Action)(() =>
+            {
+                if (!window.IsDisposed)
+                    window.RefreshManualFields();
+            }));
         }
 
         /// <summary>«Αναίρεση» of a passing to the entry of the head: the entry of the hands back. False when the id is not one.</summary>
@@ -83,9 +103,13 @@ namespace Kinovea.ScreenManager
             foreach (KeyValuePair<string, double?> pair in undo.PhaseEntries)
                 Race.GetPhaseValues(pair.Key, true).EntryDist = pair.Value;
 
+            // As before the passing: also the distance and the speed of the head written with it (a later passing starts without them).
+            Race.EntryDistHead = undo.DistHead;
+            Race.EntryVelHead = undo.VelHead;
             Race.EntryHead = undo.EntryHead.HasValue ? undo.EntryHead : false;
             Status(SwimLang.T("Αναιρέθηκε: η είσοδος του κεφαλιού (η ανάλυση έχει ξανά την είσοδο των χεριών)."), false);
             Changed(true);
+            RefreshEntryFields();
             return true;
         }
 
@@ -130,18 +154,9 @@ namespace Kinovea.ScreenManager
                 Race.EntryDistHead = distance;
             if (!sameSpeed)
                 Race.EntryVelHead = speed;
+            // (The boxes of the window show the entry of the head after its commit: EnsureHeadEntry.)
             if (passed != null)
-            {
                 Status(passed + SwimLang.T(" Σημείωσε και το καρέ που μπαίνει το κεφάλι στο νερό (E)."), false);
-                // After the commit of the window that typed it: its boxes then show the entry of the head.
-                FormSwimAnalysis window = form;
-                if (window != null && !window.IsDisposed && window.IsHandleCreated)
-                    window.BeginInvoke((Action)(() =>
-                    {
-                        if (!window.IsDisposed)
-                            window.RefreshManualFields();
-                    }));
-            }
         }
 
         /// <summary>The distance of the entry of an attempt of a training video: the head's (as SetEntryDistance).</summary>
