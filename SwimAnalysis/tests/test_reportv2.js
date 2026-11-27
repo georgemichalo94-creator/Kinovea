@@ -31,7 +31,7 @@ const pick = key => events.find(p => p.ev.key === key);
   const race = Object.assign({}, p.race, { compare: { pb: p.pb.id }, reference: p.ref });
   const r = call({ action: 'pdf', v2: true, race });
   assert.ok(r.ok, JSON.stringify(r).slice(0, 300));
-  assert.strictEqual(r.version, '2.27.1');
+  assert.strictEqual(r.version, '2.27.2');
   assert.ok(r.v2 && typeof r.v2.html === 'string' && r.v2.html.length > 50000, 'the pages of the 2nd version');
   assert.ok(!r.pdf, 'no PDF of the sheet with v2');
   assert.ok(!r.needCharts, 'no charts to draw for the pages of the 2nd version');

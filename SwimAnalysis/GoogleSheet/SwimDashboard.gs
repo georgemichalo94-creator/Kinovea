@@ -27,7 +27,7 @@
  *  account. Ένας προπονητής βλέπει τον πίνακα όταν του μοιραστείς (Προβολή) το Google Sheet των αναλύσεων.
  */
 
-var SWIM_DASH_VERSION = '1.0.1';
+var SWIM_DASH_VERSION = '1.0.2';
 /** Πόσες αναλύσεις δίνει η swimDashRaces σε μία κλήση (η σελίδα συγκρίνει ως 5). */
 var SWIM_DASH_MAX_RACES = 12;
 /** Για πόσο (s) μένουν στην προσωρινή μνήμη η λίστα και οι αναλύσεις (το μέγιστο του Apps Script: 6 ώρες). */
@@ -370,10 +370,19 @@ function swimDashFull_(race, row) {
   var estimated = SWIM_STRICT_VALUES && !!m.underwaterEstimated;
   o.manual = {
     reaction: n(m.reaction),
+    // (1.0.2) Η είσοδος του κεφαλιού (Kinovea 2.41.0, Apps Script 2.27.0: manual.entryHead, entryDistHead)· μια ανάλυση πριν από
+    // αυτό έχει των χεριών (entryDistHands). Ως το 1.0.1 μόνο των χεριών: οι αναλύσεις του 2.41.0 έμεναν χωρίς είσοδο.
+    entryHead: m.entryHead === true,
+    entryDistHead: n(m.entryDistHead),
     entryDistHands: n(m.entryDistHands),
     underwaterDist: n(m.underwaterDist),
     underwaterEstimated: estimated,
     breakoutDist: n(m.breakoutDist),
+    // (1.0.2) Οι ταχύτητες της εκκίνησης όπως τις μετρά το Kinovea (2.35.0: είσοδος → έξοδος και έξοδος → 15, m/s· από το κεφάλι
+    // στο κεφάλι και με τον κανόνα της εξόδου), οι ίδιες με το PDF και το βίντεο. Ως το 1.0.1 ο πίνακας τις έβγαζε από την έξοδο που
+    // μετρήθηκε: όπου ο κανόνας την έφερε πιο κοντά, η κολύμβηση ως τα 15 πιο αργή και η υποβρύχια πιο γρήγορη από το PDF.
+    entryBreakoutVel: n(m.entryBreakoutVel),
+    breakout15Vel: n(m.breakout15Vel),
     turns: {}
   };
   a.turns.forEach(function (t) {

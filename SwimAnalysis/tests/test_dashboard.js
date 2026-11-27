@@ -68,7 +68,7 @@ function race(n, o) {
   };
 }
 const SPECS = [
-  {}, { v: 1.75 }, { v: 1.85, typedTurn: 0.81 }, { v: 1.7, estTurn: true, manual: { underwaterEstimated: true, breakoutDist: null } },
+  {}, { v: 1.75, manual: { entryHead: true, entryDistHead: 3.45, entryDistHands: undefined, entryBreakoutVel: 2.312, breakout15Vel: 1.874 } }, { v: 1.85, typedTurn: 0.81 }, { v: 1.7, estTurn: true, manual: { underwaterEstimated: true, breakoutDist: null } },
   { gender: 'Γυναικών', v: 1.6 }, { gender: 'Γυναικών', v: 1.62, round: 'Προκριματικός' },
   { style: 'bk', v: 1.65 }, { style: 'br', v: 1.42, distance: 200 }, { style: 'fly', v: 1.7, pool: 25, distance: 100 },
   { style: 'im', distance: 200, v: 1.55, comp: 'Χειμερινό Πρωτάθλημα (δοκιμή)', date: '2026-02-14' },
@@ -188,6 +188,19 @@ res.races.forEach(f => {
   assert.strictEqual(f.blocks.length, a.blocks.length);
   assert.strictEqual(f.manual.reaction, 0.65);
 });
+// (1.0.2) Η είσοδος του κεφαλιού (Kinovea 2.41.0): στις μετρήσεις, με το είδος της· μια ανάλυση πριν από αυτό με των χεριών.
+const f0 = res.races.find(r => r.id === 'dash0'), f1 = res.races.find(r => r.id === 'dash1');
+assert.ok(f1.manual.entryHead === true && f1.manual.entryDistHead === 3.45 && f1.manual.entryDistHands === null, 'the entry of the head: ' + JSON.stringify(f1.manual).slice(0, 160));
+assert.ok(f0.manual.entryHead === false && f0.manual.entryDistHands === 3.7 && f0.manual.entryDistHead === null, 'the entry of the hands of before');
+assert.ok(/const entryOf = m => m\.entryHead \? m\.entryDistHead : m\.entryDistHands/.test(html) && /'Είσοδος κεφαλιού \(μ\.\)'/.test(html) &&
+  !/'Είσοδος στο νερό \(μ\.\)'|const e = m\.entryDistHands|ok\(m\.entryDistHands\)\) pts/.test(html), 'the page takes the entry of its kind');
+// (1.0.2) Οι ταχύτητες της εκκίνησης του Kinovea (είσοδος → έξοδος, έξοδος → 15, με τον κανόνα της εξόδου), όπως στο PDF και στο
+// βίντεο· χωρίς αυτές (ανάλυση πριν από το Kinovea 2.35.0) από τις αποστάσεις, σε m/s.
+assert.ok(f1.manual.entryBreakoutVel === 2.312 && f1.manual.breakout15Vel === 1.874, 'Kinovea\'s speeds of the start: ' + JSON.stringify(f1.manual).slice(0, 200));
+assert.ok(f0.manual.entryBreakoutVel === null && f0.manual.breakout15Vel === null, 'without Kinovea\'s speeds: none');
+assert.ok(/y: ok\(m\.entryBreakoutVel\) \? m\.entryBreakoutVel : \(b - e\) \* k \//.test(html) &&
+  /y: ok\(m\.breakout15Vel\) \? m\.breakout15Vel : \(15 - b\) \* k \//.test(html) && /const k = r\.poolUnit === 'yd' \? 0\.9144 : 1;/.test(html),
+  'the chart of the start takes Kinovea\'s speeds first');
 const f2 = res.races.find(r => r.id === 'dash2');
 assert.strictEqual(f2.turns[0].turnTime, 0.81, 'the analyst\'s turn time wins, as in the sheet');
 const f3 = res.races.find(r => r.id === 'dash3');

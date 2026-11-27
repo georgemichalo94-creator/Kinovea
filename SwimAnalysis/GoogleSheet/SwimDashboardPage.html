@@ -250,7 +250,7 @@ footer.wrap { padding-block: 0 32px; font-size: 12px; color: var(--muted); }
       <div class="chart" id="ch-phases"></div>
     </section>
     <section class="card">
-      <header><div><h2>Ταχύτητα μετά την είσοδο στο νερό</h2><p class="sub">Κουκκίδες: η μέση ταχύτητα της υποβρύχιας φάσης (είσοδος χεριών → έξοδος κεφαλιού), της κολύμβησης ως τα 15 μ. και των <span style="white-space:nowrap">15–25 μ.</span>, σε m/s. Η καμπύλη τις ενώνει ομαλά.</p></div></header>
+      <header><div><h2>Ταχύτητα μετά την είσοδο στο νερό</h2><p class="sub">Κουκκίδες: η μέση ταχύτητα της υποβρύχιας φάσης (είσοδος → έξοδος, από το κεφάλι στο κεφάλι), της κολύμβησης ως τα 15 μ. και των <span style="white-space:nowrap">15–25 μ.</span>, σε m/s, όπως στο PDF. Η καμπύλη τις ενώνει ομαλά.</p></div></header>
       <div class="chart" id="ch-start"></div>
     </section>
   </div>
@@ -565,11 +565,15 @@ function renderSummary() {
   tbl.replaceChildren(el('thead', {}, head), el('tbody', {}, body));
 }
 
+// (1.0.2) Η απόσταση της εισόδου: του κεφαλιού (Kinovea 2.41.0), αλλιώς των χεριών (μια ανάλυση πριν από αυτό). Συγκρίνονται μόνο
+// ίδιου είδους (κεφάλι με κεφάλι, χέρια με χέρια), όπως στο PDF: δύο γραμμές.
+const entryOf = m => m.entryHead ? m.entryDistHead : m.entryDistHands;
 const startMetrics = [
   ['Αντίδραση', r => r.manual.reaction, { better: 'low' }],
   ['Αποκόλληση από τον βατήρα', r => r.start.blockTime, { better: 'low' }],
   ['Πτήση (αποκόλληση → είσοδος)', r => r.start.flightTime, {}],
-  ['Είσοδος στο νερό (μ.)', r => r.manual.entryDistHands, { better: 'high' }],
+  ['Είσοδος κεφαλιού (μ.)', r => r.manual.entryHead ? r.manual.entryDistHead : null, { better: 'high' }],
+  ['Είσοδος χεριών (μ.)', r => r.manual.entryHead ? null : r.manual.entryDistHands, { better: 'high' }],
   ['Υποβρύχια φάση (είσοδος → έξοδος)', r => ok(r.start.breakout) && ok(r.start.entryTime) ? r.start.breakout - r.start.entryTime : null, {}],
   ['Δελφινισμοί', r => r.start.kicks, { n: 0 }],
   ['Κάτω από το νερό (μ.)', r => r.manual.underwaterDist, { better: 'high', approx: r => !!r.manual.underwaterEstimated }],
@@ -857,15 +861,21 @@ function blockChart(hostSel, key, fmtAxis, fmtTip, label) {
 function startChart() {
   const sel = selected(), host = $('#ch-start');
   if (!sel.length) { host.replaceChildren(); return; }
-  // Τρεις φάσεις μετά την είσοδο: υποβρύχια (είσοδος χεριών → έξοδος κεφαλιού), κολύμβηση ως τα 15 μ., 15–25 μ.
+  // Τρεις φάσεις μετά την είσοδο: υποβρύχια (είσοδος → έξοδος κεφαλιού· η είσοδος του κεφαλιού, ή των χεριών σε ανάλυση πριν από
+  // το Kinovea 2.41.0), κολύμβηση ως τα 15 μ., 15–25 μ.
   // Η τιμή είναι η μέση ταχύτητα της φάσης, στο μέσο της απόστασής της.
   const PH = [['uw', 'Υποβρύχια φάση'], ['sw', 'Κολύμβηση ως τα 15 μ.'], ['p25', '15–25 μ.']];
   const phases = r => {
     const s = r.start, m = r.manual, out = {};
     // Η απόσταση εξόδου: του κεφαλιού, αλλιώς η απόσταση κάτω από το νερό όταν μετρήθηκε (όχι εκτίμηση από τους χρόνους).
-    const e = m.entryDistHands, b = ok(m.breakoutDist) ? m.breakoutDist : (m.underwaterEstimated ? null : m.underwaterDist);
-    if (ok(e) && ok(b) && ok(s.breakout) && ok(s.entryTime) && s.breakout > s.entryTime && b > e) out.uw = { x0: e, x1: b, y: (b - e) / (s.breakout - s.entryTime) };
-    if (ok(b) && ok(s.t15) && ok(s.breakout) && s.t15 > s.breakout && b < 15) out.sw = { x0: b, x1: 15, y: (15 - b) / (s.t15 - s.breakout) };
+    const e = entryOf(m), b = ok(m.breakoutDist) ? m.breakoutDist : (m.underwaterEstimated ? null : m.underwaterDist);
+    // (1.0.2) Οι ταχύτητες του Kinovea όταν τις έχει (από το κεφάλι στο κεφάλι, με τον κανόνα της εξόδου), όπως στο PDF και στο
+    // βίντεο· αλλιώς (ανάλυση πριν από το Kinovea 2.35.0) από τις αποστάσεις, σε m/s (σε πισίνα γιαρδών × 0.9144, όπως τα 15–25).
+    const k = r.poolUnit === 'yd' ? 0.9144 : 1;
+    if (ok(e) && ok(b) && ok(s.breakout) && ok(s.entryTime) && s.breakout > s.entryTime && b > e)
+      out.uw = { x0: e, x1: b, y: ok(m.entryBreakoutVel) ? m.entryBreakoutVel : (b - e) * k / (s.breakout - s.entryTime) };
+    if (ok(b) && ok(s.t15) && ok(s.breakout) && s.t15 > s.breakout && b < 15)
+      out.sw = { x0: b, x1: 15, y: ok(m.breakout15Vel) ? m.breakout15Vel : (15 - b) * k / (s.t15 - s.breakout) };
     const r25 = r.rows.find(x => x.prevD === 15 && x.d === 25);
     if (r25 && ok(r25.vel)) out.p25 = { x0: 15, x1: 25, y: r25.vel };
     return out;
@@ -953,7 +963,7 @@ function phaseChart() {
 function positionFn(r) {
   const s = r.start, m = r.manual, pts = [[0, 0]];
   if (ok(s.blockTime)) pts.push([s.blockTime, 0]);
-  if (ok(s.entryTime) && ok(m.entryDistHands)) pts.push([s.entryTime, m.entryDistHands]);
+  if (ok(s.entryTime) && ok(entryOf(m))) pts.push([s.entryTime, entryOf(m)]);
   const b = ok(m.breakoutDist) ? m.breakoutDist : m.underwaterDist;
   if (ok(s.breakout) && ok(b)) pts.push([s.breakout, b]);
   const turns = new Map(r.turns.map(t => [t.wall, t]));

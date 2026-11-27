@@ -83,9 +83,13 @@
  *  25. Ο έλεγχος της εξόδου (2.27.1, με το Kinovea 2.41.1), όπως τον διάλεξε ο αναλυτής («Μόνο έλεγχος»): όπου η ταχύτητα έξοδος →
  *      15 (+15) βγαίνει πιο αργή από την κολύμβηση μετά, το PDF τη γράφει όπως μετρήθηκε με ⚠ και μια γραμμή (manual.breakout15Slow,
  *      manual.turns[τοίχος].bo15Slow)· πριν, το Kinovea έφερνε την έξοδο πιο κοντά και η υποβρύχια μετά την ώθηση έβγαινε χαμηλή.
+ *  26. Η έξοδος των ταχυτήτων στην αναφορά τεχνικής (2.27.2, με το Kinovea 2.41.2, ο κανόνας της εξόδου ξανά): το «τοίχος → έξοδος»
+ *      των στροφών στο γράφημα «Ταχύτητα ανά τμήμα» (και του elite από τελικό) από την έξοδο των ταχυτήτων του Kinovea
+ *      (swimSpeedsBreakout_: εκεί που η ταχύτητα έξοδος → +15 του Kinovea δίνει τον χρόνο ως τα +15), όχι από αυτή που μετρήθηκε: τα
+ *      δύο τμήματα κάνουν μαζί όλο το «τοίχος → +15», όπως στο πάνελ, το PDF και το βίντεο. Η απόσταση γράφεται όπως μετρήθηκε.
  */
 
-var SWIM_VERSION = '2.27.1';
+var SWIM_VERSION = '2.27.2';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -5214,20 +5218,43 @@ function swimTechDerive_(v, kind, k) {
   if (v.v0_5 === undefined && div(5 * k, t5) !== null) v.v0_5 = div(5 * k, t5);
   if (v.v5_10 === undefined && t5 !== null && t10 !== null && div(5 * k, t10 - t5) !== null) v.v5_10 = div(5 * k, t10 - t5);
   if (v.v10_15 === undefined && t10 !== null && t15x !== null && div(5 * k, t15x - t10) !== null) v.v10_15 = div(5 * k, t15x - t10);
+  // 2.27.2: η έξοδος για τις ταχύτητες όπως στο Kinovea (ο κανόνας της εξόδου, swimSpeedsBreakout_): τα τμήματα ως την έξοδο και από
+  // αυτή ως τα 15 (+15) δίνουν μαζί όλο το τμήμα. Ως το 2.27.1 το «τοίχος → έξοδος» της στροφής από την έξοδο που μετρήθηκε, ενώ το
+  // «έξοδος → +15» του Kinovea από αυτή του κανόνα: γρηγορότερο από του πάνελ, του PDF και του βίντεο όπου ο κανόνας την έφερε πιο κοντά.
+  var b15 = num(v.bo15Vel);
   if (kind === 'turn') {
     var in5 = num(v.in5), o15 = num(v.out15);
+    var bs = swimSpeedsBreakout_(bd, b15, bt, o15, k);
     if (v.vApproach === undefined && div(5 * k, in5) !== null) v.vApproach = div(5 * k, in5);
-    v.segOut = bd !== null ? div(bd * k, bt) : null;
-    v.seg15 = num(v.bo15Vel) !== null ? num(v.bo15Vel) : (bd !== null && o15 !== null && bt !== null ? div((15 - bd) * k, o15 - bt) : null);
+    v.segOut = bs !== null ? div(bs * k, bt) : null;
+    v.seg15 = b15 !== null ? b15 : (bd !== null && o15 !== null && bt !== null ? div((15 - bd) * k, o15 - bt) : null);
     v.segAll = div(15 * k, o15);
   } else {
     var block = num(v.blockTime), t15 = num(v.t15);
-    v.segOut = num(v.pushVel) !== null ? num(v.pushVel) : (bd !== null && bt !== null && block !== null ? div(bd * k, bt - block) : null);
-    v.seg15 = num(v.bo15Vel) !== null ? num(v.bo15Vel) : (bd !== null && t15 !== null && bt !== null ? div((15 - bd) * k, t15 - bt) : null);
+    var bs0 = swimSpeedsBreakout_(bd, b15, bt, t15, k);
+    v.segOut = num(v.pushVel) !== null ? num(v.pushVel) : (bs0 !== null && bt !== null && block !== null ? div(bs0 * k, bt - block) : null);
+    v.seg15 = b15 !== null ? b15 : (bd !== null && t15 !== null && bt !== null ? div((15 - bd) * k, t15 - bt) : null);
     v.segAll = t15 !== null && block !== null ? div(15 * k, t15 - block) : null;
   }
   ['segOut', 'seg15', 'segAll'].forEach(function (key) { if (v[key] === null) delete v[key]; });
   return v;
+}
+
+/**
+ * 2.27.2: Πού είναι η έξοδος για τις ταχύτητες (μονάδες πισίνας από τον τοίχο), όπως στο Kinovea: ο κανόνας της εξόδου του Kinovea
+ * (2.38.6, ξανά στο 2.41.2: από την έξοδο ως τα 15, +15 μετά από τοίχο, όχι πιο αργά από την κολύμβηση μετά) τη φέρνει πιο κοντά για τις
+ * ταχύτητες, ενώ η απόσταση που στέλνει και γράφεται είναι αυτή που μετρήθηκε. Η έξοδος των ταχυτήτων είναι εκεί που η ταχύτητα
+ * έξοδος → 15 του Kinovea (v15, m/s) δίνει τον χρόνο από την έξοδο (bt) ως τα 15 (t15, από την ίδια αρχή): ίδια με αυτή που μετρήθηκε
+ * όταν ο κανόνας δεν την άλλαξε (ως τις στρογγυλοποιήσεις), πιο κοντά όταν την άλλαξε. bd: αυτή που μετρήθηκε· k: μέτρα ανά μονάδα.
+ * Αυτή που μετρήθηκε όταν κάτι λείπει (μια ανάλυση πριν από το Kinovea 2.35.0 ή χωρίς ταχύτητα ως τα 15).
+ */
+function swimSpeedsBreakout_(bd, v15, bt, t15, k) {
+  var num = function (x) { return x !== null && x !== undefined && isFinite(x) ? Number(x) : null; };
+  bd = num(bd); v15 = num(v15); bt = num(bt); t15 = num(t15); k = num(k);
+  if (bd === null || v15 === null || bt === null || t15 === null || k === null || !(v15 > 0) || !(t15 > bt) || !(k > 0)) return bd;
+  var d = 15 - v15 * (t15 - bt) / k;
+  // Μόνο πιο κοντά (ο κανόνας δεν την πάει ποτέ πιο μακριά), πέρα από τις στρογγυλοποιήσεις των τιμών (3 δεκαδικά).
+  return d > 0 && d < bd - 0.01 ? d : bd;
 }
 
 /** Τιμές του Kinovea για το elite (τελικός): μόνο αριθμοί. */
