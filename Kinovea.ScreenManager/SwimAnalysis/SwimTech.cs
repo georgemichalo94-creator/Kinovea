@@ -125,10 +125,17 @@ namespace Kinovea.ScreenManager
         public double? NextSpeed;
 
         /// <summary>
-        /// (2.38.6) Where the head comes out for the speeds (pool units from the wall): OutDist, or nearer by the rule of the breakout
-        /// (SwimSpeedRules.Breakout). The distance shown and sent stays OutDist.
+        /// (2.38.6) Where the head comes out for the speeds (pool units from the wall). (2.41.1) OutDist, as measured: the rule of the
+        /// breakout is a check (SlowAfterBreakout); 2.38.6–2.41.0 nearer by it.
         /// </summary>
         public double? OutForSpeeds;
+
+        /// <summary>
+        /// (2.41.1) The check of the breakout (the analyst's rule 1, a check since 2.41.1): from the breakout to the 15 (+15 after a wall)
+        /// the swimmer was slower than in the swimming after it: he loses speed at the breakout, or the breakout was measured too far.
+        /// The panel (RuleNote) and the reports (⚠) say so; the speeds stay as measured.
+        /// </summary>
+        public bool SlowAfterBreakout;
 
         /// <summary>
         /// (2.38.6) A turn: where its speed under the water starts (pool units from the wall). (2.41.0) Where the head is at the push-off
@@ -862,6 +869,7 @@ namespace Kinovea.ScreenManager
             p.SpeedNote = null;
             p.RuleNote = null;
             p.OutForSpeeds = p.OutDist;
+            p.SlowAfterBreakout = false;
             p.PushAway = 0;
             p.PastHead = false;
             p.UnderwaterMean = null;
@@ -1082,33 +1090,31 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.38.6) The analyst's rule of the breakout (SwimSpeedRules.Breakout): from the breakout to the 15 (+15 after a wall) the swimmer
-        /// is not slower than in the swimming after it (NextSpeed). The speeds then take the breakout nearer (OutForSpeeds), so that the
-        /// speed to the 15 is the swimming's; the distance shown and sent stays the one measured (2.39.4: as far as it takes; 2.39.3 up to
-        /// 0.5 m, before also up to 5% slower). Not nearer than the start's entry (+ UnderwaterMinSpan) or than SwimSpeedRules.LeastOut
-        /// from a wall. Only from a distance that gives speeds (Usable says why not, from the speeds).
+        /// (2.41.1) The analyst's rule of the breakout as a check, the analyst's choice («Μόνο έλεγχος»): from the breakout to the 15 (+15
+        /// after a wall) the swimmer is expected to be not slower than in the swimming after it (NextSpeed). Slower: the speeds stay as
+        /// measured (OutForSpeeds = OutDist) and the panel and the reports say it (SlowAfterBreakout, ⚠): he loses speed at the breakout,
+        /// or the breakout was measured too far. 2.38.6–2.41.0 the speeds took the breakout nearer, where the speed to the 15 was the
+        /// swimming's: from the head at the push-off the turns of a 400 were then about as slow as the swimming, the curve flat after the
+        /// push-off. Only from a distance that gives speeds.
         /// </summary>
         private static void BreakoutRule(SwimTechPhase p, double? at15, double k)
         {
             p.OutForSpeeds = p.OutDist;
+            p.SlowAfterBreakout = false;
             if (!p.OutDist.HasValue || p.OutDist.Value <= 0 || p.OutEstimated || p.OutImpossible || !p.Breakout.HasValue || !at15.HasValue ||
                 !p.NextSpeed.HasValue)
                 return;
 
             double time = at15.Value - p.Breakout.Value;
-            // (2.41.0) Not nearer than where the head went in (start) or was at the push-off (turn), + the shortest way under the water.
-            double? headFrom = p.Kind == SwimPhaseKind.Start ? HeadAtEntry(p) : p.HeadAtPushoff;
-            double least = headFrom.HasValue && headFrom.Value > 0 ? Math.Max(SwimSpeedRules.LeastOut, headFrom.Value + UnderwaterMinSpan) : SwimSpeedRules.LeastOut;
-            double nearer = SwimSpeedRules.Breakout(p.OutDist.Value, time, p.NextSpeed.Value, k, least);
-            if (!(nearer < p.OutDist.Value))
+            if (!SwimSpeedRules.SlowerAfterBreakout(p.OutDist.Value, time, p.NextSpeed.Value, k))
                 return;
 
-            p.OutForSpeeds = nearer;
+            p.SlowAfterBreakout = true;
             bool start = p.Kind == SwimPhaseKind.Start;
             AddRule(p, string.Format(CultureInfo.InvariantCulture,
-                SwimLang.T(start ? "έξοδος → 15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα 15 (κανόνας: όχι πιο αργά)"
-                    : "έξοδος → +15: {0:0.00} από τα σημάδια, γράφεται {1:0.00}, όσο η κολύμβηση μετά τα +15 (κανόνας: όχι πιο αργά)"),
-                (15 - p.OutDist.Value) * k / time, (15 - nearer) * k / time));
+                SwimLang.T(start ? "⚠ έξοδος → 15: {0:0.00}, πιο αργά από την κολύμβηση μετά τα 15 ({1:0.00}): χάνει ταχύτητα στην έξοδο ή η απόσταση εξόδου μετρήθηκε πιο μακριά (έλεγξέ τη με 📍)"
+                    : "⚠ έξοδος → +15: {0:0.00}, πιο αργά από την κολύμβηση μετά τα +15 ({1:0.00}): χάνει ταχύτητα στην έξοδο ή η απόσταση εξόδου μετρήθηκε πιο μακριά (έλεγξέ τη με 📍)"),
+                (15 - p.OutDist.Value) * k / time, p.NextSpeed.Value));
         }
 
         /// <summary>
@@ -1393,11 +1399,10 @@ namespace Kinovea.ScreenManager
     /// and on the video (SwimReel), each on its own times:
     /// 1. The breakout: from the breakout to the 15 (+15 after a wall) the swimmer is not slower than in the swimming after it (the
     ///    push-off still carries him; in the finals of a European championship, 303 turns with both times, the same speed on average).
-    ///    Slower is a breakout measured too far (a click on the head as it breaks the surface): the speeds take it nearer, where the
-    ///    speed to the 15 is the swimming's, however far that is (the analyst: «Πιο πάνω να είναι, πιο κάτω είναι λάθος»; 2.39.3 at
-    ///    most 0.5 m, and the video still dipped after some turns, up to 1 m too far; until 2.39.2 also at most 5% slower), only not
-    ///    nearer than a breakout can be (LeastOut from a wall, past the entry after the start). Faster than the swimming after it, as
-    ///    measured: never made faster.
+    ///    (2.41.1) A check, the analyst's choice («Μόνο έλεγχος»): slower, the speeds stay as measured and the panel and the reports
+    ///    warn (SlowerAfterBreakout: he loses speed at the breakout, or the breakout was measured too far). 2.38.6–2.41.0 the speeds took
+    ///    the breakout nearer, where the speed to the 15 was the swimming's («Πιο πάνω να είναι, πιο κάτω είναι λάθος»): from the head
+    ///    at the push-off (2.41.0) the turns of a 400 lost their speed after the push-off, the analyst saw it on the video.
     /// 2. The start: under the water after the push off a wall the swimmer is not faster than after the start (the dive gives more than
     ///    the wall), neither on average nor at the highest speed the video shows. Above it, the speed of the turn starts a little out
     ///    from the wall (where the head is at the push-off is between the wall and the body length), just so far that it is as the start.
@@ -1426,22 +1431,16 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// Rule 1: where the head comes out for the speeds (pool units from the wall): the distance measured (outDist), or nearer when the
-        /// speed from there to the 15 in timeTo15 (s) is below nextSpeed (m/s): where it is nextSpeed (2.39.4: however far; 2.39.3 at most
-        /// 0.5 m), unless that is nearer than 'least' (pool units: the marks are off, outDist). k: metres per pool unit. (2.39.3) As fast
-        /// to a millionth of a m/s (the same speed, other roundings of the times): as measured, no note.
+        /// Rule 1, a check (2.41.1): the speed from the breakout (outDist, pool units from the wall) to the 15 in timeTo15 (s) is below the
+        /// swimming after it (nextSpeed, m/s). k: metres per pool unit. (2.39.3) As fast to a millionth of a m/s (the same speed, other
+        /// roundings of the times): not slower.
         /// </summary>
-        public static double Breakout(double outDist, double timeTo15, double nextSpeed, double k, double least)
+        public static bool SlowerAfterBreakout(double outDist, double timeTo15, double nextSpeed, double k)
         {
             if (!(timeTo15 > 0) || !(nextSpeed > 0) || !(outDist > 0) || !(outDist < 15) || !(k > 0))
-                return outDist;
+                return false;
 
-            double speed = (15 - outDist) * k / timeTo15;
-            if (speed >= nextSpeed - 1e-6)
-                return outDist;
-
-            double nearer = 15 - nextSpeed * timeTo15 / k;
-            return nearer > 0 && nearer >= least - 1e-9 ? nearer : outDist;
+            return (15 - outDist) * k / timeTo15 < nextSpeed - 1e-6;
         }
 
         /// <summary>

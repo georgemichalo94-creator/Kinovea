@@ -333,7 +333,7 @@ var SwimV2 = (function () {
     const sp = [
       { a: 0, b: s.entryDist, v: s.sigEntryVel, txt: 'σήμα → είσοδος' },
       { a: s.entryDist, b: s.bd, v: s.entryBoVel, txt: 'είσοδος → έξοδος' },
-      { a: s.bd, b: 15, v: s.bo15Vel, txt: 'έξοδος → 15 μ.' }
+      { a: s.bd, b: 15, v: s.bo15Vel, txt: s.bo15Slow ? 'έξοδος → 15 μ. ⚠' : 'έξοδος → 15 μ.' }
     ];
     sp.forEach(z => {
       const cx = (X(z.a) + X(z.b)) / 2;
@@ -377,7 +377,7 @@ var SwimV2 = (function () {
       if (e.sub) g += `<text x="${x.toFixed(1)}" y="27" class="es" text-anchor="${anchor}">${esc(e.sub)}</text>`;
     });
     g += `<text x="${((X(0) + X(t.bd)) / 2).toFixed(1)}" y="116" class="ax" text-anchor="middle">στροφή ${o.fmt(t.turnTime)} s · υποβρύχια ${o.fmt(t.uw)} s${isNum(t.vUw) ? ' · ' + t.vUw.toFixed(2) + ' m/s' : ''}</text>`;
-    if (isNum(t.vBo15)) g += `<text x="${((X(t.bd) + X(15)) / 2).toFixed(1)}" y="116" class="ax" text-anchor="middle">${t.vBo15.toFixed(2)} m/s</text>`;
+    if (isNum(t.vBo15)) g += `<text x="${((X(t.bd) + X(15)) / 2).toFixed(1)}" y="116" class="ax" text-anchor="middle">${t.vBo15.toFixed(2)} m/s${t.bo15Slow ? ' ⚠' : ''}</text>`;
     return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" class="chart">${g}</svg>`;
   }
 
@@ -925,6 +925,9 @@ var SwimV2 = (function () {
   let footText = 'Kinovea Swim · Ανάλυση αγώνα';
   const foot = (n, N) => `<div class="pf"><span>${esc(footText)}</span><span>Σελίδα ${n} από ${N}</span></div>`;
   const section = (t, s) => `<div class="sec"><div class="sec-t">${esc(t)}</div>${s ? `<div class="sec-s">${s}</div>` : ''}</div>`;
+  // (2.27.1) The check of the breakout (Kinovea 2.41.1, the analyst's rule 1 as a check): the speed from the breakout to the 15 (+15)
+  // below the swimming after it, as measured, with a ⚠ and this line.
+  const slowNote = what => `<div class="warn">⚠ ${esc(what)}: πιο αργά από την κολύμβηση μετά (χάνει ταχύτητα στην έξοδο ή η απόσταση εξόδου μετρήθηκε πιο μακριά).</div>`;
   const page = (I, title, body, n, N, first) => `<div class="page${first ? ' p1' : ''}">${first ? '' : head(I, title)}${body}${foot(n, N)}</div>`;
   /** Capitals without the accents (as Greek is written in capitals). */
   const upper = s => String(s || '').toUpperCase().replace(/[ΆΈΉΊΌΎΏ]/g, ch0 => ({ 'Ά': 'Α', 'Έ': 'Ε', 'Ή': 'Η', 'Ί': 'Ι', 'Ό': 'Ο', 'Ύ': 'Υ', 'Ώ': 'Ω' })[ch0]);
@@ -1555,7 +1558,7 @@ var SwimV2 = (function () {
       ['Χρόνος ως την έξοδο', 'bt', 's', 'none', 2],
       ['Απόσταση εξόδου (κεφάλι)', 'bd', I.uu.trim(), 'higher', 2],
       ['Ταχύτητα είσοδος → έξοδος', 'entryBoVel', 'm/s', 'higher', 2],
-      ['Ταχύτητα έξοδος → 15', 'bo15Vel', 'm/s', 'higher', 2],
+      [a.bo15Slow ? 'Ταχύτητα έξοδος → 15 ⚠' : 'Ταχύτητα έξοδος → 15', 'bo15Vel', 'm/s', 'higher', 2],
       ['Χρόνος 15' + I.u, 't15', 's', 'lower', 2]
     ];
     return `<table class="tbl sm"><thead><tr><th>Εκκίνηση</th><th>Αγώνας</th><th>${esc(I.pbShort)}</th><th>Αναφορά</th><th>Δ ${esc(I.pbShort)}</th><th>Δ Αναφ.</th></tr></thead><tbody>
@@ -1578,12 +1581,12 @@ var SwimV2 = (function () {
     // The strip of the start along the 15: with the entry and the breakout measured on the video (in their order).
     const st = a.start;
     if (ok(st.entryDist) && ok(st.bd) && st.entryDist > 0 && st.bd > st.entryDist && st.bd < 15) body += `<div class="box">${ch.startStrip({ w: W - 26, s: st, fmt: v => F(v) }).replace(/ μ\.</g, I.yd ? ' yd<' : ' μ.<')}</div>`;
-    body += `<div class="box">${startTable(x, I)}</div>`;
+    body += `<div class="box">${startTable(x, I)}${st.bo15Slow ? slowNote('Έξοδος → 15' + I.u) : ''}</div>`;
     const single = tA.length === 1 && !I.relay;
     if (single) {
       const t = tA[0], tb = realTurns(x.pb)[0], tc = realTurns(x.ref)[0];
       body += section(`Στροφή στα ${t.wall}${I.u}`, 'Από 5 πριν ως 15 μετά τον τοίχο.');
-      if (ok(t.bd) && t.bd > 0 && t.bd < 15) body += `<div class="box">${ch.turnStrip({ w: W - 26, t: Object.assign({}, t, { bd: t.bd }), fmt: v => F(v) }).replace(/ μ\.</g, I.yd ? ' yd<' : ' μ.<')}</div>`;
+      if (ok(t.bd) && t.bd > 0 && t.bd < 15) body += `<div class="box">${ch.turnStrip({ w: W - 26, t: Object.assign({}, t, { bd: t.bd }), fmt: v => F(v) }).replace(/ μ\.</g, I.yd ? ' yd<' : ' μ.<')}${t.bo15Slow ? slowNote('Έξοδος → +15' + I.u) : ''}</div>`;
       const kicksNote = ok(t.kicks) ? `${t.kicks} δελφ.` + [[I.pbShort, tb.kicks], ['αναφ.', tc.kicks]].filter(p => ok(p[1])).map(p => `${p[0]} ${p[1]}`).join(', ').replace(/^(.+)$/, ' ($1)') : null;
       body += `<div class="tiles">${tile('−5/+15', F(t.inOut), ' s', t.inOut - tb.inOut, t.inOut - tc.inOut, 'lower', 2, null, I)}
         ${tile('Στροφή', F(t.turnTime), ' s', t.turnTime - tb.turnTime, t.turnTime - tc.turnTime, 'lower', 2, t.kind === 'flip' ? 'τελευταία χεριά → πόδια φεύγουν' : 'επαφή → πόδια φεύγουν', I)}
@@ -1617,7 +1620,7 @@ var SwimV2 = (function () {
     const kindName = t => t.kind === 'change' ? `${STYLE_NAME[t.styleIn]} → ${STYLE_NAME[t.styleOut]}` : t.kind === 'flip' ? 'Τούμπα' : 'Ανοιχτή';
     if (nT <= 16) {
       body += `<div class="box"><table class="tbl${nT > 8 ? ' sm' : ''}"><thead><tr><th>Τοίχος</th>${kindCol ? '<th>Είδος</th>' : ''}<th>−5 →<br>τοίχος</th><th>Στροφή</th><th>Υποβρύχια</th><th>Δελφ.</th><th>Έξοδος</th><th>Τοίχος<br>→ +15</th><th>−5/+15</th><th>Δ ${esc(I.pbShort)}</th><th>Δ Αναφ.</th></tr></thead><tbody>
-        ${tA.map((t, i) => `<tr><td class="l"><b>${t.wall}</b></td>${kindCol ? `<td class="l sm">${esc(kindName(t))}</td>` : ''}<td>${F(t.in5)}</td><td>${F(t.turnTime)}</td><td>${F(t.uw)}</td><td>${F(t.kicks, 0)}</td><td>${F(t.bd, 1)}</td><td>${F(t.out15)}</td><td><b>${F(t.inOut)}</b></td><td>${chip(t.inOut - (tB[i] ? tB[i].inOut : NaN), 'lower') || '–'}</td><td>${chip(t.inOut - (tC[i] ? tC[i].inOut : NaN), 'lower') || '–'}</td></tr>`).join('')}
+        ${tA.map((t, i) => `<tr><td class="l"><b>${t.wall}</b></td>${kindCol ? `<td class="l sm">${esc(kindName(t))}</td>` : ''}<td>${F(t.in5)}</td><td>${F(t.turnTime)}</td><td>${F(t.uw)}</td><td>${F(t.kicks, 0)}</td><td>${F(t.bd, 1)}${t.bo15Slow ? ' ⚠' : ''}</td><td>${F(t.out15)}</td><td><b>${F(t.inOut)}</b></td><td>${chip(t.inOut - (tB[i] ? tB[i].inOut : NaN), 'lower') || '–'}</td><td>${chip(t.inOut - (tC[i] ? tC[i].inOut : NaN), 'lower') || '–'}</td></tr>`).join('')}
         <tr class="tot"><td class="l">Μ.ο.</td>${kindCol ? '<td></td>' : ''}<td>${F(avg(tA, 'in5'))}</td><td>${F(avg(tA, 'turnTime'))}</td><td>${F(avg(tA, 'uw'))}</td><td>${F(avg(tA, 'kicks'), 1)}</td><td>${F(avg(tA, 'bd'), 1)}</td><td>${F(avg(tA, 'out15'))}</td><td><b>${F(avg(tA, 'inOut'))}</b></td><td>${chip(avg(tA, 'inOut') - avg(tB, 'inOut'), 'lower') || '–'}</td><td>${chip(avg(tA, 'inOut') - avg(tC, 'inOut'), 'lower') || '–'}</td></tr>
         </tbody></table></div>`;
     } else {
@@ -1635,6 +1638,9 @@ var SwimV2 = (function () {
         <tr class="tot"><td class="l">Όλες</td><td>${nT}</td><td>${F(avg(tA, 'in5'))}</td><td>${F(avg(tA, 'turnTime'))}</td><td>${F(avg(tA, 'kicks'), 1)}</td><td>${F(avg(tA, 'bd'), 1)}</td><td>${F(avg(tA, 'out15'))}</td><td><b>${F(avg(tA, 'inOut'))}</b></td><td>${chip(avg(tA, 'inOut') - avg(tB, 'inOut'), 'lower')}</td><td>${chip(avg(tA, 'inOut') - avg(tC, 'inOut'), 'lower')}</td></tr>
         </tbody></table></div>`;
     }
+    // (2.27.1) The turns whose breakout → +15 was slower than the swimming after it (⚠, Kinovea 2.41.1).
+    const slowWalls = tA.filter(t => t.bo15Slow).map(t => t.wall);
+    if (slowWalls.length) body += slowNote((slowWalls.length === 1 ? 'Έξοδος → +15 στη στροφή ' : 'Έξοδος → +15 στις στροφές ') + slowWalls.join(', '));
     const cats = tA.map(t => String(t.wall));
     const every = nT > 32 ? 4 : nT > 16 ? 2 : 1;
     const ser = f => three(x, I, t => t[f], r => realTurns(r));
@@ -1925,6 +1931,8 @@ var SwimV2 = (function () {
       sigBoVel: ok(mn('signalBreakoutVel')) ? mn('signalBreakoutVel') : (ok(startDist) && startB > 0 ? startDist * k / startB : NaN),
       t15: num(s0.t15),
       bo15Vel: mn('breakout15Vel'),
+      // (2.27.1) The check of the breakout (Kinovea 2.41.1): slower to the 15 than the swimming after it (⚠).
+      bo15Slow: m.breakout15Slow === true,
       style: styleAt(Math.min(D, 1))
     };
 
@@ -1937,7 +1945,8 @@ var SwimV2 = (function () {
         uw: ok(num(mt.underwaterTime)) ? num(mt.underwaterTime) : num(t0.underwaterTime),
         kicks: ok(num(mt.kicks)) ? num(mt.kicks) : num(t0.kicks),
         bd: mt.underwaterEstimated ? NaN : num(mt.underwaterDist),
-        vUw: num(mt.uwSpeed), vBo15: num(mt.bo15Speed), lastGap: num(t0.lastStrokeGap), leg: legOf(w + 1), ex: kind === 'exchange' ? turnTime : NaN };
+        vUw: num(mt.uwSpeed), vBo15: num(mt.bo15Speed), bo15Slow: mt.bo15Slow === true, lastGap: num(t0.lastStrokeGap), leg: legOf(w + 1),
+        ex: kind === 'exchange' ? turnTime : NaN };
     });
     const turnAt = {};
     turns.forEach(t => { turnAt[t.wall] = t; });
@@ -2950,6 +2959,7 @@ var SwimV2 = (function () {
   .tbl th.g1 { background: #DDE6F6; color: #123B8A; text-align: center; } .tbl th.g2 { background: #E7EFFB; color: #2B5BA8; text-align: center; }
   .tbl td.sm { font-size: 9.6px; }
   .dim { color: #8A97A6; }
+  .warn { color: #B34700; font-size: 9.6px; line-height: 1.3; margin: 4px 2px 0; }
   .lgrow { display: flex; gap: 16px; margin: 6px 0 0 96px; font-size: 10.5px; color: ${C.text}; }
   .lgrow.c { margin: -2px 0 6px 0; justify-content: center; }
   .lgi { display: inline-flex; align-items: center; gap: 5px; } .lgi i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }

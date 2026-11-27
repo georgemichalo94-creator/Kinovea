@@ -180,10 +180,9 @@ $sh = (Reel $rs).Reel
 $headIn = 2.0 - (HeadOf $rs).BehindHands
 Check ([Math]::Abs($sh.DistanceAt(0.96) - $headIn) -lt 0.01) ('an analysis of the hands: the head behind them at the entry, ' + (F2 $sh.DistanceAt(0.96)) + ' (' + (F2 $headIn) + ')')
 
-# --- (2.38.6) The rule of the breakout (SwimSpeedRules.Breakout): out at 11.8 m at 4.6 s, to the 15 (6.30 s) 3.2 / 1.7 = 1.882 m/s,
-# 2.1% below the swimming after it (15–25: 10 / 5.2 = 1.923): the curve takes the breakout at 15 − 1.923 × 1.7 = 11.731 (the distance
-# shown stays 11.8), from it to the 15 at the speed of the swimming. (2.39.3) Out at 11.99 (7.9% below, 0.26 m too far): the same.
-# (2.39.4) Out at 12.30 (17% below, 0.57 m too far): the same too (2.39.3: as measured, more than 0.5 m).
+# --- (2.41.1) The rule of the breakout is a check, the analyst's choice: out at 11.8 m at 4.6 s, to the 15 (6.30 s) 3.2 / 1.7 = 1.882
+# m/s, below the swimming after it (15–25: 10 / 5.2 = 1.923): the curve takes the breakout where it was measured (2.38.6–2.41.0 at 15 −
+# 1.923 × 1.7 = 11.731, the speed under the water lower), from it to the 15 at 1.882. Out at 12.30 (17% below): as measured too.
 $rb = NewRace @(52.85) 4.6
 Mark $rb 'FeetOff' 0.62 $null
 Mark $rb 'Entry' 0.96 $null
@@ -192,17 +191,13 @@ $rb.EntryDistHead = 2.0
 $rb.BreakoutDist = 11.8
 $sb = (Reel $rb).Reel
 $next = 10 / (11.50 - 6.30)
-Check ([Math]::Abs($sb.DistanceAt(4.6) - (15 - $next * 1.7)) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 11.8) -lt 1e-9) ('the breakout of the curve at ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
+Check ([Math]::Abs($sb.DistanceAt(4.6) - 11.8) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 11.8) -lt 1e-9) ('the breakout of the curve where it was measured: ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
 $toIt = (15 - $sb.DistanceAt(4.6)) / (6.30 - 4.6)
-Check ([Math]::Abs($toIt - $next) -lt 0.005 -and [Math]::Abs($sb.SpeedAt(4.62) - $next) -lt 0.03) ('from it to the 15 ' + (F2 $toIt) + ' m/s, just after it ' + (F2 $sb.SpeedAt(4.62)) + ', as the 15-25 ' + (F2 $next))
-$rb.BreakoutDist = 11.99
-$sb = (Reel $rb).Reel
-Check ([Math]::Abs($sb.DistanceAt(4.6) - (15 - $next * 1.7)) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 11.99) -lt 1e-9) ('7.9% below, 0.26 m: the breakout of the curve at ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
+$uwIt = ($sb.DistanceAt(4.6) - $sb.DistanceAt(0.96)) / (4.6 - 0.96)
+Check ([Math]::Abs($toIt - 3.2 / 1.7) -lt 0.005 -and $toIt -lt $next -and [Math]::Abs($uwIt - (11.8 - 2.0) / 3.64) -lt 0.005) ('from it to the 15 as measured ' + (F2 $toIt) + ' m/s (15-25 ' + (F2 $next) + '), under the water ' + (F2 $uwIt) + ' as the panel')
 $rb.BreakoutDist = 12.30
 $sb = (Reel $rb).Reel
-Check ([Math]::Abs($sb.DistanceAt(4.6) - (15 - $next * 1.7)) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 12.30) -lt 1e-9) ('17% below, 0.57 m: the breakout of the curve at ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
-$toIt = (15 - $sb.DistanceAt(4.6)) / (6.30 - 4.6)
-Check ([Math]::Abs($toIt - $next) -lt 0.005) ('from it to the 15 as the swimming after it, no dip: ' + (F2 $toIt) + ' m/s (15-25 ' + (F2 $next) + ')')
+Check ([Math]::Abs($sb.DistanceAt(4.6) - 12.30) -lt 0.01) ('17% below: the breakout of the curve where it was measured, ' + (F2 $sb.DistanceAt(4.6)) + ' m')
 
 # --- (2.38.6) The rule of the start (SwimSpeedRules.PushAway): (2.41.0) both from the head. The start: the head in at 2.0 m (0.96 s),
 # out at 9.8 m at 4.0 s: 7.8 / 3.04 = 2.566 m/s, to the 15 2.26, the highest on the video about 2.74. A turn pushed off at 26.40 and out at
