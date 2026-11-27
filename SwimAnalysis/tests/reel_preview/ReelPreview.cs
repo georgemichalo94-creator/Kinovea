@@ -166,6 +166,78 @@ public static class ReelPreview
         return race;
     }
 
+    /// <summary>
+    /// (2.40.0) 400 m freestyle, long course: the chart of the long events (200 of the race at a time, moving with the swimmer, the
+    /// whole race after the finish) and the ΔΑΚ of each 50. Fictional times.
+    /// </summary>
+    public static SwimRace Freestyle400()
+    {
+        SwimRace race = new SwimRace();
+        race.Athlete = "ΔΟΚΙΜΑΣΤΙΚΟΣ ΑΘΛΗΤΗΣ";
+        race.AthleteGender = "Ανδρών";
+        race.Lane = 4;
+        race.Style = "fs";
+        race.Distance = 400;
+        race.Pool = 50;
+        race.Competition = "Δοκιμή γραφικών";
+        race.Checkpoints = SwimPresets.DefaultCheckpoints(400, 50, false);
+        race.StartTimestamp = Ts(0);
+        race.EntryDistHands = 3.6;
+        race.BreakoutDist = 11.2;
+
+        Add(race, SwimMarkType.Reaction, 0.60, 0);
+        Add(race, SwimMarkType.FeetOff, 0.72, 0);
+        Add(race, SwimMarkType.Entry, 1.05, 0);
+        foreach (double k in new double[] { 1.50, 1.95, 2.40, 2.85, 3.30 })
+            Add(race, SwimMarkType.Kick, k, 0);
+        Add(race, SwimMarkType.Breakout, 4.25, 0);
+
+        double[] walls = { 26.90, 56.30, 85.80, 115.10, 144.20, 172.70, 201.10, 229.20 };
+        double[] firstLap = { 0, 6.15, 11.85, 17.75, 23.65 };
+        double[] lap = { 0, 7.95, 13.95, 20.05, 26.10 };
+        int[] at = { 0, 15, 25, 35, 45 };
+        foreach (int d in race.Checkpoints)
+        {
+            int l = (d - 1) / 50, x = d - 50 * l;
+            double from = l == 0 ? 0 : walls[l - 1];
+            double t;
+            if (x == 50)
+                t = walls[l];
+            else
+            {
+                int i = Array.IndexOf(at, x);
+                t = from + (i >= 0 ? (l == 0 ? firstLap[i] : lap[i]) : (l == 0 ? firstLap[4] : lap[4]) * x / 45.0);
+            }
+
+            Add(race, SwimMarkType.Split, t, d);
+        }
+
+        List<double> breakouts = new List<double> { 4.25 };
+        for (int w = 0; w < walls.Length - 1; w++)
+        {
+            double wt = walls[w];
+            Add(race, SwimMarkType.FeetOff, wt + 0.26, 0);
+            foreach (double k in new double[] { 0.75, 1.20, 1.65, 2.10 })
+                Add(race, SwimMarkType.Kick, wt + k, 0);
+            Add(race, SwimMarkType.Breakout, wt + 2.55 + 0.04 * (w % 3), 0);
+            breakouts.Add(wt + 2.55 + 0.04 * (w % 3));
+            SwimTurnManual turn = race.GetTurn(50 * (w + 1), true);
+            turn.UnderwaterDist = 6.2 + 0.15 * (w % 3);
+        }
+
+        // Strokes (each arm): a little shorter cycles in the second half, the ΔΑΚ rising.
+        for (int l = 0; l < walls.Length; l++)
+        {
+            double end = walls[l];
+            double step = 0.74 - 0.012 * l;
+            for (double t = breakouts[l] + 0.2; t < end - 0.55; t += step)
+                Add(race, SwimMarkType.Stroke, t, 0);
+        }
+
+        race.Tracks.Add(Track(140.0, 150.0, 520, 1460, 610, 84));
+        return race;
+    }
+
     private static List<Frame> Frames(SwimRace fly, SwimRace free)
     {
         List<Frame> frames = new List<Frame>();
@@ -242,6 +314,25 @@ public static class ReelPreview
         }
 
         List<Frame> frames = Frames(fly, free);
+        try
+        {
+            // (2.40.0) The long events: 200 of the race at a time (from the start, moving, at the end), the whole race after the finish.
+            SwimRace long400 = Freestyle400();
+            computed[long400] = SwimCalculator.Compute(long400, timing, 0.5);
+            reels[long400] = SwimReel.Build(long400, computed[long400]);
+            foreach (double t in new double[] { 60.0, 160.0, 185.0, 222.0, 229.8 })
+                frames.Add(new Frame { Name = string.Format(ci, "fs400-{0:000.0}", t), Race = long400, Time = t, Width = 960, Height = 540 });
+            frames.Add(new Frame { Name = "fs400-160.0-small", Race = long400, Time = 160.0, Width = 640, Height = 360 });
+            StringBuilder dak = new StringBuilder();
+            foreach (SwimBlock b in computed[long400].Blocks)
+                dak.AppendLine(string.Format(ci, "{0}-{1}: ΔΑΚ {2}", b.From, b.To, b.Dak.HasValue ? b.Dak.Value.ToString("0.00", ci) : "-"));
+            File.WriteAllText(Path.Combine(folder, "dak400.txt"), dak.ToString(), Encoding.UTF8);
+        }
+        catch (Exception e)
+        {
+            errors.AppendLine("400 m freestyle: " + e);
+        }
+
         try
         {
             // The 100 m backstroke against the fictional final: the board and the Δ of the technical view.

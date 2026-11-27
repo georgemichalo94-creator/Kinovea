@@ -1480,6 +1480,10 @@ namespace Kinovea.ScreenManager
                     int wall = manager.CurrentTurnWall;
                     title = wall > 0 ? SwimLang.T("ΣΤΡΟΦΗ ") + wall.ToString(CultureInfo.InvariantCulture) + race.Unit.ToUpperInvariant() : SwimLang.T("ΣΤΡΟΦΗ");
                     SwimTurnComputed turn = c.Turns.FirstOrDefault(t => t.Wall == wall);
+                    // (2.40.0, the analyst's request) The last stroke before the wall first, as the turn goes (as row 1 of the panel's turn): a
+                    // stroke (C) like «Χεριά» below; its figure the time from it to the wall.
+                    list.Add(B("last-stroke", PlayerScreenCommands.SwimStroke, SwimLang.T("Τελ. χεριά"), turn != null ? Seconds(turn.LastStrokeGap) : null,
+                        SwimLang.T("Η τελευταία χεριά πριν τον τοίχο (C), στο καρέ που μπαίνει το χέρι: ο αριθμός είναι ο χρόνος από αυτήν ως τον τοίχο.")));
                     list.Add(B("pushoff", PlayerScreenCommands.SwimFeetOff, SwimLang.T("Αποκόλληση"), turn != null ? Seconds(turn.TurnTime) : null,
                         SwimLang.T("Τα πόδια φεύγουν από τον τοίχο.")));
                     list.Add(B("kick", PlayerScreenCommands.SwimKick, SwimLang.T("Δελφινισμός"), turn != null ? Count(turn.Kicks) : null,

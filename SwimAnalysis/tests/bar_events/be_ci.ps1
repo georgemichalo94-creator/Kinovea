@@ -583,6 +583,9 @@ if ($out) {
         foreach ($b in $buttons) { if ([string]$fId.GetValue($b) -eq 'breakout') { $side = $fSide.GetValue($b) } }
         $got = $(if ($null -ne $side) { [string]$fId.GetValue($side) + ' ' + [string]$fValue.GetValue($side) } else { 'none' })
         Check ($got -eq 'measure-turn 8.40') ('the 📍 of the tab of the turn before the first wall: the first turn, ' + $got + ' (measure-turn 8.40)')
+        # (2.40.0) The last stroke before the wall first in the tab of the turn, as the turn goes (the analyst's request).
+        $order = @($buttons | ForEach-Object { [string]$fId.GetValue($_) }) -join ','
+        Check ($order.StartsWith('last-stroke,pushoff,kick,breakout,stroke')) ('the tab of the turn: ' + $order)
         # The tab of the turn shown (as after a click on it), its picture.
         $tBar.GetField('manualFrom', $all).SetValue($leftBar, 0)
         $tBar.GetField('manualTab', $all).SetValue($leftBar, 2)

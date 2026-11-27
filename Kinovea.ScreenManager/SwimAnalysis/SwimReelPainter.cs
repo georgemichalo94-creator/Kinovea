@@ -77,7 +77,8 @@ namespace Kinovea.ScreenManager
             /// </summary>
             public RectangleF Swimmer;
 
-            public Layout(Size size)
+            /// <summary>(2.40.0) longEvent: the chart a little taller for the whole race under it (SwimReelPainter.LongEvent).</summary>
+            public Layout(Size size, bool longEvent = false)
             {
                 W = size.Width;
                 H = size.Height;
@@ -91,14 +92,15 @@ namespace Kinovea.ScreenManager
                 float chartW = Math.Min(560 * K, W - 3 * M - headerW);
                 BadgeW = Math.Min(250 * K, W - 2 * M);
                 BadgeX = W - M - BadgeW;
+                // (2.40.0) Taller for the ΔΑΚ under the speed (132 and 118 until 2.39), and for the whole race under it in the long events.
                 if (landscape && chartW >= 300 * K)
                 {
-                    Chart = new RectangleF(W - M - chartW, M, chartW, 132 * K);
+                    Chart = new RectangleF(W - M - chartW, M, chartW, (longEvent ? 176 : 158) * K);
                 }
                 else
                 {
                     // Narrow or portrait images: the chart under the header and its phase.
-                    Chart = new RectangleF(M, Header.Bottom + 42 * K, Math.Min(headerW, W - 2 * M), 118 * K);
+                    Chart = new RectangleF(M, Header.Bottom + 42 * K, Math.Min(headerW, W - 2 * M), (longEvent ? 162 : 144) * K);
                 }
 
                 BadgeY = Chart.Bottom + 10 * K;
@@ -127,7 +129,7 @@ namespace Kinovea.ScreenManager
 
             // (2.9.4) The boards stay whole over the swimmer (the analyst's choice: they go with the boxes «Στο βίντεο» or V; the HUD
             // keeps the swimmer in front): Layout.Swimmer stays empty, so nothing fades.
-            Layout layout = new Layout(size);
+            Layout layout = new Layout(size, LongEvent(s.Race));
             if (s.SummaryOnly)
             {
                 if (s.Reel.Finish.HasValue)
@@ -163,7 +165,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             if (s.Time >= SummaryStart(s))
-                DrawSummary(g, s, new Layout(size), false);
+                DrawSummary(g, s, new Layout(size, LongEvent(s.Race)), false);
         }
 
         /// <summary>After the touch the board of the final comes first (when there is one), then the summary card.</summary>
@@ -487,8 +489,12 @@ namespace Kinovea.ScreenManager
         /// <summary>
         /// (2.31.0) The whole race, from the start to the finish (before: the cycles of the current length). Above, the speed of the curve
         /// through the checkpoints up to now, the one of the card, also under the water after the start and each turn (the green bands),
-        /// broken at each wall, and the average speed of each segment passed in white, as the PDF; below, the distance of each cycle in
-        /// amber, as before; where the swimmer is, with its speed. After the finish the whole race.
+        /// broken at each wall, and the average speed of each segment passed in white, as the PDF; where the swimmer is, with its speed.
+        /// After the finish the whole race. (2.40.0, the analyst's request) Below, instead of the distance of each cycle, the ΔΑΚ of each
+        /// 50 at the middle of its window (+15 to the wall), as the PDF: blue better than the mean of the 50s up to there, orange worse,
+        /// the mean dashed; in the 50 the swimmer is in, its ΔΑΚ up to now (≈, from 10 of its window on). The long events (over
+        /// WindowSpan: the 400, the 800, the 1500) show WindowSpan of the race at a time, moving with the swimmer (he stays at WindowLead
+        /// of the width), with the whole race under it and the part shown; the whole race after the finish.
         /// </summary>
         private static void DrawChartOn(Graphics g, SwimReelScene s, Layout L)
         {
@@ -498,21 +504,44 @@ namespace Kinovea.ScreenManager
             RectangleF r = L.Chart;
             Card(g, r, athlete, k);
             bool finished = reel.Finish.HasValue && t >= reel.Finish.Value - reel.FrameSlack - 1e-6;
+            double total = s.Race.Distance;
+            if (total <= 0)
+                return;
 
-            // Title and legend (the legend where it does not reach the title).
+            bool showSwimmer = t >= 0 && !finished;
+            double now = showSwimmer ? reel.DistanceAt(t) : 0;
+            bool longEvent = LongEvent(s.Race);
+            double x0 = 0, x1 = total;
+            if (longEvent && !finished)
+            {
+                x0 = Math.Max(0, Math.Min(total - WindowSpan, now - WindowLead * WindowSpan));
+                x1 = x0 + WindowSpan;
+            }
+
+            bool window = x1 - x0 < total - 1e-6;
+            List<SwimBlock> blocks = s.Computed.Blocks.Where(b => b.Dak.HasValue && b.To <= total).OrderBy(b => b.From).ToList();
+            bool dak = blocks.Count > 0;
+
+            // Title (the part of the race shown, in the long events) and legend (where it does not reach the title).
             Font titleFont = F(8.25f, k, false, FontStyle.Bold);
-            float titleRight = r.Left + 16 * k + Caps(g, SwimLang.Upper(SwimLang.T("ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ")), titleFont,
-                SwimTheme.AccentLight, r.Left + 16 * k, r.Top + 8 * k);
+            string title = window
+                ? string.Format(CultureInfo.InvariantCulture, "{0:0} → {1:0} {2}", Math.Floor(x0), Math.Floor(x0) + WindowSpan, UnitCaps(s.Race))
+                : SwimLang.Upper(SwimLang.T("ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ"));
+            float titleRight = r.Left + 16 * k + Caps(g, title, titleFont, SwimTheme.AccentLight, r.Left + 16 * k, r.Top + 8 * k);
             Font legend = F(7.25f, k);
-            string speedLegend = SwimLang.T("ταχύτητα m/s"), averageLegend = SwimLang.T("μέση τμήματος"), distanceLegend = SwimLang.T("απόσταση/κύκλο m");
-            float distanceX = r.Right - 14 * k - Width(g, distanceLegend, legend);
-            float averageX = distanceX - 26 * k - Width(g, averageLegend, legend);
+            string speedLegend = SwimLang.T("ταχύτητα m/s"), averageLegend = SwimLang.T("μέση τμήματος"), dakLegend = SwimLang.T("ΔΑΚ (↓ καλύτερα)");
+            float dakX = r.Right - 14 * k - (dak ? Width(g, dakLegend, legend) : 0);
+            float averageX = (dak ? dakX - 26 * k : r.Right - 14 * k) - Width(g, averageLegend, legend);
             float speedX = averageX - 28 * k - Width(g, speedLegend, legend);
             if (speedX - 14 * k > titleRight + 10 * k)
             {
-                Text(g, distanceLegend, legend, SwimTheme.Amber, distanceX, r.Top + 9 * k);
-                using (SolidBrush b = new SolidBrush(SwimTheme.Amber))
-                    g.FillRectangle(b, distanceX - 12 * k, r.Top + 11 * k, 8 * k, 9 * k);
+                if (dak)
+                {
+                    Text(g, dakLegend, legend, SwimTheme.Amber, dakX, r.Top + 9 * k);
+                    using (SolidBrush b = new SolidBrush(SwimTheme.Amber))
+                        g.FillEllipse(b, dakX - 12 * k, r.Top + 12 * k, 8 * k, 8 * k);
+                }
+
                 Text(g, averageLegend, legend, segmentAverage, averageX, r.Top + 9 * k);
                 using (SolidBrush b = new SolidBrush(segmentAverage))
                     g.FillRectangle(b, averageX - 15 * k, r.Top + 14.5f * k, 11 * k, 2.5f * k);
@@ -521,15 +550,21 @@ namespace Kinovea.ScreenManager
                     g.FillEllipse(b, speedX - 12 * k, r.Top + 12 * k, 8 * k, 8 * k);
             }
 
-            RectangleF plot = new RectangleF(r.Left + 40 * k, r.Top + 30 * k, r.Width - 40 * k - 16 * k, r.Height - 30 * k - 22 * k);
-            double total = s.Race.Distance;
-            if (plot.Width < 40 || plot.Height < 30 || total <= 0)
+            // The speed above, the ΔΑΚ below; under them the distances and, in the long events, the whole race.
+            RectangleF plot = new RectangleF(r.Left + 40 * k, r.Top + 30 * k, r.Width - 40 * k - 16 * k, r.Height - 30 * k - (longEvent ? 40 : 22) * k);
+            if (plot.Width < 40 || plot.Height < 30)
                 return;
 
-            Func<double, float> X = d => plot.Left + (float)(Math.Max(0, Math.Min(total, d)) / total * plot.Width);
+            float gap = dak ? 7 * k : 0;
+            float speedH = dak ? (plot.Height - gap) * 0.6f : plot.Height;
+            RectangleF speedBand = new RectangleF(plot.Left, plot.Top, plot.Width, speedH);
+            RectangleF dakBand = dak ? new RectangleF(plot.Left, speedBand.Bottom + gap, plot.Width, plot.Bottom - speedBand.Bottom - gap) : RectangleF.Empty;
+            double span = x1 - x0;
+            Func<double, float> X = d => plot.Left + (float)((d - x0) / span * plot.Width);
+            Func<double, bool> inView = d => d >= x0 - 1e-6 && d <= x1 + 1e-6;
 
             // One scale for the whole race, so that it does not move during the video: the line and the averages of the segments (an even
-            // number of tenths, the middle line on a tenth).
+            // number of tenths, the middle line on a tenth); the ΔΑΚ from its 50s (halves).
             List<double> values = reel.Samples.Select(p => p.Speed)
                 .Concat(s.Computed.Rows.Where(row => row.Vel.HasValue).Select(row => row.Vel.Value))
                 .Where(v => v > 0.3 && v < 3.6).ToList();
@@ -545,10 +580,23 @@ namespace Kinovea.ScreenManager
             if ((int)Math.Round((vmax - vmin) * 10) % 2 == 1)
                 vmax += 0.1;
 
-            // The speed in the upper part, the distance of the cycles in the lower one (as the chart of the cycles before).
-            float topH = plot.Height * 0.58f;
-            float barH = plot.Height - topH - 6 * k;
-            Func<double, float> Y = v => plot.Top + (float)((vmax - Math.Max(vmin, Math.Min(vmax, v))) / (vmax - vmin) * topH);
+            Func<double, float> Y = v => speedBand.Top + (float)((vmax - Math.Max(vmin, Math.Min(vmax, v))) / (vmax - vmin) * speedBand.Height);
+            double dmin = 0, dmax = 1;
+            if (dak)
+            {
+                double lo = blocks.Min(b => b.Dak.Value), hi = blocks.Max(b => b.Dak.Value);
+                dmin = Math.Floor((lo - 0.15) * 2) / 2;
+                dmax = Math.Ceiling((hi + 0.15) * 2) / 2;
+                if (dmax - dmin < 1)
+                {
+                    double mid = 0.5 * (dmin + dmax);
+                    dmin = Math.Floor((mid - 0.5) * 2) / 2;
+                    dmax = dmin + 1;
+                }
+            }
+
+            float dakTop = dakBand.Top + 11 * k, dakSpan = Math.Max(4 * k, dakBand.Height - 15 * k);
+            Func<double, float> YD = v => dakTop + (float)((dmax - Math.Max(dmin, Math.Min(dmax, v))) / (dmax - dmin) * dakSpan);
             Font axis = F(6.75f, k);
             using (Pen grid = new Pen(Color.FromArgb(38, SwimTheme.Accent), Math.Max(1f, 0.8f * k)))
             {
@@ -559,132 +607,205 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            // (No figure for the scale of the cycles: it fell on the lowest of the speed; the card gives the distance of the last cycle.)
-            double dpsTop = DpsScale(reel.Cycles.Select(c => c.ShownDps));
-
-            // Where the swimmer is: its tag under the chart's line (the labels give way to it).
-            bool showSwimmer = t >= 0 && !finished;
-            double now = showSwimmer ? reel.DistanceAt(t) : 0;
+            // Where the swimmer is: its tag under the chart, over the distances (they give way to it).
             float xs = X(now);
             string tagText = now.ToString("0.0", CultureInfo.InvariantCulture) + " " + Unit(s.Race);
             Font tagFont = F(7.5f, k, false, FontStyle.Bold);
             float tagW = Width(g, tagText, tagFont) + 12 * k;
             float tagX = Math.Max(plot.Left + tagW / 2, Math.Min(plot.Right - tagW / 2, xs));
-            RectangleF tag = showSwimmer ? new RectangleF(tagX - tagW / 2, plot.Bottom - 18 * k, tagW, 16 * k) : RectangleF.Empty;
+            RectangleF tag = showSwimmer ? new RectangleF(tagX - tagW / 2, plot.Bottom + 2 * k, tagW, 16 * k) : RectangleF.Empty;
             List<RectangleF> taken = new List<RectangleF>();
-            if (showSwimmer)
-                taken.Add(tag);
 
-            // The underwater parts (after the start from the entry, after a turn from the wall, to the breakout): green, growing with the
-            // swimmer while he is under the water.
+            List<SwimRow> rows = s.Computed.Rows.Where(row => row.D > 0 && row.D <= total).OrderBy(row => row.D).ToList();
+            List<SwimRow> steps = rows.Where(row => row.Vel.HasValue && row.D > row.PrevD && row.PassedAt(t) && row.D > x0 && row.PrevD < x1).ToList();
             Font small = F(6.75f, k, false, FontStyle.Bold);
             float smallH = small.GetHeight(g);
-            string underwaterText = SwimLang.T("ΥΠΟΒΡΥΧΙΑ");
-            using (SolidBrush band = new SolidBrush(Color.FromArgb(36, SwimTheme.Green)))
+            GraphicsState clipState = g.Save();
+            g.SetClip(new RectangleF(plot.Left, plot.Top - 2 * k, plot.Width, plot.Height + 4 * k), CombineMode.Intersect);
+            try
             {
-                foreach (SwimReelSpan span in reel.UnderwaterSpans)
+                // The underwater parts (after the start from the entry, after a turn from the wall, to the breakout): green, growing with the
+                // swimmer while he is under the water.
+                string underwaterText = SwimLang.T("ΥΠΟΒΡΥΧΙΑ");
+                using (SolidBrush band = new SolidBrush(Color.FromArgb(36, SwimTheme.Green)))
                 {
-                    if (!finished && t < span.From)
-                        continue;
-
-                    double right = finished || t >= span.To ? span.ToDistance : Math.Max(span.FromDistance, Math.Min(span.ToDistance, now));
-                    float xa = X(span.FromDistance), xb = X(right);
-                    if (xb - xa < 0.5f)
-                        continue;
-
-                    g.FillRectangle(band, xa, plot.Top, xb - xa, plot.Height);
-                    float lw = Width(g, underwaterText, small);
-                    RectangleF box = new RectangleF(xa + 4 * k, plot.Bottom - 3 * k - smallH, lw + 2 * k, smallH);
-                    if (xb - xa > lw + 8 * k && !taken.Any(o => o.IntersectsWith(box)))
-                        Text(g, underwaterText, small, SwimTheme.Green, box.Left + box.Width / 2, box.Top, StringAlignment.Center);
-                }
-            }
-
-            // The checkpoints: a dashed line (amber once passed; none where they are too close), each wall a white line with «ΣΤΡΟΦΗ» on its
-            // left where it fits.
-            List<SwimRow> rows = s.Computed.Rows.Where(row => row.D > 0 && row.D <= total).OrderBy(row => row.D).ToList();
-            bool dense = rows.Count > 0 && plot.Width / rows.Count < 7 * k;
-            string turnText = SwimLang.Upper(SwimLang.T("ΣΤΡΟΦΗ"));
-            float turnW = SwimTheme.TrackedWidth(g, turnText, small, 0.1f);
-            float lastTurn = plot.Left;
-            using (Pen passed = new Pen(Color.FromArgb(220, SwimTheme.Amber), Math.Max(1f, 0.9f * k)) { DashStyle = DashStyle.Dash })
-            using (Pen coming = new Pen(Color.FromArgb(150, SwimTheme.Faint), Math.Max(1f, 0.9f * k)) { DashStyle = DashStyle.Dash })
-            using (Pen wallPassed = new Pen(Color.FromArgb(225, SwimTheme.Text), Math.Max(1f, 1.4f * k)))
-            using (Pen wallComing = new Pen(Color.FromArgb(150, SwimTheme.Faint), Math.Max(1f, 1.4f * k)))
-            {
-                foreach (SwimRow row in rows)
-                {
-                    if (row.D >= total)
-                        continue;
-
-                    bool wall = row.D % reel.Pool == 0;
-                    bool done = row.PassedAt(t);
-                    float x = X(row.D);
-                    if (!wall)
+                    foreach (SwimReelSpan sp in reel.UnderwaterSpans)
                     {
-                        if (!dense)
-                            g.DrawLine(done ? passed : coming, x, plot.Top, x, plot.Bottom);
-                        continue;
-                    }
+                        if (!finished && t < sp.From)
+                            continue;
 
-                    g.DrawLine(done ? wallPassed : wallComing, x, plot.Top, x, plot.Bottom);
-                    RectangleF box = new RectangleF(x - 4 * k - turnW, plot.Top + 2 * k, turnW, smallH);
-                    if (box.Left > lastTurn + 4 * k)
-                    {
-                        Caps(g, turnText, small, done ? SwimTheme.Text : SwimTheme.Faint, x - 4 * k, plot.Top + 2 * k, true, 0.1f);
-                        taken.Add(box);
-                    }
+                        double right = finished || t >= sp.To ? sp.ToDistance : Math.Max(sp.FromDistance, Math.Min(sp.ToDistance, now));
+                        float xa = Math.Max(plot.Left, X(sp.FromDistance)), xb = Math.Min(plot.Right, X(right));
+                        if (xb - xa < 0.5f)
+                            continue;
 
-                    lastTurn = x;
-                }
-            }
-
-            // The distance of each cycle up to now (all after the finish): amber bars with a bright top edge.
-            List<SwimReelCycle> cycles = reel.Cycles.Where(c => finished || c.Time <= t + 1e-6).ToList();
-            using (LinearGradientBrush bar = new LinearGradientBrush(new RectangleF(plot.Left, plot.Bottom - barH - 1, Math.Max(1, plot.Width), barH + 2),
-                Color.FromArgb(175, SwimTheme.Amber), Color.FromArgb(60, SwimTheme.Amber), LinearGradientMode.Vertical))
-            using (Pen edge = new Pen(SwimTheme.Amber, Math.Max(1f, 1.4f * k)))
-            {
-                foreach (SwimReelCycle c in cycles)
-                {
-                    float xa = X(reel.DistanceAt(c.Start)), xb = X(reel.DistanceAt(c.Time));
-                    float pad = Math.Min(1.5f * k, (xb - xa) * 0.15f);
-                    float h = (float)(Math.Max(0, Math.Min(dpsTop, c.ShownDps)) / dpsTop * barH);
-                    if (xb - xa > 2 * pad + 0.5f && h > 0)
-                    {
-                        g.FillRectangle(bar, xa + pad, plot.Bottom - h, xb - xa - 2 * pad, h);
-                        g.DrawLine(edge, xa + pad, plot.Bottom - h, xb - pad, plot.Bottom - h);
+                        g.FillRectangle(band, xa, speedBand.Top, xb - xa, speedBand.Height);
+                        float lw = Width(g, underwaterText, small);
+                        RectangleF box = new RectangleF(xa + 4 * k, speedBand.Bottom - 3 * k - smallH, lw + 2 * k, smallH);
+                        if (xb - xa > lw + 8 * k && !taken.Any(o => o.IntersectsWith(box)))
+                            Text(g, underwaterText, small, SwimTheme.Green, box.Left + box.Width / 2, box.Top, StringAlignment.Center);
                     }
                 }
-            }
 
-            // The average speed of each segment passed (as the PDF): a white step.
-            List<SwimRow> steps = rows.Where(row => row.Vel.HasValue && row.D > row.PrevD && row.PassedAt(t)).ToList();
-            using (Pen step = new Pen(segmentAverage, Math.Max(1.5f, 2f * k)))
-            {
-                foreach (SwimRow row in steps)
+                // (2.40.0) The windows of the ΔΑΚ (+15 to the wall of each length), as far as the swimmer has come: a faint amber floor.
+                if (dak)
                 {
-                    float xa = X(row.PrevD) + 1.5f * k, xb = X(row.D) - 1.5f * k;
-                    if (xb > xa)
-                        g.DrawLine(step, xa, Y(row.Vel.Value), xb, Y(row.Vel.Value));
+                    using (SolidBrush floor = new SolidBrush(Color.FromArgb(14, SwimTheme.Amber)))
+                    using (Pen edge = new Pen(Color.FromArgb(110, SwimTheme.Amber), Math.Max(1f, 1.2f * k)))
+                    {
+                        foreach (SwimBlock b in blocks)
+                        {
+                            for (int w = b.From; w < b.To; w += reel.Pool)
+                            {
+                                double a = w + 15, e = Math.Min(w + reel.Pool, b.To);
+                                double right = finished ? e : Math.Min(e, now);
+                                if (e <= a || right <= a || e < x0 || a > x1)
+                                    continue;
+
+                                float xa = Math.Max(plot.Left, X(a)), xb = Math.Min(plot.Right, X(right));
+                                if (xb - xa < 0.5f)
+                                    continue;
+
+                                g.FillRectangle(floor, xa, dakBand.Top, xb - xa, dakBand.Height);
+                                g.DrawLine(edge, xa, dakBand.Bottom - 0.5f * k, xb, dakBand.Bottom - 0.5f * k);
+                            }
+                        }
+                    }
+                }
+
+                // The checkpoints: a dashed line over the speed (amber once passed; none where they are too close), each wall a white line
+                // over the speed and the ΔΑΚ with «ΣΤΡΟΦΗ» on its left where it fits.
+                List<SwimRow> shownRows = rows.Where(row => row.D < total && inView(row.D)).ToList();
+                bool dense = shownRows.Count > 0 && plot.Width / shownRows.Count < 7 * k;
+                string turnText = SwimLang.Upper(SwimLang.T("ΣΤΡΟΦΗ"));
+                float turnW = SwimTheme.TrackedWidth(g, turnText, small, 0.1f);
+                float lastTurn = plot.Left;
+                using (Pen passed = new Pen(Color.FromArgb(220, SwimTheme.Amber), Math.Max(1f, 0.9f * k)) { DashStyle = DashStyle.Dash })
+                using (Pen coming = new Pen(Color.FromArgb(150, SwimTheme.Faint), Math.Max(1f, 0.9f * k)) { DashStyle = DashStyle.Dash })
+                using (Pen wallPassed = new Pen(Color.FromArgb(225, SwimTheme.Text), Math.Max(1f, 1.4f * k)))
+                using (Pen wallComing = new Pen(Color.FromArgb(150, SwimTheme.Faint), Math.Max(1f, 1.4f * k)))
+                {
+                    foreach (SwimRow row in shownRows)
+                    {
+                        bool wall = row.D % reel.Pool == 0;
+                        bool done = row.PassedAt(t);
+                        float x = X(row.D);
+                        if (!wall)
+                        {
+                            if (!dense)
+                                g.DrawLine(done ? passed : coming, x, speedBand.Top, x, speedBand.Bottom);
+                            continue;
+                        }
+
+                        g.DrawLine(done ? wallPassed : wallComing, x, plot.Top, x, plot.Bottom);
+                        RectangleF box = new RectangleF(x - 4 * k - turnW, plot.Top + 2 * k, turnW, smallH);
+                        if (box.Left > lastTurn + 4 * k)
+                        {
+                            Caps(g, turnText, small, done ? SwimTheme.Text : SwimTheme.Faint, x - 4 * k, plot.Top + 2 * k, true, 0.1f);
+                            taken.Add(box);
+                        }
+
+                        lastTurn = x;
+                    }
+                }
+
+                // The average speed of each segment passed (as the PDF): a white step.
+                using (Pen step = new Pen(segmentAverage, Math.Max(1.5f, 2f * k)))
+                {
+                    foreach (SwimRow row in steps)
+                    {
+                        float xa = X(row.PrevD) + 1.5f * k, xb = X(row.D) - 1.5f * k;
+                        if (xb > xa)
+                            g.DrawLine(step, xa, Y(row.Vel.Value), xb, Y(row.Vel.Value));
+                    }
+                }
+
+                // The speed of the curve up to now (the whole race after the finish), one line per length.
+                List<SwimReelSample> shown = finished ? reel.Samples : reel.Samples.Where(p => p.Time <= t + 1e-6).ToList();
+                float width = Math.Max(1.5f, 2.2f * k);
+                using (Pen glow = new Pen(Color.FromArgb(60, SwimTheme.Accent), width * 3.2f) { LineJoin = LineJoin.Round })
+                using (Pen line = new Pen(SwimTheme.Accent, width) { LineJoin = LineJoin.Round })
+                {
+                    foreach (IGrouping<int, SwimReelSample> length in shown.GroupBy(p => p.Lap))
+                    {
+                        PointF[] points = length.Where(p => p.Distance >= x0 - 2 && p.Distance <= x1 + 2).Select(p => new PointF(X(p.Distance), Y(p.Speed))).ToArray();
+                        if (points.Length < 2)
+                            continue;
+
+                        g.DrawLines(glow, points);
+                        g.DrawLines(line, points);
+                    }
+                }
+
+                // (2.40.0) The ΔΑΚ of each 50 done: a line through them, the mean of them dashed, each with its figure above it.
+                if (dak)
+                {
+                    List<SwimBlock> done = blocks.Where(b => finished || Passed(s, b.To, t)).ToList();
+                    double? mean = done.Count >= 2 ? done.Average(b => b.Dak.Value) : (double?)null;
+                    if (mean.HasValue)
+                    {
+                        using (Pen dash = new Pen(Color.FromArgb(115, SwimTheme.Amber), Math.Max(1f, k)) { DashStyle = DashStyle.Dash })
+                            g.DrawLine(dash, plot.Left, YD(mean.Value), plot.Right, YD(mean.Value));
+                    }
+
+                    PointF[] through = done.Select(b => new PointF(X(DakMiddle(b)), YD(b.Dak.Value))).ToArray();
+                    if (through.Length >= 2)
+                    {
+                        using (Pen pen = new Pen(Color.FromArgb(225, SwimTheme.Amber), Math.Max(1.2f, 2f * k)) { LineJoin = LineJoin.Round })
+                            g.DrawLines(pen, through);
+                    }
+
+                    Font dakFont = F(window ? 7f : (done.Count > 12 ? 6.25f : 6.75f), k, false, FontStyle.Bold);
+                    float dakH = dakFont.GetHeight(g);
+                    foreach (SwimBlock b in done)
+                    {
+                        Color c = !mean.HasValue ? SwimTheme.Amber : b.Dak.Value <= mean.Value + 1e-9 ? dakBetter : dakWorse;
+                        float x = X(DakMiddle(b)), y = YD(b.Dak.Value);
+                        using (SolidBrush dot = new SolidBrush(c))
+                            g.FillEllipse(dot, x - 4.2f * k, y - 4.2f * k, 8.4f * k, 8.4f * k);
+                        using (Pen rim = new Pen(SwimTheme.Back, Math.Max(1f, 1.4f * k)))
+                            g.DrawEllipse(rim, x - 4.2f * k, y - 4.2f * k, 8.4f * k, 8.4f * k);
+                        string figure = b.Dak.Value.ToString("0.00", CultureInfo.InvariantCulture);
+                        float fw = Width(g, figure, dakFont);
+                        if (x - fw / 2 >= plot.Left && x + fw / 2 <= plot.Right)
+                            Text(g, figure, dakFont, c, x, y - 4 * k - dakH, StringAlignment.Center);
+                    }
+
+                    // The ΔΑΚ up to now of the 50 the swimmer is in (≈): a dashed ring on the swimmer's line, its figure in a pill.
+                    double live;
+                    if (showSwimmer && LiveDak(s, now, t, out live))
+                    {
+                        float y = YD(live);
+                        using (Pen ring = new Pen(SwimTheme.Amber, Math.Max(1f, 1.5f * k)) { DashStyle = DashStyle.Dot })
+                            g.DrawEllipse(ring, xs - 4.2f * k, y - 4.2f * k, 8.4f * k, 8.4f * k);
+                        string pillText = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΔΑΚ ≈{0:0.00}"), live);
+                        Font liveFont = F(7f, k, false, FontStyle.Bold);
+                        float pw = Width(g, pillText, liveFont) + 12 * k, ph = 14 * k;
+                        float px = xs + 8 * k + pw <= plot.Right ? xs + 8 * k : xs - 8 * k - pw;
+                        RectangleF pill = new RectangleF(px, Math.Max(dakBand.Top, Math.Min(dakBand.Bottom - ph, y - ph / 2)), pw, ph);
+                        using (GraphicsPath path = SwimTheme.Rounded(pill, 4 * k))
+                        using (SolidBrush fill = new SolidBrush(Color.FromArgb(48, SwimTheme.Amber)))
+                        using (Pen rim = new Pen(SwimTheme.Amber, Math.Max(1f, k)))
+                        {
+                            g.FillPath(fill, path);
+                            g.DrawPath(rim, path);
+                        }
+
+                        Text(g, pillText, liveFont, SwimTheme.Amber, pill.Left + pill.Width / 2, pill.Top + pill.Height / 2, StringAlignment.Center, StringAlignment.Center);
+                    }
+                }
+
+                // The part before the window fades out on the left (it goes on there).
+                if (window && x0 > 0)
+                {
+                    RectangleF fade = new RectangleF(plot.Left - 1, plot.Top - 2 * k, 26 * k, plot.Height + 4 * k);
+                    using (LinearGradientBrush brush = new LinearGradientBrush(fade, Color.FromArgb(235, SwimTheme.Back), Color.FromArgb(0, SwimTheme.Back), LinearGradientMode.Horizontal))
+                        g.FillRectangle(brush, fade);
                 }
             }
-
-            // The speed of the curve up to now (the whole race after the finish), one line per length.
-            List<SwimReelSample> shown = finished ? reel.Samples : reel.Samples.Where(p => p.Time <= t + 1e-6).ToList();
-            float width = Math.Max(1.5f, 2.2f * k);
-            using (Pen glow = new Pen(Color.FromArgb(60, SwimTheme.Accent), width * 3.2f) { LineJoin = LineJoin.Round })
-            using (Pen line = new Pen(SwimTheme.Accent, width) { LineJoin = LineJoin.Round })
+            finally
             {
-                foreach (IGrouping<int, SwimReelSample> length in shown.GroupBy(p => p.Lap))
-                {
-                    PointF[] points = length.Select(p => new PointF(X(p.Distance), Y(p.Speed))).ToArray();
-                    if (points.Length < 2)
-                        continue;
-
-                    g.DrawLines(glow, points);
-                    g.DrawLines(line, points);
-                }
+                g.Restore(clipState);
             }
 
             // The figures of the steps, over their line where there is room (under it near the top of the chart).
@@ -692,14 +813,14 @@ namespace Kinovea.ScreenManager
             float stepH = stepFont.GetHeight(g);
             foreach (SwimRow row in steps)
             {
-                float xa = X(row.PrevD), xb = X(row.D);
+                float xa = Math.Max(plot.Left, X(row.PrevD)), xb = Math.Min(plot.Right, X(row.D));
                 string figure = row.Vel.Value.ToString("0.00", CultureInfo.InvariantCulture);
                 float fw = Width(g, figure, stepFont);
                 if (xb - xa < fw + 4 * k)
                     continue;
 
                 float y = Y(row.Vel.Value);
-                bool above = y - stepH - k >= plot.Top;
+                bool above = y - stepH - k >= speedBand.Top;
                 RectangleF box = new RectangleF((xa + xb - fw) / 2, above ? y - k - stepH : y + 2 * k, fw, stepH);
                 if (taken.Any(o => o.IntersectsWith(box)))
                     continue;
@@ -707,9 +828,21 @@ namespace Kinovea.ScreenManager
                 Text(g, figure, stepFont, segmentAverage, (xa + xb) / 2, box.Top, StringAlignment.Center);
             }
 
+            // The ΔΑΚ beside its band, with the mean of its 50s done under it.
+            if (dak)
+            {
+                Text(g, SwimLang.T("ΔΑΚ"), small, SwimTheme.Amber, plot.Left - 6 * k, dakBand.Top + dakBand.Height / 2, StringAlignment.Far, StringAlignment.Far);
+                List<SwimBlock> done = blocks.Where(b => finished || Passed(s, b.To, t)).ToList();
+                if (done.Count >= 2)
+                    Text(g, string.Format(CultureInfo.InvariantCulture, SwimLang.T("μ.ο. {0:0.00}"), done.Average(b => b.Dak.Value)), F(5.75f, k),
+                        Color.FromArgb(215, SwimTheme.Amber), plot.Left - 6 * k, dakBand.Top + dakBand.Height / 2 + k, StringAlignment.Far);
+            }
+
             // The distances under the chart: the start, the finish and the walls first, then the other checkpoints where they fit.
             Font tick = F(6.75f, k, false, FontStyle.Bold);
             List<RectangleF> placed = new List<RectangleF>();
+            if (showSwimmer)
+                placed.Add(tag);
             Action<string, Font, Color, float> under = (text, font, color, x) =>
             {
                 float w = Width(g, text, font);
@@ -720,9 +853,44 @@ namespace Kinovea.ScreenManager
                 placed.Add(box);
                 Text(g, text, font, color, box.Left + w / 2, box.Top, StringAlignment.Center);
             };
-            under("0", axis, SwimTheme.Faint, plot.Left);
-            foreach (SwimRow row in rows.Where(row => row.D >= total || row.D % reel.Pool == 0).Concat(rows.Where(row => row.D < total && row.D % reel.Pool != 0)))
+            if (x0 <= 1e-6)
+                under("0", axis, SwimTheme.Faint, plot.Left);
+            List<SwimRow> ticks = rows.Where(row => inView(row.D)).ToList();
+            foreach (SwimRow row in ticks.Where(row => row.D >= total || row.D % reel.Pool == 0).Concat(ticks.Where(row => row.D < total && row.D % reel.Pool != 0)))
                 under(row.D.ToString(CultureInfo.InvariantCulture), tick, row.PassedAt(t) ? SwimTheme.Amber : SwimTheme.Faint, X(row.D));
+
+            // (2.40.0) The long events: the whole race under the chart, the part shown and where the swimmer is.
+            if (longEvent)
+            {
+                float oy = r.Bottom - 11 * k, oL = plot.Left + 12 * k, oR = plot.Right - 24 * k;
+                Func<double, float> OX = d => oL + (float)(Math.Max(0, Math.Min(total, d)) / total * (oR - oL));
+                using (Pen rail = new Pen(Color.FromArgb(115, SwimTheme.Dim), Math.Max(1f, 2f * k)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawLine(rail, oL, oy, oR, oy);
+                int every = total / 50 <= 30 ? 50 : 100;
+                using (Pen notch = new Pen(Color.FromArgb(140, SwimTheme.Dim), Math.Max(1f, 0.8f * k)))
+                {
+                    for (int at = every; at < total; at += every)
+                        g.DrawLine(notch, OX(at), oy - 3 * k, OX(at), oy + 3 * k);
+                }
+
+                RectangleF part = new RectangleF(OX(x0), oy - 5 * k, Math.Max(2 * k, OX(x1) - OX(x0)), 10 * k);
+                using (GraphicsPath path = SwimTheme.Rounded(part, 3 * k))
+                using (SolidBrush fill = new SolidBrush(Color.FromArgb(55, SwimTheme.Accent)))
+                using (Pen rim = new Pen(Color.FromArgb(230, SwimTheme.Accent), Math.Max(1f, k)))
+                {
+                    g.FillPath(fill, path);
+                    g.DrawPath(rim, path);
+                }
+
+                if (showSwimmer)
+                {
+                    using (SolidBrush dot = new SolidBrush(SwimTheme.AccentPale))
+                        g.FillEllipse(dot, OX(now) - 3.4f * k, oy - 3.4f * k, 6.8f * k, 6.8f * k);
+                }
+
+                Text(g, "0", axis, SwimTheme.Faint, oL - 5 * k, oy, StringAlignment.Far, StringAlignment.Center);
+                Text(g, total.ToString("0", CultureInfo.InvariantCulture), axis, SwimTheme.Faint, oR + 5 * k, oy, StringAlignment.Near, StringAlignment.Center);
+            }
 
             if (!showSwimmer)
                 return;
@@ -751,14 +919,70 @@ namespace Kinovea.ScreenManager
 
             string value = shownSpeed.ToString("0.00", CultureInfo.InvariantCulture);
             Font pillFont = F(7.75f, k, false, FontStyle.Bold);
-            float pw = Width(g, value, pillFont) + 12 * k, ph = 16 * k;
-            float px = xs + 9 * k + pw <= plot.Right ? xs + 9 * k : xs - 9 * k - pw;
-            float py = ys - 9 * k - ph >= plot.Top - 6 * k ? ys - 9 * k - ph : ys + 9 * k;
-            RectangleF pill = new RectangleF(px, Math.Min(py, tag.Top - ph - 2 * k), pw, ph);
-            using (GraphicsPath path = SwimTheme.Rounded(pill, 4 * k))
+            float pw2 = Width(g, value, pillFont) + 12 * k, ph2 = 16 * k;
+            float px2 = xs + 9 * k + pw2 <= plot.Right ? xs + 9 * k : xs - 9 * k - pw2;
+            float py2 = ys - 9 * k - ph2 >= plot.Top - 6 * k ? ys - 9 * k - ph2 : ys + 9 * k;
+            RectangleF speedPill = new RectangleF(px2, Math.Min(py2, speedBand.Bottom - ph2), pw2, ph2);
+            using (GraphicsPath path = SwimTheme.Rounded(speedPill, 4 * k))
             using (SolidBrush fill = new SolidBrush(tone))
                 g.FillPath(fill, path);
-            Text(g, value, pillFont, Color.FromArgb(2, 18, 27), pill.Left + pill.Width / 2, pill.Top + pill.Height / 2, StringAlignment.Center, StringAlignment.Center);
+            Text(g, value, pillFont, Color.FromArgb(2, 18, 27), speedPill.Left + speedPill.Width / 2, speedPill.Top + speedPill.Height / 2, StringAlignment.Center, StringAlignment.Center);
+        }
+
+        /// <summary>(2.40.0) The long events show this much of the race at a time on the chart (pool units), the swimmer at WindowLead of it.</summary>
+        internal const double WindowSpan = 200, WindowLead = 0.75;
+
+        /// <summary>(2.40.0) The ΔΑΚ of the 50s: better than their mean (blue), worse (orange), as the PDF.</summary>
+        private static readonly Color dakBetter = Color.FromArgb(77, 163, 255), dakWorse = Color.FromArgb(255, 154, 60);
+
+        /// <summary>(2.40.0) Over WindowSpan (the 400, the 800, the 1500, a relay of 4 × 100 or longer): the chart shows a part at a time.</summary>
+        internal static bool LongEvent(SwimRace race)
+        {
+            return race != null && race.Distance > WindowSpan;
+        }
+
+        /// <summary>(2.40.0) The middle of the window of the ΔΑΚ of a 50 (from +15 after its first wall to its end).</summary>
+        private static double DakMiddle(SwimBlock b)
+        {
+            return 0.5 * (b.From + 15 + b.To);
+        }
+
+        /// <summary>(2.40.0) The checkpoint at d passed at the time t of the video.</summary>
+        private static bool Passed(SwimReelScene s, int d, double t)
+        {
+            SwimRow row = s.Computed.Rows.FirstOrDefault(x => x.D == d);
+            return row != null && row.PassedAt(t);
+        }
+
+        /// <summary>
+        /// (2.40.0) The ΔΑΚ of the length the swimmer is in, up to now: the strokes as the analysis counts them and the seconds of the race
+        /// from its +15, over its metres / 10 (SwimCalculator's ΔΑΚ of a whole window). Only in a window of 20 or more (a 50 m pool), from
+        /// 10 of it on, and not past its wall.
+        /// </summary>
+        private static bool LiveDak(SwimReelScene s, double now, double t, out double live)
+        {
+            live = 0;
+            SwimReel reel = s.Reel;
+            int pool = reel.Pool;
+            if (pool <= 0)
+                return false;
+
+            int wall = (int)Math.Floor(now / pool) * pool;
+            double a = wall + 15, e = Math.Min(wall + pool, s.Race.Distance);
+            if (e - a < 20 || now - a < 10 || now >= e)
+                return false;
+
+            double ta = reel.TimeAtDistance(a);
+            if (!(ta > 0) || ta >= t)
+                return false;
+
+            double seconds = reel.RaceTime(t) - reel.RaceTime(ta);
+            double metres = (now - a) * s.Computed.K;
+            if (!(seconds > 0) || !(metres > 0))
+                return false;
+
+            live = (reel.StrokesBetween(ta, t) + seconds) / (metres / 10.0);
+            return live > 0 && live < 60;
         }
         #endregion
 

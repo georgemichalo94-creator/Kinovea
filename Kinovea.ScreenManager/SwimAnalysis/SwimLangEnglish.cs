@@ -2922,6 +2922,13 @@ namespace Kinovea.ScreenManager
             // (2.31.0) The chart of the whole race in the technical view, the speed under the water.
             { "ΕΚΚΙΝΗΣΗ → ΤΕΡΜΑΤΙΣΜΟΣ", "START → FINISH" },
             { "μέση τμήματος", "segment average" },
+            // (2.40.0) The last stroke in the tab of the turn of the side bar.
+            { "Τελ. χεριά", "Last stroke" },
+            { "Η τελευταία χεριά πριν τον τοίχο (C), στο καρέ που μπαίνει το χέρι: ο αριθμός είναι ο χρόνος από αυτήν ως τον τοίχο.", "The last stroke before the wall (C), at the frame the hand enters: the figure is the time from it to the wall." },
+            // (2.40.0) The ΔΑΚ on the chart of the video.
+            { "ΔΑΚ (↓ καλύτερα)", "SPI (↓ better)" },
+            { "ΔΑΚ ≈{0:0.00}", "SPI ≈{0:0.00}" },
+            { "μ.ο. {0:0.00}", "mean {0:0.00}" },
             { "υποβρ.", "u/w" },
             { "📍 {0}: {1:0.00} {2} δεν γίνεται (από {3:0.#} ως {4:0.#} {2}) και δεν γράφτηκε.", "📍 {0}: {1:0.00} {2} is not possible (from {3:0.#} to {4:0.#} {2}) and was not written." },
             { " Η βαθμονόμηση είναι από άλλο καρέ: αν η κάμερα κινήθηκε, βαθμονόμησε σε αυτό το καρέ και μέτρησε ξανά.",

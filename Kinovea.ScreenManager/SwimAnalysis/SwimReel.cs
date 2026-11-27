@@ -1095,6 +1095,18 @@ namespace Kinovea.ScreenManager
 
         #region Model
         /// <summary>
+        /// (2.40.0) The strokes as the analysis counts them (lapCounted) after 'from' and up to 'to' (s after the start, the clock of the
+        /// curve): the live ΔΑΚ of the 50 the swimmer is in (SwimReelPainter).
+        /// </summary>
+        public int StrokesBetween(double from, double to)
+        {
+            int n = 0;
+            foreach (List<double> lap in lapCounted)
+                n += lap.Count(x => x > from + 1e-6 && x <= to + 1e-6);
+            return n;
+        }
+
+        /// <summary>
         /// Distance of the race (pool units) at a time after the start, from the curve through the checkpoints; after the last
         /// checkpoint marked, on with the speed of the last segment up to the next checkpoint.
         /// </summary>
