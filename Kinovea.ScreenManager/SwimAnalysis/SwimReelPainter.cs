@@ -595,7 +595,14 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            float dakTop = dakBand.Top + 11 * k, dakSpan = Math.Max(4 * k, dakBand.Height - 15 * k);
+            // (2.41.1) The figures of the ΔΑΚ bigger, the analyst's request («κάνε τον ΔΑΚ πιο μεγάλο σαν νούμερο»): 9.5 (7 until 2.41.0) in
+            // the 200 m window and up to 8 50s on the chart, 8 up to 12, 6.25 beyond (the whole of an 800 or 1500 after the finish). The band
+            // starts its dots lower by as much, so that the figure over the highest stays out of the speed.
+            int dakDone = dak ? blocks.Count(b => finished || Passed(s, b.To, t)) : 0;
+            Font dakFont = F(window || dakDone <= 8 ? 9.5f : dakDone <= 12 ? 8f : 6.25f, k, false, FontStyle.Bold);
+            float dakH = dakFont.GetHeight(g);
+            float dakLead = Math.Max(11 * k, dakH + 4 * k - 0.8f * gap);
+            float dakTop = dakBand.Top + dakLead, dakSpan = Math.Max(4 * k, dakBand.Height - dakLead - 4 * k);
             Func<double, float> YD = v => dakTop + (float)((dmax - Math.Max(dmin, Math.Min(dmax, v))) / (dmax - dmin) * dakSpan);
             Font axis = F(6.75f, k);
             using (Pen grid = new Pen(Color.FromArgb(38, SwimTheme.Accent), Math.Max(1f, 0.8f * k)))
@@ -755,8 +762,6 @@ namespace Kinovea.ScreenManager
                             g.DrawLines(pen, through);
                     }
 
-                    Font dakFont = F(window ? 7f : (done.Count > 12 ? 6.25f : 6.75f), k, false, FontStyle.Bold);
-                    float dakH = dakFont.GetHeight(g);
                     foreach (SwimBlock b in done)
                     {
                         Color c = !mean.HasValue ? SwimTheme.Amber : b.Dak.Value <= mean.Value + 1e-9 ? dakBetter : dakWorse;
@@ -779,8 +784,9 @@ namespace Kinovea.ScreenManager
                         using (Pen ring = new Pen(SwimTheme.Amber, Math.Max(1f, 1.5f * k)) { DashStyle = DashStyle.Dot })
                             g.DrawEllipse(ring, xs - 4.2f * k, y - 4.2f * k, 8.4f * k, 8.4f * k);
                         string pillText = string.Format(CultureInfo.InvariantCulture, SwimLang.T("ΔΑΚ ≈{0:0.00}"), live);
-                        Font liveFont = F(7f, k, false, FontStyle.Bold);
-                        float pw = Width(g, pillText, liveFont) + 12 * k, ph = 14 * k;
+                        // (2.41.1) Bigger too (7 until 2.41.0).
+                        Font liveFont = F(9.5f, k, false, FontStyle.Bold);
+                        float pw = Width(g, pillText, liveFont) + 12 * k, ph = 18 * k;
                         float px = xs + 8 * k + pw <= plot.Right ? xs + 8 * k : xs - 8 * k - pw;
                         RectangleF pill = new RectangleF(px, Math.Max(dakBand.Top, Math.Min(dakBand.Bottom - ph, y - ph / 2)), pw, ph);
                         using (GraphicsPath path = SwimTheme.Rounded(pill, 4 * k))
