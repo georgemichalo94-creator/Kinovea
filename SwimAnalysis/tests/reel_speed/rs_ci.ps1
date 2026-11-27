@@ -7,9 +7,9 @@
 # is high as after the start (until 2.31.0 a flat 1.89 m/s under the water after a turn). The speed in the water also under it, the
 # samples of the chart of the whole race. 2.38.4: the entry and the push-off where the head is then (as the speeds of the PDF).
 # 2.38.6: the previous model again, the analyst's request (the entry where the hands entered, the swimmer at the wall up to the push),
-# with the analyst's two rules, as the panel and the PDF: the breakout up to 0.5 m nearer when the speed to the 15 is below the swimming
-# after it (2.39.3: whatever the share, before up to 5%); a turn not faster under the water than the start (its push a little out from
-# the wall).
+# with the analyst's two rules, as the panel and the PDF: the breakout nearer when the speed to the 15 is below the swimming after it
+# (2.39.4: however far; 2.39.3 up to 0.5 m, before also up to 5%); a turn not faster under the water than the start (its push a little
+# out from the wall).
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File rs_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -155,8 +155,8 @@ Check ([Math]::Abs($st.DistanceAt(25.70) - 50) -lt 1e-6) ('its turn, slower unde
 
 # --- (2.38.6) The rule of the breakout (SwimSpeedRules.Breakout): out at 11.8 m at 4.6 s, to the 15 (6.30 s) 3.2 / 1.7 = 1.882 m/s,
 # 2.1% below the swimming after it (15–25: 10 / 5.2 = 1.923): the curve takes the breakout at 15 − 1.923 × 1.7 = 11.731 (the distance
-# shown stays 11.8), from it to the 15 at the speed of the swimming. (2.39.3) Out at 11.99 (7.9% below, 0.26 m too far): the same, no
-# longer as measured; out at 12.30 (17% below, 0.57 m too far, more than a click on the head): as measured.
+# shown stays 11.8), from it to the 15 at the speed of the swimming. (2.39.3) Out at 11.99 (7.9% below, 0.26 m too far): the same.
+# (2.39.4) Out at 12.30 (17% below, 0.57 m too far): the same too (2.39.3: as measured, more than 0.5 m).
 $rb = NewRace @(52.85) 4.6
 Mark $rb 'FeetOff' 0.62 $null
 Mark $rb 'Entry' 0.96 $null
@@ -172,7 +172,9 @@ $sb = (Reel $rb).Reel
 Check ([Math]::Abs($sb.DistanceAt(4.6) - (15 - $next * 1.7)) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 11.99) -lt 1e-9) ('7.9% below, 0.26 m: the breakout of the curve at ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
 $rb.BreakoutDist = 12.30
 $sb = (Reel $rb).Reel
-Check ([Math]::Abs($sb.DistanceAt(4.6) - 12.30) -lt 0.01) ('17% below, 0.57 m: the breakout as measured, ' + (F2 $sb.DistanceAt(4.6)) + ' m')
+Check ([Math]::Abs($sb.DistanceAt(4.6) - (15 - $next * 1.7)) -lt 0.01 -and [Math]::Abs($sb.BreakoutDistances[0] - 12.30) -lt 1e-9) ('17% below, 0.57 m: the breakout of the curve at ' + (F2 $sb.DistanceAt(4.6)) + ' m (shown ' + (F2 $sb.BreakoutDistances[0]) + ')')
+$toIt = (15 - $sb.DistanceAt(4.6)) / (6.30 - 4.6)
+Check ([Math]::Abs($toIt - $next) -lt 0.005) ('from it to the 15 as the swimming after it, no dip: ' + (F2 $toIt) + ' m/s (15-25 ' + (F2 $next) + ')')
 
 # --- (2.38.6) The rule of the start (SwimSpeedRules.PushAway): the start out at 11.5 m (from the hands at 2.0: 2.61 m/s, the highest on
 # the video about 2.99); a turn pushed off at 25.70 and out at 10.0 m at 29.4 s: from the wall 2.70 m/s and higher than the start on

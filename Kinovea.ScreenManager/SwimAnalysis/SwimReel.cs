@@ -823,7 +823,8 @@ namespace Kinovea.ScreenManager
             {
                 double out0 = startDistance;
                 double bo = Map(lapBreakouts[0], cpV, cpT), at15 = RaceTimeAt(15);
-                out0 = NearerBreakout(computed, 0, out0, bo, at15);
+                out0 = NearerBreakout(computed, 0, out0, bo, at15,
+                    entered ? Math.Max(SwimSpeedRules.LeastOut, entryDistance + SwimTechCalculator.UnderwaterMinSpan) : SwimSpeedRules.LeastOut);
                 knots.Add(new PhaseKnot { Video = lapBreakouts[0], Distance = out0, What = "breakout" });
 
                 if (entered && !race.Relay && BreakoutMeasured.Contains(0) && !double.IsNaN(at15))
@@ -856,7 +857,7 @@ namespace Kinovea.ScreenManager
                 if (!double.IsNaN(breakout) && BreakoutDistances.TryGetValue(lap, out length))
                 {
                     bo = Map(breakout, cpV, cpT);
-                    out1 = NearerBreakout(computed, wall, length, bo, at15);
+                    out1 = NearerBreakout(computed, wall, length, bo, at15, SwimSpeedRules.LeastOut);
                 }
 
                 // (2.38.6) The rule of the start: from the wall, unless the turn would be faster under the water than the start (on its
@@ -889,16 +890,17 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.38.6) The analyst's rule of the breakout (SwimSpeedRules.Breakout) on the times of the race: where the curve takes the breakout
-        /// after a wall (0: the start; pool units from it), up to 0.5 m nearer than 'length' when the speed from there to the 15 (its time
-        /// of the race at15) would be below the swimming after it, as the panel and the PDF (2.39.3: whatever the share, before up to 5%).
+        /// after a wall (0: the start; pool units from it), nearer than 'length' when the speed from there to the 15 (its time of the race
+        /// at15) would be below the swimming after it, as the panel and the PDF (2.39.4: however far, not nearer than 'least'; 2.39.3 up
+        /// to 0.5 m, before also up to 5% slower).
         /// </summary>
-        private double NearerBreakout(SwimComputed computed, int wall, double length, double breakout, double at15)
+        private double NearerBreakout(SwimComputed computed, int wall, double length, double breakout, double at15, double least)
         {
             double? next = SwimSpeedRules.NextSpeed(computed, wall);
             if (!next.HasValue || double.IsNaN(breakout) || double.IsNaN(at15))
                 return length;
 
-            return SwimSpeedRules.Breakout(length, at15 - breakout, next.Value, K);
+            return SwimSpeedRules.Breakout(length, at15 - breakout, next.Value, K, least);
         }
 
         /// <summary>(2.38.6) The time of the race at a checkpoint (0 at the start), NaN without one.</summary>

@@ -126,5 +126,42 @@ Check ($pick.Invoke($null, @($items, $race, $false, $false)).Id -eq 'starts') 'a
 $key = $tEF.GetMethod('DateKey')
 Check ($key.Invoke($null, @('12.11.2026')) -eq 20261112 -and $key.Invoke($null, @('2026-11-12')) -eq 20261112 -and $key.Invoke($null, @('12/11/2026 10:15')) -eq 20261112 -and $key.Invoke($null, @('')) -eq 0) 'dates'
 
+# (2.39.4) A long event of the finals: its analysis gives the 5 after each wall, not the 15. The reference from it gets the 15 after
+# the walls, not measured: from the breakout (time, distance from the wall) at an even speed to the 25 after the wall; a breakout past
+# the 15 between the 5 and the breakout; a turn with its 15 (and no checkpoint there) as it is. Fictional numbers.
+$text400 = @'
+{ "format": "kinovea-swim-finals", "source": "Fictional Games 2030", "short": "FG2030", "pool": 50, "finals": [
+  { "gender": "M", "style": "fs", "distance": 400, "swimmers": [
+    { "rank": 1, "name": "Hal THETATEST", "final": 226.0,
+      "checkpoints": { "15": 6.0, "25": 11.5, "45": 22.6, "50": 25.6, "55": 27.1, "75": 38.6, "95": 50.3, "100": 53.4, "105": 55.0,
+        "125": 66.6, "145": 78.3, "150": 81.5, "155": 83.2, "175": 94.4, "400": 226.0 },
+      "turns": [ { "wall": 50, "in5": 3.0, "out15": null, "out5": 1.5, "breakoutTime": 5.0, "breakoutDist": 11.0 },
+                 { "wall": 100, "in5": 3.1, "out15": null, "out5": 1.6, "breakoutTime": 8.0, "breakoutDist": 16.0 },
+                 { "wall": 150, "in5": 3.2, "out15": 7.4, "out5": 1.7, "breakoutTime": 4.6, "breakoutDist": 10.0 } ] } ] } ] }
+'@
+$f400 = $tFinals.GetMethod('Parse').Invoke($null, @($text400, $err))
+$lf = $f400.Finals[0].psobject.BaseObject; $ls = $lf.Swimmers[0].psobject.BaseObject
+$lr = $refOf.Invoke($null, [object[]]@($lf, $ls))
+function SplitAt($r, $d) { foreach ($x in $r.Times) { if ($x.D -eq $d) { return $x } }; return $null }
+$e65 = 25.6 + 5.0 + (15 - 11.0) * (38.6 - 25.6 - 5.0) / (25 - 11.0)
+$s65 = SplitAt $lr 65; $s115 = SplitAt $lr 115; $s165 = SplitAt $lr 165; $s55 = SplitAt $lr 55
+Check ($null -ne $s65 -and [Math]::Abs($s65.T - $e65) -lt 0.0006 -and $s65.Estimated) ('the 65 from the breakout at 11.0 m: ' + $(if ($s65) { $s65.T }) + ' (' + [Math]::Round($e65, 3) + '), not measured')
+$e115 = 53.4 + 1.6 + 10 * (8.0 - 1.6) / (16.0 - 5)
+Check ($null -ne $s115 -and [Math]::Abs($s115.T - $e115) -lt 0.0006 -and $s115.Estimated) ('the 115 with a breakout at 16 m, between the 5 and the breakout: ' + $(if ($s115) { $s115.T }))
+Check ($null -ne $s165 -and [Math]::Abs($s165.T - (81.5 + 7.4)) -lt 0.0006 -and -not $s165.Estimated) ('the 165 from the turn''s own 15: ' + $(if ($s165) { $s165.T }))
+Check ($null -ne $s55 -and -not $s55.Estimated -and @($lr.Times | ForEach-Object { $_.D }) -join ',' -eq '15,25,45,50,55,65,75,95,100,105,115,125,145,150,155,165,175,400') ('the checkpoints in order: ' + (@($lr.Times | ForEach-Object { $_.D }) -join ','))
+$lj = $lr.ToJson()
+$jt = @($lj['times'] | Where-Object { [int]$_['d'] -eq 65 })
+$jm = @($lj['times'] | Where-Object { [int]$_['d'] -eq 55 })
+Check ($jt.Count -eq 1 -and [int]$jt[0]['e'] -eq 1 -and $jm.Count -eq 1 -and $null -eq $jm[0]['e']) 'sent: "e": 1 on the 15 not measured only'
+$tRef = T 'SwimReference'
+# (One argument, not the properties of the JObject, which @() would enumerate.)
+$one = New-Object object[] 1; $one[0] = $lj
+$back = $tRef.GetMethod('FromJson').Invoke($null, $one)
+Check ((SplitAt $back 65).Estimated -and -not (SplitAt $back 55).Estimated -and $back.SameTimes($lr) -and $lr.Copy().SameTimes($lr)) 'read back, copied: the same'
+# A final without the time of its walls (the fictional 100s): nothing added.
+$r100 = $refOf.Invoke($null, [object[]]@($wF, $wS))
+Check (@($r100.Times | Where-Object { $_.Estimated }).Count -eq 0) 'without the times of the walls: nothing added'
+
 if ($fails -gt 0) { Write-Output ('FAILED: ' + $fails); exit 1 }
 Write-Output 'tech compare ok'

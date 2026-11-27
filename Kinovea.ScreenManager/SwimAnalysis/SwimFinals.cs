@@ -578,7 +578,48 @@ namespace Kinovea.ScreenManager
 
             foreach (KeyValuePair<int, double> c in s.Checkpoints)
                 r.Times.Add(new SwimReferenceSplit { D = c.Key, T = c.Value });
+
+            // (2.39.4) The long events (400, 800, 1500): their analysis gives the 5 m after each wall, not the 15 (the 100 and the 200 do),
+            // so a race compared with them had no turn (5 before + 15 after) and no clean swimming (+15 to −5) against the reference, only
+            // the start and the finish. The 15 after each wall from the turn of the finalist (Out15Estimate), marked as not measured.
+            foreach (SwimFinalistTurn t in s.Turns)
+            {
+                if (s.Checkpoints.ContainsKey(t.Wall + 15) || t.Wall + 15 >= f.Distance)
+                    continue;
+
+                double? wall = s.TimeAt(t.Wall);
+                double? measured = wall.HasValue && t.Out15.HasValue ? wall + t.Out15 : null;
+                double? at = measured ?? Out15Estimate(s, t);
+                if (at.HasValue)
+                    r.Times.Add(new SwimReferenceSplit { D = t.Wall + 15, T = Math.Round(at.Value, 3), Estimated = !measured.HasValue });
+            }
+
+            r.Times = r.Times.OrderBy(x => x.D).ToList();
             return r;
+        }
+
+        /// <summary>
+        /// (2.39.4) The time (s after the start signal) of the head 15 after a wall of a finalist whose analysis has no such time: from the
+        /// breakout (its time and its distance from the wall) at an even speed to the 25 after the wall; a breakout past the 15, between
+        /// the 5 after the wall and the breakout. In the finals with both times (303 turns of the 100s and 200s of a European
+        /// championship): 0.05 s off on average, not one way more than the other, 0.10 s at most for 9 turns in 10. Null without them.
+        /// </summary>
+        public static double? Out15Estimate(SwimFinalist s, SwimFinalistTurn t)
+        {
+            if (s == null || t == null || !t.BreakoutTime.HasValue || !t.BreakoutDist.HasValue)
+                return null;
+
+            double? wall = s.TimeAt(t.Wall);
+            if (!wall.HasValue)
+                return null;
+
+            double bt = t.BreakoutTime.Value, bd = t.BreakoutDist.Value;
+            double? at25 = s.TimeAt(t.Wall + 25);
+            if (at25.HasValue && bd > 0 && bd < 15 && bt > 0 && bt < at25.Value - wall.Value)
+                return wall.Value + bt + (15 - bd) * (at25.Value - wall.Value - bt) / (25 - bd);
+            if (t.Out5.HasValue && bd > 15 && bd < 25 && bt > t.Out5.Value)
+                return wall.Value + t.Out5.Value + (15 - 5) * (bt - t.Out5.Value) / (bd - 5);
+            return null;
         }
     }
 

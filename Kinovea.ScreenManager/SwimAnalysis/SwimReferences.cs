@@ -26,6 +26,12 @@ namespace Kinovea.ScreenManager
 
         /// <summary>Strokes of the segment that ends at this checkpoint (optional, like the column "Χεριές" of the Excel).</summary>
         public double? N;
+
+        /// <summary>
+        /// (2.39.4) Not measured: the 15 after a wall of a long event of the finals, from the breakout and the 25 after the wall
+        /// (SwimFinals.Out15Estimate). Sent as "e": 1.
+        /// </summary>
+        public bool Estimated;
     }
 
     /// <summary>
@@ -151,8 +157,24 @@ namespace Kinovea.ScreenManager
         public SwimReference Copy()
         {
             SwimReference r = (SwimReference)MemberwiseClone();
-            r.Times = Times.Select(s => new SwimReferenceSplit { D = s.D, T = s.T, N = s.N }).ToList();
+            r.Times = Times.Select(s => new SwimReferenceSplit { D = s.D, T = s.T, N = s.N, Estimated = s.Estimated }).ToList();
             return r;
+        }
+
+        /// <summary>(2.39.4) The same checkpoints with the same times (to the millisecond) and the same strokes.</summary>
+        public bool SameTimes(SwimReference other)
+        {
+            if (other == null || other.Times.Count != Times.Count)
+                return false;
+
+            for (int i = 0; i < Times.Count; i++)
+            {
+                SwimReferenceSplit a = Times[i], b = other.Times[i];
+                if (a.D != b.D || Math.Abs(a.T - b.T) > 0.0005 || a.N != b.N || a.Estimated != b.Estimated)
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -260,6 +282,8 @@ namespace Kinovea.ScreenManager
                 t["t"] = Math.Round(s.T, 3);
                 if (s.N.HasValue)
                     t["n"] = s.N.Value;
+                if (s.Estimated)
+                    t["e"] = 1;
                 times.Add(t);
             }
 
@@ -295,8 +319,10 @@ namespace Kinovea.ScreenManager
                     double? d = t.Value<double?>("d");
                     double? time = t.Value<double?>("t");
                     double? n = t.Value<double?>("n");
+                    double? e = t.Value<double?>("e");
                     if (d.HasValue && time.HasValue && d.Value > 0 && time.Value > 0)
-                        r.Times.Add(new SwimReferenceSplit { D = (int)Math.Round(d.Value), T = time.Value, N = n.HasValue && n.Value >= 0 ? n : null });
+                        r.Times.Add(new SwimReferenceSplit { D = (int)Math.Round(d.Value), T = time.Value, N = n.HasValue && n.Value >= 0 ? n : null,
+                            Estimated = e.HasValue && e.Value > 0 });
                 }
             }
 

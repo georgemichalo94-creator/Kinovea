@@ -3013,10 +3013,14 @@ namespace Kinovea.ScreenManager
             InvalidatePlayer();
         }
 
-        /// <summary>A reference of the sheet, of this computer or one of the swimmers of the finals.</summary>
+        /// <summary>
+        /// A reference of the sheet, of this computer or one of the swimmers of the finals (2.39.4: a finalist as the finals of this
+        /// computer have it first, with the 15 after each wall of the long events).
+        /// </summary>
         private SwimReference FindReference(string id)
         {
-            return References.Find(id) ?? Finals.FindReference(id);
+            SwimReference finalist = Finals != null ? Finals.FindReference(id) : null;
+            return finalist ?? References.Find(id);
         }
 
         /// <summary>The finals of a file (the analyses of an Olympic final): kept on this computer for the comparisons.</summary>
@@ -3247,6 +3251,18 @@ namespace Kinovea.ScreenManager
         {
             if (Race == null)
                 return false;
+
+            // (2.39.4) A finalist kept with the race (an analysis made before): as the finals of this computer have it now, with the 15
+            // after each wall of the long events.
+            if (Race.Reference != null && Finals != null)
+            {
+                SwimReference now = Finals.FindReference(Race.Reference.Id);
+                if (now != null && !now.SameTimes(Race.Reference))
+                {
+                    Race.Reference = now.Copy();
+                    return true;
+                }
+            }
 
             // A race chosen to compare with (another swimmer of the video, an analysis of the Google Sheet) stays, of either gender.
             if (Race.Reference != null && Race.Reference.Matches(Race) && (Race.Reference.IsRace || Race.Reference.GenderMatches(Race.AthleteGender)))
