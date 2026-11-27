@@ -265,7 +265,7 @@ Check ("$($start.SpeedNote)" -like '*μετά το κεφάλι στα 15*') ('t
 # gives more), neither on the mean nor at the highest speed the video shows (SwimSpeedRules.Peak). The start out at 14.2 m (entry →
 # breakout 10.9 / 4.80 = 2.2708 m/s, to the 15 2.2222, the highest on the video 2.3161). A turn out at 10.0 m: from the wall 2.50 m/s:
 # its speed starts 1.60 m out (within the body length of a man, 1.95): 2.0988, its highest as the start's; no warning, a note. Out at
-# 12.0 m: 4.62 m out, past the body length: 1.8458 and the warning of the panel. Not in a relay.
+# 12.0 m (2.39.4: with the +15 earlier, below): past the body length and the warning of the panel. Not in a relay.
 $race7 = NewRace; Fill $race7 $true
 $race7.AthleteGender = 'Ανδρών'; $race7.AthleteBirthYear = '2000'; $race7.Date = '23.11.2026'
 Mark $race7 'Entry' 1.04 $null
@@ -295,15 +295,21 @@ Check ("$($q.Turn.RuleNote)" -like '*2.50 από τα σημάδια, γράφε
 Check (Near $q.Turn.Value('kickDist') (10.0 / 6) 0.0006) ('the distance per kick as measured: ' + $q.Turn.Value('kickDist'))
 $body = Sheet $race7 (TurnPhase $race7)
 Check ((Near $body.race.manual.turns.'50'.uwSpeed 2.0988 0.0006) -and (Near $body.race.manual.turns.'50'.underwaterDist 10.0 1e-9)) ('sent: ' + $body.race.manual.turns.'50'.uwSpeed + ' from ' + $body.race.manual.turns.'50'.underwaterDist + ' m')
+# (2.39.4) Out at 12.0 m with the +15 at 32.3 s (not 33.5): from the breakout to the +15 3 / 1.7 = 1.76, not below the swimming
+# after it (10 / 7.1 = 1.41), so the rule of the breakout (now however far) leaves it as measured; under the water 12.0 / 4.0 = 3.0
+# m/s, so far above the start that its speed would start past the body length (at least 12 − 2.2708 × 4 = 2.92 m out): the warning.
+foreach ($mk in $race7.Marks) { if ($mk.Type.ToString() -eq 'Split' -and $mk.Distance -eq 65) { $mk.Timestamp = [long](1000 + 32300) } }
 $t7.UnderwaterDist = 12.0
 $q = Phases7
 $w = Faster $q
 # (The speed of the start as the panel shows it, to the hundredth.)
 $startShown = ([double]$q.Start.Value('uwVel')).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture)
-Check ((Near $q.Turn.Value('uwVel') 1.8458 0.0006) -and $q.Turn.PastHead -and "$w" -like ('*πολύ πιο γρήγορη από την εκκίνηση (' + $startShown + ' m/s)*')) ('a turn out at 12.0 m (' + $q.Turn.Value('uwVel') + ', from ' + $q.Turn.PushAway + ' m): ' + $w)
+$uw12 = $q.Turn.Value('uwVel')
+Check ($null -ne $uw12 -and [double]$uw12 -le $startUw + 1e-6 -and [double]$uw12 -gt 1.0 -and $q.Turn.PushAway -gt 2.9 -and $q.Turn.PastHead -and [Math]::Abs($q.Turn.OutForSpeeds - 12.0) -lt 1e-9 -and "$w" -like ('*πολύ πιο γρήγορη από την εκκίνηση (' + $startShown + ' m/s)*')) ('a turn out at 12.0 m (' + $uw12 + ', from ' + $q.Turn.PushAway + ' m): ' + $w)
 $race7.Relay = $true
 Check ($null -eq (Faster $q)) 'not in a relay'
 $race7.Relay = $false
+foreach ($mk in $race7.Marks) { if ($mk.Type.ToString() -eq 'Split' -and $mk.Distance -eq 65) { $mk.Timestamp = [long](1000 + 33500) } }
 
 if ($fails -gt 0) { Write-Output ("$fails check(s) failed"); exit 1 }
 Write-Output 'speeds of the start and of the turns: all checks passed'

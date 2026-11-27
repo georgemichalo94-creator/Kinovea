@@ -180,7 +180,10 @@ Check ([Math]::Abs($toIt - $next) -lt 0.005) ('from it to the 15 as the swimming
 # the video about 2.99); a turn pushed off at 25.70 and out at 10.0 m at 29.4 s: from the wall 2.70 m/s and higher than the start on
 # the video. Its speed starts a little out from the wall (about 0.79 m, within the body length): its highest and its mean on the video
 # not above the start's, its mean the one of the panel and the PDF (SwimTech). Out at 9.0 m (slower than the start): from the wall.
+# (2.39.4) The swimming after the +15 slower here (75 m at 39.30, 1.49 m/s): the breakout → +15 (5 / 3.2 = 1.56) not below it, so that
+# the rule of the breakout (now however far) leaves the turn as measured and what this checks is the rule of the start.
 $rt = NewRace @(52.85) 4.6
+foreach ($mk in $rt.Marks) { if ($mk.Type.ToString() -eq 'Split' -and $mk.Distance -eq 75) { $mk.Timestamp = [long](1000 + 39300) } }
 Mark $rt 'FeetOff' 0.62 $null
 Mark $rt 'Entry' 0.96 $null
 Mark $rt 'FeetOff' 25.70 $null
