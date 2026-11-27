@@ -515,6 +515,8 @@ if ($out) {
       $p = $picks[$s.key]
       $l = Load $p.n $p.f
       $l.race.Athlete = 'Αθλητής Δείγμα'; $l.race.Competition = 'Αγώνας δείγμα'; $l.race.Location = 'Πόλη δείγμα'; $l.race.Round = 'Τελικός'; $l.race.Lane = 4
+      # (2.41.0) As an analysis of 2.41.0: the entry of the head (its label, «Είσοδος κεφαλιού», has to fit beside its time).
+      $l.race.EntryHead = $true; $l.race.EntryDistHead = $l.race.EntryDistHands; $l.race.EntryDistHands = $null
       $mgrType.GetProperty('Race').SetValue($mgr, $l.race)
       $mgrType.GetProperty('Computed').SetValue($mgr, $l.computed)
       $mgrType.GetProperty('Timing').SetValue($mgr, $l.timing)
