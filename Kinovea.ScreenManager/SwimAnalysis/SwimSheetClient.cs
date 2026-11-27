@@ -833,7 +833,8 @@ namespace Kinovea.ScreenManager
                     manual["entryBreakoutVel"] = Math.Round(entryBreakout.Value, 3);
                 if (breakout15.HasValue)
                     manual["breakout15Vel"] = Math.Round(breakout15.Value, 3);
-                // (2.41.1) The check of the breakout (Apps Script 2.27.1: ⚠ in the PDF): slower to the 15 than the swimming after it.
+                // (2.41.1) The check of the breakout (Apps Script 2.27.1: ⚠ in the PDF): slower to the 15 than the swimming after it;
+                // (2.41.2) only where the rule of the breakout could not take it to the swimming (the marks are off).
                 if (breakout15.HasValue && startPhase.SlowAfterBreakout)
                     manual["breakout15Slow"] = true;
             }
@@ -860,7 +861,8 @@ namespace Kinovea.ScreenManager
                 double? bo15Speed = turnPhase != null ? turnPhase.Value("bo15Vel") : null;
                 if (bo15Speed.HasValue && !race.IsTraining)
                     t["bo15Speed"] = Math.Round(bo15Speed.Value, 3);
-                // (2.41.1) The check of the breakout: slower to the +15 than the swimming after it (Apps Script 2.27.1: ⚠ in the PDF).
+                // (2.41.1) The check of the breakout: slower to the +15 than the swimming after it (Apps Script 2.27.1: ⚠ in the PDF);
+                // (2.41.2) only where the rule of the breakout could not take it to the swimming (the marks are off).
                 if (bo15Speed.HasValue && !race.IsTraining && turnPhase.SlowAfterBreakout)
                     t["bo15Slow"] = true;
                 turns[pair.Key.ToString(CultureInfo.InvariantCulture)] = t;

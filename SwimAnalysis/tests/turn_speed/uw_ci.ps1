@@ -18,6 +18,9 @@
 # and measured), the head at the push-off of a turn the typical height + 0.10 m from the wall (nothing typed), the distance per kick
 # from the head too; the two rules as before, the start's from the head (past it a mark is off: the warning). An analysis marked with
 # the entry of the hands before 2.41.0: the head 0.27 × the height behind them, and the Sheet gets the hands' as before.
+# 2.41.1: the rule of the breakout a check only (⚠). 2.41.2: the rule again, the analyst's request, in a turn with the whole of its
+# underwater part (the head at the push-off nearer the wall with the breakout: the speed under the water as the marks); the warning only
+# where the marks are off.
 # Windows PowerShell 5.1 (.NET Framework, as Kinovea) or PowerShell 7. Exit code 1 when a check fails.
 #   powershell -File uw_ci.ps1 -sm <Kinovea.ScreenManager.dll> -bin <folder of the other dlls>
 param([string]$sm, [string]$bin)
@@ -124,34 +127,54 @@ $body = Sheet $race $r
 Check ($null -eq $body.race.manual.bodyLength -and $null -eq $body.race.manual.entryDistHips -and $null -eq $body.race.manual.entryVelHips -and $null -eq $body.race.manual.entryVelFeet) 'no body length, hips or feet sent'
 $race.BodyLength = $null; $race.AthleteGender = ''; $race.AthleteBirthYear = ''
 
-# (2.41.1) The rule of the breakout is a check, the analyst's choice («Μόνο έλεγχος»): out at 10.19 m, to the +15 4.81 / 2.9 = 1.659, below
-# the swimming after it (1.695): the speeds as measured (2.38.6–2.41.0 from 10.0847, nearer), the panel warns (⚠) and the Sheet is told
-# (bo15Slow: ⚠ in the PDF). 8% below (10.478) and 10.9% below (10.62): the same. Faster (10.0 above): no warning, nothing sent.
+# (2.41.2) The rule of the breakout again, the analyst's request (2.41.1 a check only, and the speed fell after the breakout on the video):
+# out at 10.19 m, to the +15 4.81 / 2.9 = 1.659, below the swimming after it (1.695): the speeds take the breakout to 10.0847 (15 − 1.695
+# × 2.9), so the speed to the +15 is the swimming's, and the whole underwater part goes nearer the wall with it: the head at the push-off
+# 0.1053 nearer too, so the speed under the water stays the one of the marks ((10.19 − 1.885) / 4.0; 2.38.6–2.41.0 from 10.0847 and the
+# head at 1.885: slower); the distance sent as measured, no ⚠ (bo15Slow) sent. 8% below (10.478) and 10.9% below (10.62): the same. At
+# 12.6 (0.83 m/s to the +15) the underwater part would go 2.5 nearer, past the wall: the marks are off, as measured with the warning (⚠,
+# bo15Slow). Faster (10.0 above): no rule, no warning.
 $turn.UnderwaterDist = 10.19
 $r = TurnPhase $race
 $next = 10 / (39.4 - 33.5)
+$at = 15 - $next * 2.9
 Check ([Math]::Abs($r.Turn.NextSpeed - $next) -lt 1e-9) ('the swimming after the +15: ' + $r.Turn.NextSpeed)
-Check ([Math]::Abs($r.Turn.OutForSpeeds - 10.19) -lt 1e-9 -and $r.Turn.SlowAfterBreakout) ('the breakout for the speeds as measured: ' + $r.Turn.OutForSpeeds + ', slower after it: ' + $r.Turn.SlowAfterBreakout)
-Check ((Near $r.Turn.Value('bo15Vel') (4.81 / 2.9) 0.0006) -and (Near $r.Turn.Value('uwVel') ((10.19 - 1.885) / 4.0) 0.0006)) ('to the +15 as measured ' + $r.Turn.Value('bo15Vel') + ', under the water ' + $r.Turn.Value('uwVel'))
-Check ("$($r.Turn.RuleNote)" -like '*⚠ έξοδος → +15: 1.66, πιο αργά από την κολύμβηση μετά τα +15 (1.69)*') ('the warning of the panel: ' + $r.Turn.RuleNote)
+Check ([Math]::Abs($r.Turn.OutForSpeeds - $at) -lt 1e-6 -and [Math]::Abs($r.Turn.PushShift - (10.19 - $at)) -lt 1e-6 -and [Math]::Abs($r.Turn.PushAway - (1.885 - (10.19 - $at))) -lt 1e-6 -and -not $r.Turn.SlowAfterBreakout) ('the breakout for the speeds ' + $r.Turn.OutForSpeeds + ', the underwater part ' + $r.Turn.PushShift + ' nearer (from ' + $r.Turn.PushAway + '), no warning')
+Check ((Near $r.Turn.Value('bo15Vel') $next 0.0006) -and (Near $r.Turn.Value('uwVel') ((10.19 - 1.885) / 4.0) 0.0006)) ('to the +15 as the swimming ' + $r.Turn.Value('bo15Vel') + ', under the water as the marks ' + $r.Turn.Value('uwVel'))
+Check ("$($r.Turn.RuleNote)" -like '*1.66 από τα σημάδια, γράφεται 1.69*' -and "$($r.Turn.RuleNote)" -like '*όλη η υποβρύχια φάση 0.11 πιο κοντά στον τοίχο*' -and "$($r.Turn.RuleNote)" -notlike '*⚠*') ('the note of the panel: ' + $r.Turn.RuleNote)
 Check (Near $r.Turn.Value('kickDist') ((10.19 - 1.885) / 6) 0.0006) ('the distance per kick as measured, from the head: ' + $r.Turn.Value('kickDist'))
 $body = Sheet $race $r
-Check ((Near $body.race.manual.turns.'50'.underwaterDist 10.19 1e-9) -and (Near $body.race.manual.turns.'50'.bo15Speed (4.81 / 2.9) 0.0006) -and $body.race.manual.turns.'50'.bo15Slow -eq $true) ('sent: the distance ' + $body.race.manual.turns.'50'.underwaterDist + ', the speed ' + $body.race.manual.turns.'50'.bo15Speed + ', slower ' + $body.race.manual.turns.'50'.bo15Slow)
+Check ((Near $body.race.manual.turns.'50'.underwaterDist 10.19 1e-9) -and (Near $body.race.manual.turns.'50'.bo15Speed $next 0.0006) -and (Near $body.race.manual.turns.'50'.uwSpeed ((10.19 - 1.885) / 4.0) 0.0006) -and $null -eq $body.race.manual.turns.'50'.bo15Slow) ('sent: the distance measured ' + $body.race.manual.turns.'50'.underwaterDist + ', the speeds ' + $body.race.manual.turns.'50'.uwSpeed + ' / ' + $body.race.manual.turns.'50'.bo15Speed + ', no ⚠')
 $turn.UnderwaterDist = 10.478
 $r = TurnPhase $race
-Check ((Near $r.Turn.Value('bo15Vel') (4.522 / 2.9) 0.0006) -and "$($r.Turn.RuleNote)" -like '*⚠ έξοδος → +15: 1.56, πιο αργά*(1.69)*' -and [Math]::Abs($r.Turn.OutForSpeeds - 10.478) -lt 1e-9) ('8% slower: as measured, a warning (' + $r.Turn.Value('bo15Vel') + ')')
+Check ((Near $r.Turn.Value('bo15Vel') $next 0.0006) -and (Near $r.Turn.Value('uwVel') ((10.478 - 1.885) / 4.0) 0.0006) -and "$($r.Turn.RuleNote)" -like '*1.56 από τα σημάδια, γράφεται 1.69*0.39 πιο κοντά*' -and [Math]::Abs($r.Turn.OutForSpeeds - $at) -lt 1e-6) ('8% slower, 0.39 m: as the swimming, under the water as the marks (' + $r.Turn.Value('uwVel') + ', ' + $r.Turn.RuleNote + ')')
+$body = Sheet $race $r
+Check ((Near $body.race.manual.turns.'50'.underwaterDist 10.478 1e-9) -and $null -eq $body.race.manual.turns.'50'.bo15Slow) ('sent: the distance measured ' + $body.race.manual.turns.'50'.underwaterDist)
 $turn.UnderwaterDist = 10.62
 $r = TurnPhase $race
-Check ((Near $r.Turn.Value('bo15Vel') (4.38 / 2.9) 0.0006) -and "$($r.Turn.RuleNote)" -like '*⚠ έξοδος → +15: 1.51, πιο αργά*(1.69)*' -and [Math]::Abs($r.Turn.OutForSpeeds - 10.62) -lt 1e-9) ('10.9% slower: as measured, a warning (' + $r.Turn.Value('bo15Vel') + ')')
-$ruleOf = (T 'SwimSpeedRules').GetMethod('SlowerAfterBreakout')
-$slow = [bool]$ruleOf.Invoke($null, [object[]]@([double]10.62, [double]2.9, [double]$next, [double]1.0))
-$fast = [bool]$ruleOf.Invoke($null, [object[]]@([double]10.0, [double]2.9, [double]$next, [double]1.0))
-$same = [bool]$ruleOf.Invoke($null, [object[]]@([double](15 - $next * 2.9), [double]2.9, [double]$next, [double]1.0))
-Check ($slow -and -not $fast -and -not $same) ('the check: 10.62 slower ' + $slow + ', 10.0 faster ' + $fast + ', as fast ' + $same)
+Check ((Near $r.Turn.Value('bo15Vel') $next 0.0006) -and (Near $r.Turn.Value('uwVel') ((10.62 - 1.885) / 4.0) 0.0006) -and "$($r.Turn.RuleNote)" -like '*1.51 από τα σημάδια, γράφεται 1.69*0.54 πιο κοντά*') ('10.9% slower, 0.54 m: as the swimming, under the water as the marks (' + $r.Turn.Value('uwVel') + ', ' + $r.Turn.RuleNote + ')')
+$turn.UnderwaterDist = 12.6
+$r = TurnPhase $race
+Check ($r.Turn.SlowAfterBreakout -and [Math]::Abs($r.Turn.OutForSpeeds - 12.6) -lt 1e-9 -and $r.Turn.PushShift -eq 0 -and (Near $r.Turn.Value('bo15Vel') (2.4 / 2.9) 0.0006) -and "$($r.Turn.RuleNote)" -like '*⚠ έξοδος → +15: 0.83, πιο αργά από την κολύμβηση μετά τα +15 (1.69)*') ('12.6, past the wall: as measured with the warning (' + $r.Turn.Value('bo15Vel') + ', ' + $r.Turn.RuleNote + ')')
+$body = Sheet $race $r
+Check ($body.race.manual.turns.'50'.bo15Slow -eq $true) 'and the Sheet is told (⚠ in the PDF)'
+$ruleOf = (T 'SwimSpeedRules').GetMethod('Breakout')
+function Rule1($out, $time, $nx, $from, $turnOf) { return $ruleOf.Invoke($null, [object[]]@([double]$out, [double]$time, [double]$nx, [double]1.0, [double]$from, [bool]$turnOf)) }
+$f1 = Rule1 10.62 2.9 $next 1.885 $true
+$f2 = Rule1 6.0 8.0 1.7 1.885 $true
+$f3 = Rule1 10.0 2.9 $next 1.885 $true
+$f4 = Rule1 10.62 2.9 $next 3.3 $false
+$f5 = Rule1 6.0 8.0 1.7 3.3 $false
+$f6 = Rule1 (15 - $next * 2.9) 2.9 $next 1.885 $true
+Check ($f1.Moved -and [Math]::Abs($f1.Out - $at) -lt 1e-9 -and [Math]::Abs($f1.Shift - (10.62 - $at)) -lt 1e-9) ('the rule, a turn: 10.62 -> ' + $f1.Out + ', the underwater part ' + $f1.Shift + ' nearer')
+Check ($f2.Slower -and -not $f2.Moved -and $f2.Out -eq 6.0) ('a turn whose underwater part would go 4.6 nearer, past the wall: as measured, slower (' + $f2.Out + ')')
+Check (-not $f3.Slower -and -not $f3.Moved -and $f3.Out -eq 10.0 -and -not $f6.Slower) ('faster or as fast: as measured (' + $f3.Out + ')')
+Check ($f4.Moved -and [Math]::Abs($f4.Out - $at) -lt 1e-9 -and $f4.Shift -eq 0) ('a start: the breakout only (' + $f4.Out + ', ' + $f4.Shift + ')')
+Check ($f5.Slower -and -not $f5.Moved -and $f5.Out -eq 6.0) ('a start whose breakout would be 1.4 m out, before its entry: as measured (' + $f5.Out + ')')
 $turn.UnderwaterDist = 10.0
 $r = TurnPhase $race
 $body = Sheet $race $r
-Check (-not $r.Turn.SlowAfterBreakout -and $null -eq $body.race.manual.turns.'50'.bo15Slow) 'faster than the swimming after it: no warning, nothing sent'
+Check (-not $r.Turn.SlowAfterBreakout -and $null -eq $r.Turn.RuleNote -and $r.Turn.PushShift -eq 0 -and $null -eq $body.race.manual.turns.'50'.bo15Slow) 'faster than the swimming after it: no rule, no warning, nothing sent'
 
 # The distance estimated from the times: no speed from it.
 $turn.UnderwaterEstimated = $true

@@ -800,7 +800,9 @@ namespace Kinovea.ScreenManager
         /// when the turn would be faster under the water than the start (its mean, or the highest speed of the curve after the push).
         /// (2.41.0) From the head to the head again, the analyst's request, as the panel and the PDF: the entry where the head went into the
         /// water (in an analysis marked with the hands, the head behind them), the push off a wall where the head is then (the typical height
-        /// + 0.10 from it: the swimmer goes out from the wall to there while he pushes), farther only by the rule of the start.
+        /// + 0.10 from it: the swimmer goes out from the wall to there while he pushes), farther only by the rule of the start. (2.41.2) The
+        /// rule of the breakout again (2.41.1 a check only: the speed fell after the breakout), in a turn with the whole of its underwater
+        /// part: the head at the push-off nearer the wall with the breakout, so that the speed under the water stays the one of the marks.
         /// </summary>
         private bool AddPhaseKnots(SwimRace race, SwimComputed computed)
         {
@@ -824,15 +826,16 @@ namespace Kinovea.ScreenManager
             if (entered)
                 knots.Add(new PhaseKnot { Video = Entry.Value, Distance = entryDistance, Break = true, What = "entry" });
 
-            // (2.38.6) The breakout of the start, and its speeds under the water, which the turns are held to (only from a breakout
-            // measured, as the panel and the PDF; not in a relay, where another swimmer dived). (2.41.1) Where it was measured: the rule of
-            // the breakout is a check (the panel and the reports warn); 2.38.6–2.41.0 the curve took it nearer by it.
+            // (2.38.6) The breakout of the start by the rule of the breakout, and its speeds under the water, which the turns are held to
+            // (only from a breakout measured, as the panel and the PDF; not in a relay, where another swimmer dived). (2.41.2) The rule
+            // again (2.41.1 a check only), the breakout only in the start: where the head went in is measured.
             double startMean = double.NaN, startPeak = double.NaN;
             double startDistance;
             if (lapBreakouts.Count > 0 && !double.IsNaN(lapBreakouts[0]) && BreakoutDistances.TryGetValue(0, out startDistance))
             {
                 double out0 = startDistance;
                 double bo = Map(lapBreakouts[0], cpV, cpT), at15 = RaceTimeAt(15);
+                out0 = BreakoutFix(computed, 0, out0, bo, at15, entered ? entryDistance : 0, false).Out;
                 knots.Add(new PhaseKnot { Video = lapBreakouts[0], Distance = out0, What = "breakout" });
 
                 if (entered && !race.Relay && BreakoutMeasured.Contains(0) && !double.IsNaN(at15))
@@ -864,12 +867,15 @@ namespace Kinovea.ScreenManager
                 // (2.41.0) Where the head is at the push-off (the typical height + 0.10 from the wall); at the change of a relay the next
                 // swimmer dives (from the wall, as the start).
                 double headOut = change ? 0 : head.AtPushoff / K;
-                // (2.41.1) The breakout where it was measured (the rule of the breakout is a check).
+                // (2.41.2) The breakout by the rule of the breakout again, and with it the whole of the underwater part nearer the wall (the
+                // head at the push-off too, as far as the wall), as the panel and the PDF (2.41.1 where it was measured).
                 double length, out1 = double.NaN, bo = double.NaN, at15 = RaceTimeAt(wall + 15);
                 if (!double.IsNaN(breakout) && BreakoutDistances.TryGetValue(lap, out length))
                 {
                     bo = Map(breakout, cpV, cpT);
-                    out1 = length;
+                    SwimBreakoutFix fix = BreakoutFix(computed, wall, length, bo, at15, headOut, true);
+                    out1 = fix.Out;
+                    headOut = Math.Max(0, headOut - fix.Shift);
                 }
 
                 // (2.38.6) The rule of the start: (2.41.0) from the head at the push-off, unless the turn would be faster under the water than
@@ -901,6 +907,20 @@ namespace Kinovea.ScreenManager
                 put |= PutKnot(knot, cpV, cpT);
 
             return put;
+        }
+
+        /// <summary>
+        /// (2.41.2) The analyst's rule of the breakout (SwimSpeedRules.Breakout) on the times of the race, as the panel and the PDF: after a
+        /// wall (0: the start; pool units from it) where the curve takes the breakout ('length': as measured or estimated) and, in a turn
+        /// ('turn'), how much nearer the wall the head at the push-off goes with it ('from': where the underwater part starts).
+        /// </summary>
+        private SwimBreakoutFix BreakoutFix(SwimComputed computed, int wall, double length, double breakout, double at15, double from, bool turn)
+        {
+            double? next = SwimSpeedRules.NextSpeed(computed, wall);
+            if (!next.HasValue || double.IsNaN(breakout) || double.IsNaN(at15))
+                return new SwimBreakoutFix { Out = length };
+
+            return SwimSpeedRules.Breakout(length, at15 - breakout, next.Value, K, from, turn);
         }
 
         /// <summary>(2.38.6) The time of the race at a checkpoint (0 at the start), NaN without one.</summary>
