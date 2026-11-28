@@ -2900,6 +2900,9 @@ namespace Kinovea.ScreenManager
             // The previous races of the PB are those of the event.
             if (!structureChanged && r.Style != oldStyle)
                 manager.RefreshPbCandidates();
+
+            // (2.42.0) The swimmers of a relay as soon as the distance becomes one (4x…) or the style changes the legs (a medley).
+            RefreshRelayLegs();
         }
 
         private void CommitDistance()
@@ -2964,6 +2967,7 @@ namespace Kinovea.ScreenManager
 
             r.Kind = training ? SwimRace.KindTraining : SwimRace.KindRace;
             manager.RaceInfoChanged(false);
+            RefreshRelayLegs();
             SetTechnicalView(training, true);
             RefreshPb();
             // (2.22.0) A technique analysis gets the lists of its comparisons (previous technique analyses and elite).

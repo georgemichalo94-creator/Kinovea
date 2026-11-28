@@ -48,7 +48,7 @@ namespace Kinovea.ScreenManager
                 legStyle[k] = new Label { AutoSize = true, ForeColor = SwimTheme.Dim, Margin = new Padding(0, 6, 6, 0) };
                 legName[k] = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 2, 4, 2), Font = SwimTheme.Ui(8.5f, FontStyle.Bold) };
                 legNote[k] = new Label { AutoSize = true, Margin = new Padding(2, 6, 4, 0), Cursor = Cursors.Hand };
-                legPick[k] = new SwimNoFocusButton { Text = "▾", Width = 30, Height = 24, Margin = new Padding(0, 1, 4, 1) };
+                legPick[k] = new SwimNoFocusButton { Text = "▾", Width = 40, Height = 24, Margin = new Padding(0, 1, 4, 1) };
                 legTime[k] = new Label { AutoSize = true, ForeColor = SwimTheme.Text, Margin = new Padding(4, 6, 0, 0), Font = SwimTheme.Ui(8.5f, FontStyle.Bold) };
 
                 TextBox box = legName[k];

@@ -131,8 +131,9 @@ namespace Kinovea.ScreenManager
             using (SolidBrush tip = new SolidBrush(A(running ? C2 : Color.White, a)))
                 g.FillPolygon(tip, new[] { new PointF(mx - 7, track.Top - 20), new PointF(mx + 7, track.Top - 20), new PointF(mx, track.Top - 11) });
 
+            // (The 0 beside the −0.03 crowded it: the limits of the zones only.)
             Font tf = Mono(12);
-            foreach (double v in new[] { SwimRelay.Invalid, 0.0, SwimRelay.TargetFrom, SwimRelay.TargetTo, SwimRelay.Slow, SwimRelay.ScaleTo })
+            foreach (double v in new[] { SwimRelay.Invalid, SwimRelay.TargetFrom, SwimRelay.TargetTo, SwimRelay.Slow, SwimRelay.ScaleTo })
             {
                 string label = v < 0 ? "−" + Math.Abs(v).ToString("0.00", CultureInfo.InvariantCulture) : v == 0 ? "0" : v.ToString("0.00", CultureInfo.InvariantCulture);
                 Text(g, label, tf, A(Lbl, a), X(v), track.Bottom + 7, 0);
@@ -167,6 +168,47 @@ namespace Kinovea.ScreenManager
             if (x.Official.HasValue)
                 foot.Add(SwimLang.T("επίσημο ") + SwimRelay.Figure(x.Official.Value));
             Text(g, string.Join(" · ", foot.ToArray()), Mono(12), A(Lbl, a), r.Left + 22, r.Bottom - 20);
+        }
+
+        /// <summary>
+        /// (2.42.0, the test in the program) The exchange on the boards of before (the image too small for the HUD, or the boards chosen):
+        /// the same panel, in a top corner of the image (the left one, the right one when the boards are there), a third of its width
+        /// (260–492 pixels). Only from the touch to two seconds after the feet left the block, as on the HUD.
+        /// </summary>
+        public static void PaintExchangeBoard(Graphics g, Size size, SwimHudScene s, bool right)
+        {
+            if (g == null || s == null || s.Race == null || s.Computed == null || !s.Race.IsRelayOfFour || s.Race.IsTraining || double.IsNaN(s.Time) ||
+                size.Width < 300 || size.Height < 200)
+                return;
+
+            double shown;
+            bool running;
+            SwimExchange x = SwimRelay.ShownAt(SwimRelay.Exchanges(s.Race, s.Computed), s.Time, out shown, out running);
+            if (x == null || !x.Touch.HasValue)
+                return;
+
+            double start = x.Touch.Value;
+            double end = x.FeetOff.HasValue ? Math.Max(x.Touch.Value, x.FeetOff.Value) + SwimRelay.HoldSeconds : x.Touch.Value + SwimRelay.RunningSeconds;
+            float a = Window(s.Time, start - 0.12, end, 0.12, 0.3);
+            if (a <= 0.01f)
+                return;
+
+            float width = Math.Max(260f, Math.Min(ExchangeW, size.Width * 0.34f));
+            float k = width / ExchangeW;
+            GraphicsState saved = g.Save();
+            try
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                g.TranslateTransform(right ? size.Width - width - 12 : 12, 12);
+                g.ScaleTransform(k, k);
+                string unit = s.Race.IsYards ? "yd" : SwimLang.T("μ.");
+                PaintExchange(g, new RectangleF(0, 0, ExchangeW, ExchangeH), x, shown, running, unit, a);
+            }
+            finally
+            {
+                g.Restore(saved);
+            }
         }
 
         /// <summary>The dot of a swimmer's colour; returns where his name starts.</summary>

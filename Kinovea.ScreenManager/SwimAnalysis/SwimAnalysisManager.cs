@@ -2233,7 +2233,31 @@ namespace Kinovea.ScreenManager
         {
             DrawRaceBoards(g, timestamp, size, all, report, swimmer);
             if (!all && !report)
+            {
                 DrawRaceSummary(g, timestamp, size);
+                DrawExchangeBoard(g, timestamp, size);
+            }
+        }
+
+        /// <summary>
+        /// (2.42.0) The exchange of a relay on the boards of before (the HUD has its own): from the touch, in the top corner away from the
+        /// boards. Not on the images of the report.
+        /// </summary>
+        private void DrawExchangeBoard(Graphics g, long timestamp, Size size)
+        {
+            if (Race == null || Computed == null || !Race.IsRelayOfFour || !Race.StartTimestamp.HasValue || Timing == null || !Timing.IsValid)
+                return;
+
+            SwimHudScene scene = new SwimHudScene
+            {
+                Race = Race,
+                Computed = Computed,
+                Timing = Timing,
+                Timestamp = timestamp,
+                Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value)
+            };
+            string corner = Settings != null ? Settings.OverlayCorner ?? "TopRight" : "TopRight";
+            SwimHudPainter.PaintExchangeBoard(g, size, scene, corner == "TopLeft");
         }
 
         /// <summary>

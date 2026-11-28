@@ -226,7 +226,8 @@ namespace Kinovea.ScreenManager
                 string uri;
                 if (!done.TryGetValue(id, out uri))
                 {
-                    uri = (pictureOf != null ? pictureOf(id) : null) ?? NoPicture;
+                    string picture = pictureOf != null ? pictureOf(id) : null;
+                    uri = string.IsNullOrEmpty(picture) ? NoPicture : picture;
                     done[id] = uri;
                 }
 

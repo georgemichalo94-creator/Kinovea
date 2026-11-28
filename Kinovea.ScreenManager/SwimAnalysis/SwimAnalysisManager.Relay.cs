@@ -323,6 +323,12 @@ namespace Kinovea.ScreenManager
                     SwimSnapshot off = ExchangeSnapshot(null, timestamp, SwimRelay.OffLabel(n), mark.Id);
                     if (off != null)
                         taken.Add(off);
+
+                    // (2.42.0) The touch given by the official time (no S at the wall, as with the results of the KOE): its snapshot
+                    // now, from its frame (the video goes there and comes back).
+                    SwimSnapshot touch = OfficialTouchSnapshot(n, mark.Id);
+                    if (touch != null)
+                        taken.Add(touch);
                 }
                 else if (n < 0)
                 {
@@ -382,11 +388,15 @@ namespace Kinovea.ScreenManager
             return 0;
         }
 
-        /// <summary>The race time of a checkpoint: its time (the official one where given), null when it is not marked.</summary>
+        /// <summary>
+        /// The race time of a checkpoint: its time (the official one where given), null when it is neither marked nor given by the results.
+        /// (2.42.0, the test in the program) The official time alone counts too, as for the exchanges on the video (SwimRelay.Exchanges):
+        /// with the touches from the results the feet off the block found no exchange and took no snapshot.
+        /// </summary>
         private double? MarkedTime(int distance)
         {
             SwimRow row = Computed != null && Computed.Rows != null ? Computed.Rows.FirstOrDefault(r => r.D == distance) : null;
-            if (row != null && row.T.HasValue && row.Marked)
+            if (row != null && row.T.HasValue && (row.Marked || row.Official))
                 return row.T;
             SwimMark split = Race.GetSplit(distance);
             return split != null ? (double?)Timing.Seconds(split.Timestamp, Race.StartTimestamp.Value) : null;
@@ -421,6 +431,63 @@ namespace Kinovea.ScreenManager
             {
                 if (own)
                     image.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// (2.42.0) The snapshot of the touch of exchange n when its time is the official one and the wall has no S (its own snapshot is
+        /// taken with the S): from its frame, the video brought there and back (not while it plays). Null: marked with S, taken already,
+        /// no official time or its frame not reached.
+        /// </summary>
+        private SwimSnapshot OfficialTouchSnapshot(int n, string markId)
+        {
+            if (player == null || player.IsCurrentlyPlaying || frameServer == null || frameServer.VideoReader == null)
+                return null;
+
+            int wall = n * Race.LegDistance;
+            string label = SwimRelay.TouchLabel(n);
+            if (Race.GetSplit(wall) != null || (Race.Snapshots != null && Race.Snapshots.Any(x => x.Event == label)))
+                return null;
+
+            SwimRow row = Computed != null && Computed.Rows != null ? Computed.Rows.FirstOrDefault(r => r.D == wall) : null;
+            if (row == null || !row.Official || !row.T.HasValue)
+                return null;
+
+            long at = Timing.Timestamp(row.T.Value, Race.StartTimestamp.Value);
+            long back = player.CurrentTimestamp;
+            bool moved = false;
+            try
+            {
+                if (!SameFrame(back, at))
+                {
+                    // The frame nearest to the time (the player shows the first frame at or after the time asked: half a frame earlier).
+                    long half = (long)Math.Floor(Math.Max(1.0, frameServer.VideoReader.Info.AverageTimeStampsPerFrame) * 0.5);
+                    player.ForcePosition(Math.Max(frameServer.VideoReader.WorkingZone.Start, at - half), true);
+                    moved = true;
+                    if (!SameFrame(player.CurrentTimestamp, at))
+                        return null;
+                }
+
+                return ExchangeSnapshot(null, player.CurrentTimestamp, label, markId);
+            }
+            catch (Exception e)
+            {
+                log.Error("Could not take the snapshot of the touch of an exchange.", e);
+                return null;
+            }
+            finally
+            {
+                if (moved)
+                {
+                    try
+                    {
+                        player.ForcePosition(back, true);
+                    }
+                    catch (Exception e)
+                    {
+                        log.Error("Could not bring the video back to the feet off the block.", e);
+                    }
+                }
             }
         }
 
