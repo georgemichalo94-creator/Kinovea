@@ -203,6 +203,19 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private string WithSnapshots(SwimRace race, string html)
         {
+            return FillSnapshots(html, id =>
+            {
+                SwimSnapshot s = race != null && race.Snapshots != null ? race.Snapshots.FirstOrDefault(x => x.Id == id) : null;
+                return SnapshotDataUri(s != null ? SnapshotPath(s) : null);
+            });
+        }
+
+        /// <summary>
+        /// (2.42.0) {{SNAP:id}} in the pages → pictureOf(id) (a data URI), or one transparent pixel when it gives none; each id read once.
+        /// Nothing of the screen: also in the CI.
+        /// </summary>
+        internal static string FillSnapshots(string html, Func<string, string> pictureOf)
+        {
             if (string.IsNullOrEmpty(html) || html.IndexOf("{{SNAP:", StringComparison.Ordinal) < 0)
                 return html;
 
@@ -213,8 +226,7 @@ namespace Kinovea.ScreenManager
                 string uri;
                 if (!done.TryGetValue(id, out uri))
                 {
-                    SwimSnapshot s = race != null && race.Snapshots != null ? race.Snapshots.FirstOrDefault(x => x.Id == id) : null;
-                    uri = SnapshotDataUri(s != null ? SnapshotPath(s) : null) ?? NoPicture;
+                    uri = (pictureOf != null ? pictureOf(id) : null) ?? NoPicture;
                     done[id] = uri;
                 }
 

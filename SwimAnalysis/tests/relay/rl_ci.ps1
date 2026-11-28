@@ -218,6 +218,27 @@ $keys = @('ΑΛΛΑΓΗ ΣΚΥΤΑΛΗΣ', 'Αποκόλληση βατήρα', 
 $missing = @($keys | Where-Object { -not $map.ContainsKey($_) })
 Check ($missing.Count -eq 0) ('the English of the new texts (' + $keys.Count + ', missing ' + $missing.Count + ': ' + ($missing -join ' | ') + ')')
 
+# The pictures of the snapshots in the pages printed by Edge: {{SNAP:id}} → the JPEG of the snapshot (at most 1100 wide), one
+# transparent pixel when there is none; each id read once.
+try {
+  $fill = $tManager.GetMethod('FillSnapshots', $static); $uriOf = $tManager.GetMethod('SnapshotDataUri', $static)
+  $png = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'rl_ci_snapshot.png')
+  $sb = New-Object System.Drawing.Bitmap 1600, 900; $sg = [System.Drawing.Graphics]::FromImage($sb); $sg.Clear([System.Drawing.Color]::FromArgb(20, 90, 140)); $sg.Dispose()
+  $sb.Save($png, [System.Drawing.Imaging.ImageFormat]::Png); $sb.Dispose()
+  $pic = [string]$uriOf.Invoke($null, [object[]]@($png))
+  $script:asked = @()
+  $pictureOf = [Func[string, string]]{ param($id) $script:asked += $id; if ($id -eq 'aa1') { return $pic }; return $null }
+  $filled = [string]$fill.Invoke($null, [object[]]@('<img src="{{SNAP:aa1}}"><img src="{{SNAP:bb2}}"><img src="{{SNAP:aa1}}">', $pictureOf))
+  $jpeg = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (, [Convert]::FromBase64String($pic.Substring($pic.IndexOf(',') + 1)))))
+  $parts = $filled -split '<img src="'
+  Check ($pic.StartsWith('data:image/jpeg;base64,') -and $jpeg.Width -eq 1100 -and $jpeg.Height -eq 619) ('the picture of a snapshot for the pages: a JPEG ' + $jpeg.Width + '×' + $jpeg.Height + ' (from 1600×900)')
+  Check ($filled -notmatch '\{\{SNAP:' -and $parts[1].StartsWith($pic) -and $parts[3].StartsWith($pic) -and $parts[2].StartsWith('data:image/gif;base64,') -and $script:asked.Count -eq 2) ('the pages filled: the snapshot twice, one pixel for the one missing, each asked once (' + ($script:asked -join ',') + ')')
+  $jpeg.Dispose(); Remove-Item $png -ErrorAction SilentlyContinue
+} catch {
+  $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
+  Check $false ('the pictures of the snapshots in the pages: ' + $x.GetType().Name + ': ' + $x.Message)
+}
+
 # ---- 6. Pictures of the exchange on the HUD (1920×1080, no video under it).
 if ($out) {
   try {
@@ -236,7 +257,7 @@ if ($out) {
         $scene.Timestamp = $ts; $scene.Time = $timing.Seconds($ts, [long]1000); $scene.FrameNumber = [long](($ts - 1000) / 20)
         $scene.VideoSeconds = $scene.FrameNumber / 50.0; $scene.Fps = 50; $scene.VideoSize = New-Object System.Drawing.Size 1920, 1080
         $scene.Calibrated = $true; $scene.Summary = $true; $scene.SpeedTrace = $true; $scene.DeltaInfo = $false
-        $tHud.GetMethod('Paint').Invoke($null, @($g, (New-Object System.Drawing.Size 1920, 1080), $scene))
+        $tHud.GetMethod('Paint').Invoke($null, [object[]]@($g, [System.Drawing.Size]::new(1920, 1080), $scene))
       } finally { $g.Dispose() }
       $bmp.Save([System.IO.Path]::Combine($out, $s[1]), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
       Write-Output ('picture: ' + $s[1])
