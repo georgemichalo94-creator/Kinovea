@@ -2240,7 +2240,7 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
-        /// (2.42.0) The exchange of a relay on the boards of before (the HUD has its own): from the touch, in the top corner away from the
+        /// (2.42.0) The exchange of a relay on the boards of before (the HUD has its own): from the touch, in the corner across from the
         /// boards. Not on the images of the report.
         /// </summary>
         private void DrawExchangeBoard(Graphics g, long timestamp, Size size)
@@ -2257,7 +2257,8 @@ namespace Kinovea.ScreenManager
                 Time = Timing.Seconds(timestamp, Race.StartTimestamp.Value)
             };
             string corner = Settings != null ? Settings.OverlayCorner ?? "TopRight" : "TopRight";
-            SwimHudPainter.PaintExchangeBoard(g, size, scene, corner == "TopLeft");
+            SwimHudPainter.PaintExchangeBoard(g, size, scene, corner.EndsWith("Left", StringComparison.Ordinal),
+                corner.StartsWith("Bottom", StringComparison.Ordinal));
         }
 
         /// <summary>

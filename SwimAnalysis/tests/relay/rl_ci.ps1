@@ -267,9 +267,9 @@ if ($out) {
     }
 
     # (2.42.0) The exchange on the boards of before (an image too small for the HUD: the analysis window open beside the video), in the
-    # top left corner, a third of the width (at least 260 pixels); in the right corner when the boards are on the left.
+    # corner across from the boards (bottom left; bottom right when they are on the left), a third of the width (at least 180 pixels).
     $boardOf = $tHud.GetMethod('PaintExchangeBoard')
-    foreach ($b in @(@(49.90, 960, 540, $false, 'exchange_board_960_running.png'), @(50.30, 960, 540, $false, 'exchange_board_960_done.png'), @(100.40, 640, 360, $true, 'exchange_board_640_right.png'))) {
+    foreach ($b in @(@(49.90, 960, 540, $false, 'exchange_board_960_running.png'), @(50.30, 960, 540, $false, 'exchange_board_960_done.png'), @(100.40, 430, 242, $true, 'exchange_board_430_right.png'))) {
       $bmp = New-Object System.Drawing.Bitmap ([int]$b[1]), ([int]$b[2])
       $g = [System.Drawing.Graphics]::FromImage($bmp)
       try {
@@ -277,7 +277,7 @@ if ($out) {
         $scene = [Activator]::CreateInstance($tScene)
         $ts = [long](1000 + [Math]::Round([double]$b[0] * 50) * 20)
         $scene.Race = $race; $scene.Computed = $computed; $scene.Timing = $timing; $scene.Timestamp = $ts; $scene.Time = $timing.Seconds($ts, [long]1000)
-        $boardOf.Invoke($null, [object[]]@($g, [System.Drawing.Size]::new([int]$b[1], [int]$b[2]), $scene, [bool]$b[3]))
+        $boardOf.Invoke($null, [object[]]@($g, [System.Drawing.Size]::new([int]$b[1], [int]$b[2]), $scene, [bool]$b[3], $false))
       } finally { $g.Dispose() }
       $bmp.Save([System.IO.Path]::Combine($out, $b[4]), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
       Write-Output ('picture: ' + $b[4])

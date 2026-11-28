@@ -172,10 +172,11 @@ namespace Kinovea.ScreenManager
 
         /// <summary>
         /// (2.42.0, the test in the program) The exchange on the boards of before (the image too small for the HUD, or the boards chosen):
-        /// the same panel, in a top corner of the image (the left one, the right one when the boards are there), a third of its width
-        /// (260–492 pixels). Only from the touch to two seconds after the feet left the block, as on the HUD.
+        /// the same panel in the corner across from the boards (they stand in a top right corner: bottom left; 'right', 'top': where it
+        /// goes), a third of the width of the image (180–492 pixels), over them where the image is small. Only from the touch to two
+        /// seconds after the feet left the block, as on the HUD.
         /// </summary>
-        public static void PaintExchangeBoard(Graphics g, Size size, SwimHudScene s, bool right)
+        public static void PaintExchangeBoard(Graphics g, Size size, SwimHudScene s, bool right, bool top)
         {
             if (g == null || s == null || s.Race == null || s.Computed == null || !s.Race.IsRelayOfFour || s.Race.IsTraining || double.IsNaN(s.Time) ||
                 size.Width < 300 || size.Height < 200)
@@ -193,14 +194,15 @@ namespace Kinovea.ScreenManager
             if (a <= 0.01f)
                 return;
 
-            float width = Math.Max(260f, Math.Min(ExchangeW, size.Width * 0.34f));
+            float width = Math.Max(180f, Math.Min(ExchangeW, size.Width * 0.34f));
             float k = width / ExchangeW;
+            float height = ExchangeH * k;
             GraphicsState saved = g.Save();
             try
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
-                g.TranslateTransform(right ? size.Width - width - 12 : 12, 12);
+                g.TranslateTransform(right ? size.Width - width - 12 : 12, top ? 12 : Math.Max(12, size.Height - height - 12));
                 g.ScaleTransform(k, k);
                 string unit = s.Race.IsYards ? "yd" : SwimLang.T("μ.");
                 PaintExchange(g, new RectangleF(0, 0, ExchangeW, ExchangeH), x, shown, running, unit, a);
