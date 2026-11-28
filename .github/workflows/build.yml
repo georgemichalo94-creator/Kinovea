@@ -760,6 +760,16 @@ jobs:
             $a10 = Invoke-RestMethod $up10 -Method Post -Headers $headers -InFile slides-check.zip -ContentType "application/zip"
             Write-Output "::notice title=Draft release slides pictures::$($a10.name) $($a10.size) bytes"
           }
+          # (2.42.0) The pictures of the exchange of a relay on the HUD (a fictional race), for a look.
+          if (Test-Path relays) {
+            Compress-Archive -Path relays\* -DestinationPath relays.zip -Force
+            foreach ($a in @($release.assets)) {
+              if ($a -and $a.name -eq 'relays.zip') { Invoke-RestMethod "$api/releases/assets/$($a.id)" -Method Delete -Headers $headers | Out-Null }
+            }
+            $up11 = "https://uploads.github.com/repos/${{ github.repository }}/releases/$($release.id)/assets?name=relays.zip"
+            $a11 = Invoke-RestMethod $up11 -Method Post -Headers $headers -InFile relays.zip -ContentType "application/zip"
+            Write-Output "::notice title=Draft release relay pictures::$($a11.name) $($a11.size) bytes"
+          }
         } catch {
           $detail = $_.ErrorDetails.Message
           Write-Output "::warning title=Draft release::$($_.Exception.Message) $detail"
