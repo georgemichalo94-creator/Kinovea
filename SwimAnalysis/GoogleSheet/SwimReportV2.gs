@@ -1695,7 +1695,7 @@ var SwimV2 = (function () {
   }
 
   // ---- relays: legs and takeovers
-  function pageLegs(x, I, n, N) {
+  function pageLegs(x, I, n, N, withExchanges) {
     const a = x.race, b = x.pb, c = x.ref;
     const legOf = (r, i) => r.legs && r.legs[i] ? r.legs[i] : null;
     const split = (r, i) => legOf(r, i) ? legOf(r, i).split : NaN;
@@ -1715,6 +1715,8 @@ var SwimV2 = (function () {
         body += `<div class="box">${chart}</div>`;
       }
     }
+    // (2.28.0) The exchanges have their own page when they are measured (pageExchanges).
+    if (!withExchanges) return page(I, 'Τα σκέλη', body, n, N);
     body += section('Οι αλλαγές', 'Επαφή του κολυμβητή που φτάνει → τα πόδια του επόμενου φεύγουν από τον βατήρα (επιτρέπεται ως −0.03 s). Ζώνη-στόχος 0.10–0.20 s.');
     const exOf = (r, i) => legOf(r, i) ? legOf(r, i).ex : NaN;
     body += `<div class="box"><table class="tbl"><thead><tr><th>Αλλαγή</th><th>Επαφή → πόδια<br>φεύγουν</th><th>${esc(I.pbShort)}</th><th>Αναφορά</th><th>15 από<br>την επαφή</th><th>Έξοδος</th><th>Δελφ.</th><th>Πάνω από 0.20 s</th></tr></thead><tbody>
@@ -1727,6 +1729,144 @@ var SwimV2 = (function () {
       colors: a.legs.slice(1).map(l => l.ex > 0.2 ? C.lossMark : C.gainMark) });
     if (exChart) body += `<div class="box">${exChart}</div>`;
     return page(I, 'Σκέλη και αλλαγές', body, n, N);
+  }
+
+  // ---- (2.28.0) relays: the exchanges with their snapshots, the starts against the individual bests
+  /** The colours of the four swimmers of a relay (their dots, as on the HUD of Kinovea). */
+  const LEG_COLORS = ['#E85454', '#F2C230', '#4D94FF', '#3DDC96'];
+  /** The zones of an exchange (as Kinovea's SwimRelay): 0 not valid (before −0.03), 1 risk, 2 the target 0.10–0.20, 3 slow, 4 very slow. */
+  const exZone = t => t < -0.03 - 1e-9 ? 0 : t < 0.10 - 1e-9 ? 1 : t <= 0.20 + 1e-9 ? 2 : t <= 0.35 + 1e-9 ? 3 : 4;
+  const EX_ZONE_COLORS = ['#E5484D', '#2E6BD6', '#1FA97A', '#E0A020', '#E57B22'];
+  /** What the time of an exchange says (as on the HUD): in the target, how much above or below it, not valid. */
+  function exVerdict(t) {
+    const z = exZone(t);
+    if (z === 0) return 'άκυρη: πριν από το −0.03';
+    if (z === 1) return `${F(0.10 - t)} s κάτω από τη ζώνη · ρίσκο`;
+    if (z === 2) return 'στη ζώνη 0.10–0.20';
+    return `${F(t - 0.20)} s πάνω από τη ζώνη${z === 4 ? ' · αργή' : ''}`;
+  }
+  const legDot = i => `<i class="rl-dot" style="background:${LEG_COLORS[i % 4]}"></i>`;
+  const family = name => String(name || '').trim().split(/\s+/)[0] || '';
+  /** A snapshot of an exchange: its picture, put in by Kinovea when it prints the pages ({{SNAP:id}}), or its place when there is none. */
+  const snap = (id, color, caption) => `<div class="xc-ph">${id ? `<div class="im"><img src="{{SNAP:${esc(id)}}}" alt=""></div>` : '<div class="im none">χωρίς στιγμιότυπο</div>'}
+      <div class="xc-cap"><i style="background:${color}"></i>${caption}</div></div>`;
+
+  function pageExchanges(x, I, n, N, withLegs) {
+    const a = x.race, b = x.pb, rl = x.relay;
+    const name = i => I.swimmers[i] || (rl && rl.legs[i].name) || '';
+    const officialEx = i => rl ? rl.legs[i].officialEx : NaN;
+    const exOf = i => ok(a.legs[i].ex) ? a.legs[i].ex : (rl && i > 0 ? rl.exchanges[i - 1].ex : NaN);
+    let body = section('Οι κολυμβητές', 'Η σειρά της ομάδας και ο χρόνος κάθε σκέλους (από την επαφή του προηγούμενου).');
+    const over = a.legs.slice(1).reduce((s0, l, j) => s0 + (ok(exOf(j + 1)) ? Math.max(0, exOf(j + 1) - 0.2) : 0), 0);
+    // (Without the page of the legs: their ΔΑΚ and their swimming here.)
+    const more = withLegs ? '<th>ΔΑΚ</th><th>Συχνότητα</th><th>Μήκος<br>κύκλου</th>' : '';
+    const moreOf = l => withLegs ? `<td class="dk"><b>${F(l.dak)}</b></td><td>${F(l.sr, 1)}</td><td>${F(l.sl)}</td>` : '';
+    body += `<div class="box"><table class="tbl sm"><thead><tr><th>Σκέλος</th><th style="text-align:left">Κολυμβητής</th>${I.relay && x.ev.style === 'im' ? '<th style="text-align:left">Στυλ</th>' : ''}<th>Χρόνος</th><th>Σωρευτικός</th>${more}<th>Αλλαγή<br>(βίντεο)</th><th>Αλλαγή<br>(επίσημη)</th></tr></thead><tbody>
+      ${a.legs.map((l, i) => `<tr><td class="l"><b>${i + 1}</b> · ${l.from}–${l.to}</td><td class="l">${legDot(i)}${esc(name(i)) || '–'}</td>${I.relay && x.ev.style === 'im' ? `<td class="l">${esc(STYLE_NAME[l.style])}</td>` : ''}<td><b>${T(l.split)}</b></td><td>${T(l.cum)}</td>${moreOf(l)}
+        <td>${i === 0 ? (ok(a.start.block) ? 'αντ. ' + F(a.start.block) : '–') : `<b>${F(exOf(i))}</b>`}</td><td>${F(officialEx(i))}</td></tr>`).join('')}
+      <tr class="tot"><td class="l">Ομάδα</td><td></td>${I.relay && x.ev.style === 'im' ? '<td></td>' : ''}<td><b>${T(a.final)}</b></td><td></td>${withLegs ? `<td class="dk"><b>${F(a.avg.dak)}</b></td><td>${F(a.avg.sr, 1)}</td><td>${F(a.avg.sl)}</td>` : ''}<td colspan="2" class="l">πάνω από 0.20: <b>${F(over)} s</b></td></tr>
+    </tbody></table></div>`;
+    body += section('Οι αλλαγές', 'Επαφή του κολυμβητή που φτάνει → τα πόδια του επόμενου φεύγουν από τον βατήρα (επιτρέπεται ως −0.03 s). Ζώνη-στόχος 0.10–0.20 s. ' +
+      'Τα στιγμιότυπα είναι τα καρέ του βίντεο στις δύο στιγμές.');
+    a.legs.slice(1).forEach((l, j) => {
+      const i = j + 1, t = exOf(i), e = rl ? rl.exchanges[j] : { touchSnap: '', offSnap: '' };
+      const turn = a.turns.find(z => z.kind === 'exchange' && z.wall === l.from) || {};
+      const pbEx = b.legs && b.legs[i] ? b.legs[i].ex : NaN;
+      const extra = [ok(officialEx(i)) ? 'επίσημη ' + F(officialEx(i)) : '', ok(pbEx) ? `${esc(I.pbShort).toLowerCase()} ${F(pbEx)}` : ''].filter(s0 => s0).join(' · ');
+      const out = [ok(l.out15) ? `15${I.u} από την επαφή ${F(l.out15)} s` : '', ok(turn.bd) ? `έξοδος ${F(turn.bd, 1)}${I.u}` : '', ok(turn.kicks) ? `${F(turn.kicks, 0)} δελφ.` : ''].filter(s0 => s0).join(' · ');
+      const names = name(i - 1) || name(i) ? `${legDot(i - 1)}${esc(family(name(i - 1)) || 'Σκέλος ' + i)} → ${legDot(i)}${esc(family(name(i)) || 'Σκέλος ' + (i + 1))}` : '';
+      body += `<div class="xc"><div><div class="xc-t">Αλλαγή ${i} → ${i + 1} <small>· ${l.from}${I.u}</small></div>
+        ${names ? `<div class="xc-n">${names}</div>` : ''}
+        <div class="xc-v">${ok(t) ? F(t) : '–'}<small> s</small></div>
+        ${ok(t) ? `<span class="zone z${exZone(t)}">${exVerdict(t)}</span>` : ''}
+        ${extra ? `<div class="xc-x">${extra}</div>` : ''}${out ? `<div class="xc-x">${out}</div>` : ''}</div>
+        ${snap(e.touchSnap, '#00C8FF', `Επαφή · ${T(a.legs[i - 1].cum)}`)}
+        ${snap(e.offSnap, '#E57B22', `Πόδια φεύγουν · ${ok(t) ? S(t) + ' s' : '–'}`)}</div>`;
+    });
+    const exs = a.legs.slice(1).map((l, j) => exOf(j + 1));
+    const chart = ch.barChart({ w: W - 26, h: 120, cats: a.legs.slice(1).map((l, j) => `${j + 1} → ${j + 2}`), values: exs.map(v => ok(v) ? Math.max(0, v) : NaN),
+      fmt: v => F(v) + ' s', yTitle: 's', colors: exs.map(v => ok(v) ? EX_ZONE_COLORS[exZone(v)] : C.pb) });
+    if (chart) body += `<div class="box">${chart}</div>`;
+    return page(I, 'Οι αλλαγές της σκυτάλης', body, n, N);
+  }
+
+  /**
+   * The start of each swimmer in the relay and in his individual best (x.relay.legs[i].pb): to the 15 from the signal in the first leg
+   * (both normal starts), from the touch before him in the others against from the signal in his best; split into the exchange (or
+   * the reaction) and the dive (feet off the block → 15); the breakout, the kicks, the speeds feet → breakout and breakout → 15, the
+   * time of the leg against his best.
+   */
+  function relayStartOf(x, i) {
+    const a = x.race, k = a.k || 1;
+    if (i === 0) {
+      const s = a.start, uw = s.bt - s.block;
+      return { react: s.block, to15: s.t15, dive: s.t15 - s.block, bd: s.bd, kicks: s.kicks, leg: a.legs[0].split,
+        uwV: uw > 0 && ok(s.bd) ? s.bd * k / uw : NaN, boV: ok(s.bo15Vel) ? s.bo15Vel : (ok(s.bd) && s.t15 > s.bt ? (15 - s.bd) * k / (s.t15 - s.bt) : NaN) };
+    }
+    const l = a.legs[i], t = a.turns.find(z => z.kind === 'exchange' && z.wall === l.from) || {};
+    const react = l.ex, to15 = l.out15, bt = react + t.uw;
+    return { react, to15, dive: to15 - react, bd: t.bd, kicks: t.kicks, leg: l.split,
+      uwV: t.uw > 0 && ok(t.bd) ? t.bd * k / t.uw : NaN, boV: ok(t.vBo15) ? t.vBo15 : (ok(t.bd) && to15 > bt ? (15 - t.bd) * k / (to15 - bt) : NaN) };
+  }
+
+  function pbStartOf(model) {
+    if (!model) return null;
+    const s = model.start, k = model.k || 1, uw = s.bt - s.block;
+    return { react: s.block, to15: s.t15, dive: s.t15 - s.block, bd: s.bd, kicks: s.kicks, leg: model.final,
+      uwV: uw > 0 && ok(s.bd) ? s.bd * k / uw : NaN, boV: ok(s.bo15Vel) ? s.bo15Vel : (ok(s.bd) && s.t15 > s.bt ? (15 - s.bd) * k / (s.t15 - s.bt) : NaN) };
+  }
+
+  function pageRelayStart(x, I, n, N) {
+    const a = x.race, rl = x.relay;
+    const legLen = I.D / 4;
+    const starts = a.legs.map((l, i) => ({ r: relayStartOf(x, i), p: pbStartOf(rl.legs[i].pb), leg: rl.legs[i] }));
+    const most = Math.max.apply(null, [].concat.apply([], starts.map(s => [s.r.to15, s.p ? s.p.to15 : NaN])).filter(ok).concat([1]));
+    const PX = 300 / most;
+    const event = st => `${legLen} ${(STYLE_NAME[st] || '').toLowerCase()}`;
+    let body = section('Η εκκίνηση στη σκυτάλη και στο ατομικό ρεκόρ', `Κάθε κολυμβητής με το ατομικό του ρεκόρ στο ίδιο αγώνισμα (${event(a.legs[0].style)}${I.relay && x.ev.style === 'im' ? ', το στυλ του σκέλους του' : ''}), ` +
+      `από τις αναλύσεις του και όχι μεταγενέστερο. Στα σκέλη 2–4 η εκκίνηση μετρά από την επαφή του προηγούμενου, στο ατομικό από το σήμα. Η βουτιά: από τα πόδια που φεύγουν από τον βατήρα ως τα 15${I.u}`);
+    body += `<div class="rs-key"><i style="background:#00C8FF"></i>αντίδραση (σήμα → πόδια) ή αλλαγή (επαφή → πόδια) <i style="background:${C.navy};margin-left:12px"></i>βουτιά: πόδια φεύγουν → 15${I.u} <span style="margin-left:12px">δεξιά: ως τα 15${I.u} (s)</span></div>`;
+    const bar = (s, exchange) => {
+      if (!s || !ok(s.to15)) return '<div class="rs-bar"><span class="t">–</span></div>';
+      const rw = Math.max(0, (ok(s.react) ? s.react : 0) * PX), dw = Math.max(0, (ok(s.dive) ? s.dive : s.to15) * PX);
+      const label = exchange ? `<span class="rs-lab" style="left:0">αλλαγή ${F(s.react)}</span>` : '';
+      return `<div class="rs-bar">${label}<span class="r" style="width:${rw.toFixed(1)}px">${rw >= 28 ? F(s.react) : ''}</span><span class="d" style="width:${dw.toFixed(1)}px">${dw >= 34 ? F(s.dive) : ''}</span><span class="t">${F(s.to15)}</span></div>`;
+    };
+    const diff = (r, p, nn) => ok(r) && ok(p) ? S(r - p, nn) : '–';
+    let gainAll = 0, gainEx = 0, gainDive = 0, counted = 0;
+    starts.forEach((s, i) => {
+      const r = s.r, p = s.p, leg = s.leg;
+      const who = leg.name || I.swimmers[i] || `Σκέλος ${i + 1}`;
+      const pbLine = p ? `ατομικό ρεκόρ: ${event(a.legs[i].style)} <b>${T(p.leg)}</b>${leg.pbCompetition ? ' · ' + esc(leg.pbCompetition) : ''}` : '';
+      let verdict;
+      if (!p || !ok(p.to15) || !ok(r.to15)) {
+        verdict = leg.athleteId ? `Χωρίς ατομικό ρεκόρ στο ${event(a.legs[i].style)} στις αναλύσεις του: μόνο η σκυτάλη.` : 'Ο κολυμβητής δεν είναι από το KOE App: μόνο η σκυτάλη.';
+      } else if (i === 0) {
+        const d = r.to15 - p.to15;
+        const word = Math.abs(d) < 0.005 ? '<span class="chip n">ίδια</span>' : d > 0 ? `<span class="chip l">${F(d)} s πιο αργή</span>` : `<span class="chip g">${F(-d)} s πιο γρήγορη</span>`;
+        verdict = `${word} Κανονική εκκίνηση (σήμα): ως τα 15${I.u} ${Math.abs(d) < 0.005 ? 'όσο' : d > 0 ? 'πιο αργή από' : 'πιο γρήγορη από'} το ατομικό του· αντίδραση ${diff(r.react, p.react)}, βουτιά ${diff(r.dive, p.dive)} s.`;
+      } else {
+        const g = p.to15 - r.to15, gEx = p.react - r.react, gDive = p.dive - r.dive;
+        if (ok(g) && ok(gEx) && ok(gDive)) { gainAll += g; gainEx += gEx; gainDive += gDive; counted++; }
+        const word = g >= 0 ? `<span class="chip g">κερδίζει ${F(g)} s</span>` : `<span class="chip l">χάνει ${F(-g)} s</span>`;
+        const dive = gDive < -0.005 ? `, αλλά <b class="loss">στη βουτιά χάνει ${F(-gDive)} s</b> από το ατομικό του.` : `, ${F(gDive)} από τη βουτιά.`;
+        verdict = `${word} ως τα 15${I.u}: ${F(gEx)} από την αλλαγή αντί για αντίδραση${dive}`;
+      }
+      const rows = [['Έξοδος' + I.u.replace(' ', ' (') + ')', r.bd, p ? p.bd : NaN, 1], ['Δελφινισμοί', r.kicks, p ? p.kicks : NaN, 0],
+        ['Πόδια → έξοδος (m/s)', r.uwV, p ? p.uwV : NaN, 2], [`Έξοδος → 15${I.u} (m/s)`, r.boV, p ? p.boV : NaN, 2], ['Σκέλος / ατομικό', r.leg, p ? p.leg : NaN, -1]];
+      body += `<div class="rs"><div class="rs-h"><div class="rs-n">${i + 1} · ${esc(who)}</div><div class="rs-pb">${pbLine}</div></div>
+        <div class="rs-b"><div><div class="rs-row"><span class="lab">Σκυτάλη</span>${bar(r, i > 0)}</div><div class="rs-row"><span class="lab">Ατομικό</span>${bar(p, false)}</div>
+          <div class="rs-txt">${verdict}</div></div>
+        <table class="rs-tbl"><thead><tr><th></th><th>Σκυτάλη</th><th>Ατομικό</th><th>Διαφ.</th></tr></thead><tbody>
+          ${rows.map(q => `<tr><td class="l">${q[0]}</td><td><b>${q[3] < 0 ? T(q[1]) : F(q[1], q[3])}</b></td><td>${q[3] < 0 ? T(q[2]) : F(q[2], q[3])}</td><td>${diff(q[1], q[2], q[3] < 0 ? 2 : q[3])}</td></tr>`).join('')}
+        </tbody></table></div></div>`;
+    });
+    if (counted) {
+      const part = (g0, what) => g0 >= 0 ? `${F(g0)} από ${what}` : `χάνουν ${F(-g0)} ${what.replace(/^τις /, 'στις ')}`;
+      body += `<div class="rs-sum"><b>Σκέλη ${counted === 3 ? '2–4' : 'με ατομικό ρεκόρ'}:</b> ως τα 15${I.u} ${gainAll >= 0 ? 'κερδίζουν' : 'χάνουν'} μαζί <b>${F(Math.abs(gainAll))} s</b> ` +
+        `${gainAll >= 0 ? 'από' : 'σε σχέση με'} τα ατομικά τους· ${part(gainEx, 'τις αλλαγές')}${gainDive >= 0 === gainEx >= 0 ? ' και ' : ', ενώ '}${part(gainDive, 'τις βουτιές')}.</div>`;
+    }
+    return page(I, 'Η εκκίνηση στη σκυτάλη', body, n, N);
   }
 
   // ---- appendix
@@ -1811,7 +1951,14 @@ var SwimV2 = (function () {
     // (2.25.0) The conclusion of the whole race right after the phases (in the short analysis too).
     add('conclusion', (R, n, N) => pageConclusion(x, I, R, n, N));
     if (a.blocks.some(bk => ok(bk.dak))) add('dak', (R, n, N) => pageDak(x, I, n, N));
-    if (I.relay && a.legs && a.legs.some(l => ok(l.split))) add('legs', (R, n, N) => pageLegs(x, I, n, N));
+    // (2.28.0) A relay: its exchanges on their own page (with the snapshots of their two moments), and each swimmer's start against his
+    // individual best when there is one.
+    const exPage = I.relay && !!x.relay && a.legs && a.legs.slice(1).some(l => ok(l.ex));
+    // Without the team's best and a reference the legs have nothing to be compared with: their values go to the page of the exchanges.
+    const legsPage = I.relay && a.legs && a.legs.some(l => ok(l.split)) && (!exPage || I.has.pb || I.has.ref);
+    if (legsPage) add('legs', (R, n, N) => pageLegs(x, I, n, N, !exPage));
+    if (exPage) add('exchanges', (R, n, N) => pageExchanges(x, I, n, N, !legsPage));
+    if (x.relay && x.relay.legs.some(l => l.pb && ok(l.pb.start.t15))) add('relayStart', (R, n, N) => pageRelayStart(x, I, n, N));
     if (I.D <= 100 && !I.relay) add('speed', (R, n, N) => pageSpeed(x, I, n, N));
     else add('composition', (R, n, N) => pageComposition(x, I, n, N));
     if (I.im && !I.relay && a.rows.some(r => ok(r.t))) add('styles', (R, n, N) => pageStyles(x, I, n, N));
@@ -2074,9 +2221,37 @@ var SwimV2 = (function () {
     const gender = String(race.gender || race.category || '').trim();
     const meta = [race.competition, race.location, race.date, race.pool === 50 ? 'Πισίνα 50μ.' : yd ? 'Πισίνα 25yd' : 'Πισίνα 25μ.', race.round, race.lane ? 'Διαδρομή ' + race.lane : '']
       .map(s => String(s || '').trim()).filter(s => s);
-    return { ev, race: a, pb: other(cmp.pb), ref: other(cmp.elite),
+    const relay = relayOf(race, a, cmp);
+    return { ev, race: a, pb: other(cmp.pb), ref: other(cmp.elite), relay,
       details: { who: race.athlete || '', kind: gender || (race.relay ? 'Ομαδικό' : ''), competition: String(race.competition || '').trim(), club: race.relay ? '' : String(race.club || '').trim(),
-        round: String(race.round || '').trim(), meta, pbLabel: cmp.pb ? String(cmp.pb.label || '') : '', refLabel: cmp.elite ? String(cmp.elite.label || '') : '' } };
+        round: String(race.round || '').trim(), meta, pbLabel: cmp.pb ? String(cmp.pb.label || '') : '', refLabel: cmp.elite ? String(cmp.elite.label || '') : '',
+        swimmers: relay && relay.legs.some(l => l.name) ? relay.legs.map(l => l.name) : null } };
+  }
+
+  /**
+   * (2.28.0) A relay with its swimmers (Kinovea 2.42.0, race.relayLegs): each swimmer (his name, his athlete of the KOE App, his
+   * official leg and exchange) with his individual personal best of the event of his leg (swimRelayPbs_: same stroke, the distance of
+   * the leg, the same pool, not later than the race), and the exchanges with the ids of the snapshots of their two moments. Null for
+   * another race.
+   */
+  function relayOf(race, a, cmp) {
+    const legsIn = Array.isArray(race.relayLegs) ? race.relayLegs : [], exIn = Array.isArray(race.relayExchanges) ? race.relayExchanges : [];
+    if (!race.relay || !a.legs || (!legsIn.length && !exIn.length)) return null;
+    const pbs = Array.isArray(cmp.relayPbs) ? cmp.relayPbs : [];
+    const legs = [1, 2, 3, 4].map(n => {
+      const l = legsIn.find(o => o.leg === n) || null;
+      const p = pbs[n - 1];
+      let pb = null;
+      try { pb = p && p.race && p.analysis ? analyse(p.race, p.analysis) : null; } catch (e) { pb = null; }
+      return { n, name: l ? String(l.athlete || '') : '', athleteId: l ? String(l.athleteId || '') : '', style: a.legs[n - 1].style,
+        official: l ? num(l.official) : NaN, officialEx: l ? num(l.officialExchange) : NaN, pb,
+        pbCompetition: p && p.race ? String(p.race.competition || '').trim() : '', pbDate: p && p.race ? String(p.race.date || '').trim() : '' };
+    });
+    const exchanges = [1, 2, 3].map(n => {
+      const e = exIn.find(o => o.n === n) || {};
+      return { n, touchSnap: e.touchSnap || '', offSnap: e.offSnap || '', ex: num(e.ex), official: num(e.official) };
+    });
+    return { legs, exchanges };
   }
 
   // ---------------------------------------------------------------------------------------------------------------------------
@@ -2933,6 +3108,35 @@ var SwimV2 = (function () {
   .acb-bar i.up { background: linear-gradient(90deg, #2BB3A0, #5FE3C9); } .acb-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; }
   .acb-v { font-size: 12.5px; color: #fff; font-weight: 800; text-align: right; white-space: nowrap; } .acb-v small { font-size: 10.5px; color: #A9BACB; font-weight: 700; }
   .ac-sub { margin: 6px 0 0; } .nw { white-space: nowrap; }
+  .rl-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 1px; vertical-align: 0; }
+  .xc { display: grid; grid-template-columns: 204px 1fr 1fr; gap: 10px; align-items: start; border: 1px solid #E3E8EE; border-radius: 10px; padding: 8px 10px; margin-bottom: 7px; }
+  .xc-t { font-family: 'Inter Display', 'Inter', sans-serif; font-weight: 800; font-size: 14px; color: ${C.ink}; } .xc-t small { font-weight: 600; font-size: 10.5px; color: ${C.dim}; }
+  .xc-n { font-size: 10.4px; font-weight: 600; color: ${C.text}; margin: 2px 0 1px; }
+  .xc-v { font-family: 'Inter Display', 'Inter', sans-serif; font-size: 36px; font-weight: 800; color: ${C.ink}; line-height: 1.05; } .xc-v small { font-size: 15px; color: ${C.dim}; font-weight: 600; }
+  .xc-x { font-size: 9.8px; color: ${C.dim}; margin-top: 3px; line-height: 1.35; }
+  .xc-ph .im { width: 100%; aspect-ratio: 16 / 9; border-radius: 7px; background: #DDE4EC; border: 1px solid #D3DCE6; overflow: hidden; }
+  .xc-ph .im img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .xc-ph .im.none { display: flex; align-items: center; justify-content: center; font-size: 10px; color: ${C.faint}; }
+  .xc-cap { font-size: 10px; font-weight: 700; color: ${C.text}; margin-top: 3px; } .xc-cap i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+  .zone { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 9px; margin-top: 3px; }
+  .zone.z0 { background: #FDE0E2; color: #B3261E; } .zone.z1 { background: #E1EAFB; color: #1C55B8; } .zone.z2 { background: #DDF5EA; color: #0E7A4F; }
+  .zone.z3 { background: #FFF1DA; color: #8A5300; } .zone.z4 { background: #FCE6D3; color: #A24A07; }
+  .rs-key { font-size: 10px; color: ${C.dim}; margin: 0 0 6px; } .rs-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 4px 0 0; vertical-align: -1px; }
+  .rs { border: 1px solid #E3E8EE; border-radius: 10px; padding: 7px 11px 7px; margin-bottom: 7px; }
+  .rs-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .rs-n { font-family: 'Inter Display', 'Inter', sans-serif; font-weight: 800; font-size: 13.5px; color: ${C.ink}; white-space: nowrap; }
+  .rs-pb { font-size: 10px; color: ${C.dim}; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; } .rs-pb b { font-size: 14px; color: ${C.ink}; }
+  .rs-b { display: grid; grid-template-columns: 1fr 282px; gap: 12px; align-items: start; margin-top: 3px; }
+  .rs-row { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 6px; margin: 9px 0 4px; } .rs-row .lab { font-size: 10.4px; font-weight: 700; color: ${C.dim}; }
+  .rs-bar { position: relative; height: 18px; display: flex; align-items: center; }
+  .rs-bar .r { height: 18px; min-width: 3px; background: #00C8FF; border-radius: 3px 0 0 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #0B111A; }
+  .rs-bar .d { height: 18px; background: ${C.navy}; border-radius: 0 3px 3px 0; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 800; color: #fff; }
+  .rs-bar .t { margin-left: 6px; font-size: 12px; font-weight: 800; color: ${C.ink}; white-space: nowrap; }
+  .rs-lab { position: absolute; top: -12px; font-size: 9px; font-weight: 700; color: ${C.dim}; white-space: nowrap; }
+  .rs-txt { font-size: 10.4px; color: ${C.text}; margin-top: 4px; line-height: 1.4; } .rs-txt .loss { color: ${C.loss}; }
+  .rs-tbl { width: 100%; border-collapse: collapse; } .rs-tbl th { font-size: 9px; color: ${C.dim}; font-weight: 700; text-align: right; padding: 1px 5px 3px; border-bottom: 1px solid #D3DCE6; background: #EEF2F7; }
+  .rs-tbl th:first-child { text-align: left; } .rs-tbl td { font-size: 10.6px; text-align: right; padding: 2px 5px; border-bottom: 1px solid #EEF2F6; } .rs-tbl td.l { text-align: left; font-weight: 600; }
+  .rs-sum { border: 1px solid #E3E8EE; border-radius: 10px; padding: 7px 12px; font-size: 11px; }
   .db { display: inline-block; position: relative; width: 32px; height: 8px; vertical-align: middle; margin-right: 4px; background: linear-gradient(#C9D2DC, #C9D2DC) center / 1px 100% no-repeat; }
   .db i { position: absolute; top: 1px; height: 6px; border-radius: 3px; } .db i.f { right: 50%; background: ${C.gainMark}; } .db i.s { left: 50%; background: ${C.lossMark}; }
   .rc { border: 1px solid #E3E8EE; border-left: 5px solid #2E6BD6; border-radius: 10px; padding: 7px 13px 8px; margin-bottom: 7px; background: #fff; }

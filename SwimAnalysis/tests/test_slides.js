@@ -79,7 +79,7 @@ all().forEach(p => VARIANTS.forEach(v => {
   assert.ok(asked.slides && asked.slides.html.indexOf('<section class="sl v') > 0 && asked.slides.video >= 8 && asked.slides.social >= 6, 'the slides when asked');
   assert.strictEqual(asked.html, plain.html, 'the pages the same with the slides');
   assert.ok(short.slides && short.slides.video <= 4, 'the slides of the short analysis: ' + (short.slides && short.slides.video));
-  assert.strictEqual(asked.version, '2.27.2');
+  assert.strictEqual(asked.version, '2.28.0');
 }
 assert.ok(speedPosts > 100, 'speed posts checked: ' + speedPosts);
 console.log('test_slides: ' + built + ' slide sets OK (' + speedPosts + ' speed posts with the start)');

@@ -87,9 +87,17 @@
  *      των στροφών στο γράφημα «Ταχύτητα ανά τμήμα» (και του elite από τελικό) από την έξοδο των ταχυτήτων του Kinovea
  *      (swimSpeedsBreakout_: εκεί που η ταχύτητα έξοδος → +15 του Kinovea δίνει τον χρόνο ως τα +15), όχι από αυτή που μετρήθηκε: τα
  *      δύο τμήματα κάνουν μαζί όλο το «τοίχος → +15», όπως στο πάνελ, το PDF και το βίντεο. Η απόσταση γράφεται όπως μετρήθηκε.
+ *  27. Τα ομαδικά με τους κολυμβητές τους (2.28.0, με το Kinovea 2.42.0): το Kinovea στέλνει τους τέσσερις κολυμβητές (relayLegs: ο
+ *      αθλητής του KOE App του καθενός, από τον ΑΜ στα αποτελέσματα του KOE live, από όνομα και έτος, ή από τον αναλυτή) και τις αλλαγές
+ *      (relayExchanges: η επαφή, τα πόδια από τον βατήρα, ο χρόνος, τα στιγμιότυπα). Κάθε κολυμβητής του KOE App παίρνει μία γραμμή στο
+ *      «Αναλύσεις Αγώνων» (Race ID «<αγώνας>#<σκέλος>», Αγώνισμα «fs σκέλος» όπως τα σκέλη της βιβλιοθήκης, ώστε να μη μπαίνει στα PB
+ *      των ατομικών, με τις τιμές του σκέλους του) και το PDF της ομάδας στο «Αρχεία Αθλητών/τριων» με τον δικό του profile_id (η
+ *      περιγραφή μένει «ΑΡΧΕΙΟ ΑΝΑΛΥΣΗΣ ΑΓΩΝΑ», της λίστας του AppSheet). Στην αναφορά: τα ονόματα στα σκέλη, οι αλλαγές σε δική τους
+ *      σελίδα με τα δύο στιγμιότυπα κάθε αλλαγής (το Kinovea τα βάζει στη θέση του {{SNAP:id}} όταν τυπώνει τις σελίδες), και η
+ *      εκκίνηση κάθε κολυμβητή στη σκυτάλη απέναντι στο ατομικό του ρεκόρ στο αγώνισμα του σκέλους του (swimRelayPbs_).
  */
 
-var SWIM_VERSION = '2.27.2';
+var SWIM_VERSION = '2.28.0';
 var SWIM_APP_ID = 'kinovea-swim';
 var SWIM_INDEX_SHEET = 'Αγώνες';
 var SWIM_SUMMARY_SHEET = 'Αναλύσεις Αγώνων';
@@ -396,8 +404,8 @@ function swimHandleRequest_(req) {
         // 2.10.0: το PDF και στο «Αρχεία Αθλητών/τριων» του KOE App (εκτός αν το Kinovea ζητά archive: false), και για το πακέτο
         // αποστολής του Kinovea το ίδιο το PDF (pdfData) και τα email των προπονητών του αθλητή (coaches).
         var athleteRec = swimRegistryRecordSafe_(req.race);
-        if (req.archive !== false) result.archive = swimArchiveReport_(req.race, result.pdf, result.pdf.blob, athleteRec);
-        if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
+        if (req.archive !== false) result.archive = swimArchiveRaceReport_(req.race, result.pdf, result.pdf.blob);
+        if (req.coaches) result.coaches = swimRaceCoaches_(req.race, athleteRec);
         if (req.pdfData && result.pdf.blob) result.pdf.data = Utilities.base64Encode(result.pdf.blob.getBytes());
         if (req.pdfData && result.pdfShort && result.pdfShort.blob) result.pdfShort.data = Utilities.base64Encode(result.pdfShort.blob.getBytes());
         result.timings = timings({ pdf: exported - reported, archive: Date.now() - exported });
@@ -1080,6 +1088,8 @@ function swimUpsertRace_(rawRace, opts) {
   var sheetUrl = ss.getUrl() + '#gid=' + sheet.getSheetId();
   swimSaveIndexEntry_(index, entry, race, sheet, layout.signature + '\n' + charts.placement, kpi.finalTime);
   if (race.kind !== 'training') swimWriteSummary_(race, analysis, kpi, sheetUrl);
+  // (2.28.0) Ομαδικό: και μία γραμμή για κάθε κολυμβητή του KOE App, με το σκέλος του.
+  if (swimIsRelayOfFour_(race)) swimWriteRelaySummaries_(race, analysis, sheetUrl);
 
   var result = {
     ok: true,
@@ -1240,6 +1250,152 @@ function swimSetSummaryPdf_(raceId, url) {
   var sh = swimSummarySheet_(swimDataSpreadsheet_());
   var row = swimSummaryRow_(sh, raceId);
   if (row) sh.getRange(row, SWIM_SUM.pdf + 1).setValue(url);
+  // (2.28.0) Και οι γραμμές των κολυμβητών ενός ομαδικού («<αγώνας>#<σκέλος>»): το PDF της ομάδας.
+  var last = sh.getLastRow();
+  if (last < 2 || !raceId) return;
+  var ids = sh.getRange(2, SWIM_SUM.raceId + 1, last - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).indexOf(raceId + '#') === 0) sh.getRange(i + 2, SWIM_SUM.pdf + 1).setValue(url);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// (2.28.0) Ομαδικό: κάθε κολυμβητής του KOE App με το σκέλος του στην καρτέλα του
+// ---------------------------------------------------------------------------------------------
+
+/** Ο κολυμβητής ενός σκέλους (1–4) του ομαδικού, null όταν δεν είναι γνωστός. */
+function swimRelayLegOf_(race, leg) {
+  var list = race && race.relayLegs ? race.relayLegs : [];
+  for (var i = 0; i < list.length; i++) if (list[i].leg === leg) return list[i];
+  return null;
+}
+
+/** Ομαδικό τεσσάρων σκελών (4x50, 4x100, 4x200), όχι προσπάθειες προπόνησης. */
+function swimIsRelayOfFour_(race) {
+  return !!(race && race.relay && race.kind !== 'training' && race.distance >= 4 && race.distance % 4 === 0);
+}
+
+/**
+ * (2.28.0) Οι τιμές του σκέλους ενός κολυμβητή από την ανάλυση της ομάδας: ο χρόνος του (από την επαφή του προηγούμενου· του 1ου από το
+ * σήμα), η μέση ταχύτητα, οι χεριές του (όταν όλα τα τμήματά του έχουν), η συχνότητα και το μήκος της καθαρής κολύμβησής του (όπως η
+ * σύνοψη του αγώνα), ο ΔΑΚ των 50άρι του, τα 15 (από το σήμα, ή από την επαφή στις αλλαγές) και τα 50άριά του.
+ */
+function swimRelayLegKpis_(race, analysis, leg) {
+  var L = race.distance / 4, from = (leg - 1) * L, to = leg * L, k = race.k || 1;
+  var at = { 0: 0 };
+  (analysis.rows || []).forEach(function (r) { if (r.t !== null && r.t !== undefined) at[r.d] = r.t; });
+  var has = function (d) { return at[d] !== undefined && at[d] !== null && isFinite(at[d]); };
+  var t0 = has(from) ? at[from] : null, t1 = has(to) ? at[to] : null;
+  var time = t0 !== null && t1 !== null && t1 > t0 ? t1 - t0 : null;
+  var rows = (analysis.rows || []).filter(function (r) { return r.d > from + 1e-9 && r.d <= to + 1e-9; });
+  var strokes = null;
+  if (rows.length && rows.every(function (r) { return typeof r.strokes === 'number' && isFinite(r.strokes); })) {
+    strokes = rows.reduce(function (s, r) { return s + r.strokes; }, 0);
+  }
+  var cyc = 0, cycT = 0, cs = 0, cd = 0;
+  rows.forEach(function (r) {
+    if (r.sr === null || r.sr === undefined || !(r.segTime > 0)) return;
+    var c = r.sr * r.segTime / 60;
+    cyc += c; cycT += r.segTime; cs += c * (r.ppc || 1); cd += (r.d - r.prevD) * k;
+  });
+  var daks = (analysis.blocks || []).filter(function (b) {
+    return b.from >= from - 1e-9 && b.to <= to + 1e-9 && b.dak !== null && b.dak !== undefined && isFinite(b.dak);
+  }).map(function (b) { return b.dak; });
+  var splits = [];
+  for (var d = from + 50; d <= to + 1e-9; d += 50) {
+    if (!has(d) || !has(d - 50)) { splits = []; break; }
+    splits.push((at[d] - at[d - 50]).toFixed(2));
+  }
+  return { finalTime: time, avgVel: time ? L * k / time : null, totalStrokes: strokes, sr: cycT > 0 ? cyc * 60 / cycT : null,
+    dps: cs > 0 ? cd / cs : null, dak: daks.length ? daks.reduce(function (a, b) { return a + b; }, 0) / daks.length : null,
+    t15: has(from + 15) && t0 !== null ? at[from + 15] - t0 : null, splits: splits.join(' / ') };
+}
+
+/**
+ * (2.28.0) Η γραμμή ενός κολυμβητή του ομαδικού στο «Αναλύσεις Αγώνων»: ο αθλητής του KOE App, το σκέλος του ως αγώνισμα («fs σκέλος»,
+ * όπως τα σκέλη της βιβλιοθήκης: δεν μπαίνει στα PB των ατομικών), η απόστασή του, οι τιμές του σκέλους, Race ID «<αγώνας>#<σκέλος>».
+ */
+function swimRelayLegSummaryValues_(race, analysis, l, sheetUrl, pdf) {
+  var num = function (v) { return typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : ''; };
+  var kpi = swimRelayLegKpis_(race, analysis, l.leg);
+  var L = race.distance / 4;
+  var style = ['fs', 'bk', 'br', 'fly'].indexOf(l.style) >= 0 ? l.style : swimStyleAt_(race, l.leg * L);
+  var label = swimIndexEventLabel_({ style: style, relay: false, relayLeg: String(l.leg), kind: 'race' }) + (race.dq ? ' (DQ)' : '');
+  var idValue = /^\d+$/.test(l.athleteId) ? Number(l.athleteId) : l.athleteId;
+  return [idValue, l.athlete, l.club || race.club, l.category, race.date, race.competition, race.location, race.round,
+    label, String(L), swimPoolLabel_(race), num(kpi.finalTime), num(kpi.avgVel), num(kpi.totalStrokes), num(kpi.sr), num(kpi.dps),
+    num(kpi.dak), num(kpi.t15), kpi.splits, sheetUrl || '', pdf || '', race.id + '#' + l.leg,
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm')];
+}
+
+/**
+ * (2.28.0) Οι γραμμές των κολυμβητών ενός ομαδικού στο «Αναλύσεις Αγώνων»: μία για κάθε σκέλος με αθλητή του KOE App (η καρτέλα του
+ * δείχνει το σκέλος του)· η γραμμή ενός σκέλους που έμεινε χωρίς αθλητή του KOE App φεύγει. Η γραμμή της ομάδας μένει όπως ήταν.
+ */
+function swimWriteRelaySummaries_(race, analysis, sheetUrl) {
+  if (!swimIsRelayOfFour_(race)) return;
+  var sh = swimSummarySheet_(swimDataSpreadsheet_());
+  var teamRow = swimSummaryRow_(sh, race.id);
+  var teamPdf = teamRow ? sh.getRange(teamRow, SWIM_SUM.pdf + 1).getValue() : '';
+  for (var n = 1; n <= 4; n++) {
+    var row = swimSummaryRow_(sh, race.id + '#' + n);
+    var l = swimRelayLegOf_(race, n);
+    if (!l || !l.athleteId) {
+      if (row) sh.deleteRows(row, 1);
+      continue;
+    }
+    var pdf = row ? sh.getRange(row, SWIM_SUM.pdf + 1).getValue() : '';
+    var values = swimRelayLegSummaryValues_(race, analysis, l, sheetUrl, pdf || teamPdf);
+    sh.getRange(row || sh.getLastRow() + 1, 1, 1, values.length).setValues([values]);
+  }
+}
+
+/**
+ * (2.28.0) Το PDF ενός αγώνα στο «Αρχεία Αθλητών/τριων» του KOE App: ενός ομαδικού με τους κολυμβητές του στην καρτέλα του καθενός
+ * (μία γραμμή για κάθε κολυμβητή του KOE App, με την περιγραφή της αναφοράς αγώνα όπως πάντα), των άλλων όπως πριν. Η απάντηση όπως
+ * του ενός αθλητή (ok, message, note), με το πλήθος των κολυμβητών (legs).
+ */
+function swimArchiveRaceReport_(raw, pdf, blob) {
+  var race;
+  try { race = swimNormalizeRace_(raw); } catch (e) { race = null; }
+  if (!race || !swimIsRelayOfFour_(race) || !race.relayLegs) return swimArchiveReport_(raw, pdf, blob, swimRegistryRecordSafe_(raw));
+  var results = [];
+  race.relayLegs.forEach(function (l) {
+    if (!l.athleteId) return;
+    var record = null;
+    try { record = swimRegistryRecord_(l.athleteId); } catch (e) { record = null; }
+    var legRaw = Object.assign({}, raw, { id: race.id + '#' + l.leg, athleteId: l.athleteId, athlete: l.athlete });
+    results.push(swimArchiveReport_(legRaw, pdf, blob, record));
+  });
+  var good = results.filter(function (r) { return r && r.ok; });
+  if (!good.length) {
+    return results.length ? results[0] : { ok: false, reason: 'registry',
+      message: swimT_('Κανένας κολυμβητής της σκυταλοδρομίας δεν είναι από το KOE App: το PDF δεν μπήκε στο «Αρχεία Αθλητών/τριων».') };
+  }
+  var notes = good.filter(function (r) { return r.note; }).map(function (r) { return r.note; });
+  var out = { ok: true, id: good[0].id, row: good[0].row, updated: good[0].updated, inFolder: good.every(function (r) { return r.inFolder; }),
+    legs: good.length };
+  out.note = swimTF_('στην καρτέλα {0} από τους {1} κολυμβητές', good.length, race.relayLegs.length) + (notes.length ? ' · ' + notes[0] : '');
+  return out;
+}
+
+/** (2.28.0) Τα email των προπονητών ενός αγώνα: του αθλητή, ή των κολυμβητών ενός ομαδικού (χωρίς διπλά). */
+function swimRaceCoaches_(raw, athleteRec) {
+  var race;
+  try { race = swimNormalizeRace_(raw); } catch (e) { race = null; }
+  if (!race || !swimIsRelayOfFour_(race) || !race.relayLegs) return athleteRec ? athleteRec.coaches : [];
+  var out = [], seen = {};
+  race.relayLegs.forEach(function (l) {
+    if (!l.athleteId) return;
+    var rec = null;
+    try { rec = swimRegistryRecord_(l.athleteId); } catch (e) { rec = null; }
+    (rec && rec.coaches ? rec.coaches : []).forEach(function (c) {
+      if (seen[String(c).toLowerCase()]) return;
+      seen[String(c).toLowerCase()] = true;
+      out.push(c);
+    });
+  });
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1742,7 +1898,54 @@ function swimNormalizeRace_(raw) {
 
   if (!race.distance && race.checkpoints.length) race.distance = race.checkpoints[race.checkpoints.length - 1].d;
   if (!race.distanceLabel) race.distanceLabel = String(race.distance);
+
+  // (2.28.0) Ομαδικό (Kinovea 2.42.0): οι τέσσερις κολυμβητές του με τον αθλητή τους στο KOE App, και οι αλλαγές του (η επαφή, τα πόδια
+  // από τον βατήρα, ο χρόνος, τα στιγμιότυπα που βάζει το Kinovea στο PDF). Μόνο όταν υπάρχουν (ίδιο αντικείμενο αλλιώς).
+  var relayLegs = swimRelayLegs_(r.relayLegs);
+  if (relayLegs.length) race.relayLegs = relayLegs;
+  var relayExchanges = swimRelayExchanges_(r.relayExchanges);
+  if (relayExchanges.length) race.relayExchanges = relayExchanges;
   return race;
+}
+
+/**
+ * (2.28.0) Οι κολυμβητές ενός ομαδικού (Kinovea 2.42.0), με τη σειρά τους: [{ leg (1–4), style, athlete, athleteId (unique_id του KOE
+ * App, κενό για όνομα μόνο), gender, club, category, birthYear, match ("code", "name", "chosen", ""), official (ο επίσημος χρόνος του
+ * σκέλους), officialExchange (η επίσημη αλλαγή του· του 1ου η αντίδραση) }].
+ */
+function swimRelayLegs_(list) {
+  if (!Array.isArray(list)) return [];
+  var text = function (v) { return String(v === null || v === undefined ? '' : v).trim(); };
+  var out = [];
+  list.forEach(function (l) {
+    if (!l || typeof l !== 'object') return;
+    var leg = swimNum_(l.leg);
+    if (leg === null || leg < 1 || leg > 4 || Math.round(leg) !== leg || out.some(function (x) { return x.leg === leg; })) return;
+    out.push({ leg: leg, style: text(l.style).toLowerCase(), athlete: text(l.athlete).substring(0, 80), athleteId: text(l.athleteId),
+      gender: text(l.gender), club: text(l.club), category: text(l.category), birthYear: text(l.birthYear), match: text(l.match),
+      official: swimNum_(l.official), officialExchange: swimNum_(l.officialExchange) });
+  });
+  out.sort(function (a, b) { return a.leg - b.leg; });
+  return out;
+}
+
+/**
+ * (2.28.0) Οι αλλαγές ενός ομαδικού όπως τις μέτρησε το Kinovea 2.42.0: [{ n (1–3), wall, touch, feetOff, ex, official, touchSnap,
+ * offSnap }]· τα στιγμιότυπα (τα id τους) τα βάζει το Kinovea στις σελίδες του PDF ({{SNAP:id}}).
+ */
+function swimRelayExchanges_(list) {
+  if (!Array.isArray(list)) return [];
+  var id = function (v) { var s = String(v === null || v === undefined ? '' : v).trim(); return /^[0-9A-Za-z_\-]{1,64}$/.test(s) ? s : ''; };
+  var out = [];
+  list.forEach(function (x) {
+    if (!x || typeof x !== 'object') return;
+    var n = swimNum_(x.n);
+    if (n === null || n < 1 || n > 3 || Math.round(n) !== n || out.some(function (o) { return o.n === n; })) return;
+    out.push({ n: n, wall: swimNum_(x.wall), touch: swimNum_(x.touch), feetOff: swimNum_(x.feetOff), ex: swimNum_(x.ex),
+      official: swimNum_(x.official), touchSnap: id(x.touchSnap), offSnap: id(x.offSnap) });
+  });
+  out.sort(function (a, b) { return a.n - b.n; });
+  return out;
 }
 
 /**
@@ -7507,6 +7710,37 @@ function swimDateKey_(s) {
   return y * 10000 + Number(m[2]) * 100 + Number(m[1]);
 }
 
+/**
+ * (2.28.0) Το ατομικό ρεκόρ κάθε κολυμβητή ενός ομαδικού στο αγώνισμα του σκέλους του (ίδιο στυλ, η απόσταση του σκέλους, ίδια πισίνα·
+ * όχι σκέλος σκυταλοδρομίας ή προπόνηση), από τις αναλύσεις του, όχι μεταγενέστερο από τον αγώνα: [{ leg, id, label, race, analysis }
+ * ή null] για τα σκέλη 1–4.
+ */
+function swimRelayPbs_(race) {
+  var out = [null, null, null, null];
+  if (!swimIsRelayOfFour_(race) || !race.relayLegs || !race.relayLegs.length) return out;
+  var L = race.distance / 4, day = swimDateKey_(race.date);
+  race.relayLegs.forEach(function (l) {
+    if (!l.athleteId) return;
+    var style = ['fs', 'bk', 'br', 'fly'].indexOf(l.style) >= 0 ? l.style : swimStyleAt_(race, l.leg * L);
+    try {
+      var list = swimAnalysesFor_({ athleteId: l.athleteId, style: style, distance: L, relay: false, pool: race.pool, poolUnit: race.poolUnit,
+        raceId: race.id });
+      for (var i = 0; i < list.length; i++) {
+        if (!list[i].finalTime) continue;
+        var d = swimDateKey_(list[i].date);
+        if (day !== null && d !== null && d > day) continue;
+        var stored = swimStoredRace_(list[i].id);
+        if (!stored) continue;
+        var pr = swimNormalizeRace_(stored.race);
+        if (pr.relay || pr.relayLeg || pr.kind === 'training') continue;
+        out[l.leg - 1] = { leg: l.leg, id: list[i].id, label: list[i].label, race: pr, analysis: swimAnalyze_(pr) };
+        break;
+      }
+    } catch (e) { /* χωρίς ατομικό ρεκόρ για αυτόν */ }
+  });
+  return out;
+}
+
 /** PB αυτόματα: ο καλύτερος χρόνος του αθλητή στο ίδιο αγώνισμα, όχι μεταγενέστερος από τον αγώνα. */
 function swimAutoPb_(race) {
   var list = swimAnalysesFor_({ athleteId: race.athleteId, athlete: race.athlete, style: race.style, distance: race.distance,
@@ -7894,7 +8128,12 @@ function swimExportPdfs_(ss, made) {
  * διαφάνειες του αγώνα, { html, video, social }, των σελίδων του PDF (μόνο η σύντομη: οι δικές της)· ένα σφάλμα τους δεν χαλά το PDF.
  */
 function swimV2Pages_(src, parts, slides) {
-  var x = SwimV2.fromScript(src.race, src.analysis, src.extras || {});
+  var extras = src.extras || {};
+  // (2.28.0) Ομαδικό με τους κολυμβητές του: το ατομικό ρεκόρ του καθενός για τη σελίδα της εκκίνησης στη σκυτάλη.
+  if (swimIsRelayOfFour_(src.race) && src.race.relayLegs && src.race.relayLegs.length && !extras.relayPbs) {
+    try { extras.relayPbs = swimRelayPbs_(src.race); } catch (e) { extras.relayPbs = null; }
+  }
+  var x = SwimV2.fromScript(src.race, src.analysis, extras);
   var p = parts || { short: false, full: true };
   var onlyShort = !!p.short && !p.full;
   var main = SwimV2.document(x, onlyShort ? { short: 3 } : {});
@@ -7957,8 +8196,8 @@ function swimStorePdfV2_(req) {
   }
   swimSetSummaryPdf_(raceId, result.pdf.url);
   var athleteRec = swimRegistryRecordSafe_(raw);
-  if (req.archive !== false) result.archive = swimArchiveReport_(raw, result.pdf, result.pdf.blob, athleteRec);
-  if (req.coaches) result.coaches = athleteRec ? athleteRec.coaches : [];
+  if (req.archive !== false) result.archive = swimArchiveRaceReport_(raw, result.pdf, result.pdf.blob);
+  if (req.coaches) result.coaches = swimRaceCoaches_(raw, athleteRec);
   if (req.pdfData) {
     result.pdf.data = String(req.pdf);
     if (result.pdfShort) result.pdfShort.data = String(req.pdfShort);
@@ -11278,7 +11517,7 @@ function swimSelectedBulk_(pdf) {
   var index = swimIndexSheet_(reports);
   list.forEach(function (r) {
     if (Date.now() - t0 > 4.5 * 60 * 1000) { left++; return; }
-    var id = String(sheet.getRange(r, SWIM_SUM.raceId + 1).getValue() || '');
+    var id = String(sheet.getRange(r, SWIM_SUM.raceId + 1).getValue() || '').replace(/#[1-4]$/, '');
     var stored = id ? swimStoredRace_(id) : null;
     if (!stored) return;
     try {
@@ -11288,7 +11527,7 @@ function swimSelectedBulk_(pdf) {
       if (pdf) {
         var info = swimExportPdfs_(reports, made).pdf;
         swimSetSummaryPdf_(id, info.url);
-        swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
+        swimArchiveRaceReport_(stored.race, info, info.blob);
       }
       done++;
     } catch (e) {
@@ -11900,7 +12139,8 @@ function swimSelectedRaceId_() {
   if (sheet.getName() === SWIM_SUMMARY_SHEET) {
     var row = sheet.getActiveRange().getRow();
     if (row < 2) return null;
-    var id = String(sheet.getRange(row, SWIM_SUM.raceId + 1).getValue() || '');
+    // (2.28.0) Η γραμμή ενός κολυμβητή ομαδικού («<αγώνας>#<σκέλος>»): ο αγώνας της ομάδας.
+    var id = String(sheet.getRange(row, SWIM_SUM.raceId + 1).getValue() || '').replace(/#[1-4]$/, '');
     return id || null;
   }
   var race = swimRaceFromSheet_(sheet);
@@ -11952,7 +12192,7 @@ function swimPdfSelected() {
   var pdfs = swimExportPdfs_(reports, made);
   var info = pdfs.pdf;
   swimSetSummaryPdf_(id, info.url);
-  var archived = swimArchiveReport_(stored.race, info, info.blob, swimRegistryRecordSafe_(stored.race));
+  var archived = swimArchiveRaceReport_(stored.race, info, info.blob);
   var link = function (f) { return '<p><a href="' + f.url + '" target="_blank">Άνοιγμα ' + f.name + '</a></p>'; };
   var html = '<div style="font-family:Arial;font-size:13px"><p>Το PDF αποθηκεύτηκε στον φάκελο <b>' + SWIM_REPORT_FOLDER + '</b>.</p>' +
     '<p>' + (archived.ok ? 'Μπήκε και στο «' + SWIM_FILES_SHEET + '» του KOE App.' : String(archived.message || '')) + '</p>' +
@@ -12013,6 +12253,10 @@ function swimCreateDemo() {
 // ---------------------------------------------------------------------------------------------
 
 var SWIM_EN_ = {
+  // (2.28.0) Τα ομαδικά: το PDF στην καρτέλα κάθε κολυμβητή.
+  'Κανένας κολυμβητής της σκυταλοδρομίας δεν είναι από το KOE App: το PDF δεν μπήκε στο «Αρχεία Αθλητών/τριων».':
+    'No swimmer of the relay is from the KOE App: the PDF did not go into "Αρχεία Αθλητών/τριων".',
+  'στην καρτέλα {0} από τους {1} κολυμβητές': 'on the card of {0} of the {1} swimmers',
   // Μηνύματα προς το Kinovea (σφάλματα και προειδοποιήσεις)
   'Λάθος token. Αντέγραψε ξανά το token από το μενού Swim Analysis → Στοιχεία σύνδεσης.':
     'Wrong token. Copy the token again from the menu Swim Analysis → "Στοιχεία σύνδεσης".',

@@ -159,7 +159,7 @@ foreach ($n in 1..4) {
   $l.OfficialExchange = @(0.66, 0.21, 0.30, 0.18)[$n - 1]
 }
 $computed = $tCalc.GetMethod('Compute').Invoke($null, @($race, $timing, 0.5))
-$ex = @($tRelay.GetMethod('Exchanges').Invoke($null, @($race, $computed)))
+$exList = $tRelay.GetMethod('Exchanges').Invoke($null, @($race, $computed)); $ex = @($exList)
 Check ($ex.Count -eq 3) ('three exchanges (' + $ex.Count + ')')
 if ($ex.Count -eq 3) {
   Check ($ex[0].Wall -eq 100 -and (Near $ex[0].Touch 49.79) -and (Near $ex[0].FeetOff 50.02) -and (Near $ex[0].Time 0.23)) ('exchange 1 → 2: the official touch 49.79, the feet off 50.02: ' + (F2 $ex[0].Time) + ' s')
@@ -168,7 +168,7 @@ if ($ex.Count -eq 3) {
 }
 $shownAt = $tRelay.GetMethod('ShownAt')
 function Shown($t) {
-  $args3 = [object[]]@($ex, [double]$t, [double]0, $false)
+  $args3 = [object[]]@($exList, [double]$t, [double]0, $false)
   $x = $shownAt.Invoke($null, $args3)
   return @{ X = $x; Shown = $args3[2]; Running = $args3[3] }
 }
