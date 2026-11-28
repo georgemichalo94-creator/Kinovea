@@ -230,9 +230,12 @@ try {
   $pictureOf = [Func[string, string]]{ param($id) $script:asked += $id; if ($id -eq 'aa1') { return $pic }; return $null }
   $filled = [string]$fill.Invoke($null, [object[]]@('<img src="{{SNAP:aa1}}"><img src="{{SNAP:bb2}}"><img src="{{SNAP:aa1}}">', $pictureOf))
   $jpeg = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (, [Convert]::FromBase64String($pic.Substring($pic.IndexOf(',') + 1)))))
-  $parts = $filled -split '<img src="'
+  $twice = ([regex]::Matches($filled, [regex]::Escape('src="' + $pic + '"'))).Count
+  $pixel = ([regex]::Matches($filled, [regex]::Escape('src="data:image/gif;base64,'))).Count
+  $left = $filled.Contains('{{SNAP:')
+  $heads = @([regex]::Matches($filled, 'src="([^"]{0,22})') | ForEach-Object { $_.Groups[1].Value }) -join ' | '
   Check ($pic.StartsWith('data:image/jpeg;base64,') -and $jpeg.Width -eq 1100 -and $jpeg.Height -eq 619) ('the picture of a snapshot for the pages: a JPEG ' + $jpeg.Width + '×' + $jpeg.Height + ' (from 1600×900)')
-  Check ($filled -notmatch '\{\{SNAP:' -and $parts[1].StartsWith($pic) -and $parts[3].StartsWith($pic) -and $parts[2].StartsWith('data:image/gif;base64,') -and $script:asked.Count -eq 2) ('the pages filled: the snapshot twice, one pixel for the one missing, each asked once (' + ($script:asked -join ',') + ')')
+  Check ((-not $left) -and $twice -eq 2 -and $pixel -eq 1 -and $script:asked.Count -eq 2) ('the pages filled: the snapshot twice (' + $twice + '), one pixel for the one missing (' + $pixel + '), none left (' + (-not $left) + '), each asked once (' + ($script:asked -join ',') + '): ' + $heads + ' (' + $filled.Length + ' characters, the picture ' + $pic.Length + ')')
   $jpeg.Dispose(); Remove-Item $png -ErrorAction SilentlyContinue
 } catch {
   $x = $_.Exception; while ($null -ne $x.InnerException) { $x = $x.InnerException }
