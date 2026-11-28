@@ -6,8 +6,13 @@ This file is part of Kinovea and is distributed under the terms of the GNU Gener
 #endregion
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -136,6 +141,10 @@ namespace Kinovea.ScreenManager
             string htmlShort = v2.Value<string>("htmlShort");
             int pages = v2.Value<int?>("pages") ?? 0;
 
+            // (2.42.0) The pictures of the snapshots the pages ask for ({{SNAP:id}}: the exchanges of a relay), from their files here.
+            html = WithSnapshots(race, html);
+            htmlShort = WithSnapshots(race, htmlShort);
+
             // (2.39.0) The slides of the race for its package, asked with its pages: made after its PDF (ShootSlides). An Apps Script
             // before 2.26.0 does not send them: said in the window of the package.
             SwimPackage slidesFor = PackageWaitingPdf(race);
@@ -180,6 +189,79 @@ namespace Kinovea.ScreenManager
                 if (slidesFor != null)
                     ShootSlides(slidesFor, slidesHtml, ui);
             });
+        }
+
+        /// <summary>A picture that is not there: one transparent pixel (the page keeps its place and its background).</summary>
+        private const string NoPicture = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+        /// <summary>The widest a picture of a snapshot goes into the pages (pixels): sharp in print, a small PDF.</summary>
+        private const int SnapshotPdfWidth = 1100;
+
+        /// <summary>
+        /// (2.42.0) The pages with the pictures of the snapshots they ask for: {{SNAP:id}} becomes the picture of the race's snapshot of that
+        /// id (a JPEG data URI, at most SnapshotPdfWidth wide), or one transparent pixel when it has none.
+        /// </summary>
+        private string WithSnapshots(SwimRace race, string html)
+        {
+            if (string.IsNullOrEmpty(html) || html.IndexOf("{{SNAP:", StringComparison.Ordinal) < 0)
+                return html;
+
+            Dictionary<string, string> done = new Dictionary<string, string>();
+            return Regex.Replace(html, @"\{\{SNAP:([0-9A-Za-z_\-]{1,64})\}\}", m =>
+            {
+                string id = m.Groups[1].Value;
+                string uri;
+                if (!done.TryGetValue(id, out uri))
+                {
+                    SwimSnapshot s = race != null && race.Snapshots != null ? race.Snapshots.FirstOrDefault(x => x.Id == id) : null;
+                    uri = SnapshotDataUri(s != null ? SnapshotPath(s) : null) ?? NoPicture;
+                    done[id] = uri;
+                }
+
+                return uri;
+            });
+        }
+
+        /// <summary>A picture as a JPEG data URI, at most SnapshotPdfWidth wide; null when it cannot be read.</summary>
+        internal static string SnapshotDataUri(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+
+            try
+            {
+                using (Image image = Image.FromFile(path))
+                {
+                    int w = Math.Min(SnapshotPdfWidth, image.Width);
+                    int h = Math.Max(1, (int)Math.Round(image.Height * (double)w / Math.Max(1, image.Width)));
+                    using (Bitmap small = new Bitmap(w, h, PixelFormat.Format24bppRgb))
+                    using (MemoryStream stream = new MemoryStream())
+                    {
+                        using (Graphics g = Graphics.FromImage(small))
+                        {
+                            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                            g.DrawImage(image, new Rectangle(0, 0, w, h));
+                        }
+
+                        ImageCodecInfo jpeg = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
+                        if (jpeg == null)
+                            return null;
+                        using (EncoderParameters quality = new EncoderParameters(1))
+                        {
+                            quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 84L);
+                            small.Save(stream, jpeg, quality);
+                        }
+
+                        return "data:image/jpeg;base64," + Convert.ToBase64String(stream.ToArray());
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                log.Warn("A picture of a snapshot could not go into the pages: " + e.Message);
+                return null;
+            }
         }
 
         private void V2Printed(SwimRace race, SwimPdfPrinter.Result main, SwimPdfPrinter.Result part, int pages, double requestSeconds)

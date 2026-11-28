@@ -281,6 +281,85 @@ namespace Kinovea.ScreenManager
         public string Camera;
     }
 
+    /// <summary>
+    /// (2.42.0) A swimmer of a relay: his leg (1–4), his name, his athlete of the registry (the KOE App) when known and how he was
+    /// found, and what the official results give for his leg.
+    /// </summary>
+    public class SwimRelayLeg
+    {
+        public const string ByCode = "code";
+        public const string ByName = "name";
+        public const string ByAnalyst = "chosen";
+
+        public int Leg;
+        public string Athlete = "";
+
+        /// <summary>The athlete of the registry (unique_id of the KOE App), empty for a name only.</summary>
+        public string AthleteId = "";
+        public string AthleteGender = "";
+        public string AthleteBirthYear = "";
+        public string AthleteCategory = "";
+        public string AthleteClub = "";
+
+        /// <summary>
+        /// How the athlete of the registry was found: "code" (his registry number in the results), "name" (his name and year, one
+        /// athlete only), "chosen" (by the analyst); empty: not found (a name only).
+        /// </summary>
+        public string Match = "";
+
+        /// <summary>The swimmer as the results publish him (to look for him again): his names, year of birth and the source's code.</summary>
+        public string OfficialName = "";
+        public int OfficialBirthYear;
+        public string OfficialCode = "";
+
+        /// <summary>The official time of his leg (s) and the official time of his exchange (his reaction for the first), when given.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? OfficialTime;
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public double? OfficialExchange;
+
+        /// <summary>The athletes of the registry who may be him (their ids), found with the results; null: not looked for yet.</summary>
+        [JsonIgnore]
+        public List<string> Candidates;
+
+        [JsonIgnore]
+        public bool HasAthlete
+        {
+            get { return !string.IsNullOrEmpty(AthleteId); }
+        }
+
+        /// <summary>The family name (the first word of the name as the registry writes it: "Παπαδόπουλος Γιώργος").</summary>
+        [JsonIgnore]
+        public string FamilyName
+        {
+            get
+            {
+                string name = (Athlete ?? "").Trim();
+                int space = name.IndexOf(' ');
+                return space > 0 ? name.Substring(0, space) : name;
+            }
+        }
+
+        public void EnsureText()
+        {
+            if (Athlete == null) Athlete = "";
+            if (AthleteId == null) AthleteId = "";
+            if (AthleteGender == null) AthleteGender = "";
+            if (AthleteBirthYear == null) AthleteBirthYear = "";
+            if (AthleteCategory == null) AthleteCategory = "";
+            if (AthleteClub == null) AthleteClub = "";
+            if (Match == null) Match = "";
+            if (OfficialName == null) OfficialName = "";
+            if (OfficialCode == null) OfficialCode = "";
+        }
+
+        public SwimRelayLeg Copy()
+        {
+            return (SwimRelayLeg)MemberwiseClone();
+        }
+    }
+
     /// <summary>A chart of the PDF report drawn by Kinovea: its key in the report, its image on the Drive, the hash of its values.</summary>
     public class SwimChartImage
     {
@@ -841,6 +920,12 @@ namespace Kinovea.ScreenManager
         [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
         public double? OfficialReaction;
 
+        /// <summary>
+        /// (2.42.0) A relay: its four swimmers in the order they swim (from the official results or chosen by the analyst), each with
+        /// his athlete of the registry when known, so that the analysis of his leg goes to his card in the KOE App. Empty: not known.
+        /// </summary>
+        public List<SwimRelayLeg> RelayLegs = new List<SwimRelayLeg>();
+
         public Dictionary<int, SwimTurnManual> Turns = new Dictionary<int, SwimTurnManual>();
 
         /// <summary>Distances measured for the attempts of a training video, by attempt id.</summary>
@@ -1246,6 +1331,10 @@ namespace Kinovea.ScreenManager
         public void EnsureLists()
         {
             if (Marks == null) Marks = new List<SwimMark>();
+            if (RelayLegs == null) RelayLegs = new List<SwimRelayLeg>();
+            RelayLegs.RemoveAll(l => l == null || l.Leg < 1 || l.Leg > 4);
+            foreach (SwimRelayLeg l in RelayLegs)
+                l.EnsureText();
             if (StrokeCounts == null) StrokeCounts = new Dictionary<int, double>();
             if (StrokeConfirmed == null) StrokeConfirmed = new Dictionary<int, double>();
             if (Checkpoints == null) Checkpoints = new List<int>();
@@ -1310,6 +1399,60 @@ namespace Kinovea.ScreenManager
         public bool ShouldSerializeQuietProposals()
         {
             return QuietProposals != null && QuietProposals.Count > 0;
+        }
+
+        public bool ShouldSerializeRelayLegs()
+        {
+            return RelayLegs != null && RelayLegs.Count > 0;
+        }
+
+        /// <summary>(2.42.0) A relay of four legs (4x50, 4x100, 4x200): the swimmers and the exchanges are its own.</summary>
+        [JsonIgnore]
+        public bool IsRelayOfFour
+        {
+            get { return Relay && !IsTraining && Distance >= 4 && Distance % 4 == 0; }
+        }
+
+        /// <summary>(2.42.0) The distance of a leg of a relay (pool units), 0 for a race that is not one.</summary>
+        [JsonIgnore]
+        public int LegDistance
+        {
+            get { return IsRelayOfFour ? Distance / 4 : 0; }
+        }
+
+        /// <summary>(2.42.0) The swimmer of the leg (1–4), null when not known.</summary>
+        public SwimRelayLeg RelayLeg(int leg)
+        {
+            return RelayLegs == null ? null : RelayLegs.FirstOrDefault(l => l.Leg == leg);
+        }
+
+        /// <summary>(2.42.0) The swimmer of the leg (1–4), made when there is none.</summary>
+        public SwimRelayLeg RelayLegFor(int leg)
+        {
+            if (RelayLegs == null)
+                RelayLegs = new List<SwimRelayLeg>();
+            SwimRelayLeg l = RelayLeg(leg);
+            if (l == null)
+            {
+                l = new SwimRelayLeg { Leg = leg };
+                RelayLegs.Add(l);
+                RelayLegs.Sort((a, b) => a.Leg.CompareTo(b.Leg));
+            }
+
+            return l;
+        }
+
+        /// <summary>(2.42.0) The style of a leg (1–4) of the relay: the order of the medley relay, else the race's style.</summary>
+        public string LegStyle(int leg)
+        {
+            int d = LegDistance;
+            return d > 0 ? SwimPresets.StyleAt(this, (leg - 1) * d + d * 0.5) : Style;
+        }
+
+        /// <summary>(2.42.0) The swimmers of the relay as they were (for the Undo of the official results).</summary>
+        public List<SwimRelayLeg> CopyRelayLegs()
+        {
+            return RelayLegs == null ? new List<SwimRelayLeg>() : RelayLegs.Select(l => l.Copy()).ToList();
         }
 
         /// <summary>

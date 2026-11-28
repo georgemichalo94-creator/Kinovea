@@ -49,6 +49,14 @@ namespace Kinovea.ScreenManager
         /// <summary>Not a time (DSQ, DNS, DNF…): what the results say.</summary>
         public string Status = "";
 
+        /// <summary>
+        /// (2.42.0) A relay: its swimmers in the order they swam (each with his names, year, code, the time of his leg in LegTime and
+        /// his exchange in Reaction when published); empty when the results do not give them. A swimmer: his leg (1–4) in Order.
+        /// </summary>
+        public List<SwimOfficialEntry> Members = new List<SwimOfficialEntry>();
+        public int Order;
+        public double? LegTime;
+
         public string Name
         {
             get { return (FamilyName + " " + GivenName).Trim(); }
@@ -363,6 +371,16 @@ namespace Kinovea.ScreenManager
         {
             JObject o = GetJson(KoeLive + "/api/Results?OrganizationID=&CompetitionCode=" + Uri.EscapeDataString(unit.CompetitionCode) +
                 "&UnitCode=" + Uri.EscapeDataString(unit.UnitCode));
+            return ReadKoeEntries(o, unit);
+        }
+
+        /// <summary>
+        /// The entries of a heat of the KOE live results from its answer (false when it has none). (2.42.0) A relay: the team, and its
+        /// swimmers (Composition.Athlete, in their order) with the time of their leg (SPLIT_TIME, else from the team's times at the
+        /// ends of the legs).
+        /// </summary>
+        public static bool ReadKoeEntries(JObject o, SwimOfficialUnit unit)
+        {
             JArray outer = o == null ? null : o["Results"] as JArray;
             if (outer == null)
                 return false;
@@ -435,11 +453,104 @@ namespace Kinovea.ScreenManager
                     }
 
                     e.Splits = SplitsEvery50(at, unit.Distance);
+                    if (unit.Relay)
+                        e.Members = KoeMembers(t, at, e.Time, unit.Distance);
                     unit.Entries.Add(e);
                 }
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// (2.42.0) The swimmers of a relay of the KOE live results in their order: names, year, gender, club, the federation's number,
+        /// the time of the leg (SPLIT_TIME; else the team's times at the ends of the legs, the last one its final time).
+        /// </summary>
+        private static List<SwimOfficialEntry> KoeMembers(JToken t, IDictionary<double, double> at, double? final, int distance)
+        {
+            List<SwimOfficialEntry> members = new List<SwimOfficialEntry>();
+            JArray athletes = t.SelectToken("Composition.Athlete") as JArray;
+            if (athletes == null)
+                return members;
+
+            foreach (JToken m in athletes)
+            {
+                JToken a = m.SelectToken("Description[0]");
+                SwimOfficialEntry e = new SwimOfficialEntry
+                {
+                    Order = Int(m["Order"]),
+                    Code = Str(m["CompetitorCode"])
+                };
+
+                if (a != null)
+                {
+                    e.FamilyName = Str(a["FamilyName"]);
+                    e.GivenName = Str(a["GivenName"]);
+                    e.FamilyNameLatin = Str(a["FamilyName_ENG"]);
+                    e.GivenNameLatin = Str(a["GivenName_ENG"]);
+                    e.Gender = Gender(Str(a["GenderCode_ENG"]));
+                    DateTime? born = Date(a["BirthDate"]);
+                    e.BirthYear = born.HasValue ? born.Value.Year : 0;
+                    e.Nation = Str(a["NationCode"]);
+                    e.IfId = Str(a["IFId"]);
+                    e.Club = Str(a["OrganisationCode"]);
+                }
+
+                JArray entries = m["EventUnitEntry"] as JArray;
+                if (entries != null)
+                {
+                    foreach (JToken x in entries)
+                    {
+                        if (Str(x["Code"]).ToUpperInvariant() == "SPLIT_TIME")
+                            e.LegTime = Time(Str(x["Value"]));
+                    }
+                }
+
+                members.Add(e);
+            }
+
+            // In the order they swam (1–4); an order not given keeps the order of the list.
+            if (members.All(x => x.Order > 0))
+                members = members.OrderBy(x => x.Order).ToList();
+            for (int i = 0; i < members.Count; i++)
+            {
+                if (members[i].Order <= 0)
+                    members[i].Order = i + 1;
+            }
+
+            FillLegTimes(members, at, final, distance);
+            return members;
+        }
+
+        /// <summary>
+        /// (2.42.0) The times of the legs of a relay its results do not give, from the team's times at the ends of the legs (the last
+        /// one its final time) when both ends of a leg are known; the ones given stay.
+        /// </summary>
+        public static void FillLegTimes(List<SwimOfficialEntry> members, IDictionary<double, double> at, double? final, int distance)
+        {
+            if (members == null || members.Count != 4 || distance <= 0 || distance % 4 != 0)
+                return;
+
+            int leg = distance / 4;
+            Func<int, double?> end = k =>
+            {
+                if (k == 0)
+                    return 0;
+                if (k == 4)
+                    return final;
+                double v;
+                return at != null && at.TryGetValue(k * leg, out v) ? v : (double?)null;
+            };
+
+            for (int k = 1; k <= 4; k++)
+            {
+                SwimOfficialEntry m = members[k - 1];
+                if (m.LegTime.HasValue)
+                    continue;
+                double? from = end(k - 1), to = end(k);
+                if (from.HasValue && to.HasValue && to.Value > from.Value)
+                    m.LegTime = Math.Round(to.Value - from.Value, 2);
+            }
         }
 
         /// <summary>

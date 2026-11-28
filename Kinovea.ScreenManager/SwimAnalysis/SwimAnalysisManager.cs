@@ -515,6 +515,10 @@ namespace Kinovea.ScreenManager
                 command != PlayerScreenCommands.SwimAngle)
                 AutoSnapshots(command, timestamp, undoStack.Count > undoBefore ? undoStack[undoStack.Count - 1] : null, !ReferenceEquals(LastStatus, statusBefore));
 
+            // (2.42.0) A relay: the touch at the end of a leg and the feet of the next swimmer off the block, always.
+            if (Race.IsRelayOfFour && undoStack.Count > undoBefore)
+                ExchangeSnapshots(command, timestamp, undoStack[undoStack.Count - 1]);
+
             // The finish has just been marked: the frame with the graphics (final time, velocity chart) for the report.
             if (command == PlayerScreenCommands.SwimSplit && splitAdded && !Race.IsTraining)
             {
@@ -902,6 +906,7 @@ namespace Kinovea.ScreenManager
             officialUndo.Clear();
             entryUndo.Clear();
             ClearWaitingFrames();
+            ClearExchangeWaiting();
             CancelQuietReading();
         }
 

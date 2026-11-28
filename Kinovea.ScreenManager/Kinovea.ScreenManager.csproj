@@ -1026,6 +1026,9 @@
     <Compile Include="SwimAnalysis\FormSwimAnalysis.Tech.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="SwimAnalysis\FormSwimAnalysis.Relay.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SwimAnalysis\FormSwimAnalysis.TechEval.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1064,6 +1067,7 @@
     <Compile Include="SwimAnalysis\SwimFinalsPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.cs" />
     <Compile Include="SwimAnalysis\SwimHudPainter.Tech.cs" />
+    <Compile Include="SwimAnalysis\SwimHudPainter.Relay.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.Assistant.cs" />
     <Compile Include="SwimAnalysis\SwimMainMenu.Layout.cs" />
@@ -1124,6 +1128,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Paste.cs" />
+    <Compile Include="SwimAnalysis\SwimAnalysisManager.Relay.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Event.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.Hud.cs" />
     <Compile Include="SwimAnalysis\SwimCalculator.cs" />
@@ -1152,6 +1157,7 @@
     <Compile Include="SwimAnalysis\SwimAnalysisManager.SharedLearning.cs" />
     <Compile Include="SwimAnalysis\SwimAnalysisManager.TechLearningShare.cs" />
     <Compile Include="SwimAnalysis\SwimRace.cs" />
+    <Compile Include="SwimAnalysis\SwimRelay.cs" />
     <Compile Include="SwimAnalysis\SwimReel.cs" />
     <Compile Include="SwimAnalysis\SwimReelPainter.cs" />
     <Compile Include="SwimAnalysis\SwimReferences.cs" />

@@ -27,6 +27,7 @@ namespace Kinovea.ScreenManager
         private readonly int distance;
         private readonly string athlete;
         private readonly int lane;
+        private readonly bool relay;
         private readonly Timer readTimer;
         private SwimPasteResult result;
         private bool filling;
@@ -39,15 +40,22 @@ namespace Kinovea.ScreenManager
         public SwimEventInfo Event { get; private set; }
 
         public SwimPasteDialog(string intro, string initial, int distance, string athlete, int lane)
+            : this(intro, initial, distance, athlete, lane, false)
+        {
+        }
+
+        /// <summary>(2.42.0) relay: the race is a relay (the swimmers' lines under each team are read as its swimmers).</summary>
+        public SwimPasteDialog(string intro, string initial, int distance, string athlete, int lane, bool relay)
         {
             this.distance = distance;
             this.athlete = athlete ?? "";
             this.lane = lane;
+            this.relay = relay;
 
             Text = SwimLang.T("📋 Επικόλληση αποτελεσμάτων");
             StartPosition = FormStartPosition.CenterParent;
             Width = 780;
-            Height = 560;
+            Height = relay ? 600 : 560;
             MinimizeBox = false;
             MaximizeBox = false;
             ShowInTaskbar = false;
@@ -74,7 +82,7 @@ namespace Kinovea.ScreenManager
                 Font = new Font(FontFamily.GenericMonospace, 9f)
             };
 
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 150, Padding = new Padding(8, 4, 8, 0) };
+            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = relay ? 190 : 150, Padding = new Padding(8, 4, 8, 0) };
             TableLayoutPanel whoRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = 30, ColumnCount = 2 };
             whoRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             whoRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -153,7 +161,7 @@ namespace Kinovea.ScreenManager
             Event = SwimResultsPaste.EventFromText(text.Text);
             if (Event != null && !Event.HasEvent)
                 Event = null;
-            result = SwimResultsPaste.Parse(text.Text, Distance, athlete, lane);
+            result = SwimResultsPaste.Parse(text.Text, Distance, athlete, lane, Event != null ? Event.Relay : relay);
             filling = true;
             who.Items.Clear();
             bool ask = result.Best < 0 && result.Records.Count > 1;
@@ -247,8 +255,19 @@ namespace Kinovea.ScreenManager
                 lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("Δεν βρέθηκε τελικός χρόνος για τα {0}μ."), Distance) +
                     (r.Status.Length > 0 ? " (" + r.Status + ")" : ""));
 
-            // Another swimmer than the race's athlete (a row of the wrong line, the only one pasted).
-            if (athlete.Trim().Length > 0 && SwimResultsPaste.NameScore(athlete, r) < SwimResultsPaste.OtherName)
+            // (2.42.0) A relay: its swimmers in their order, with the time of their leg and their exchange when given.
+            if (r.Members.Count == 4)
+            {
+                lines.Add(SwimLang.T("Κολυμβητές: ") + string.Join(" · ", r.Members.Select((m, k) =>
+                    (k + 1).ToString(CultureInfo.InvariantCulture) + " " + m.Name +
+                    (m.BirthYear > 0 ? " (" + m.BirthYear.ToString(CultureInfo.InvariantCulture) + ")" : "") +
+                    (m.Time.HasValue ? " " + SwimResultsPaste.FormatTime(m.Time.Value) : "")).ToArray()));
+            }
+            else if (relay || (Event != null && Event.Relay))
+                lines.Add(SwimLang.T("Δεν βρέθηκαν οι 4 κολυμβητές της ομάδας: άνοιξε την ομάδα στη σελίδα (τους κολυμβητές της) και αντίγραψέ τους μαζί, αν θέλεις και αυτούς."));
+
+            // Another swimmer than the race's athlete (a row of the wrong line, the only one pasted). (2.42.0) Not for a relay (the team).
+            if (r.Members.Count == 0 && !relay && athlete.Trim().Length > 0 && SwimResultsPaste.NameScore(athlete, r) < SwimResultsPaste.OtherName)
                 lines.Add(string.Format(CultureInfo.InvariantCulture, SwimLang.T("⚠ Δεν μοιάζει με τον αθλητή του αγώνα («{0}»): έλεγξε ότι είναι η σωστή γραμμή."), athlete.Trim()));
 
             if (result.Best >= 0 && result.Records.Count > 1)

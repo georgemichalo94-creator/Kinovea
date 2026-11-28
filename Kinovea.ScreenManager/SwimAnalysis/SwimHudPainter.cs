@@ -88,7 +88,7 @@ namespace Kinovea.ScreenManager
     public static partial class SwimHudPainter
     {
         /// <summary>The version of the swim analysis shown on the panel.</summary>
-        public const string AppVersion = "2.41.2";
+        public const string AppVersion = "2.42.0";
 
         // The colours of the demo.
         private static readonly Color C = Color.FromArgb(56, 225, 255);
@@ -659,6 +659,7 @@ namespace Kinovea.ScreenManager
                 {
                     Timed("frame", () => DrawFrame(g, s, L));
                     Timed("video", () => DrawVideoLayer(g, s, st, L));
+                    Timed("exchange", () => DrawExchange(g, s, st, L));
                     Timed("left", () => Fade(g, L, L.Left, layer => DrawLeft(layer, s, st, L)));
                     Timed("splits", () => Fade(g, L, L.Splits, layer => DrawSplits(layer, s, st, L)));
                     Timed("log", () =>
@@ -1870,6 +1871,10 @@ namespace Kinovea.ScreenManager
 
                 if (s.DeltaInfo && row.Delta.HasValue && s.Computed.Reference != null)
                     sub.Add("Δ " + SwimReference.FormatDelta(row.Delta.Value));
+
+                // (2.42.0) The touch of an exchange of a relay: its own panel (DrawExchange) says it.
+                if (SwimRelay.ExchangeAt(s.Race, row.D) > 0)
+                    continue;
                 list.Add(new Callout
                 {
                     Time = row.OnVideo,

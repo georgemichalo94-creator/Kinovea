@@ -1477,7 +1477,7 @@ namespace Kinovea.ScreenManager
         private void UploadSnapshot(SwimSnapshot snapshot)
         {
             if (!Settings.IsConfigured || snapshot == null || Race == null || !string.IsNullOrEmpty(snapshot.FileId) ||
-                uploading.Count > 0 || uploadFailed.Contains(snapshot.Id))
+                uploading.Count > 0 || uploadFailed.Contains(snapshot.Id) || SwimRelay.IsExchangeSnapshot(snapshot))
                 return;
 
             byte[] bytes;
@@ -1555,7 +1555,8 @@ namespace Kinovea.ScreenManager
             if (uploading.Count > 0)
                 return;
 
-            SwimSnapshot next = Race.Snapshots.FirstOrDefault(x => string.IsNullOrEmpty(x.FileId) && !uploadFailed.Contains(x.Id) && SnapshotPath(x) != null);
+            SwimSnapshot next = Race.Snapshots.FirstOrDefault(x => string.IsNullOrEmpty(x.FileId) && !uploadFailed.Contains(x.Id) && SnapshotPath(x) != null &&
+                !SwimRelay.IsExchangeSnapshot(x));
             if (next != null)
                 UploadSnapshot(next);
         }

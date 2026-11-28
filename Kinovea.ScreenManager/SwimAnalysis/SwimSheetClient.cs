@@ -707,6 +707,49 @@ namespace Kinovea.ScreenManager
             // The language of the report and the PDF (since 2.7.7; an older script makes them in Greek). The values stay in Greek.
             r["lang"] = SwimLang.Code;
 
+            // (2.42.0) A relay: its swimmers (the analysis of each leg goes to the card of his athlete in the KOE App) and its exchanges
+            // (the touch, the feet off the block, their time and the ids of their snapshots: their pictures go into the PDF here).
+            if (race.IsRelayOfFour)
+            {
+                JArray legs = new JArray();
+                foreach (SwimRelayLeg l in race.RelayLegs.OrderBy(x => x.Leg))
+                {
+                    JObject o = new JObject();
+                    o["leg"] = l.Leg;
+                    o["style"] = race.LegStyle(l.Leg);
+                    o["athlete"] = l.Athlete ?? "";
+                    o["athleteId"] = l.AthleteId ?? "";
+                    o["gender"] = l.AthleteGender ?? "";
+                    o["club"] = l.AthleteClub ?? "";
+                    o["category"] = l.AthleteCategory ?? "";
+                    o["birthYear"] = l.AthleteBirthYear ?? "";
+                    o["match"] = l.Match ?? "";
+                    if (l.OfficialTime.HasValue)
+                        o["official"] = Math.Round(l.OfficialTime.Value, 2);
+                    if (l.OfficialExchange.HasValue)
+                        o["officialExchange"] = Math.Round(l.OfficialExchange.Value, 2);
+                    legs.Add(o);
+                }
+
+                r["relayLegs"] = legs;
+                JArray exchanges = new JArray();
+                foreach (SwimExchange x in SwimRelay.Exchanges(race, computed))
+                {
+                    JObject o = new JObject();
+                    o["n"] = x.Number;
+                    o["wall"] = x.Wall;
+                    o["touch"] = x.Touch.HasValue ? (JToken)SwimCalculator.Ms(x.Touch.Value) : JValue.CreateNull();
+                    o["feetOff"] = x.FeetOff.HasValue ? (JToken)SwimCalculator.Ms(x.FeetOff.Value) : JValue.CreateNull();
+                    o["ex"] = x.Time.HasValue ? (JToken)Math.Round(x.Time.Value, 3) : JValue.CreateNull();
+                    o["official"] = x.Official.HasValue ? (JToken)Math.Round(x.Official.Value, 2) : JValue.CreateNull();
+                    o["touchSnap"] = x.TouchSnapshot ?? "";
+                    o["offSnap"] = x.OffSnapshot ?? "";
+                    exchanges.Add(o);
+                }
+
+                r["relayExchanges"] = exchanges;
+            }
+
             JArray checkpoints = new JArray();
             if (!race.IsTraining)
             {
@@ -1081,6 +1124,9 @@ namespace Kinovea.ScreenManager
             JArray snapshots = new JArray();
             foreach (SwimSnapshot s in race.Snapshots)
             {
+                // (2.42.0) The snapshots of the exchanges of a relay go with them (relayExchanges), for the PDF.
+                if (SwimRelay.IsExchangeSnapshot(s))
+                    continue;
                 SwimTechPhase phase = phaseOf(s.Timestamp);
                 JObject o = new JObject();
                 o["id"] = s.Id;

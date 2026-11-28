@@ -320,6 +320,17 @@ namespace Kinovea.ScreenManager
             using (SolidBrush b = new SolidBrush(timed ? phase : Color.FromArgb(110, phase)))
                 g.FillEllipse(b, r.Left + S(4), r.Top + (r.Height - dot) / 2, dot, dot);
 
+            // (2.42.0) The time of an exchange running from the touch until F is marked (⏱ 0.11…).
+            string value = e.Value;
+            bool runningValue = false;
+            double? now = manager.CurrentRaceTime ?? PreviewTime;
+            if (!timed && e.RunningFrom.HasValue && now.HasValue && now.Value >= e.RunningFrom.Value - 0.0005 &&
+                now.Value - e.RunningFrom.Value <= SwimRelay.RunningSeconds)
+            {
+                value = "⏱ " + Math.Max(0, now.Value - e.RunningFrom.Value).ToString("0.00", CultureInfo.InvariantCulture) + "…";
+                runningValue = true;
+            }
+
             // The value: a distance in its box (changed in place), or a text.
             float valueLeft = colV;
             if (e.Distance != SwimBarDistance.None)
@@ -329,10 +340,10 @@ namespace Kinovea.ScreenManager
                 if (editId != e.Id)
                     DrawValueBox(g, list, e, box, race);
             }
-            else if (!string.IsNullOrEmpty(e.Value))
+            else if (!string.IsNullOrEmpty(value))
             {
-                Color color = e.Pilot ? SwimTheme.Amber : e.ValueOk ? SwimTheme.Green : (timed ? SwimTheme.Text : SwimTheme.Faint);
-                Size vs = TextRenderer.MeasureText(g, e.Value, valueFont, Size.Empty, TextFormatFlags.NoPadding);
+                Color color = runningValue ? SwimTheme.Accent : e.Pilot ? SwimTheme.Amber : e.ValueOk ? SwimTheme.Green : (timed ? SwimTheme.Text : SwimTheme.Faint);
+                Size vs = TextRenderer.MeasureText(g, value, valueFont, Size.Empty, TextFormatFlags.NoPadding);
                 RectangleF vr = new RectangleF(colV - vs.Width - 1, r.Top, vs.Width + 2, r.Height);
                 valueLeft = vr.Left;
                 if (e.StrokesEditable && e.StrokesValue && e.Checkpoint > 0)
@@ -346,7 +357,7 @@ namespace Kinovea.ScreenManager
                     list.Add(new Item { Id = sid, Bounds = hit, Tip = SwimLang.T("Οι χεριές του τμήματος: κλικ για διόρθωση."), Click = () => manager.EditSegmentStrokes(d) });
                 }
 
-                Write(g, e.Value, valueFont, vr, color, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+                Write(g, value, valueFont, vr, color, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             }
 
             string time = timed ? FormatRaceTime(e.Time.Value) : "–";

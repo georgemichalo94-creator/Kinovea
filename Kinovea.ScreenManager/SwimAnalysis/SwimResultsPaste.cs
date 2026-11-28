@@ -47,6 +47,12 @@ namespace Kinovea.ScreenManager
         /// <summary>The splits could not all be read (only the final time goes in).</summary>
         public bool SplitsMissing;
 
+        /// <summary>
+        /// (2.42.0) A relay: its four swimmers as written under the team's line (names, year, the time of the leg in Time when it can be
+        /// told, the exchange in Reaction); empty when they were not pasted.
+        /// </summary>
+        public List<SwimPasteRecord> Members = new List<SwimPasteRecord>();
+
         public string Name
         {
             get { return (GivenName + " " + FamilyName).Trim(); }
@@ -202,6 +208,15 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public static SwimPasteResult Parse(string text, int distance, string athlete, int lane)
         {
+            return Parse(text, distance, athlete, lane, false);
+        }
+
+        /// <summary>
+        /// (2.42.0) The same, for a relay: the lines of its four swimmers under the line of a team (a name and a time, as the results
+        /// show them opened) are its swimmers, not times of the team.
+        /// </summary>
+        public static SwimPasteResult Parse(string text, int distance, string athlete, int lane, bool relay)
+        {
             SwimPasteResult result = new SwimPasteResult();
             if (string.IsNullOrWhiteSpace(text) || distance <= 0)
                 return result;
@@ -216,7 +231,20 @@ namespace Kinovea.ScreenManager
 
             List<Token> tokens = Tokenize(text);
             List<Start> starts = RecordStarts(tokens);
-            if (starts.Count == 0)
+            List<SwimPasteRecord> alone = null;
+            List<Token> teamAlone = relay && starts.Count == 0 && tokens.Count > 0 ? WithoutMembers(tokens, out alone) : null;
+            if (teamAlone != null)
+            {
+                // (2.42.0) One team without its rank, its swimmers under it.
+                SwimPasteRecord r = ReadRecord(teamAlone, 0, teamAlone.Count, false, false, distance);
+                if (r != null)
+                {
+                    r.Members = alone;
+                    LegTimes(r);
+                    result.Records.Add(r);
+                }
+            }
+            else if (starts.Count == 0)
             {
                 // No ranks: one swimmer, or one per name that starts a line after the times of the one before.
                 int from = 0;
@@ -241,9 +269,20 @@ namespace Kinovea.ScreenManager
                 for (int i = 0; i < starts.Count; i++)
                 {
                     int to = i + 1 < starts.Count ? starts[i + 1].At : tokens.Count;
-                    SwimPasteRecord r = ReadRecord(tokens, starts[i].At, to, true, starts[i].Lane, distance);
+                    List<SwimPasteRecord> members = null;
+                    List<Token> part = relay ? WithoutMembers(tokens.GetRange(starts[i].At, to - starts[i].At), out members) : null;
+                    SwimPasteRecord r = part != null ? ReadRecord(part, 0, part.Count, true, starts[i].Lane, distance)
+                        : ReadRecord(tokens, starts[i].At, to, true, starts[i].Lane, distance);
                     if (r != null)
+                    {
+                        if (members != null)
+                        {
+                            r.Members = members;
+                            LegTimes(r);
+                        }
+
                         result.Records.Add(r);
+                    }
                 }
             }
 
@@ -952,6 +991,105 @@ namespace Kinovea.ScreenManager
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// (2.42.0) The tokens of a team's record without the lines of its swimmers, and the swimmers: exactly four lines under the
+        /// team's one that start with a name (or an exchange time and a name) and have a time of the race. Null when there are not four
+        /// (the record is read as before). The times of a swimmer's line wait in TimeChoices for LegTimes.
+        /// </summary>
+        private static List<Token> WithoutMembers(List<Token> part, out List<SwimPasteRecord> members)
+        {
+            members = null;
+            List<List<Token>> lines = new List<List<Token>>();
+            foreach (Token t in part)
+            {
+                if (lines.Count == 0 || t.LineStart)
+                    lines.Add(new List<Token>());
+                lines[lines.Count - 1].Add(t);
+            }
+
+            List<int> swimmers = new List<int>();
+            for (int k = 1; k < lines.Count; k++)
+            {
+                List<Token> l = lines[k];
+                int at = l[0].Kind == Kind.Time && l[0].Value <= 2.0 ? 1 : 0;
+                int words = l.Skip(at).TakeWhile(t => t.Kind == Kind.Word || (t.Kind == Kind.Nation && !t.Sure)).Count();
+                bool timed = l.Any(t => t.Kind == Kind.Time && !t.Signed && t.Value >= MinRaceTime);
+                if (words >= 2 && timed)
+                    swimmers.Add(k);
+            }
+
+            if (swimmers.Count != 4)
+                return null;
+
+            members = swimmers.Select(k => ReadMember(lines[k])).ToList();
+            List<Token> team = new List<Token>();
+            for (int k = 0; k < lines.Count; k++)
+            {
+                if (!swimmers.Contains(k))
+                    team.AddRange(lines[k]);
+            }
+
+            return team;
+        }
+
+        /// <summary>(2.42.0) A swimmer's line of a relay: his name, country, year, club, exchange time and the times of the line.</summary>
+        private static SwimPasteRecord ReadMember(List<Token> line)
+        {
+            SwimPasteRecord m = new SwimPasteRecord();
+            List<string> name = new List<string>(), club = new List<string>();
+            foreach (Token t in line)
+            {
+                bool afterName = m.BirthYear > 0 || m.TimeChoices.Count > 0;
+                if (t.Kind == Kind.Word || (t.Kind == Kind.Nation && !t.Sure))
+                {
+                    if (afterName)
+                        club.Add(t.Text);
+                    else
+                        name.Add(t.Text);
+                }
+                else if (t.Kind == Kind.Nation)
+                    m.Nation = t.Text;
+                else if (t.Kind == Kind.Status)
+                    m.Status = t.Text;
+                else if (t.Kind == Kind.Int && t.Value >= 1930 && t.Value <= DateTime.Now.Year && m.BirthYear == 0 && name.Count > 0)
+                    m.BirthYear = (int)t.Value;
+                else if (t.Kind == Kind.Time && t.Value >= MinRaceTime && !t.Signed)
+                    m.TimeChoices.Add(t.Value);
+                else if (t.Kind == Kind.Time && t.Value <= 2.0 && !m.Reaction.HasValue && m.TimeChoices.Count == 0)
+                    m.Reaction = t.Text.StartsWith("-", StringComparison.Ordinal) ? -t.Value : t.Value;
+            }
+
+            SplitName(name, out m.FamilyName, out m.GivenName);
+            m.Club = string.Join(" ", club.ToArray());
+            m.Text = string.Join(" ", line.Select(t => t.Text).ToArray());
+            return m;
+        }
+
+        /// <summary>
+        /// (2.42.0) The time of each leg of a relay from its swimmers' lines: the last time of each line when they add up to the team's
+        /// time (the times of the legs), or when they go up to it (the team's time at the end of each leg). Else not known.
+        /// </summary>
+        private static void LegTimes(SwimPasteRecord team)
+        {
+            List<SwimPasteRecord> m = team.Members;
+            double[] legs = null;
+            if (m.Count == 4 && team.Time.HasValue && m.All(x => x.TimeChoices.Count > 0))
+            {
+                double final = team.Time.Value;
+                double[] last = m.Select(x => x.TimeChoices[x.TimeChoices.Count - 1]).ToArray();
+                if (Math.Abs(last.Sum() - final) <= 0.05)
+                    legs = last;
+                else if (last[0] < last[1] && last[1] < last[2] && last[2] < last[3] && Math.Abs(last[3] - final) <= 0.02)
+                    legs = new[] { last[0], last[1] - last[0], last[2] - last[1], last[3] - last[2] };
+            }
+
+            for (int k = 0; k < m.Count; k++)
+            {
+                m[k].Time = legs != null ? (double?)Math.Round(legs[k], 2) : null;
+                m[k].TimeChoices.Clear();
+            }
         }
 
         /// <summary>

@@ -49,6 +49,9 @@ namespace Kinovea.ScreenManager
             public int BirthYear;
             public double? Final;
             public SwimAthleteList Registry;
+
+            /// <summary>(2.42.0) A relay: the registry numbers of its swimmers already known (its team is found by them too).</summary>
+            public List<string> LegIds = new List<string>();
         }
 
         /// <summary>What was found: the swimmer's result (or the swimmers to choose from), and why not.</summary>
@@ -184,6 +187,8 @@ namespace Kinovea.ScreenManager
             int born;
             if (int.TryParse(Race.AthleteBirthYear, NumberStyles.Integer, CultureInfo.InvariantCulture, out born))
                 q.BirthYear = born;
+            if (Race.Relay && Race.RelayLegs != null)
+                q.LegIds = Race.RelayLegs.Where(l => l.HasAthlete).Select(l => l.AthleteId.Trim()).Distinct().ToList();
             return q;
         }
 
@@ -541,12 +546,26 @@ namespace Kinovea.ScreenManager
                 found.How = SwimLang.T("με τον αριθμό μητρώου");
             }
 
+            // (2.42.0) A relay: the team of its swimmers already known (at least two of them, or the one known), or of the race's athlete
+            // when he is one of its swimmers (an analysis of before 2.42.0).
+            if (q.Relay && (chosen == null || chosen.Count == 0))
+            {
+                int need = Math.Min(2, q.LegIds.Count);
+                if (need > 0)
+                    chosen = all.Where(x => x.Value.Members.Count(mb => mb.Code.Length > 0 && q.LegIds.Contains(mb.Code)) >= need).ToList();
+                if ((chosen == null || chosen.Count == 0) && q.AthleteId.Length > 0)
+                    chosen = all.Where(x => x.Value.Members.Any(mb => mb.Code == q.AthleteId)).ToList();
+                if (chosen != null && chosen.Count > 0)
+                    found.How = SwimLang.T("με τους αριθμούς μητρώου των κολυμβητών");
+            }
+
             // 2. The name (Greek or Latin letters, family name first or last), the year of birth and the nation.
             if ((chosen == null || chosen.Count == 0) && q.Athlete.Length > 0)
             {
                 chosen = all.Where(x =>
                     (q.BirthYear == 0 || x.Value.BirthYear == 0 || x.Value.BirthYear == q.BirthYear) && NationFits(q.Nation, x.Value.Nation) &&
-                    NameLike(family, given, x.Value) >= SwimNameMatch.SameName).ToList();
+                    (NameLike(family, given, x.Value) >= SwimNameMatch.SameName ||
+                     (q.Relay && x.Value.Members.Any(mb => NameLike(family, given, mb) >= SwimNameMatch.SameName)))).ToList();
                 found.How = SwimLang.T("με το όνομα");
             }
 
@@ -808,7 +827,9 @@ namespace Kinovea.ScreenManager
 
             // The race's athlete stays his own when the swimmer was not found by him (the lane, the list) and the race has one.
             SwimOfficialEntry e = found.Entry;
-            SwimAthlete athlete = RegistryAthlete(e, q.Registry);
+            // (2.42.0) A relay with its swimmers: the team is the race's (its name), each swimmer his leg's (RelayLegs).
+            List<SwimRelayLeg> relayLegs = found.Unit.Relay && Race.Relay && e.Members.Count > 0 ? RelayLegsOf(e, q.Registry, Race.RelayLegs) : null;
+            SwimAthlete athlete = relayLegs != null ? null : RegistryAthlete(e, q.Registry);
             bool keepAthlete = !found.ByAthlete && !string.IsNullOrWhiteSpace(Race.Athlete) && (athlete == null || athlete.Id != (Race.AthleteId ?? ""));
             List<double> times = e.OfficialTimes();
             StringBuilder b = new StringBuilder();
@@ -827,7 +848,9 @@ namespace Kinovea.ScreenManager
             if (e.Reaction.HasValue)
                 b.Append(SwimLang.T(" · αντίδραση ")).Append(e.Reaction.Value.ToString("0.00", CultureInfo.InvariantCulture));
             b.Append('\n');
-            if (keepAthlete)
+            if (relayLegs != null)
+                b.Append(RelayLegsText(relayLegs));
+            else if (keepAthlete)
                 b.Append(SwimLang.T("Ο αθλητής του αγώνα μένει ο ίδιος: ")).Append(Race.Athlete).Append('\n');
             else if (athlete != null && athlete.Id != (Race.AthleteId ?? ""))
                 b.Append(SwimLang.T("Αθλητής από το μητρώο: ")).Append(athlete.Name).Append(" (").Append(athlete.Id).Append(")\n");
@@ -852,8 +875,10 @@ namespace Kinovea.ScreenManager
                 oldCategory = race.AthleteCategory, oldClub = race.AthleteClub, oldDate = race.Date, oldRound = race.Round,
                 oldCompetition = race.Competition, oldLink = race.ResultsLink, oldLocation = race.Location;
             int oldLane = race.Lane;
+            List<SwimRelayLeg> oldLegs = race.CopyRelayLegs();
             Action detailsBack = () =>
             {
+                race.RelayLegs = oldLegs;
                 race.Athlete = oldAthlete;
                 race.AthleteId = oldId;
                 race.AthleteGender = oldGender;
@@ -876,6 +901,19 @@ namespace Kinovea.ScreenManager
                 SetAthlete(athlete);
             if (e.Lane > 0)
                 Race.Lane = e.Lane;
+            if (relayLegs != null)
+            {
+                // The team's name for the race (a swimmer of it as the race's athlete before 2.42.0: the team now, his leg is his).
+                Race.RelayLegs = relayLegs;
+                if (relayLegs.Any(rl => !string.IsNullOrEmpty(Race.AthleteId) && rl.AthleteId == Race.AthleteId) || string.IsNullOrWhiteSpace(Race.Athlete))
+                {
+                    Race.Athlete = e.Name.Length > 0 ? e.Name : e.NameLatin;
+                    Race.AthleteId = "";
+                    Race.AthleteCategory = "";
+                    Race.AthleteBirthYear = "";
+                    Race.AthleteClub = e.Club ?? "";
+                }
+            }
             if (string.IsNullOrWhiteSpace(Race.Athlete))
                 Race.Athlete = e.Name.Length > 0 ? e.Name : e.NameLatin;
 
@@ -913,7 +951,8 @@ namespace Kinovea.ScreenManager
                 form.RefreshAll();
 
             // The registry learns from it (a sure match only): a Latin spelling of our athlete, an international athlete's code.
-            if (!keepAthlete)
+            // (2.42.0) Not from a relay's team.
+            if (!keepAthlete && relayLegs == null && !found.Unit.Relay)
                 RememberOfficialAthlete(e, athlete, found.ByAthlete, found.Unit.Source == "paste");
         }
 

@@ -87,6 +87,12 @@ namespace Kinovea.ScreenManager
         /// <summary>An official time of the results.</summary>
         public bool Official;
 
+        /// <summary>
+        /// (2.42.0) The feet of the next swimmer of a relay off the block, not marked yet: the race time of the touch of the exchange, from
+        /// which the time runs on the list until F (SwimRelay.RunningSeconds at most). Null: none.
+        /// </summary>
+        public double? RunningFrom;
+
         public string Tip;
 
         /// <summary>The time to show on the video for it (the mark, else the time), null when it has none.</summary>
@@ -203,12 +209,17 @@ namespace Kinovea.ScreenManager
                 if (rowAt.TryGetValue(end, out wallRow))
                     list.Add(Checkpoint(wallRow, title, 2, SwimLang.T("Επαφή ") + end.ToString(CultureInfo.InvariantCulture) + unit, unit, next));
 
-                string pushoffLabel = exchange ? SwimLang.T("Ξεκίνημα") : SwimLang.T("Αποκόλληση");
-                string pushoffTip = exchange ? SwimLang.T("Ο επόμενος κολυμβητής φεύγει από τον βατήρα · ο χρόνος της αλλαγής από την επαφή.")
+                string pushoffLabel = exchange ? SwimLang.T("Αποκόλληση βατήρα") : SwimLang.T("Αποκόλληση");
+                string pushoffTip = exchange ? SwimLang.T("F: τα πόδια του επόμενου κολυμβητή φεύγουν από τον βατήρα · ο χρόνος της αλλαγής από την επαφή (S): μετράει στο βίντεο ως το F.")
                     : turn != null && turn.Flip ? SwimLang.T("Τα πόδια φεύγουν από τον τοίχο · ο χρόνος της στροφής από την τελευταία χεριά.")
                     : SwimLang.T("Τα πόδια φεύγουν από τον τοίχο · ο χρόνος της στροφής από την επαφή.");
-                list.Add(Event("pushoff" + end.ToString(CultureInfo.InvariantCulture), title, 2, pushoffLabel, turn != null ? turn.Pushoff : null,
-                    turn != null && turn.TurnTime.HasValue ? Seconds(turn.TurnTime.Value) + " s" : null, pushoffTip));
+                SwimBarEvent pushoff = Event("pushoff" + end.ToString(CultureInfo.InvariantCulture), title, 2, pushoffLabel, turn != null ? turn.Pushoff : null,
+                    turn != null && turn.TurnTime.HasValue ? Seconds(turn.TurnTime.Value) + " s" : null, pushoffTip);
+                // (2.42.0) An exchange whose touch is marked and F not yet: the time runs from the touch on the list.
+                SwimRow touchRow;
+                if (exchange && pushoff.Time == null && rowAt.TryGetValue(end, out touchRow) && touchRow.T.HasValue && touchRow.Marked)
+                    pushoff.RunningFrom = touchRow.T;
+                list.Add(pushoff);
 
                 double? wallT = WallTime(rowAt, end);
                 double? turnBreakout = turn != null ? turn.Breakout : null;

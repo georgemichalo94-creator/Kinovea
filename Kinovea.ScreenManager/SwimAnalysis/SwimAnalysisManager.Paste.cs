@@ -64,7 +64,7 @@ namespace Kinovea.ScreenManager
             SwimPasteRecord chosen;
             SwimEventInfo titleEvent;
             bool byName;
-            using (SwimPasteDialog dialog = new SwimPasteDialog(intro, clip, Race.Distance, Race.Athlete, RaceLaneNumber()))
+            using (SwimPasteDialog dialog = new SwimPasteDialog(intro, clip, Race.Distance, Race.Athlete, RaceLaneNumber(), Race.Relay))
             {
                 if (dialog.ShowDialog(DialogOwner) != DialogResult.OK || dialog.Chosen == null || !dialog.Chosen.Time.HasValue)
                 {
@@ -182,6 +182,35 @@ namespace Kinovea.ScreenManager
             {
                 e.FamilyNameLatin = r.FamilyName;
                 e.GivenNameLatin = r.GivenName;
+            }
+
+            // (2.42.0) A relay: its swimmers as pasted (found in the registry by their name, year and gender; no code in a text).
+            for (int k = 0; k < r.Members.Count; k++)
+            {
+                SwimPasteRecord m = r.Members[k];
+                SwimOfficialEntry member = new SwimOfficialEntry
+                {
+                    Order = k + 1,
+                    Nation = m.Nation.Length > 0 ? m.Nation : r.Nation,
+                    Club = m.Club.Length > 0 ? m.Club : r.Club,
+                    BirthYear = m.BirthYear,
+                    Gender = gender == "M" || gender == "F" ? gender : "",
+                    LegTime = m.Time,
+                    Reaction = m.Reaction,
+                    Status = m.Status
+                };
+                if (SwimNameMatch.HasGreek(m.FamilyName + m.GivenName))
+                {
+                    member.FamilyName = m.FamilyName;
+                    member.GivenName = m.GivenName;
+                }
+                else
+                {
+                    member.FamilyNameLatin = m.FamilyName;
+                    member.GivenNameLatin = m.GivenName;
+                }
+
+                e.Members.Add(member);
             }
 
             return e;

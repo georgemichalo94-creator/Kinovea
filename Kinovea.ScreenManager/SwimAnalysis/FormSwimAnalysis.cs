@@ -1410,6 +1410,9 @@ namespace Kinovea.ScreenManager
             AddRow(table, SwimLang.T("Αποτελέσματα (σύνδεσμος)"), tbResultsLink);
             AddRow(table, "", resultsButtons);
 
+            // (2.42.0) A relay: its four swimmers (from the results, or chosen in the KOE App).
+            AddRelayRow(table);
+
             AddRow(table, SwimLang.T("Σημεία ελέγχου"), tbCheckpoints);
             AddRow(table, "", btnDefaults);
 
@@ -1833,6 +1836,7 @@ namespace Kinovea.ScreenManager
             if (!tbResultsLink.Focused)
                 tbResultsLink.Text = r.ResultsLink ?? "";
             tbCheckpoints.Text = SwimPresets.FormatCheckpoints(r.Checkpoints);
+            RefreshRelayLegs();
         }
 
         /// <summary>
@@ -2717,6 +2721,7 @@ namespace Kinovea.ScreenManager
 
             lblAthleteList.Text = manager.AthletesMessage ?? "";
             FilterAthletes();
+            RefreshRelayLegs();
         }
 
         private void FilterAthletes()
@@ -2741,13 +2746,22 @@ namespace Kinovea.ScreenManager
             if (athlete == null)
                 return;
 
+            // (2.42.0) The swimmer of a leg of a relay looked for (▾ «Αναζήτηση στο KOE App»).
+            if (ChooseLegAthlete(athlete))
+                return;
+
             manager.SetAthlete(athlete);
             tbAthleteSearch.Text = "";
         }
 
         private void TbAthleteSearch_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter)
+            if (e.KeyCode == Keys.Escape && CancelLegSearch())
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Enter)
             {
                 if (lbAthletes.Items.Count > 0)
                     ChooseAthlete(lbAthletes.Items[0] as SwimAthlete);
