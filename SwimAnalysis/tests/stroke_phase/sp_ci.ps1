@@ -227,7 +227,7 @@ try {
   $m = Manual 12.5 11.9 $true
   Check ([Math]::Abs($m.signalBreakoutVel - 12.5 / 4.6) -lt 0.001) 'with the distance under the water an estimate of the times: sent too'
   $m = Manual 12.5 11.8 $false
-  Check ($null -eq $m.signalBreakoutVel) 'with the distance under the water measured: the script computes it as before (nothing sent)'
+  Check ([Math]::Abs($m.signalBreakoutVel - 12.5 / 4.6) -lt 0.001) 'with the distance under the water measured too (11.8 m): (2.42.0) from the breakout of the speeds, as the other speeds of the start (until 2.41.2 nothing sent: the script took 11.8 / 4.60)'
   $m = Manual $null $null $false
   Check ($null -eq $m.signalBreakoutVel) 'without a distance: nothing'
 } catch { Write-Output ('FAIL the speed from the signal to the breakout: ' + $_.Exception.Message); $fails++ }

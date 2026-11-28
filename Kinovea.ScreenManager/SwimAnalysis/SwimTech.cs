@@ -1043,6 +1043,22 @@ namespace Kinovea.ScreenManager
         }
 
         /// <summary>
+        /// (2.42.0) Mean speed of a start from the signal to the breakout, the race sheet's «Μέση ταχύτητα από το σήμα έως την έξοδο»:
+        /// from where the head comes out for the speeds (the rule of the breakout), as the other speeds of the start (until 2.41.2 the
+        /// sheet took it from the distance measured, also where the rule took the breakout nearer). Null when something is missing, the
+        /// distance is the estimate from the times or is not possible, or the speed is not plausible. No note: the panel does not show it.
+        /// </summary>
+        internal static double? SignalBreakoutSpeed(SwimTechPhase p, double k)
+        {
+            if (p == null || p.Kind != SwimPhaseKind.Start || !p.Breakout.HasValue || p.Breakout.Value < SpeedMinTime ||
+                !p.OutDist.HasValue || p.OutDist.Value <= 0 || p.OutEstimated || p.OutImpossible)
+                return null;
+
+            double speed = Out(p) * k / p.Breakout.Value;
+            return speed >= UnderwaterSpeedMin && speed <= UnderwaterSpeedMax ? speed : (double?)null;
+        }
+
+        /// <summary>
         /// (2.15.0) Shortest way of the head under the water after a push-off for its speed (pool units): nearer, the clicks of the two
         /// distances (a few tenths each) would weigh too much.
         /// </summary>

@@ -156,7 +156,8 @@ namespace Kinovea.ScreenManager
         {
             GraphicsPath path = new GraphicsPath();
             foreach (Rectangle r in Cards())
-                path.AddPath(Rounded(r, 10), false);
+                using (GraphicsPath card = Rounded(r, 10))
+                    path.AddPath(card, false);
             return path;
         }
 

@@ -243,6 +243,18 @@ $body = Sheet $race4 $r
 $m = $body.race.manual
 Check ((Near $m.sigEntryVel (3.30 / 1.04) 0.0006) -and (Near $m.entryBreakoutVel ($way / 4.26) 0.0006) -and (Near $m.breakout15Vel (2.0 / 0.9) 0.0006)) ('the three phases sent: ' + $m.sigEntryVel + ' / ' + $m.entryBreakoutVel + ' / ' + $m.breakout15Vel)
 Check ($m.entryHead -eq $true -and (Near $m.entryDistHead 3.30 1e-9) -and $null -eq $m.entryDistHands -and $null -eq $m.entryVelHands) ('the entry of the head sent: ' + $m.entryHead + ' ' + $m.entryDistHead + ' / hands ' + $m.entryDistHands)
+# (2.42.0) The average speed from the signal to the breakout of the sheet from the breakout of the speeds too, as the three phases:
+# 13.0 / 5.30. Out at 14.0 m (to the 15 1.0 / 0.9 = 1.11, below the swimming after it, 10 / 5.6): the rule takes the breakout of the
+# speeds to 15 − 1.786 × 0.9 = 13.393, and the sheet's signal → breakout from it, as entry → breakout (until 2.41.2 from the 14.0
+# measured: 2.64); the distance sent as measured.
+Check (Near $m.signalBreakoutVel (13.0 / 5.30) 0.0006) ('signal → breakout sent: ' + $m.signalBreakoutVel)
+$race4.BreakoutDist = 14.0
+$r = TurnPhase $race4
+foreach ($p in $r.Phases) { if ($p.Kind.ToString() -eq 'Start') { $start = $p } }
+$near = 15 - (10 / 5.6) * 0.9
+$m = (Sheet $race4 $r).race.manual
+Check ([Math]::Abs($start.OutForSpeeds - $near) -lt 1e-6 -and (Near $m.signalBreakoutVel ($near / 5.30) 0.0006) -and (Near $m.entryBreakoutVel (($near - 3.30) / 4.26) 0.0006) -and (Near $m.breakoutDist 14.0 1e-9)) ('out at 14.0 m: the breakout of the speeds ' + $start.OutForSpeeds + ', signal → breakout ' + $m.signalBreakoutVel + ' (from the marks ' + (14.0 / 5.30).ToString('0.000', [Globalization.CultureInfo]::InvariantCulture) + '), the distance sent ' + $m.breakoutDist)
+$race4.BreakoutDist = 13.0
 # (2.41.0) An analysis marked with the entry of the hands before 2.41.0 (the hands at 3.30 m at 1.04 s): the head 0.27 × 1.85 = 0.4995 m
 # behind them at that moment, so under the water (13.0 − 2.8005) / 4.26; from the signal the hands' as before; the Sheet gets the hands'.
 $race4.EntryHead = $false; $race4.EntryDistHead = $null; $race4.EntryDistHands = 3.30

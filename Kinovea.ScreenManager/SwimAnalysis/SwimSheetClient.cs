@@ -876,6 +876,12 @@ namespace Kinovea.ScreenManager
                     manual["entryBreakoutVel"] = Math.Round(entryBreakout.Value, 3);
                 if (breakout15.HasValue)
                     manual["breakout15Vel"] = Math.Round(breakout15.Value, 3);
+                // (2.42.0) The average speed from the signal to the breakout of the sheet from the breakout of the speeds too (the rule
+                // of the breakout), as these three: until 2.41.2 from the distance measured (2.34.0 above, or the script's from the
+                // distance under the water), also where the rule took the breakout nearer. The PDF and the video do not show it.
+                double? signalBreakout = SwimTechCalculator.SignalBreakoutSpeed(startPhase, race.K);
+                if (signalBreakout.HasValue)
+                    manual["signalBreakoutVel"] = Math.Round(signalBreakout.Value, 3);
                 // (2.41.1) The check of the breakout (Apps Script 2.27.1: ⚠ in the PDF): slower to the 15 than the swimming after it;
                 // (2.41.2) only where the rule of the breakout could not take it to the swimming (the marks are off).
                 if (breakout15.HasValue && startPhase.SlowAfterBreakout)
