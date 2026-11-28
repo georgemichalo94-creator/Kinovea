@@ -3158,6 +3158,7 @@ namespace Kinovea.ScreenManager
             { " Πάτα «🎬» για να ξαναγίνουν τα ενοποιημένα τους.", " Press «🎬» to make their joined videos again." },
             { "Τα γυρισμένα βίντεο δεν διορθώθηκαν: ", "The turned videos were not corrected: " },
             // (2.42.0) The relays: their swimmers and their exchanges.
+            { "ΑΛΛΑΓΗ", "EXCHANGE" },
             { " · αργή", " · slow" },
             { " · ρίσκο", " · risk" },
             { " κάτω από τη ζώνη ", " below the zone " },

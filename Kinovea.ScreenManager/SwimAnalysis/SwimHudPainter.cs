@@ -551,10 +551,12 @@ namespace Kinovea.ScreenManager
                 return;
             }
 
+            // (2.42.0) The wall at the end of a leg of a relay is an exchange, not a turn: the phase says so (before it the last 5 of the leg).
             double intoLength = st.D - Math.Floor(st.D / pool + 1e-9) * pool;
             if (lap > 0 && (!hasBreakout || t < breakout) && intoLength < 15)
             {
-                st.Phase = SwimLang.T("ΣΤΡΟΦΗ");
+                bool exchange = SwimRelay.ExchangeAt(s.Race, (int)Math.Round(lap * pool)) > 0;
+                st.Phase = exchange ? SwimLang.T("ΑΛΛΑΓΗ") : SwimLang.T("ΣΤΡΟΦΗ");
                 st.Phase2 = SwimLang.T("υποβρύχια φάση");
                 st.Tab = 3;
                 return;
@@ -562,8 +564,9 @@ namespace Kinovea.ScreenManager
 
             if (pool - intoLength <= 5 && st.D < distance - 5)
             {
-                st.Phase = SwimLang.T("ΣΤΡΟΦΗ");
-                st.Phase2 = string.Format(CultureInfo.InvariantCulture, SwimLang.T("είσοδος 5{0}"), st.Unit);
+                bool exchange = SwimRelay.ExchangeAt(s.Race, (int)Math.Round((Math.Floor(st.D / pool + 1e-9) + 1) * pool)) > 0;
+                st.Phase = exchange ? SwimLang.T("ΑΛΛΑΓΗ") : SwimLang.T("ΣΤΡΟΦΗ");
+                st.Phase2 = string.Format(CultureInfo.InvariantCulture, exchange ? SwimLang.T("τελευταία 5{0}") : SwimLang.T("είσοδος 5{0}"), st.Unit);
                 st.Tab = 3;
                 return;
             }
@@ -2339,7 +2342,8 @@ namespace Kinovea.ScreenManager
                 for (int w = s.Race.Pool; w < s.Race.Distance; w += s.Race.Pool)
                 {
                     g.DrawLine(wall, X(w), top - 20, X(w), bottom + 4);
-                    Caps(g, SwimLang.T("ΣΤΡΟΦΗ"), Ui(11), A(Color.FromArgb(153, 143, 243, 255), a), X(w) + 6, top - 18, 0.2f);
+                    Caps(g, SwimRelay.ExchangeAt(s.Race, w) > 0 ? SwimLang.T("ΑΛΛΑΓΗ") : SwimLang.T("ΣΤΡΟΦΗ"), Ui(11), A(Color.FromArgb(153, 143, 243, 255), a),
+                        X(w) + 6, top - 18, 0.2f);
                 }
             }
 
